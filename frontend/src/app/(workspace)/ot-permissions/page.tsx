@@ -9,8 +9,43 @@ import { QRCodeSVG } from 'qrcode.react';
 import LocationPhotoCapture from '@/components/LocationPhotoCapture';
 import Spinner from '@/components/Spinner';
 import { useAuth } from '@/contexts/AuthContext';
-import { CheckIcon, XIcon, CalendarIcon, BriefcaseIcon, ClockIcon, PlusIcon } from 'lucide-react';
+import {
+  Plus,
+  Check,
+  X,
+  Calendar,
+  Briefcase,
+  Clock3,
+  CheckCircle2,
+  XCircle,
+  ShieldCheck,
+  Search,
+  Filter,
+  Eye,
+  AlertCircle,
+  Clock,
+  ChevronRight,
+  RotateCw,
+  QrCode,
+  FileText,
+  Timer,
+  Zap,
+  MapPin,
+  Scan,
+  ImageIcon,
+  Map,
+  Navigation,
+  ArrowRight,
+  CheckCircle,
+  Trash2,
+  CheckSquare,
+  ClipboardList,
+  Activity
+} from 'lucide-react';
+import { ToastContainer, toast } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 import { getEmployeeInitials } from '@/lib/utils';
+
 import {
   canApproveOT,
   canRejectOT,
@@ -19,6 +54,29 @@ import {
   canRejectPermission,
   canApplyPermission
 } from '@/lib/permissions';
+
+// Premium Stat Card
+const StatCard = ({ title, value, icon: Icon, bgClass, iconClass, dekorClass, trend }: { title: string, value: number | string, icon: any, bgClass: string, iconClass: string, dekorClass?: string, trend?: { value: string, positive: boolean } }) => (
+  <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 transition-all hover:shadow-xl dark:border-slate-800 dark:bg-slate-900">
+    <div className="flex items-center justify-between gap-3 sm:gap-4">
+      <div className="flex-1 min-w-0">
+        <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500 truncate">{title}</p>
+        <div className="mt-1 sm:mt-2 flex items-baseline gap-2">
+          <h3 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">{value}</h3>
+          {trend && (
+            <span className={`text-[9px] sm:text-[10px] font-black px-1.5 py-0.5 rounded-md ${trend.positive ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'}`}>
+              {trend.value}
+            </span>
+          )}
+        </div>
+      </div>
+      <div className={`flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-2xl shrink-0 ${bgClass} ${iconClass}`}>
+        <Icon className="h-5 w-5 sm:h-6 sm:w-6" />
+      </div>
+    </div>
+    {dekorClass && <div className={`absolute -right-4 -bottom-4 h-20 w-20 sm:h-24 sm:w-24 rounded-full ${dekorClass}`} />}
+  </div>
+);
 
 const Portal = ({ children }: { children: React.ReactNode }) => {
   const [mounted, setMounted] = useState(false);
@@ -202,6 +260,7 @@ export default function OTAndPermissionsPage() {
   const [otRequests, setOTRequests] = useState<OTRequest[]>([]);
   const [permissions, setPermissions] = useState<PermissionRequest[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [showFilters, setShowFilters] = useState(false);
   const [shifts, setShifts] = useState<Shift[]>([]);
 
   // Filters
@@ -257,6 +316,30 @@ export default function OTAndPermissionsPage() {
   const [attendanceLoading, setAttendanceLoading] = useState(false);
   const [validationError, setValidationError] = useState<string>('');
   const [permissionValidationError, setPermissionValidationError] = useState<string>('');
+
+  const stats = useMemo(() => {
+    const counts = {
+      approvedOT: 0,
+      approvedPermissions: 0,
+      pendingOT: 0,
+      pendingPermissions: 0,
+      rejected: 0
+    };
+
+    otRequests.forEach(req => {
+      if (req.status === 'approved') counts.approvedOT += req.otHours;
+      else if (req.status === 'pending') counts.pendingOT++;
+      else if (req.status === 'rejected') counts.rejected++;
+    });
+
+    permissions.forEach(req => {
+      if (req.status === 'approved' || req.status === 'checked_in' || req.status === 'checked_out') counts.approvedPermissions++;
+      else if (req.status === 'pending') counts.pendingPermissions++;
+      else if (req.status === 'rejected') counts.rejected++;
+    });
+
+    return counts;
+  }, [otRequests, permissions]);
 
   // Evidence State
   // Derived State
@@ -857,14 +940,9 @@ export default function OTAndPermissionsPage() {
 
   return (
     <div className="relative min-h-screen bg-slate-50 dark:bg-slate-900 transition-colors duration-300">
-      {/* Toast Notifications Container */}
-      <div className="fixed right-4 top-4 z-[100] flex flex-col gap-2">
-        {toasts.map((toast) => (
-          <ToastNotification key={toast.id} toast={toast} onClose={() => removeToast(toast.id)} />
-        ))}
-      </div>
+      <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} />
 
-      {/* Decorative Background Elements */}
+      {/* Decorative Background */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-[10%] -right-[10%] w-[40%] h-[40%] rounded-full bg-blue-500/5 blur-[120px] dark:bg-blue-500/10" />
         <div className="absolute -bottom-[10%] -left-[10%] w-[40%] h-[40%] rounded-full bg-emerald-500/5 blur-[120px] dark:bg-emerald-500/10" />
@@ -872,156 +950,206 @@ export default function OTAndPermissionsPage() {
 
       <div className="relative z-10 flex flex-col min-h-screen">
         {/* Sticky Header */}
-        <header className="sticky top-0 z-40 w-full border-b border-white/20 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/80 backdrop-blur-md">
-          <div className="mx-auto max-w-[1920px] px-8 py-5">
+        <header className="sticky top-4 z-40 px-4 sm:px-8 mb-4">
+          <div className="mx-auto max-w-[1920px] bg-white/70 dark:bg-slate-900/70 backdrop-blur-2xl rounded-[2.5rem] border border-white/20 dark:border-slate-800 shadow-2xl shadow-slate-200/50 dark:shadow-none px-6 sm:px-10 py-4 sm:py-5">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h1 className="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300">
+                <div className="flex items-center gap-2 text-slate-400 font-bold text-[10px] uppercase tracking-[0.2em] mb-1">
+                  <Briefcase className="w-3 h-3" />
+                  <span>Workspace</span>
+                  <ChevronRight className="w-3 h-3" />
+                  <span className="text-blue-500">Overtime & Permissions</span>
+                </div>
+                <h1 className="text-2xl font-black bg-clip-text text-transparent bg-linear-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 uppercase tracking-tight">
                   OT & Permissions
                 </h1>
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500/80 dark:text-slate-400/80">
-                  Workspace Management
-                </p>
               </div>
 
-              <div className="flex items-center gap-4">
-                {/* Tabs - Glassmorphism UI */}
-                <div className="inline-flex p-1 rounded-2xl bg-slate-200/50 dark:bg-slate-800/50 border border-slate-300/20 dark:border-slate-700/30">
+              <div className="flex flex-wrap items-center gap-3">
+                {currentUser && canApplyOT(currentUser as any) && (
                   <button
-                    onClick={() => setActiveTab('ot')}
-                    className={`px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-300 ${activeTab === 'ot'
-                      ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xl shadow-blue-500/20'
-                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
-                      }`}
+                    onClick={() => { setActiveTab('ot'); setShowOTDialog(true); }}
+                    className="h-10 px-6 rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-slate-900/10 dark:shadow-white/10"
                   >
-                    Overtime
+                    <Plus className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Apply OT</span>
+                    <span className="sm:hidden">OT</span>
                   </button>
+                )}
+                {currentUser && canApplyPermission(currentUser as any) && (
                   <button
-                    onClick={() => setActiveTab('permissions')}
-                    className={`px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-300 ${activeTab === 'permissions'
-                      ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-xl shadow-emerald-500/20'
-                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
-                      }`}
+                    onClick={() => { setActiveTab('permissions'); setShowPermissionDialog(true); }}
+                    className="h-10 px-6 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all shadow-sm"
                   >
-                    Permissions
+                    <Plus className="w-3.5 h-3.5 text-blue-500" />
+                    <span className="hidden sm:inline">Apply Permission</span>
+                    <span className="sm:hidden">Permission</span>
                   </button>
-                  <button
-                    onClick={() => setActiveTab('pending')}
-                    className={`px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-300 ${activeTab === 'pending'
-                      ? 'bg-white dark:bg-slate-700 text-orange-600 dark:text-orange-400 shadow-xl shadow-orange-500/20'
-                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
-                      }`}
-                  >
-                    Pending
-                  </button>
-                </div>
-
-                <div className="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-2" />
-
-                <div className="flex gap-2">
-                  {currentUser && canApplyOT(currentUser as any) && (
-                    <button
-                      onClick={() => { setActiveTab('ot'); setShowOTDialog(true); }}
-                      className="h-11 px-6 rounded-2xl bg-gradient-to-r from-blue-600 to-blue-500 text-white text-xs font-black uppercase tracking-widest shadow-lg shadow-blue-600/20 hover:shadow-blue-600/30 hover:-translate-y-0.5 transition-all active:scale-95 flex items-center gap-2"
-                    >
-                      <PlusIcon className="w-4 h-4" />
-                      Apply OT
-                    </button>
-                  )}
-                  {currentUser && canApplyPermission(currentUser as any) && (
-                    <button
-                      onClick={() => { setActiveTab('permissions'); setShowPermissionDialog(true); }}
-                      className="h-11 px-6 rounded-2xl bg-gradient-to-r from-emerald-600 to-emerald-500 text-white text-xs font-black uppercase tracking-widest shadow-lg shadow-emerald-600/20 hover:shadow-emerald-600/30 hover:-translate-y-0.5 transition-all active:scale-95 flex items-center gap-2"
-                    >
-                      <PlusIcon className="w-4 h-4" />
-                      Apply Permission
-                    </button>
-                  )}
-                </div>
+                )}
               </div>
             </div>
           </div>
         </header>
 
-        <main className="flex-1 px-8 py-8">
+        <main className="flex-1 max-w-[1920px] mx-auto w-full px-4 sm:px-8 py-6 sm:py-8 space-y-8">
+          {/* Stats Grid */}
+          <div className="grid grid-cols-2 gap-3 sm:gap-6 lg:grid-cols-4 animate-in fade-in slide-in-from-top-4 duration-500">
+            <StatCard
+              title="Approved OT Hours"
+              value={`${stats.approvedOT}h`}
+              icon={Timer}
+              bgClass="bg-blue-500/10"
+              iconClass="text-blue-600 dark:text-blue-400"
+              dekorClass="bg-blue-500/5"
+            />
+            <StatCard
+              title="Pending Requests"
+              value={stats.pendingOT + stats.pendingPermissions}
+              icon={Clock3}
+              bgClass="bg-amber-500/10"
+              iconClass="text-amber-600 dark:text-amber-400"
+              dekorClass="bg-amber-500/5"
+              trend={{ value: `${stats.pendingOT} OT | ${stats.pendingPermissions} Perm`, positive: false }}
+            />
+            <StatCard
+              title="Approved Permissions"
+              value={stats.approvedPermissions}
+              icon={CheckCircle2}
+              bgClass="bg-emerald-500/10"
+              iconClass="text-emerald-600 dark:text-emerald-400"
+              dekorClass="bg-emerald-500/5"
+            />
+            <StatCard
+              title="Rejected Requests"
+              value={stats.rejected}
+              icon={XCircle}
+              bgClass="bg-rose-500/10"
+              iconClass="text-rose-600 dark:text-rose-400"
+              dekorClass="bg-rose-500/5"
+            />
+          </div>
 
-          {/* Filters - Glassmorphism Card */}
-          <div className="mb-8 p-6 rounded-3xl border border-white/20 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl shadow-xl shadow-slate-200/50 dark:shadow-none animate-in fade-in slide-in-from-top-4 duration-500">
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-4">
-              {!isEmployee && (
-                <div className="space-y-2">
-                  <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 ml-1">
-                    Employee Number
-                  </label>
-                  <input
-                    type="text"
-                    value={activeTab === 'ot' ? otFilters.employeeNumber : permissionFilters.employeeNumber}
-                    onChange={(e) => {
-                      if (activeTab === 'ot') {
-                        setOTFilters(prev => ({ ...prev, employeeNumber: e.target.value }));
-                      } else {
-                        setPermissionFilters(prev => ({ ...prev, employeeNumber: e.target.value }));
-                      }
-                    }}
-                    placeholder="Filter by employee..."
-                    className="w-full h-11 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/50 dark:bg-slate-800/50 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all dark:text-white"
-                  />
+          {/* Controls Section */}
+          <div className="flex flex-col xl:flex-col gap-6">
+            {/* Filters Card */}
+            <div className="flex-1 p-5 sm:p-6 rounded-4xl border border-white/20 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl shadow-xl shadow-slate-200/50 dark:shadow-none transition-all">
+              <div className="flex flex-wrap items-center gap-6">
+                {/* Search & Toggle */}
+                <div className="flex items-center gap-2 w-full md:w-auto md:flex-1">
+                  <div className="flex-1 min-w-[200px] relative group">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
+                    <input
+                      type="text"
+                      placeholder="Search Employee..."
+                      value={otFilters.employeeNumber}
+                      onChange={(e) => setOTFilters(prev => ({ ...prev, employeeNumber: e.target.value }))}
+                      className="w-full h-11 pl-11 pr-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all dark:text-white"
+                    />
+                  </div>
+                  <button
+                    onClick={() => setShowFilters(!showFilters)}
+                    className={`md:hidden h-11 w-11 flex items-center justify-center rounded-2xl border transition-all ${showFilters
+                      ? 'bg-blue-500 border-blue-500 text-white'
+                      : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400'
+                      }`}
+                  >
+                    <Filter className="w-5 h-5" />
+                  </button>
                 </div>
-              )}
-              <div className="space-y-2">
-                <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 ml-1">
-                  Status
-                </label>
-                <select
-                  value={activeTab === 'ot' ? otFilters.status : permissionFilters.status}
-                  onChange={(e) => {
-                    if (activeTab === 'ot') {
-                      setOTFilters(prev => ({ ...prev, status: e.target.value }));
-                    } else {
-                      setPermissionFilters(prev => ({ ...prev, status: e.target.value }));
-                    }
-                  }}
-                  className="w-full h-11 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/50 dark:bg-slate-800/50 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all dark:text-white appearance-none cursor-pointer"
-                >
-                  <option value="">All Status</option>
-                  <option value="pending">Pending</option>
-                  <option value="approved">Approved</option>
-                  <option value="rejected">Rejected</option>
-                </select>
+
+                <div className={`flex flex-wrap items-center gap-4 w-full md:w-auto ${showFilters ? 'flex' : 'hidden md:flex'}`}>
+                  <div className="relative">
+                    <Filter className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                    <select
+                      value={activeTab === 'ot' ? otFilters.status : permissionFilters.status}
+                      onChange={(e) => {
+                        if (activeTab === 'ot') setOTFilters(prev => ({ ...prev, status: e.target.value }));
+                        else setPermissionFilters(prev => ({ ...prev, status: e.target.value }));
+                      }}
+                      className="h-10 pl-9 pr-8 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all appearance-none cursor-pointer"
+                    >
+                      <option value="">All Status</option>
+                      <option value="pending">Pending</option>
+                      <option value="approved">Approved</option>
+                      <option value="rejected">Rejected</option>
+                    </select>
+                  </div>
+
+                  <div className="flex items-center flex-wrap sm:flex-nowrap gap-2 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                    <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <input
+                      type="date"
+                      value={activeTab === 'ot' ? otFilters.startDate : permissionFilters.startDate}
+                      onChange={(e) => {
+                        if (activeTab === 'ot') setOTFilters(prev => ({ ...prev, startDate: e.target.value }));
+                        else setPermissionFilters(prev => ({ ...prev, startDate: e.target.value }));
+                      }}
+                      className="bg-transparent text-xs font-bold text-slate-600 dark:text-slate-300 outline-none cursor-pointer w-full sm:w-auto min-w-[100px]"
+                    />
+                    <span className="text-slate-300 dark:text-slate-600 font-bold shrink-0">→</span>
+                    <input
+                      type="date"
+                      value={activeTab === 'ot' ? otFilters.endDate : permissionFilters.endDate}
+                      onChange={(e) => {
+                        if (activeTab === 'ot') setOTFilters(prev => ({ ...prev, endDate: e.target.value }));
+                        else setPermissionFilters(prev => ({ ...prev, endDate: e.target.value }));
+                      }}
+                      className="bg-transparent text-xs font-bold text-slate-600 dark:text-slate-300 outline-none cursor-pointer w-full sm:w-auto min-w-[100px]"
+                    />
+                  </div>
+                </div>
               </div>
-              <div className="space-y-2">
-                <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 ml-1">
-                  Start Date
-                </label>
-                <input
-                  type="date"
-                  value={activeTab === 'ot' ? otFilters.startDate : permissionFilters.startDate}
-                  onChange={(e) => {
-                    if (activeTab === 'ot') {
-                      setOTFilters(prev => ({ ...prev, startDate: e.target.value }));
-                    } else {
-                      setPermissionFilters(prev => ({ ...prev, startDate: e.target.value }));
-                    }
-                  }}
-                  className="w-full h-11 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/50 dark:bg-slate-800/50 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all dark:text-white cursor-pointer"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 ml-1">
-                  End Date
-                </label>
-                <input
-                  type="date"
-                  value={activeTab === 'ot' ? otFilters.endDate : permissionFilters.endDate}
-                  onChange={(e) => {
-                    if (activeTab === 'ot') {
-                      setOTFilters(prev => ({ ...prev, endDate: e.target.value }));
-                    } else {
-                      setPermissionFilters(prev => ({ ...prev, endDate: e.target.value }));
-                    }
-                  }}
-                  className="w-full h-11 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/50 dark:bg-slate-800/50 text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all dark:text-white cursor-pointer"
-                />
+            </div>
+
+            {/* Tabs */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+              <div className="inline-flex items-center p-1 rounded-xl bg-slate-100/50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 backdrop-blur-sm shadow-inner overflow-x-auto scrollbar-hide">
+                {[
+                  {
+                    id: 'ot',
+                    label: 'Overtime',
+                    icon: Timer,
+                    count: otRequests.length,
+                    activeClass: 'text-blue-600 dark:text-blue-400',
+                    badgeClass: 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300'
+                  },
+                  {
+                    id: 'permissions',
+                    label: 'Permissions',
+                    icon: ShieldCheck,
+                    count: permissions.length,
+                    activeClass: 'text-violet-600 dark:text-violet-400',
+                    badgeClass: 'bg-violet-50 text-violet-600 dark:bg-violet-900/30 dark:text-violet-300'
+                  },
+                  {
+                    id: 'pending',
+                    label: 'Pending Approvals',
+                    icon: Clock3,
+                    count: totalPending,
+                    activeClass: 'text-amber-600 dark:text-amber-400',
+                    badgeClass: 'bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-300'
+                  }
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id as any)}
+                    className={`group relative flex items-center gap-2 px-4 sm:px-6 py-2 rounded-lg text-xs font-bold transition-all duration-300 whitespace-nowrap ${activeTab === tab.id
+                      ? `bg-white dark:bg-slate-700 shadow-sm ring-1 ring-slate-200/50 dark:ring-0 ${tab.activeClass}`
+                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                      }`}
+                  >
+                    <tab.icon className={`w-3.5 h-3.5 ${activeTab === tab.id ? tab.activeClass : 'text-slate-400 group-hover:text-slate-600'}`} />
+                    <span>{tab.label}</span>
+                    {tab.count > 0 && (
+                      <span className={`flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-md text-[10px] font-black ${activeTab === tab.id
+                        ? tab.badgeClass
+                        : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                        }`}>
+                        {tab.count}
+                      </span>
+                    )}
+                  </button>
+                ))}
               </div>
             </div>
           </div>
@@ -1044,19 +1172,19 @@ export default function OTAndPermissionsPage() {
                 </div>
 
                 {pendingOTs.length === 0 ? (
-                  <div className="rounded-[2rem] border-2 border-dashed border-slate-200 dark:border-slate-800 p-12 text-center bg-white/30 dark:bg-slate-900/30 backdrop-blur-sm">
-                    <ClockIcon className="mx-auto h-12 w-12 text-slate-300 dark:text-slate-600 mb-4" />
+                  <div className="rounded-[2.5rem] border-2 border-dashed border-slate-200 dark:border-slate-800 p-12 text-center bg-white/30 dark:bg-slate-900/30 backdrop-blur-sm">
+                    <Clock className="mx-auto h-12 w-12 text-slate-300 dark:text-slate-600 mb-4" />
                     <h3 className="text-lg font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Clear Workspace</h3>
                     <p className="mt-2 text-sm text-slate-400 dark:text-slate-500">No overtime requests requiring your approval.</p>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                     {pendingOTs.map((ot) => (
-                      <div key={ot._id} className="group relative flex flex-col justify-between rounded-[2rem] border border-white/20 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl p-6 shadow-xl shadow-slate-200/50 dark:shadow-none hover:-translate-y-1 transition-all duration-300">
+                      <div key={ot._id} className="group relative flex flex-col justify-between rounded-[2.5rem] border border-white/20 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl p-6 shadow-xl shadow-slate-200/50 dark:shadow-none hover:-translate-y-1 transition-all duration-300">
                         {/* Header */}
                         <div className="flex items-start justify-between gap-4 mb-6">
                           <div className="flex items-center gap-4">
-                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 text-white font-black text-xs shadow-lg shadow-blue-500/20">
+                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-linear-to-br from-blue-500 to-blue-600 text-white font-black text-xs shadow-lg shadow-blue-500/20">
                               {getEmployeeInitials({
                                 employee_name: ot.employeeId?.employee_name || '',
                                 first_name: ot.employeeId?.employee_name?.split(' ')[0],
@@ -1073,7 +1201,7 @@ export default function OTAndPermissionsPage() {
                               </p>
                             </div>
                           </div>
-                          <span className="px-3 py-1 bg-orange-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-orange-500/20">
+                          <span className="px-3 py-1 bg-amber-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-amber-500/20">
                             PENDING
                           </span>
                         </div>
@@ -1090,8 +1218,9 @@ export default function OTAndPermissionsPage() {
                           </div>
                           <div className="col-span-2 space-y-1">
                             <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Time Window</p>
-                            <p className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                              {formatTime(ot.otInTime)} <span className="text-slate-400 mx-1">→</span> {formatTime(ot.otOutTime)}
+                            <p className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                              <Timer className="w-3 h-3 text-slate-400" />
+                              {formatTime(ot.otInTime)} <ChevronRight className="w-3 h-3 text-slate-300" /> {formatTime(ot.otOutTime)}
                             </p>
                           </div>
                         </div>
@@ -1100,15 +1229,15 @@ export default function OTAndPermissionsPage() {
                         <div className="flex items-center gap-3">
                           <button
                             onClick={() => handleApprove('ot', ot._id)}
-                            className="flex-1 h-10 rounded-xl bg-green-500 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-green-500/20 hover:bg-green-600 transition-all flex items-center justify-center gap-2"
+                            className="flex-1 h-10 rounded-xl bg-emerald-500 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-emerald-500/20 hover:bg-emerald-600 transition-all flex items-center justify-center gap-2"
                           >
-                            <CheckIcon className="h-3.5 w-3.5" /> Approve
+                            <Check className="h-3.5 w-3.5" /> Approve
                           </button>
                           <button
                             onClick={() => handleReject('ot', ot._id)}
-                            className="flex-1 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[10px] font-black uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all flex items-center justify-center gap-2"
+                            className="flex-1 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[10px] font-black uppercase tracking-widest hover:bg-rose-500 hover:text-white transition-all flex items-center justify-center gap-2"
                           >
-                            <XIcon className="h-3.5 w-3.5" /> Reject
+                            <X className="h-3.5 w-3.5" /> Reject
                           </button>
                         </div>
                       </div>
@@ -1128,19 +1257,19 @@ export default function OTAndPermissionsPage() {
                 </div>
 
                 {pendingPermissions.length === 0 ? (
-                  <div className="rounded-[2rem] border-2 border-dashed border-slate-200 dark:border-slate-800 p-12 text-center bg-white/30 dark:bg-slate-900/30 backdrop-blur-sm">
-                    <PlusIcon className="mx-auto h-12 w-12 text-slate-300 dark:text-slate-600 mb-4" />
+                  <div className="rounded-[2.5rem] border-2 border-dashed border-slate-200 dark:border-slate-800 p-12 text-center bg-white/30 dark:bg-slate-900/30 backdrop-blur-sm">
+                    <Plus className="mx-auto h-12 w-12 text-slate-300 dark:text-slate-600 mb-4" />
                     <h3 className="text-lg font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Clear Workspace</h3>
                     <p className="mt-2 text-sm text-slate-400 dark:text-slate-500">No permission requests requiring your approval.</p>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                     {pendingPermissions.map((perm) => (
-                      <div key={perm._id} className="group relative flex flex-col justify-between rounded-[2rem] border border-white/20 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl p-6 shadow-xl shadow-slate-200/50 dark:shadow-none hover:-translate-y-1 transition-all duration-300">
+                      <div key={perm._id} className="group relative flex flex-col justify-between rounded-[2.5rem] border border-white/20 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl p-6 shadow-xl shadow-slate-200/50 dark:shadow-none hover:-translate-y-1 transition-all duration-300">
                         {/* Header */}
                         <div className="flex items-start justify-between gap-4 mb-6">
                           <div className="flex items-center gap-4">
-                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 text-white font-black text-xs shadow-lg shadow-emerald-500/20">
+                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-linear-to-br from-emerald-500 to-emerald-600 text-white font-black text-xs shadow-lg shadow-emerald-500/20">
                               {getEmployeeInitials({
                                 employee_name: perm.employeeId?.employee_name || '',
                                 first_name: perm.employeeId?.employee_name?.split(' ')[0],
@@ -1157,7 +1286,7 @@ export default function OTAndPermissionsPage() {
                               </p>
                             </div>
                           </div>
-                          <span className="px-3 py-1 bg-orange-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-orange-500/20">
+                          <span className="px-3 py-1 bg-amber-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-amber-500/20">
                             PENDING
                           </span>
                         </div>
@@ -1174,8 +1303,9 @@ export default function OTAndPermissionsPage() {
                           </div>
                           <div className="col-span-2 space-y-1">
                             <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Time Range</p>
-                            <p className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                              {formatTime(perm.permissionStartTime)} <span className="text-slate-400 mx-1">→</span> {formatTime(perm.permissionEndTime)}
+                            <p className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                              <Timer className="w-3 h-3 text-slate-400" />
+                              {formatTime(perm.permissionStartTime)} <ChevronRight className="w-3 h-3 text-slate-400" /> {formatTime(perm.permissionEndTime)}
                             </p>
                           </div>
                           {perm.purpose && (
@@ -1193,15 +1323,15 @@ export default function OTAndPermissionsPage() {
                             <>
                               <button
                                 onClick={() => handleApprove('permission', perm._id)}
-                                className="flex-1 h-10 rounded-xl bg-green-500 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-green-500/20 hover:bg-green-600 transition-all flex items-center justify-center gap-2"
+                                className="flex-1 h-10 rounded-xl bg-emerald-500 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-emerald-500/20 hover:bg-emerald-600 transition-all flex items-center justify-center gap-2"
                               >
-                                <CheckIcon className="h-3.5 w-3.5" /> Approve
+                                <Check className="h-3.5 w-3.5" /> Approve
                               </button>
                               <button
                                 onClick={() => handleReject('permission', perm._id)}
-                                className="flex-1 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[10px] font-black uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all flex items-center justify-center gap-2"
+                                className="flex-1 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[10px] font-black uppercase tracking-widest hover:bg-rose-500 hover:text-white transition-all flex items-center justify-center gap-2"
                               >
-                                <XIcon className="h-3.5 w-3.5" /> Reject
+                                <X className="h-3.5 w-3.5" /> Reject
                               </button>
                             </>
                           )}
@@ -1213,7 +1343,7 @@ export default function OTAndPermissionsPage() {
                               }}
                               className="w-full h-10 rounded-xl bg-blue-500 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-500/20 hover:bg-blue-600 transition-all flex items-center justify-center gap-2"
                             >
-                              <ClockIcon className="h-3.5 w-3.5" /> Gate Pass
+                              <QrCode className="h-3.5 w-3.5" /> Gate Pass
                             </button>
                           )}
                         </div>
@@ -1226,22 +1356,22 @@ export default function OTAndPermissionsPage() {
           ) : (
             activeTab === 'ot' ? (
               <div className="relative group animate-in fade-in slide-in-from-bottom-4 duration-700">
-                <div className="absolute -inset-1 bg-gradient-to-r from-blue-500/10 to-transparent rounded-[2rem] blur-xl opacity-0 group-hover:opacity-100 transition duration-1000" />
-                <div className="relative overflow-hidden rounded-[2rem] border border-white/20 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl shadow-2xl shadow-slate-200/50 dark:shadow-none">
-                  <div className="overflow-x-auto">
+                <div className="absolute -inset-1 bg-linear-to-r from-blue-500/10 to-transparent rounded-4xl blur-xl opacity-0 group-hover:opacity-100 transition duration-1000" />
+                <div className="relative overflow-hidden rounded-[2.5rem] border border-white/20 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl shadow-2xl shadow-slate-200/50 dark:shadow-none">
+                  <div className="hidden md:block overflow-x-auto scrollbar-hide">
                     <table className="w-full text-left border-collapse">
                       <thead>
                         <tr className="border-b border-slate-200/60 dark:border-slate-700/60 bg-slate-50/50 dark:bg-slate-800/50">
-                          {showEmployeeCol && <th scope="col" className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">Employee</th>}
-                          {showDivision && <th scope="col" className="px-6 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">Division</th>}
-                          {showDepartment && <th scope="col" className="px-6 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">Department</th>}
-                          <th scope="col" className="px-6 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">Date</th>
-                          <th scope="col" className="px-6 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">Shift</th>
-                          <th scope="col" className="px-6 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400 text-center">In Time</th>
-                          <th scope="col" className="px-6 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400 text-center">Out Time</th>
-                          <th scope="col" className="px-6 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400 text-center">Hours</th>
-                          <th scope="col" className="px-6 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400 text-center">Status</th>
-                          <th scope="col" className="px-8 py-5 text-right text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">Actions</th>
+                          {showEmployeeCol && <th scope="col" className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400 whitespace-nowrap">Employee</th>}
+                          {showDivision && <th scope="col" className="px-6 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400 whitespace-nowrap">Division</th>}
+                          {showDepartment && <th scope="col" className="px-6 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400 whitespace-nowrap">Department</th>}
+                          <th scope="col" className="px-6 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400 whitespace-nowrap">Date</th>
+                          <th scope="col" className="px-6 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400 whitespace-nowrap">Shift</th>
+                          <th scope="col" className="px-6 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400 text-center whitespace-nowrap">In Time</th>
+                          <th scope="col" className="px-6 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400 text-center whitespace-nowrap">Out Time</th>
+                          <th scope="col" className="px-6 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400 text-center whitespace-nowrap">Hours</th>
+                          <th scope="col" className="px-6 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400 text-center whitespace-nowrap">Status</th>
+                          <th scope="col" className="px-8 py-5 text-right text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400 whitespace-nowrap">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -1250,7 +1380,7 @@ export default function OTAndPermissionsPage() {
                             <td colSpan={10} className="px-8 py-20 text-center">
                               <div className="flex flex-col items-center gap-3">
                                 <div className="w-16 h-16 rounded-3xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center">
-                                  <ClockIcon className="w-8 h-8 text-slate-300" />
+                                  <Clock className="w-8 h-8 text-slate-300" />
                                 </div>
                                 <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">No OT requests found</p>
                               </div>
@@ -1262,7 +1392,7 @@ export default function OTAndPermissionsPage() {
                               {showEmployeeCol && (
                                 <td className="px-8 py-4">
                                   <div className="flex items-center gap-4">
-                                    <div className="h-10 w-10 min-w-[40px] rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-black text-xs shadow-lg shadow-blue-500/20">
+                                    <div className="h-10 w-10 min-w-10 rounded-2xl bg-linear-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-black text-xs shadow-lg shadow-blue-500/20">
                                       {getEmployeeInitials({ employee_name: ot.employeeId?.employee_name || '', first_name: '', last_name: '', emp_no: '' } as any)}
                                     </div>
                                     <div className="min-w-0">
@@ -1276,21 +1406,23 @@ export default function OTAndPermissionsPage() {
                                   </div>
                                 </td>
                               )}
-                              {showDivision && <td className="px-6 py-4 text-xs font-bold text-slate-600 dark:text-slate-400">{ot.employeeId?.department?.division?.name || '-'}</td>}
-                              {showDepartment && <td className="px-6 py-4 text-xs font-bold text-slate-600 dark:text-slate-400">{ot.employeeId?.department?.name || '-'}</td>}
+                              {showDivision && <td className="px-6 py-4 text-xs font-bold text-slate-600 dark:text-slate-400 whitespace-nowrap">{ot.employeeId?.department?.division?.name || '-'}</td>}
+                              {showDepartment && <td className="px-6 py-4 text-xs font-bold text-slate-600 dark:text-slate-400 whitespace-nowrap">{ot.employeeId?.department?.name || '-'}</td>}
                               <td className="px-6 py-4 whitespace-nowrap text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider">{formatDate(ot.date)}</td>
-                              <td className="px-6 py-4 text-xs font-bold text-slate-600 dark:text-slate-400">
+                              <td className="px-6 py-4 text-xs font-bold text-slate-600 dark:text-slate-400 whitespace-nowrap">
                                 {ot.shiftId?.name || '-'}
                               </td>
-                              <td className="px-6 py-4 text-center text-xs font-bold text-slate-900 dark:text-white">{formatTime(ot.otInTime)}</td>
-                              <td className="px-6 py-4 text-center text-xs font-bold text-slate-900 dark:text-white">{formatTime(ot.otOutTime)}</td>
+                              <td className="px-6 py-4 text-center text-xs font-bold text-slate-900 dark:text-white whitespace-nowrap">{formatTime(ot.otInTime)}</td>
+                              <td className="px-6 py-4 text-center text-xs font-bold text-slate-900 dark:text-white whitespace-nowrap">{formatTime(ot.otOutTime)}</td>
                               <td className="px-6 py-4 text-center">
-                                <span className="px-3 py-1 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-black text-xs">
+                                <span className="px-3 py-1 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-black text-xs whitespace-nowrap">
                                   {ot.otHours}h
                                 </span>
                               </td>
                               <td className="px-6 py-4 text-center">
-                                <span className={`inline-flex items-center px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-[0.1em] shadow-sm ${ot.status === 'approved' ? 'bg-green-500 text-white shadow-green-500/20' : ot.status === 'rejected' ? 'bg-red-500 text-white shadow-red-500/20' : 'bg-orange-500 text-white shadow-orange-500/20'
+                                <span className={`inline-flex items-center px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-sm whitespace-nowrap ${ot.status === 'approved' ? 'bg-emerald-500 text-white shadow-emerald-500/20' :
+                                  ot.status === 'rejected' ? 'bg-rose-500 text-white shadow-rose-500/20' :
+                                    'bg-amber-500 text-white shadow-amber-500/20'
                                   }`}>
                                   {ot.status}
                                 </span>
@@ -1301,13 +1433,13 @@ export default function OTAndPermissionsPage() {
                                     <>
                                       <button
                                         onClick={() => handleApprove('ot', ot._id)}
-                                        className="h-8 px-4 rounded-lg bg-green-500/10 text-green-600 hover:bg-green-500 hover:text-white text-[10px] font-black uppercase tracking-widest transition-all"
+                                        className="h-9 px-4 rounded-xl bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500 hover:text-white text-[10px] font-black uppercase tracking-widest transition-all shadow-sm"
                                       >
                                         Approve
                                       </button>
                                       <button
                                         onClick={() => handleReject('ot', ot._id)}
-                                        className="h-8 px-4 rounded-lg bg-red-500/10 text-red-600 hover:bg-red-500 hover:text-white text-[10px] font-black uppercase tracking-widest transition-all"
+                                        className="h-9 px-4 rounded-xl bg-rose-500/10 text-rose-600 hover:bg-rose-500 hover:text-white text-[10px] font-black uppercase tracking-widest transition-all shadow-sm"
                                       >
                                         Reject
                                       </button>
@@ -1321,25 +1453,97 @@ export default function OTAndPermissionsPage() {
                       </tbody>
                     </table>
                   </div>
+
+                  {/* Mobile Card View for OT */}
+                  <div className="md:hidden space-y-4 p-4">
+                    {otRequests.length === 0 ? (
+                      <div className="text-center py-10 text-slate-500 text-sm italic">
+                        No OT requests found
+                      </div>
+                    ) : (
+                      otRequests.map((ot) => (
+                        <div
+                          key={ot._id}
+                          className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-sm active:scale-[0.98] transition-all"
+                        >
+                          <div className="flex justify-between items-start mb-3">
+                            <div className="flex items-center gap-3">
+                              <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-700 dark:text-blue-400 font-bold text-xs shrink-0">
+                                {getEmployeeInitials({ employee_name: ot.employeeId?.employee_name || '', first_name: '', last_name: '', emp_no: '' } as any)}
+                              </div>
+                              <div>
+                                <h4 className="font-bold text-slate-900 dark:text-white text-sm">
+                                  {ot.employeeId?.employee_name || ot.employeeNumber}
+                                </h4>
+                                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                                  {ot.employeeNumber}
+                                </p>
+                              </div>
+                            </div>
+                            <span className={`px-2 py-1 rounded-md text-[10px] font-black uppercase tracking-widest ${ot.status === 'approved' ? 'bg-emerald-500/10 text-emerald-600' :
+                              ot.status === 'rejected' ? 'bg-rose-500/10 text-rose-600' :
+                                'bg-amber-500/10 text-amber-600'
+                              }`}>
+                              {ot.status}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3 text-sm text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl mb-3">
+                            <div className="flex flex-col">
+                              <span className="text-[10px] uppercase font-bold text-slate-400">Date</span>
+                              <span className="font-semibold text-slate-900 dark:text-white">{formatDate(ot.date)}</span>
+                            </div>
+                            <div className="flex flex-col">
+                              <span className="text-[10px] uppercase font-bold text-slate-400">Hours</span>
+                              <span className="font-semibold text-blue-600 dark:text-blue-400">{ot.otHours}h</span>
+                            </div>
+                            <div className="col-span-2 border-t border-slate-200 dark:border-slate-700 pt-2 flex justify-between items-center">
+                              <span className="text-[10px] uppercase font-bold text-slate-400">Time</span>
+                              <span className="font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                                {formatTime(ot.otInTime)} <ChevronRight className="w-3 h-3 text-slate-400" /> {formatTime(ot.otOutTime)}
+                              </span>
+                            </div>
+                          </div>
+
+                          {canPerformAction(ot) && (
+                            <div className="flex gap-2 mt-3">
+                              <button
+                                onClick={() => handleApprove('ot', ot._id)}
+                                className="flex-1 h-9 rounded-lg bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500 hover:text-white text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                              >
+                                <Check className="h-3.5 w-3.5" /> Approve
+                              </button>
+                              <button
+                                onClick={() => handleReject('ot', ot._id)}
+                                className="flex-1 h-9 rounded-lg bg-rose-500/10 text-rose-600 hover:bg-rose-500 hover:text-white text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                              >
+                                <X className="h-3.5 w-3.5" /> Reject
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
               </div>
             ) : (
               <div className="relative group animate-in fade-in slide-in-from-bottom-4 duration-700">
-                <div className="absolute -inset-1 bg-gradient-to-r from-emerald-500/10 to-transparent rounded-[2rem] blur-xl opacity-0 group-hover:opacity-100 transition duration-1000" />
-                <div className="relative overflow-hidden rounded-[2rem] border border-white/20 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl shadow-2xl shadow-slate-200/50 dark:shadow-none">
-                  <div className="overflow-x-auto">
+                <div className="absolute -inset-1 bg-linear-to-r from-emerald-500/10 to-transparent rounded-4xl blur-xl opacity-0 group-hover:opacity-100 transition duration-1000" />
+                <div className="relative overflow-hidden rounded-[2.5rem] border border-white/20 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl shadow-2xl shadow-slate-200/50 dark:shadow-none">
+                  <div className="hidden md:block overflow-x-auto scrollbar-hide">
                     <table className="w-full text-left border-collapse">
                       <thead>
                         <tr className="border-b border-slate-200/60 dark:border-slate-700/60 bg-slate-50/50 dark:bg-slate-800/50">
-                          {showEmployeeCol && <th scope="col" className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">Employee</th>}
-                          {showDivision && <th scope="col" className="px-6 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">Division</th>}
-                          {showDepartment && <th scope="col" className="px-6 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">Department</th>}
-                          <th scope="col" className="px-6 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">Date</th>
-                          <th scope="col" className="px-6 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400 text-center">Time Range</th>
-                          <th scope="col" className="px-6 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400 text-center">Hours</th>
-                          <th scope="col" className="px-6 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">Purpose</th>
-                          <th scope="col" className="px-6 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400 text-center">Status</th>
-                          <th scope="col" className="px-8 py-5 text-right text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">Actions</th>
+                          {showEmployeeCol && <th scope="col" className="px-8 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400 whitespace-nowrap">Employee</th>}
+                          {showDivision && <th scope="col" className="px-6 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400 whitespace-nowrap">Division</th>}
+                          {showDepartment && <th scope="col" className="px-6 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400 whitespace-nowrap">Department</th>}
+                          <th scope="col" className="px-6 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400 whitespace-nowrap">Date</th>
+                          <th scope="col" className="px-6 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400 text-center whitespace-nowrap">Time Range</th>
+                          <th scope="col" className="px-6 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400 text-center whitespace-nowrap">Hours</th>
+                          <th scope="col" className="px-6 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400 whitespace-nowrap">Purpose</th>
+                          <th scope="col" className="px-6 py-5 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400 text-center whitespace-nowrap">Status</th>
+                          <th scope="col" className="px-8 py-5 text-right text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400 whitespace-nowrap">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -1348,7 +1552,7 @@ export default function OTAndPermissionsPage() {
                             <td colSpan={10} className="px-8 py-20 text-center">
                               <div className="flex flex-col items-center gap-3">
                                 <div className="w-16 h-16 rounded-3xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center">
-                                  <PlusIcon className="w-8 h-8 text-slate-300" />
+                                  <Plus className="w-8 h-8 text-slate-300" />
                                 </div>
                                 <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">No permission requests found</p>
                               </div>
@@ -1360,7 +1564,7 @@ export default function OTAndPermissionsPage() {
                               {showEmployeeCol && (
                                 <td className="px-8 py-4">
                                   <div className="flex items-center gap-4">
-                                    <div className="h-10 w-10 min-w-[40px] rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center text-white font-black text-xs shadow-lg shadow-emerald-500/20">
+                                    <div className="h-10 w-10 min-w-10 rounded-2xl bg-linear-to-br from-emerald-500 to-emerald-600 flex items-center justify-center text-white font-black text-xs shadow-lg shadow-emerald-500/20">
                                       {getEmployeeInitials({ employee_name: perm.employeeId?.employee_name || '', first_name: '', last_name: '', emp_no: '' } as any)}
                                     </div>
                                     <div className="min-w-0">
@@ -1374,28 +1578,28 @@ export default function OTAndPermissionsPage() {
                                   </div>
                                 </td>
                               )}
-                              {showDivision && <td className="px-6 py-4 text-xs font-bold text-slate-600 dark:text-slate-400">{perm.employeeId?.department?.division?.name || '-'}</td>}
-                              {showDepartment && <td className="px-6 py-4 text-xs font-bold text-slate-600 dark:text-slate-400">{perm.employeeId?.department?.name || '-'}</td>}
+                              {showDivision && <td className="px-6 py-4 text-xs font-bold text-slate-600 dark:text-slate-400 whitespace-nowrap">{perm.employeeId?.department?.division?.name || '-'}</td>}
+                              {showDepartment && <td className="px-6 py-4 text-xs font-bold text-slate-600 dark:text-slate-400 whitespace-nowrap">{perm.employeeId?.department?.name || '-'}</td>}
                               <td className="px-6 py-4 whitespace-nowrap text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider">{formatDate(perm.date)}</td>
-                              <td className="px-6 py-4 text-center text-xs font-bold text-slate-700 dark:text-slate-300">
-                                <span className="px-3 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                              <td className="px-6 py-4 text-center text-xs font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                                <span className="px-3 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 flex items-center gap-2">
+                                  <Timer className="w-3 h-3" />
                                   {formatTime(perm.permissionStartTime)} - {formatTime(perm.permissionEndTime)}
                                 </span>
                               </td>
                               <td className="px-6 py-4 text-center">
-                                <span className="px-3 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 font-black text-xs">
+                                <span className="px-3 py-1 rounded-lg bg-emerald-5 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 font-black text-xs whitespace-nowrap">
                                   {perm.permissionHours}h
                                 </span>
                               </td>
                               <td className="px-6 py-4 text-xs font-bold text-slate-600 dark:text-slate-400 max-w-[150px] truncate" title={perm.purpose}>{perm.purpose}</td>
                               <td className="px-6 py-4 text-center">
-                                <span className={`inline-flex items-center px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-[0.1em] shadow-sm ${
-                                  perm.status === 'approved' ? 'bg-green-500 text-white shadow-green-500/20' :
-                                  perm.status === 'rejected' ? 'bg-red-500 text-white shadow-red-500/20' :
-                                  perm.status === 'checked_out' ? 'bg-blue-500 text-white shadow-blue-500/20' :
-                                  perm.status === 'checked_in' ? 'bg-emerald-500 text-white shadow-emerald-500/20' :
-                                  'bg-orange-500 text-white shadow-orange-500/20'
-                                }`}>
+                                <span className={`inline-flex items-center px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-sm whitespace-nowrap ${perm.status === 'approved' ? 'bg-emerald-500 text-white shadow-emerald-500/20' :
+                                  perm.status === 'rejected' ? 'bg-rose-500 text-white shadow-rose-500/20' :
+                                    perm.status === 'checked_out' ? 'bg-blue-500 text-white shadow-blue-500/20' :
+                                      perm.status === 'checked_in' ? 'bg-emerald-500 text-white shadow-emerald-500/20' :
+                                        'bg-amber-500 text-white shadow-amber-500/20'
+                                  }`}>
                                   {perm.status.replace(/_/g, ' ')}
                                 </span>
                               </td>
@@ -1405,13 +1609,13 @@ export default function OTAndPermissionsPage() {
                                     <>
                                       <button
                                         onClick={() => handleApprove('permission', perm._id)}
-                                        className="h-8 px-4 rounded-lg bg-green-500/10 text-green-600 hover:bg-green-500 hover:text-white text-[10px] font-black uppercase tracking-widest transition-all"
+                                        className="h-9 px-4 rounded-xl bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500 hover:text-white text-[10px] font-black uppercase tracking-widest transition-all shadow-sm"
                                       >
                                         Approve
                                       </button>
                                       <button
                                         onClick={() => handleReject('permission', perm._id)}
-                                        className="h-8 px-4 rounded-lg bg-red-500/10 text-red-600 hover:bg-red-500 hover:text-white text-[10px] font-black uppercase tracking-widest transition-all"
+                                        className="h-9 px-4 rounded-xl bg-rose-500/10 text-rose-600 hover:bg-rose-500 hover:text-white text-[10px] font-black uppercase tracking-widest transition-all shadow-sm"
                                       >
                                         Reject
                                       </button>
@@ -1423,8 +1627,9 @@ export default function OTAndPermissionsPage() {
                                         setSelectedQR(perm);
                                         setShowQRDialog(true);
                                       }}
-                                      className="h-8 px-4 rounded-lg bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500 hover:text-white text-[10px] font-black uppercase tracking-widest transition-all"
+                                      className="h-9 px-4 rounded-xl bg-blue-500/10 text-blue-600 hover:bg-blue-500 hover:text-white text-[10px] font-black uppercase tracking-widest transition-all shadow-sm flex items-center gap-2"
                                     >
+                                      <QrCode className="w-3.5 h-3.5" />
                                       Gate Pass
                                     </button>
                                   )}
@@ -1436,6 +1641,97 @@ export default function OTAndPermissionsPage() {
                       </tbody>
                     </table>
                   </div>
+
+                  {/* Mobile Card View for Permissions */}
+                  <div className="md:hidden space-y-4 p-4">
+                    {permissions.length === 0 ? (
+                      <div className="text-center py-10 text-slate-500 text-sm italic">
+                        No permission requests found
+                      </div>
+                    ) : (
+                      permissions.map((perm) => (
+                        <div
+                          key={perm._id}
+                          className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-sm active:scale-[0.98] transition-all"
+                        >
+                          <div className="flex justify-between items-start mb-3">
+                            <div className="flex items-center gap-3">
+                              <div className="h-10 w-10 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-700 dark:text-emerald-400 font-bold text-xs shrink-0">
+                                {getEmployeeInitials({ employee_name: perm.employeeId?.employee_name || '', first_name: '', last_name: '', emp_no: '' } as any)}
+                              </div>
+                              <div>
+                                <h4 className="font-bold text-slate-900 dark:text-white text-sm">
+                                  {perm.employeeId?.employee_name || perm.employeeNumber}
+                                </h4>
+                                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                                  {perm.employeeNumber}
+                                </p>
+                              </div>
+                            </div>
+                            <span className={`px-2 py-1 rounded-md text-[10px] font-black uppercase tracking-widest ${perm.status === 'approved' ? 'bg-emerald-500/10 text-emerald-600' :
+                              perm.status === 'rejected' ? 'bg-rose-500/10 text-rose-600' :
+                                'bg-amber-500/10 text-amber-600'
+                              }`}>
+                              {perm.status.replace(/_/g, ' ')}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3 text-sm text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl mb-3">
+                            <div className="flex flex-col">
+                              <span className="text-[10px] uppercase font-bold text-slate-400">Date</span>
+                              <span className="font-semibold text-slate-900 dark:text-white">{formatDate(perm.date)}</span>
+                            </div>
+                            <div className="flex flex-col">
+                              <span className="text-[10px] uppercase font-bold text-slate-400">Hours</span>
+                              <span className="font-semibold text-emerald-600 dark:text-emerald-400">{perm.permissionHours}h</span>
+                            </div>
+                            <div className="col-span-2 border-t border-slate-200 dark:border-slate-700 pt-2 flex justify-between items-center">
+                              <span className="text-[10px] uppercase font-bold text-slate-400">Time</span>
+                              <span className="font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                                {formatTime(perm.permissionStartTime)} <ChevronRight className="w-3 h-3 text-slate-400" /> {formatTime(perm.permissionEndTime)}
+                              </span>
+                            </div>
+                            {perm.purpose && (
+                              <div className="col-span-2 border-t border-slate-200 dark:border-slate-700 pt-2">
+                                <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Purpose</span>
+                                <p className="text-xs italic text-slate-600 dark:text-slate-400 truncate">{perm.purpose}</p>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex gap-2 mt-3">
+                            {canPerformAction(perm) && (
+                              <>
+                                <button
+                                  onClick={() => handleApprove('permission', perm._id)}
+                                  className="flex-1 h-9 rounded-lg bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500 hover:text-white text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                                >
+                                  <Check className="h-3.5 w-3.5" /> Approve
+                                </button>
+                                <button
+                                  onClick={() => handleReject('permission', perm._id)}
+                                  className="flex-1 h-9 rounded-lg bg-rose-500/10 text-rose-600 hover:bg-rose-500 hover:text-white text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                                >
+                                  <X className="h-3.5 w-3.5" /> Reject
+                                </button>
+                              </>
+                            )}
+                            {perm.status === 'approved' && perm.qrCode && (
+                              <button
+                                onClick={() => {
+                                  setSelectedQR(perm);
+                                  setShowQRDialog(true);
+                                }}
+                                className="flex-1 h-9 rounded-lg bg-blue-500/10 text-blue-600 hover:bg-blue-500 hover:text-white text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                              >
+                                <QrCode className="w-3.5 h-3.5" /> Gate Pass
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
               </div>
             )
@@ -1445,295 +1741,205 @@ export default function OTAndPermissionsPage() {
           {showOTDialog && (
             <Portal>
               <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setShowOTDialog(false)} />
-                <div className="relative z-50 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-[2.5rem] border border-white/20 bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl shadow-2xl animate-in zoom-in-95 duration-300">
-                  <div className="sticky top-0 z-10 flex items-center justify-between p-8 border-b border-slate-100 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md">
-                    <div>
-                      <h2 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Apply Overtime</h2>
-                      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-500 mt-1">Request OT Approval</p>
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md animate-in fade-in duration-300" onClick={() => setShowOTDialog(false)} />
+                <div className="relative z-50 w-full max-w-lg overflow-hidden rounded-[2.5rem] border border-white/20 bg-white dark:bg-slate-900 shadow-2xl animate-in zoom-in-95 duration-300 flex flex-col max-h-[90vh]">
+                  {/* Header */}
+                  <div className="flex items-center justify-between p-6 sm:p-8 border-b border-slate-100 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md">
+                    <div className="flex items-center gap-4">
+                      <div className="h-12 w-12 rounded-2xl bg-blue-500/10 flex items-center justify-center">
+                        <Timer className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                      </div>
+                      <div>
+                        <h2 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Apply Overtime</h2>
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-500">Workspace Request</p>
+                      </div>
                     </div>
                     <button
-                      onClick={() => {
-                        setShowOTDialog(false);
-                        resetOTForm();
-                      }}
-                      className="h-10 w-10 flex items-center justify-center rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-red-500 transition-all"
+                      onClick={() => { setShowOTDialog(false); resetOTForm(); }}
+                      className="h-10 w-10 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-all active:scale-95"
                     >
-                      <XIcon className="h-5 w-5" />
+                      <X className="h-5 w-5" />
                     </button>
                   </div>
 
-                  <div className="p-8 space-y-6">
-                    {/* Validation Error */}
+                  <div className="flex-1 overflow-y-auto p-6 sm:p-8 space-y-6">
                     {validationError && (
-                      <div className="rounded-lg border-2 border-red-300 bg-red-50 p-4 dark:border-red-700 dark:bg-red-900/20">
-                        <div className="flex items-center gap-2">
-                          <svg className="h-5 w-5 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          <p className="text-sm font-medium text-red-800 dark:text-red-300">{validationError}</p>
-                        </div>
+                      <div className="flex gap-3 p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400 animate-in slide-in-from-top-2 duration-300">
+                        <XCircle className="w-5 h-5 shrink-0" />
+                        <p className="text-xs font-bold leading-relaxed">{validationError}</p>
                       </div>
                     )}
 
                     {!isEmployee && (
-                      <div>
-                        <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Employee *</label>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black underline decoration-blue-500/30 underline-offset-4 uppercase tracking-[0.15em] text-slate-500 dark:text-slate-400 ml-1">
+                          Select Employee <span className="text-rose-500">*</span>
+                        </label>
                         <select
                           value={otFormData.employeeId}
                           onChange={(e) => {
-                            const value = e.target.value;
-                            if (!value) return;
-
-                            // Find employee by _id or emp_no
-                            const employee = employees.find(emp => (emp._id === value) || (emp.emp_no === value));
+                            const employee = employees.find(emp => (emp._id === e.target.value) || (emp.emp_no === e.target.value));
                             if (employee && employee.emp_no) {
-                              const employeeId = employee._id || employee.emp_no;
-                              // Update form data immediately
-                              setOTFormData(prev => ({
-                                ...prev,
-                                employeeId,
-                                employeeNumber: employee.emp_no
-                              }));
-                              handleEmployeeSelect(employeeId, employee.emp_no, otFormData.date);
+                              setOTFormData(prev => ({ ...prev, employeeId: employee._id || employee.emp_no, employeeNumber: employee.emp_no }));
+                              handleEmployeeSelect(employee._id || employee.emp_no, employee.emp_no, otFormData.date);
                             }
                           }}
-                          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                          className="w-full h-12 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all dark:text-white appearance-none cursor-pointer"
                         >
-                          <option value="">Select Employee</option>
-                          {employees && employees.length > 0 ? (
-                            employees
-                              .filter(emp => emp.emp_no) // Only require emp_no, not _id
-                              .map((emp, index) => {
-                                const identifier = emp._id || emp.emp_no;
-                                return (
-                                  <option key={`ot-employee-${identifier}-${index}`} value={identifier}>
-                                    {emp.emp_no} - {emp.employee_name || 'Unknown'}
-                                  </option>
-                                );
-                              })
-                          ) : (
-                            <option value="" disabled>No employees available</option>
-                          )}
+                          <option value="">Choose an employee...</option>
+                          {employees.map((emp, i) => (
+                            <option key={`ot-emp-${i}`} value={emp._id || emp.emp_no}>
+                              {emp.emp_no} - {emp.employee_name}
+                            </option>
+                          ))}
                         </select>
                       </div>
                     )}
 
-                    <div>
-                      <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Date *</label>
-                      <input
-                        type="date"
-                        min={new Date().toISOString().split('T')[0]}
-                        value={otFormData.date}
-                        onChange={(e) => {
-                          setOTFormData(prev => ({ ...prev, date: e.target.value }));
-                          if (otFormData.employeeId && otFormData.employeeNumber) {
-                            handleEmployeeSelect(otFormData.employeeId, otFormData.employeeNumber, e.target.value);
-                          }
-                        }}
-                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                      />
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black underline decoration-blue-500/30 underline-offset-4 uppercase tracking-[0.15em] text-slate-500 dark:text-slate-400 ml-1">
+                        Select Date <span className="text-rose-500">*</span>
+                      </label>
+                      <div className="relative group">
+                        <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
+                        <input
+                          type="date"
+                          min={new Date().toISOString().split('T')[0]}
+                          value={otFormData.date}
+                          onChange={(e) => {
+                            setOTFormData(prev => ({ ...prev, date: e.target.value }));
+                            if (otFormData.employeeId) handleEmployeeSelect(otFormData.employeeId, otFormData.employeeNumber, e.target.value);
+                          }}
+                          className="w-full h-12 pl-12 pr-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all dark:text-white cursor-pointer"
+                        />
+                      </div>
                     </div>
 
-                    {/* Attendance Information */}
-                    {attendanceLoading && (
-                      <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">
-                        <div className="flex items-center gap-2">
-                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></div>
-                          <p className="text-sm text-slate-600 dark:text-slate-400">Loading attendance data...</p>
+                    {attendanceLoading ? (
+                      <div className="flex items-center gap-3 p-4 rounded-2xl bg-blue-500/5 border border-blue-500/10">
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+                        <p className="text-xs font-bold text-blue-600/70">Syncing attendance data...</p>
+                      </div>
+                    ) : (attendanceData || confusedShift) && (
+                      <div className="p-4 sm:p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 space-y-4">
+                        <div className="flex items-center gap-2 flex-wrap text-slate-900 dark:text-white uppercase tracking-wider mb-2">
+                          <Activity className="w-4 h-4 text-blue-500" />
+                          Attendance Info
                         </div>
+
+                        {attendanceData && (
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-1">
+                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">In Time</p>
+                              <p className="text-xs font-bold text-slate-900 dark:text-white">{formatTime(attendanceData.inTime)}</p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Out Time</p>
+                              <p className="text-xs font-bold text-slate-900 dark:text-white">{formatTime(attendanceData.outTime)}</p>
+                            </div>
+                          </div>
+                        )}
+
+                        {confusedShift && (
+                          <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-slate-700">
+                            <p className="text-[10px] font-black text-amber-500 uppercase tracking-widest leading-relaxed">
+                              MULTIPLE SHIFTS DETECTED. PLEASE SELECT:
+                            </p>
+                            <select
+                              value={otFormData.manuallySelectedShiftId}
+                              onChange={(e) => {
+                                const sid = e.target.value;
+                                setOTFormData(prev => ({ ...prev, manuallySelectedShiftId: sid }));
+                                const s = confusedShift.possibleShifts.find(ps => ps.shiftId === sid);
+                                if (s) {
+                                  setSelectedShift({ _id: s.shiftId, name: s.shiftName, startTime: s.startTime, endTime: s.endTime, duration: 0 });
+                                  if (s.endTime) {
+                                    const out = new Date(otFormData.date);
+                                    const [h, m] = s.endTime.split(':').map(Number);
+                                    out.setHours(h + 1, m, 0, 0);
+                                    setOTFormData(prev => ({ ...prev, otOutTime: out.toISOString().slice(0, 16) }));
+                                  }
+                                }
+                              }}
+                              className="w-full h-10 px-3 rounded-lg border border-amber-500/30 bg-white dark:bg-slate-900 text-xs font-bold focus:ring-4 focus:ring-amber-500/10 outline-none transition-all dark:text-white cursor-pointer"
+                            >
+                              <option value="">Pick Shift...</option>
+                              {confusedShift.possibleShifts.map((s, idx) => (
+                                <option key={idx} value={s.shiftId}>{s.shiftName} ({s.startTime}-{s.endTime})</option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+
+                        {(selectedShift || (confusedShift && otFormData.manuallySelectedShiftId)) && (
+                          <div className="px-3 py-2 rounded-xl bg-blue-500/5 border border-blue-500/10">
+                            <p className="text-[9px] font-black text-blue-500 uppercase tracking-widest mb-1">Proposed OT Start (Shift End)</p>
+                            <p className="text-sm font-black text-blue-600 dark:text-blue-400">
+                              {selectedShift?.endTime || confusedShift?.possibleShifts.find(s => s.shiftId === otFormData.manuallySelectedShiftId)?.endTime}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     )}
 
-                    {attendanceData && !attendanceLoading && (
-                      <div className="rounded-lg border-2 border-green-200 bg-green-50 p-4 dark:border-green-700 dark:bg-green-900/20">
-                        <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-green-900 dark:text-green-200">
-                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          Attendance Information
-                        </h3>
-                        <div className="grid grid-cols-2 gap-3 text-sm">
-                          <div className="rounded bg-white/50 p-2 dark:bg-slate-800/50">
-                            <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Status</p>
-                            <p className="mt-1 font-semibold text-slate-900 dark:text-white">{attendanceData.status || '-'}</p>
-                          </div>
-                          <div className="rounded bg-white/50 p-2 dark:bg-slate-800/50">
-                            <p className="text-xs font-medium text-slate-500 dark:text-slate-400">In Time</p>
-                            <p className="mt-1 font-semibold text-slate-900 dark:text-white">{formatTime(attendanceData.inTime)}</p>
-                          </div>
-                          <div className="rounded bg-white/50 p-2 dark:bg-slate-800/50">
-                            <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Out Time</p>
-                            <p className="mt-1 font-semibold text-slate-900 dark:text-white">{formatTime(attendanceData.outTime)}</p>
-                          </div>
-                          <div className="rounded bg-white/50 p-2 dark:bg-slate-800/50">
-                            <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Total Hours</p>
-                            <p className="mt-1 font-semibold text-slate-900 dark:text-white">{attendanceData.totalHours ? `${attendanceData.totalHours.toFixed(2)}h` : '-'}</p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Show message if no attendance but employee and date are selected */}
                     {!attendanceLoading && !attendanceData && otFormData.employeeId && otFormData.date && (
-                      <div className="rounded-lg border-2 border-orange-200 bg-orange-50 p-4 dark:border-orange-700 dark:bg-orange-900/20">
-                        <div className="flex items-center gap-2">
-                          <svg className="h-5 w-5 text-orange-600 dark:text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          <p className="text-sm font-medium text-orange-800 dark:text-orange-300">No attendance record found for this date</p>
-                        </div>
+                      <div className="p-4 rounded-2xl bg-amber-500/5 border border-amber-500/10 flex gap-3 text-amber-600 dark:text-amber-400">
+                        <AlertCircle className="w-5 h-5 shrink-0" />
+                        <p className="text-[10px] font-bold leading-relaxed uppercase tracking-wider">No attendance record for this date.</p>
                       </div>
                     )}
 
-                    {confusedShift && (
-                      <div className="rounded-lg border-2 border-yellow-300 bg-yellow-50 p-4 dark:border-yellow-600 dark:bg-yellow-900/20">
-                        <div className="mb-2 flex items-center gap-2">
-                          <svg className="h-5 w-5 text-yellow-600 dark:text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                          </svg>
-                          <span className="font-semibold text-yellow-800 dark:text-yellow-300">ConfusedShift Detected</span>
-                        </div>
-                        <p className="mb-3 text-sm text-yellow-700 dark:text-yellow-400">
-                          Multiple shifts match for this attendance. Please manually select the correct shift.
-                        </p>
-                        <div>
-                          <label className="mb-1 block text-sm font-medium text-yellow-800 dark:text-yellow-300">Select Shift *</label>
-                          <select
-                            value={otFormData.manuallySelectedShiftId}
-                            onChange={(e) => {
-                              const selectedShiftId = e.target.value;
-                              setOTFormData(prev => ({ ...prev, manuallySelectedShiftId: selectedShiftId }));
-
-                              // Find and set the selected shift
-                              const selectedShiftData = confusedShift.possibleShifts.find(s => s.shiftId === selectedShiftId);
-                              if (selectedShiftData) {
-                                const shiftFromList = shifts.find(s => s._id === selectedShiftId);
-                                if (shiftFromList) {
-                                  setSelectedShift(shiftFromList);
-                                } else {
-                                  // Create shift object from confused shift data
-                                  setSelectedShift({
-                                    _id: selectedShiftData.shiftId,
-                                    name: selectedShiftData.shiftName,
-                                    startTime: selectedShiftData.startTime,
-                                    endTime: selectedShiftData.endTime,
-                                    duration: 0,
-                                  });
-                                }
-
-                                // Auto-suggest OT out time based on selected shift
-                                if (selectedShiftData.endTime) {
-                                  const [endHour, endMin] = selectedShiftData.endTime.split(':').map(Number);
-                                  const suggestedOutTime = new Date(otFormData.date);
-                                  suggestedOutTime.setHours(endHour + 1, endMin, 0, 0);
-                                  const suggestedOutTimeStr = suggestedOutTime.toISOString().slice(0, 16);
-                                  setOTFormData(prev => ({ ...prev, otOutTime: suggestedOutTimeStr }));
-                                }
-                              }
-                            }}
-                            className="w-full rounded-lg border border-yellow-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-yellow-500 focus:outline-none focus:ring-1 focus:ring-yellow-500 dark:border-yellow-600 dark:bg-slate-900 dark:text-white"
-                            required
-                          >
-                            <option value="">Select Shift</option>
-                            {confusedShift.possibleShifts.map((shift, index) => {
-                              const shiftObj = shifts.find(s => s._id === shift.shiftId);
-                              return (
-                                <option key={`confused-shift-${shift.shiftId}-${index}`} value={shift.shiftId}>
-                                  {shift.shiftName} ({shift.startTime} - {shift.endTime})
-                                </option>
-                              );
-                            })}
-                          </select>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Shift Information - Show for both normal and confused shift (after selection) */}
-                    {(selectedShift || (confusedShift && otFormData.manuallySelectedShiftId)) && attendanceData && (
-                      <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-700 dark:bg-blue-900/20">
-                        <h3 className="mb-2 text-sm font-semibold text-blue-900 dark:text-blue-200">Shift Information</h3>
-                        <div className="space-y-2 text-sm">
-                          <div>
-                            <span className="font-medium text-blue-800 dark:text-blue-300">Shift:</span>{' '}
-                            <span className="text-blue-900 dark:text-blue-200">
-                              {selectedShift?.name || confusedShift?.possibleShifts.find(s => s.shiftId === otFormData.manuallySelectedShiftId)?.shiftName || '-'}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="font-medium text-blue-800 dark:text-blue-300">Shift Time:</span>{' '}
-                            <span className="text-blue-900 dark:text-blue-200">
-                              {selectedShift ? `${selectedShift.startTime} - ${selectedShift.endTime}` :
-                                confusedShift?.possibleShifts.find(s => s.shiftId === otFormData.manuallySelectedShiftId) ?
-                                  `${confusedShift.possibleShifts.find(s => s.shiftId === otFormData.manuallySelectedShiftId)?.startTime} - ${confusedShift.possibleShifts.find(s => s.shiftId === otFormData.manuallySelectedShiftId)?.endTime}` : '-'}
-                            </span>
-                          </div>
-                          <div className="mt-3 rounded bg-white/50 p-2 dark:bg-slate-800/50">
-                            <span className="font-semibold text-blue-900 dark:text-blue-200">OT In Time (Shift End):</span>{' '}
-                            <span className="text-lg font-bold text-blue-700 dark:text-blue-300">
-                              {selectedShift?.endTime || confusedShift?.possibleShifts.find(s => s.shiftId === otFormData.manuallySelectedShiftId)?.endTime || '-'}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    <div>
-                      <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">OT Out Time *</label>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black underline decoration-blue-500/30 underline-offset-4 uppercase tracking-[0.15em] text-slate-500 dark:text-slate-400 ml-1">
+                        OT End Date & Time <span className="text-rose-500">*</span>
+                      </label>
                       <input
                         type="datetime-local"
                         value={otFormData.otOutTime}
                         onChange={(e) => setOTFormData(prev => ({ ...prev, otOutTime: e.target.value }))}
-                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                        required
+                        className="w-full h-12 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all dark:text-white cursor-pointer"
                       />
                     </div>
 
-                    <div>
-                      <label className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-400">Comments (Optional)</label>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black underline decoration-blue-500/30 underline-offset-4 uppercase tracking-[0.15em] text-slate-500 dark:text-slate-400 ml-1">
+                        Comments
+                      </label>
                       <textarea
+                        placeholder="Add any specific details here..."
                         value={otFormData.comments}
                         onChange={(e) => setOTFormData(prev => ({ ...prev, comments: e.target.value }))}
-                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                        rows={2}
+                        className="w-full p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all dark:text-white min-h-[100px] resize-none"
                       />
                     </div>
 
-                    {/* Photo Evidence */}
-                    <div className="pt-2 border-t border-slate-100 dark:border-slate-700/50">
+                    <div className="space-y-4 pt-4 border-t border-slate-100 dark:border-slate-800">
                       <LocationPhotoCapture
-                        label="Live Photo Evidence"
+                        label="Submission Proof"
                         onCapture={(loc, photo) => {
                           setEvidenceFile(photo.file);
                           setLocationData(loc);
                           (photo.file as any).exifLocation = photo.exifLocation;
                         }}
-                        onClear={() => {
-                          setEvidenceFile(null);
-                          setLocationData(null);
-                        }}
+                        onClear={() => { setEvidenceFile(null); setLocationData(null); }}
                       />
                     </div>
-
                   </div>
 
                   {/* Footer */}
-                  <div className="flex items-center justify-end gap-4 p-8 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50">
+                  <div className="sticky bottom-0 z-10 p-6 sm:p-8 border-t border-slate-100 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md flex items-center justify-end gap-3">
                     <button
-                      onClick={() => {
-                        setShowOTDialog(false);
-                        resetOTForm();
-                      }}
-                      className="h-12 px-8 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:bg-slate-50 transition-all"
+                      onClick={() => { setShowOTDialog(false); resetOTForm(); }}
+                      className="h-12 px-6 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-slate-900 dark:hover:text-white transition-all"
                     >
-                      Cancel
+                      Dismiss
                     </button>
                     <button
                       onClick={handleCreateOT}
                       disabled={loading}
-                      className="h-12 px-8 rounded-2xl bg-gradient-to-r from-blue-500 to-blue-600 text-white text-[10px] font-black uppercase tracking-widest shadow-xl shadow-blue-500/20 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50"
+                      className="h-12 px-8 rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-[10px] font-black uppercase tracking-widest shadow-xl shadow-slate-900/10 dark:shadow-white/10 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
                     >
-                      {loading ? 'Creating...' : 'Submit OT Request'}
+                      {loading ? 'Processing...' : 'Submit Request'}
                     </button>
                   </div>
                 </div>
@@ -1741,230 +1947,172 @@ export default function OTAndPermissionsPage() {
             </Portal>
           )}
 
+
           {/* Permission Dialog */}
           {showPermissionDialog && (
             <Portal>
               <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setShowPermissionDialog(false)} />
-                <div className="relative z-50 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-[2.5rem] border border-white/20 bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl shadow-2xl animate-in zoom-in-95 duration-300">
-                  <div className="sticky top-0 z-10 flex items-center justify-between p-8 border-b border-slate-100 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md">
-                    <div>
-                      <h2 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Apply Permission</h2>
-                      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-500 mt-1">Request Permission Pass</p>
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md animate-in fade-in duration-300" onClick={() => setShowPermissionDialog(false)} />
+                <div className="relative z-50 w-full max-w-lg overflow-hidden rounded-[2.5rem] border border-white/20 bg-white dark:bg-slate-900 shadow-2xl animate-in zoom-in-95 duration-300 flex flex-col max-h-[90vh]">
+                  {/* Header */}
+                  <div className="flex items-center justify-between p-6 sm:p-8 border-b border-slate-100 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md">
+                    <div className="flex items-center gap-4">
+                      <div className="h-12 w-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center">
+                        <Zap className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+                      </div>
+                      <div>
+                        <h2 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Apply Permission</h2>
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-500">Short Duration Break</p>
+                      </div>
                     </div>
                     <button
-                      onClick={() => {
-                        setShowPermissionDialog(false);
-                        resetPermissionForm();
-                      }}
-                      className="h-10 w-10 flex items-center justify-center rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-red-500 transition-all"
+                      onClick={() => { setShowPermissionDialog(false); resetPermissionForm(); }}
+                      className="h-10 w-10 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-all active:scale-95"
                     >
-                      <XIcon className="h-5 w-5" />
+                      <X className="h-5 w-5" />
                     </button>
                   </div>
 
-                  <div className="p-8 space-y-6">
-                    {/* Validation Error */}
+                  <div className="flex-1 overflow-y-auto p-6 sm:p-8 space-y-6">
                     {permissionValidationError && (
-                      <div className="rounded-lg border-2 border-red-300 bg-red-50 p-4 dark:border-red-700 dark:bg-red-900/20">
-                        <div className="flex items-center gap-2">
-                          <svg className="h-5 w-5 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          <p className="text-sm font-medium text-red-800 dark:text-red-300">{permissionValidationError}</p>
-                        </div>
+                      <div className="flex gap-3 p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400 animate-in slide-in-from-top-2 duration-300">
+                        <XCircle className="w-5 h-5 shrink-0" />
+                        <p className="text-xs font-bold leading-relaxed">{permissionValidationError}</p>
                       </div>
                     )}
+
                     {!isEmployee && (
-                      <div>
-                        <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Employee *</label>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black underline decoration-emerald-500/30 underline-offset-4 uppercase tracking-[0.15em] text-slate-500 dark:text-slate-400 ml-1">
+                          Employee No <span className="text-rose-500">*</span>
+                        </label>
                         <select
                           value={permissionFormData.employeeId}
                           onChange={async (e) => {
-                            const value = e.target.value;
-                            if (!value) {
-                              setPermissionFormData(prev => ({
-                                ...prev,
-                                employeeId: '',
-                                employeeNumber: '',
-                              }));
+                            const val = e.target.value;
+                            if (!val) {
+                              setPermissionFormData(prev => ({ ...prev, employeeId: '', employeeNumber: '' }));
                               setPermissionValidationError('');
                               return;
                             }
-
-                            // Find employee by _id or emp_no
-                            const employee = employees.find(emp => (emp._id === value) || (emp.emp_no === value));
-                            if (employee && employee.emp_no) {
-                              const employeeId = employee._id || employee.emp_no;
-                              setPermissionFormData(prev => ({
-                                ...prev,
-                                employeeId: employeeId,
-                                employeeNumber: employee.emp_no,
-                              }));
+                            const emp = employees.find(e => (e._id === val) || (e.emp_no === val));
+                            if (emp && emp.emp_no) {
+                              setPermissionFormData(prev => ({ ...prev, employeeId: emp._id || emp.emp_no, employeeNumber: emp.emp_no }));
                               setPermissionValidationError('');
-
-                              // Check attendance when employee is selected
                               if (permissionFormData.date) {
                                 try {
-                                  const attendanceRes = await api.getAttendanceDetail(employee.emp_no, permissionFormData.date);
-                                  if (!attendanceRes.success || !attendanceRes.data || !attendanceRes.data.inTime) {
-                                    setPermissionValidationError('No attendance record found or employee has no in-time for this date. Permission cannot be created without attendance.');
-                                  } else {
-                                    setPermissionValidationError('');
-                                  }
-                                } catch (error) {
-                                  console.error('Error checking attendance:', error);
-                                }
+                                  const res = await api.getAttendanceDetail(emp.emp_no, permissionFormData.date);
+                                  if (!res.success || !res.data || !res.data.inTime) setPermissionValidationError('No active attendance for this date.');
+                                } catch (err) { console.error(err); }
                               }
-                            } else {
-                              setPermissionFormData(prev => ({
-                                ...prev,
-                                employeeId: '',
-                                employeeNumber: '',
-                              }));
-                              setPermissionValidationError('');
                             }
                           }}
-                          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                          className="w-full h-12 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all dark:text-white appearance-none cursor-pointer"
                         >
-                          <option value="">Select Employee</option>
-                          {employees && employees.length > 0 ? (
-                            employees
-                              .filter(emp => emp.emp_no) // Only require emp_no, not _id
-                              .map((emp, index) => {
-                                const identifier = emp._id || emp.emp_no;
-                                return (
-                                  <option key={`perm-employee-${identifier}-${index}`} value={identifier}>
-                                    {emp.emp_no} - {emp.employee_name || 'Unknown'}
-                                  </option>
-                                );
-                              })
-                          ) : (
-                            <option value="" disabled>No employees available</option>
-                          )}
+                          <option value="">Choose employee...</option>
+                          {employees.map((emp, i) => (
+                            <option key={`p-emp-${i}`} value={emp._id || emp.emp_no}>{emp.emp_no} - {emp.employee_name}</option>
+                          ))}
                         </select>
                       </div>
                     )}
 
-                    <div>
-                      <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Date *</label>
-                      <input
-                        type="date"
-                        min={new Date().toISOString().split('T')[0]}
-                        value={permissionFormData.date}
-                        onChange={async (e) => {
-                          setPermissionFormData(prev => ({ ...prev, date: e.target.value }));
-                          // Check attendance when date changes
-                          if (permissionFormData.employeeNumber && e.target.value) {
-                            try {
-                              const attendanceRes = await api.getAttendanceDetail(permissionFormData.employeeNumber, e.target.value);
-                              if (!attendanceRes.success || !attendanceRes.data || !attendanceRes.data.inTime) {
-                                setPermissionValidationError('No attendance record found or employee has no in-time for this date. Permission cannot be created without attendance.');
-                              } else {
-                                setPermissionValidationError('');
-                              }
-                            } catch (error) {
-                              console.error('Error checking attendance:', error);
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black underline decoration-emerald-500/30 underline-offset-4 uppercase tracking-[0.15em] text-slate-500 dark:text-slate-400 ml-1">
+                        Application Date <span className="text-rose-500">*</span>
+                      </label>
+                      <div className="relative group">
+                        <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-emerald-500 transition-colors" />
+                        <input
+                          type="date"
+                          min={new Date().toISOString().split('T')[0]}
+                          value={permissionFormData.date}
+                          onChange={async (e) => {
+                            const d = e.target.value;
+                            setPermissionFormData(prev => ({ ...prev, date: d }));
+                            if (permissionFormData.employeeNumber && d) {
+                              try {
+                                const res = await api.getAttendanceDetail(permissionFormData.employeeNumber, d);
+                                if (!res.success || !res.data || !res.data.inTime) setPermissionValidationError('No active attendance for this date.');
+                                else setPermissionValidationError('');
+                              } catch (err) { console.error(err); }
                             }
-                          }
-                        }}
-                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                      />
+                          }}
+                          className="w-full h-12 pl-12 pr-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all dark:text-white cursor-pointer"
+                        />
+                      </div>
                     </div>
 
-                    {/* Attendance Validation Message for Permission */}
-                    {permissionFormData.employeeNumber && permissionFormData.date && (
-                      <div className="rounded-lg border-2 border-orange-200 bg-orange-50 p-4 dark:border-orange-700 dark:bg-orange-900/20">
-                        <div className="flex items-center gap-2">
-                          <svg className="h-5 w-5 text-orange-600 dark:text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          <p className="text-sm font-medium text-orange-800 dark:text-orange-300">
-                            Note: Permission requires attendance with in-time for the selected date. Please ensure the employee has marked attendance.
-                          </p>
-                        </div>
-                      </div>
-                    )}
-
                     <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Permission Start Time *</label>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Start Time <span className="text-rose-500">*</span></label>
                         <input
                           type="datetime-local"
                           value={permissionFormData.permissionStartTime}
                           onChange={(e) => setPermissionFormData(prev => ({ ...prev, permissionStartTime: e.target.value }))}
-                          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                          required
+                          className="w-full h-11 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold focus:ring-4 focus:ring-emerald-500/10 outline-none transition-all dark:text-white cursor-pointer"
                         />
                       </div>
-                      <div>
-                        <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Permission End Time *</label>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">End Time <span className="text-rose-500">*</span></label>
                         <input
                           type="datetime-local"
                           value={permissionFormData.permissionEndTime}
                           onChange={(e) => setPermissionFormData(prev => ({ ...prev, permissionEndTime: e.target.value }))}
-                          className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                          required
+                          className="w-full h-11 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold focus:ring-4 focus:ring-emerald-500/10 outline-none transition-all dark:text-white cursor-pointer"
                         />
                       </div>
                     </div>
 
-                    <div>
-                      <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Purpose *</label>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black underline decoration-emerald-500/30 underline-offset-4 uppercase tracking-[0.15em] text-slate-500 dark:text-slate-400 ml-1">
+                        Purpose of Break <span className="text-rose-500">*</span>
+                      </label>
                       <input
                         type="text"
+                        placeholder="e.g., Personal errand, Medical..."
                         value={permissionFormData.purpose}
                         onChange={(e) => setPermissionFormData(prev => ({ ...prev, purpose: e.target.value }))}
-                        placeholder="Enter purpose for permission"
-                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                        required
+                        className="w-full h-12 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all dark:text-white"
                       />
                     </div>
 
-                    <div>
-                      <label className="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-400">Comments (Optional)</label>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Comments</label>
                       <textarea
                         value={permissionFormData.comments}
                         onChange={(e) => setPermissionFormData(prev => ({ ...prev, comments: e.target.value }))}
-                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                        rows={2}
+                        className="w-full p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all dark:text-white min-h-[80px] resize-none"
                       />
                     </div>
 
-                    {/* Photo Evidence */}
-                    <div className="pt-2 border-t border-slate-100 dark:border-slate-700/50">
+                    <div className="space-y-4 pt-4 border-t border-slate-100 dark:border-slate-800">
                       <LocationPhotoCapture
-                        label="Live Photo Evidence"
+                        label="Check-in Photo (Required)"
                         onCapture={(loc, photo) => {
                           setEvidenceFile(photo.file);
                           setLocationData(loc);
                           (photo.file as any).exifLocation = photo.exifLocation;
                         }}
-                        onClear={() => {
-                          setEvidenceFile(null);
-                          setLocationData(null);
-                        }}
+                        onClear={() => { setEvidenceFile(null); setLocationData(null); }}
                       />
                     </div>
                   </div>
 
                   {/* Footer */}
-                  <div className="flex items-center justify-end gap-4 p-8 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50">
+                  <div className="sticky bottom-0 z-10 p-6 sm:p-8 border-t border-slate-100 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md flex items-center justify-end gap-3">
                     <button
-                      onClick={() => {
-                        setShowPermissionDialog(false);
-                        resetPermissionForm();
-                      }}
-                      className="h-12 px-8 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:bg-slate-50 transition-all"
+                      onClick={() => { setShowPermissionDialog(false); resetPermissionForm(); }}
+                      className="h-12 px-6 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-slate-900 dark:hover:text-white transition-all"
                     >
                       Cancel
                     </button>
                     <button
                       onClick={handleCreatePermission}
                       disabled={loading}
-                      className="h-12 px-8 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 text-white text-[10px] font-black uppercase tracking-widest shadow-xl shadow-emerald-500/20 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50"
+                      className="h-12 px-8 rounded-2xl bg-emerald-500 text-white text-[10px] font-black uppercase tracking-widest shadow-xl shadow-emerald-500/20 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
                     >
-                      {loading ? 'Creating...' : 'Submit Permission'}
+                      {loading ? 'Processing...' : 'Request Permission'}
                     </button>
                   </div>
                 </div>
@@ -1976,127 +2124,107 @@ export default function OTAndPermissionsPage() {
           {showQRDialog && selectedQR && (
             <Portal>
               <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => {
-                  setShowQRDialog(false);
-                  setSelectedQR(null);
-                }} />
-                <div className="relative z-50 w-full max-w-md max-h-[90vh] overflow-y-auto rounded-[2.5rem] border border-white/20 bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl shadow-2xl animate-in zoom-in-95 duration-300">
-                  <div className="flex items-center justify-between p-8 border-b border-slate-100 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md font-black">
-                    <div>
-                      <h2 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Gate Pass</h2>
-                      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-500 mt-1">Permission QR Code</p>
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md animate-in fade-in duration-300" onClick={() => { setShowQRDialog(false); setSelectedQR(null); }} />
+                <div className="relative z-50 w-full max-w-sm rounded-[2.5rem] overflow-hidden bg-white dark:bg-slate-900 border border-white/20 shadow-2xl animate-in zoom-in-95 duration-300">
+                  <div className="flex flex-col items-center p-8 text-center bg-gradient-to-b from-blue-500/5 to-transparent">
+                    <div className="w-16 h-16 rounded-2xl bg-blue-500/10 flex items-center justify-center mb-6">
+                      <QrCode className="w-8 h-8 text-blue-500" />
                     </div>
-                    <button
-                      onClick={() => {
-                        setShowQRDialog(false);
-                        setSelectedQR(null);
-                      }}
-                      className="h-10 w-10 flex items-center justify-center rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-red-500 transition-all font-bold"
-                    >
-                      <XIcon className="h-5 w-5" />
-                    </button>
+                    <h2 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Gate Pass</h2>
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-500 mt-1">Permission Active</p>
+
+                    <div className="w-full mt-6 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 text-left">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Employee Info</p>
+                      <p className="text-sm font-bold text-slate-900 dark:text-white line-clamp-1">{selectedQR.employeeId?.employee_name}</p>
+                      <p className="text-[10px] font-bold text-slate-500 mt-2">{formatDate(selectedQR.date)}</p>
+                    </div>
                   </div>
 
-                  <div className="p-8 space-y-6 text-center">
-                    <div className="space-y-4 text-center">
-                      <div className="space-y-2 mb-6">
-                        <p className="font-semibold text-lg text-slate-900 dark:text-white">
-                          {selectedQR.employeeId?.employee_name || selectedQR.employeeNumber}
-                        </p>
-                        <p className="text-sm text-slate-500">{formatDate(selectedQR.date)} • {formatTime(selectedQR.permissionStartTime)} - {formatTime(selectedQR.permissionEndTime)}</p>
-                      </div>
-
-                      {!selectedQR.gateOutTime ? (
-                        <div className="space-y-4">
-                          {selectedQR.qrCode && selectedQR.qrCode.startsWith('OUT:') ? (
-                            <div className="space-y-4">
-                              <p className="font-medium text-blue-600 dark:text-blue-400">Gate Out Pass Active</p>
-                              <div className="mx-auto flex h-64 w-64 items-center justify-center rounded-lg border-2 border-slate-300 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-                                <QRCodeSVG
-                                  value={selectedQR.qrCode}
-                                  size={240}
-                                  level="H"
-                                  includeMargin={true}
-                                />
-                              </div>
-                              <p className="text-xs text-slate-500">Show this QR to Security at Gate</p>
+                  <div className="p-8 space-y-8 flex flex-col items-center">
+                    {!selectedQR.gateOutTime ? (
+                      <div className="w-full space-y-6">
+                        {selectedQR.qrCode && selectedQR.qrCode.startsWith('OUT:') ? (
+                          <div className="flex flex-col items-center gap-6">
+                            <div className="p-4 rounded-[2rem] bg-white border-4 border-blue-500/20 shadow-2xl shadow-blue-500/10">
+                              <QRCodeSVG value={selectedQR.qrCode} size={200} level="H" includeMargin={true} />
                             </div>
-                          ) : (
-                            <button
-                              onClick={() => handleGenerateGatePass('OUT')}
-                              disabled={loading}
-                              className="w-full rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 hover:bg-blue-700 disabled:opacity-50"
-                            >
-                              {loading ? 'Generating...' : 'Generate Gate Out Pass'}
-                            </button>
-                          )}
-                        </div>
-                      ) : !selectedQR.gateInTime ? (
-                        <div className="space-y-4">
-                          <div className="rounded-lg bg-yellow-50 p-3 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300">
-                            <p className="text-sm font-medium">Out Time: {formatTime(selectedQR.gateOutTime)}</p>
+                            <div className="px-4 py-2 rounded-xl bg-orange-500/10 text-orange-600 dark:text-orange-400 text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
+                              <Scan className="w-3.5 h-3.5" />
+                              Scan for Exit
+                            </div>
                           </div>
+                        ) : (
+                          <button
+                            onClick={() => handleGenerateGatePass('OUT')}
+                            disabled={loading}
+                            className="w-full h-14 rounded-2xl bg-blue-600 text-white text-xs font-black uppercase tracking-widest shadow-xl shadow-blue-600/20 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
+                          >
+                            {loading ? 'Processing...' : 'Generate Exit Pass'}
+                          </button>
+                        )}
+                      </div>
+                    ) : !selectedQR.gateInTime ? (
+                      <div className="w-full space-y-6">
+                        <div className="p-4 rounded-2xl bg-blue-500/5 border border-blue-500/10 text-center">
+                          <p className="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-1">Exit Logged</p>
+                          <p className="text-sm font-black text-slate-900 dark:text-white">{formatTime(selectedQR.gateOutTime)}</p>
+                        </div>
 
-                          {/* Check 5 min buffer logic roughly for UI */}
-                          {(() => {
-                            const outTime = new Date(selectedQR.gateOutTime).getTime();
-                            const now = new Date().getTime();
-                            const diffMins = (now - outTime) / (1000 * 60);
-
-                            if (diffMins < 5) {
-                              return (
-                                <div className="p-4 text-center">
-                                  <p className="text-sm text-slate-500 mb-2">Please wait before generating Gate In Pass</p>
-                                  <p className="text-2xl font-bold text-slate-700 dark:text-slate-300">
-                                    {Math.ceil(5 - diffMins)}m remaining
-                                  </p>
-                                </div>
-                              );
-                            }
-
-                            if (selectedQR.qrCode && selectedQR.qrCode.startsWith('IN:')) {
-                              return (
-                                <div className="space-y-4">
-                                  <p className="font-medium text-green-600 dark:text-green-400">Gate In Pass Active</p>
-                                  <div className="mx-auto flex h-64 w-64 items-center justify-center rounded-lg border-2 border-slate-300 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-                                    <QRCodeSVG
-                                      value={selectedQR.qrCode}
-                                      size={240}
-                                      level="H"
-                                      includeMargin={true}
-                                    />
-                                  </div>
-                                  <p className="text-xs text-slate-500">Show this QR to Security at Gate</p>
-                                </div>
-                              );
-                            }
-
+                        {(() => {
+                          const diff = (new Date().getTime() - new Date(selectedQR.gateOutTime).getTime()) / 60000;
+                          if (diff < 5) {
                             return (
-                              <button
-                                onClick={() => handleGenerateGatePass('IN')}
-                                disabled={loading}
-                                className="w-full rounded-xl bg-green-600 py-3 text-sm font-semibold text-white shadow-lg shadow-green-500/30 hover:bg-green-700 disabled:opacity-50"
-                              >
-                                {loading ? 'Generating...' : 'Generate Gate In Pass'}
-                              </button>
+                              <div className="text-center space-y-2">
+                                <div className="h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                                  <div className="h-full bg-blue-500 animate-[shimmer_2s_infinite]" style={{ width: `${(diff / 5) * 100}%` }} />
+                                </div>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Entry opens in {Math.ceil(5 - diff)}m</p>
+                              </div>
                             );
-                          })()}
+                          }
+
+                          if (selectedQR.qrCode && selectedQR.qrCode.startsWith('IN:')) {
+                            return (
+                              <div className="flex flex-col items-center gap-6">
+                                <div className="p-4 rounded-[2rem] bg-white border-4 border-emerald-500/20 shadow-2xl shadow-emerald-500/10">
+                                  <QRCodeSVG value={selectedQR.qrCode} size={200} level="H" includeMargin={true} />
+                                </div>
+                                <div className="px-4 py-2 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
+                                  <Scan className="w-3.5 h-3.5" />
+                                  Scan for Entry
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <button
+                              onClick={() => handleGenerateGatePass('IN')}
+                              disabled={loading}
+                              className="w-full h-14 rounded-2xl bg-emerald-600 text-white text-xs font-black uppercase tracking-widest shadow-xl shadow-emerald-600/20 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
+                            >
+                              {loading ? 'Processing...' : 'Generate Entry Pass'}
+                            </button>
+                          );
+                        })()}
+                      </div>
+                    ) : (
+                      <div className="w-full p-8 rounded-[2.5rem] bg-emerald-500/5 border-2 border-dashed border-emerald-500/20 text-center animate-in zoom-in-95 duration-500">
+                        <div className="w-16 h-16 rounded-full bg-emerald-500/20 text-emerald-600 flex items-center justify-center mx-auto mb-4">
+                          <Check className="w-8 h-8" />
                         </div>
-                      ) : (
-                        <div className="space-y-4 p-6 bg-green-50 rounded-xl dark:bg-green-900/20">
-                          <div className="h-16 w-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto dark:bg-green-800 dark:text-green-300">
-                            <CheckIcon className="h-8 w-8" />
-                          </div>
-                          <div>
-                            <h3 className="text-lg font-bold text-green-800 dark:text-green-300">Trip Completed</h3>
-                            <p className="text-sm text-green-700 dark:text-green-400 mt-1">
-                              Out: {formatTime(selectedQR.gateOutTime)} • In: {formatTime(selectedQR.gateInTime)}
-                            </p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                        <h3 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">Access Logged</h3>
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] mt-1">Trip Completed Successfully</p>
+                      </div>
+                    )}
                   </div>
+
+                  <button
+                    onClick={() => { setShowQRDialog(false); setSelectedQR(null); }}
+                    className="w-full h-16 border-t border-slate-100 dark:border-slate-800 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-all font-bold"
+                  >
+                    Close Pass
+                  </button>
                 </div>
               </div>
             </Portal>
@@ -2107,74 +2235,130 @@ export default function OTAndPermissionsPage() {
           {showEvidenceDialog && selectedEvidenceItem && (
             <Portal>
               <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setShowEvidenceDialog(false)} />
-                <div className="relative z-50 w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-[2.5rem] border border-white/20 bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl shadow-2xl animate-in zoom-in-95 duration-300">
-                  <div className="flex items-center justify-between p-8 border-b border-slate-100 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md">
-                    <div>
-                      <h2 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Evidence View</h2>
-                      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-500 mt-1">
-                        {selectedEvidenceItem.employeeName} • {formatDate(selectedEvidenceItem.date)}
-                      </p>
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md animate-in fade-in duration-300" onClick={() => setShowEvidenceDialog(false)} />
+                <div className="relative z-50 w-full max-w-2xl overflow-hidden rounded-[2.5rem] border border-white/20 bg-white dark:bg-slate-900 shadow-2xl animate-in zoom-in-95 duration-300 flex flex-col max-h-[90vh]">
+                  {/* Header */}
+                  <div className="flex items-center justify-between p-6 sm:p-8 border-b border-slate-100 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md">
+                    <div className="flex items-center gap-4">
+                      <div className="h-12 w-12 rounded-2xl bg-blue-500/10 flex items-center justify-center">
+                        <MapPin className="w-6 h-6 text-blue-500" />
+                      </div>
+                      <div className="min-w-0">
+                        <h2 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight truncate">Evidence View</h2>
+                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-500 truncate">
+                          {selectedEvidenceItem.employeeName} • {formatDate(selectedEvidenceItem.date)}
+                        </p>
+                      </div>
                     </div>
                     <button
                       onClick={() => setShowEvidenceDialog(false)}
-                      className="h-10 w-10 flex items-center justify-center rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-red-500 transition-all font-bold"
+                      className="h-10 w-10 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-all active:scale-95"
                     >
-                      <XIcon className="h-5 w-5" />
+                      <X className="h-5 w-5" />
                     </button>
                   </div>
 
-                  <div className="p-8 space-y-8">
-                    {/* Photo Evidence */}
-                    {selectedEvidenceItem.photoEvidence && (
-                      <div>
-                        <h3 className="mb-3 text-sm font-medium text-slate-900 dark:text-white">Photo Evidence</h3>
-                        <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
-                          <img
-                            src={selectedEvidenceItem.photoEvidence.url}
-                            alt="Evidence"
-                            className="h-auto w-full object-contain"
-                          />
+                  <div className="flex-1 overflow-y-auto px-6 py-6 space-y-4">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                      {/* Photo Section */}
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400 mb-4">
+                          <ImageIcon className="w-3.5 h-3.5" />
+                          Visual Proof
                         </div>
+                        {selectedEvidenceItem.photoEvidence ? (
+                          <div className="group relative rounded-[2rem] overflow-hidden border-4 border-white dark:border-slate-800 shadow-2xl shadow-slate-200 dark:shadow-none transition-transform hover:scale-[1.02]">
+                            <img
+                              src={selectedEvidenceItem.photoEvidence.url}
+                              alt="Site Evidence"
+                              className="w-full h-auto object-cover aspect-[4/5]"
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-t from-slate-900/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                          </div>
+                        ) : (
+                          <div className="aspect-[4/5] rounded-[2rem] bg-slate-100 dark:bg-slate-800 flex flex-col items-center justify-center text-slate-400 border-2 border-dashed border-slate-200 dark:border-slate-700">
+                            <ImageIcon className="w-12 h-12 mb-2 opacity-20" />
+                            <p className="text-[10px] font-black uppercase tracking-widest">No Photo Provided</p>
+                          </div>
+                        )}
                       </div>
-                    )}
 
-                    {/* Location Map */}
-                    {selectedEvidenceItem.geoLocation && (
-                      <div>
-                        <h3 className="mb-3 text-sm font-medium text-slate-900 dark:text-white">Captured Location</h3>
-                        <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700">
-                          <iframe
-                            width="100%"
-                            height="300"
-                            style={{ border: 0 }}
-                            loading="lazy"
-                            allowFullScreen
-                            referrerPolicy="no-referrer-when-downgrade"
-                            src={`https://www.google.com/maps/embed/v1/place?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&q=${selectedEvidenceItem.geoLocation.latitude},${selectedEvidenceItem.geoLocation.longitude}`}
-                          />
-                          <div className="bg-slate-50 p-3 dark:bg-slate-800">
-                            <div className="flex items-start gap-2">
-                              <svg className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                              </svg>
-                              <div>
-                                <p className="text-xs text-slate-500 dark:text-slate-400">Captured at</p>
-                                <p className="text-sm font-medium text-slate-900 dark:text-white">
-                                  {new Date(selectedEvidenceItem.geoLocation.capturedAt).toLocaleString()}
-                                </p>
-                                {selectedEvidenceItem.geoLocation.address && (
-                                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                                    {selectedEvidenceItem.geoLocation.address}
+                      {/* Map/Location Section */}
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400 mb-4">
+                          <Map className="w-3.5 h-3.5" />
+                          Geospatial Log
+                        </div>
+                        {selectedEvidenceItem.geoLocation ? (
+                          <div className="space-y-6">
+                            <div className="rounded-[2rem] overflow-hidden border-4 border-white dark:border-slate-800 shadow-2xl shadow-slate-200 dark:shadow-none h-[300px]">
+                              <iframe
+                                width="100%"
+                                height="100%"
+                                style={{ border: 0 }}
+                                loading="lazy"
+                                allowFullScreen
+                                src={`https://www.google.com/maps/embed/v1/place?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&q=${selectedEvidenceItem.geoLocation.latitude},${selectedEvidenceItem.geoLocation.longitude}`}
+                              />
+                            </div>
+
+                            <div className="p-5 rounded-2xl bg-blue-500/5 border border-blue-500/10 space-y-4">
+                              <div className="flex items-start gap-4">
+                                <div className="h-10 w-10 shrink-0 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-500">
+                                  <Navigation className="w-5 h-5" />
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="text-[10px] font-black underline decoration-blue-500/30 underline-offset-4 uppercase tracking-widest text-slate-400 mb-1">Precise Coordinates</p>
+                                  <p className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate">
+                                    {selectedEvidenceItem.geoLocation.latitude.toFixed(6)}, {selectedEvidenceItem.geoLocation.longitude.toFixed(6)}
                                   </p>
-                                )}
+                                </div>
                               </div>
+
+                              <div className="flex items-start gap-4">
+                                <div className="h-10 w-10 shrink-0 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-500">
+                                  <Clock className="w-5 h-5" />
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="text-[10px] font-black underline decoration-amber-500/30 underline-offset-4 uppercase tracking-widest text-slate-400 mb-1">Time Captured</p>
+                                  <p className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                                    {new Date(selectedEvidenceItem.geoLocation.capturedAt).toLocaleString()}
+                                  </p>
+                                </div>
+                              </div>
+
+                              {selectedEvidenceItem.geoLocation.address && (
+                                <div className="flex items-start gap-4 pt-2 border-t border-slate-200 dark:border-slate-700">
+                                  <div className="h-10 w-10 shrink-0 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-500">
+                                    <MapPin className="w-5 h-5" />
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Resolved Address</p>
+                                    <p className="text-[10px] font-bold text-slate-700 dark:text-slate-300 leading-relaxed italic">
+                                      {selectedEvidenceItem.geoLocation.address}
+                                    </p>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           </div>
-                        </div>
+                        ) : (
+                          <div className="p-4 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center min-h-20 border border-slate-200 dark:border-slate-700">
+                            <Navigation className="w-12 h-12 mb-2 opacity-20" />
+                            <p className="text-[10px] font-black uppercase tracking-widest">No Geo-Data Available</p>
+                          </div>
+                        )}
                       </div>
-                    )}
+                    </div>
+                  </div>
+
+                  <div className="p-8 border-t border-slate-100 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md flex justify-end">
+                    <button
+                      onClick={() => setShowEvidenceDialog(false)}
+                      className="h-12 px-8 rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-[10px] font-black uppercase tracking-widest shadow-xl shadow-slate-900/10 dark:shadow-white/10 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                    >
+                      Acknowledge Evidence
+                    </button>
                   </div>
                 </div>
               </div>
@@ -2185,5 +2369,6 @@ export default function OTAndPermissionsPage() {
     </div>
   );
 }
+
 
 

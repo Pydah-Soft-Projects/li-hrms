@@ -318,7 +318,7 @@ export default function ProfilePage() {
           {/* Right Column: Information Tabs */}
           <div className="lg:col-span-8">
             {/* Tabs Header */}
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-1 mb-6 flex overflow-x-auto hide-scrollbar">
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-1 mb-6 flex flex-col sm:flex-row">
               <button
                 onClick={() => setActiveTab('profile')}
                 className={`flex-1 flex items-center justify-center gap-2 px-6 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 whitespace-nowrap
