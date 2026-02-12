@@ -260,6 +260,7 @@ export default function OTAndPermissionsPage() {
   const [otRequests, setOTRequests] = useState<OTRequest[]>([]);
   const [permissions, setPermissions] = useState<PermissionRequest[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [showFilters, setShowFilters] = useState(false);
   const [shifts, setShifts] = useState<Shift[]>([]);
 
   // Filters
@@ -1033,23 +1034,30 @@ export default function OTAndPermissionsPage() {
             {/* Filters Card */}
             <div className="flex-1 p-5 sm:p-6 rounded-4xl border border-white/20 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl shadow-xl shadow-slate-200/50 dark:shadow-none transition-all">
               <div className="flex flex-wrap items-center gap-6">
-                {!isEmployee && (
+                {/* Search & Toggle */}
+                <div className="flex items-center gap-2 w-full md:w-auto md:flex-1">
                   <div className="flex-1 min-w-[200px] relative group">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
                     <input
                       type="text"
-                      placeholder="Search Employee Number..."
-                      value={activeTab === 'ot' ? otFilters.employeeNumber : permissionFilters.employeeNumber}
-                      onChange={(e) => {
-                        if (activeTab === 'ot') setOTFilters(prev => ({ ...prev, employeeNumber: e.target.value }));
-                        else setPermissionFilters(prev => ({ ...prev, employeeNumber: e.target.value }));
-                      }}
+                      placeholder="Search Employee..."
+                      value={otFilters.employeeNumber}
+                      onChange={(e) => setOTFilters(prev => ({ ...prev, employeeNumber: e.target.value }))}
                       className="w-full h-11 pl-11 pr-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all dark:text-white"
                     />
                   </div>
-                )}
+                  <button
+                    onClick={() => setShowFilters(!showFilters)}
+                    className={`md:hidden h-11 w-11 flex items-center justify-center rounded-2xl border transition-all ${showFilters
+                      ? 'bg-blue-500 border-blue-500 text-white'
+                      : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400'
+                      }`}
+                  >
+                    <Filter className="w-5 h-5" />
+                  </button>
+                </div>
 
-                <div className="flex flex-wrap items-center gap-4">
+                <div className={`flex flex-wrap items-center gap-4 w-full md:w-auto ${showFilters ? 'flex' : 'hidden md:flex'}`}>
                   <div className="relative">
                     <Filter className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
                     <select
@@ -1093,40 +1101,56 @@ export default function OTAndPermissionsPage() {
               </div>
             </div>
 
-            {/* Tabs Card */}
-            <div className="xl:w-80 p-1.5 rounded-4xl border border-white/20 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl shadow-xl shadow-slate-200/50 dark:shadow-none flex items-center justify-between overflow-hidden">
-              <button
-                onClick={() => setActiveTab('ot')}
-                className={`flex-1 h-12 rounded-3xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 relative group ${activeTab === 'ot'
-                  ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-lg shadow-slate-900/20'
-                  : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-              >
-                OT
-              </button>
-              <button
-                onClick={() => setActiveTab('permissions')}
-                className={`flex-1 h-12 rounded-3xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 relative group ${activeTab === 'permissions'
-                  ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-lg shadow-slate-900/20'
-                  : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-              >
-                Perm
-              </button>
-              <button
-                onClick={() => setActiveTab('pending')}
-                className={`flex-1 h-12 rounded-3xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 relative group ${activeTab === 'pending'
-                  ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-lg shadow-slate-900/20'
-                  : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-              >
-                <span className="relative z-10">Pending</span>
-                {totalPending > 0 && (
-                  <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-blue-500 text-[8px] font-bold text-white border-2 border-white dark:border-slate-900 animate-bounce">
-                    {totalPending}
-                  </span>
-                )}
-              </button>
+            {/* Tabs */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+              <div className="inline-flex items-center p-1 rounded-xl bg-slate-100/50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 backdrop-blur-sm shadow-inner overflow-x-auto scrollbar-hide">
+                {[
+                  {
+                    id: 'ot',
+                    label: 'Overtime',
+                    icon: Timer,
+                    count: otRequests.length,
+                    activeClass: 'text-blue-600 dark:text-blue-400',
+                    badgeClass: 'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300'
+                  },
+                  {
+                    id: 'permissions',
+                    label: 'Permissions',
+                    icon: ShieldCheck,
+                    count: permissions.length,
+                    activeClass: 'text-violet-600 dark:text-violet-400',
+                    badgeClass: 'bg-violet-50 text-violet-600 dark:bg-violet-900/30 dark:text-violet-300'
+                  },
+                  {
+                    id: 'pending',
+                    label: 'Pending Approvals',
+                    icon: Clock3,
+                    count: totalPending,
+                    activeClass: 'text-amber-600 dark:text-amber-400',
+                    badgeClass: 'bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-300'
+                  }
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id as any)}
+                    className={`group relative flex items-center gap-2 px-4 sm:px-6 py-2 rounded-lg text-xs font-bold transition-all duration-300 whitespace-nowrap ${activeTab === tab.id
+                      ? `bg-white dark:bg-slate-700 shadow-sm ring-1 ring-slate-200/50 dark:ring-0 ${tab.activeClass}`
+                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                      }`}
+                  >
+                    <tab.icon className={`w-3.5 h-3.5 ${activeTab === tab.id ? tab.activeClass : 'text-slate-400 group-hover:text-slate-600'}`} />
+                    <span>{tab.label}</span>
+                    {tab.count > 0 && (
+                      <span className={`flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-md text-[10px] font-black ${activeTab === tab.id
+                        ? tab.badgeClass
+                        : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                        }`}>
+                        {tab.count}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 

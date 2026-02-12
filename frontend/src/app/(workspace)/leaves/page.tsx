@@ -365,6 +365,7 @@ export default function LeavesPage() {
   const [pendingLeaves, setPendingLeaves] = useState<LeaveApplication[]>([]);
   const [pendingODs, setPendingODs] = useState<ODApplication[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showFilters, setShowFilters] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -1680,19 +1681,30 @@ export default function LeavesPage() {
         <div className="mb-6 animate-in fade-in slide-in-from-top-4 duration-500">
           <div className="p-5 sm:p-6 rounded-4xl border border-white/20 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl shadow-xl shadow-slate-200/50 dark:shadow-none transition-all">
             <div className="flex flex-wrap items-center gap-6">
-              {/* Search */}
-              <div className="flex-1 min-w-[200px] relative group">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
-                <input
-                  type="text"
-                  placeholder="Search Employee..."
-                  value={leaveFilters.employeeNumber}
-                  onChange={(e) => setLeaveFilters(prev => ({ ...prev, employeeNumber: e.target.value }))}
-                  className="w-full h-11 pl-11 pr-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all dark:text-white"
-                />
+              {/* Search & Toggle */}
+              <div className="flex items-center gap-2 w-full md:w-auto md:flex-1">
+                <div className="flex-1 min-w-[200px] relative group">
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
+                  <input
+                    type="text"
+                    placeholder="Search Employee..."
+                    value={leaveFilters.employeeNumber}
+                    onChange={(e) => setLeaveFilters(prev => ({ ...prev, employeeNumber: e.target.value }))}
+                    className="w-full h-11 pl-11 pr-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all dark:text-white"
+                  />
+                </div>
+                <button
+                  onClick={() => setShowFilters(!showFilters)}
+                  className={`md:hidden h-11 w-11 flex items-center justify-center rounded-2xl border transition-all ${showFilters
+                    ? 'bg-blue-500 border-blue-500 text-white'
+                    : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400'
+                    }`}
+                >
+                  <Filter className="w-5 h-5" />
+                </button>
               </div>
 
-              <div className="flex flex-wrap items-center gap-4">
+              <div className={`flex flex-wrap items-center gap-4 w-full md:w-auto ${showFilters ? 'flex' : 'hidden md:flex'}`}>
                 {/* Status Filter */}
                 <div className="relative">
                   <Filter className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
