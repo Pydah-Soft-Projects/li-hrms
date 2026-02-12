@@ -31,24 +31,24 @@ import Swal from 'sweetalert2';
 
 // Premium Stat Card
 const StatCard = ({ title, value, icon: Icon, bgClass, iconClass, dekorClass, trend }: { title: string, value: number | string, icon: any, bgClass: string, iconClass: string, dekorClass?: string, trend?: { value: string, positive: boolean } }) => (
-  <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 transition-all hover:shadow-xl dark:border-slate-800 dark:bg-slate-900">
-    <div className="flex items-center justify-between gap-4">
-      <div className="flex-1">
-        <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500">{title}</p>
-        <div className="mt-2 flex items-baseline gap-2">
-          <h3 className="text-2xl font-black text-slate-900 dark:text-white">{value}</h3>
+  <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 transition-all hover:shadow-xl dark:border-slate-800 dark:bg-slate-900">
+    <div className="flex items-center justify-between gap-3 sm:gap-4">
+      <div className="flex-1 min-w-0">
+        <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500 truncate">{title}</p>
+        <div className="mt-1 sm:mt-2 flex items-baseline gap-2">
+          <h3 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">{value}</h3>
           {trend && (
-            <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-md ${trend.positive ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'}`}>
+            <span className={`text-[9px] sm:text-[10px] font-black px-1.5 py-0.5 rounded-md ${trend.positive ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'}`}>
               {trend.value}
             </span>
           )}
         </div>
       </div>
-      <div className={`flex h-12 w-12 items-center justify-center rounded-2xl ${bgClass} ${iconClass}`}>
-        <Icon className="h-6 w-6" />
+      <div className={`flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-2xl shrink-0 ${bgClass} ${iconClass}`}>
+        <Icon className="h-5 w-5 sm:h-6 sm:w-6" />
       </div>
     </div>
-    {dekorClass && <div className={`absolute -right-4 -bottom-4 h-24 w-24 rounded-full ${dekorClass}`} />}
+    {dekorClass && <div className={`absolute -right-4 -bottom-4 h-20 w-20 sm:h-24 sm:w-24 rounded-full ${dekorClass}`} />}
   </div>
 );
 
@@ -135,6 +135,7 @@ export default function CCLPage() {
   const [actionComment, setActionComment] = useState('');
 
   const [employees, setEmployees] = useState<{ _id: string; emp_no: string; employee_name: string }[]>([]);
+  const [searchTerm, setSearchTerm] = useState(''); // Global search
 
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split('T')[0],
@@ -145,18 +146,53 @@ export default function CCLPage() {
     empNo: '',
     employeeId: '',
   });
+
+  const [cclFilters, setCclFilters] = useState({
+    employeeNumber: '',
+    status: '',
+    startDate: '',
+    endDate: ''
+  });
+
   const [assignedByUsers, setAssignedByUsers] = useState<User[]>([]);
   const [dateValid, setDateValid] = useState<boolean | null>(null);
   const [dateValidationMessage, setDateValidationMessage] = useState<string>('');
 
+  const filterData = (data: CCLRequest[]) => {
+    return data.filter(item => {
+      // 1. Employee Number / Name Search
+      const searchContent = cclFilters.employeeNumber.toLowerCase();
+      const matchesSearch = !searchContent ||
+        (item.employeeId?.employee_name?.toLowerCase().includes(searchContent)) ||
+        (item.emp_no?.toLowerCase().includes(searchContent));
+
+      // 2. Status Filter
+      const matchesStatus = !cclFilters.status || item.status === cclFilters.status;
+
+      // 3. Date Range Filter
+      let matchesDate = true;
+      if (cclFilters.startDate || cclFilters.endDate) {
+        const itemDate = new Date(item.date).getTime();
+        const start = cclFilters.startDate ? new Date(cclFilters.startDate).getTime() : 0;
+        const end = cclFilters.endDate ? new Date(cclFilters.endDate).getTime() : Infinity;
+        matchesDate = itemDate >= start && itemDate <= end;
+      }
+
+      return matchesSearch && matchesStatus && matchesDate;
+    });
+  };
+
+  const filteredCCLs = useMemo(() => filterData(myCCLs), [myCCLs, cclFilters]);
+  const filteredPendingCCLs = useMemo(() => filterData(pendingCCLs), [pendingCCLs, cclFilters]);
+
   const stats = useMemo(() => {
     const counts = {
       my: { approved: 0, pending: 0, rejected: 0 },
-      pendingApproval: pendingCCLs.length,
+      pendingApproval: filteredPendingCCLs.length,
       total: { approved: 0, pending: 0, rejected: 0 }
     };
 
-    myCCLs.forEach(ccl => {
+    filteredCCLs.forEach(ccl => {
       const status = ccl.status?.toLowerCase();
       if (status === 'approved') counts.my.approved++;
       else if (status === 'rejected') counts.my.rejected++;
@@ -168,7 +204,7 @@ export default function CCLPage() {
     });
 
     return counts;
-  }, [myCCLs, pendingCCLs]);
+  }, [filteredCCLs, filteredPendingCCLs]);
 
   const loadData = async () => {
     setLoading(true);
@@ -332,7 +368,7 @@ export default function CCLPage() {
     }
   };
 
-  const list = activeTab === 'my' ? myCCLs : pendingCCLs;
+  const list = activeTab === 'my' ? filteredCCLs : filteredPendingCCLs;
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 pb-10">
@@ -353,14 +389,17 @@ export default function CCLPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto overflow-x-auto hide-scrollbar">
+
+
             {(canApplyCCLForSelf || canApplyCCLForOthers) && (
               <button
                 onClick={() => setShowForm(true)}
-                className="group h-11 sm:h-10 px-6 rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-slate-900/10 dark:shadow-white/10"
+                className="group h-10 sm:h-11 px-4 sm:px-6 rounded-xl sm:rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-[9px] sm:text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-slate-900/10 dark:shadow-white/10 shrink-0"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>Apply CCL</span>
+                <span className="hidden sm:inline">Apply CCL</span>
+                <span className="sm:hidden">Apply</span>
               </button>
             )}
           </div>
@@ -383,7 +422,7 @@ export default function CCLPage() {
         />
 
         {/* Stats Grid */}
-        <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mb-8 grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard
             title="Approved CCLs"
             value={stats.my.approved}
@@ -416,6 +455,60 @@ export default function CCLPage() {
             iconClass="text-indigo-600 dark:text-indigo-400"
             dekorClass="bg-indigo-500/5"
           />
+        </div>
+
+        {/* Controls Section (Filters) */}
+        <div className="mb-6 animate-in fade-in slide-in-from-top-4 duration-500">
+          <div className="p-5 sm:p-6 rounded-4xl border border-white/20 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl shadow-xl shadow-slate-200/50 dark:shadow-none transition-all">
+            <div className="flex flex-wrap items-center gap-6">
+              {/* Search */}
+              <div className="flex-1 min-w-[200px] relative group">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
+                <input
+                  type="text"
+                  placeholder="Search Employee..."
+                  value={cclFilters.employeeNumber}
+                  onChange={(e) => setCclFilters(prev => ({ ...prev, employeeNumber: e.target.value }))}
+                  className="w-full h-11 pl-11 pr-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all dark:text-white"
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-4">
+                {/* Status Filter */}
+                <div className="relative">
+                  <Filter className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                  <select
+                    value={cclFilters.status}
+                    onChange={(e) => setCclFilters(prev => ({ ...prev, status: e.target.value }))}
+                    className="h-10 pl-9 pr-8 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all appearance-none cursor-pointer"
+                  >
+                    <option value="">All Status</option>
+                    <option value="pending">Pending</option>
+                    <option value="approved">Approved</option>
+                    <option value="rejected">Rejected</option>
+                  </select>
+                </div>
+
+                {/* Date Range */}
+                <div className="flex items-center flex-wrap sm:flex-nowrap gap-2 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                  <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <input
+                    type="date"
+                    value={cclFilters.startDate}
+                    onChange={(e) => setCclFilters(prev => ({ ...prev, startDate: e.target.value }))}
+                    className="bg-transparent text-xs font-bold text-slate-600 dark:text-slate-300 outline-none cursor-pointer w-full sm:w-auto min-w-[100px]"
+                  />
+                  <span className="text-slate-300 dark:text-slate-600 font-bold shrink-0">→</span>
+                  <input
+                    type="date"
+                    value={cclFilters.endDate}
+                    onChange={(e) => setCclFilters(prev => ({ ...prev, endDate: e.target.value }))}
+                    className="bg-transparent text-xs font-bold text-slate-600 dark:text-slate-300 outline-none cursor-pointer w-full sm:w-auto min-w-[100px]"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Tabs */}
@@ -453,105 +546,185 @@ export default function CCLPage() {
           {loading && list.length === 0 ? (
             <div className="flex justify-center py-20"><Spinner /></div>
           ) : (
-            <div className="overflow-x-auto scrollbar-hide">
-              <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
-                <thead className="bg-slate-50/50 dark:bg-slate-800/50">
-                  <tr>
-                    <th scope="col" className="py-4 pl-6 pr-3 text-left text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Employee</th>
-                    <th scope="col" className="px-3 py-4 text-left text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Date</th>
-                    <th scope="col" className="px-3 py-4 text-left text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Type</th>
-                    <th scope="col" className="px-3 py-4 text-left text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Assigned By</th>
-                    <th scope="col" className="px-3 py-4 text-left text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Purpose</th>
-                    <th scope="col" className="px-3 py-4 text-left text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Status</th>
-                    <th scope="col" className="relative py-4 pl-3 pr-6 text-right text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 bg-white dark:divide-slate-800 dark:bg-slate-900/50">
-                  {list.length === 0 ? (
+            <>
+              <div className="hidden md:block overflow-x-auto scrollbar-hide">
+                <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-800">
+                  <thead className="bg-slate-50/50 dark:bg-slate-800/50">
                     <tr>
-                      <td colSpan={7} className="py-20 text-center">
-                        <div className="flex flex-col items-center gap-2">
-                          <div className="h-12 w-12 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center">
-                            <AlertCircle className="w-6 h-6 text-slate-300" />
-                          </div>
-                          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">No CCL requests found</p>
-                        </div>
-                      </td>
+                      <th scope="col" className="py-4 pl-6 pr-3 text-left text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Employee</th>
+                      <th scope="col" className="px-3 py-4 text-left text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Date</th>
+                      <th scope="col" className="px-3 py-4 text-left text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Type</th>
+                      <th scope="col" className="px-3 py-4 text-left text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Assigned By</th>
+                      <th scope="col" className="px-3 py-4 text-left text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Purpose</th>
+                      <th scope="col" className="px-3 py-4 text-left text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Status</th>
+                      <th scope="col" className="relative py-4 pl-3 pr-6 text-right text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Actions</th>
                     </tr>
-                  ) : (
-                    list.map((ccl) => (
-                      <tr
-                        key={ccl._id}
-                        className="group cursor-pointer transition-colors hover:bg-slate-50/50 dark:hover:bg-slate-800/30"
-                        onClick={() => setSelectedCCL(ccl)}
-                      >
-                        <td className="whitespace-nowrap py-4 pl-6 pr-3">
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400 font-black text-xs">
-                              {(ccl.employeeId?.employee_name || ccl.emp_no).charAt(0).toUpperCase()}
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 bg-white dark:divide-slate-800 dark:bg-slate-900/50">
+                    {list.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="py-20 text-center">
+                          <div className="flex flex-col items-center gap-2">
+                            <div className="h-12 w-12 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center">
+                              <AlertCircle className="w-6 h-6 text-slate-300" />
                             </div>
-                            <div>
-                              <div className="text-sm font-bold text-slate-900 dark:text-white transition-colors group-hover:text-indigo-600 dark:group-hover:text-indigo-400">{ccl.employeeId?.employee_name || ccl.emp_no}</div>
-                              <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{ccl.emp_no}</div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-4">
-                          <div className="flex flex-col">
-                            <span className="text-sm font-bold text-slate-700 dark:text-slate-300">{formatDate(ccl.date)}</span>
-                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Compensatory Day</span>
-                          </div>
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-4">
-                          <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-black uppercase tracking-widest ${ccl.isHalfDay ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400' : 'bg-blue-500/10 text-blue-600 dark:text-blue-400'}`}>
-                            {ccl.isHalfDay ? `Half (${ccl.halfDayType || '-'})` : 'Full Day'}
-                          </span>
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-4">
-                          <div className="flex items-center gap-2">
-                            <div className="h-6 w-6 rounded-md bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-                              <ShieldCheck className="w-3 h-3 text-slate-400" />
-                            </div>
-                            <span className="text-xs font-bold text-slate-600 dark:text-slate-400">{ccl.assignedBy?.name || '-'}</span>
-                          </div>
-                        </td>
-                        <td className="px-3 py-4">
-                          <p className="max-w-[200px] truncate text-xs font-medium text-slate-600 dark:text-slate-400">{ccl.purpose}</p>
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-4">
-                          <StatusBadge status={ccl.status} />
-                        </td>
-                        <td className="whitespace-nowrap py-4 pl-3 pr-6 text-right">
-                          <div className="flex justify-end gap-2">
-                            {activeTab === 'pending' && canPerformAction(ccl) && (
-                              <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                                <button
-                                  onClick={() => openActionModal(ccl._id, 'approve')}
-                                  className="h-8 w-8 rounded-lg bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500 hover:text-white transition-all flex items-center justify-center"
-                                  title="Approve"
-                                >
-                                  <Check className="h-4 w-4" />
-                                </button>
-                                <button
-                                  onClick={() => openActionModal(ccl._id, 'reject')}
-                                  className="h-8 w-8 rounded-lg bg-rose-500/10 text-rose-600 hover:bg-rose-500 hover:text-white transition-all flex items-center justify-center"
-                                  title="Reject"
-                                >
-                                  <X className="h-4 w-4" />
-                                </button>
-                              </div>
-                            )}
-                            <button className="h-8 w-8 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-indigo-500 dark:hover:text-indigo-400 transition-all flex items-center justify-center">
-                              <ChevronRight className="h-4 w-4" />
-                            </button>
+                            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">No CCL requests found</p>
                           </div>
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+                    ) : (
+                      list.map((ccl) => (
+                        <tr
+                          key={ccl._id}
+                          className="group cursor-pointer transition-colors hover:bg-slate-50/50 dark:hover:bg-slate-800/30"
+                          onClick={() => setSelectedCCL(ccl)}
+                        >
+                          <td className="whitespace-nowrap py-4 pl-6 pr-3">
+                            <div className="flex items-center gap-3">
+                              <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400 font-black text-xs">
+                                {(ccl.employeeId?.employee_name || ccl.emp_no).charAt(0).toUpperCase()}
+                              </div>
+                              <div>
+                                <div className="text-sm font-bold text-slate-900 dark:text-white transition-colors group-hover:text-indigo-600 dark:group-hover:text-indigo-400">{ccl.employeeId?.employee_name || ccl.emp_no}</div>
+                                <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{ccl.emp_no}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-4">
+                            <div className="flex flex-col">
+                              <span className="text-sm font-bold text-slate-700 dark:text-slate-300">{formatDate(ccl.date)}</span>
+                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Compensatory Day</span>
+                            </div>
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-4">
+                            <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-black uppercase tracking-widest ${ccl.isHalfDay ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400' : 'bg-blue-500/10 text-blue-600 dark:text-blue-400'}`}>
+                              {ccl.isHalfDay ? `Half (${ccl.halfDayType || '-'})` : 'Full Day'}
+                            </span>
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-4">
+                            <div className="flex items-center gap-2">
+                              <div className="h-6 w-6 rounded-md bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+                                <ShieldCheck className="w-3 h-3 text-slate-400" />
+                              </div>
+                              <span className="text-xs font-bold text-slate-600 dark:text-slate-400">{ccl.assignedBy?.name || '-'}</span>
+                            </div>
+                          </td>
+                          <td className="px-3 py-4">
+                            <p className="max-w-[200px] truncate text-xs font-medium text-slate-600 dark:text-slate-400">{ccl.purpose}</p>
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-4">
+                            <StatusBadge status={ccl.status} />
+                          </td>
+                          <td className="whitespace-nowrap py-4 pl-3 pr-6 text-right">
+                            <div className="flex justify-end gap-2">
+                              {activeTab === 'pending' && canPerformAction(ccl) && (
+                                <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                                  <button
+                                    onClick={() => openActionModal(ccl._id, 'approve')}
+                                    className="h-8 w-8 rounded-lg bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500 hover:text-white transition-all flex items-center justify-center"
+                                    title="Approve"
+                                  >
+                                    <Check className="h-4 w-4" />
+                                  </button>
+                                  <button
+                                    onClick={() => openActionModal(ccl._id, 'reject')}
+                                    className="h-8 w-8 rounded-lg bg-rose-500/10 text-rose-600 hover:bg-rose-500 hover:text-white transition-all flex items-center justify-center"
+                                    title="Reject"
+                                  >
+                                    <X className="h-4 w-4" />
+                                  </button>
+                                </div>
+                              )}
+                              <button className="h-8 w-8 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-indigo-500 dark:hover:text-indigo-400 transition-all flex items-center justify-center">
+                                <ChevronRight className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile Card View */}
+              <div className="md:hidden space-y-4 p-4">
+                {list.length === 0 ? (
+                  <div className="text-center py-10 text-slate-500 text-sm italic">
+                    No CCL requests found
+                  </div>
+                ) : (
+                  list.map((ccl) => (
+                    <div
+                      key={ccl._id}
+                      onClick={() => setSelectedCCL(ccl)}
+                      className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-sm active:scale-[0.98] transition-all"
+                    >
+                      <div className="flex justify-between items-start mb-3">
+                        <div className="flex items-center gap-3">
+                          <div className="h-10 w-10 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-700 dark:text-indigo-400 font-bold text-xs shrink-0">
+                            {(ccl.employeeId?.employee_name || ccl.emp_no).charAt(0).toUpperCase()}
+                          </div>
+                          <div>
+                            <h4 className="font-bold text-slate-900 dark:text-white text-sm">
+                              {ccl.employeeId?.employee_name || ccl.emp_no}
+                            </h4>
+                            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                              {ccl.emp_no}
+                            </p>
+                          </div>
+                        </div>
+                        <StatusBadge status={ccl.status} />
+                      </div>
+
+                      <div className="flex items-center justify-between text-sm text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl mb-3">
+                        <div className="flex flex-col">
+                          <span className="text-[10px] uppercase font-bold text-slate-400">Duration</span>
+                          <span className="font-semibold text-slate-900 dark:text-white">
+                            {ccl.isHalfDay ? `Half Day (${ccl.halfDayType === 'first_half' ? '1st' : '2nd'})` : 'Full Day'}
+                          </span>
+                        </div>
+                        <div className="h-8 w-px bg-slate-200 dark:bg-slate-700"></div>
+                        <div className="flex flex-col items-end">
+                          <span className="text-[10px] uppercase font-bold text-slate-400">Date</span>
+                          <span className="font-semibold text-slate-900 dark:text-white text-right">
+                            {formatDate(ccl.date)}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                          <ShieldCheck className="w-3.5 h-3.5" />
+                          <span>Assigned by: <span className="font-semibold text-slate-700 dark:text-slate-300">{ccl.assignedBy?.name || '-'}</span></span>
+                        </div>
+
+                        {activeTab === 'pending' && canPerformAction(ccl) ? (
+                          <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              onClick={() => openActionModal(ccl._id, 'approve')}
+                              className="h-8 w-8 rounded-lg bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500 hover:text-white transition-all flex items-center justify-center"
+                            >
+                              <Check className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => openActionModal(ccl._id, 'reject')}
+                              className="h-8 w-8 rounded-lg bg-rose-500/10 text-rose-600 hover:bg-rose-500 hover:text-white transition-all flex items-center justify-center"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <button className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline">
+                            View Details
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </>
           )}
         </div>
       </div>

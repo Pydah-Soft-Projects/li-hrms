@@ -35,25 +35,26 @@ import {
 } from 'lucide-react';
 
 // Custom Stat Card
+// Custom Stat Card
 const StatCard = ({ title, value, icon: Icon, bgClass, iconClass, dekorClass, trend }: { title: string, value: number | string, icon: any, bgClass: string, iconClass: string, dekorClass?: string, trend?: { value: string, positive: boolean } }) => (
-  <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 transition-all hover:shadow-xl dark:border-slate-800 dark:bg-slate-900">
-    <div className="flex items-center justify-between gap-4">
-      <div className="flex-1">
-        <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500">{title}</p>
-        <div className="mt-2 flex items-baseline gap-2">
-          <h3 className="text-2xl font-black text-slate-900 dark:text-white">{value}</h3>
+  <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 transition-all hover:shadow-xl dark:border-slate-800 dark:bg-slate-900">
+    <div className="flex items-center justify-between gap-3 sm:gap-4">
+      <div className="flex-1 min-w-0">
+        <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500 truncate">{title}</p>
+        <div className="mt-1 sm:mt-2 flex items-baseline gap-2">
+          <h3 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">{value}</h3>
           {trend && (
-            <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-md ${trend.positive ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'}`}>
+            <span className={`text-[9px] sm:text-[10px] font-black px-1.5 py-0.5 rounded-md ${trend.positive ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'}`}>
               {trend.value}
             </span>
           )}
         </div>
       </div>
-      <div className={`flex h-12 w-12 items-center justify-center rounded-2xl ${bgClass} ${iconClass}`}>
-        <Icon className="h-6 w-6" />
+      <div className={`flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-2xl shrink-0 ${bgClass} ${iconClass}`}>
+        <Icon className="h-5 w-5 sm:h-6 sm:w-6" />
       </div>
     </div>
-    {dekorClass && <div className={`absolute -right-4 -bottom-4 h-24 w-24 rounded-full ${dekorClass}`} />}
+    {dekorClass && <div className={`absolute -right-4 -bottom-4 h-20 w-20 sm:h-24 sm:w-24 rounded-full ${dekorClass}`} />}
   </div>
 );
 
@@ -410,6 +411,7 @@ export default function LeavesPage() {
   // Employees for "Apply For" selection
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [employeeSearch, setEmployeeSearch] = useState('');
+  const [searchTerm, setSearchTerm] = useState(''); // Global search for lists
   const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
 
@@ -442,6 +444,14 @@ export default function LeavesPage() {
     isHalfDay: false,
     halfDayType: null,
     remarks: '',
+  });
+
+  const [leaveFilters, setLeaveFilters] = useState({
+    employeeNumber: '',
+    status: '',
+    leaveType: '',
+    startDate: '',
+    endDate: ''
   });
 
   // Evidence State
@@ -1451,6 +1461,41 @@ export default function LeavesPage() {
   };
 
 
+  // Filter logic
+  const filterData = (data: any[]) => {
+    return data.filter(item => {
+      // 1. Employee Search
+      const searchContent = leaveFilters.employeeNumber.toLowerCase();
+      const matchesSearch = !searchContent ||
+        (item.employeeId?.employee_name?.toLowerCase().includes(searchContent)) ||
+        (item.employee_name?.toLowerCase().includes(searchContent)) ||
+        (item.emp_no?.toLowerCase().includes(searchContent));
+
+      // 2. Status Filter
+      const matchesStatus = !leaveFilters.status || item.status === leaveFilters.status;
+
+      // 3. Leave Type Filter (Works for both Leave.leaveType and OD.odType)
+      const type = item.leaveType || item.odType;
+      const matchesType = !leaveFilters.leaveType || (type && type === leaveFilters.leaveType);
+
+      // 4. Date Range Filter
+      let matchesDate = true;
+      if (leaveFilters.startDate || leaveFilters.endDate) {
+        const itemDate = new Date(item.fromDate).getTime(); // Using fromDate as reference
+        const start = leaveFilters.startDate ? new Date(leaveFilters.startDate).getTime() : 0;
+        const end = leaveFilters.endDate ? new Date(leaveFilters.endDate).getTime() : Infinity;
+        matchesDate = itemDate >= start && itemDate <= end;
+      }
+
+      return matchesSearch && matchesStatus && matchesType && matchesDate;
+    });
+  };
+
+  const filteredLeaves = useMemo(() => filterData(leaves), [leaves, leaveFilters]);
+  const filteredODs = useMemo(() => filterData(ods), [ods, leaveFilters]);
+  const filteredPendingLeaves = useMemo(() => filterData(pendingLeaves), [pendingLeaves, leaveFilters]);
+  const filteredPendingODs = useMemo(() => filterData(pendingODs), [pendingODs, leaveFilters]);
+
   const stats = useMemo(() => {
     const calc = (items: any[]) => ({
       total: items.length,
@@ -1546,14 +1591,17 @@ export default function LeavesPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto overflow-x-auto hide-scrollbar">
+
+
             {hasManagePermission && (canApplyForSelf || canApplyForOthers || currentUser?.role === 'employee' || ['manager', 'hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser?.role)) && (
               <button
                 onClick={() => openApplyDialog('leave')}
-                className="group h-11 sm:h-10 px-6 rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-slate-900/10 dark:shadow-white/10"
+                className="group h-10 sm:h-11 px-4 sm:px-6 rounded-xl sm:rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-[9px] sm:text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-slate-900/10 dark:shadow-white/10 shrink-0"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>Apply Request</span>
+                <span className="hidden sm:inline">Apply Request</span>
+                <span className="sm:hidden">Apply</span>
               </button>
             )}
           </div>
@@ -1577,7 +1625,7 @@ export default function LeavesPage() {
         />
 
         {/* Stats Grid */}
-        <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        <div className="mb-8 grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           <StatCard
             title="Approved Leaves"
             value={stats.leaves.approved}
@@ -1628,6 +1676,77 @@ export default function LeavesPage() {
           />
         </div>
 
+        {/* Controls Section (Filters) */}
+        <div className="mb-6 animate-in fade-in slide-in-from-top-4 duration-500">
+          <div className="p-5 sm:p-6 rounded-4xl border border-white/20 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl shadow-xl shadow-slate-200/50 dark:shadow-none transition-all">
+            <div className="flex flex-wrap items-center gap-6">
+              {/* Search */}
+              <div className="flex-1 min-w-[200px] relative group">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
+                <input
+                  type="text"
+                  placeholder="Search Employee..."
+                  value={leaveFilters.employeeNumber}
+                  onChange={(e) => setLeaveFilters(prev => ({ ...prev, employeeNumber: e.target.value }))}
+                  className="w-full h-11 pl-11 pr-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all dark:text-white"
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-4">
+                {/* Status Filter */}
+                <div className="relative">
+                  <Filter className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                  <select
+                    value={leaveFilters.status}
+                    onChange={(e) => setLeaveFilters(prev => ({ ...prev, status: e.target.value }))}
+                    className="h-10 pl-9 pr-8 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all appearance-none cursor-pointer"
+                  >
+                    <option value="">All Status</option>
+                    <option value="pending">Pending</option>
+                    <option value="approved">Approved</option>
+                    <option value="rejected">Rejected</option>
+                  </select>
+                </div>
+
+                {/* Type Filter */}
+                <div className="relative">
+                  <Filter className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                  <select
+                    value={leaveFilters.leaveType}
+                    onChange={(e) => setLeaveFilters(prev => ({ ...prev, leaveType: e.target.value }))}
+                    className="h-10 pl-9 pr-8 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all appearance-none cursor-pointer"
+                  >
+                    <option value="">All Types</option>
+                    {activeTab === 'od' ? (
+                      odTypes.map(t => <option key={t.code} value={t.code}>{t.name}</option>)
+                    ) : (
+                      leaveTypes.map(t => <option key={t.code} value={t.code}>{t.name}</option>)
+                    )}
+                  </select>
+                </div>
+
+                {/* Date Range */}
+                <div className="flex items-center flex-wrap sm:flex-nowrap gap-2 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                  <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <input
+                    type="date"
+                    value={leaveFilters.startDate}
+                    onChange={(e) => setLeaveFilters(prev => ({ ...prev, startDate: e.target.value }))}
+                    className="bg-transparent text-xs font-bold text-slate-600 dark:text-slate-300 outline-none cursor-pointer w-full sm:w-auto min-w-[100px]"
+                  />
+                  <span className="text-slate-300 dark:text-slate-600 font-bold shrink-0">→</span>
+                  <input
+                    type="date"
+                    value={leaveFilters.endDate}
+                    onChange={(e) => setLeaveFilters(prev => ({ ...prev, endDate: e.target.value }))}
+                    className="bg-transparent text-xs font-bold text-slate-600 dark:text-slate-300 outline-none cursor-pointer w-full sm:w-auto min-w-[100px]"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Tab Navigation */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div className="inline-flex items-center p-1 rounded-xl bg-slate-100/50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 backdrop-blur-sm shadow-inner overflow-x-auto scrollbar-hide">
@@ -1661,222 +1780,349 @@ export default function LeavesPage() {
 
         <div className="mt-4">
           {activeTab === 'leaves' && (
-            <div className="overflow-x-auto scrollbar-hide bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/60 dark:border-slate-800 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-500">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200/60 dark:border-slate-800">
-                    {currentUser?.role !== 'employee' && (
-                      <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Employee</th>
-                    )}
-                    <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Leave Type</th>
-                    <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Dates</th>
-                    <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 text-center">Duration</th>
-                    <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 text-center">Status</th>
-                    <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {leaves.length === 0 ? (
-                    <tr>
-                      <td colSpan={currentUser?.role !== 'employee' ? 6 : 5} className="px-6 py-10 text-center text-slate-500 text-sm">
-                        No leave applications found
-                      </td>
+            <>
+              {/* Desktop Table View */}
+              <div className="hidden md:block overflow-x-auto scrollbar-hide bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/60 dark:border-slate-800 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-500">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200/60 dark:border-slate-800">
+                      {currentUser?.role !== 'employee' && (
+                        <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Employee</th>
+                      )}
+                      <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Leave Type</th>
+                      <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Dates</th>
+                      <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 text-center">Duration</th>
+                      <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 text-center">Status</th>
+                      <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 text-right">Actions</th>
                     </tr>
-                  ) : (
-                    leaves.map((leave) => (
-                      <tr
-                        key={leave._id}
-                        onClick={() => openDetailDialog(leave, 'leave')}
-                        className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors cursor-pointer"
-                      >
-                        {currentUser?.role !== 'employee' && (
-                          <td className="px-6 py-3.5">
-                            <div className="flex items-center gap-3">
-                              <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-700 dark:text-blue-400 font-bold text-xs shrink-0">
-                                {getEmployeeInitials({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: '' } as any)}
-                              </div>
-                              <div className="min-w-0">
-                                <div className="font-medium text-slate-900 dark:text-white text-sm truncate max-w-[150px]">
-                                  {leave.employeeId?.employee_name || `${leave.employeeId?.first_name || ''} ${leave.employeeId?.last_name || ''}`.trim() || leave.emp_no}
-                                </div>
-                                <div className="text-xs text-slate-500">
-                                  {leave.employeeId?.emp_no}
-                                </div>
-                              </div>
-                            </div>
-                          </td>
-                        )}
-                        <td className="px-6 py-3.5">
-                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300 capitalize">
-                            {leave.leaveType?.replace('_', ' ')}
-                          </span>
-                        </td>
-                        <td className="px-6 py-3.5 whitespace-nowrap">
-                          <div className="text-sm text-slate-700 dark:text-slate-300">
-                            <span className="font-medium">{formatDate(leave.fromDate)}</span>
-                            {leave.fromDate !== leave.toDate && (
-                              <span className="text-slate-400 mx-1.5">-</span>
-                            )}
-                            {leave.fromDate !== leave.toDate && (
-                              <span>{formatDate(leave.toDate)}</span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-6 py-3.5 text-center">
-                          <div className="inline-flex items-center gap-1.5 bg-slate-100 rounded-md px-2 py-1 dark:bg-slate-800">
-                            <span className="font-semibold text-slate-700 dark:text-slate-300 text-sm">
-                              {leave.numberOfDays}d
-                            </span>
-                            {leave.isHalfDay && (
-                              <span className="text-[10px] font-bold text-orange-600 uppercase">
-                                {leave.halfDayType === 'first_half' ? '(1st)' : '(2nd)'}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-6 py-3.5 text-center">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize border ${getStatusColor(leave.status) === 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' ? 'border-green-200' : 'border-transparent' // subtle border for approved
-                            } ${getStatusColor(leave.status)}`}>
-                            {leave.status?.replace('_', ' ')}
-                          </span>
-                        </td>
-                        <td className="px-6 py-3.5 text-right">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openDetailDialog(leave, 'leave');
-                            }}
-                            className="text-sm text-blue-600 hover:text-blue-800 font-medium dark:text-blue-400 dark:hover:text-blue-300"
-                          >
-                            View
-                          </button>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {filteredLeaves.length === 0 ? (
+                      <tr>
+                        <td colSpan={currentUser?.role !== 'employee' ? 6 : 5} className="px-6 py-10 text-center text-slate-500 text-sm">
+                          No leave applications found
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+                    ) : (
+                      filteredLeaves.map((leave) => (
+                        <tr
+                          key={leave._id}
+                          onClick={() => openDetailDialog(leave, 'leave')}
+                          className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors cursor-pointer"
+                        >
+                          {currentUser?.role !== 'employee' && (
+                            <td className="px-6 py-3.5">
+                              <div className="flex items-center gap-3">
+                                <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-700 dark:text-blue-400 font-bold text-xs shrink-0">
+                                  {getEmployeeInitials({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: '' } as any)}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="font-medium text-slate-900 dark:text-white text-sm truncate max-w-[150px]">
+                                    {leave.employeeId?.employee_name || `${leave.employeeId?.first_name || ''} ${leave.employeeId?.last_name || ''}`.trim() || leave.emp_no}
+                                  </div>
+                                  <div className="text-xs text-slate-500">
+                                    {leave.employeeId?.emp_no}
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+                          )}
+                          <td className="px-6 py-3.5">
+                            <span className="text-sm font-medium text-slate-700 dark:text-slate-300 capitalize">
+                              {leave.leaveType?.replace('_', ' ')}
+                            </span>
+                          </td>
+                          <td className="px-6 py-3.5 whitespace-nowrap">
+                            <div className="text-sm text-slate-700 dark:text-slate-300">
+                              <span className="font-medium">{formatDate(leave.fromDate)}</span>
+                              {leave.fromDate !== leave.toDate && (
+                                <span className="text-slate-400 mx-1.5">-</span>
+                              )}
+                              {leave.fromDate !== leave.toDate && (
+                                <span>{formatDate(leave.toDate)}</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-6 py-3.5 text-center">
+                            <div className="inline-flex items-center gap-1.5 bg-slate-100 rounded-md px-2 py-1 dark:bg-slate-800">
+                              <span className="font-semibold text-slate-700 dark:text-slate-300 text-sm">
+                                {leave.numberOfDays}d
+                              </span>
+                              {leave.isHalfDay && (
+                                <span className="text-[10px] font-bold text-orange-600 uppercase">
+                                  {leave.halfDayType === 'first_half' ? '(1st)' : '(2nd)'}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-6 py-3.5 text-center">
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize border ${getStatusColor(leave.status) === 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' ? 'border-green-200' : 'border-transparent' // subtle border for approved
+                              } ${getStatusColor(leave.status)}`}>
+                              {leave.status?.replace('_', ' ')}
+                            </span>
+                          </td>
+                          <td className="px-6 py-3.5 text-right">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openDetailDialog(leave, 'leave');
+                              }}
+                              className="text-sm text-blue-600 hover:text-blue-800 font-medium dark:text-blue-400 dark:hover:text-blue-300"
+                            >
+                              View
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile Card View */}
+              <div className="md:hidden space-y-4">
+                {filteredLeaves.length === 0 ? (
+                  <div className="text-center py-10 text-slate-500 text-sm bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
+                    No leave applications found
+                  </div>
+                ) : (
+                  filteredLeaves.map((leave) => (
+                    <div
+                      key={leave._id}
+                      onClick={() => openDetailDialog(leave, 'leave')}
+                      className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-sm active:scale-[0.98] transition-all"
+                    >
+                      <div className="flex justify-between items-start mb-3">
+                        <div className="flex items-center gap-3">
+                          {currentUser?.role !== 'employee' && (
+                            <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-700 dark:text-blue-400 font-bold text-xs shrink-0">
+                              {getEmployeeInitials({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: '' } as any)}
+                            </div>
+                          )}
+                          <div>
+                            {currentUser?.role !== 'employee' && (
+                              <h4 className="font-bold text-slate-900 dark:text-white text-sm">
+                                {leave.employeeId?.employee_name || leave.emp_no}
+                              </h4>
+                            )}
+                            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                              {leave.leaveType?.replace('_', ' ')}
+                            </p>
+                          </div>
+                        </div>
+                        <span className={`inline-flex px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border ${getStatusColor(leave.status)} border-transparent`}>
+                          {leave.status?.replace('_', ' ')}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between text-sm text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl">
+                        <div className="flex flex-col">
+                          <span className="text-[10px] uppercase font-bold text-slate-400">Duration</span>
+                          <span className="font-semibold text-slate-900 dark:text-white">
+                            {leave.numberOfDays} Day{leave.numberOfDays !== 1 ? 's' : ''} {leave.isHalfDay && `(${leave.halfDayType === 'first_half' ? '1st' : '2nd'} Half)`}
+                          </span>
+                        </div>
+                        <div className="h-8 w-px bg-slate-200 dark:bg-slate-700"></div>
+                        <div className="flex flex-col items-end">
+                          <span className="text-[10px] uppercase font-bold text-slate-400">Dates</span>
+                          <span className="font-semibold text-slate-900 dark:text-white text-right">
+                            {formatDate(leave.fromDate)}
+                            {leave.fromDate !== leave.toDate && ` - ${formatDate(leave.toDate)}`}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </>
           )}
 
 
           {activeTab === 'od' && (
-            <div className="overflow-x-auto scrollbar-hide bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/60 dark:border-slate-800 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-500">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200/60 dark:border-slate-800">
-                    {currentUser?.role !== 'employee' && (
-                      <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Employee</th>
-                    )}
-                    <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">OD Type</th>
-                    <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Place Visited</th>
-                    <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Dates</th>
-                    <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 text-center">Duration</th>
-                    <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 text-center">Status</th>
-                    <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {ods.length === 0 ? (
-                    <tr>
-                      <td colSpan={currentUser?.role !== 'employee' ? 7 : 6} className="px-6 py-10 text-center text-slate-500 text-sm italic">
-                        No OD applications found
-                      </td>
+            <>
+              {/* Desktop Table View */}
+              <div className="hidden md:block overflow-x-auto scrollbar-hide bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/60 dark:border-slate-800 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-500">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200/60 dark:border-slate-800">
+                      {currentUser?.role !== 'employee' && (
+                        <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Employee</th>
+                      )}
+                      <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">OD Type</th>
+                      <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Place Visited</th>
+                      <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">Dates</th>
+                      <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 text-center">Duration</th>
+                      <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 text-center">Status</th>
+                      <th className="px-6 py-4 text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 text-right">Actions</th>
                     </tr>
-                  ) : (
-                    ods.map((od) => (
-                      <tr
-                        key={od._id}
-                        onClick={() => openDetailDialog(od, 'od')}
-                        className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors cursor-pointer"
-                      >
-                        {currentUser?.role !== 'employee' && (
-                          <td className="px-6 py-3.5">
-                            <div className="flex items-center gap-3">
-                              <div className="h-8 w-8 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-purple-700 dark:text-purple-400 font-bold text-xs shrink-0">
-                                {getEmployeeInitials({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: '' } as any)}
-                              </div>
-                              <div className="min-w-0">
-                                <div className="font-medium text-slate-900 dark:text-white text-sm truncate max-w-[150px]">
-                                  {od.employeeId?.employee_name || `${od.employeeId?.first_name || ''} ${od.employeeId?.last_name || ''}`.trim() || od.emp_no}
-                                </div>
-                                <div className="text-xs text-slate-500">
-                                  {od.employeeId?.emp_no}
-                                </div>
-                              </div>
-                            </div>
-                          </td>
-                        )}
-                        <td className="px-6 py-3.5">
-                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300 capitalize">
-                            {od.odType?.replace('_', ' ')}
-                          </span>
-                        </td>
-                        <td className="px-6 py-3.5 max-w-[180px] truncate text-sm text-slate-700 dark:text-slate-300" title={od.placeVisited}>
-                          {od.placeVisited || '-'}
-                        </td>
-                        <td className="px-6 py-3.5 whitespace-nowrap">
-                          <div className="text-sm text-slate-700 dark:text-slate-300">
-                            <span className="font-medium">{formatDate(od.fromDate)}</span>
-                            {od.fromDate !== od.toDate && (
-                              <span className="text-slate-400 mx-1.5">-</span>
-                            )}
-                            {od.fromDate !== od.toDate && (
-                              <span>{formatDate(od.toDate)}</span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-6 py-3.5 text-center">
-                          <div className="inline-flex items-center gap-1.5 bg-slate-100 rounded-md px-2 py-1 dark:bg-slate-800">
-                            <span className="font-semibold text-slate-700 dark:text-slate-300 text-sm">
-                              {od.numberOfDays}d
-                            </span>
-                            {od.isHalfDay && (
-                              <span className="text-[10px] font-bold text-orange-600 uppercase">
-                                {od.halfDayType === 'first_half' ? '(1st)' : '(2nd)'}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-6 py-3.5 text-center">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize border ${getStatusColor(od.status) === 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' ? 'border-green-200' : 'border-transparent'
-                            } ${getStatusColor(od.status)}`}>
-                            {od.status?.replace('_', ' ')}
-                          </span>
-                        </td>
-                        <td className="px-6 py-3.5 text-right">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openDetailDialog(od, 'od');
-                            }}
-                            className="text-sm text-purple-600 hover:text-purple-800 font-medium dark:text-purple-400 dark:hover:text-purple-300"
-                          >
-                            View
-                          </button>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {filteredODs.length === 0 ? (
+                      <tr>
+                        <td colSpan={currentUser?.role !== 'employee' ? 7 : 6} className="px-6 py-10 text-center text-slate-500 text-sm italic">
+                          No OD applications found
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+                    ) : (
+                      filteredODs.map((od) => (
+                        <tr
+                          key={od._id}
+                          onClick={() => openDetailDialog(od, 'od')}
+                          className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors cursor-pointer"
+                        >
+                          {currentUser?.role !== 'employee' && (
+                            <td className="px-6 py-3.5">
+                              <div className="flex items-center gap-3">
+                                <div className="h-8 w-8 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-purple-700 dark:text-purple-400 font-bold text-xs shrink-0">
+                                  {getEmployeeInitials({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: '' } as any)}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="font-medium text-slate-900 dark:text-white text-sm truncate max-w-[150px]">
+                                    {od.employeeId?.employee_name || `${od.employeeId?.first_name || ''} ${od.employeeId?.last_name || ''}`.trim() || od.emp_no}
+                                  </div>
+                                  <div className="text-xs text-slate-500">
+                                    {od.employeeId?.emp_no}
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+                          )}
+                          <td className="px-6 py-3.5">
+                            <span className="text-sm font-medium text-slate-700 dark:text-slate-300 capitalize">
+                              {od.odType?.replace('_', ' ')}
+                            </span>
+                          </td>
+                          <td className="px-6 py-3.5 max-w-[180px] truncate text-sm text-slate-700 dark:text-slate-300" title={od.placeVisited}>
+                            {od.placeVisited || '-'}
+                          </td>
+                          <td className="px-6 py-3.5 whitespace-nowrap">
+                            <div className="text-sm text-slate-700 dark:text-slate-300">
+                              <span className="font-medium">{formatDate(od.fromDate)}</span>
+                              {od.fromDate !== od.toDate && (
+                                <span className="text-slate-400 mx-1.5">-</span>
+                              )}
+                              {od.fromDate !== od.toDate && (
+                                <span>{formatDate(od.toDate)}</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-6 py-3.5 text-center">
+                            <div className="inline-flex items-center gap-1.5 bg-slate-100 rounded-md px-2 py-1 dark:bg-slate-800">
+                              <span className="font-semibold text-slate-700 dark:text-slate-300 text-sm">
+                                {od.numberOfDays}d
+                              </span>
+                              {od.isHalfDay && (
+                                <span className="text-[10px] font-bold text-orange-600 uppercase">
+                                  {od.halfDayType === 'first_half' ? '(1st)' : '(2nd)'}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-6 py-3.5 text-center">
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize border ${getStatusColor(od.status) === 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' ? 'border-green-200' : 'border-transparent'
+                              } ${getStatusColor(od.status)}`}>
+                              {od.status?.replace('_', ' ')}
+                            </span>
+                          </td>
+                          <td className="px-6 py-3.5 text-right">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openDetailDialog(od, 'od');
+                              }}
+                              className="text-sm text-purple-600 hover:text-purple-800 font-medium dark:text-purple-400 dark:hover:text-purple-300"
+                            >
+                              View
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile Card View */}
+              <div className="md:hidden space-y-4">
+                {filteredODs.length === 0 ? (
+                  <div className="text-center py-10 text-slate-500 text-sm bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
+                    No OD applications found
+                  </div>
+                ) : (
+                  filteredODs.map((od) => (
+                    <div
+                      key={od._id}
+                      onClick={() => openDetailDialog(od, 'od')}
+                      className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-sm active:scale-[0.98] transition-all"
+                    >
+                      <div className="flex justify-between items-start mb-3">
+                        <div className="flex items-center gap-3">
+                          {currentUser?.role !== 'employee' && (
+                            <div className="h-10 w-10 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-purple-700 dark:text-purple-400 font-bold text-xs shrink-0">
+                              {getEmployeeInitials({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: '' } as any)}
+                            </div>
+                          )}
+                          <div>
+                            {currentUser?.role !== 'employee' && (
+                              <h4 className="font-bold text-slate-900 dark:text-white text-sm">
+                                {od.employeeId?.employee_name || od.emp_no}
+                              </h4>
+                            )}
+                            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                              {od.odType?.replace('_', ' ')}
+                            </p>
+                          </div>
+                        </div>
+                        <span className={`inline-flex px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border ${getStatusColor(od.status)} border-transparent`}>
+                          {od.status?.replace('_', ' ')}
+                        </span>
+                      </div>
+
+                      {od.placeVisited && (
+                        <div className="mb-3 flex items-start gap-2 text-xs text-slate-500 dark:text-slate-400">
+                          <Briefcase className="w-3.5 h-3.5 mt-0.5" />
+                          <span>{od.placeVisited}</span>
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between text-sm text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl">
+                        <div className="flex flex-col">
+                          <span className="text-[10px] uppercase font-bold text-slate-400">Duration</span>
+                          <span className="font-semibold text-slate-900 dark:text-white">
+                            {od.numberOfDays} Day{od.numberOfDays !== 1 ? 's' : ''} {od.isHalfDay && `(${od.halfDayType === 'first_half' ? '1st' : '2nd'} Half)`}
+                          </span>
+                        </div>
+                        <div className="h-8 w-px bg-slate-200 dark:bg-slate-700"></div>
+                        <div className="flex flex-col items-end">
+                          <span className="text-[10px] uppercase font-bold text-slate-400">Dates</span>
+                          <span className="font-semibold text-slate-900 dark:text-white text-right">
+                            {formatDate(od.fromDate)}
+                            {od.fromDate !== od.toDate && ` - ${formatDate(od.toDate)}`}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </>
           )}
 
 
           {activeTab === 'pending' && (
             <div className="p-4 space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-500">
               {/* Pending Leaves */}
-              {pendingLeaves.length > 0 && (
+              {filteredPendingLeaves.length > 0 && (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between px-2">
                     <h3 className="text-xs font-black text-slate-500 uppercase tracking-wider flex items-center gap-2">
                       <Calendar className="w-3.5 h-3.5" />
-                      Pending Leaves ({pendingLeaves.length})
+                      Pending Leaves ({filteredPendingLeaves.length})
                     </h3>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                    {pendingLeaves.map((leave) => (
+                    {filteredPendingLeaves.map((leave) => (
                       <div key={leave._id} className="group relative flex flex-col justify-between rounded-2xl border border-slate-200/60 bg-white p-5 shadow-sm transition-all hover:shadow-md hover:border-blue-200/60 dark:border-slate-800 dark:bg-slate-900">
                         {/* Status Strip */}
                         <div className="absolute top-0 left-0 w-1 h-full bg-blue-500/80 rounded-l-2xl group-hover:w-1.5 transition-all" />
@@ -1966,14 +2212,14 @@ export default function LeavesPage() {
               )}
 
               {/* Pending ODs */}
-              {pendingODs.length > 0 && (
+              {filteredPendingODs.length > 0 && (
                 <div>
                   <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-2">
                     <Briefcase />
-                    Pending ODs ({pendingODs.length})
+                    Pending ODs ({filteredPendingODs.length})
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                    {pendingODs.map((od) => (
+                    {filteredPendingODs.map((od) => (
                       <div key={od._id} className="group relative flex flex-col justify-between rounded-xl border border-slate-200 border-l-4 border-l-purple-500 bg-white p-5 shadow-sm transition-all hover:shadow-md dark:border-slate-700 dark:bg-slate-800">
 
                         {/* Header */}
@@ -2540,9 +2786,9 @@ export default function LeavesPage() {
                 </div>
 
                 {/* Content */}
-                <div className="flex-1 overflow-y-auto p-8 space-y-8">
+                <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 space-y-6 sm:space-y-8">
                   {/* Top Section: Employee & Status */}
-                  <div className="flex justify-between items-start gap-6">
+                  <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-6">
                     <div className="flex items-center gap-4">
                       <div className={`w-16 h-16 rounded-2xl flex items-center justify-center text-white font-black text-2xl shadow-xl ${detailType === 'leave'
                         ? 'bg-blue-600 shadow-blue-500/20'
@@ -2572,7 +2818,7 @@ export default function LeavesPage() {
                       </div>
                     </div>
 
-                    <div className="flex flex-col items-end gap-2">
+                    <div className="flex flex-row sm:flex-col items-center sm:items-end gap-2 w-full sm:w-auto justify-between sm:justify-start">
                       <span className={`px-4 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-widest border ${getStatusColor(selectedItem!.status)}`}>
                         {selectedItem!.status?.replace('_', ' ')}
                       </span>
@@ -2584,7 +2830,7 @@ export default function LeavesPage() {
                   </div>
 
                   {/* Stats Grid - Cleaner Look */}
-                  <div className="grid grid-cols-4 gap-4 bg-slate-50 dark:bg-slate-700/30 p-6 rounded-xl">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-slate-50 dark:bg-slate-700/30 p-4 sm:p-6 rounded-xl">
                     <div className="space-y-1">
                       <p className="text-xs uppercase font-bold text-slate-400 tracking-wider">Type</p>
                       <p className="text-sm font-bold text-slate-900 dark:text-white truncate" title={detailType === 'leave' ? (selectedItem! as LeaveApplication).leaveType : (selectedItem! as ODApplication).odType}>
@@ -2609,7 +2855,7 @@ export default function LeavesPage() {
 
                   {/* Details Content - Clean & Aligned */}
                   <div className="space-y-6">
-                    <div className="bg-slate-50 dark:bg-slate-900/50 p-6 rounded-xl">
+                    <div className="bg-slate-50 dark:bg-slate-900/50 p-4 sm:p-6 rounded-xl">
                       <p className="text-xs uppercase font-bold text-slate-400 mb-2 tracking-wider">Purpose / Reason</p>
                       <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
                         {selectedItem!.purpose || 'No purpose specified'}
@@ -2617,22 +2863,22 @@ export default function LeavesPage() {
                     </div>
 
                     {detailType === 'od' && (selectedItem! as ODApplication).placeVisited && (
-                      <div className="flex items-center gap-4 text-sm text-slate-700 dark:text-slate-300 px-2 mt-2">
-                        <span className="font-bold text-xs uppercase text-slate-400 tracking-wider min-w-[80px]">Location:</span>
-                        <span className="font-medium">{(selectedItem! as ODApplication).placeVisited}</span>
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 text-sm text-slate-700 dark:text-slate-300 px-2 mt-2">
+                        <span className="font-bold text-xs uppercase text-slate-400 tracking-wider sm:min-w-20">Location:</span>
+                        <span className="font-medium break-words">{(selectedItem! as ODApplication).placeVisited}</span>
                       </div>
                     )}
                     {selectedItem!.contactNumber && (
-                      <div className="flex items-center gap-4 text-sm text-slate-700 dark:text-slate-300 px-2 mt-2">
-                        <span className="font-bold text-xs uppercase text-slate-400 tracking-wider min-w-[80px]">Contact:</span>
-                        <span className="font-medium text-slate-900 dark:text-white">{selectedItem!.contactNumber}</span>
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 text-sm text-slate-700 dark:text-slate-300 px-2 mt-2">
+                        <span className="font-bold text-xs uppercase text-slate-400 tracking-wider sm:min-w-20">Contact:</span>
+                        <span className="font-medium text-slate-900 dark:text-white break-all">{selectedItem!.contactNumber}</span>
                       </div>
                     )}
                   </div>
 
                   {/* Approval Steps - Timeline / Progress */}
                   {((selectedItem as any).workflow?.approvalChain?.length > 0) && (
-                    <div className="bg-slate-50 dark:bg-slate-900/50 p-6 rounded-xl">
+                    <div className="bg-slate-50 dark:bg-slate-900/50 p-4 sm:p-6 rounded-xl">
                       <p className="text-xs uppercase font-bold text-slate-400 mb-4 tracking-wider">Approval Timeline</p>
                       {/* Progress bar */}
                       <div className="mb-6">
@@ -2671,7 +2917,7 @@ export default function LeavesPage() {
                                 {isApproved && (
                                   <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
                                     {step.actionByName || 'Unknown'} ({step.actionByRole || stepRole})
-                                    {step.updatedAt && <span className="ml-1">· {new Date(step.updatedAt).toLocaleString()}</span>}
+                                    {step.updatedAt && <span className="ml-1 inline-block">· {new Date(step.updatedAt).toLocaleString()}</span>}
                                   </p>
                                 )}
                                 {isApproved && step.comments && (
@@ -2775,387 +3021,388 @@ export default function LeavesPage() {
       </div >
 
 
-      {showEditDialog && selectedItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setShowEditDialog(false)} />
-          <div className="relative z-50 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-white/20 dark:border-slate-800 shadow-2xl p-6 sm:p-8 animate-in zoom-in-95 duration-300">
-            <div className="mb-8">
-              <h2 className="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300">
-                Edit {detailType === 'leave' ? 'Leave' : 'OD'} Application
-              </h2>
-              <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">Modify the existing request details.</p>
-            </div>
-
-            <form onSubmit={async (e) => {
-              e.preventDefault();
-              try {
-                const user = auth.getUser();
-
-                // Clean up data before sending - convert empty strings to null for enum fields
-                const cleanedData: any = {
-                  ...editFormData,
-                  // Fix halfDayType - must be null if not half day, or valid enum value
-                  halfDayType: editFormData.isHalfDay
-                    ? (editFormData.halfDayType || 'first_half')
-                    : (editFormData.halfDayType === '' || editFormData.halfDayType === null ? null : editFormData.halfDayType),
-                  // For hour-based OD, ensure times are properly set
-                  odStartTime: (detailType === 'od' && editFormData.odType_extended === 'hours')
-                    ? (editFormData.odStartTime || null)
-                    : (editFormData.odStartTime === '' ? null : editFormData.odStartTime),
-                  odEndTime: (detailType === 'od' && editFormData.odType_extended === 'hours')
-                    ? (editFormData.odEndTime || null)
-                    : (editFormData.odEndTime === '' ? null : editFormData.odEndTime),
-                  changeReason: `Edited by ${user?.name || 'Admin'}`,
-                };
-
-                // If Super Admin is changing status, include statusChangeReason
-                if (isSuperAdmin && editFormData.status && editFormData.status !== selectedItem.status) {
-                  cleanedData.statusChangeReason = `Status changed from ${selectedItem.status} to ${editFormData.status}`;
-                }
-
-                const response = detailType === 'leave'
-                  ? await api.updateLeave(selectedItem._id, cleanedData)
-                  : await api.updateOD(selectedItem._id, cleanedData);
-
-                if (response.success) {
-                  Swal.fire({
-                    icon: 'success',
-                    title: 'Success!',
-                    text: `${detailType === 'leave' ? 'Leave' : 'OD'} updated successfully`,
-                    timer: 2000,
-                    showConfirmButton: false,
-                  });
-                  setShowEditDialog(false);
-                  setShowDetailDialog(false);
-                  setSelectedItem(null);
-                  setIsChangeHistoryExpanded(false);
-                  loadData();
-                } else {
-                  Swal.fire({
-                    icon: 'error',
-                    title: 'Failed',
-                    text: response.error || 'Failed to update',
-                  });
-                }
-              } catch (err: any) {
-                Swal.fire({
-                  icon: 'error',
-                  title: 'Error',
-                  text: err.message || 'Failed to update',
-                });
-              }
-            }} className="space-y-4">
-              {/* Type */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                  {detailType === 'leave' ? 'Leave Type' : 'OD Type'} *
-                </label>
-                <input
-                  type="text"
-                  value={detailType === 'leave' ? editFormData.leaveType : editFormData.odType}
-                  onChange={(e) => setEditFormData({
-                    ...editFormData,
-                    [detailType === 'leave' ? 'leaveType' : 'odType']: e.target.value,
-                  })}
-                  required
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                />
+      {
+        showEditDialog && selectedItem && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setShowEditDialog(false)} />
+            <div className="relative z-50 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-white/20 dark:border-slate-800 shadow-2xl p-6 sm:p-8 animate-in zoom-in-95 duration-300">
+              <div className="mb-8">
+                <h2 className="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300">
+                  Edit {detailType === 'leave' ? 'Leave' : 'OD'} Application
+                </h2>
+                <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">Modify the existing request details.</p>
               </div>
 
-              {/* Dates */}
-              <div className="grid grid-cols-2 gap-4">
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                try {
+                  const user = auth.getUser();
+
+                  // Clean up data before sending - convert empty strings to null for enum fields
+                  const cleanedData: any = {
+                    ...editFormData,
+                    // Fix halfDayType - must be null if not half day, or valid enum value
+                    halfDayType: editFormData.isHalfDay
+                      ? (editFormData.halfDayType || 'first_half')
+                      : (editFormData.halfDayType === '' || editFormData.halfDayType === null ? null : editFormData.halfDayType),
+                    // For hour-based OD, ensure times are properly set
+                    odStartTime: (detailType === 'od' && editFormData.odType_extended === 'hours')
+                      ? (editFormData.odStartTime || null)
+                      : (editFormData.odStartTime === '' ? null : editFormData.odStartTime),
+                    odEndTime: (detailType === 'od' && editFormData.odType_extended === 'hours')
+                      ? (editFormData.odEndTime || null)
+                      : (editFormData.odEndTime === '' ? null : editFormData.odEndTime),
+                    changeReason: `Edited by ${user?.name || 'Admin'}`,
+                  };
+
+                  // If Super Admin is changing status, include statusChangeReason
+                  if (isSuperAdmin && editFormData.status && editFormData.status !== selectedItem.status) {
+                    cleanedData.statusChangeReason = `Status changed from ${selectedItem.status} to ${editFormData.status}`;
+                  }
+
+                  const response = detailType === 'leave'
+                    ? await api.updateLeave(selectedItem._id, cleanedData)
+                    : await api.updateOD(selectedItem._id, cleanedData);
+
+                  if (response.success) {
+                    Swal.fire({
+                      icon: 'success',
+                      title: 'Success!',
+                      text: `${detailType === 'leave' ? 'Leave' : 'OD'} updated successfully`,
+                      timer: 2000,
+                      showConfirmButton: false,
+                    });
+                    setShowEditDialog(false);
+                    setShowDetailDialog(false);
+                    setSelectedItem(null);
+                    setIsChangeHistoryExpanded(false);
+                    loadData();
+                  } else {
+                    Swal.fire({
+                      icon: 'error',
+                      title: 'Failed',
+                      text: response.error || 'Failed to update',
+                    });
+                  }
+                } catch (err: any) {
+                  Swal.fire({
+                    icon: 'error',
+                    title: 'Error',
+                    text: err.message || 'Failed to update',
+                  });
+                }
+              }} className="space-y-4">
+                {/* Type */}
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">From Date *</label>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    {detailType === 'leave' ? 'Leave Type' : 'OD Type'} *
+                  </label>
                   <input
-                    type="date"
-                    value={editFormData.fromDate}
-                    onChange={(e) => {
-                      const newFromDate = e.target.value;
-                      // Auto-set end date = start date for half-day and hour-based OD
-                      const newToDate = (detailType === 'od' && (editFormData.odType_extended === 'half_day' || editFormData.odType_extended === 'hours'))
-                        ? newFromDate
-                        : editFormData.toDate;
-                      setEditFormData({ ...editFormData, fromDate: newFromDate, toDate: newToDate });
-                    }}
+                    type="text"
+                    value={detailType === 'leave' ? editFormData.leaveType : editFormData.odType}
+                    onChange={(e) => setEditFormData({
+                      ...editFormData,
+                      [detailType === 'leave' ? 'leaveType' : 'odType']: e.target.value,
+                    })}
                     required
                     className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    To Date *
-                    {/* Today button for hour-based OD */}
-                    {detailType === 'od' && editFormData.odType_extended === 'hours' && (
+
+                {/* Dates */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">From Date *</label>
+                    <input
+                      type="date"
+                      value={editFormData.fromDate}
+                      onChange={(e) => {
+                        const newFromDate = e.target.value;
+                        // Auto-set end date = start date for half-day and hour-based OD
+                        const newToDate = (detailType === 'od' && (editFormData.odType_extended === 'half_day' || editFormData.odType_extended === 'hours'))
+                          ? newFromDate
+                          : editFormData.toDate;
+                        setEditFormData({ ...editFormData, fromDate: newFromDate, toDate: newToDate });
+                      }}
+                      required
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      To Date *
+                      {/* Today button for hour-based OD */}
+                      {detailType === 'od' && editFormData.odType_extended === 'hours' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const today = new Date().toISOString().split('T')[0];
+                            setEditFormData({ ...editFormData, fromDate: today, toDate: today });
+                          }}
+                          className="ml-2 text-xs px-2 py-1 rounded-lg bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50 transition-colors"
+                        >
+                          Today
+                        </button>
+                      )}
+                    </label>
+                    <input
+                      type="date"
+                      value={editFormData.toDate}
+                      onChange={(e) => {
+                        // For half-day and hour-based OD, prevent changing end date separately
+                        if (detailType === 'od' && (editFormData.odType_extended === 'half_day' || editFormData.odType_extended === 'hours')) {
+                          // Auto-set to start date
+                          setEditFormData({ ...editFormData, toDate: editFormData.fromDate });
+                        } else {
+                          setEditFormData({ ...editFormData, toDate: e.target.value });
+                        }
+                      }}
+                      required
+                      disabled={detailType === 'od' && (editFormData.odType_extended === 'half_day' || editFormData.odType_extended === 'hours')}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white disabled:bg-slate-100 dark:disabled:bg-slate-700 disabled:cursor-not-allowed"
+                    />
+                    {detailType === 'od' && (editFormData.odType_extended === 'half_day' || editFormData.odType_extended === 'hours') && (
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        End date is automatically set to start date for {editFormData.odType_extended === 'half_day' ? 'half-day' : 'hour-based'} OD
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* OD Duration Type (OD only) */}
+                {detailType === 'od' && (
+                  <div className="space-y-3">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">OD Duration Type *</label>
+                    <div className="grid grid-cols-3 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setEditFormData({ ...editFormData, odType_extended: 'full_day', isHalfDay: false, halfDayType: null, odStartTime: null, odEndTime: null })}
+                        className={`p-3 rounded-lg border-2 transition-all ${editFormData.odType_extended === 'full_day'
+                          ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
+                          : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                          }`}
+                      >
+                        <div className="text-sm font-semibold text-slate-900 dark:text-white">Full Day</div>
+                      </button>
                       <button
                         type="button"
                         onClick={() => {
-                          const today = new Date().toISOString().split('T')[0];
-                          setEditFormData({ ...editFormData, fromDate: today, toDate: today });
+                          const endDate = editFormData.fromDate || editFormData.toDate;
+                          setEditFormData({
+                            ...editFormData,
+                            odType_extended: 'half_day',
+                            isHalfDay: true,
+                            halfDayType: editFormData.halfDayType || 'first_half',
+                            odStartTime: null,
+                            odEndTime: null,
+                            toDate: endDate || editFormData.fromDate
+                          });
                         }}
-                        className="ml-2 text-xs px-2 py-1 rounded-lg bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:hover:bg-purple-900/50 transition-colors"
+                        className={`p-3 rounded-lg border-2 transition-all ${editFormData.odType_extended === 'half_day'
+                          ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
+                          : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                          }`}
                       >
-                        Today
+                        <div className="text-sm font-semibold text-slate-900 dark:text-white">Half Day</div>
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const endDate = editFormData.fromDate || editFormData.toDate;
+                          setEditFormData({
+                            ...editFormData,
+                            odType_extended: 'hours',
+                            isHalfDay: false,
+                            halfDayType: null,
+                            toDate: endDate || editFormData.fromDate
+                          });
+                        }}
+                        className={`p-3 rounded-lg border-2 transition-all ${editFormData.odType_extended === 'hours'
+                          ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
+                          : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                          }`}
+                      >
+                        <div className="text-sm font-semibold text-slate-900 dark:text-white">Specific Hours</div>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Hour Input (for hour-based OD) */}
+                {detailType === 'od' && editFormData.odType_extended === 'hours' && (
+                  <div className="space-y-4 p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-700">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Start Time *</label>
+                        <input
+                          type="time"
+                          value={editFormData.odStartTime || ''}
+                          onChange={(e) => setEditFormData({ ...editFormData, odStartTime: e.target.value })}
+                          required={editFormData.odType_extended === 'hours'}
+                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">End Time *</label>
+                        <input
+                          type="time"
+                          value={editFormData.odEndTime || ''}
+                          onChange={(e) => setEditFormData({ ...editFormData, odEndTime: e.target.value })}
+                          required={editFormData.odType_extended === 'hours'}
+                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                        />
+                      </div>
+                    </div>
+                    {editFormData.odStartTime && editFormData.odEndTime && (
+                      <div className="p-3 bg-white dark:bg-slate-800 rounded-lg border border-purple-300 dark:border-purple-600">
+                        <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                          {(() => {
+                            const [startHour, startMin] = editFormData.odStartTime.split(':').map(Number);
+                            const [endHour, endMin] = editFormData.odEndTime.split(':').map(Number);
+                            const startMinutes = startHour * 60 + startMin;
+                            const endMinutes = endHour * 60 + endMin;
+                            const durationMinutes = endMinutes - startMinutes;
+
+                            if (durationMinutes <= 0) {
+                              return <span className="text-red-600 dark:text-red-400">❌ End time must be after start time</span>;
+                            }
+
+                            const hours = Math.floor(durationMinutes / 60);
+                            const mins = durationMinutes % 60;
+
+                            if (durationMinutes > 480) {
+                              return <span className="text-red-600 dark:text-red-400">❌ Maximum duration is 8 hours</span>;
+                            }
+
+                            return (
+                              <span className="text-green-600 dark:text-green-400">
+                                ✓ Duration: {hours}h {mins}m
+                              </span>
+                            );
+                          })()}
+                        </p>
+                      </div>
                     )}
-                  </label>
-                  <input
-                    type="date"
-                    value={editFormData.toDate}
-                    onChange={(e) => {
-                      // For half-day and hour-based OD, prevent changing end date separately
-                      if (detailType === 'od' && (editFormData.odType_extended === 'half_day' || editFormData.odType_extended === 'hours')) {
-                        // Auto-set to start date
-                        setEditFormData({ ...editFormData, toDate: editFormData.fromDate });
-                      } else {
-                        setEditFormData({ ...editFormData, toDate: e.target.value });
-                      }
-                    }}
-                    required
-                    disabled={detailType === 'od' && (editFormData.odType_extended === 'half_day' || editFormData.odType_extended === 'hours')}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white disabled:bg-slate-100 dark:disabled:bg-slate-700 disabled:cursor-not-allowed"
-                  />
-                  {detailType === 'od' && (editFormData.odType_extended === 'half_day' || editFormData.odType_extended === 'hours') && (
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                      End date is automatically set to start date for {editFormData.odType_extended === 'half_day' ? 'half-day' : 'hour-based'} OD
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              {/* OD Duration Type (OD only) */}
-              {detailType === 'od' && (
-                <div className="space-y-3">
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">OD Duration Type *</label>
-                  <div className="grid grid-cols-3 gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setEditFormData({ ...editFormData, odType_extended: 'full_day', isHalfDay: false, halfDayType: null, odStartTime: null, odEndTime: null })}
-                      className={`p-3 rounded-lg border-2 transition-all ${editFormData.odType_extended === 'full_day'
-                        ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
-                        : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
-                        }`}
-                    >
-                      <div className="text-sm font-semibold text-slate-900 dark:text-white">Full Day</div>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const endDate = editFormData.fromDate || editFormData.toDate;
-                        setEditFormData({
-                          ...editFormData,
-                          odType_extended: 'half_day',
-                          isHalfDay: true,
-                          halfDayType: editFormData.halfDayType || 'first_half',
-                          odStartTime: null,
-                          odEndTime: null,
-                          toDate: endDate || editFormData.fromDate
-                        });
-                      }}
-                      className={`p-3 rounded-lg border-2 transition-all ${editFormData.odType_extended === 'half_day'
-                        ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
-                        : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
-                        }`}
-                    >
-                      <div className="text-sm font-semibold text-slate-900 dark:text-white">Half Day</div>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const endDate = editFormData.fromDate || editFormData.toDate;
-                        setEditFormData({
-                          ...editFormData,
-                          odType_extended: 'hours',
-                          isHalfDay: false,
-                          halfDayType: null,
-                          toDate: endDate || editFormData.fromDate
-                        });
-                      }}
-                      className={`p-3 rounded-lg border-2 transition-all ${editFormData.odType_extended === 'hours'
-                        ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30'
-                        : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
-                        }`}
-                    >
-                      <div className="text-sm font-semibold text-slate-900 dark:text-white">Specific Hours</div>
-                    </button>
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* Hour Input (for hour-based OD) */}
-              {detailType === 'od' && editFormData.odType_extended === 'hours' && (
-                <div className="space-y-4 p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-700">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Start Time *</label>
+                {/* Half Day (for non-hour-based OD) */}
+                {!(detailType === 'od' && editFormData.odType_extended === 'hours') && (
+                  <div className="flex items-center gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
                       <input
-                        type="time"
-                        value={editFormData.odStartTime || ''}
-                        onChange={(e) => setEditFormData({ ...editFormData, odStartTime: e.target.value })}
-                        required={editFormData.odType_extended === 'hours'}
-                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                        type="checkbox"
+                        checked={editFormData.isHalfDay}
+                        onChange={(e) => setEditFormData({ ...editFormData, isHalfDay: e.target.checked, halfDayType: e.target.checked ? (editFormData.halfDayType || 'first_half') : null })}
+                        className="w-4 h-4 rounded border-slate-300"
                       />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">End Time *</label>
-                      <input
-                        type="time"
-                        value={editFormData.odEndTime || ''}
-                        onChange={(e) => setEditFormData({ ...editFormData, odEndTime: e.target.value })}
-                        required={editFormData.odType_extended === 'hours'}
-                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                      />
-                    </div>
+                      <span className="text-sm text-slate-700 dark:text-slate-300">Half Day</span>
+                    </label>
+                    {editFormData.isHalfDay && (
+                      <select
+                        value={editFormData.halfDayType || ''}
+                        onChange={(e) => setEditFormData({ ...editFormData, halfDayType: e.target.value as 'first_half' | 'second_half' | null || null })}
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                      >
+                        <option value="first_half">First Half</option>
+                        <option value="second_half">Second Half</option>
+                      </select>
+                    )}
                   </div>
-                  {editFormData.odStartTime && editFormData.odEndTime && (
-                    <div className="p-3 bg-white dark:bg-slate-800 rounded-lg border border-purple-300 dark:border-purple-600">
-                      <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                        {(() => {
-                          const [startHour, startMin] = editFormData.odStartTime.split(':').map(Number);
-                          const [endHour, endMin] = editFormData.odEndTime.split(':').map(Number);
-                          const startMinutes = startHour * 60 + startMin;
-                          const endMinutes = endHour * 60 + endMin;
-                          const durationMinutes = endMinutes - startMinutes;
+                )}
 
-                          if (durationMinutes <= 0) {
-                            return <span className="text-red-600 dark:text-red-400">❌ End time must be after start time</span>;
-                          }
-
-                          const hours = Math.floor(durationMinutes / 60);
-                          const mins = durationMinutes % 60;
-
-                          if (durationMinutes > 480) {
-                            return <span className="text-red-600 dark:text-red-400">❌ Maximum duration is 8 hours</span>;
-                          }
-
-                          return (
-                            <span className="text-green-600 dark:text-green-400">
-                              ✓ Duration: {hours}h {mins}m
-                            </span>
-                          );
-                        })()}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Half Day (for non-hour-based OD) */}
-              {!(detailType === 'od' && editFormData.odType_extended === 'hours') && (
-                <div className="flex items-center gap-4">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={editFormData.isHalfDay}
-                      onChange={(e) => setEditFormData({ ...editFormData, isHalfDay: e.target.checked, halfDayType: e.target.checked ? (editFormData.halfDayType || 'first_half') : null })}
-                      className="w-4 h-4 rounded border-slate-300"
-                    />
-                    <span className="text-sm text-slate-700 dark:text-slate-300">Half Day</span>
-                  </label>
-                  {editFormData.isHalfDay && (
-                    <select
-                      value={editFormData.halfDayType || ''}
-                      onChange={(e) => setEditFormData({ ...editFormData, halfDayType: e.target.value as 'first_half' | 'second_half' | null || null })}
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                    >
-                      <option value="first_half">First Half</option>
-                      <option value="second_half">Second Half</option>
-                    </select>
-                  )}
-                </div>
-              )}
-
-              {/* Purpose */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Purpose *</label>
-                <textarea
-                  value={editFormData.purpose}
-                  onChange={(e) => setEditFormData({ ...editFormData, purpose: e.target.value })}
-                  required
-                  rows={3}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                />
-              </div>
-
-              {/* Place Visited (OD only) */}
-              {detailType === 'od' && (
+                {/* Purpose */}
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Place Visited *</label>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Purpose *</label>
+                  <textarea
+                    value={editFormData.purpose}
+                    onChange={(e) => setEditFormData({ ...editFormData, purpose: e.target.value })}
+                    required
+                    rows={3}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  />
+                </div>
+
+                {/* Place Visited (OD only) */}
+                {detailType === 'od' && (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Place Visited *</label>
+                    <input
+                      type="text"
+                      value={editFormData.placeVisited}
+                      onChange={(e) => setEditFormData({ ...editFormData, placeVisited: e.target.value })}
+                      required
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    />
+                  </div>
+                )}
+
+                {/* Contact Number */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Contact Number *</label>
+                  <input
+                    type="tel"
+                    value={editFormData.contactNumber}
+                    onChange={(e) => setEditFormData({ ...editFormData, contactNumber: e.target.value })}
+                    required
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  />
+                </div>
+
+                {/* Remarks */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Remarks</label>
                   <input
                     type="text"
-                    value={editFormData.placeVisited}
-                    onChange={(e) => setEditFormData({ ...editFormData, placeVisited: e.target.value })}
-                    required
+                    value={editFormData.remarks}
+                    onChange={(e) => setEditFormData({ ...editFormData, remarks: e.target.value })}
                     className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                   />
                 </div>
-              )}
 
-              {/* Contact Number */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Contact Number *</label>
-                <input
-                  type="tel"
-                  value={editFormData.contactNumber}
-                  onChange={(e) => setEditFormData({ ...editFormData, contactNumber: e.target.value })}
-                  required
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                />
-              </div>
+                {/* Status (Super Admin only) */}
+                {isSuperAdmin && (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Status (Super Admin)
+                    </label>
+                    <select
+                      value={editFormData.status || selectedItem.status}
+                      onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value })}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    >
+                      <option value="pending">Pending</option>
+                      <option value="hod_approved">HOD Approved</option>
+                      <option value="hr_approved">HR Approved</option>
+                      <option value="approved">Approved</option>
+                      <option value="hod_rejected">HOD Rejected</option>
+                      <option value="hr_rejected">HR Rejected</option>
+                      <option value="rejected">Rejected</option>
+                      <option value="cancelled">Cancelled</option>
+                    </select>
+                  </div>
+                )}
 
-              {/* Remarks */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Remarks</label>
-                <input
-                  type="text"
-                  value={editFormData.remarks}
-                  onChange={(e) => setEditFormData({ ...editFormData, remarks: e.target.value })}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                />
-              </div>
-
-              {/* Status (Super Admin only) */}
-              {isSuperAdmin && (
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    Status (Super Admin)
-                  </label>
-                  <select
-                    value={editFormData.status || selectedItem.status}
-                    onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                {/* Buttons */}
+                <div className="flex gap-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowEditDialog(false)}
+                    className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
                   >
-                    <option value="pending">Pending</option>
-                    <option value="hod_approved">HOD Approved</option>
-                    <option value="hr_approved">HR Approved</option>
-                    <option value="approved">Approved</option>
-                    <option value="hod_rejected">HOD Rejected</option>
-                    <option value="hr_rejected">HR Rejected</option>
-                    <option value="rejected">Rejected</option>
-                    <option value="cancelled">Cancelled</option>
-                  </select>
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 px-4 py-2.5 text-sm font-semibold text-white rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600"
+                  >
+                    Save Changes
+                  </button>
                 </div>
-              )}
-
-              {/* Buttons */}
-              <div className="flex gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setShowEditDialog(false)}
-                  className="flex-1 px-4 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 px-4 py-2.5 text-sm font-semibold text-white rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600"
-                >
-                  Save Changes
-                </button>
-              </div>
-            </form>
+              </form>
+            </div>
           </div>
-        </div>
-      )
+        )
       }
     </div >
   );
