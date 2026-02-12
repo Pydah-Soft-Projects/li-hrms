@@ -460,16 +460,16 @@ export default function EmployeeFormSettingsPage() {
         {/* Header */}
         <div className="mb-6 flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100">
+            <h1 className="text-xl md:text-3xl font-bold text-slate-900 dark:text-slate-100">
               Employee Form Settings
             </h1>
-            <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+            <p className="mt-1 md:mt-2 text-xs md:text-sm text-slate-600 dark:text-slate-400">
               Configure dynamic fields and groups for employee application forms
             </p>
           </div>
           <button
             onClick={() => setShowAddGroup(true)}
-            className="rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg transition-all hover:from-blue-600 hover:to-indigo-600"
+            className="rounded-lg md:rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-3 py-2 md:px-5 md:py-2.5 text-xs md:text-sm font-semibold text-white shadow-lg transition-all hover:from-blue-600 hover:to-indigo-600"
           >
             + Add Group
           </button>
@@ -543,9 +543,9 @@ export default function EmployeeFormSettingsPage() {
                 className="flex cursor-pointer items-center justify-between p-4 hover:bg-slate-50 dark:hover:bg-slate-900/50"
                 onClick={() => toggleGroup(group.id)}
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 md:gap-3">
                   <svg
-                    className={`h-5 w-5 text-slate-400 transition-transform ${expandedGroups.has(group.id) ? 'rotate-90' : ''
+                    className={`h-4 w-4 md:h-5 md:w-5 text-slate-400 transition-transform ${expandedGroups.has(group.id) ? 'rotate-90' : ''
                       }`}
                     fill="none"
                     stroke="currentColor"
@@ -554,15 +554,15 @@ export default function EmployeeFormSettingsPage() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
                   <div>
-                    <h3 className="font-semibold text-slate-900 dark:text-slate-100">
+                    <h3 className="text-sm md:text-base font-semibold text-slate-900 dark:text-slate-100">
                       {group.label}
                       {group.isSystem && (
-                        <span className="ml-2 rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
+                        <span className="ml-2 rounded bg-blue-100 px-1.5 md:px-2 py-0.5 text-[10px] md:text-xs text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
                           System
                         </span>
                       )}
                     </h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                    <p className="text-[10px] md:text-xs text-slate-500 dark:text-slate-400">
                       {group.fields.length} field{group.fields.length !== 1 ? 's' : ''}
                     </p>
                   </div>
@@ -575,7 +575,7 @@ export default function EmployeeFormSettingsPage() {
                           e.stopPropagation();
                           setEditingGroup(group.id);
                         }}
-                        className="rounded-lg bg-blue-500 px-3 py-1 text-xs text-white hover:bg-blue-600"
+                        className="rounded-lg bg-blue-500 px-2 py-1 md:px-3 md:py-1 text-[10px] md:text-xs text-white hover:bg-blue-600"
                       >
                         Edit
                       </button>
@@ -584,7 +584,7 @@ export default function EmployeeFormSettingsPage() {
                           e.stopPropagation();
                           handleDeleteGroup(group.id);
                         }}
-                        className="rounded-lg bg-red-500 px-3 py-1 text-xs text-white hover:bg-red-600"
+                        className="rounded-lg bg-red-500 px-2 py-1 md:px-3 md:py-1 text-[10px] md:text-xs text-white hover:bg-red-600"
                       >
                         Delete
                       </button>

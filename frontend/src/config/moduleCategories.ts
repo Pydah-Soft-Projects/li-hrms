@@ -65,7 +65,8 @@ export const MODULE_CATEGORIES = [
         name: 'Settings',
         icon: '⚙️',
         modules: [
-            { code: 'GENERAL_SETTINGS', label: 'General Settings', href: '/settings' }
+            { code: 'GENERAL_SETTINGS', label: 'General Settings', href: '/settings' },
+            { code: 'USERS', label: 'Users', href: '/users' }
         ]
     }
 ];

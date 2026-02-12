@@ -74,7 +74,7 @@ export const PAGE_PERMISSIONS: Record<string, UserRole[]> = {
     '/ot-permissions': ['sub_admin', 'hr', 'hod', 'manager', 'employee'],
     '/reports': ['sub_admin', 'hr', 'hod', 'manager', 'employee'],
     '/settings': ['sub_admin', 'hr', 'manager', 'employee'],
-    '/users': ['sub_admin', 'hr', 'manager', 'employee'],
+    '/users': ['sub_admin', 'hr', 'manager'],
     '/profile': ['sub_admin', 'hr', 'hod', 'manager', 'employee'],
     '/confused-shifts': ['sub_admin', 'hr', 'hod', 'manager', 'employee'],
 };
@@ -286,23 +286,23 @@ export function canResolveConfusedShifts(user: User): boolean {
 // ==========================================
 
 export function canViewUsers(user: User): boolean {
-    return hasAnyRole(user, ['sub_admin', 'hr', 'employee']) && canViewFeature(user, 'USERS');
+    return hasAnyRole(user, ['super_admin', 'sub_admin', 'hr', 'manager']) && canViewFeature(user, 'USERS');
 }
 
 export function canCreateUser(user: User): boolean {
-    return hasAnyRole(user, ['sub_admin', 'hr', 'manager', 'employee']) && canManageFeature(user, 'USERS');
+    return hasAnyRole(user, ['super_admin', 'sub_admin', 'hr', 'manager']) && canManageFeature(user, 'USERS');
 }
 
 export function canEditUser(user: User): boolean {
-    return hasAnyRole(user, ['sub_admin', 'hr', 'manager', 'employee']) && canManageFeature(user, 'USERS');
+    return hasAnyRole(user, ['super_admin', 'sub_admin', 'hr', 'manager']) && canManageFeature(user, 'USERS');
 }
 
 export function canDeleteUser(user: User): boolean {
-    return hasAnyRole(user, ['sub_admin', 'manager', 'employee']) && canManageFeature(user, 'USERS');
+    return hasAnyRole(user, ['super_admin', 'sub_admin', 'hr', 'manager']) && canManageFeature(user, 'USERS');
 }
 
 export function canResetPassword(user: User): boolean {
-    return hasAnyRole(user, ['sub_admin', 'hr', 'manager', 'employee']) && canManageFeature(user, 'USERS');
+    return hasAnyRole(user, ['super_admin', 'sub_admin', 'hr', 'manager']) && canManageFeature(user, 'USERS');
 }
 
 // ==========================================
