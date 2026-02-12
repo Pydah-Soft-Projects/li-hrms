@@ -12,11 +12,10 @@ const StatusBadge = ({ status }: { status: string }) => {
   const isRejected = status === 'rejected';
   return (
     <span
-      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
-        isApproved ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' :
-        isRejected ? 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
-        'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-      }`}
+      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${isApproved ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' :
+          isRejected ? 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+            'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+        }`}
     >
       <span className={`w-1.5 h-1.5 rounded-full ${isApproved ? 'bg-emerald-500' : isRejected ? 'bg-red-500' : 'bg-amber-500'}`} />
       {status}
@@ -235,122 +234,122 @@ export default function SuperadminCCLPage() {
 
   return (
     <>
-    <ToastContainer position="top-right" autoClose={3000} />
-        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Time &amp; Attendance</p>
-            <h1 className="mt-1 text-2xl font-semibold tracking-tight text-gray-900 dark:text-white">CCL (Compensatory Leave)</h1>
-          </div>
+      <ToastContainer position="top-right" autoClose={3000} />
+      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Time &amp; Attendance</p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-gray-900 dark:text-white">CCL (Compensatory Leave)</h1>
+        </div>
+        <button
+          onClick={() => setShowForm(true)}
+          className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+        >
+          <PlusIcon className="h-4 w-4" /> Apply CCL
+        </button>
+      </div>
+
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex gap-1 rounded-lg bg-white p-1 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
           <button
-            onClick={() => setShowForm(true)}
-            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+            onClick={() => setActiveTab('all')}
+            className={`rounded-md px-4 py-2 text-sm font-medium transition ${activeTab === 'all' ? 'bg-indigo-600 text-white shadow' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'}`}
           >
-            <PlusIcon className="h-4 w-4" /> Apply CCL
+            All CCL
+          </button>
+          <button
+            onClick={() => setActiveTab('pending')}
+            className={`rounded-md px-4 py-2 text-sm font-medium transition ${activeTab === 'pending' ? 'bg-indigo-600 text-white shadow' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'}`}
+          >
+            Pending Approvals {pendingCCLs.length > 0 && `(${pendingCCLs.length})`}
           </button>
         </div>
-
-        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex gap-1 rounded-lg bg-white p-1 shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
-            <button
-              onClick={() => setActiveTab('all')}
-              className={`rounded-md px-4 py-2 text-sm font-medium transition ${activeTab === 'all' ? 'bg-indigo-600 text-white shadow' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'}`}
+        {activeTab === 'all' && (
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={filters.status}
+              onChange={(e) => setFilters((p) => ({ ...p, status: e.target.value }))}
+              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
             >
-              All CCL
-            </button>
-            <button
-              onClick={() => setActiveTab('pending')}
-              className={`rounded-md px-4 py-2 text-sm font-medium transition ${activeTab === 'pending' ? 'bg-indigo-600 text-white shadow' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'}`}
-            >
-              Pending Approvals {pendingCCLs.length > 0 && `(${pendingCCLs.length})`}
-            </button>
+              <option value="">All status</option>
+              <option value="pending">Pending</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+            </select>
+            <input
+              type="date"
+              value={filters.fromDate}
+              onChange={(e) => setFilters((p) => ({ ...p, fromDate: e.target.value }))}
+              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+            />
+            <input
+              type="date"
+              value={filters.toDate}
+              onChange={(e) => setFilters((p) => ({ ...p, toDate: e.target.value }))}
+              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+            />
           </div>
-          {activeTab === 'all' && (
-            <div className="flex flex-wrap items-center gap-2">
-              <select
-                value={filters.status}
-                onChange={(e) => setFilters((p) => ({ ...p, status: e.target.value }))}
-                className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-              >
-                <option value="">All status</option>
-                <option value="pending">Pending</option>
-                <option value="approved">Approved</option>
-                <option value="rejected">Rejected</option>
-              </select>
-              <input
-                type="date"
-                value={filters.fromDate}
-                onChange={(e) => setFilters((p) => ({ ...p, fromDate: e.target.value }))}
-                className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-              />
-              <input
-                type="date"
-                value={filters.toDate}
-                onChange={(e) => setFilters((p) => ({ ...p, toDate: e.target.value }))}
-                className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-              />
-            </div>
-          )}
-        </div>
+        )}
+      </div>
 
-        <div className="overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
-          {loading && list.length === 0 ? (
-            <div className="flex justify-center py-20"><Spinner /></div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                <thead className="bg-gray-50 dark:bg-gray-800/50">
-                  <tr>
-                    <th scope="col" className="py-3.5 pl-4 pr-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300 sm:pl-6">Employee</th>
-                    <th scope="col" className="px-3 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300">Date</th>
-                    <th scope="col" className="px-3 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300">Type</th>
-                    <th scope="col" className="px-3 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300">Assigned By</th>
-                    <th scope="col" className="px-3 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300">Purpose</th>
-                    <th scope="col" className="px-3 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300">Status</th>
-                    <th scope="col" className="relative py-3.5 pl-3 pr-4 sm:pr-6"><span className="sr-only">Actions</span></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-800">
-                  {list.length === 0 ? (
-                    <tr><td colSpan={7} className="py-16 text-center text-sm text-gray-500 dark:text-gray-400">No CCL requests found</td></tr>
-                  ) : (
-                    list.map((ccl) => (
-                      <tr key={ccl._id} className="cursor-pointer transition hover:bg-gray-50 dark:hover:bg-gray-700/50" onClick={() => setSelectedCCL(ccl)}>
-                        <td className="whitespace-nowrap py-4 pl-4 pr-3 sm:pl-6">
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-medium text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400">
-                              {(ccl.employeeId?.employee_name || ccl.emp_no).charAt(0).toUpperCase()}
-                            </div>
-                            <div>
-                              <div className="font-medium text-gray-900 dark:text-white">{ccl.employeeId?.employee_name || ccl.emp_no}</div>
-                              <div className="text-xs text-gray-500 dark:text-gray-400">{ccl.emp_no}</div>
-                            </div>
+      <div className="overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
+        {loading && list.length === 0 ? (
+          <div className="flex justify-center py-20"><Spinner /></div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+              <thead className="bg-gray-50 dark:bg-gray-800/50">
+                <tr>
+                  <th scope="col" className="py-3.5 pl-4 pr-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300 sm:pl-6">Employee</th>
+                  <th scope="col" className="px-3 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300">Date</th>
+                  <th scope="col" className="px-3 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300">Type</th>
+                  <th scope="col" className="px-3 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300">Assigned By</th>
+                  <th scope="col" className="px-3 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300">Purpose</th>
+                  <th scope="col" className="px-3 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-300">Status</th>
+                  <th scope="col" className="relative py-3.5 pl-3 pr-4 sm:pr-6"><span className="sr-only">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-800">
+                {list.length === 0 ? (
+                  <tr><td colSpan={7} className="py-16 text-center text-sm text-gray-500 dark:text-gray-400">No CCL requests found</td></tr>
+                ) : (
+                  list.map((ccl) => (
+                    <tr key={ccl._id} className="cursor-pointer transition hover:bg-gray-50 dark:hover:bg-gray-700/50" onClick={() => setSelectedCCL(ccl)}>
+                      <td className="whitespace-nowrap py-4 pl-4 pr-3 sm:pl-6">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-medium text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400">
+                            {(ccl.employeeId?.employee_name || ccl.emp_no).charAt(0).toUpperCase()}
                           </div>
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-600 dark:text-gray-300">{formatDate(ccl.date)}</td>
-                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-600 dark:text-gray-300">{ccl.isHalfDay ? `Half (${ccl.halfDayType || '-'})` : 'Full'}</td>
-                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-600 dark:text-gray-300">{ccl.assignedBy?.name || '-'}</td>
-                        <td className="max-w-[200px] truncate px-3 py-4 text-sm text-gray-600 dark:text-gray-300">{ccl.purpose}</td>
-                        <td className="whitespace-nowrap px-3 py-4"><StatusBadge status={ccl.status} /></td>
-                        <td className="whitespace-nowrap py-4 pl-3 pr-4 text-right sm:pr-6">
-                          {superadminCanAct && ccl.status !== 'approved' && ccl.status !== 'rejected' && (
-                            <div className="flex justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
-                              <button onClick={() => openActionModal(ccl._id, 'approve')} className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-emerald-700">
-                                <Check className="h-3.5 w-3.5" /> Approve
-                              </button>
-                              <button onClick={() => openActionModal(ccl._id, 'reject')} className="inline-flex items-center gap-1 rounded-md bg-red-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-red-700">
-                                <X className="h-3.5 w-3.5" /> Reject
-                              </button>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+                          <div>
+                            <div className="font-medium text-gray-900 dark:text-white">{ccl.employeeId?.employee_name || ccl.emp_no}</div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400">{ccl.emp_no}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-600 dark:text-gray-300">{formatDate(ccl.date)}</td>
+                      <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-600 dark:text-gray-300">{ccl.isHalfDay ? `Half (${ccl.halfDayType || '-'})` : 'Full'}</td>
+                      <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-600 dark:text-gray-300">{ccl.assignedBy?.name || '-'}</td>
+                      <td className="max-w-[200px] truncate px-3 py-4 text-sm text-gray-600 dark:text-gray-300">{ccl.purpose}</td>
+                      <td className="whitespace-nowrap px-3 py-4"><StatusBadge status={ccl.status} /></td>
+                      <td className="whitespace-nowrap py-4 pl-3 pr-4 text-right sm:pr-6">
+                        {superadminCanAct && ccl.status !== 'approved' && ccl.status !== 'rejected' && (
+                          <div className="flex justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+                            <button onClick={() => openActionModal(ccl._id, 'approve')} className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-emerald-700">
+                              <Check className="h-3.5 w-3.5" /> Approve
+                            </button>
+                            <button onClick={() => openActionModal(ccl._id, 'reject')} className="inline-flex items-center gap-1 rounded-md bg-red-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-red-700">
+                              <X className="h-3.5 w-3.5" /> Reject
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
       {/* Apply Form Modal */}
       {showForm && (

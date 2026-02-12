@@ -372,13 +372,26 @@ exports.createUserFromEmployee = async (req, res) => {
 // @access  Private (Super Admin, Sub Admin, HR)
 exports.getAllUsers = async (req, res) => {
   try {
-    const { role, department, isActive, search, page = 1, limit = 50 } = req.query;
-    const query = {};
+    const { role, department, division, isActive, search, page = 1, limit = 50 } = req.query;
+    const query = req.metadataScopeFilter ? { ...req.metadataScopeFilter } : {};
 
     if (role) query.role = role;
+
     if (department) {
-      query['divisionMapping.departments'] = department;
+      if (division) {
+        // Strict intersection for specific department search within a division
+        query.divisionMapping = {
+          $elemMatch: {
+            division: division,
+            departments: department
+          }
+        };
+      } else {
+        query['divisionMapping.departments'] = department;
+      }
     }
+
+
     if (isActive !== undefined) query.isActive = isActive === 'true';
     if (search) {
       query.$or = [

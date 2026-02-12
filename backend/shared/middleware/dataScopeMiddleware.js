@@ -346,11 +346,175 @@ async function getEmployeeIdsInScope(user) {
     return employees.map(e => e._id);
 }
 
+/**
+ * Build scope filter specifically for metadata (Division, Department, User)
+ * Unlike buildScopeFilter, this ignores ownership and focuses on organizational mapping.
+ * @param {Object} user - User object from req.user
+ * @param {string} modelName - 'Division', 'Department', or 'User'
+ * @returns {Object} MongoDB filter object
+ */
+function buildMetadataScopeFilter(user, modelName, selectedDivisionId = null) {
+    if (!user) return { _id: null };
+
+    const scope = user.dataScope || getDefaultScope(user.role);
+    const isAdmin = user.role === 'super_admin' || user.role === 'sub_admin';
+
+    // Super Admin / Sub Admin / Global scope sees transparency
+    if (isAdmin || scope === 'all') {
+        const filter = {};
+        if (selectedDivisionId) {
+            if (modelName === 'Division') filter._id = selectedDivisionId;
+            else if (modelName === 'Department') filter.divisions = selectedDivisionId;
+            else if (modelName === 'User') filter['divisionMapping.division'] = selectedDivisionId;
+        }
+        return filter;
+    }
+
+    if (!user.divisionMapping || !Array.isArray(user.divisionMapping) || user.divisionMapping.length === 0) {
+        return { _id: null };
+    }
+
+    const filter = {};
+
+    // Enforcement: Non-admins only see active metadata
+    filter.isActive = true;
+
+    const allowedDivisions = user.divisionMapping.map(m => (m.division?._id || m.division).toString());
+
+    switch (modelName) {
+        case 'Division':
+            if (selectedDivisionId) {
+                // If they ask for a specific division, check if they are allowed to see it
+                if (allowedDivisions.includes(selectedDivisionId.toString())) {
+                    filter._id = selectedDivisionId;
+                } else {
+                    filter._id = null;
+                }
+            } else {
+                filter._id = { $in: allowedDivisions };
+            }
+            return filter;
+
+        case 'Department':
+            // Per-Division Scoping Logic
+            if (selectedDivisionId) {
+                const mapping = user.divisionMapping.find(m => (m.division?._id || m.division).toString() === selectedDivisionId.toString());
+                if (!mapping) return { _id: null };
+
+                const specificDepts = (mapping.departments || []).map(d => (d?._id || d).toString());
+                if (specificDepts.length > 0) {
+                    filter._id = { $in: specificDepts };
+                } else {
+                    filter.divisions = selectedDivisionId;
+                }
+            } else {
+                // Granular Intersection Logic: Or condition across all allowed mappings
+                const mappingConditions = user.divisionMapping.map(m => {
+                    const divId = (m.division?._id || m.division).toString();
+                    const depts = (m.departments || []).map(d => (d?._id || d).toString());
+
+                    if (depts.length > 0) {
+                        return { divisions: divId, _id: { $in: depts } };
+                    } else {
+                        return { divisions: divId };
+                    }
+                });
+
+                if (mappingConditions.length === 0) return { _id: null };
+                filter.$or = mappingConditions;
+            }
+            return filter;
+
+        case 'User':
+            // Users are matched if they have ANY overlap in divisionMapping with the viewer
+            const userOrConditions = [];
+
+            const relevantMappings = selectedDivisionId
+                ? user.divisionMapping.filter(m => (m.division?._id || m.division).toString() === selectedDivisionId.toString())
+                : user.divisionMapping;
+
+            relevantMappings.forEach(mapping => {
+                const divId = (mapping.division?._id || mapping.division).toString();
+                const depts = (mapping.departments || []).map(d => (d?._id || d).toString());
+
+                if (depts.length > 0) {
+                    // Match users who have this division AND any of these departments
+                    userOrConditions.push({
+                        divisionMapping: {
+                            $elemMatch: {
+                                division: divId,
+                                departments: { $in: depts }
+                            }
+                        }
+                    });
+                } else {
+                    // Match users who have this division (any department)
+                    userOrConditions.push({
+                        'divisionMapping.division': divId
+                    });
+                }
+            });
+
+            if (userOrConditions.length === 0) return { _id: null };
+            filter.$or = userOrConditions;
+            return filter;
+
+        default:
+            return filter;
+    }
+}
+
+
+/**
+ * Middleware factory for metadata scoping
+ */
+const applyMetadataScopeFilter = (modelName) => async (req, res, next) => {
+    try {
+        const userId = req.user.userId || req.user._id;
+        let user = await User.findById(userId);
+
+        if (!user) {
+            // Fallback for employees
+            const employee = await Employee.findById(userId);
+            if (employee) {
+                user = employee.toObject ? employee.toObject() : employee;
+                user.role = 'employee';
+                user.dataScope = 'own';
+
+                // Populate virtual divisionMapping for metadata filtering
+                user.divisionMapping = [];
+                if (employee.division_id) {
+                    user.divisionMapping.push({
+                        division: employee.division_id,
+                        departments: employee.department_id ? [employee.department_id] : []
+                    });
+                }
+            }
+        }
+
+        if (!user) {
+            return res.status(401).json({ success: false, message: 'User not found' });
+        }
+
+        // Pass the selected division from query if present
+        req.metadataScopeFilter = buildMetadataScopeFilter(user, modelName, req.query.division);
+        req.scopedUser = user;
+
+        next();
+    } catch (error) {
+        console.error(`[DataScope] Error applying metadata scope for ${modelName}:`, error);
+        return res.status(500).json({ success: false, message: 'Error applying scope filter' });
+    }
+};
+
 module.exports = {
     applyScopeFilter,
+    applyMetadataScopeFilter,
     buildScopeFilter,
+    buildMetadataScopeFilter,
     buildWorkflowVisibilityFilter,
     checkJurisdiction,
     getDefaultScope,
     getEmployeeIdsInScope
 };
+

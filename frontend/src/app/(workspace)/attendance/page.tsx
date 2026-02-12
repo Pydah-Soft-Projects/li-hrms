@@ -14,7 +14,6 @@ import {
   canEditAttendance,  // Used as canManageAttendance
   isManagementRole
 } from '@/lib/permissions';
-import { useWorkspace } from '@/contexts/WorkspaceContext';
 
 
 
@@ -252,11 +251,7 @@ export default function AttendancePage() {
 
   const { user } = useAuth();
 
-  const { activeWorkspace } = useWorkspace();
-
-
-
-  const isEmployee = user?.role === 'employee' || activeWorkspace?.type === 'employee';
+  const isEmployee = user?.role === 'employee';
 
   const isHR = !isEmployee;
 
@@ -393,6 +388,8 @@ export default function AttendancePage() {
 
   const observerTarget = useRef<HTMLDivElement>(null);  // NEW: Ref for IntersectionObserver
 
+  const isFetchingRef = useRef(false); // NEW: Lock to prevent double-firing
+
 
 
   // Table type state
@@ -468,35 +465,22 @@ export default function AttendancePage() {
 
 
   useEffect(() => {
-
-    if (activeWorkspace) {
-
-      loadDivisions();
-
-      loadDepartments();
-
-    }
-
-  }, [activeWorkspace]);
+    loadDivisions();
+    loadDepartments();
+  }, []); // Run on mount, relying on auth/permissions rather than workspace
 
 
 
   useEffect(() => {
 
     if (selectedDivision) {
-
       loadDepartments(selectedDivision);
-
     } else {
-
-      setDepartments([]);
-
+      // If no specific division is selected, reload the full allowed list
+      loadDepartments();
       setSelectedDepartment('');
-
       setDesignations([]);
-
       setSelectedDesignation('');
-
     }
 
   }, [selectedDivision]);
@@ -614,10 +598,8 @@ export default function AttendancePage() {
 
       (entries) => {
 
-        if (entries[0].isIntersecting && hasMore && !loading && !loadingMore) {
-
+        if (entries[0].isIntersecting && hasMore && !loading && !loadingMore && !isFetchingRef.current) {
           setPage(prev => prev + 1);
-
         }
 
       },
@@ -653,12 +635,8 @@ export default function AttendancePage() {
 
 
   useEffect(() => {
-
     // Apply filters to monthly data
-
     let filtered = [...monthlyData];
-
-
 
     if (searchQuery) {
 
@@ -674,66 +652,7 @@ export default function AttendancePage() {
 
     }
 
-
-
-    if (selectedDivision) {
-
-      filtered = filtered.filter(item => {
-
-        // Prefer direct division on employee
-
-        if (item.employee.division) {
-
-          const divId = typeof item.employee.division === 'string' ? item.employee.division : (item.employee.division as any)?._id || (item.employee as any).division_id?._id || (item.employee as any).division_id;
-
-          if (divId === selectedDivision) return true;
-
-        }
-
-
-
-        // Fallback to department's division
-
-        const dept = item.employee.department as any;
-
-        if (!dept) return false;
-
-        const divId = typeof dept.division === 'string' ? dept.division : (dept.division?._id || dept.divisionId?._id || dept.divisionId);
-
-        return divId === selectedDivision;
-
-      });
-
-    }
-
-
-
-    if (selectedDepartment) {
-
-      filtered = filtered.filter(item =>
-
-        item.employee.department?._id === selectedDepartment
-
-      );
-
-    }
-
-
-
-    if (selectedDesignation) {
-
-      filtered = filtered.filter(item =>
-
-        item.employee.designation?._id === selectedDesignation
-
-      );
-
-    }
-
-
-
     setFilteredMonthlyData(filtered);
-
   }, [monthlyData, selectedDivision, selectedDepartment, selectedDesignation, searchQuery]);
 
   // Permission checks using read/write pattern
@@ -745,36 +664,12 @@ export default function AttendancePage() {
 
 
   const loadDivisions = async () => {
-
     try {
-
-      const response = await api.getDivisions(true);
-
+      const response = await api.getDivisions();
+      console.log('api.getDivisions response:', response);
       if (response.success && response.data) {
 
         let divs = response.data;
-
-
-
-        // If workspace has specific divisions assigned, filter them
-
-        if (activeWorkspace?.scopeConfig?.divisions && activeWorkspace.scopeConfig.divisions.length > 0) {
-
-          const allowedIds = activeWorkspace.scopeConfig.divisions.map(id => typeof id === 'string' ? id : (id as any)._id);
-
-          divs = divs.filter((d: any) => allowedIds.includes(d._id));
-
-        } else if (activeWorkspace?.scopeConfig?.divisionMapping && activeWorkspace.scopeConfig.divisionMapping.length > 0) {
-
-          // If workspace uses division mapping, extract those divisions
-
-          const allowedIds = activeWorkspace.scopeConfig.divisionMapping.map(m => typeof m.division === 'string' ? m.division : (m.division as any)?._id);
-
-          divs = divs.filter((d: any) => allowedIds.includes(d._id));
-
-        }
-
-
 
         setDivisions(divs);
 
@@ -795,7 +690,7 @@ export default function AttendancePage() {
 
     try {
 
-      const response = await api.getDepartments(true);
+      const response = await api.getDepartments(undefined, divisionId);
 
       if (response.success && response.data) {
 
@@ -852,41 +747,34 @@ export default function AttendancePage() {
 
 
   const loadMonthlyAttendance = async (reset: boolean = false) => {
+    // 1. Guard against simultaneous fetches
+    if (isFetchingRef.current) return;
+
+    const targetPage = reset ? 1 : page;
+
+    // 2. Guard against out-of-bounds page requests (unless resetting to 1)
+    if (!reset && targetPage > totalPages && totalPages > 0) {
+      setHasMore(false);
+      return;
+    }
 
     try {
+      isFetchingRef.current = true;
 
+      // Set appropriate loading state
       if (reset) {
-
         setLoading(true);
-
       } else {
-
         setLoadingMore(true);
-
       }
 
-
-
-      setError('');
-
-      const targetPage = reset ? 1 : page;
-
-
-
       const response = await api.getMonthlyAttendance(year, month, {
-
         page: targetPage,
-
         limit,
-
         search: searchQuery,
-
         divisionId: selectedDivision,
-
         departmentId: selectedDepartment,
-
         designationId: selectedDesignation
-
       });
 
 
@@ -950,11 +838,9 @@ export default function AttendancePage() {
       setError(err.message || 'Failed to load monthly attendance');
 
     } finally {
-
       if (reset) setLoading(false);
-
       setLoadingMore(false);
-
+      isFetchingRef.current = false; // Reset lock
     }
 
   };
@@ -2931,7 +2817,7 @@ export default function AttendancePage() {
 
         {/* Attendance Table */}
         <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto scrollbar-hide">
             <table className="w-full border-collapse text-xs">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-800">
