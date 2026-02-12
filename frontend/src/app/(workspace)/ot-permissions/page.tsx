@@ -1030,7 +1030,7 @@ export default function OTAndPermissionsPage() {
           </div>
 
           {/* Controls Section */}
-          <div className="flex flex-col xl:flex-row gap-6">
+          <div className="flex flex-col xl:flex-col gap-6">
             {/* Filters Card */}
             <div className="flex-1 p-5 sm:p-6 rounded-4xl border border-white/20 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl shadow-xl shadow-slate-200/50 dark:shadow-none transition-all">
               <div className="flex flex-wrap items-center gap-6">
