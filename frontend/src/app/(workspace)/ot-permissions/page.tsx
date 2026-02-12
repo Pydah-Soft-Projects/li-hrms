@@ -57,24 +57,24 @@ import {
 
 // Premium Stat Card
 const StatCard = ({ title, value, icon: Icon, bgClass, iconClass, dekorClass, trend }: { title: string, value: number | string, icon: any, bgClass: string, iconClass: string, dekorClass?: string, trend?: { value: string, positive: boolean } }) => (
-  <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 transition-all hover:shadow-xl dark:border-slate-800 dark:bg-slate-900">
-    <div className="flex items-center justify-between gap-4">
-      <div className="flex-1">
-        <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500">{title}</p>
-        <div className="mt-2 flex items-baseline gap-2">
-          <h3 className="text-2xl font-black text-slate-900 dark:text-white">{value}</h3>
+  <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 transition-all hover:shadow-xl dark:border-slate-800 dark:bg-slate-900">
+    <div className="flex items-center justify-between gap-3 sm:gap-4">
+      <div className="flex-1 min-w-0">
+        <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500 truncate">{title}</p>
+        <div className="mt-1 sm:mt-2 flex items-baseline gap-2">
+          <h3 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">{value}</h3>
           {trend && (
-            <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-md ${trend.positive ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'}`}>
+            <span className={`text-[9px] sm:text-[10px] font-black px-1.5 py-0.5 rounded-md ${trend.positive ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'}`}>
               {trend.value}
             </span>
           )}
         </div>
       </div>
-      <div className={`flex h-12 w-12 items-center justify-center rounded-2xl ${bgClass} ${iconClass}`}>
-        <Icon className="h-6 w-6" />
+      <div className={`flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-2xl shrink-0 ${bgClass} ${iconClass}`}>
+        <Icon className="h-5 w-5 sm:h-6 sm:w-6" />
       </div>
     </div>
-    {dekorClass && <div className={`absolute -right-4 -bottom-4 h-24 w-24 rounded-full ${dekorClass}`} />}
+    {dekorClass && <div className={`absolute -right-4 -bottom-4 h-20 w-20 sm:h-24 sm:w-24 rounded-full ${dekorClass}`} />}
   </div>
 );
 
@@ -959,7 +959,7 @@ export default function OTAndPermissionsPage() {
                   <ChevronRight className="w-3 h-3" />
                   <span className="text-blue-500">Overtime & Permissions</span>
                 </div>
-                <h1 className="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 uppercase tracking-tight">
+                <h1 className="text-2xl font-black bg-clip-text text-transparent bg-linear-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 uppercase tracking-tight">
                   OT & Permissions
                 </h1>
               </div>
@@ -992,7 +992,7 @@ export default function OTAndPermissionsPage() {
 
         <main className="flex-1 max-w-[1920px] mx-auto w-full px-4 sm:px-8 py-6 sm:py-8 space-y-8">
           {/* Stats Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 animate-in fade-in slide-in-from-top-4 duration-500">
+          <div className="grid grid-cols-2 gap-3 sm:gap-6 lg:grid-cols-4 animate-in fade-in slide-in-from-top-4 duration-500">
             <StatCard
               title="Approved OT Hours"
               value={`${stats.approvedOT}h`}
@@ -1031,7 +1031,7 @@ export default function OTAndPermissionsPage() {
           {/* Controls Section */}
           <div className="flex flex-col xl:flex-row gap-6">
             {/* Filters Card */}
-            <div className="flex-1 p-5 sm:p-6 rounded-[2rem] border border-white/20 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl shadow-xl shadow-slate-200/50 dark:shadow-none transition-all">
+            <div className="flex-1 p-5 sm:p-6 rounded-4xl border border-white/20 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl shadow-xl shadow-slate-200/50 dark:shadow-none transition-all">
               <div className="flex flex-wrap items-center gap-6">
                 {!isEmployee && (
                   <div className="flex-1 min-w-[200px] relative group">
@@ -1067,8 +1067,8 @@ export default function OTAndPermissionsPage() {
                     </select>
                   </div>
 
-                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-                    <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                  <div className="flex items-center flex-wrap sm:flex-nowrap gap-2 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                    <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                     <input
                       type="date"
                       value={activeTab === 'ot' ? otFilters.startDate : permissionFilters.startDate}
@@ -1076,9 +1076,9 @@ export default function OTAndPermissionsPage() {
                         if (activeTab === 'ot') setOTFilters(prev => ({ ...prev, startDate: e.target.value }));
                         else setPermissionFilters(prev => ({ ...prev, startDate: e.target.value }));
                       }}
-                      className="bg-transparent text-xs font-bold text-slate-600 dark:text-slate-300 outline-none cursor-pointer"
+                      className="bg-transparent text-xs font-bold text-slate-600 dark:text-slate-300 outline-none cursor-pointer w-full sm:w-auto min-w-[100px]"
                     />
-                    <span className="text-slate-300 dark:text-slate-600 font-bold">→</span>
+                    <span className="text-slate-300 dark:text-slate-600 font-bold shrink-0">→</span>
                     <input
                       type="date"
                       value={activeTab === 'ot' ? otFilters.endDate : permissionFilters.endDate}
@@ -1086,7 +1086,7 @@ export default function OTAndPermissionsPage() {
                         if (activeTab === 'ot') setOTFilters(prev => ({ ...prev, endDate: e.target.value }));
                         else setPermissionFilters(prev => ({ ...prev, endDate: e.target.value }));
                       }}
-                      className="bg-transparent text-xs font-bold text-slate-600 dark:text-slate-300 outline-none cursor-pointer"
+                      className="bg-transparent text-xs font-bold text-slate-600 dark:text-slate-300 outline-none cursor-pointer w-full sm:w-auto min-w-[100px]"
                     />
                   </div>
                 </div>
@@ -1094,10 +1094,10 @@ export default function OTAndPermissionsPage() {
             </div>
 
             {/* Tabs Card */}
-            <div className="xl:w-80 p-1.5 rounded-[2rem] border border-white/20 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl shadow-xl shadow-slate-200/50 dark:shadow-none flex items-center justify-between overflow-hidden">
+            <div className="xl:w-80 p-1.5 rounded-4xl border border-white/20 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl shadow-xl shadow-slate-200/50 dark:shadow-none flex items-center justify-between overflow-hidden">
               <button
                 onClick={() => setActiveTab('ot')}
-                className={`flex-1 h-12 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 relative group ${activeTab === 'ot'
+                className={`flex-1 h-12 rounded-3xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 relative group ${activeTab === 'ot'
                   ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-lg shadow-slate-900/20'
                   : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
                   }`}
@@ -1106,7 +1106,7 @@ export default function OTAndPermissionsPage() {
               </button>
               <button
                 onClick={() => setActiveTab('permissions')}
-                className={`flex-1 h-12 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 relative group ${activeTab === 'permissions'
+                className={`flex-1 h-12 rounded-3xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 relative group ${activeTab === 'permissions'
                   ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-lg shadow-slate-900/20'
                   : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
                   }`}
@@ -1115,7 +1115,7 @@ export default function OTAndPermissionsPage() {
               </button>
               <button
                 onClick={() => setActiveTab('pending')}
-                className={`flex-1 h-12 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest transition-all duration-300 relative group ${activeTab === 'pending'
+                className={`flex-1 h-12 rounded-3xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 relative group ${activeTab === 'pending'
                   ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-lg shadow-slate-900/20'
                   : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
                   }`}
@@ -1160,7 +1160,7 @@ export default function OTAndPermissionsPage() {
                         {/* Header */}
                         <div className="flex items-start justify-between gap-4 mb-6">
                           <div className="flex items-center gap-4">
-                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 text-white font-black text-xs shadow-lg shadow-blue-500/20">
+                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-linear-to-br from-blue-500 to-blue-600 text-white font-black text-xs shadow-lg shadow-blue-500/20">
                               {getEmployeeInitials({
                                 employee_name: ot.employeeId?.employee_name || '',
                                 first_name: ot.employeeId?.employee_name?.split(' ')[0],
@@ -1245,7 +1245,7 @@ export default function OTAndPermissionsPage() {
                         {/* Header */}
                         <div className="flex items-start justify-between gap-4 mb-6">
                           <div className="flex items-center gap-4">
-                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 text-white font-black text-xs shadow-lg shadow-emerald-500/20">
+                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-linear-to-br from-emerald-500 to-emerald-600 text-white font-black text-xs shadow-lg shadow-emerald-500/20">
                               {getEmployeeInitials({
                                 employee_name: perm.employeeId?.employee_name || '',
                                 first_name: perm.employeeId?.employee_name?.split(' ')[0],
@@ -1332,9 +1332,9 @@ export default function OTAndPermissionsPage() {
           ) : (
             activeTab === 'ot' ? (
               <div className="relative group animate-in fade-in slide-in-from-bottom-4 duration-700">
-                <div className="absolute -inset-1 bg-gradient-to-r from-blue-500/10 to-transparent rounded-[2.5rem] blur-xl opacity-0 group-hover:opacity-100 transition duration-1000" />
+                <div className="absolute -inset-1 bg-linear-to-r from-blue-500/10 to-transparent rounded-4xl blur-xl opacity-0 group-hover:opacity-100 transition duration-1000" />
                 <div className="relative overflow-hidden rounded-[2.5rem] border border-white/20 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl shadow-2xl shadow-slate-200/50 dark:shadow-none">
-                  <div className="overflow-x-auto scrollbar-hide">
+                  <div className="hidden md:block overflow-x-auto scrollbar-hide">
                     <table className="w-full text-left border-collapse">
                       <thead>
                         <tr className="border-b border-slate-200/60 dark:border-slate-700/60 bg-slate-50/50 dark:bg-slate-800/50">
@@ -1368,7 +1368,7 @@ export default function OTAndPermissionsPage() {
                               {showEmployeeCol && (
                                 <td className="px-8 py-4">
                                   <div className="flex items-center gap-4">
-                                    <div className="h-10 w-10 min-w-[40px] rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-black text-xs shadow-lg shadow-blue-500/20">
+                                    <div className="h-10 w-10 min-w-10 rounded-2xl bg-linear-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-black text-xs shadow-lg shadow-blue-500/20">
                                       {getEmployeeInitials({ employee_name: ot.employeeId?.employee_name || '', first_name: '', last_name: '', emp_no: '' } as any)}
                                     </div>
                                     <div className="min-w-0">
@@ -1396,7 +1396,7 @@ export default function OTAndPermissionsPage() {
                                 </span>
                               </td>
                               <td className="px-6 py-4 text-center">
-                                <span className={`inline-flex items-center px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-[0.1em] shadow-sm whitespace-nowrap ${ot.status === 'approved' ? 'bg-emerald-500 text-white shadow-emerald-500/20' :
+                                <span className={`inline-flex items-center px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-sm whitespace-nowrap ${ot.status === 'approved' ? 'bg-emerald-500 text-white shadow-emerald-500/20' :
                                   ot.status === 'rejected' ? 'bg-rose-500 text-white shadow-rose-500/20' :
                                     'bg-amber-500 text-white shadow-amber-500/20'
                                   }`}>
@@ -1429,13 +1429,85 @@ export default function OTAndPermissionsPage() {
                       </tbody>
                     </table>
                   </div>
+
+                  {/* Mobile Card View for OT */}
+                  <div className="md:hidden space-y-4 p-4">
+                    {otRequests.length === 0 ? (
+                      <div className="text-center py-10 text-slate-500 text-sm italic">
+                        No OT requests found
+                      </div>
+                    ) : (
+                      otRequests.map((ot) => (
+                        <div
+                          key={ot._id}
+                          className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-sm active:scale-[0.98] transition-all"
+                        >
+                          <div className="flex justify-between items-start mb-3">
+                            <div className="flex items-center gap-3">
+                              <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-700 dark:text-blue-400 font-bold text-xs shrink-0">
+                                {getEmployeeInitials({ employee_name: ot.employeeId?.employee_name || '', first_name: '', last_name: '', emp_no: '' } as any)}
+                              </div>
+                              <div>
+                                <h4 className="font-bold text-slate-900 dark:text-white text-sm">
+                                  {ot.employeeId?.employee_name || ot.employeeNumber}
+                                </h4>
+                                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                                  {ot.employeeNumber}
+                                </p>
+                              </div>
+                            </div>
+                            <span className={`px-2 py-1 rounded-md text-[10px] font-black uppercase tracking-widest ${ot.status === 'approved' ? 'bg-emerald-500/10 text-emerald-600' :
+                              ot.status === 'rejected' ? 'bg-rose-500/10 text-rose-600' :
+                                'bg-amber-500/10 text-amber-600'
+                              }`}>
+                              {ot.status}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3 text-sm text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl mb-3">
+                            <div className="flex flex-col">
+                              <span className="text-[10px] uppercase font-bold text-slate-400">Date</span>
+                              <span className="font-semibold text-slate-900 dark:text-white">{formatDate(ot.date)}</span>
+                            </div>
+                            <div className="flex flex-col">
+                              <span className="text-[10px] uppercase font-bold text-slate-400">Hours</span>
+                              <span className="font-semibold text-blue-600 dark:text-blue-400">{ot.otHours}h</span>
+                            </div>
+                            <div className="col-span-2 border-t border-slate-200 dark:border-slate-700 pt-2 flex justify-between items-center">
+                              <span className="text-[10px] uppercase font-bold text-slate-400">Time</span>
+                              <span className="font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                                {formatTime(ot.otInTime)} <ChevronRight className="w-3 h-3 text-slate-400" /> {formatTime(ot.otOutTime)}
+                              </span>
+                            </div>
+                          </div>
+
+                          {canPerformAction(ot) && (
+                            <div className="flex gap-2 mt-3">
+                              <button
+                                onClick={() => handleApprove('ot', ot._id)}
+                                className="flex-1 h-9 rounded-lg bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500 hover:text-white text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                              >
+                                <Check className="h-3.5 w-3.5" /> Approve
+                              </button>
+                              <button
+                                onClick={() => handleReject('ot', ot._id)}
+                                className="flex-1 h-9 rounded-lg bg-rose-500/10 text-rose-600 hover:bg-rose-500 hover:text-white text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                              >
+                                <X className="h-3.5 w-3.5" /> Reject
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
               </div>
             ) : (
               <div className="relative group animate-in fade-in slide-in-from-bottom-4 duration-700">
-                <div className="absolute -inset-1 bg-gradient-to-r from-emerald-500/10 to-transparent rounded-[2.5rem] blur-xl opacity-0 group-hover:opacity-100 transition duration-1000" />
+                <div className="absolute -inset-1 bg-linear-to-r from-emerald-500/10 to-transparent rounded-4xl blur-xl opacity-0 group-hover:opacity-100 transition duration-1000" />
                 <div className="relative overflow-hidden rounded-[2.5rem] border border-white/20 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl shadow-2xl shadow-slate-200/50 dark:shadow-none">
-                  <div className="overflow-x-auto scrollbar-hide">
+                  <div className="hidden md:block overflow-x-auto scrollbar-hide">
                     <table className="w-full text-left border-collapse">
                       <thead>
                         <tr className="border-b border-slate-200/60 dark:border-slate-700/60 bg-slate-50/50 dark:bg-slate-800/50">
@@ -1468,7 +1540,7 @@ export default function OTAndPermissionsPage() {
                               {showEmployeeCol && (
                                 <td className="px-8 py-4">
                                   <div className="flex items-center gap-4">
-                                    <div className="h-10 w-10 min-w-[40px] rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center text-white font-black text-xs shadow-lg shadow-emerald-500/20">
+                                    <div className="h-10 w-10 min-w-10 rounded-2xl bg-linear-to-br from-emerald-500 to-emerald-600 flex items-center justify-center text-white font-black text-xs shadow-lg shadow-emerald-500/20">
                                       {getEmployeeInitials({ employee_name: perm.employeeId?.employee_name || '', first_name: '', last_name: '', emp_no: '' } as any)}
                                     </div>
                                     <div className="min-w-0">
@@ -1492,13 +1564,13 @@ export default function OTAndPermissionsPage() {
                                 </span>
                               </td>
                               <td className="px-6 py-4 text-center">
-                                <span className="px-3 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 font-black text-xs whitespace-nowrap">
+                                <span className="px-3 py-1 rounded-lg bg-emerald-5 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 font-black text-xs whitespace-nowrap">
                                   {perm.permissionHours}h
                                 </span>
                               </td>
                               <td className="px-6 py-4 text-xs font-bold text-slate-600 dark:text-slate-400 max-w-[150px] truncate" title={perm.purpose}>{perm.purpose}</td>
                               <td className="px-6 py-4 text-center">
-                                <span className={`inline-flex items-center px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-[0.1em] shadow-sm whitespace-nowrap ${perm.status === 'approved' ? 'bg-emerald-500 text-white shadow-emerald-500/20' :
+                                <span className={`inline-flex items-center px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-sm whitespace-nowrap ${perm.status === 'approved' ? 'bg-emerald-500 text-white shadow-emerald-500/20' :
                                   perm.status === 'rejected' ? 'bg-rose-500 text-white shadow-rose-500/20' :
                                     perm.status === 'checked_out' ? 'bg-blue-500 text-white shadow-blue-500/20' :
                                       perm.status === 'checked_in' ? 'bg-emerald-500 text-white shadow-emerald-500/20' :
@@ -1544,6 +1616,97 @@ export default function OTAndPermissionsPage() {
                         )}
                       </tbody>
                     </table>
+                  </div>
+
+                  {/* Mobile Card View for Permissions */}
+                  <div className="md:hidden space-y-4 p-4">
+                    {permissions.length === 0 ? (
+                      <div className="text-center py-10 text-slate-500 text-sm italic">
+                        No permission requests found
+                      </div>
+                    ) : (
+                      permissions.map((perm) => (
+                        <div
+                          key={perm._id}
+                          className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-sm active:scale-[0.98] transition-all"
+                        >
+                          <div className="flex justify-between items-start mb-3">
+                            <div className="flex items-center gap-3">
+                              <div className="h-10 w-10 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-700 dark:text-emerald-400 font-bold text-xs shrink-0">
+                                {getEmployeeInitials({ employee_name: perm.employeeId?.employee_name || '', first_name: '', last_name: '', emp_no: '' } as any)}
+                              </div>
+                              <div>
+                                <h4 className="font-bold text-slate-900 dark:text-white text-sm">
+                                  {perm.employeeId?.employee_name || perm.employeeNumber}
+                                </h4>
+                                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                                  {perm.employeeNumber}
+                                </p>
+                              </div>
+                            </div>
+                            <span className={`px-2 py-1 rounded-md text-[10px] font-black uppercase tracking-widest ${perm.status === 'approved' ? 'bg-emerald-500/10 text-emerald-600' :
+                              perm.status === 'rejected' ? 'bg-rose-500/10 text-rose-600' :
+                                'bg-amber-500/10 text-amber-600'
+                              }`}>
+                              {perm.status.replace(/_/g, ' ')}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3 text-sm text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl mb-3">
+                            <div className="flex flex-col">
+                              <span className="text-[10px] uppercase font-bold text-slate-400">Date</span>
+                              <span className="font-semibold text-slate-900 dark:text-white">{formatDate(perm.date)}</span>
+                            </div>
+                            <div className="flex flex-col">
+                              <span className="text-[10px] uppercase font-bold text-slate-400">Hours</span>
+                              <span className="font-semibold text-emerald-600 dark:text-emerald-400">{perm.permissionHours}h</span>
+                            </div>
+                            <div className="col-span-2 border-t border-slate-200 dark:border-slate-700 pt-2 flex justify-between items-center">
+                              <span className="text-[10px] uppercase font-bold text-slate-400">Time</span>
+                              <span className="font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                                {formatTime(perm.permissionStartTime)} <ChevronRight className="w-3 h-3 text-slate-400" /> {formatTime(perm.permissionEndTime)}
+                              </span>
+                            </div>
+                            {perm.purpose && (
+                              <div className="col-span-2 border-t border-slate-200 dark:border-slate-700 pt-2">
+                                <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Purpose</span>
+                                <p className="text-xs italic text-slate-600 dark:text-slate-400 truncate">{perm.purpose}</p>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex gap-2 mt-3">
+                            {canPerformAction(perm) && (
+                              <>
+                                <button
+                                  onClick={() => handleApprove('permission', perm._id)}
+                                  className="flex-1 h-9 rounded-lg bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500 hover:text-white text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                                >
+                                  <Check className="h-3.5 w-3.5" /> Approve
+                                </button>
+                                <button
+                                  onClick={() => handleReject('permission', perm._id)}
+                                  className="flex-1 h-9 rounded-lg bg-rose-500/10 text-rose-600 hover:bg-rose-500 hover:text-white text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                                >
+                                  <X className="h-3.5 w-3.5" /> Reject
+                                </button>
+                              </>
+                            )}
+                            {perm.status === 'approved' && perm.qrCode && (
+                              <button
+                                onClick={() => {
+                                  setSelectedQR(perm);
+                                  setShowQRDialog(true);
+                                }}
+                                className="flex-1 h-9 rounded-lg bg-blue-500/10 text-blue-600 hover:bg-blue-500 hover:text-white text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                              >
+                                <QrCode className="w-3.5 h-3.5" /> Gate Pass
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
               </div>
@@ -1635,7 +1798,7 @@ export default function OTAndPermissionsPage() {
                       </div>
                     ) : (attendanceData || confusedShift) && (
                       <div className="p-4 sm:p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 space-y-4">
-                        <div className="flex items-center gap-2 text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider mb-2">
+                        <div className="flex items-center gap-2 flex-wrap text-slate-900 dark:text-white uppercase tracking-wider mb-2">
                           <Activity className="w-4 h-4 text-blue-500" />
                           Attendance Info
                         </div>
@@ -2071,7 +2234,7 @@ export default function OTAndPermissionsPage() {
                     </button>
                   </div>
 
-                  <div className="flex-1 overflow-y-auto p-6 sm:p-8">
+                  <div className="flex-1 overflow-y-auto px-6 py-6 space-y-4">
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                       {/* Photo Section */}
                       <div className="space-y-4">
@@ -2156,7 +2319,7 @@ export default function OTAndPermissionsPage() {
                             </div>
                           </div>
                         ) : (
-                          <div className="h-[400px] rounded-[2rem] bg-slate-100 dark:bg-slate-800 flex flex-col items-center justify-center text-slate-400 border-2 border-dashed border-slate-200 dark:border-slate-700">
+                          <div className="p-4 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center min-h-20 border border-slate-200 dark:border-slate-700">
                             <Navigation className="w-12 h-12 mb-2 opacity-20" />
                             <p className="text-[10px] font-black uppercase tracking-widest">No Geo-Data Available</p>
                           </div>

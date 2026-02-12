@@ -2149,10 +2149,11 @@ export default function EmployeesPage() {
 
       <div className="relative z-10 max-w-[1920px] mx-auto px-4 sm:px-8 py-6 sm:py-8 space-y-8">
         {/* Header - Unified Layout */}
-        <div className="flex flex-wrap items-center justify-between gap-6 mb-2">
+        <div className="space-y-4 mb-2">
+          {/* Top Row: Title and Icon */}
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20">
-              <Users className="w-6 h-6" />
+            <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl md:rounded-2xl bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20">
+              <Users className="w-5 h-5 md:w-6 md:h-6" />
             </div>
             <div>
               <div className="flex items-center gap-2 mb-1">
@@ -2172,12 +2173,13 @@ export default function EmployeesPage() {
                   <span className="text-xs font-bold text-indigo-500 uppercase tracking-wider">{commonDivision.name}</span>
                 )}
               </div>
-              <h1 className="text-2xl font-black tracking-tight text-text-primary">Employee Management</h1>
-              <p className="text-sm text-text-secondary font-medium">Manage workforce records • <span className="text-indigo-500">Source: {dataSource.toUpperCase()}</span></p>
+              <h1 className="text-xl md:text-2xl font-black tracking-tight text-text-primary">Employee Management</h1>
+              <p className="text-xs md:text-sm text-text-secondary font-medium">Manage workforce records • <span className="text-indigo-500">Source: {dataSource.toUpperCase()}</span></p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          {/* Bottom Row: Action Buttons - Full Width on Desktop */}
+          <div className="flex flex-wrap md:flex-nowrap items-center gap-3">
             {(commonDivision || commonDepartment) && (
               <div className="hidden items-center gap-2 sm:flex">
                 {commonDivision && (
@@ -2192,12 +2194,15 @@ export default function EmployeesPage() {
             {/* Tab Slider */}
             <div className="relative flex items-center rounded-2xl bg-bg-surface/50 border border-border-base p-1 backdrop-blur-md shadow-sm">
               <div
-                className={`absolute h-8 rounded-xl bg-bg-base border border-border-base shadow-sm transition-all duration-300 ease-in-out ${activeTab === 'employees' ? 'left-1 w-[calc(50%-4px)]' : 'left-[calc(50%)] w-[calc(50%-4px)]'
-                  }`}
+                className={`absolute h-8 rounded-xl bg-bg-base border border-border-base shadow-sm transition-all duration-300 ease-in-out`}
+                style={{
+                  width: activeTab === 'employees' ? 'calc(50% - 4px)' : 'calc(50% - 4px)',
+                  transform: activeTab === 'employees' ? 'translateX(0px)' : 'translateX(calc(100% + 4px))'
+                }}
               />
               <button
                 onClick={() => setActiveTab('employees')}
-                className={`relative z-10 px-4 py-1.5 text-xs font-black uppercase tracking-widest transition-colors ${activeTab === 'employees'
+                className={`relative z-10 px-3 py-1.5 md:px-4 md:py-1.5 text-[10px] md:text-xs font-black uppercase tracking-widest transition-colors ${activeTab === 'employees'
                   ? 'text-text-primary'
                   : 'text-text-secondary hover:text-text-primary'
                   }`}
@@ -2206,7 +2211,7 @@ export default function EmployeesPage() {
               </button>
               <button
                 onClick={() => setActiveTab('applications')}
-                className={`relative z-10 px-4 py-1.5 text-xs font-black uppercase tracking-widest transition-colors flex items-center justify-center gap-2 ${activeTab === 'applications'
+                className={`relative z-10 px-3 py-1.5 md:px-4 md:py-1.5 text-[10px] md:text-xs font-black uppercase tracking-widest transition-colors flex items-center justify-center gap-2 ${activeTab === 'applications'
                   ? 'text-text-primary'
                   : 'text-text-secondary hover:text-text-primary'
                   }`}
@@ -2224,10 +2229,10 @@ export default function EmployeesPage() {
             {hasManagePermission && (
               <Link
                 href="/employees/form-settings"
-                className="flex items-center justify-center rounded-2xl border border-border-base bg-bg-surface/50 p-2.5 text-text-secondary transition-all hover:bg-bg-surface hover:text-indigo-500 backdrop-blur-md shadow-sm"
+                className="flex items-center justify-center rounded-xl md:rounded-2xl border border-border-base bg-bg-surface/50 p-2 md:p-2.5 text-text-secondary transition-all hover:bg-bg-surface hover:text-indigo-500 backdrop-blur-md shadow-sm"
                 title="Form Settings"
               >
-                <Settings className="h-5 w-5" />
+                <Settings className="h-4 w-4 md:h-5 md:w-5" />
               </Link>
             )}
 
@@ -2235,147 +2240,198 @@ export default function EmployeesPage() {
             {hasManagePermission && (
               <button
                 onClick={() => setShowBulkUpload(true)}
-                className="flex items-center gap-2 rounded-2xl border border-border-base bg-bg-surface/50 px-4 py-2.5 text-sm font-bold text-text-secondary transition-all hover:bg-bg-surface hover:text-indigo-500 backdrop-blur-md shadow-sm"
+                className="flex items-center gap-2 rounded-xl md:rounded-2xl border border-border-base bg-bg-surface/50 px-3 py-2 md:px-4 md:py-2.5 text-xs md:text-sm font-bold text-text-secondary transition-all hover:bg-bg-surface hover:text-indigo-500 backdrop-blur-md shadow-sm"
               >
-                <div className="w-5 h-5 flex items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-500">
-                  <Upload className="h-3.5 w-3.5" />
+                <div className="w-4 h-4 md:w-5 md:h-5 flex items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-500">
+                  <Upload className="h-3 w-3 md:h-3.5 md:w-3.5" />
                 </div>
                 <span className="hidden sm:inline uppercase tracking-widest text-[10px]">Import</span>
               </button>
             )}
 
-            {/* New Application Button */}
+            {/* New Application Button - Desktop Only */}
             {hasManagePermission && (
               <button
                 onClick={() => setShowApplicationDialog(true)}
-                className="flex items-center gap-2 rounded-2xl bg-gradient-to-br from-indigo-500 to-indigo-600 px-5 py-2.5 text-xs font-black uppercase tracking-widest text-white shadow-xl shadow-indigo-500/20 transition-all hover:scale-[1.02] active:scale-95"
+                className="hidden md:flex md:items-center md:gap-2 md:rounded-2xl md:bg-gradient-to-br md:from-indigo-500 md:to-indigo-600 md:px-5 md:py-2.5 md:text-xs md:font-black md:uppercase md:tracking-widest md:text-white md:shadow-xl md:shadow-indigo-500/20 md:transition-all md:hover:scale-[1.02] md:active:scale-95"
               >
                 <Plus className="h-4 w-4" />
-                New Application
+                <span>New Application</span>
               </button>
             )}
 
           </div>
+        </div>
 
-          {/* Pagination Controls & Search */}
-          <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-6 p-5 sm:p-6 rounded-[2.5rem] border border-border-base bg-bg-surface/40 backdrop-blur-2xl shadow-xl shadow-indigo-500/5">
-            <div className="flex flex-col md:flex-row items-stretch md:items-center gap-4 flex-1">
-              <div className="relative flex-1 group">
-                <div className="absolute inset-0 bg-indigo-500/5 rounded-2xl blur-xl transition-opacity opacity-0 group-focus-within:opacity-100" />
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-text-secondary transition-colors group-focus-within:text-indigo-500" />
-                <input
-                  type="text"
-                  placeholder="Search by name, emp no, or department..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && loadEmployees(1, false)}
-                  className="relative w-full h-12 pl-12 pr-4 rounded-2xl border border-border-base bg-bg-base/60 text-sm font-semibold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-text-primary placeholder:text-text-secondary/40 shadow-sm"
-                />
-              </div>
+        {/* Pagination Controls & Search */}
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 md:gap-6 p-4 md:p-5 sm:p-6 rounded-[2.5rem] border border-border-base bg-bg-surface/40 backdrop-blur-2xl shadow-xl shadow-indigo-500/5">
+          {/* Search Section - Full width on desktop, stacked on mobile */}
+          <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 md:gap-4 flex-1">
+            <div className="relative flex-1 lg:max-w-2xl group">
+              <div className="absolute inset-0 bg-indigo-500/5 rounded-2xl blur-xl transition-opacity opacity-0 group-focus-within:opacity-100" />
+              <Search className="absolute left-3 md:left-4 top-1/2 -translate-y-1/2 w-3.5 h-3.5 md:w-4 md:h-4 text-text-secondary transition-colors group-focus-within:text-indigo-500" />
+              <input
+                type="text"
+                placeholder="Search by name, emp no, or department..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && loadEmployees(1, false)}
+                className="relative w-full h-10 md:h-12 pl-10 md:pl-12 pr-3 md:pr-4 rounded-xl md:rounded-2xl border border-border-base bg-bg-base/60 text-xs md:text-sm font-semibold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-text-primary placeholder:text-text-secondary/40 shadow-sm"
+              />
+            </div>
+            <button
+              onClick={() => loadEmployees(1, false)}
+              className="h-10 md:h-12 px-6 md:px-8 rounded-xl md:rounded-2xl bg-gradient-to-br from-indigo-500 to-indigo-600 text-white text-[10px] font-black uppercase tracking-[0.2em] shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/40 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 whitespace-nowrap flex-shrink-0"
+            >
+              <Search className="w-3 h-3 md:w-3.5 h-3.5" />
+              <span>Search</span>
+            </button>
+
+            {/* New Application Button - Mobile Only, Full Width */}
+            {hasManagePermission && (
               <button
-                onClick={() => loadEmployees(1, false)}
-                className="h-12 px-8 rounded-2xl bg-gradient-to-br from-indigo-500 to-indigo-600 text-white text-[10px] font-black uppercase tracking-[0.2em] shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/40 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 whitespace-nowrap"
+                onClick={() => setShowApplicationDialog(true)}
+                className="md:hidden h-10 px-6 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-600 text-white text-[10px] font-black uppercase tracking-[0.2em] shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/40 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 whitespace-nowrap"
               >
-                <Search className="w-3.5 h-3.5" />
-                <span>Search</span>
+                <Plus className="w-3.5 h-3.5" />
+                <span>New Application</span>
               </button>
+            )}
+          </div>
+
+          {/* Desktop: Pagination on right */}
+          <div className="hidden lg:flex items-center justify-end gap-6 md:gap-8 flex-shrink-0">
+            <div className="flex items-center gap-3">
+              <span className="text-[10px] font-black uppercase tracking-widest text-text-secondary">Page</span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => loadEmployees(currentPage - 1, false)}
+                  disabled={currentPage <= 1 || loading}
+                  className="w-10 h-10 flex items-center justify-center rounded-xl border border-border-base bg-bg-base/50 text-text-secondary hover:text-indigo-500 hover:border-indigo-500/50 disabled:opacity-30 disabled:hover:border-border-base disabled:hover:text-text-secondary transition-all"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <div className="min-w-[80px] text-center px-1">
+                  <span className="text-sm font-black text-text-primary">{currentPage}</span>
+                  <span className="mx-1.5 text-[10px] font-bold text-text-secondary">of</span>
+                  <span className="text-sm font-black text-text-primary">{totalPages || 1}</span>
+                </div>
+                <button
+                  onClick={() => loadEmployees(currentPage + 1, false)}
+                  disabled={currentPage >= totalPages || loading}
+                  className="w-10 h-10 flex items-center justify-center rounded-xl border border-border-base bg-bg-base/50 text-text-secondary hover:text-indigo-500 hover:border-indigo-500/50 disabled:opacity-30 disabled:hover:border-border-base disabled:hover:text-text-secondary transition-all"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
-            <div className="flex flex-wrap items-center justify-between sm:justify-end gap-6 sm:gap-8">
-              <div className="flex items-center gap-3">
-                <span className="text-[10px] font-black uppercase tracking-widest text-text-secondary">Page</span>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => loadEmployees(currentPage - 1, false)}
-                    disabled={currentPage <= 1 || loading}
-                    className="w-10 h-10 flex items-center justify-center rounded-xl border border-border-base bg-bg-base/50 text-text-secondary hover:text-indigo-500 hover:border-indigo-500/50 disabled:opacity-30 disabled:hover:border-border-base disabled:hover:text-text-secondary transition-all"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-                  <div className="min-w-[80px] text-center px-1">
-                    <span className="text-sm font-black text-text-primary">{currentPage}</span>
-                    <span className="mx-1.5 text-[10px] font-bold text-text-secondary">of</span>
-                    <span className="text-sm font-black text-text-primary">{totalPages || 1}</span>
-                  </div>
-                  <button
-                    onClick={() => loadEmployees(currentPage + 1, false)}
-                    disabled={currentPage >= totalPages || loading}
-                    className="w-10 h-10 flex items-center justify-center rounded-xl border border-border-base bg-bg-base/50 text-text-secondary hover:text-indigo-500 hover:border-indigo-500/50 disabled:opacity-30 disabled:hover:border-border-base disabled:hover:text-text-secondary transition-all"
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
+            <div className="hidden sm:block h-8 w-px bg-border-base"></div>
+
+            <div className="flex flex-col items-end">
+              <span className="text-[10px] font-black uppercase tracking-widest text-text-secondary mb-0.5">Total Records</span>
+              <span className="text-sm font-black text-indigo-500">{totalCount}</span>
+            </div>
+          </div>
+
+          {/* Mobile: Pagination below search */}
+          <div className="lg:hidden flex items-center justify-between sm:justify-end gap-4 sm:gap-6 md:gap-8 flex-shrink-0">
+            <div className="flex items-center gap-3">
+              <span className="text-[10px] font-black uppercase tracking-widest text-text-secondary">Page</span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => loadEmployees(currentPage - 1, false)}
+                  disabled={currentPage <= 1 || loading}
+                  className="w-10 h-10 flex items-center justify-center rounded-xl border border-border-base bg-bg-base/50 text-text-secondary hover:text-indigo-500 hover:border-indigo-500/50 disabled:opacity-30 disabled:hover:border-border-base disabled:hover:text-text-secondary transition-all"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <div className="min-w-[80px] text-center px-1">
+                  <span className="text-sm font-black text-text-primary">{currentPage}</span>
+                  <span className="mx-1.5 text-[10px] font-bold text-text-secondary">of</span>
+                  <span className="text-sm font-black text-text-primary">{totalPages || 1}</span>
                 </div>
+                <button
+                  onClick={() => loadEmployees(currentPage + 1, false)}
+                  disabled={currentPage >= totalPages || loading}
+                  className="w-10 h-10 flex items-center justify-center rounded-xl border border-border-base bg-bg-base/50 text-text-secondary hover:text-indigo-500 hover:border-indigo-500/50 disabled:opacity-30 disabled:hover:border-border-base disabled:hover:text-text-secondary transition-all"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
               </div>
+            </div>
 
-              <div className="hidden sm:block h-8 w-px bg-border-base"></div>
+            <div className="hidden sm:block h-8 w-px bg-border-base"></div>
 
-              <div className="flex flex-col items-end">
-                <span className="text-[10px] font-black uppercase tracking-widest text-text-secondary mb-0.5">Total Records</span>
-                <span className="text-sm font-black text-indigo-500">{totalCount}</span>
-              </div>
+            <div className="flex flex-col items-end">
+              <span className="text-[10px] font-black uppercase tracking-widest text-text-secondary mb-0.5">Total Records</span>
+              <span className="text-sm font-black text-indigo-500">{totalCount}</span>
             </div>
           </div>
         </div>
+      </div>
 
-        {/* Employee List with Skeleton Loading */}
-        {loading || (activeTab === 'applications' && loadingApplications) ? (
-          <div className="overflow-hidden rounded-3xl border border-border-base bg-bg-surface/50 backdrop-blur-md shadow-sm">
-            <div className="overflow-x-auto scrollbar-hide">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-border-base bg-bg-base/50">
-                    <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">
-                      {activeTab === 'employees' ? 'Emp No' : 'App No'}
-                    </th>
-                    <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Name</th>
-                    <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Division</th>
-                    {!hideDepartmentColumn && <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Department</th>}
-                    {activeTab === 'employees' && !hideDesignationColumn && <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Designation</th>}
-                    {activeTab === 'applications' && <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Proposed Salary</th>}
-                    <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Status</th>
-                    <th className="px-6 py-4 text-right text-[10px] font-black uppercase tracking-widest text-text-secondary">Actions</th>
+      {/* Employee List with Skeleton Loading */}
+      {loading || (activeTab === 'applications' && loadingApplications) ? (
+        <div className="overflow-hidden rounded-3xl border border-border-base bg-bg-surface/50 backdrop-blur-md shadow-sm">
+          <div className="overflow-x-auto scrollbar-hide">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-border-base bg-bg-base/50">
+                  <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">
+                    {activeTab === 'employees' ? 'Emp No' : 'App No'}
+                  </th>
+                  <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Name</th>
+                  <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Division</th>
+                  {!hideDepartmentColumn && <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Department</th>}
+                  {activeTab === 'employees' && !hideDesignationColumn && <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Designation</th>}
+                  {activeTab === 'applications' && <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Proposed Salary</th>}
+                  <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Status</th>
+                  <th className="px-6 py-4 text-right text-[10px] font-black uppercase tracking-widest text-text-secondary">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border-base">
+                {[...Array(5)].map((_, i) => (
+                  <tr key={i} className="animate-pulse">
+                    <td className="px-6 py-4"><div className="h-4 w-12 rounded bg-bg-base" /></td>
+                    <td className="px-6 py-4">
+                      <div className="h-4 w-32 rounded bg-bg-base mb-2" />
+                      <div className="h-3 w-24 rounded bg-bg-base/50" />
+                    </td>
+                    <td className="px-6 py-4"><div className="h-4 w-24 rounded bg-bg-base" /></td>
+                    {!hideDepartmentColumn && <td className="px-6 py-4"><div className="h-4 w-24 rounded bg-bg-base" /></td>}
+                    <td className="px-6 py-4"><div className="h-4 w-24 rounded bg-bg-base" /></td>
+                    <td className="px-6 py-4"><div className="h-6 w-16 rounded-full bg-bg-base" /></td>
+                    <td className="px-6 py-4 text-right"><div className="ml-auto h-8 w-24 rounded bg-bg-base" /></td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-border-base">
-                  {[...Array(5)].map((_, i) => (
-                    <tr key={i} className="animate-pulse">
-                      <td className="px-6 py-4"><div className="h-4 w-12 rounded bg-bg-base" /></td>
-                      <td className="px-6 py-4">
-                        <div className="h-4 w-32 rounded bg-bg-base mb-2" />
-                        <div className="h-3 w-24 rounded bg-bg-base/50" />
-                      </td>
-                      <td className="px-6 py-4"><div className="h-4 w-24 rounded bg-bg-base" /></td>
-                      {!hideDepartmentColumn && <td className="px-6 py-4"><div className="h-4 w-24 rounded bg-bg-base" /></td>}
-                      <td className="px-6 py-4"><div className="h-4 w-24 rounded bg-bg-base" /></td>
-                      <td className="px-6 py-4"><div className="h-6 w-16 rounded-full bg-bg-base" /></td>
-                      <td className="px-6 py-4 text-right"><div className="ml-auto h-8 w-24 rounded bg-bg-base" /></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                ))}
+              </tbody>
+            </table>
           </div>
-        ) : activeTab === 'employees' ? (
-          filteredEmployees.length === 0 ? (
-            <div className="rounded-3xl border border-border-base bg-bg-surface/50 p-12 text-center backdrop-blur-md shadow-sm">
-              <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-2xl bg-indigo-500/10 text-indigo-500">
-                <Users className="h-10 w-10" />
-              </div>
-              <h3 className="text-xl font-black text-text-primary tracking-tight">No employees found</h3>
-              <p className="mt-2 text-sm text-text-secondary font-medium max-w-xs mx-auto">We couldn&apos;t find any employee records matching your criteria. Try adjusting your filters or search term.</p>
-              <button
-                onClick={() => {
-                  setSearchTerm('');
-                  setEmployeeFilters({});
-                  setSelectedDivision('');
-                }}
-                className="mt-6 px-6 py-2.5 rounded-xl bg-bg-base border border-border-base text-xs font-black uppercase tracking-widest text-text-primary hover:bg-bg-surface transition-colors"
-              >
-                Reset All Filters
-              </button>
+        </div>
+      ) : activeTab === 'employees' ? (
+        filteredEmployees.length === 0 ? (
+          <div className="rounded-3xl border border-border-base bg-bg-surface/50 p-12 text-center backdrop-blur-md shadow-sm">
+            <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-2xl bg-indigo-500/10 text-indigo-500">
+              <Users className="h-10 w-10" />
             </div>
-          ) : (
-            <div className="overflow-hidden rounded-3xl border border-border-base bg-bg-surface/50 backdrop-blur-md shadow-sm">
+            <h3 className="text-xl font-black text-text-primary tracking-tight">No employees found</h3>
+            <p className="mt-2 text-sm text-text-secondary font-medium max-w-xs mx-auto">We couldn&apos;t find any employee records matching your criteria. Try adjusting your filters or search term.</p>
+            <button
+              onClick={() => {
+                setSearchTerm('');
+                setEmployeeFilters({});
+                setSelectedDivision('');
+              }}
+              className="mt-6 px-6 py-2.5 rounded-xl bg-bg-base border border-border-base text-xs font-black uppercase tracking-widest text-text-primary hover:bg-bg-surface transition-colors"
+            >
+              Reset All Filters
+            </button>
+          </div>
+        ) : (
+          <>
+            {/* Desktop Table View */}
+            <div className="hidden md:block overflow-hidden rounded-3xl border border-border-base bg-bg-surface/50 backdrop-blur-md shadow-sm">
               <div className="overflow-x-auto scrollbar-hide">
                 <table className="w-full">
                   <thead>
@@ -2564,234 +2620,531 @@ export default function EmployeesPage() {
                 {/* Add pagination controls here if needed */}
               </div>
             </div>
-          )
-        ) : (
-          /* Applications Tab */
-          <>
-            {/* Applications Bulk Actions */}
-            {selectedApplicationIds.length > 0 && hasManagePermission && (
-              <div className="mb-6 flex items-center gap-3">
-                <button
-                  onClick={handleBulkReject}
-                  className="px-6 py-2.5 rounded-xl bg-status-negative text-white text-xs font-black uppercase tracking-widest hover:bg-red-600 shadow-lg shadow-status-negative/20 transition-all flex items-center gap-2"
-                >
-                  <UserX className="w-4 h-4" />
-                  <span>Reject Selected ({selectedApplicationIds.length})</span>
-                </button>
-                <button
-                  onClick={handleBulkApprove}
-                  className="px-6 py-2.5 rounded-xl bg-indigo-500 text-white text-xs font-black uppercase tracking-widest hover:bg-indigo-600 shadow-lg shadow-indigo-500/20 transition-all flex items-center gap-2"
-                >
-                  <UserCheck className="w-4 h-4" />
-                  <span>Approve Selected ({selectedApplicationIds.length})</span>
-                </button>
-              </div>
-            )}
 
-            {filteredApplications.length === 0 ? (
-              <div className="rounded-3xl border border-border-base bg-bg-surface/50 p-12 text-center backdrop-blur-md shadow-sm">
-                <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-2xl bg-indigo-500/10 text-indigo-500">
-                  <LucideClock className="h-10 w-10" />
-                </div>
-                <h3 className="text-xl font-black text-text-primary tracking-tight">No applications found</h3>
-                <p className="mt-2 text-sm text-text-secondary font-medium max-w-xs mx-auto">There are no employee applications to display at this time.</p>
-                <button
-                  onClick={() => {
-                    setApplicationSearchTerm('');
-                    setApplicationFilters({});
-                    loadApplications();
-                  }}
-                  className="mt-6 px-6 py-2.5 rounded-xl bg-bg-base border border-border-base text-xs font-black uppercase tracking-widest text-text-primary hover:bg-bg-surface transition-colors"
+            {/* Mobile Card View */}
+            <div className="md:hidden space-y-3">
+              {filteredEmployees.map((employee) => (
+                <div
+                  key={employee.emp_no}
+                  onClick={() => handleViewEmployee(employee)}
+                  className="relative rounded-xl border border-border-base bg-bg-surface/70 p-3 shadow-sm backdrop-blur-md transition-all hover:shadow-md active:scale-[0.99] cursor-pointer"
                 >
-                  Refresh Applications
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-8">
-                {/* Pending Approvals Table */}
-                <div className="overflow-hidden rounded-3xl border border-border-base bg-bg-surface/50 backdrop-blur-md shadow-sm">
-                  <div className="border-b border-border-base bg-bg-base/30 px-6 py-4 flex items-center justify-between">
-                    <h3 className="text-[10px] font-black text-text-secondary uppercase tracking-widest flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-status-warning animate-pulse" />
-                      Pending Approvals ({pendingApplications.length})
-                    </h3>
-                  </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="border-b border-border-base bg-bg-base/50">
-                          <th className="px-6 py-4 text-left">
-                            <input
-                              type="checkbox"
-                              checked={selectedApplicationIds.length === pendingApplications.length && pendingApplications.length > 0}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  setSelectedApplicationIds(pendingApplications.map(app => app._id));
-                                } else {
-                                  setSelectedApplicationIds([]);
-                                }
-                              }}
-                              className="h-4 w-4 rounded border-border-base text-indigo-600 focus:ring-indigo-500 focus:ring-offset-0 bg-bg-base"
-                            />
-                          </th>
-                          <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Emp No</th>
-                          <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Name</th>
-                          <RenderFilterHeader
-                            label="Division"
-                            filterKey="division.name"
-                            options={Array.from(new Set(pendingApplications.map(a => (a as any).division?.name || (a.division_id as any)?.name).filter((x) => !!x))) as string[]}
-                            currentFilters={applicationFilters}
-                            setFilters={setApplicationFilters}
-                          />
-                          <RenderFilterHeader
-                            label="Department"
-                            filterKey="department.name"
-                            options={Array.from(new Set(pendingApplications.map(a => a.department?.name || (a.department_id as any)?.name).filter((x) => !!x))) as string[]}
-                            currentFilters={applicationFilters}
-                            setFilters={setApplicationFilters}
-                          />
-                          <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Proposed Salary</th>
-                          <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Created By</th>
-                          <th className="px-6 py-4 text-right text-[10px] font-black uppercase tracking-widest text-text-secondary">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border-base">
-                        {pendingApplications.length === 0 ? (
-                          <tr>
-                            <td colSpan={8} className="px-6 py-12 text-center text-xs font-bold text-text-secondary uppercase">No pending approvals</td>
-                          </tr>
+                  {/* Card Header */}
+                  <div className="mb-2 flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-xs font-black text-indigo-500">{employee.emp_no}</span>
+                        {employee.is_active !== false ? (
+                          <span className="inline-flex items-center gap-1 rounded-md bg-status-positive/10 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-status-positive">
+                            <UserCheck className="w-2.5 h-2.5" />
+                            Active
+                          </span>
                         ) : (
-                          pendingApplications.map((app) => (
-                            <tr
-                              key={app._id}
-                              className="transition-all hover:bg-bg-base/80 group cursor-pointer"
-                              onClick={() => openApprovalDialog(app)}
-                            >
-                              <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
-                                <input
-                                  type="checkbox"
-                                  checked={selectedApplicationIds.includes(app._id)}
-                                  onChange={() => toggleSelectApplication(app._id)}
-                                  className="h-4 w-4 rounded border-border-base text-indigo-600 focus:ring-indigo-500 focus:ring-offset-0 bg-bg-base"
-                                />
-                              </td>
-                              <td className="whitespace-nowrap px-6 py-4 text-sm font-black text-indigo-500">
-                                {app.emp_no}
-                              </td>
-                              <td className="whitespace-nowrap px-6 py-4">
-                                <div className="text-sm font-black text-text-primary uppercase tracking-tight">{app.employee_name}</div>
-                                {app.email && <div className="text-[10px] font-bold text-text-secondary uppercase tracking-widest">{app.email}</div>}
-                              </td>
-                              <td className="whitespace-nowrap px-6 py-4 text-xs font-bold text-text-secondary">
-                                {(app as any).division?.name || (app.division_id as { name?: string })?.name || '-'}
-                              </td>
-                              <td className="whitespace-nowrap px-6 py-4 text-xs font-bold text-text-secondary">
-                                {app.department?.name || (app.department_id as { name?: string })?.name || '-'}
-                              </td>
-                              <td className="whitespace-nowrap px-6 py-4 text-sm font-black text-text-primary">
-                                ₹{app.proposedSalary.toLocaleString()}
-                              </td>
-                              <td className="whitespace-nowrap px-6 py-4 text-[10px] font-black text-text-secondary uppercase tracking-widest">
-                                {app.createdBy?.name || 'Unknown'}
-                              </td>
-                              <td className="whitespace-nowrap px-6 py-4 text-right">
-                                {hasManagePermission && (
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); openApprovalDialog(app); }}
-                                    className="px-4 py-1.5 rounded-lg bg-indigo-500 text-white text-[10px] font-black uppercase tracking-widest hover:bg-indigo-600 transition-colors shadow-sm shadow-indigo-500/10"
-                                  >
-                                    Review
-                                  </button>
-                                )}
-                              </td>
-                            </tr>
-                          ))
+                          <span className="inline-flex items-center gap-1 rounded-md bg-text-secondary/10 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-text-secondary">
+                            <UserX className="w-2.5 h-2.5" />
+                            Inactive
+                          </span>
                         )}
-                      </tbody>
-                    </table>
+                      </div>
+                      <h3 className="text-sm font-black text-text-primary uppercase tracking-tight truncate">{employee.employee_name}</h3>
+                      {employee.email && (
+                        <p className="text-[10px] font-medium text-text-secondary truncate">{employee.email}</p>
+                      )}
+                    </div>
                   </div>
-                </div>
 
-                {/* Processed Applications Table */}
-                <div className="overflow-hidden rounded-3xl border border-border-base bg-bg-surface/50 backdrop-blur-md shadow-sm">
-                  <div className="border-b border-border-base bg-bg-base/30 px-6 py-4">
-                    <h3 className="text-[10px] font-black text-text-secondary uppercase tracking-widest">Processed Applications ({approvedApplications.length + rejectedApplications.length})</h3>
+                  {/* Card Info */}
+                  <div className="space-y-1.5 mb-3">
+                    {(employee.division?.name || (employee.division_id as { name?: string })?.name) && (
+                      <div className="flex items-center gap-1.5 text-xs text-text-secondary">
+                        <span className="font-medium">Division:</span>
+                        <span className="font-bold">{employee.division?.name || (employee.division_id as { name?: string })?.name}</span>
+                      </div>
+                    )}
+                    {employee.department?.name && (
+                      <div className="flex items-center gap-1.5 text-xs text-text-secondary">
+                        <span className="font-medium">Dept:</span>
+                        <span className="font-bold">{employee.department.name}</span>
+                      </div>
+                    )}
+                    {employee.designation?.name && (
+                      <div className="flex items-center gap-1.5 text-xs text-text-secondary">
+                        <span className="font-medium">Role:</span>
+                        <span className="font-bold">{employee.designation.name}</span>
+                      </div>
+                    )}
+                    {employee.phone_number && (
+                      <div className="flex items-center gap-1.5 text-xs text-text-secondary">
+                        <span className="font-medium">Phone:</span>
+                        <span className="font-bold">{employee.phone_number}</span>
+                      </div>
+                    )}
+                    {employee.leftDate && (
+                      <div className="flex items-center gap-1.5 text-[10px]">
+                        <span className="inline-flex items-center gap-1 rounded-md bg-status-warning/10 px-1.5 py-0.5 font-black uppercase tracking-wider text-status-warning">
+                          <LucideClock className="w-2.5 h-2.5" />
+                          Left: {new Date(employee.leftDate).toLocaleDateString()}
+                        </span>
+                      </div>
+                    )}
                   </div>
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="border-b border-border-base bg-bg-base/50">
-                          <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Emp No</th>
-                          <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Name</th>
-                          <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Division</th>
-                          <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Department</th>
-                          <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Proposed</th>
-                          <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Approved</th>
-                          <RenderFilterHeader
-                            label="Status"
-                            filterKey="status"
-                            options={['approved', 'rejected']}
-                            currentFilters={applicationFilters}
-                            setFilters={setApplicationFilters}
-                          />
-                          <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Processed By</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border-base">
-                        {[...approvedApplications, ...rejectedApplications].length === 0 ? (
-                          <tr>
-                            <td colSpan={8} className="px-6 py-12 text-center text-xs font-bold text-text-secondary uppercase">No processed applications</td>
-                          </tr>
+
+
+                  {/* Card Actions */}
+                  <div className="flex items-center gap-1.5 pt-2 border-t border-border-base/50">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleViewEmployee(employee); }}
+                      className="flex-1 flex items-center justify-center gap-1 rounded-lg bg-indigo-500/10 px-1.5 py-1.5 text-[9px] font-black uppercase tracking-wider text-indigo-500 transition-colors hover:bg-indigo-500/20"
+                      title="View"
+                    >
+                      <Eye className="h-2.5 w-2.5" />
+                      <span>View</span>
+                    </button>
+                    {hasManagePermission && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleEdit(employee); }}
+                        className="flex-1 flex items-center justify-center gap-1 rounded-lg bg-blue-500/10 px-1.5 py-1.5 text-[9px] font-black uppercase tracking-wider text-blue-500 transition-colors hover:bg-blue-500/20"
+                        title="Edit"
+                      >
+                        <Edit2 className="h-2.5 w-2.5" />
+                        <span>Edit</span>
+                      </button>
+                    )}
+                    {hasManagePermission && (
+                      <>
+                        {employee.leftDate ? (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleRemoveLeftDate(employee); }}
+                            className="p-1.5 rounded-lg bg-status-positive/10 text-status-positive hover:bg-status-positive/20 transition-colors"
+                            title="Reactivate Employee"
+                          >
+                            <UserCheck className="h-3 w-3" />
+                          </button>
                         ) : (
-                          [...approvedApplications, ...rejectedApplications].map((app) => (
-                            <tr
-                              key={app._id}
-                              className="bg-bg-base/20 transition-all group"
-                            >
-                              <td className="whitespace-nowrap px-6 py-4 text-sm font-black text-indigo-500">
-                                {app.emp_no}
-                              </td>
-                              <td className="whitespace-nowrap px-6 py-4">
-                                <div className="text-sm font-black text-text-primary uppercase tracking-tight">{app.employee_name}</div>
-                              </td>
-                              <td className="whitespace-nowrap px-6 py-4 text-xs font-bold text-text-secondary">
-                                {(app as any).division?.name || (app.division_id as { name?: string })?.name || '-'}
-                              </td>
-                              <td className="whitespace-nowrap px-6 py-4 text-xs font-bold text-text-secondary">
-                                {app.department?.name || (app.department_id as { name?: string })?.name || '-'}
-                              </td>
-                              <td className="whitespace-nowrap px-6 py-4 text-xs font-bold text-text-secondary">
-                                ₹{app.proposedSalary.toLocaleString()}
-                              </td>
-                              <td className="whitespace-nowrap px-6 py-4 text-sm font-black text-text-primary">
-                                {app.approvedSalary ? `₹${app.approvedSalary.toLocaleString()}` : '-'}
-                              </td>
-                              <td className="whitespace-nowrap px-6 py-4">
-                                <span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest ${app.status === 'approved'
-                                  ? 'bg-status-positive/10 text-status-positive'
-                                  : 'bg-status-negative/10 text-status-negative'
-                                  }`}>
-                                  {app.status === 'approved' && <UserCheck className="w-3 h-3" />}
-                                  {app.status === 'rejected' && <UserX className="w-3 h-3" />}
-                                  {app.status}
-                                </span>
-                              </td>
-                              <td className="whitespace-nowrap px-6 py-4 text-[10px] font-black text-text-secondary uppercase tracking-widest">
-                                {app.approvedBy?.name || app.rejectedBy?.name || '-'}
-                              </td>
-                            </tr>
-                          ))
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleSetLeftDate(employee); }}
+                            className="p-1.5 rounded-lg bg-status-negative/10 text-status-negative hover:bg-status-negative/20 transition-colors"
+                            title="Set Left Date"
+                          >
+                            <UserX className="h-3 w-3" />
+                          </button>
                         )}
-                      </tbody>
-                    </table>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (employee.is_active !== false) handleDeactivate(employee.emp_no, true);
+                            else handleActivate(employee.emp_no);
+                          }}
+                          className={`p-1.5 rounded-lg transition-colors ${employee.is_active !== false
+                            ? 'bg-status-warning/10 text-status-warning hover:bg-status-warning/20'
+                            : 'bg-status-positive/10 text-status-positive hover:bg-status-positive/20'
+                            }`}
+                          title={employee.is_active !== false ? 'Deactivate' : 'Activate'}
+                        >
+                          {employee.is_active !== false ? <Settings className="h-3 w-3" /> : <UserCheck className="h-3 w-3" />}
+                        </button>
+                      </>
+                    )}
+                    {hasManagePermission && !employee.leftDate && (
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (!confirm(`Resend credentials to ${employee.employee_name}?`)) return;
+                          setIsResending(employee.emp_no);
+                          try {
+                            await api.resendEmployeeCredentials(employee.emp_no, { passwordMode, notificationChannels });
+                            setSuccess('Credentials sent!');
+                          } catch (err) {
+                            setError('Failed to resend');
+                          } finally {
+                            setIsResending(null);
+                          }
+                        }}
+                        disabled={isResending === employee.emp_no}
+                        className="p-1.5 rounded-lg bg-purple-500/10 text-purple-500 hover:bg-purple-500/20 transition-colors disabled:opacity-50"
+                        title="Resend Credentials"
+                      >
+                        {isResending === employee.emp_no ? (
+                          <div className="h-3 w-3 animate-spin rounded-full border-2 border-purple-500 border-t-transparent" />
+                        ) : (
+                          <Mail className="h-3 w-3" />
+                        )}
+                      </button>
+                    )}
                   </div>
                 </div>
+              ))}
+
+              {/* Mobile Stats Footer */}
+              <div className="rounded-xl border border-border-base bg-bg-surface/40 px-4 py-3 text-center backdrop-blur-md">
+                <p className="text-[10px] font-bold text-text-secondary uppercase tracking-widest">
+                  Showing <span className="text-indigo-500">{filteredEmployees.length}</span> of <span className="text-indigo-500">{totalCount}</span> Employees
+                </p>
               </div>
-            )}
+            </div>
           </>
-        )}
+        )
+      ) : (
+        /* Applications Tab */
+        <>
+          {/* Applications Bulk Actions */}
+          {selectedApplicationIds.length > 0 && hasManagePermission && (
+            <div className="mb-6 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              <button
+                onClick={handleBulkReject}
+                className="px-4 md:px-6 py-2 md:py-2.5 rounded-xl bg-status-negative text-white text-xs font-black uppercase tracking-widest hover:bg-red-600 shadow-lg shadow-status-negative/20 transition-all flex items-center justify-center gap-2"
+              >
+                <UserX className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                <span>Reject Selected ({selectedApplicationIds.length})</span>
+              </button>
+              <button
+                onClick={handleBulkApprove}
+                className="px-4 md:px-6 py-2 md:py-2.5 rounded-xl bg-indigo-500 text-white text-xs font-black uppercase tracking-widest hover:bg-indigo-600 shadow-lg shadow-indigo-500/20 transition-all flex items-center justify-center gap-2"
+              >
+                <UserCheck className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                <span>Approve Selected ({selectedApplicationIds.length})</span>
+              </button>
+            </div>
+          )}
 
-      </div>
+          {filteredApplications.length === 0 ? (
+            <div className="rounded-3xl border border-border-base bg-bg-surface/50 p-12 text-center backdrop-blur-md shadow-sm">
+              <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-2xl bg-indigo-500/10 text-indigo-500">
+                <LucideClock className="h-10 w-10" />
+              </div>
+              <h3 className="text-xl font-black text-text-primary tracking-tight">No applications found</h3>
+              <p className="mt-2 text-sm text-text-secondary font-medium max-w-xs mx-auto">There are no employee applications to display at this time.</p>
+              <button
+                onClick={() => {
+                  setApplicationSearchTerm('');
+                  setApplicationFilters({});
+                  loadApplications();
+                }}
+                className="mt-6 px-6 py-2.5 rounded-xl bg-bg-base border border-border-base text-xs font-black uppercase tracking-widest text-text-primary hover:bg-bg-surface transition-colors"
+              >
+                Refresh Applications
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-8">
+              {/* Pending Approvals Table */}
+              <div className="overflow-hidden rounded-3xl border border-border-base bg-bg-surface/50 backdrop-blur-md shadow-sm">
+                <div className="border-b border-border-base bg-bg-base/30 px-4 md:px-6 py-3 md:py-4 flex items-center justify-between">
+                  <h3 className="text-[10px] font-black text-text-secondary uppercase tracking-widest flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-status-warning animate-pulse" />
+                    Pending Approvals ({pendingApplications.length})
+                  </h3>
+                </div>
+
+                {/* Desktop Table View */}
+                <div className="hidden md:block overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-border-base bg-bg-base/50">
+                        <th className="px-6 py-4 text-left">
+                          <input
+                            type="checkbox"
+                            checked={selectedApplicationIds.length === pendingApplications.length && pendingApplications.length > 0}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedApplicationIds(pendingApplications.map(app => app._id));
+                              } else {
+                                setSelectedApplicationIds([]);
+                              }
+                            }}
+                            className="h-4 w-4 rounded border-border-base text-indigo-600 focus:ring-indigo-500 focus:ring-offset-0 bg-bg-base"
+                          />
+                        </th>
+                        <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Emp No</th>
+                        <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Name</th>
+                        <RenderFilterHeader
+                          label="Division"
+                          filterKey="division.name"
+                          options={Array.from(new Set(pendingApplications.map(a => (a as any).division?.name || (a.division_id as any)?.name).filter((x) => !!x))) as string[]}
+                          currentFilters={applicationFilters}
+                          setFilters={setApplicationFilters}
+                        />
+                        <RenderFilterHeader
+                          label="Department"
+                          filterKey="department.name"
+                          options={Array.from(new Set(pendingApplications.map(a => a.department?.name || (a.department_id as any)?.name).filter((x) => !!x))) as string[]}
+                          currentFilters={applicationFilters}
+                          setFilters={setApplicationFilters}
+                        />
+                        <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Proposed Salary</th>
+                        <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Created By</th>
+                        <th className="px-6 py-4 text-right text-[10px] font-black uppercase tracking-widest text-text-secondary">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border-base">
+                      {pendingApplications.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="px-6 py-12 text-center text-xs font-bold text-text-secondary uppercase">No pending approvals</td>
+                        </tr>
+                      ) : (
+                        pendingApplications.map((app) => (
+                          <tr
+                            key={app._id}
+                            className="transition-all hover:bg-bg-base/80 group cursor-pointer"
+                            onClick={() => openApprovalDialog(app)}
+                          >
+                            <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
+                              <input
+                                type="checkbox"
+                                checked={selectedApplicationIds.includes(app._id)}
+                                onChange={() => toggleSelectApplication(app._id)}
+                                className="h-4 w-4 rounded border-border-base text-indigo-600 focus:ring-indigo-500 focus:ring-offset-0 bg-bg-base"
+                              />
+                            </td>
+                            <td className="whitespace-nowrap px-6 py-4 text-sm font-black text-indigo-500">
+                              {app.emp_no}
+                            </td>
+                            <td className="whitespace-nowrap px-6 py-4">
+                              <div className="text-sm font-black text-text-primary uppercase tracking-tight">{app.employee_name}</div>
+                              {app.email && <div className="text-[10px] font-bold text-text-secondary uppercase tracking-widest">{app.email}</div>}
+                            </td>
+                            <td className="whitespace-nowrap px-6 py-4 text-xs font-bold text-text-secondary">
+                              {(app as any).division?.name || (app.division_id as { name?: string })?.name || '-'}
+                            </td>
+                            <td className="whitespace-nowrap px-6 py-4 text-xs font-bold text-text-secondary">
+                              {app.department?.name || (app.department_id as { name?: string })?.name || '-'}
+                            </td>
+                            <td className="whitespace-nowrap px-6 py-4 text-sm font-black text-text-primary">
+                              ₹{app.proposedSalary.toLocaleString()}
+                            </td>
+                            <td className="whitespace-nowrap px-6 py-4 text-[10px] font-black text-text-secondary uppercase tracking-widest">
+                              {app.createdBy?.name || 'Unknown'}
+                            </td>
+                            <td className="whitespace-nowrap px-6 py-4 text-right">
+                              {hasManagePermission && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); openApprovalDialog(app); }}
+                                  className="px-4 py-1.5 rounded-lg bg-indigo-500 text-white text-[10px] font-black uppercase tracking-widest hover:bg-indigo-600 transition-colors shadow-sm shadow-indigo-500/10"
+                                >
+                                  Review
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Mobile Card View */}
+                <div className="md:hidden p-3 space-y-3">
+                  {pendingApplications.length === 0 ? (
+                    <p className="px-3 py-8 text-center text-xs font-bold text-text-secondary uppercase">No pending approvals</p>
+                  ) : (
+                    pendingApplications.map((app) => (
+                      <div
+                        key={app._id}
+                        onClick={() => openApprovalDialog(app)}
+                        className="relative rounded-xl border border-border-base bg-bg-base/40 p-3 shadow-sm transition-all hover:shadow-md active:scale-[0.99] cursor-pointer"
+                      >
+                        {/* Checkbox */}
+                        <div className="absolute top-2 right-2" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={selectedApplicationIds.includes(app._id)}
+                            onChange={() => toggleSelectApplication(app._id)}
+                            className="h-4 w-4 rounded border-border-base text-indigo-600 focus:ring-indigo-500 focus:ring-offset-0 bg-bg-base"
+                          />
+                        </div>
+
+                        {/* Card Content */}
+                        <div className="pr-8">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-xs font-black text-indigo-500">{app.emp_no}</span>
+                            <span className="inline-flex items-center gap-1 rounded-md bg-status-warning/10 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-status-warning">
+                              <LucideClock className="w-2.5 h-2.5" />
+                              Pending
+                            </span>
+                          </div>
+                          <h4 className="text-sm font-black text-text-primary uppercase tracking-tight truncate mb-1">{app.employee_name}</h4>
+                          {app.email && <p className="text-[10px] font-medium text-text-secondary truncate mb-2">{app.email}</p>}
+
+                          <div className="space-y-1">
+                            {((app as any).division?.name || (app.division_id as { name?: string })?.name) && (
+                              <div className="flex items-center gap-1.5 text-xs text-text-secondary">
+                                <span className="font-medium">Division:</span>
+                                <span className="font-bold">{(app as any).division?.name || (app.division_id as { name?: string })?.name}</span>
+                              </div>
+                            )}
+                            {(app.department?.name || (app.department_id as { name?: string })?.name) && (
+                              <div className="flex items-center gap-1.5 text-xs text-text-secondary">
+                                <span className="font-medium">Dept:</span>
+                                <span className="font-bold">{app.department?.name || (app.department_id as { name?: string })?.name}</span>
+                              </div>
+                            )}
+                            <div className="flex items-center gap-1.5 text-xs text-text-secondary">
+                              <span className="font-medium">Salary:</span>
+                              <span className="font-bold text-text-primary">₹{app.proposedSalary.toLocaleString()}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 text-xs text-text-secondary">
+                              <span className="font-medium">By:</span>
+                              <span className="font-bold">{app.createdBy?.name || 'Unknown'}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Action Button */}
+                        {hasManagePermission && (
+                          <div className="mt-3 pt-2 border-t border-border-base/50">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); openApprovalDialog(app); }}
+                              className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-indigo-500/10 px-2 py-1.5 text-[10px] font-black uppercase tracking-wider text-indigo-500 transition-colors hover:bg-indigo-500/20"
+                            >
+                              <UserCheck className="h-3 w-3" />
+                              <span>Review Application</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Processed Applications Table */}
+              <div className="overflow-hidden rounded-3xl border border-border-base bg-bg-surface/50 backdrop-blur-md shadow-sm">
+                <div className="border-b border-border-base bg-bg-base/30 px-4 md:px-6 py-3 md:py-4">
+                  <h3 className="text-[10px] font-black text-text-secondary uppercase tracking-widest">Processed Applications ({approvedApplications.length + rejectedApplications.length})</h3>
+                </div>
+
+                {/* Desktop Table View */}
+                <div className="hidden md:block overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-border-base bg-bg-base/50">
+                        <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Emp No</th>
+                        <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Name</th>
+                        <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Division</th>
+                        <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Department</th>
+                        <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Proposed</th>
+                        <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Approved</th>
+                        <RenderFilterHeader
+                          label="Status"
+                          filterKey="status"
+                          options={['approved', 'rejected']}
+                          currentFilters={applicationFilters}
+                          setFilters={setApplicationFilters}
+                        />
+                        <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Processed By</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border-base">
+                      {[...approvedApplications, ...rejectedApplications].length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="px-6 py-12 text-center text-xs font-bold text-text-secondary uppercase">No processed applications</td>
+                        </tr>
+                      ) : (
+                        [...approvedApplications, ...rejectedApplications].map((app) => (
+                          <tr
+                            key={app._id}
+                            className="bg-bg-base/20 transition-all group"
+                          >
+                            <td className="whitespace-nowrap px-6 py-4 text-sm font-black text-indigo-500">
+                              {app.emp_no}
+                            </td>
+                            <td className="whitespace-nowrap px-6 py-4">
+                              <div className="text-sm font-black text-text-primary uppercase tracking-tight">{app.employee_name}</div>
+                            </td>
+                            <td className="whitespace-nowrap px-6 py-4 text-xs font-bold text-text-secondary">
+                              {(app as any).division?.name || (app.division_id as { name?: string })?.name || '-'}
+                            </td>
+                            <td className="whitespace-nowrap px-6 py-4 text-xs font-bold text-text-secondary">
+                              {app.department?.name || (app.department_id as { name?: string })?.name || '-'}
+                            </td>
+                            <td className="whitespace-nowrap px-6 py-4 text-xs font-bold text-text-secondary">
+                              ₹{app.proposedSalary.toLocaleString()}
+                            </td>
+                            <td className="whitespace-nowrap px-6 py-4 text-sm font-black text-text-primary">
+                              {app.approvedSalary ? `₹${app.approvedSalary.toLocaleString()}` : '-'}
+                            </td>
+                            <td className="whitespace-nowrap px-6 py-4">
+                              <span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest ${app.status === 'approved'
+                                ? 'bg-status-positive/10 text-status-positive'
+                                : 'bg-status-negative/10 text-status-negative'
+                                }`}>
+                                {app.status === 'approved' && <UserCheck className="w-3 h-3" />}
+                                {app.status === 'rejected' && <UserX className="w-3 h-3" />}
+                                {app.status}
+                              </span>
+                            </td>
+                            <td className="whitespace-nowrap px-6 py-4 text-[10px] font-black text-text-secondary uppercase tracking-widest">
+                              {app.approvedBy?.name || app.rejectedBy?.name || '-'}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Mobile Card View */}
+                <div className="md:hidden p-3 space-y-3">
+                  {[...approvedApplications, ...rejectedApplications].length === 0 ? (
+                    <p className="px-3 py-8 text-center text-xs font-bold text-text-secondary uppercase">No processed applications</p>
+                  ) : (
+                    [...approvedApplications, ...rejectedApplications].map((app) => (
+                      <div
+                        key={app._id}
+                        className="relative rounded-xl border border-border-base bg-bg-base/40 p-3 shadow-sm"
+                      >
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-xs font-black text-indigo-500">{app.emp_no}</span>
+                          <span className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider ${app.status === 'approved'
+                            ? 'bg-status-positive/10 text-status-positive'
+                            : 'bg-status-negative/10 text-status-negative'
+                            }`}>
+                            {app.status === 'approved' && <UserCheck className="w-2.5 h-2.5" />}
+                            {app.status === 'rejected' && <UserX className="w-2.5 h-2.5" />}
+                            {app.status}
+                          </span>
+                        </div>
+                        <h4 className="text-sm font-black text-text-primary uppercase tracking-tight truncate mb-2">{app.employee_name}</h4>
+
+                        <div className="space-y-1">
+                          {((app as any).division?.name || (app.division_id as { name?: string })?.name) && (
+                            <div className="flex items-center gap-1.5 text-xs text-text-secondary">
+                              <span className="font-medium">Division:</span>
+                              <span className="font-bold">{(app as any).division?.name || (app.division_id as { name?: string })?.name}</span>
+                            </div>
+                          )}
+                          {(app.department?.name || (app.department_id as { name?: string })?.name) && (
+                            <div className="flex items-center gap-1.5 text-xs text-text-secondary">
+                              <span className="font-medium">Dept:</span>
+                              <span className="font-bold">{app.department?.name || (app.department_id as { name?: string })?.name}</span>
+                            </div>
+                          )}
+                          <div className="flex items-center gap-1.5 text-xs text-text-secondary">
+                            <span className="font-medium">Proposed:</span>
+                            <span className="font-bold text-text-primary">₹{app.proposedSalary.toLocaleString()}</span>
+                          </div>
+                          {app.approvedSalary && (
+                            <div className="flex items-center gap-1.5 text-xs text-text-secondary">
+                              <span className="font-medium">Approved:</span>
+                              <span className="font-bold text-status-positive">₹{app.approvedSalary.toLocaleString()}</span>
+                            </div>
+                          )}
+                          <div className="flex items-center gap-1.5 text-xs text-text-secondary">
+                            <span className="font-medium">By:</span>
+                            <span className="font-bold">{app.approvedBy?.name || app.rejectedBy?.name || '-'}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+
 
       {/* Application Creation Dialog */}
       {
@@ -4549,7 +4902,6 @@ export default function EmployeesPage() {
           </div>
         )
       }
-    </div >
+    </div>
   );
 }
-
