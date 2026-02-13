@@ -607,6 +607,67 @@ export interface EmployeeApplication extends Partial<Employee> {
   employeeDeductions?: (Deduction & { overrideAmount?: number })[];
 }
 
+export interface LiveAttendanceEmployee {
+  id: string;
+  empNo: string;
+  name: string;
+  department: string;
+  designation: string;
+  division: string;
+  shift: string;
+  shiftStartTime: string | null;
+  shiftEndTime: string | null;
+  inTime: string;
+  outTime: string | null;
+  status: string;
+  date: string;
+  hoursWorked: number;
+  isLate: boolean;
+  lateMinutes: number;
+  isEarlyOut: boolean;
+  earlyOutMinutes: number;
+  otHours: number;
+  extraHours: number;
+}
+
+export interface ShiftStat {
+  name: string;
+  working: number;
+  completed: number;
+}
+
+export interface DepartmentStat {
+  id: string;
+  name: string;
+  divisionId: string;
+  divisionName: string;
+  totalEmployees: number;
+  working: number;
+  completed: number;
+  present: number;
+  absent: number;
+}
+
+export interface LiveAttendanceReportData {
+  date: string;
+  summary: {
+    currentlyWorking: number;
+    completedShift: number;
+    totalPresent: number;
+    totalActiveEmployees: number;
+    absentEmployees: number;
+    shiftBreakdown: ShiftStat[];
+    departmentBreakdown: DepartmentStat[];
+  };
+  currentlyWorking: LiveAttendanceEmployee[];
+  completedShift: LiveAttendanceEmployee[];
+}
+
+export interface LiveAttendanceFilterOption {
+  id: string;
+  name: string;
+}
+
 export const api = {
   login: async (identifier: string, password: string) => {
     return apiRequest<LoginResponse>('/auth/login', {
@@ -3015,6 +3076,25 @@ export const api = {
   // Activity Feed
   getRecentActivity: async () => {
     return apiRequest<any>('/attendance/activity/recent', { method: 'GET' });
+  },
+
+  // Live Attendance
+  getLiveAttendanceReport: async (params?: { date?: string; division?: string; department?: string; shift?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.date) query.append('date', params.date);
+    if (params?.division) query.append('division', params.division);
+    if (params?.department) query.append('department', params.department);
+    if (params?.shift) query.append('shift', params.shift);
+    const queryString = query.toString() ? `?${query.toString()}` : '';
+    return apiRequest<LiveAttendanceReportData>(`/attendance/reports/live${queryString}`, { method: 'GET' });
+  },
+
+  getLiveAttendanceFilterOptions: async () => {
+    return apiRequest<{
+      divisions: LiveAttendanceFilterOption[];
+      departments: LiveAttendanceFilterOption[];
+      shifts: LiveAttendanceFilterOption[];
+    }>('/attendance/reports/live/filters', { method: 'GET' });
   },
 
   // Security Gate Pass
