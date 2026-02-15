@@ -206,6 +206,13 @@ exports.getAssignedByUsers = async (req, res) => {
       employee = await Employee.findById(employeeId);
     } else if (empNo) {
       employee = await findEmployeeByEmpNo(empNo);
+    } else {
+      // Fallback to current user if no params provided
+      if (req.user.employeeRef) {
+        employee = await Employee.findById(req.user.employeeRef);
+      } else if (req.user.employeeId) {
+        employee = await findEmployeeByEmpNo(req.user.employeeId);
+      }
     }
 
     if (!employee) {

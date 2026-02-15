@@ -323,6 +323,9 @@ exports.applyOD = async (req, res) => {
 
     // Use empNo as primary identifier (from frontend)
     if (empNo) {
+      // Check if this is self-application
+      const isSelf = req.user.emp_no && (req.user.emp_no === empNo || req.user.emp_no.toLowerCase() === empNo.toLowerCase());
+
       // Check if user has permission to apply for others
       // Allow hod, hr, sub_admin, super_admin to apply for anyone (Global Logic)
       // Manager is handled separately with detailed scoping
@@ -331,8 +334,13 @@ exports.applyOD = async (req, res) => {
 
       console.log(`[Apply OD] User ${req.user._id} (${req.user.role}) applying for employee ${empNo}`);
 
+      // 0. SELF APPLICATION CHECK
+      if (isSelf) {
+        console.log(`[Apply OD] ✅ Self Application Authorization granted`);
+        employee = await findEmployeeByEmpNo(empNo);
+      }
       // 1. GLOBAL ADMIN CHECK
-      if (isGlobalAdmin) {
+      else if (isGlobalAdmin) {
         console.log(`[Apply OD] ✅ Global Admin Authorization granted`);
         // We still need the employee for data populating later
         employee = await findEmployeeByEmpNo(empNo);
@@ -430,16 +438,19 @@ exports.applyOD = async (req, res) => {
           });
         }
         console.log(`[Apply OD] ✅ Workspace Authorization granted`);
+        // Find employee by emp_no (checks MongoDB first, then MSSQL based on settings)
+        employee = await findEmployeeByEmpNo(empNo);
       }
 
 
-
-      // Find employee by emp_no (checks MongoDB first, then MSSQL based on settings)
-      employee = await findEmployeeByEmpNo(empNo);
     } else if (employeeId) {
       // Legacy: Check if user has permission to apply for others
       // Allow hod, hr, sub_admin, super_admin (backward compatibility)
-      const hasRolePermission = ['hod', 'hr', 'sub_admin', 'super_admin'].includes(req.user.role);
+
+      // Check if this is self-application
+      const isSelf = req.user.employeeRef && req.user.employeeRef.toString() === employeeId.toString();
+
+      const hasRolePermission = ['hod', 'hr', 'sub_admin', 'super_admin'].includes(req.user.role) || isSelf;
 
       console.log(`[Apply OD] User ${req.user._id} (${req.user.role}) applying for employee ${employeeId}(legacy)`);
       console.log(`[Apply OD] Has role permission: ${hasRolePermission} `);
