@@ -453,7 +453,11 @@ exports.applyLeave = async (req, res) => {
     } else if (employeeId) {
       // Legacy: Check if user has permission to apply for others
       // Allow hod, hr, sub_admin, super_admin, manager (backward compatibility)
-      const hasRolePermission = ['hod', 'hr', 'sub_admin', 'super_admin', 'manager'].includes(req.user.role);
+
+      // Check if this is self-application
+      const isSelf = req.user.employeeRef && req.user.employeeRef.toString() === employeeId.toString();
+
+      const hasRolePermission = ['hod', 'hr', 'sub_admin', 'super_admin', 'manager'].includes(req.user.role) || isSelf;
 
       console.log(`[Apply Leave] User ${req.user._id} (${req.user.role}) applying for employee ${employeeId}(legacy)`);
       console.log(`[Apply Leave] Has role permission: ${hasRolePermission} `);
