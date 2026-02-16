@@ -31,8 +31,8 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber) {
         $lte: endDateStr,
       },
     })
-      .select('status shiftId totalHours extraHours earlyOutMinutes payableShifts')
-      .populate('shiftId', 'payableShifts name')
+      .select('status shifts totalWorkingHours extraHours totalEarlyOutMinutes payableShifts')
+      .populate('shifts.shiftId', 'payableShifts name')
       .lean();
 
     // 2. Calculate total present days (Half-day counts as 0.5)
@@ -56,19 +56,6 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber) {
     for (const record of activeAttendanceDays) {
       if (record.payableShifts !== undefined && record.payableShifts !== null) {
         totalPayableShifts += Number(record.payableShifts);
-      } else {
-        // Fallback to legacy logic
-        let basePayable = 1;
-        if (record.shiftId && typeof record.shiftId === 'object' && record.shiftId.payableShifts !== undefined && record.shiftId.payableShifts !== null) {
-          basePayable = Number(record.shiftId.payableShifts);
-        }
-
-        // If it's a half day, they get half of the shift's payable value
-        if (record.status === 'HALF_DAY') {
-          totalPayableShifts += (basePayable / 2);
-        } else {
-          totalPayableShifts += basePayable;
-        }
       }
     }
 

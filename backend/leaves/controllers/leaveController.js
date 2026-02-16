@@ -1715,7 +1715,7 @@ exports.updateLeaveForAttendance = async (req, res) => {
     const attendance = await AttendanceDaily.findOne({
       employeeNumber: employeeNumber.toUpperCase(),
       date: date,
-    }).populate('shiftId');
+    }).populate('shifts.shiftId');
 
     if (!attendance) {
       return res.status(404).json({

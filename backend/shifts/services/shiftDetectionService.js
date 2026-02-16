@@ -1259,11 +1259,30 @@ const resolveConfusedShift = async (confusedShiftId, shiftId, userId, comments =
       // Update attendance record - USE SHIFTS ARRAY
       if (!attendanceRecord.shifts) attendanceRecord.shifts = [];
 
-      let targetShift;
+      let targetShift = null;
       if (attendanceRecord.shifts.length > 0) {
-        targetShift = attendanceRecord.shifts[0];
-      } else {
-        targetShift = { shiftNumber: 1 };
+        // Find the shift that matches the confused shift's in-time
+        // We use a small tolerance or exact match since it comes from the same source
+        targetShift = attendanceRecord.shifts.find(s => {
+          const sTime = new Date(s.inTime).getTime();
+          const cTime = new Date(confusedShift.inTime).getTime();
+          return Math.abs(sTime - cTime) < 1000 * 60; // 1 minute tolerance
+        });
+
+        // If not found by time, and only 1 shift exists, maybe safe to assume it's that one? 
+        // But strict matching is safer for multi-shift. 
+        // If not found, we might need to add it?
+        if (!targetShift && attendanceRecord.shifts.length === 0) {
+          // Fallback logic below will handle push
+        }
+      }
+
+      if (!targetShift) {
+        targetShift = {
+          shiftNumber: attendanceRecord.shifts.length + 1,
+          inTime: confusedShift.inTime, // Use confused shift time
+          outTime: confusedShift.outTime // Use confused shift time
+        };
         attendanceRecord.shifts.push(targetShift);
       }
 
