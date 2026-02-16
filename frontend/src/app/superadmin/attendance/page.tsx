@@ -2151,20 +2151,21 @@ export default function AttendancePage() {
                         {!editingShift ? (
                           <>
                             <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                              {attendanceDetail.shiftId && typeof attendanceDetail.shiftId === 'object'
+                              {(attendanceDetail.shiftId && typeof attendanceDetail.shiftId === 'object'
                                 ? attendanceDetail.shiftId.name
-                                : '-'}
+                                : '-')}
                             </div>
                             <button
                               onClick={() => {
                                 setEditingShift(true);
+                                // Default to first shift or root shift
                                 if (attendanceDetail.shiftId && typeof attendanceDetail.shiftId === 'object') {
                                   setSelectedShiftId(attendanceDetail.shiftId._id);
                                 }
                               }}
                               className="rounded-lg bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-all hover:bg-blue-600"
                             >
-                              {attendanceDetail.shiftId ? 'Change' : 'Assign'}
+                              {attendanceDetail.shifts && attendanceDetail.shifts.length > 0 ? 'Edit' : (attendanceDetail.shiftId ? 'Change' : 'Assign')}
                             </button>
                           </>
                         ) : (
@@ -2277,29 +2278,79 @@ export default function AttendancePage() {
                         {formatHours(attendanceDetail.totalHours)}
                       </div>
                     </div>
-                    {attendanceDetail.isLateIn && attendanceDetail.lateInMinutes && (
-                      <div>
-                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Late In</label>
-                        <div className="mt-1 text-sm font-semibold text-orange-600 dark:text-orange-400">
-                          +{attendanceDetail.lateInMinutes} minutes
-                        </div>
-                      </div>
-                    )}
-                    {attendanceDetail.isEarlyOut && attendanceDetail.earlyOutMinutes && (
-                      <div>
-                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Early Out</label>
-                        <div className="mt-1 text-sm font-semibold text-orange-600 dark:text-orange-400">
-                          -{attendanceDetail.earlyOutMinutes} minutes
-                        </div>
-                        {attendanceDetail.earlyOutDeduction?.deductionApplied && (
-                          <p className="text-[11px] text-amber-600 dark:text-amber-400">
-                            Deduction: {attendanceDetail.earlyOutDeduction.deductionType?.replace('_', ' ')}
-                            {attendanceDetail.earlyOutDeduction.deductionDays ? ` (${attendanceDetail.earlyOutDeduction.deductionDays} day(s))` : ''}
-                            {attendanceDetail.earlyOutDeduction.deductionAmount ? ` (₹${attendanceDetail.earlyOutDeduction.deductionAmount})` : ''}
-                          </p>
-                        )}
-                      </div>
-                    )}
+                    {/* Late In Display - Support Multi-Shift */}
+                    {(() => {
+                      const shiftsWithLate = attendanceDetail.shifts?.filter((s: any) => s.lateInMinutes && s.lateInMinutes > 0) || [];
+                      const hasRootLate = attendanceDetail.isLateIn && attendanceDetail.lateInMinutes;
+
+                      if (shiftsWithLate.length > 0) {
+                        return (
+                          <div>
+                            <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Late In</label>
+                            {shiftsWithLate.map((s: any, idx: number) => (
+                              <div key={idx} className="mt-1 text-sm font-semibold text-orange-600 dark:text-orange-400">
+                                {attendanceDetail.shifts && attendanceDetail.shifts.length > 1 ? `#${idx + 1}: ` : ''}
+                                +{s.lateInMinutes} min
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      } else if (hasRootLate) {
+                        return (
+                          <div>
+                            <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Late In</label>
+                            <div className="mt-1 text-sm font-semibold text-orange-600 dark:text-orange-400">
+                              +{attendanceDetail.lateInMinutes} minutes
+                            </div>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
+
+                    {/* Early Out Display - Support Multi-Shift */}
+                    {(() => {
+                      const shiftsWithEarly = attendanceDetail.shifts?.filter((s: any) => s.earlyOutMinutes && s.earlyOutMinutes > 0) || [];
+                      const hasRootEarly = attendanceDetail.isEarlyOut && attendanceDetail.earlyOutMinutes;
+
+                      if (shiftsWithEarly.length > 0) {
+                        return (
+                          <div>
+                            <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Early Out</label>
+                            {shiftsWithEarly.map((s: any, idx: number) => (
+                              <div key={idx} className="mt-1 text-sm font-semibold text-orange-600 dark:text-orange-400">
+                                {attendanceDetail.shifts && attendanceDetail.shifts.length > 1 ? `#${idx + 1}: ` : ''}
+                                -{s.earlyOutMinutes} min
+                              </div>
+                            ))}
+                            {attendanceDetail.earlyOutDeduction?.deductionApplied && (
+                              <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                                Deduction: {attendanceDetail.earlyOutDeduction.deductionType?.replace('_', ' ')}
+                                {attendanceDetail.earlyOutDeduction.deductionDays ? ` (${attendanceDetail.earlyOutDeduction.deductionDays} day(s))` : ''}
+                                {attendanceDetail.earlyOutDeduction.deductionAmount ? ` (₹${attendanceDetail.earlyOutDeduction.deductionAmount})` : ''}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      } else if (hasRootEarly) {
+                        return (
+                          <div>
+                            <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Early Out</label>
+                            <div className="mt-1 text-sm font-semibold text-orange-600 dark:text-orange-400">
+                              -{attendanceDetail.earlyOutMinutes} minutes
+                            </div>
+                            {attendanceDetail.earlyOutDeduction?.deductionApplied && (
+                              <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                                Deduction: {attendanceDetail.earlyOutDeduction.deductionType?.replace('_', ' ')}
+                                {attendanceDetail.earlyOutDeduction.deductionDays ? ` (${attendanceDetail.earlyOutDeduction.deductionDays} day(s))` : ''}
+                                {attendanceDetail.earlyOutDeduction.deductionAmount ? ` (₹${attendanceDetail.earlyOutDeduction.deductionAmount})` : ''}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
                     {attendanceDetail.otHours && attendanceDetail.otHours > 0 && (
                       <div>
                         <label className="text-xs font-medium text-slate-600 dark:text-slate-400">OT Hours</label>

@@ -169,17 +169,18 @@ exports.getCalendarViewData = async (employee, year, month) => {
 
     attendanceMap[record.date] = {
       date: record.date,
-      inTime: record.inTime,
-      outTime: record.outTime,
-      totalHours: record.totalHours,
+      // Map from first/last shift for display, or use shifts array in frontend
+      inTime: record.shifts && record.shifts.length > 0 ? record.shifts[0].inTime : null,
+      outTime: record.shifts && record.shifts.length > 0 ? record.shifts[record.shifts.length - 1].outTime : null,
+      totalHours: record.totalWorkingHours, // Use aggregate
       status: record.status,
-      shiftId: record.shiftId,
-      isLateIn: record.isLateIn || false,
-      isEarlyOut: record.isEarlyOut || false,
-      lateInMinutes: record.lateInMinutes || null,
-      earlyOutMinutes: record.earlyOutMinutes || null,
+      shiftId: record.shifts && record.shifts.length > 0 ? record.shifts[0].shiftId : null,
+      isLateIn: record.totalLateInMinutes > 0,
+      isEarlyOut: record.totalEarlyOutMinutes > 0,
+      lateInMinutes: record.totalLateInMinutes || 0,
+      earlyOutMinutes: record.totalEarlyOutMinutes || 0,
       earlyOutDeduction: record.earlyOutDeduction || null,
-      expectedHours: record.expectedHours || null,
+      expectedHours: record.totalExpectedHours || null,
       otHours: Math.max(record.otHours || 0, record.totalOTHours || 0),
       extraHours: record.extraHours || 0,
       permissionHours: record.permissionHours || 0,
@@ -191,7 +192,8 @@ exports.getCalendarViewData = async (employee, year, month) => {
       isConflict: isConflict,
       isEdited: record.isEdited || false,
       editHistory: record.editHistory || [],
-      source: record.source || []
+      source: record.source || [],
+      shifts: record.shifts || []
     };
   });
 
@@ -248,9 +250,8 @@ exports.getMonthlyTableViewData = async (employees, year, month) => {
     employeeNumber: { $in: empNos },
     date: { $gte: startDate, $lte: endDateStr },
   })
-    .select('employeeNumber date status inTime outTime totalHours lateInMinutes earlyOutMinutes isLateIn isEarlyOut shiftId shifts expectedHours otHours extraHours permissionHours permissionCount notes earlyOutDeduction isEdited editHistory')
-    .populate('shiftId', 'name startTime endTime duration payableShifts')
-    .populate('shifts.shiftId', 'name startTime endTime')
+    .select('employeeNumber date status shifts totalWorkingHours totalLateInMinutes totalEarlyOutMinutes totalExpectedHours totalOTHours extraHours permissionHours permissionCount notes earlyOutDeduction isEdited editHistory')
+    .populate('shifts.shiftId', 'name startTime endTime duration payableShifts')
     .sort({ employeeNumber: 1, date: 1 })
     .lean();
 
@@ -399,16 +400,16 @@ exports.getMonthlyTableViewData = async (employees, year, month) => {
       dailyAttendance[dateStr] = {
         date: dateStr,
         status: status,
-        inTime: record?.inTime || null,
-        outTime: record?.outTime || null,
-        totalHours: record?.totalHours || null,
-        lateInMinutes: record?.lateInMinutes || 0,
-        earlyOutMinutes: record?.earlyOutMinutes || 0,
-        isLateIn: record?.isLateIn || false,
-        isEarlyOut: record?.isEarlyOut || false,
-        shiftId: record?.shiftId || null,
+        inTime: record?.shifts && record.shifts.length > 0 ? record.shifts[0].inTime : null,
+        outTime: record?.shifts && record.shifts.length > 0 ? record.shifts[record.shifts.length - 1].outTime : null,
+        totalHours: record?.totalWorkingHours || null,
+        lateInMinutes: record?.totalLateInMinutes || 0,
+        earlyOutMinutes: record?.totalEarlyOutMinutes || 0,
+        isLateIn: record?.totalLateInMinutes > 0,
+        isEarlyOut: record?.totalEarlyOutMinutes > 0,
+        shiftId: record?.shifts && record.shifts.length > 0 ? record.shifts[0].shiftId._id || record.shifts[0].shiftId : null,
         shifts: record?.shifts || [],
-        expectedHours: record?.expectedHours || 0,
+        expectedHours: record?.totalExpectedHours || 0,
         otHours: Math.max(record?.otHours || 0, record?.totalOTHours || 0),
         extraHours: record?.extraHours || 0,
         permissionHours: record?.permissionHours || 0,

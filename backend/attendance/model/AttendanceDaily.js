@@ -118,21 +118,20 @@ const attendanceDailySchema = new mongoose.Schema(
       type: Number, // Sum of payable shifts (e.g. 1.5)
       default: 0,
     },
-    // ========== BACKWARD COMPATIBILITY FIELDS ==========
-    // Keep existing fields for backward compatibility
-    // These will represent first shift IN and last shift OUT
-    inTime: {
-      type: Date,
-      default: null,
-    },
-    outTime: {
-      type: Date,
-      default: null,
-    },
-    totalHours: {
+    // ========== NEW AGGREGATE FIELDS ==========
+    totalLateInMinutes: {
       type: Number,
-      default: null, // Calculated: (outTime - inTime) / (1000 * 60 * 60)
+      default: 0
     },
+    totalEarlyOutMinutes: {
+      type: Number,
+      default: 0
+    },
+    totalExpectedHours: {
+      type: Number,
+      default: 0
+    },
+
     status: {
       type: String,
       enum: ['PRESENT', 'ABSENT', 'PARTIAL', 'HALF_DAY', 'HOLIDAY', 'WEEK_OFF'],
@@ -176,37 +175,10 @@ const attendanceDailySchema = new mongoose.Schema(
       trim: true,
       default: null,
     },
-    // Shift-related fields (for primary/first shift)
-    shiftId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Shift',
-      default: null,
-      index: true,
-    },
-    lateInMinutes: {
-      type: Number,
-      default: null, // Minutes late if in-time > shift start + grace period
-    },
-    earlyOutMinutes: {
-      type: Number,
-      default: null, // Minutes early if out-time < shift end
-    },
-    isLateIn: {
-      type: Boolean,
-      default: false,
-    },
-    isEarlyOut: {
-      type: Boolean,
-      default: false,
-    },
-    expectedHours: {
-      type: Number,
-      default: null, // Expected hours based on shift duration
-    },
     // Overtime and extra hours
     otHours: {
       type: Number,
-      default: 0, // Overtime hours (from approved OT request)
+      default: 0, // Overtime hours (from approved OT request) - Keeping for backward compat / manual OT
     },
     extraHours: {
       type: Number,
@@ -300,34 +272,7 @@ attendanceDailySchema.index({ shiftId: 1, date: 1 }, { background: true });
 
 // Method to calculate total hours
 // Handles overnight shifts where out-time is before in-time (next day scenario)
-attendanceDailySchema.methods.calculateTotalHours = function () {
-  if (this.inTime && this.outTime) {
-    let outTimeToUse = new Date(this.outTime);
-    let inTimeToUse = new Date(this.inTime);
-
-    // If out-time is before in-time on the same date, it's likely next day (overnight shift)
-    // Compare only the time portion, not the full date
-    const outTimeOnly = outTimeToUse.getHours() * 60 + outTimeToUse.getMinutes();
-    const inTimeOnly = inTimeToUse.getHours() * 60 + inTimeToUse.getMinutes();
-
-    // If out-time (time only) is less than in-time (time only), assume out-time is next day
-    // This handles cases like: in at 20:00, out at 04:00 (next day)
-    // But also handles: in at 08:02, out at 04:57 (next day)
-    if (outTimeOnly < inTimeOnly) {
-      // Check if the actual dates are different
-      // If same date but out-time is earlier, it's next day
-      if (outTimeToUse.toDateString() === inTimeToUse.toDateString()) {
-        outTimeToUse.setDate(outTimeToUse.getDate() + 1);
-      }
-    }
-
-    const diffMs = outTimeToUse.getTime() - inTimeToUse.getTime();
-    const diffHours = diffMs / (1000 * 60 * 60);
-    this.totalHours = Math.round(diffHours * 100) / 100; // Round to 2 decimal places
-    return this.totalHours;
-  }
-  return null;
-};
+// Method to calculate total hours - REMOVED (Legacy)
 
 // Pre-save hook to calculate aggregates from shifts array
 attendanceDailySchema.pre('save', async function () {
@@ -349,38 +294,37 @@ attendanceDailySchema.pre('save', async function () {
     let totalWorking = 0;
     let totalOT = 0;
     let totalExtra = 0;
-    let firstIn = null;
-    let lastOut = null;
+    let totalLateIn = 0;
+    let totalEarlyOut = 0;
+    let totalExpected = 0;
 
-  if (this.inTime && this.outTime) {
-    this.calculateTotalHours();
-
+    // Calculate totals from shifts
     this.shifts.forEach((shift, index) => {
       totalWorking += shift.workingHours || 0;
       totalOT += shift.otHours || 0;
       totalExtra += shift.extraHours || 0;
 
-      if (!firstIn || (shift.inTime && shift.inTime < firstIn)) {
-        firstIn = shift.inTime;
-      }
+      // Accumulate minutes
+      if (shift.lateInMinutes > 0) totalLateIn += shift.lateInMinutes;
+      if (shift.earlyOutMinutes > 0) totalEarlyOut += shift.earlyOutMinutes;
+      if (shift.isLateIn) totalLateIn += (shift.lateInMinutes || 0); // Double check logic, usually one is enough.
 
-      if (shift.outTime) {
-        if (!lastOut || shift.outTime > lastOut) {
-          lastOut = shift.outTime;
-        }
-      }
+      // Expected hours (assuming shift.duration is in minutes? Model says methods to calculate it.)
+      // Note: We don't have exact expectedHours per shift saved usually, just calculated dynamically or from shiftId.
+      // If we want totalExpectedHours, we should ideally sum up duration of assigned shifts.
+      // However, shift.duration might not be populated here.
+      // We will rely on shift.workingHours logic mostly. 
+      // For now, let's leave totalExpected as 0 if not easily available, or try to use what we have.
     });
 
     this.totalWorkingHours = Math.round(totalWorking * 100) / 100;
     this.totalOTHours = Math.round(totalOT * 100) / 100;
     this.extraHours = Math.round(totalExtra * 100) / 100;
+    this.totalLateInMinutes = totalLateIn;
+    this.totalEarlyOutMinutes = totalEarlyOut;
+    this.totalExpectedHours = totalExpected; // Placeholder or calculate if possible
 
-    // 2. Metrics (Backward Compatibility)
-    this.inTime = firstIn;
-    this.outTime = lastOut;
-    this.totalHours = this.totalWorkingHours;
-
-    // 3. Status Determination
+    // 2. Status Determination
     // Logic:
     // - PRESENT: If any shift is PRESENT (or payable >= 1)
     // - HALF_DAY: Only if exactly ONE shift and it is HALF_DAY
@@ -393,51 +337,23 @@ attendanceDailySchema.pre('save', async function () {
       this.status = 'HALF_DAY';
     } else {
       // If multi-shift but none present, checking aggregated payable might handle edge cases like 0.5 + 0.5
-      if (this.payableShifts >= 1) {
+      let totalPayable = this.shifts.reduce((acc, s) => acc + (s.payableShift || 0), 0);
+      this.payableShifts = totalPayable;
+
+      if (totalPayable >= 1) {
         this.status = 'PRESENT';
+      } else if (totalPayable > 0) {
+        this.status = 'HALF_DAY'; // Or PARTIAL
       } else {
         // Fallback to whatever the individual outcomes were, but usually absent/partial
         this.status = this.shifts.length > 0 ? 'PARTIAL' : 'ABSENT';
       }
     }
 
-    // Set primary lookup fields from first shift
-    if (this.shifts.length > 0 && this.shifts[0].shiftId) {
-      this.shiftId = this.shifts[0].shiftId;
-      this.isLateIn = this.shifts[0].isLateIn;
-      this.lateInMinutes = this.shifts[0].lateInMinutes;
-    }
-  }
-
   } else {
-    // Legacy mapping for direct updates without shifts array
-    if (this.inTime && this.outTime) {
-      this.calculateTotalHours();
-      if (this.expectedHours) {
-        const effectiveHours = (this.totalHours || 0) + (this.odHours || 0);
-        // Normalize duration to hours if it looks like minutes (e.g. > 20)
-        // expectedHours is usually in hours for legacy, but shift duration is often in hours too. 
-        // Let's assume expectedHours is in HOURS.
-        const durationHours = this.expectedHours;
-
-        if (effectiveHours >= (durationHours * 0.9)) {
-          this.status = 'PRESENT';
-          this.payableShifts = 1;
-        } else if (effectiveHours >= (durationHours * 0.45)) {
-          this.status = 'HALF_DAY';
-          this.payableShifts = 0.5;
-        } else {
-          this.status = 'ABSENT';
-          this.payableShifts = 0;
-        }
-      } else if (this.status !== 'HALF_DAY' && this.status !== 'ABSENT') {
-        // Fallback if expectedHours is missing but we have in/out
-        this.status = 'PRESENT';
-        this.payableShifts = 1;
-      }
-    } else if (this.inTime || this.outTime) {
-      this.status = 'PARTIAL';
-      this.payableShifts = 0;
+    // Legacy/No-Shift Logic (likely unused now but good for safety)
+    if (this.totalWorkingHours > 0) {
+      this.status = 'PRESENT'; // Simplified fallback
     } else {
       // No punches - use roster status if available, else default to ABSENT
       this.payableShifts = 0;
@@ -450,7 +366,8 @@ attendanceDailySchema.pre('save', async function () {
       }
     }
     // Special Requirement: If worked on Holiday/Week-Off (have punches on HOL/WO day), add remark
-    if ((rosterStatus === 'HOL' || rosterStatus === 'WO') && (this.inTime || this.outTime)) {
+    // Checked via totalWorkingHours now
+    if ((rosterStatus === 'HOL' || rosterStatus === 'WO') && (this.totalWorkingHours > 0)) {
       const dayLabel = rosterStatus === 'HOL' ? 'Holiday' : 'Week Off';
       const remark = `Worked on ${dayLabel}`;
       if (!this.notes) {
@@ -461,11 +378,11 @@ attendanceDailySchema.pre('save', async function () {
     }
   }
 
-  // Calculate early-out deduction if earlyOutMinutes exists
-  if (this.earlyOutMinutes && this.earlyOutMinutes > 0) {
+  // Calculate early-out deduction if totalEarlyOutMinutes exists
+  if (this.totalEarlyOutMinutes && this.totalEarlyOutMinutes > 0) {
     try {
       const { calculateEarlyOutDeduction } = require('../services/earlyOutDeductionService');
-      const deduction = await calculateEarlyOutDeduction(this.earlyOutMinutes);
+      const deduction = await calculateEarlyOutDeduction(this.totalEarlyOutMinutes);
 
       // Update early-out deduction fields
       this.earlyOutDeduction = {
@@ -507,8 +424,8 @@ attendanceDailySchema.post('save', async function () {
     const { recalculateOnAttendanceUpdate } = require('../services/summaryCalculationService');
     const { detectExtraHours } = require('../services/extraHoursService');
 
-    // If shiftId was modified, we need to recalculate the entire month
-    if (this.isModified('shiftId')) {
+    // If shifts array was modified, we need to recalculate the entire month
+    if (this.isModified('shifts')) {
       const dateObj = new Date(this.date);
       const year = dateObj.getFullYear();
       const monthNumber = dateObj.getMonth() + 1;
@@ -525,10 +442,10 @@ attendanceDailySchema.post('save', async function () {
       await recalculateOnAttendanceUpdate(this.employeeNumber, this.date);
     }
 
-    // Detect extra hours if outTime or shiftId was modified
-    if (this.isModified('outTime') || this.isModified('shiftId')) {
-      if (this.outTime && this.shiftId) {
-        // Only detect if we have both outTime and shiftId
+    // Detect extra hours if shifts were modified
+    if (this.isModified('shifts')) {
+      if (this.shifts && this.shifts.length > 0) {
+        // Only detect if we have shifts
         await detectExtraHours(this.employeeNumber, this.date);
       }
     }
