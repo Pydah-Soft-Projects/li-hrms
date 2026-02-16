@@ -21,7 +21,7 @@ exports.getCalendarViewData = async (employee, year, month) => {
     employeeNumber: employee.emp_no,
     date: { $gte: startDate, $lte: endDateStr },
   })
-    .populate('shiftId', 'name startTime endTime duration payableShifts')
+    .populate('shifts.shiftId', 'name startTime endTime duration payableShifts')
     .sort({ date: 1 });
 
   // Fetch approved leaves and ODs
@@ -170,17 +170,17 @@ exports.getCalendarViewData = async (employee, year, month) => {
     attendanceMap[record.date] = {
       date: record.date,
       // Map from first/last shift for display, or use shifts array in frontend
-      inTime: record.shifts && record.shifts.length > 0 ? record.shifts[0].inTime : null,
-      outTime: record.shifts && record.shifts.length > 0 ? record.shifts[record.shifts.length - 1].outTime : null,
+      // inTime and outTime are now provided within the shifts array for multi-shift support
       totalHours: record.totalWorkingHours, // Use aggregate
       status: record.status,
       shiftId: record.shifts && record.shifts.length > 0 ? record.shifts[0].shiftId : null,
+      shiftName: record.shifts && record.shifts.length > 0 && record.shifts[0].shiftId ? record.shifts[0].shiftId.name : null,
       isLateIn: record.totalLateInMinutes > 0,
       isEarlyOut: record.totalEarlyOutMinutes > 0,
       lateInMinutes: record.totalLateInMinutes || 0,
       earlyOutMinutes: record.totalEarlyOutMinutes || 0,
       earlyOutDeduction: record.earlyOutDeduction || null,
-      expectedHours: record.totalExpectedHours || null,
+      expectedHours: record.totalExpectedHours || (record.shifts && record.shifts.length > 0 && record.shifts[0].shiftId ? record.shifts[0].shiftId.duration : null),
       otHours: Math.max(record.otHours || 0, record.totalOTHours || 0),
       extraHours: record.extraHours || 0,
       permissionHours: record.permissionHours || 0,
@@ -400,16 +400,15 @@ exports.getMonthlyTableViewData = async (employees, year, month) => {
       dailyAttendance[dateStr] = {
         date: dateStr,
         status: status,
-        inTime: record?.shifts && record.shifts.length > 0 ? record.shifts[0].inTime : null,
-        outTime: record?.shifts && record.shifts.length > 0 ? record.shifts[record.shifts.length - 1].outTime : null,
+        // inTime and outTime are now provided within the shifts array for multi-shift support
         totalHours: record?.totalWorkingHours || null,
         lateInMinutes: record?.totalLateInMinutes || 0,
         earlyOutMinutes: record?.totalEarlyOutMinutes || 0,
         isLateIn: record?.totalLateInMinutes > 0,
         isEarlyOut: record?.totalEarlyOutMinutes > 0,
-        shiftId: record?.shifts && record.shifts.length > 0 ? record.shifts[0].shiftId._id || record.shifts[0].shiftId : null,
+        shiftId: record?.shifts && record.shifts.length > 0 ? record.shifts[0].shiftId : null,
         shifts: record?.shifts || [],
-        expectedHours: record?.totalExpectedHours || 0,
+        expectedHours: record?.totalExpectedHours || (record?.shifts && record.shifts.length > 0 && record.shifts[0].shiftId ? record.shifts[0].shiftId.duration : 0),
         otHours: Math.max(record?.otHours || 0, record?.totalOTHours || 0),
         extraHours: record?.extraHours || 0,
         permissionHours: record?.permissionHours || 0,

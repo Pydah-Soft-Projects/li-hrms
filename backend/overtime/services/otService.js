@@ -561,9 +561,10 @@ const rejectOTRequest = async (otId, userId, reason, userRole) => {
  * @param {String} employeeNumber - Employee number
  * @param {String} date - Date (YYYY-MM-DD)
  * @param {String} userId - User ID performing the conversion
+ * @param {String} userName - User name performing the conversion
  * @returns {Object} - Result
  */
-const convertExtraHoursToOT = async (employeeId, employeeNumber, date, userId) => {
+const convertExtraHoursToOT = async (employeeId, employeeNumber, date, userId, userName) => {
   try {
     // Get attendance record
     const attendanceRecord = await AttendanceDaily.findOne({
@@ -668,6 +669,7 @@ const convertExtraHoursToOT = async (employeeId, employeeNumber, date, userId) =
     attendanceRecord.editHistory.push({
       action: 'OT_CONVERSION',
       modifiedBy: userId,
+      modifiedByName: userName,
       modifiedAt: new Date(),
       details: `Converted ${otHours.toFixed(2)} hours extra to OT`
     });

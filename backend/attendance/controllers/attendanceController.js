@@ -119,7 +119,7 @@ exports.getAttendanceList = async (req, res) => {
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     const records = await AttendanceDaily.find(query)
-      .populate('shiftId', 'name startTime endTime duration')
+      .populate('shifts.shiftId', 'name startTime endTime duration')
       .sort({ date: -1 })
       .skip(skip)
       .limit(parseInt(limit));
@@ -207,7 +207,6 @@ exports.getAttendanceDetail = async (req, res) => {
       employeeNumber: employeeNumber.toUpperCase(),
       date: date,
     })
-      .populate('shiftId', 'name startTime endTime duration gracePeriod')
       .populate('shifts.shiftId', 'name startTime endTime duration gracePeriod');
 
     if (!record) {
@@ -494,6 +493,7 @@ exports.updateOutTime = async (req, res) => {
     attendanceRecord.editHistory.push({
       action: 'OUT_TIME_UPDATE',
       modifiedBy: req.user._id,
+      modifiedByName: req.user.name,
       modifiedAt: new Date(),
       details: `Out time updated manually to ${outTimeDate.toLocaleTimeString()}`
     });
@@ -566,6 +566,22 @@ exports.updateOutTime = async (req, res) => {
         const hours = diffMs / (1000 * 60 * 60);
         shiftSegment.punchHours = Math.round(hours * 100) / 100;
         shiftSegment.workingHours = Math.round(((shiftSegment.punchHours || 0) + (shiftSegment.odHours || 0)) * 100) / 100;
+      }
+
+      // 5. Recalculate Status and Payable
+      const durationHours = shiftDetails.duration > 20 ? (shiftDetails.duration / 60) : (shiftDetails.duration || 8);
+      let basePayable = shiftDetails.payableShifts ?? 1;
+      shiftSegment.expectedHours = Math.round(durationHours * 100) / 100;
+
+      if (shiftSegment.workingHours >= (durationHours * 0.9)) {
+        shiftSegment.status = 'PRESENT';
+        shiftSegment.payableShift = basePayable;
+      } else if (shiftSegment.workingHours >= (durationHours * 0.45)) {
+        shiftSegment.status = 'HALF_DAY';
+        shiftSegment.payableShift = basePayable * 0.5;
+      } else {
+        shiftSegment.status = 'ABSENT';
+        shiftSegment.payableShift = 0;
       }
     }
 
@@ -750,10 +766,11 @@ exports.assignShift = async (req, res) => {
       // But status might change.
     }
 
-    // Update Status based on NEW rules
+    // Update Status based on rules
     if (shiftSegment.workingHours !== undefined) {
-      const durationHours = shift.duration > 20 ? (shift.duration / 60) : shift.duration; // Normalize
+      const durationHours = shift.duration > 20 ? (shift.duration / 60) : (shift.duration || 8);
       let basePayable = shift.payableShifts ?? 1;
+      shiftSegment.expectedHours = Math.round(durationHours * 100) / 100;
 
       if (shiftSegment.workingHours >= (durationHours * 0.9)) {
         shiftSegment.status = 'PRESENT';
@@ -762,7 +779,8 @@ exports.assignShift = async (req, res) => {
         shiftSegment.status = 'HALF_DAY';
         shiftSegment.payableShift = basePayable * 0.5;
       } else {
-        // shiftSegment.status = 'ABSENT'; // Or PARTIAL?
+        shiftSegment.status = 'ABSENT';
+        shiftSegment.payableShift = 0;
       }
     }
 
@@ -776,6 +794,7 @@ exports.assignShift = async (req, res) => {
     attendanceRecord.editHistory.push({
       action: 'SHIFT_CHANGE',
       modifiedBy: req.user?._id || req.user?.userId,
+      modifiedByName: req.user.name,
       modifiedAt: new Date(),
       details: `Changed shift to ${shift.name}`
     });
@@ -811,7 +830,7 @@ exports.assignShift = async (req, res) => {
       employeeNumber: employeeNumber.toUpperCase(),
       date: date,
     })
-      .populate('shiftId', 'name startTime endTime duration payableShifts');
+      .populate('shifts.shiftId', 'name startTime endTime duration payableShifts');
 
     res.status(200).json({
       success: true,
@@ -1024,8 +1043,9 @@ exports.updateInTime = async (req, res) => {
 
     attendanceRecord.isEdited = true;
     attendanceRecord.editHistory.push({
-      action: 'SHIFT_CHANGE', // Fallback for now matching enum
+      action: 'IN_TIME_UPDATE',
       modifiedBy: req.user?._id || req.user?.userId,
+      modifiedByName: req.user.name,
       modifiedAt: new Date(),
       details: `In time updated manually to ${newInTime.toLocaleTimeString()}`
     });
@@ -1062,6 +1082,22 @@ exports.updateInTime = async (req, res) => {
         const hours = diffMs / (1000 * 60 * 60);
         shiftSegment.punchHours = Math.round(hours * 100) / 100;
         shiftSegment.workingHours = Math.round(((shiftSegment.punchHours || 0) + (shiftSegment.odHours || 0)) * 100) / 100;
+
+        // Recalculate Status and Payable
+        const durationHours = shiftDetails.duration > 20 ? (shiftDetails.duration / 60) : (shiftDetails.duration || 8);
+        let basePayable = shiftDetails.payableShifts ?? 1;
+        shiftSegment.expectedHours = Math.round(durationHours * 100) / 100;
+
+        if (shiftSegment.workingHours >= (durationHours * 0.9)) {
+          shiftSegment.status = 'PRESENT';
+          shiftSegment.payableShift = basePayable;
+        } else if (shiftSegment.workingHours >= (durationHours * 0.45)) {
+          shiftSegment.status = 'HALF_DAY';
+          shiftSegment.payableShift = basePayable * 0.5;
+        } else {
+          shiftSegment.status = 'ABSENT';
+          shiftSegment.payableShift = 0;
+        }
       }
     }
 

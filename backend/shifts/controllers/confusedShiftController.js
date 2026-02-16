@@ -265,12 +265,52 @@ exports.autoAssignAllConfusedShifts = async (req, res) => {
           });
 
           if (attendanceRecord) {
-            attendanceRecord.shiftId = result.assignedShift;
-            attendanceRecord.lateInMinutes = result.lateInMinutes;
-            attendanceRecord.earlyOutMinutes = result.earlyOutMinutes;
-            attendanceRecord.isLateIn = result.isLateIn || false;
-            attendanceRecord.isEarlyOut = result.isEarlyOut || false;
-            attendanceRecord.expectedHours = result.expectedHours;
+            // Update attendance record - USE SHIFTS ARRAY
+            if (!attendanceRecord.shifts) attendanceRecord.shifts = [];
+
+            let targetShift = null;
+            if (attendanceRecord.shifts.length > 0) {
+              // Find matching shift by inTime (1 min tolerance)
+              targetShift = attendanceRecord.shifts.find(s => {
+                const sTime = new Date(s.inTime).getTime();
+                const cTime = new Date(confusedShift.inTime).getTime();
+                return Math.abs(sTime - cTime) < 60000;
+              });
+            }
+
+            if (!targetShift) {
+              targetShift = {
+                shiftNumber: attendanceRecord.shifts.length + 1,
+                inTime: attendanceRecord.inTime || confusedShift.inTime,
+                outTime: confusedShift.outTime
+              };
+              attendanceRecord.shifts.push(targetShift);
+            }
+
+            targetShift.shiftId = result.assignedShift;
+            targetShift.shiftName = result.shiftName;
+
+            // Limit fetch if needed, but existing logic needs improvement.
+            // Let's assume result has details if updated service returns them.
+            // The service returns: assignedShift, shiftName, shiftStartTime, shiftEndTime
+
+            targetShift.shiftStartTime = result.shiftStartTime; // Service returns this? Yes
+            targetShift.shiftEndTime = result.shiftEndTime;     // Service returns this? Yes
+
+            // If service doesn't return duration, we might miss it.
+            // But let's rely on expectedHours from serviceResult
+
+            targetShift.lateInMinutes = result.lateInMinutes;
+            targetShift.earlyOutMinutes = result.earlyOutMinutes;
+            targetShift.isLateIn = result.isLateIn || false;
+            targetShift.isEarlyOut = result.isEarlyOut || false;
+            targetShift.expectedHours = result.expectedHours;
+            targetShift.status = (targetShift.outTime) ? 'complete' : 'incomplete';
+
+            // Update status if needed
+            if (!attendanceRecord.status || attendanceRecord.status === 'ABSENT') {
+              attendanceRecord.status = 'PRESENT';
+            }
 
             await attendanceRecord.save();
           }
@@ -356,12 +396,51 @@ exports.autoAssignConfusedShift = async (req, res) => {
     });
 
     if (attendanceRecord) {
-      attendanceRecord.shiftId = result.assignedShift;
-      attendanceRecord.lateInMinutes = result.lateInMinutes;
-      attendanceRecord.earlyOutMinutes = result.earlyOutMinutes;
-      attendanceRecord.isLateIn = result.isLateIn || false;
-      attendanceRecord.isEarlyOut = result.isEarlyOut || false;
-      attendanceRecord.expectedHours = result.expectedHours;
+      // Update attendance record - USE SHIFTS ARRAY
+      if (!attendanceRecord.shifts) attendanceRecord.shifts = [];
+
+      let targetShift = null;
+      if (attendanceRecord.shifts.length > 0) {
+        // Find matching shift by inTime (1 min tolerance)
+        targetShift = attendanceRecord.shifts.find(s => {
+          const sTime = new Date(s.inTime).getTime();
+          const cTime = new Date(confusedShift.inTime).getTime();
+          return Math.abs(sTime - cTime) < 60000;
+        });
+      }
+
+      if (!targetShift) {
+        targetShift = {
+          shiftNumber: attendanceRecord.shifts.length + 1,
+          inTime: attendanceRecord.inTime || confusedShift.inTime,
+          outTime: confusedShift.outTime
+        };
+        attendanceRecord.shifts.push(targetShift);
+      }
+
+      // We can rely on result properties if updated in autoAssignNearestShift return
+      targetShift.shiftId = result.assignedShift;
+      targetShift.shiftName = result.shiftName;
+      targetShift.shiftStartTime = result.shiftStartTime;
+      targetShift.shiftEndTime = result.shiftEndTime;
+
+      // If missing from result, fetch?
+      // Assuming autoAssignNearestShift returns basic info now or we accept previous logic.
+      // The previous block had explicit fetch. Let's keep it if we want to be safe, or optimize.
+      // Since result comes from `autoAssignNearestShift` in `shiftDetectionService`...
+      // Looking at `shiftDetectionService.js`: it returns `shiftName`, `shiftStartTime`, `shiftEndTime`.
+      // So no need to fetch again!
+
+      targetShift.lateInMinutes = result.lateInMinutes;
+      targetShift.earlyOutMinutes = result.earlyOutMinutes;
+      targetShift.isLateIn = result.isLateIn || false;
+      targetShift.isEarlyOut = result.isEarlyOut || false;
+      targetShift.expectedHours = result.expectedHours;
+      targetShift.status = (targetShift.outTime) ? 'complete' : 'incomplete';
+
+      if (!attendanceRecord.status || attendanceRecord.status === 'ABSENT') {
+        attendanceRecord.status = 'PRESENT';
+      }
 
       await attendanceRecord.save();
     }

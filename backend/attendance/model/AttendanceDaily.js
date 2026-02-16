@@ -144,13 +144,14 @@ const attendanceDailySchema = new mongoose.Schema(
     editHistory: [{
       action: {
         type: String,
-        enum: ['OUT_TIME_UPDATE', 'SHIFT_CHANGE', 'OT_CONVERSION'],
+        enum: ['OUT_TIME_UPDATE', 'SHIFT_CHANGE', 'OT_CONVERSION', 'IN_TIME_UPDATE'],
         required: true,
       },
       modifiedBy: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
       },
+      modifiedByName: String,
       modifiedAt: {
         type: Date,
         default: Date.now,
@@ -299,7 +300,7 @@ attendanceDailySchema.pre('save', async function () {
     let totalExpected = 0;
 
     // Calculate totals from shifts
-    this.shifts.forEach((shift, index) => {
+    this.shifts.forEach((shift) => {
       totalWorking += shift.workingHours || 0;
       totalOT += shift.otHours || 0;
       totalExtra += shift.extraHours || 0;
@@ -307,14 +308,9 @@ attendanceDailySchema.pre('save', async function () {
       // Accumulate minutes
       if (shift.lateInMinutes > 0) totalLateIn += shift.lateInMinutes;
       if (shift.earlyOutMinutes > 0) totalEarlyOut += shift.earlyOutMinutes;
-      if (shift.isLateIn) totalLateIn += (shift.lateInMinutes || 0); // Double check logic, usually one is enough.
 
-      // Expected hours (assuming shift.duration is in minutes? Model says methods to calculate it.)
-      // Note: We don't have exact expectedHours per shift saved usually, just calculated dynamically or from shiftId.
-      // If we want totalExpectedHours, we should ideally sum up duration of assigned shifts.
-      // However, shift.duration might not be populated here.
-      // We will rely on shift.workingHours logic mostly. 
-      // For now, let's leave totalExpected as 0 if not easily available, or try to use what we have.
+      // Expected hours (from shift definition if available)
+      totalExpected += shift.expectedHours || 8;
     });
 
     this.totalWorkingHours = Math.round(totalWorking * 100) / 100;

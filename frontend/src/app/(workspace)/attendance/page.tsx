@@ -149,6 +149,8 @@ interface AttendanceRecord {
 
     modifiedBy: string;
 
+    modifiedByName?: string;
+
     modifiedAt: string;
 
     details: string;
@@ -261,39 +263,46 @@ export default function AttendancePage() {
 
 
 
-  // Helper to format time in IST
-  const formatTimeIST = (timeStr: string | null, showDateIfDifferent?: boolean, recordDate?: string) => {
+  // Helper to format time consistently
+  const formatTime = (timeStr: string | null, showDateIfDifferent?: boolean, recordDate?: string) => {
     if (!timeStr) return '-';
+
+    // Handle "HH:mm" or "HH:mm:ss" format directly (e.g. from legacy fields or raw input)
+    if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(timeStr)) {
+      const [hours, minutes] = timeStr.split(':').map(Number);
+      const date = new Date();
+      date.setHours(hours, minutes, 0, 0);
+      return date.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      });
+    }
 
     try {
       const date = new Date(timeStr);
-      let formattedTime = date.toLocaleTimeString('en-US', {
+      if (isNaN(date.getTime())) return timeStr; // Fallback to raw string if invalid date
+
+      const timeFormatted = date.toLocaleTimeString('en-US', {
         timeZone: 'Asia/Kolkata',
         hour: '2-digit',
         minute: '2-digit',
         hour12: true
       });
 
+      // If showDateIfDifferent is true and recordDate is provided, check if dates differ
       if (showDateIfDifferent && recordDate) {
-        const istDate = new Date(date.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-        const istDateStr = istDate.toISOString().split('T')[0];
-        if (istDateStr !== recordDate) {
-          const datePart = istDate.toLocaleDateString('en-US', {
-            timeZone: 'Asia/Kolkata',
-            month: 'short',
-            day: 'numeric'
-          });
-          formattedTime = `${formattedTime} (${datePart})`;
+        const timeDateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+        if (timeDateStr !== recordDate) {
+          const dateLabel = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          return `${dateLabel}, ${timeFormatted}`;
         }
       }
 
-      return formattedTime;
+      return timeFormatted;
     } catch {
-
-      return '-';
-
+      return timeStr;
     }
-
   };
 
 
@@ -2383,50 +2392,6 @@ export default function AttendancePage() {
 
 
 
-  const formatTime = (time: string | null, showDateIfDifferent?: boolean, recordDate?: string) => {
-
-    if (!time) return '-';
-
-    try {
-
-      const date = new Date(time);
-
-      const timeStr = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
-
-
-
-      // If showDateIfDifferent is true and recordDate is provided, check if dates differ
-
-      if (showDateIfDifferent && recordDate) {
-
-        const timeDateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-
-        if (timeDateStr !== recordDate) {
-
-          // Dates are different - show date with time
-
-          const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-
-          return `${dateStr}, ${timeStr}`;
-
-        }
-
-      }
-
-
-
-      return timeStr;
-
-    } catch {
-
-      return time;
-
-    }
-
-  };
-
-
-
   const formatHours = (hours: number | null) => {
 
     if (hours === null || hours === undefined) return '-';
@@ -2498,19 +2463,17 @@ export default function AttendancePage() {
                       </div>
 
                       <input
-
                         autoFocus
-
                         type="text"
-
                         value={searchQuery}
-
                         onChange={(e) => setSearchQuery(e.target.value)}
-
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            loadMonthlyAttendance(true);
+                          }
+                        }}
                         placeholder="Search..."
-
                         className="w-40 h-9 pl-9 pr-3 text-xs rounded-xl border border-slate-200 bg-white focus:border-green-500 focus:ring-2 focus:ring-green-500/10 transition-all dark:border-slate-700 dark:bg-slate-800 dark:text-white shadow-sm"
-
                       />
 
                     </div>
@@ -2781,6 +2744,7 @@ export default function AttendancePage() {
               { label: 'PT', name: 'Partial', color: 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-800' },
               { label: 'A', name: 'Absent', color: 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700' },
               { label: '!', name: 'Conflict', color: 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-800' },
+              { label: '✎', name: 'Edited', color: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/10 dark:text-indigo-400 dark:border-indigo-800' },
             ].map((item) => (
               <div key={item.label} className="flex items-center gap-2 group cursor-help">
                 <div className={`w-6 h-6 flex items-center justify-center rounded text-[10px] font-bold border shadow-sm transition-all duration-200 group-hover:scale-110 group-hover:shadow-md ${item.color}`}>
@@ -3046,8 +3010,19 @@ export default function AttendancePage() {
                                       )}
                                       {tableType === 'in_out' && (
                                         <div className="text-[8px] font-medium leading-tight">
-                                          <div className="text-green-600 dark:text-green-400">{record?.inTime ? formatTimeIST(record.inTime) : '-'}</div>
-                                          <div className="text-red-600 dark:text-red-400">{record?.outTime ? formatTimeIST(record.outTime) : '-'}</div>
+                                          {record?.shifts && record.shifts.length > 0 ? (
+                                            record.shifts.map((s: any, idx: number) => (
+                                              <div key={idx} className={idx > 0 ? "mt-1 pt-1 border-t border-slate-100 dark:border-slate-800" : ""}>
+                                                <div className="text-green-600 dark:text-green-400">{s.inTime ? formatTime(s.inTime) : '-'}</div>
+                                                <div className="text-red-600 dark:text-red-400">{s.outTime ? formatTime(s.outTime) : '-'}</div>
+                                              </div>
+                                            ))
+                                          ) : (
+                                            <>
+                                              <div className="text-green-600 dark:text-green-400">{record?.inTime ? formatTime(record.inTime) : '-'}</div>
+                                              <div className="text-red-600 dark:text-red-400">{record?.outTime ? formatTime(record.outTime) : '-'}</div>
+                                            </>
+                                          )}
                                         </div>
                                       )}
                                       {tableType === 'leaves' && (
@@ -3062,7 +3037,7 @@ export default function AttendancePage() {
                                           <div className="text-purple-600">{record?.extraHours ? record.extraHours.toFixed(1) : '-'}</div>
                                         </div>
                                       )}
-                                      {record?.source?.includes('manual') && (
+                                      {(record?.source?.includes('manual') || record?.isEdited) && (
                                         <div className="text-[7px] text-indigo-600 dark:text-indigo-400 absolute top-0.5 right-0.5" title="Manually Edited">✎</div>
                                       )}
                                     </div>
@@ -3431,51 +3406,58 @@ export default function AttendancePage() {
                     <div>
                       <label className="text-xs font-medium text-slate-600 dark:text-slate-400">In Time</label>
                       <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
-                        {formatTimeIST(attendanceDetail.inTime)}
+                        {attendanceDetail.shifts && attendanceDetail.shifts.length > 0
+                          ? attendanceDetail.shifts.map((s: any, i: number) => (
+                            <div key={i}>{s.inTime ? formatTime(s.inTime) : '-'}</div>
+                          ))
+                          : (attendanceDetail.inTime ? formatTime(attendanceDetail.inTime) : '-')}
                       </div>
                     </div>
                     <div>
                       <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Out Time</label>
-                      <div className="mt-1 flex items-center gap-2">
+                      <div className="mt-1 flex flex-col gap-1">
                         {!editingOutTime ? (
                           <>
                             <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                              {attendanceDetail.outTime ? formatTimeIST(attendanceDetail.outTime) : '-'}
+                              {attendanceDetail.shifts && attendanceDetail.shifts.length > 0
+                                ? attendanceDetail.shifts.map((s: any, i: number) => (
+                                  <div key={i} className="flex items-center gap-2">
+                                    <span>{s.outTime ? formatTime(s.outTime) : '-'}</span>
+                                    {i === attendanceDetail.shifts!.length - 1 && (
+                                      <button
+                                        onClick={() => {
+                                          setEditingOutTime(true);
+                                          setSelectedShiftRecordId(s._id);
+                                          if (s.outTime) {
+                                            const date = new Date(s.outTime);
+                                            setOutTimeInput(`${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`);
+                                          }
+                                        }}
+                                        className="rounded-md bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400"
+                                      >
+                                        {s.outTime ? 'Edit' : 'Add'}
+                                      </button>
+                                    )}
+                                  </div>
+                                ))
+                                : (
+                                  <div className="flex items-center gap-2">
+                                    <span>{attendanceDetail.outTime ? formatTime(attendanceDetail.outTime) : '-'}</span>
+                                    <button
+                                      onClick={() => {
+                                        setEditingOutTime(true);
+                                        if (attendanceDetail.outTime) {
+                                          const date = new Date(attendanceDetail.outTime);
+                                          setOutTimeInput(`${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`);
+                                        }
+                                      }}
+                                      className="rounded-md bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400"
+                                    >
+                                      {attendanceDetail.outTime ? 'Edit' : 'Add'}
+                                    </button>
+                                  </div>
+                                )}
                             </div>
-                            {!attendanceDetail.outTime && (
-                              <button
-                                onClick={() => {
-                                  setEditingOutTime(true);
-                                  if (attendanceDetail.shifts && attendanceDetail.shifts.length > 0) {
-                                    const lastShift = attendanceDetail.shifts[attendanceDetail.shifts.length - 1];
-                                    setSelectedShiftRecordId(lastShift._id);
-                                  }
-                                  if (attendanceDetail.outTime) {
-                                    const date = new Date(attendanceDetail.outTime);
-                                    setOutTimeInput(`${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`);
-                                  }
-                                }}
-                                className="rounded-lg bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-all hover:bg-blue-600"
-                              >
-                                Add
-                              </button>
-                            )}
-                            {attendanceDetail.outTime && (
-                              <button
-                                onClick={() => {
-                                  setEditingOutTime(true);
-                                  if (attendanceDetail.shifts && attendanceDetail.shifts.length > 0) {
-                                    const lastShift = attendanceDetail.shifts[attendanceDetail.shifts.length - 1];
-                                    setSelectedShiftRecordId(lastShift._id);
-                                  }
-                                  const date = new Date(attendanceDetail.outTime);
-                                  setOutTimeInput(`${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`);
-                                }}
-                                className="rounded-lg bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-all hover:bg-blue-600"
-                              >
-                                Edit
-                              </button>
-                            )}
                           </>
                         ) : (
                           <div className="flex-1 flex items-center gap-2">
@@ -3512,7 +3494,12 @@ export default function AttendancePage() {
                       <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
                         {formatHours(attendanceDetail.totalHours)}
                       </div>
-
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Expected Hours</label>
+                      <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
+                        {attendanceDetail.expectedHours ? formatHours(attendanceDetail.expectedHours) : '-'}
+                      </div>
                     </div>
                     {/* Late In Display - Support Multi-Shift */}
                     {(() => {
@@ -3991,6 +3978,43 @@ export default function AttendancePage() {
                             ⚠️ Conflict: OD approved but attendance logged for this date
                           </div>
                         )}
+                    </div>
+                  )}
+
+                  {/* Edit History Section */}
+                  {attendanceDetail.editHistory && attendanceDetail.editHistory.length > 0 && (
+                    <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-800/50">
+                      <div className="flex items-center gap-2 mb-4">
+                        <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Edit History</h4>
+                      </div>
+                      <div className="space-y-3">
+                        {attendanceDetail.editHistory.map((edit: any, index: number) => (
+                          <div key={index} className="relative pl-4 border-l-2 border-slate-200 dark:border-slate-700 py-1">
+                            <div className="flex justify-between items-start">
+                              <span className="text-[10px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-tighter">
+                                {edit.action?.replace(/_/g, ' ')}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-medium">
+                                {new Date(edit.modifiedAt).toLocaleString('en-US', {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                })}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-xs text-slate-600 dark:text-slate-400 leading-relaxed font-medium">
+                              {edit.details}
+                            </p>
+                            <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-500 italic">
+                              Modified by: <span className="font-bold text-slate-700 dark:text-slate-300">{edit.modifiedByName || 'System'}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -4508,7 +4532,7 @@ export default function AttendancePage() {
           )
         }
       </div>
-    </div>
+    </div >
   );
 
 }

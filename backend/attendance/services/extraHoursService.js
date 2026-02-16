@@ -27,7 +27,7 @@ const detectExtraHours = async (employeeNumber, date) => {
     const attendanceRecord = await AttendanceDaily.findOne({
       employeeNumber: employeeNumber.toUpperCase(),
       date: date,
-    }).populate('shiftId');
+    }).populate('shifts.shiftId');
 
     if (!attendanceRecord) {
       console.log(`[ExtraHours] Attendance record not found for ${employeeNumber} on ${date}`);
@@ -38,8 +38,13 @@ const detectExtraHours = async (employeeNumber, date) => {
     }
 
     // Need both shift and outTime to calculate extra hours
-    if (!attendanceRecord.shiftId) {
-      console.log(`[ExtraHours] No shift assigned for ${employeeNumber} on ${date}`);
+    // For extra hours calculation, we look at the last shift of the day
+    const lastShift = attendanceRecord.shifts && attendanceRecord.shifts.length > 0
+      ? attendanceRecord.shifts[attendanceRecord.shifts.length - 1]
+      : null;
+
+    if (!lastShift || !lastShift.shiftId) {
+      console.log(`[ExtraHours] No shifts or no shiftId assigned for ${employeeNumber} on ${date}`);
       return {
         success: false,
         message: 'Shift not assigned',
@@ -47,7 +52,7 @@ const detectExtraHours = async (employeeNumber, date) => {
       };
     }
 
-    if (!attendanceRecord.outTime) {
+    if (!lastShift.outTime) {
       console.log(`[ExtraHours] No out time for ${employeeNumber} on ${date}`);
       return {
         success: false,
@@ -56,37 +61,8 @@ const detectExtraHours = async (employeeNumber, date) => {
       };
     }
 
-    const shift = attendanceRecord.shiftId;
-    if (typeof shift === 'string') {
-      // If shiftId is just an ID, populate it
-      const shiftDoc = await Shift.findById(shift);
-      if (!shiftDoc) {
-        return {
-          success: false,
-          message: 'Shift not found',
-        };
-      }
-      shift = shiftDoc;
-    }
-
-    // Get shift end time and start time
-    const [shiftEndHour, shiftEndMin] = shift.endTime.split(':').map(Number);
-    const [shiftStartHour, shiftStartMin] = shift.startTime.split(':').map(Number);
-    const shiftStartMinutes = shiftStartHour * 60 + shiftStartMin;
-    const shiftEndMinutes = shiftEndHour * 60 + shiftEndMin;
-
-    // Check if this is an overnight shift (end time < start time in minutes)
-    // This means shift spans midnight (e.g., 20:00-04:00, 22:00-06:00, etc.)
-    // Works for ANY shift that crosses midnight, not just 20:00+
-    const isOvernight = shiftEndMinutes < shiftStartMinutes;
-
-    // Get grace period from shift (default 15 minutes)
-    const gracePeriodMinutes = shift.gracePeriod || 15;
-
-    // Get out-time as Date object (ensure it's a proper Date object)
-    const outTimeDate = attendanceRecord.outTime instanceof Date
-      ? new Date(attendanceRecord.outTime)
-      : new Date(attendanceRecord.outTime);
+    const shift = lastShift.shiftId;
+    const outTimeDate = new Date(lastShift.outTime);
 
     // Parse the attendance date string (YYYY-MM-DD) - this is the shift start date
     const dateParts = date.split('-');
@@ -272,7 +248,7 @@ const batchDetectExtraHours = async (startDate = null, endDate = null) => {
     }
 
     const records = await AttendanceDaily.find(query)
-      .populate('shiftId')
+      .populate('shifts.shiftId')
       .sort({ date: -1 });
 
     stats.processed = records.length;
