@@ -14,9 +14,12 @@ exports.getAllHolidaysAdmin = async (req, res) => {
         let query = {};
 
         if (year) {
-            const startDate = new Date(`${year}-01-01`);
-            const endDate = new Date(`${year}-12-31`);
-            query.date = { $gte: startDate, $lte: endDate };
+            query = {
+                $or: [
+                    { date: { $gte: new Date(`${year}-01-01`), $lte: new Date(`${year}-12-31`) } },
+                    { endDate: { $gte: new Date(`${year}-01-01`), $lte: new Date(`${year}-12-31`) } }
+                ]
+            };
         }
 
         const holidays = await Holiday.find(query)
@@ -60,12 +63,12 @@ exports.getMyHolidays = async (req, res) => {
         }
 
         const { year } = req.query;
-        let dateQuery = {};
-        if (year) {
-            const startDate = new Date(`${year}-01-01`);
-            const endDate = new Date(`${year}-12-31`);
-            dateQuery.date = { $gte: startDate, $lte: endDate };
-        }
+        const dateQuery = year ? {
+            $or: [
+                { date: { $gte: new Date(`${year}-01-01`), $lte: new Date(`${year}-12-31`) } },
+                { endDate: { $gte: new Date(`${year}-01-01`), $lte: new Date(`${year}-12-31`) } }
+            ]
+        } : {};
 
         // 1. Identify User's Group
         // Find groups that match user's division AND (department OR all departments)
@@ -150,6 +153,49 @@ exports.saveHolidayGroup = async (req, res) => {
     try {
         const { _id, name, description, divisionMapping, isActive } = req.body;
 
+        // 1. Validation: Mapping Exclusivity
+        // Ensure that a (Division, Department) combo doesn't exist in another group
+        const allGroups = await HolidayGroup.find({ _id: { $ne: _id }, isActive: true });
+
+        for (const mapping of divisionMapping) {
+            const currentDivisionId = mapping.division.toString();
+            const currentDeptIds = mapping.departments.map(d => d.toString());
+
+            for (const existingGroup of allGroups) {
+                for (const existingMapping of existingGroup.divisionMapping) {
+                    if (existingMapping.division.toString() === currentDivisionId) {
+                        // If current mapping has ALL departments (empty array)
+                        if (currentDeptIds.length === 0) {
+                            return res.status(400).json({
+                                success: false,
+                                message: `Division already mapped in group: ${existingGroup.name}. Overlapping division mappings are not allowed.`
+                            });
+                        }
+
+                        // If existing mapping has ALL departments
+                        if (existingMapping.departments.length === 0) {
+                            return res.status(400).json({
+                                success: false,
+                                message: `Division already mapped to ALL departments in group: ${existingGroup.name}.`
+                            });
+                        }
+
+                        // Check for specific department overlap
+                        const overlap = currentDeptIds.filter(id =>
+                            existingMapping.departments.map(d => d.toString()).includes(id)
+                        );
+
+                        if (overlap.length > 0) {
+                            return res.status(400).json({
+                                success: false,
+                                message: `Some departments are already mapped in group: ${existingGroup.name}. Duplicate mappings are not allowed.`
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
         let group;
         if (_id) {
             group = await HolidayGroup.findById(_id);
@@ -188,7 +234,7 @@ exports.saveHolidayGroup = async (req, res) => {
 // @access  Private (Super Admin)
 exports.saveHoliday = async (req, res) => {
     try {
-        const { _id, name, date, type, isMaster, scope, applicableTo, targetGroupIds, groupId, overridesMasterId, description } = req.body;
+        const { _id, name, date, endDate, type, isMaster, scope, applicableTo, targetGroupIds, groupId, overridesMasterId, description } = req.body;
 
         // Validation
         if (scope === 'GROUP' && !groupId) {
@@ -202,6 +248,7 @@ exports.saveHoliday = async (req, res) => {
 
             holiday.name = name;
             holiday.date = date;
+            holiday.endDate = endDate || null;
             holiday.type = type;
             holiday.isMaster = isMaster;
             holiday.scope = scope;
@@ -216,6 +263,7 @@ exports.saveHoliday = async (req, res) => {
             holiday = await Holiday.create({
                 name,
                 date,
+                endDate: endDate || null,
                 type,
                 isMaster,
                 scope,

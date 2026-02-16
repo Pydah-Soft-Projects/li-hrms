@@ -686,6 +686,7 @@ export interface Holiday {
   _id: string;
   name: string;
   date: string; // ISO Date string
+  endDate?: string; // Optional end date
   type: 'National' | 'Regional' | 'Optional' | 'Company';
   isMaster: boolean;
   scope: 'GLOBAL' | 'GROUP';

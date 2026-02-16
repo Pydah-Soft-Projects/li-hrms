@@ -28,7 +28,6 @@ import {
     ChevronLeft,
     ChevronRight,
     Menu,
-    X,
 } from 'lucide-react';
 
 // Module code to icon mapping
@@ -60,6 +59,7 @@ const moduleIcons: Record<string, any> = {
     PAYSLIPS: Receipt,
     PAYROLL: Banknote,
     LOANS_SALARY_ADVANCE: PiggyBank,
+    HOLIDAY_CALENDAR: CalendarClock,
 };
 
 export default function WorkspaceSidebar() {

@@ -20,6 +20,7 @@ const availableModules = [
     { id: 'PAY_REGISTER', label: 'Payroll Register' },
     { id: 'ALLOWANCES_DEDUCTIONS', label: 'Allowance/Deduction' },
     { id: 'CCL', label: 'CCL Management' },
+    { id: 'HOLIDAY_CALENDAR', label: 'Holiday Calendar' },
     { id: 'SETTINGS', label: 'System Settings' },
 ];
 
