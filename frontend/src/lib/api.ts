@@ -668,6 +668,37 @@ export interface LiveAttendanceFilterOption {
   name: string;
 }
 
+export interface HolidayGroup {
+  _id: string;
+  name: string;
+  description?: string;
+  divisionMapping: {
+    division: string | Division; // ID or Populated
+    departments: (string | Department)[]; // IDs or Populated
+  }[];
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  createdBy?: string;
+}
+
+export interface Holiday {
+  _id: string;
+  name: string;
+  date: string; // ISO Date string
+  type: 'National' | 'Regional' | 'Optional' | 'Company';
+  isMaster: boolean;
+  scope: 'GLOBAL' | 'GROUP';
+  applicableTo?: 'ALL' | 'SPECIFIC_GROUPS';
+  targetGroupIds?: (string | HolidayGroup)[];
+  groupId?: string | HolidayGroup;
+  overridesMasterId?: string | Holiday;
+  description?: string;
+  createdBy?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export const api = {
   login: async (identifier: string, password: string) => {
     return apiRequest<LoginResponse>('/auth/login', {
@@ -776,6 +807,39 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(data),
     });
+  },
+
+  // Holidays
+  getAllHolidaysAdmin: async (year?: number) => {
+    const query = year ? `?year=${year}` : '';
+    return apiRequest<{ holidays: Holiday[]; groups: HolidayGroup[] }>(`/holidays/admin${query}`, { method: 'GET' });
+  },
+
+  getMyHolidays: async (year?: number) => {
+    const query = year ? `?year=${year}` : '';
+    return apiRequest<Holiday[]>(`/holidays/my${query}`, { method: 'GET' });
+  },
+
+  saveHolidayGroup: async (data: Partial<HolidayGroup>) => {
+    return apiRequest<HolidayGroup>('/holidays/groups', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  deleteHolidayGroup: async (id: string) => {
+    return apiRequest<void>(`/holidays/groups/${id}`, { method: 'DELETE' });
+  },
+
+  saveHoliday: async (data: Partial<Holiday>) => {
+    return apiRequest<Holiday>('/holidays', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  deleteHoliday: async (id: string) => {
+    return apiRequest<void>(`/holidays/${id}`, { method: 'DELETE' });
   },
 
   // Shifts
