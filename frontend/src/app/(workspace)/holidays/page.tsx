@@ -1,3 +1,4 @@
+'use client';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { api, Holiday } from '@/lib/api';
 import Spinner from '@/components/Spinner';
