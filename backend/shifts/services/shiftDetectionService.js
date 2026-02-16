@@ -1256,12 +1256,32 @@ const resolveConfusedShift = async (confusedShiftId, shiftId, userId, comments =
         ? calculateEarlyOut(confusedShift.outTime, shift.endTime, shift.startTime, confusedShift.date, globalEarlyOutGrace)
         : null;
 
-      attendanceRecord.shiftId = shiftId;
-      attendanceRecord.lateInMinutes = lateInMinutes > 0 ? lateInMinutes : null;
-      attendanceRecord.earlyOutMinutes = earlyOutMinutes && earlyOutMinutes > 0 ? earlyOutMinutes : null;
-      attendanceRecord.isLateIn = lateInMinutes > 0;
-      attendanceRecord.isEarlyOut = earlyOutMinutes && earlyOutMinutes > 0;
-      attendanceRecord.expectedHours = shift.duration;
+      // Update attendance record - USE SHIFTS ARRAY
+      if (!attendanceRecord.shifts) attendanceRecord.shifts = [];
+
+      let targetShift;
+      if (attendanceRecord.shifts.length > 0) {
+        targetShift = attendanceRecord.shifts[0];
+      } else {
+        targetShift = { shiftNumber: 1 };
+        attendanceRecord.shifts.push(targetShift);
+      }
+
+      targetShift.shiftId = shiftId;
+      targetShift.shiftName = shift.name;
+      targetShift.shiftStartTime = shift.startTime;
+      targetShift.shiftEndTime = shift.endTime;
+      targetShift.lateInMinutes = lateInMinutes > 0 ? lateInMinutes : 0;
+      targetShift.earlyOutMinutes = earlyOutMinutes && earlyOutMinutes > 0 ? earlyOutMinutes : 0;
+      targetShift.isLateIn = lateInMinutes > 0;
+      targetShift.isEarlyOut = earlyOutMinutes && earlyOutMinutes > 0;
+      targetShift.expectedHours = shift.duration;
+      targetShift.status = 'complete'; // Assumed since resolved
+
+      // Update root status if needed
+      if (attendanceRecord.status === 'ABSENT' || !attendanceRecord.status) {
+        attendanceRecord.status = 'PRESENT';
+      }
 
       await attendanceRecord.save();
     }
@@ -1331,12 +1351,36 @@ const syncShiftsForExistingRecords = async (startDate = null, endDate = null) =>
 
         if (result.success && result.assignedShift) {
           // Update record with shift assignment
-          record.shiftId = result.assignedShift;
-          record.lateInMinutes = result.lateInMinutes;
-          record.earlyOutMinutes = result.earlyOutMinutes;
-          record.isLateIn = result.isLateIn || false;
-          record.isEarlyOut = result.isEarlyOut || false;
-          record.expectedHours = result.expectedHours;
+          // Update record with shift assignment - USE SHIFTS ARRAY
+          if (!record.shifts) record.shifts = [];
+
+          let targetShift;
+          if (record.shifts.length > 0) {
+            targetShift = record.shifts[0];
+          } else {
+            targetShift = {
+              shiftNumber: 1,
+              inTime: record.inTime, // Legacy root inTime
+              outTime: record.outTime, // Legacy root outTime
+              // We should ideally ensure inTime/outTime are set on shift
+            };
+            record.shifts.push(targetShift);
+          }
+
+          targetShift.shiftId = result.assignedShift;
+          targetShift.shiftName = result.shiftName;
+          targetShift.shiftStartTime = result.shiftStartTime;
+          targetShift.shiftEndTime = result.shiftEndTime;
+          targetShift.lateInMinutes = result.lateInMinutes || 0;
+          targetShift.earlyOutMinutes = result.earlyOutMinutes || 0;
+          targetShift.isLateIn = result.isLateIn || false;
+          targetShift.isEarlyOut = result.isEarlyOut || false;
+          targetShift.expectedHours = result.expectedHours;
+          targetShift.status = record.outTime ? 'complete' : 'incomplete';
+
+          // Clean up root fields if migration didn't catch them?
+          // Maybe unsafe to unset here without explicit migration logic, but we are "syncing shifts".
+          // Let's just save.
 
           await record.save();
           stats.assigned++;
