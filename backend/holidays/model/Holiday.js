@@ -11,6 +11,10 @@ const holidaySchema = new mongoose.Schema(
             type: Date,
             required: [true, 'Holiday date is required'],
         },
+        endDate: {
+            type: Date,
+            default: null,
+        },
         type: {
             type: String,
             enum: ['National', 'Regional', 'Optional', 'Company'],
