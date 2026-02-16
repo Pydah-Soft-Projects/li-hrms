@@ -79,6 +79,14 @@ export default function HolidayManagementPage() {
     }, [loadData, loadDivisionsAndDepartments]);
 
     const handleDeleteHoliday = async (id: string) => {
+        const holiday = allHolidays.find(h => h._id === id);
+        const isGroupView = selectedGroupId !== 'GLOBAL';
+
+        if (isGroupView && holiday?.scope === 'GLOBAL') {
+            alert('You cannot delete a Global holiday from a Group view. Please edit the Global calendar to remove it, or use an override to mark it as a working day (feature coming soon).');
+            return;
+        }
+
         if (!confirm('Are you sure you want to delete this holiday?')) return;
         try {
             await api.deleteHoliday(id);
@@ -447,9 +455,10 @@ export default function HolidayManagementPage() {
                             e.preventDefault();
                             const formData = new FormData(e.currentTarget);
                             const isGlobalContext = editingHoliday ? editingHoliday.scope === 'GLOBAL' : selectedGroupId === 'GLOBAL';
+                            const isCreatingOverride = !isGlobalContext && editingHoliday?.scope === 'GLOBAL';
                             const applicableTo = isGlobalContext ? (formData.get('applicableTo') as "ALL" | "SPECIFIC_GROUPS") : 'SPECIFIC_GROUPS';
 
-                            const data: Partial<Holiday> & { isMaster: boolean, scope: string, applicableTo: string, groupId?: string, targetGroupIds?: string[], endDate?: string } = {
+                            const data: Partial<Holiday> & { isMaster: boolean, scope: string, applicableTo: string, groupId?: string, targetGroupIds?: string[], endDate?: string, overridesMasterId?: string } = {
                                 name: formData.get('name') as string,
                                 date: formData.get('date') as string,
                                 endDate: formData.get('endDate') as string || undefined,
@@ -458,12 +467,17 @@ export default function HolidayManagementPage() {
                                 isMaster: isGlobalContext,
                                 scope: isGlobalContext ? 'GLOBAL' : 'GROUP',
                                 applicableTo,
-                                groupId: isGlobalContext ? undefined : (editingHoliday?.groupId as string || selectedGroupId),
+                                groupId: isGlobalContext ? undefined : (selectedGroupId !== 'GLOBAL' ? selectedGroupId : (editingHoliday?.groupId as string)),
                                 targetGroupIds: isGlobalContext && applicableTo === 'SPECIFIC_GROUPS' ? formData.getAll('targetGroupIds') as string[] : undefined
                             };
 
                             if (editingHoliday) {
-                                data._id = editingHoliday._id;
+                                if (isCreatingOverride) {
+                                    // Creating a NEW override record, do not send _id
+                                    data.overridesMasterId = editingHoliday._id;
+                                } else {
+                                    data._id = editingHoliday._id;
+                                }
                             }
 
 
@@ -653,15 +667,21 @@ export default function HolidayManagementPage() {
                                         <button
                                             type="button"
                                             onClick={() => {
+                                                const isGroupView = selectedGroupId !== 'GLOBAL';
+                                                if (isGroupView && editingHoliday.scope === 'GLOBAL') {
+                                                    alert('You cannot delete a Global holiday from a Group view. If you need to change this date for this group, please create an override or edit the Global calendar.');
+                                                    return;
+                                                }
                                                 if (confirm('Are you sure you want to delete this holiday?')) {
                                                     handleDeleteHoliday(editingHoliday._id);
                                                     setShowHolidayForm(false);
                                                 }
                                             }}
-                                            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                                            className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${(selectedGroupId !== 'GLOBAL' && editingHoliday.scope === 'GLOBAL') ? 'text-slate-400 cursor-not-allowed bg-slate-100' : 'text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20'}`}
+                                            disabled={selectedGroupId !== 'GLOBAL' && editingHoliday.scope === 'GLOBAL'}
                                         >
                                             <Trash2 className="h-4 w-4" />
-                                            Delete Event
+                                            {selectedGroupId !== 'GLOBAL' && editingHoliday.scope === 'GLOBAL' ? 'Global Event (No Delete)' : 'Delete Event'}
                                         </button>
                                     )}
                                 </div>
@@ -678,9 +698,11 @@ export default function HolidayManagementPage() {
                                     </button>
                                     <button
                                         type="submit"
-                                        className="px-8 py-2.5 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-lg shadow-blue-500/30 transform transition-all active:scale-95"
+                                        className="flex items-center gap-2 px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-lg shadow-blue-500/30 transition-all hover:scale-[1.02] active:scale-[0.98]"
                                     >
-                                        {editingHoliday ? 'Update Event' : 'Create Event'}
+                                        {editingHoliday ? (
+                                            selectedGroupId !== 'GLOBAL' && editingHoliday.scope === 'GLOBAL' ? 'Create Override' : 'Update Event'
+                                        ) : 'Create Event'}
                                     </button>
                                 </div>
                             </div>
@@ -834,21 +856,41 @@ function HolidayGroupForm({ editing, divisions, departments, onClose, onSave }: 
                                     </select>
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Departments (Optional)</label>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <label className="block text-xs font-medium text-slate-500 dark:text-slate-400">Departments</label>
+                                        <label className="flex items-center gap-1.5 cursor-pointer group">
+                                            <input
+                                                type="checkbox"
+                                                checked={m.departments.length === 0}
+                                                onChange={(e) => {
+                                                    if (e.target.checked) {
+                                                        updateMapping(idx, 'departments', []);
+                                                    } else {
+                                                        // If unchecking, we could optionally leave it empty or pre-select first dept
+                                                    }
+                                                }}
+                                                className="w-3.5 h-3.5 rounded text-blue-600 border-slate-300 focus:ring-blue-500"
+                                            />
+                                            <span className="text-[10px] font-bold text-slate-500 group-hover:text-blue-600 transition-colors uppercase">All Departments</span>
+                                        </label>
+                                    </div>
                                     <select
                                         multiple
                                         value={m.departments}
+                                        disabled={m.departments.length === 0}
                                         onChange={(e) => {
                                             const values = Array.from(e.target.selectedOptions).map(opt => opt.value);
                                             updateMapping(idx, 'departments', values);
                                         }}
-                                        className="w-full h-24 px-3 py-1.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-800 dark:border-slate-600 dark:text-white"
+                                        className={`w-full h-24 px-3 py-1.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-800 dark:border-slate-600 dark:text-white transition-opacity ${m.departments.length === 0 ? 'opacity-50 grayscale-[0.5]' : 'opacity-100'}`}
                                     >
                                         {departments.filter(dept => (dept.divisions || []).some((div: any) => (typeof div === 'object' ? div._id : div) === m.division)).map(dept => (
                                             <option key={dept._id} value={dept._id}>{dept.name}</option>
                                         ))}
                                     </select>
-                                    <p className="mt-1 text-[10px] text-slate-500">Ctrl+Click to select multiple. Empty = All Depts.</p>
+                                    <p className="mt-1 text-[10px] text-slate-500">
+                                        {m.departments.length === 0 ? 'Currently targeting ALL departments in this division.' : 'Ctrl+Click to select multiple.'}
+                                    </p>
                                 </div>
                             </div>
                         </div>

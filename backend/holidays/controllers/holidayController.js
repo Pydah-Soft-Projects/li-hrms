@@ -3,7 +3,78 @@ const HolidayGroup = require('../model/HolidayGroup');
 const User = require('../../users/model/User');
 const Division = require('../../departments/model/Division');
 const Department = require('../../departments/model/Department');
+const Employee = require('../../employees/model/Employee');
+const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
 const cacheService = require('../../shared/services/cacheService');
+
+// Helper to sync holiday to shift roster
+async function syncHolidayToRoster(holiday) {
+    try {
+        const { date, endDate, scope, applicableTo, targetGroupIds, groupId, name } = holiday;
+        const dates = [];
+        let current = new Date(date);
+        const stop = endDate ? new Date(endDate) : new Date(date);
+
+        while (current <= stop) {
+            dates.push(current.toISOString().split('T')[0]);
+            current.setDate(current.getDate() + 1);
+        }
+
+        // 1. Identify Target Employees
+        let empFilter = { isActive: true };
+        if (scope === 'GROUP') {
+            const group = await HolidayGroup.findById(groupId);
+            if (!group) return;
+
+            const mappingConditions = group.divisionMapping.map(m => ({
+                division: m.division,
+                ...(m.departments.length > 0 ? { department: { $in: m.departments } } : {})
+            }));
+            empFilter.$or = mappingConditions;
+        } else if (applicableTo === 'SPECIFIC_GROUPS') {
+            const groups = await HolidayGroup.find({ _id: { $in: targetGroupIds } });
+            const allMappings = [];
+            for (const g of groups) {
+                g.divisionMapping.forEach(m => {
+                    allMappings.push({
+                        division: m.division,
+                        ...(m.departments.length > 0 ? { department: { $in: m.departments } } : {})
+                    });
+                });
+            }
+            if (allMappings.length > 0) empFilter.$or = allMappings;
+            else return; // No targets
+        }
+
+        const employees = await Employee.find(empFilter).select('emp_no');
+        const empNos = employees.map(e => e.emp_no);
+
+        if (empNos.length === 0) return;
+
+        // 2. Update Roster (Bulk update/upsert)
+        // Note: For large datasets, use bulkWrite for performance
+        for (const day of dates) {
+            for (const empNo of empNos) {
+                await PreScheduledShift.findOneAndUpdate(
+                    { employeeNumber: empNo, date: day },
+                    {
+                        $set: {
+                            status: 'HOL',
+                            shiftId: null,
+                            notes: `Holiday: ${name}`
+                        },
+                        $setOnInsert: { scheduledBy: holiday.createdBy }
+                    },
+                    { upsert: true }
+                );
+            }
+        }
+
+        console.log(`Synced holiday "${name}" to roster for ${empNos.length} employees across ${dates.length} days.`);
+    } catch (err) {
+        console.error('Error syncing holiday to roster:', err);
+    }
+}
 
 // @desc    Get all holidays (Master + Groups)
 // @route   GET /api/holidays/admin
@@ -280,6 +351,9 @@ exports.saveHoliday = async (req, res) => {
             success: true,
             data: holiday
         });
+
+        // Background Sync (Do not block response)
+        syncHolidayToRoster(holiday).catch(err => console.error('Roster Sync Error:', err));
 
     } catch (error) {
         res.status(500).json({

@@ -3335,7 +3335,7 @@ export default function AttendancePage() {
                           <>
                             <div className="text-sm font-semibold text-slate-900 dark:text-white">
                               {attendanceDetail.shifts && attendanceDetail.shifts.length > 0
-                                ? attendanceDetail.shifts.map((s, index) => {
+                                ? attendanceDetail.shifts.map((s: any, index: number) => {
                                   const sName = s.shiftId && typeof s.shiftId === 'object' ? (s.shiftId as any).name : '-';
                                   return (
                                     <span key={index} className="block">
@@ -3503,14 +3503,14 @@ export default function AttendancePage() {
                     </div>
                     {/* Late In Display - Support Multi-Shift */}
                     {(() => {
-                      const shiftsWithLate = attendanceDetail.shifts?.filter(s => s.lateInMinutes && s.lateInMinutes > 0) || [];
+                      const shiftsWithLate = attendanceDetail.shifts?.filter((s: any) => s.lateInMinutes && s.lateInMinutes > 0) || [];
                       const hasRootLate = attendanceDetail.isLateIn && attendanceDetail.lateInMinutes;
 
                       if (shiftsWithLate.length > 0) {
                         return (
                           <div>
                             <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Late In</label>
-                            {shiftsWithLate.map((s, idx) => (
+                            {shiftsWithLate.map((s: any, idx: number) => (
                               <div key={idx} className="mt-1 text-sm font-semibold text-orange-600 dark:text-orange-400">
                                 {attendanceDetail.shifts && attendanceDetail.shifts.length > 1 ? `#${idx + 1}: ` : ''}
                                 +{s.lateInMinutes} min
@@ -3533,14 +3533,14 @@ export default function AttendancePage() {
 
                     {/* Early Out Display - Support Multi-Shift */}
                     {(() => {
-                      const shiftsWithEarly = attendanceDetail.shifts?.filter(s => s.earlyOutMinutes && s.earlyOutMinutes > 0) || [];
+                      const shiftsWithEarly = attendanceDetail.shifts?.filter((s: any) => s.earlyOutMinutes && s.earlyOutMinutes > 0) || [];
                       const hasRootEarly = attendanceDetail.isEarlyOut && attendanceDetail.earlyOutMinutes;
 
                       if (shiftsWithEarly.length > 0) {
                         return (
                           <div>
                             <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Early Out</label>
-                            {shiftsWithEarly.map((s, idx) => (
+                            {shiftsWithEarly.map((s: any, idx: number) => (
                               <div key={idx} className="mt-1 text-sm font-semibold text-orange-600 dark:text-orange-400">
                                 {attendanceDetail.shifts && attendanceDetail.shifts.length > 1 ? `#${idx + 1}: ` : ''}
                                 -{s.earlyOutMinutes} min
@@ -4223,8 +4223,8 @@ export default function AttendancePage() {
                               </td>
                               {typeSummaryData.type === 'in_out' ? (
                                 <>
-                                  <td className="px-4 py-3 text-green-600 font-semibold">{record?.inTime ? formatTimeIST(record.inTime) : '-'}</td>
-                                  <td className="px-4 py-3 text-red-600 font-semibold">{record?.outTime ? formatTimeIST(record.outTime) : '-'}</td>
+                                  <td className="px-4 py-3 text-green-600 font-semibold">{record?.inTime ? formatTime(record.inTime) : '-'}</td>
+                                  <td className="px-4 py-3 text-red-600 font-semibold">{record?.outTime ? formatTime(record.outTime) : '-'}</td>
                                 </>
                               ) : typeSummaryData.type === 'ot' || typeSummaryData.type === 'extra' ? (
                                 <>

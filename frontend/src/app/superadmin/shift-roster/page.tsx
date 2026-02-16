@@ -1,12 +1,21 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'react-hot-toast';
 
+import { format, parseISO } from 'date-fns';
+import { Holiday, HolidayGroup } from '@/lib/api';
+
 type Shift = { _id: string; name: string; code?: string; color?: string };
-type Employee = { _id: string; employee_name?: string; emp_no: string; department?: { name: string; _id: string } };
-type RosterCell = { shiftId?: string | null; status?: 'WO' };
+type Employee = {
+  _id: string;
+  employee_name?: string;
+  emp_no: string;
+  department?: { name: string; _id: string };
+  division?: { name: string; _id: string };
+};
+type RosterCell = { shiftId?: string | null; status?: 'WO' | 'HOL'; notes?: string };
 type RosterState = Map<string, Record<string, RosterCell>>;
 
 const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -49,6 +58,8 @@ function RosterPage() {
   const [saving, setSaving] = useState(false);
   const [savingProgress, setSavingProgress] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<'roster' | 'assigned'>('roster');
+  const [holidays, setHolidays] = useState<Holiday[]>([]);
+  const [holidayGroups, setHolidayGroups] = useState<HolidayGroup[]>([]);
 
   const [showWeekOff, setShowWeekOff] = useState(false);
   const [weekOffDays, setWeekOffDays] = useState<Record<string, boolean>>(
@@ -57,7 +68,7 @@ function RosterPage() {
 
   const days = useMemo(() => getMonthDays(month), [month]);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       setLoading(true);
 
@@ -65,7 +76,7 @@ function RosterPage() {
       if (selectedDept) filters.department_id = selectedDept;
       if (selectedDivision) filters.division_id = selectedDivision;
 
-      const [shiftRes, empRes, rosterRes, divRes, deptRes] = await Promise.all([
+      const [shiftRes, empRes, rosterRes, divRes, deptRes, holidayRes] = await Promise.all([
         api.getShifts().catch((err) => {
           console.error('Failed to load shifts:', err);
           return { data: [] };
@@ -85,8 +96,27 @@ function RosterPage() {
         api.getDepartments().catch((err) => {
           console.error('Failed to load departments:', err);
           return { data: [] };
+        }),
+        api.getAllHolidaysAdmin(Number(month.split('-')[0])).catch((err) => {
+          console.error('Failed to load holidays:', err);
+          return { data: [] };
         })
       ]);
+
+      if (holidayRes && holidayRes.data) {
+        if (Array.isArray(holidayRes.data)) {
+          // Fallback if data structure is array
+          setHolidays(holidayRes.data);
+          setHolidayGroups([]);
+        } else {
+          // Correct structure: { holidays: [], groups: [] }
+          setHolidays(holidayRes.data.holidays || []);
+          setHolidayGroups(holidayRes.data.groups || []);
+        }
+      } else {
+        setHolidays([]);
+        setHolidayGroups([]);
+      }
 
       // Ensure arrays
       const shiftList = Array.isArray(shiftRes?.data) ? shiftRes.data : (Array.isArray(shiftRes) ? shiftRes : []);
@@ -119,10 +149,11 @@ function RosterPage() {
         const row = map.get(emp)!;
         // Backend now explicitly returns status: 'WO' for week offs
         // Also handle legacy data where shiftId is null (fallback)
-        const isWeekOff = e.status === 'WO' || (!e.shiftId && !e.shift);
+        const isWeekOff = e.status === 'WO';
+        const isHoliday = e.status === 'HOL';
         row[e.date] = {
           shiftId: e.shiftId || null,
-          status: isWeekOff ? 'WO' : undefined
+          status: isWeekOff ? 'WO' : (isHoliday ? 'HOL' : undefined)
         };
       });
 
@@ -138,11 +169,11 @@ function RosterPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [month, selectedDept, selectedDivision]);
 
   useEffect(() => {
     loadData();
-  }, [month, selectedDept, selectedDivision]);
+  }, [loadData]);
 
   const updateCell = (empNo: string, date: string, value: RosterCell) => {
     setRoster((prev) => {
@@ -172,7 +203,7 @@ function RosterPage() {
     });
   };
 
-  const applyEmployeeAllDays = (empNo: string, shiftId: string | null, status?: 'WO') => {
+  const applyEmployeeAllDays = (empNo: string, shiftId: string | null, status?: 'WO' | 'HOL') => {
     setRoster((prev) => {
       const map = new Map(prev);
       const row: Record<string, RosterCell> = { ...(map.get(empNo) || {}) };
@@ -195,17 +226,20 @@ function RosterPage() {
           if (!cell) return;
 
           // Skip if neither shiftId nor status is set
-          if (!cell.shiftId && cell.status !== 'WO') return;
+          if (!cell.shiftId && cell.status !== 'WO' && cell.status !== 'HOL') return;
 
           const entry: any = {
             employeeNumber: empNo,
             date,
           };
 
-          // Handle week off
+          // Handle week off or holiday
           if (cell.status === 'WO') {
             entry.shiftId = null;
             entry.status = 'WO';
+          } else if (cell.status === 'HOL') {
+            entry.shiftId = null;
+            entry.status = 'HOL';
           } else {
             // Regular shift - must have shiftId
             if (!cell.shiftId) {
@@ -297,6 +331,7 @@ function RosterPage() {
       shifts: Array<{ shiftId: string | null; shiftLabel: string; days: number; dates: string[] }>;
       totalDays: number;
       weekOffs: number;
+      holidays: number;
     }> = [];
 
     // Ensure employees is an array
@@ -311,11 +346,12 @@ function RosterPage() {
       Object.entries(row).forEach(([date, cell]) => {
         // Check for week off: either status is 'WO' or shiftId is null with status 'WO'
         const isWeekOff = cell?.status === 'WO';
-        const shiftId = isWeekOff ? 'WO' : (cell?.shiftId || null);
-        const label = isWeekOff ? 'Week Off' : (shiftId ? shiftLabel(shifts.find((s) => s._id === shiftId)) : 'Unassigned');
+        const isHoliday = cell?.status === 'HOL';
+        const shiftId = isWeekOff ? 'WO' : (isHoliday ? 'HOL' : (cell?.shiftId || null));
+        const label = isWeekOff ? 'Week Off' : (isHoliday ? 'Holiday' : (shiftId ? shiftLabel(shifts.find((s) => s._id === shiftId)) : 'Unassigned'));
 
-        // Use a consistent key for week offs
-        const mapKey = isWeekOff ? 'WO' : shiftId;
+        // Use a consistent key for week offs and holidays
+        const mapKey = isWeekOff ? 'WO' : (isHoliday ? 'HOL' : shiftId);
 
         if (!shiftMap.has(mapKey)) {
           shiftMap.set(mapKey, { label, dates: [] });
@@ -332,16 +368,19 @@ function RosterPage() {
             days: data.dates.length,
             dates: data.dates.sort(),
           }))
-          // Sort to show week offs first, then other shifts
+          // Sort to show week offs first, then holidays, then other shifts
           .sort((a, b) => {
             if (a.shiftId === 'WO') return -1;
             if (b.shiftId === 'WO') return 1;
+            if (a.shiftId === 'HOL') return -1;
+            if (b.shiftId === 'HOL') return 1;
             return 0;
           });
 
         const totalDays = shiftsList.reduce((sum, s) => sum + s.days, 0);
         const weekOffs = shiftsList.find((s) => s.shiftId === 'WO')?.days || 0;
-        summary.push({ employee: emp, shifts: shiftsList, totalDays, weekOffs });
+        const holidaysCount = shiftsList.find((s) => s.shiftId === 'HOL')?.days || 0;
+        summary.push({ employee: emp, shifts: shiftsList, totalDays, weekOffs, holidays: holidaysCount });
       }
     });
 
@@ -372,6 +411,10 @@ function RosterPage() {
             <div className="flex items-center gap-1.5">
               <div className="w-2.5 h-2.5 rounded-full border border-orange-200 bg-orange-100 shadow-sm"></div>
               <span className="text-xs text-slate-600 dark:text-slate-700">WO</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-2.5 h-2.5 rounded-full border border-red-200 bg-red-100 shadow-sm"></div>
+              <span className="text-xs text-slate-600 dark:text-slate-700">HOL</span>
             </div>
             {shifts.map(shift => (
               <div key={shift._id} className="flex items-center gap-1.5">
@@ -524,10 +567,15 @@ function RosterPage() {
                   {days.map((d) => {
                     const date = new Date(d);
                     const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+                    const isHoliday = holidays.some(h => {
+                      const start = format(parseISO(h.date), 'yyyy-MM-dd');
+                      const end = h.endDate ? format(parseISO(h.endDate), 'yyyy-MM-dd') : start;
+                      return d >= start && d <= end;
+                    });
                     return (
                       <th
                         key={d}
-                        className={`w-6 px-0.5 py-2 text-center text-[10px] border-b border-r border-black dark:border-slate-500 ${isWeekend ? 'bg-slate-100/50 dark:bg-slate-800' : ''
+                        className={`w-6 px-0.5 py-2 text-center text-[10px] border-b border-r border-black dark:border-slate-500 ${isWeekend ? 'bg-slate-100/50 dark:bg-slate-800' : ''} ${isHoliday ? 'bg-orange-100/50 dark:bg-orange-900/30' : ''
                           }`}
                       >
                         <div className="font-semibold text-slate-700 dark:text-slate-300">{date.getDate()}</div>
@@ -553,11 +601,12 @@ function RosterPage() {
                           </div>
                           <select
                             className="w-24 text-[9px] rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-1.5 py-1 cursor-pointer hover:border-blue-400 transition-colors focus:ring-1 focus:ring-blue-500 focus:outline-none"
-                            onChange={(e) => applyEmployeeAllDays(emp.emp_no, e.target.value || null, e.target.value === 'WO' ? 'WO' : undefined)}
+                            onChange={(e) => applyEmployeeAllDays(emp.emp_no, e.target.value || null, e.target.value === 'WO' ? 'WO' : (e.target.value === 'HOL' ? 'HOL' : undefined))}
                             defaultValue=""
                           >
                             <option value="">Apply to all days...</option>
                             <option value="WO">Set Week Off</option>
+                            <option value="HOL">Set Holiday</option>
                             {shifts.map((s) => (
                               <option key={s._id} value={s._id}>
                                 Set {shiftLabel(s)}
@@ -568,49 +617,86 @@ function RosterPage() {
                       </td>
                       {days.map((d) => {
                         const cell = row[d];
-                        const current = cell?.status === 'WO' ? 'WO' : cell?.shiftId || '';
+                        const isHoliday = holidays.some(h => {
+                          // Check date range
+                          const start = format(parseISO(h.date), 'yyyy-MM-dd');
+                          const end = h.endDate ? format(parseISO(h.endDate), 'yyyy-MM-dd') : start;
+                          if (d < start || d > end) return false;
+
+                          // Check applicability
+                          if (h.scope === 'GLOBAL') {
+                            if (h.applicableTo === 'ALL') {
+                              // Check for overrides by this group
+                              // (Ideally we check if ANY override exists for this master globally relevant to this employee)
+                              // But for now, global defaults to true unless overridden.
+                              // TODO: Check if an override exists for this master ID that APPLIES to this employee.
+                              const override = holidays.find(o =>
+                                o.overridesMasterId === h._id &&
+                                o.scope === 'GROUP' &&
+                                checkGroupApplicability(o, emp, holidayGroups)
+                              );
+                              return !override; // If override exists, the MASTER is NOT applicable (the override is)
+                            }
+                            if (h.applicableTo === 'SPECIFIC_GROUPS') {
+                              return checkGroupApplicability(h, emp, holidayGroups);
+                            }
+                            return true;
+                          } else if (h.scope === 'GROUP') {
+                            return checkGroupApplicability(h, emp, holidayGroups);
+                          }
+                          return false;
+                        });
+
+                        const current = cell?.status === 'WO' ? 'WO' : (cell?.status === 'HOL' ? 'HOL' : cell?.shiftId || '');
                         const isWeekend = new Date(d).getDay() === 0 || new Date(d).getDay() === 6;
                         return (
                           <td
                             key={d}
-                            className={`p-0.5 text-center relative h-10 border-r border-black dark:border-slate-500 last:border-r-0 ${isWeekend ? 'bg-slate-50/50 dark:bg-slate-800/30' : ''
-                              }`}
+                            className={`p-0.5 text-center relative h-10 border-r border-black dark:border-slate-500 last:border-r-0 ${isWeekend ? 'bg-slate-50/50 dark:bg-slate-800/30' : ''} ${isHoliday ? 'bg-orange-50/50 dark:bg-orange-950/20' : ''}`}
                             style={
-                              current && current !== 'WO'
+                              current && current !== 'WO' && current !== 'HOL'
                                 ? { backgroundColor: `${shifts.find(s => s._id === current)?.color || '#3b82f6'}30` }
-                                : current === 'WO' ? { backgroundColor: '#ffedd5' } : {}
+                                : current === 'WO' ? { backgroundColor: '#ffedd5' } : current === 'HOL' ? { backgroundColor: '#fee2e2' } : {}
                             }
                           >
-                            {/* Removed solid bar */}
                             <select
                               value={current}
                               onChange={(e) => {
                                 const val = e.target.value;
                                 if (val === 'WO') {
                                   updateCell(emp.emp_no, d, { shiftId: null, status: 'WO' });
+                                } else if (val === 'HOL') {
+                                  updateCell(emp.emp_no, d, { shiftId: null, status: 'HOL' });
                                 } else {
                                   updateCell(emp.emp_no, d, { shiftId: val || null, status: undefined });
                                 }
                               }}
                               className="w-full h-full text-[10px] font-medium rounded bg-transparent px-1 py-1 focus:ring-0 focus:outline-none appearance-none text-center cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
                               style={{
-                                color: current === 'WO' ? '#c2410c' : 'inherit',
+                                color: current === 'WO' ? '#c2410c' : (current === 'HOL' ? '#b91c1c' : 'inherit'),
                               }}
                             >
                               <option value="">-</option>
                               <option value="WO">WO</option>
+                              <option value="HOL">HOL</option>
                               {shifts.map((s) => (
-                                <option key={s._id} value={s._id} style={{ color: s.color }}>
+                                <option key={s._id} value={s._id}>
                                   {shiftLabel(s)}
                                 </option>
                               ))}
                             </select>
-
+                            {isHoliday && !current && (
+                              <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-40">
+                                <span className="text-[8px] font-bold text-orange-600">HOL</span>
+                              </div>
+                            )}
                             {/* Custom downward arrow for cleaner look, hidden if empty to look like a clean cell */}
                             {
-                              !current && (
-                                <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-0 group-hover:opacity-20">
-                                  <div className="w-1 h-1 rounded-full bg-slate-400"></div>
+                              !current && !isHoliday && (
+                                <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-0 group-hover/td:opacity-100 transition-opacity">
+                                  <svg className="w-3 h-3 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                  </svg>
                                 </div>
                               )
                             }
@@ -624,8 +710,7 @@ function RosterPage() {
             </table>
           </div>
         </div>
-      )
-      }
+      )}
 
       {/* Assigned Shifts View */}
       {
@@ -780,6 +865,47 @@ function RosterPage() {
       }
     </div >
   );
+}
+
+// Helper to check if an employee belongs to a holiday group
+function checkGroupApplicability(holiday: Holiday, emp: Employee, groups: HolidayGroup[]) {
+  // 1. Identify Target Groups
+  let targetGroups: HolidayGroup[] = [];
+
+  if (holiday.scope === 'GROUP') {
+    const gId = typeof holiday.groupId === 'object' ? (holiday.groupId as any)?._id : holiday.groupId;
+    const g = groups.find(grp => grp._id === gId);
+    if (g) targetGroups.push(g);
+  } else if (holiday.targetGroupIds && holiday.targetGroupIds.length > 0) {
+    holiday.targetGroupIds.forEach(tg => {
+      const gId = typeof tg === 'object' ? (tg as any)._id : tg;
+      const g = groups.find(grp => grp._id === gId);
+      if (g) targetGroups.push(g);
+    });
+  }
+
+  // 2. Check if employee matches ANY of the target groups
+  return targetGroups.some(g => {
+    return g.divisionMapping.some(m => {
+      const divId = typeof m.division === 'object' ? (m.division as any)._id : m.division;
+      const empDivId = emp.division?._id || emp.division;
+
+      // Match Division
+      if (divId === empDivId) {
+        // Determine Department Match
+        if (!m.departments || m.departments.length === 0) {
+          return true; // All Departments
+        }
+        const empDeptId = emp.department?._id || emp.department;
+        // Check if employee dept is in mapping
+        return m.departments.some(d => {
+          const dId = typeof d === 'object' ? (d as any)._id : d;
+          return dId === empDeptId;
+        });
+      }
+      return false;
+    });
+  });
 }
 
 export default RosterPage;
