@@ -56,14 +56,18 @@ import {
 } from '@/lib/permissions';
 
 // Premium Stat Card
-const StatCard = ({ title, value, icon: Icon, bgClass, iconClass, dekorClass, trend }: { title: string, value: number | string, icon: any, bgClass: string, iconClass: string, dekorClass?: string, trend?: { value: string, positive: boolean } }) => (
+const StatCard = ({ title, value, icon: Icon, bgClass, iconClass, dekorClass, trend, loading }: { title: string, value: number | string, icon: any, bgClass: string, iconClass: string, dekorClass?: string, trend?: { value: string, positive: boolean }, loading?: boolean }) => (
   <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 transition-all hover:shadow-xl dark:border-slate-800 dark:bg-slate-900">
     <div className="flex items-center justify-between gap-3 sm:gap-4">
       <div className="flex-1 min-w-0">
         <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500 truncate">{title}</p>
         <div className="mt-1 sm:mt-2 flex items-baseline gap-2">
-          <h3 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">{value}</h3>
-          {trend && (
+          {loading ? (
+            <div className="h-6 w-16 bg-slate-200 dark:bg-slate-700 rounded animate-pulse"></div>
+          ) : (
+            <h3 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">{value}</h3>
+          )}
+          {!loading && trend && (
             <span className={`text-[9px] sm:text-[10px] font-black px-1.5 py-0.5 rounded-md ${trend.positive ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'}`}>
               {trend.value}
             </span>
@@ -994,13 +998,24 @@ export default function OTAndPermissionsPage() {
         <main className="flex-1 max-w-[1920px] mx-auto w-full px-4 sm:px-8 py-6 sm:py-8 space-y-8">
           {/* Stats Grid */}
           <div className="grid grid-cols-2 gap-3 sm:gap-6 lg:grid-cols-4 animate-in fade-in slide-in-from-top-4 duration-500">
+
             <StatCard
               title="Approved OT Hours"
-              value={`${stats.approvedOT}h`}
+              value={stats.approvedOT}
               icon={Timer}
+              bgClass="bg-emerald-500/10"
+              iconClass="text-emerald-600 dark:text-emerald-400"
+              dekorClass="bg-emerald-500/5"
+              loading={loading}
+            />
+            <StatCard
+              title="Approved Permissions"
+              value={stats.approvedPermissions}
+              icon={CheckCircle2}
               bgClass="bg-blue-500/10"
               iconClass="text-blue-600 dark:text-blue-400"
               dekorClass="bg-blue-500/5"
+              loading={loading}
             />
             <StatCard
               title="Pending Requests"
@@ -1009,15 +1024,7 @@ export default function OTAndPermissionsPage() {
               bgClass="bg-amber-500/10"
               iconClass="text-amber-600 dark:text-amber-400"
               dekorClass="bg-amber-500/5"
-              trend={{ value: `${stats.pendingOT} OT | ${stats.pendingPermissions} Perm`, positive: false }}
-            />
-            <StatCard
-              title="Approved Permissions"
-              value={stats.approvedPermissions}
-              icon={CheckCircle2}
-              bgClass="bg-emerald-500/10"
-              iconClass="text-emerald-600 dark:text-emerald-400"
-              dekorClass="bg-emerald-500/5"
+              loading={loading}
             />
             <StatCard
               title="Rejected Requests"
@@ -1026,6 +1033,7 @@ export default function OTAndPermissionsPage() {
               bgClass="bg-rose-500/10"
               iconClass="text-rose-600 dark:text-rose-400"
               dekorClass="bg-rose-500/5"
+              loading={loading}
             />
           </div>
 
@@ -1375,7 +1383,32 @@ export default function OTAndPermissionsPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                        {otRequests.length === 0 ? (
+                        {loading ? (
+                          [...Array(5)].map((_, i) => (
+                            <tr key={i} className="animate-pulse">
+                              {showEmployeeCol && (
+                                <td className="px-8 py-4">
+                                  <div className="flex items-center gap-4">
+                                    <div className="h-10 w-10 rounded-2xl bg-slate-200 dark:bg-slate-700" />
+                                    <div className="space-y-1.5">
+                                      <div className="h-3 w-24 bg-slate-200 dark:bg-slate-700 rounded" />
+                                      <div className="h-2 w-16 bg-slate-200 dark:bg-slate-700 rounded" />
+                                    </div>
+                                  </div>
+                                </td>
+                              )}
+                              {showDivision && <td className="px-6 py-4"><div className="h-4 w-24 bg-slate-200 dark:bg-slate-700 rounded" /></td>}
+                              {showDepartment && <td className="px-6 py-4"><div className="h-4 w-28 bg-slate-200 dark:bg-slate-700 rounded" /></td>}
+                              <td className="px-6 py-4"><div className="h-4 w-24 bg-slate-200 dark:bg-slate-700 rounded" /></td>
+                              <td className="px-6 py-4"><div className="h-4 w-20 bg-slate-200 dark:bg-slate-700 rounded" /></td>
+                              <td className="px-6 py-4"><div className="h-4 w-12 bg-slate-200 dark:bg-slate-700 rounded mx-auto" /></td>
+                              <td className="px-6 py-4"><div className="h-4 w-12 bg-slate-200 dark:bg-slate-700 rounded mx-auto" /></td>
+                              <td className="px-6 py-4"><div className="h-4 w-10 bg-slate-200 dark:bg-slate-700 rounded mx-auto" /></td>
+                              <td className="px-6 py-4"><div className="h-6 w-20 bg-slate-200 dark:bg-slate-700 rounded-lg mx-auto" /></td>
+                              <td className="px-8 py-4"><div className="h-8 w-16 bg-slate-200 dark:bg-slate-700 rounded-lg ml-auto" /></td>
+                            </tr>
+                          ))
+                        ) : otRequests.length === 0 ? (
                           <tr>
                             <td colSpan={10} className="px-8 py-20 text-center">
                               <div className="flex flex-col items-center gap-3">
@@ -1456,7 +1489,23 @@ export default function OTAndPermissionsPage() {
 
                   {/* Mobile Card View for OT */}
                   <div className="md:hidden space-y-4 p-4">
-                    {otRequests.length === 0 ? (
+                    {loading ? (
+                      [...Array(3)].map((_, i) => (
+                        <div key={i} className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-sm animate-pulse">
+                          <div className="flex justify-between items-start mb-3">
+                            <div className="flex items-center gap-3">
+                              <div className="h-10 w-10 rounded-full bg-slate-200 dark:bg-slate-700"></div>
+                              <div className="space-y-2">
+                                <div className="h-4 w-32 bg-slate-200 dark:bg-slate-700 rounded"></div>
+                                <div className="h-3 w-20 bg-slate-200 dark:bg-slate-700 rounded"></div>
+                              </div>
+                            </div>
+                            <div className="h-6 w-20 bg-slate-200 dark:bg-slate-700 rounded-lg"></div>
+                          </div>
+                          <div className="h-16 bg-slate-50 dark:bg-slate-800 rounded-xl"></div>
+                        </div>
+                      ))
+                    ) : otRequests.length === 0 ? (
                       <div className="text-center py-10 text-slate-500 text-sm italic">
                         No OT requests found
                       </div>
@@ -1547,7 +1596,31 @@ export default function OTAndPermissionsPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                        {permissions.length === 0 ? (
+                        {loading ? (
+                          [...Array(5)].map((_, i) => (
+                            <tr key={i} className="animate-pulse">
+                              {showEmployeeCol && (
+                                <td className="px-8 py-4">
+                                  <div className="flex items-center gap-4">
+                                    <div className="h-10 w-10 rounded-2xl bg-slate-200 dark:bg-slate-700" />
+                                    <div className="space-y-1.5">
+                                      <div className="h-3 w-24 bg-slate-200 dark:bg-slate-700 rounded" />
+                                      <div className="h-2 w-16 bg-slate-200 dark:bg-slate-700 rounded" />
+                                    </div>
+                                  </div>
+                                </td>
+                              )}
+                              {showDivision && <td className="px-6 py-4"><div className="h-4 w-24 bg-slate-200 dark:bg-slate-700 rounded" /></td>}
+                              {showDepartment && <td className="px-6 py-4"><div className="h-4 w-28 bg-slate-200 dark:bg-slate-700 rounded" /></td>}
+                              <td className="px-6 py-4"><div className="h-4 w-24 bg-slate-200 dark:bg-slate-700 rounded" /></td>
+                              <td className="px-6 py-4"><div className="h-4 w-20 bg-slate-200 dark:bg-slate-700 rounded mx-auto" /></td>
+                              <td className="px-6 py-4"><div className="h-4 w-12 bg-slate-200 dark:bg-slate-700 rounded mx-auto" /></td>
+                              <td className="px-6 py-4"><div className="h-4 w-32 bg-slate-200 dark:bg-slate-700 rounded" /></td>
+                              <td className="px-6 py-4"><div className="h-6 w-20 bg-slate-200 dark:bg-slate-700 rounded-lg mx-auto" /></td>
+                              <td className="px-8 py-4"><div className="h-8 w-16 bg-slate-200 dark:bg-slate-700 rounded-lg ml-auto" /></td>
+                            </tr>
+                          ))
+                        ) : permissions.length === 0 ? (
                           <tr>
                             <td colSpan={10} className="px-8 py-20 text-center">
                               <div className="flex flex-col items-center gap-3">
@@ -1644,7 +1717,23 @@ export default function OTAndPermissionsPage() {
 
                   {/* Mobile Card View for Permissions */}
                   <div className="md:hidden space-y-4 p-4">
-                    {permissions.length === 0 ? (
+                    {loading ? (
+                      [...Array(3)].map((_, i) => (
+                        <div key={i} className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-sm animate-pulse">
+                          <div className="flex justify-between items-start mb-3">
+                            <div className="flex items-center gap-3">
+                              <div className="h-10 w-10 rounded-full bg-slate-200 dark:bg-slate-700"></div>
+                              <div className="space-y-2">
+                                <div className="h-4 w-32 bg-slate-200 dark:bg-slate-700 rounded"></div>
+                                <div className="h-3 w-20 bg-slate-200 dark:bg-slate-700 rounded"></div>
+                              </div>
+                            </div>
+                            <div className="h-6 w-20 bg-slate-200 dark:bg-slate-700 rounded-lg"></div>
+                          </div>
+                          <div className="h-16 bg-slate-50 dark:bg-slate-800 rounded-xl"></div>
+                        </div>
+                      ))
+                    ) : permissions.length === 0 ? (
                       <div className="text-center py-10 text-slate-500 text-sm italic">
                         No permission requests found
                       </div>

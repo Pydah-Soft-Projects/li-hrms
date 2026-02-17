@@ -11,7 +11,7 @@ import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { toast, ToastContainer } from 'react-toastify';
 import Swal from 'sweetalert2';
 import 'react-toastify/dist/ReactToastify.css';
-import Spinner from '@/components/Spinner';
+
 import LocationPhotoCapture from '@/components/LocationPhotoCapture';
 import {
   Calendar,
@@ -36,14 +36,19 @@ import {
 
 // Custom Stat Card
 // Custom Stat Card
-const StatCard = ({ title, value, icon: Icon, bgClass, iconClass, dekorClass, trend }: { title: string, value: number | string, icon: any, bgClass: string, iconClass: string, dekorClass?: string, trend?: { value: string, positive: boolean } }) => (
+// Custom Stat Card
+const StatCard = ({ title, value, icon: Icon, bgClass, iconClass, dekorClass, trend, loading }: { title: string, value: number | string, icon: any, bgClass: string, iconClass: string, dekorClass?: string, trend?: { value: string, positive: boolean }, loading?: boolean }) => (
   <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 transition-all hover:shadow-xl dark:border-slate-800 dark:bg-slate-900">
     <div className="flex items-center justify-between gap-3 sm:gap-4">
       <div className="flex-1 min-w-0">
         <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500 truncate">{title}</p>
         <div className="mt-1 sm:mt-2 flex items-baseline gap-2">
-          <h3 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">{value}</h3>
-          {trend && (
+          {loading ? (
+            <div className="h-6 w-16 bg-slate-200 dark:bg-slate-700 rounded animate-pulse"></div>
+          ) : (
+            <h3 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">{value}</h3>
+          )}
+          {!loading && trend && (
             <span className={`text-[9px] sm:text-[10px] font-black px-1.5 py-0.5 rounded-md ${trend.positive ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'}`}>
               {trend.value}
             </span>
@@ -1565,13 +1570,7 @@ export default function LeavesPage() {
     };
   }, [leaves, ods, activeTab, currentUser]);
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <Spinner />
-      </div>
-    );
-  }
+
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 pb-10">
@@ -1634,6 +1633,7 @@ export default function LeavesPage() {
             bgClass="bg-emerald-500/10"
             iconClass="text-emerald-600 dark:text-emerald-400"
             dekorClass="bg-emerald-500/5"
+            loading={loading}
           />
           <StatCard
             title="Pending Leaves"
@@ -1642,6 +1642,7 @@ export default function LeavesPage() {
             bgClass="bg-amber-500/10"
             iconClass="text-amber-600 dark:text-amber-400"
             dekorClass="bg-amber-500/5"
+            loading={loading}
           />
           <StatCard
             title="Rejected Leaves"
@@ -1650,6 +1651,7 @@ export default function LeavesPage() {
             bgClass="bg-rose-500/10"
             iconClass="text-rose-600 dark:text-rose-400"
             dekorClass="bg-rose-500/5"
+            loading={loading}
           />
           <StatCard
             title="Approved ODs"
@@ -1658,6 +1660,7 @@ export default function LeavesPage() {
             bgClass="bg-blue-500/10"
             iconClass="text-blue-600 dark:text-blue-400"
             dekorClass="bg-blue-500/5"
+            loading={loading}
           />
           <StatCard
             title="Pending ODs"
@@ -1666,6 +1669,7 @@ export default function LeavesPage() {
             bgClass="bg-violet-500/10"
             iconClass="text-violet-600 dark:text-violet-400"
             dekorClass="bg-violet-500/5"
+            loading={loading}
           />
           <StatCard
             title="Rejected ODs"
@@ -1674,6 +1678,7 @@ export default function LeavesPage() {
             bgClass="bg-slate-500/10"
             iconClass="text-slate-600 dark:text-slate-400"
             dekorClass="bg-slate-500/5"
+            loading={loading}
           />
         </div>
 
@@ -1809,7 +1814,28 @@ export default function LeavesPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {filteredLeaves.length === 0 ? (
+                    {loading ? (
+                      [...Array(5)].map((_, i) => (
+                        <tr key={i} className="animate-pulse">
+                          {currentUser?.role !== 'employee' && (
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-3">
+                                <div className="h-8 w-8 rounded-full bg-slate-200 dark:bg-slate-700" />
+                                <div className="space-y-1.5">
+                                  <div className="h-3 w-24 bg-slate-200 dark:bg-slate-700 rounded" />
+                                  <div className="h-2 w-16 bg-slate-200 dark:bg-slate-700 rounded" />
+                                </div>
+                              </div>
+                            </td>
+                          )}
+                          <td className="px-6 py-4"><div className="h-4 w-24 bg-slate-200 dark:bg-slate-700 rounded" /></td>
+                          <td className="px-6 py-4"><div className="h-4 w-32 bg-slate-200 dark:bg-slate-700 rounded" /></td>
+                          <td className="px-6 py-4"><div className="h-6 w-16 bg-slate-200 dark:bg-slate-700 rounded" /></td>
+                          <td className="px-6 py-4"><div className="h-6 w-20 bg-slate-200 dark:bg-slate-700 rounded-full" /></td>
+                          <td className="px-6 py-4"><div className="h-4 w-12 bg-slate-200 dark:bg-slate-700 rounded ml-auto" /></td>
+                        </tr>
+                      ))
+                    ) : filteredLeaves.length === 0 ? (
                       <tr>
                         <td colSpan={currentUser?.role !== 'employee' ? 6 : 5} className="px-6 py-10 text-center text-slate-500 text-sm">
                           No leave applications found
@@ -1893,7 +1919,23 @@ export default function LeavesPage() {
 
               {/* Mobile Card View */}
               <div className="md:hidden space-y-4">
-                {filteredLeaves.length === 0 ? (
+                {loading ? (
+                  [...Array(3)].map((_, i) => (
+                    <div key={i} className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-sm animate-pulse">
+                      <div className="flex justify-between items-start mb-3">
+                        <div className="flex items-center gap-3">
+                          <div className="h-10 w-10 rounded-full bg-slate-200 dark:bg-slate-700"></div>
+                          <div className="space-y-2">
+                            <div className="h-4 w-32 bg-slate-200 dark:bg-slate-700 rounded"></div>
+                            <div className="h-3 w-20 bg-slate-200 dark:bg-slate-700 rounded"></div>
+                          </div>
+                        </div>
+                        <div className="h-6 w-20 bg-slate-200 dark:bg-slate-700 rounded-lg"></div>
+                      </div>
+                      <div className="h-16 bg-slate-50 dark:bg-slate-800 rounded-xl"></div>
+                    </div>
+                  ))
+                ) : filteredLeaves.length === 0 ? (
                   <div className="text-center py-10 text-slate-500 text-sm bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
                     No leave applications found
                   </div>
@@ -1970,7 +2012,28 @@ export default function LeavesPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {filteredODs.length === 0 ? (
+                    {loading ? (
+                      [...Array(5)].map((_, i) => (
+                        <tr key={i} className="animate-pulse">
+                          {currentUser?.role !== 'employee' && (
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-3">
+                                <div className="h-8 w-8 rounded-full bg-slate-200 dark:bg-slate-700" />
+                                <div className="space-y-1.5">
+                                  <div className="h-3 w-24 bg-slate-200 dark:bg-slate-700 rounded" />
+                                  <div className="h-2 w-16 bg-slate-200 dark:bg-slate-700 rounded" />
+                                </div>
+                              </div>
+                            </td>
+                          )}
+                          <td className="px-6 py-4"><div className="h-4 w-24 bg-slate-200 dark:bg-slate-700 rounded" /></td>
+                          <td className="px-6 py-4"><div className="h-4 w-32 bg-slate-200 dark:bg-slate-700 rounded" /></td>
+                          <td className="px-6 py-4"><div className="h-6 w-16 bg-slate-200 dark:bg-slate-700 rounded" /></td>
+                          <td className="px-6 py-4"><div className="h-6 w-20 bg-slate-200 dark:bg-slate-700 rounded-full" /></td>
+                          <td className="px-6 py-4"><div className="h-4 w-12 bg-slate-200 dark:bg-slate-700 rounded ml-auto" /></td>
+                        </tr>
+                      ))
+                    ) : filteredODs.length === 0 ? (
                       <tr>
                         <td colSpan={currentUser?.role !== 'employee' ? 7 : 6} className="px-6 py-10 text-center text-slate-500 text-sm italic">
                           No OD applications found
@@ -2057,7 +2120,23 @@ export default function LeavesPage() {
 
               {/* Mobile Card View */}
               <div className="md:hidden space-y-4">
-                {filteredODs.length === 0 ? (
+                {loading ? (
+                  [...Array(3)].map((_, i) => (
+                    <div key={i} className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-sm animate-pulse">
+                      <div className="flex justify-between items-start mb-3">
+                        <div className="flex items-center gap-3">
+                          <div className="h-10 w-10 rounded-full bg-slate-200 dark:bg-slate-700"></div>
+                          <div className="space-y-2">
+                            <div className="h-4 w-32 bg-slate-200 dark:bg-slate-700 rounded"></div>
+                            <div className="h-3 w-20 bg-slate-200 dark:bg-slate-700 rounded"></div>
+                          </div>
+                        </div>
+                        <div className="h-6 w-20 bg-slate-200 dark:bg-slate-700 rounded-lg"></div>
+                      </div>
+                      <div className="h-16 bg-slate-50 dark:bg-slate-800 rounded-xl"></div>
+                    </div>
+                  ))
+                ) : filteredODs.length === 0 ? (
                   <div className="text-center py-10 text-slate-500 text-sm bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
                     No OD applications found
                   </div>
@@ -2124,204 +2203,230 @@ export default function LeavesPage() {
 
           {activeTab === 'pending' && (
             <div className="p-4 space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-500">
-              {/* Pending Leaves */}
-              {filteredPendingLeaves.length > 0 && (
+              {loading ? (
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between px-2">
-                    <h3 className="text-xs font-black text-slate-500 uppercase tracking-wider flex items-center gap-2">
-                      <Calendar className="w-3.5 h-3.5" />
-                      Pending Leaves ({filteredPendingLeaves.length})
+                  <div className="h-5 w-40 bg-slate-200 dark:bg-slate-700 rounded animate-pulse mb-4"></div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                    {[...Array(3)].map((_, i) => (
+                      <div key={i} className="h-56 rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900 animate-pulse">
+                        <div className="flex justify-between mb-4">
+                          <div className="flex gap-3">
+                            <div className="h-10 w-10 rounded-full bg-slate-200 dark:bg-slate-700"></div>
+                            <div className="space-y-2">
+                              <div className="h-4 w-32 bg-slate-200 dark:bg-slate-700 rounded"></div>
+                              <div className="h-3 w-20 bg-slate-200 dark:bg-slate-700 rounded"></div>
+                            </div>
+                          </div>
+                          <div className="h-6 w-20 bg-slate-200 dark:bg-slate-700 rounded-full"></div>
+                        </div>
+                        <div className="space-y-3">
+                          <div className="h-4 w-full bg-slate-200 dark:bg-slate-700 rounded"></div>
+                          <div className="h-4 w-3/4 bg-slate-200 dark:bg-slate-700 rounded"></div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (<>
+                {/* Pending Leaves */}
+                {filteredPendingLeaves.length > 0 && (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between px-2">
+                      <h3 className="text-xs font-black text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                        <Calendar className="w-3.5 h-3.5" />
+                        Pending Leaves ({filteredPendingLeaves.length})
+                      </h3>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                      {filteredPendingLeaves.map((leave) => (
+                        <div key={leave._id} className="group relative flex flex-col justify-between rounded-2xl border border-slate-200/60 bg-white p-5 shadow-sm transition-all hover:shadow-md hover:border-blue-200/60 dark:border-slate-800 dark:bg-slate-900">
+                          {/* Status Strip */}
+                          <div className="absolute top-0 left-0 w-1 h-full bg-blue-500/80 rounded-l-2xl group-hover:w-1.5 transition-all" />
+
+                          {/* Header */}
+                          <div className="flex items-start justify-between gap-3 mb-4">
+                            <div className="flex items-center gap-3">
+                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600 font-bold dark:bg-blue-900/30 dark:text-blue-400">
+                                {getEmployeeInitials({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: '' } as any)}
+                              </div>
+                              <div>
+                                <h4 className="font-semibold text-slate-900 dark:text-white line-clamp-1">
+                                  {leave.employeeId?.first_name} {leave.employeeId?.last_name}
+                                </h4>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                                  <span>{leave.employeeId?.emp_no}</span>
+                                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                                  {(leave.employeeId as any)?.department?.name && (
+                                    <>
+                                      <span>•</span>
+                                      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                                      <span className="truncate max-w-[100px]">{(leave.employeeId as any)?.department?.name}</span>
+                                    </>
+                                  )}
+                                </p>
+                              </div>
+                            </div>
+                            <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(leave.status)}`}>
+                              {leave.status.replace('_', ' ')}
+                            </span>
+                          </div>
+
+                          {/* Content */}
+                          <div className="mb-4 space-y-2.5">
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-slate-500 dark:text-slate-400">Type</span>
+                              <span className="font-medium text-slate-700 dark:text-slate-300">{leave.leaveType}</span>
+                            </div>
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-slate-500 dark:text-slate-400">Duration</span>
+                              <span className="font-medium text-slate-700 dark:text-slate-300">{leave.numberOfDays} Day{leave.numberOfDays !== 1 ? 's' : ''}</span>
+                            </div>
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-slate-500 dark:text-slate-400">Dates</span>
+                              <span className="font-medium text-slate-700 dark:text-slate-300 text-right">
+                                {formatDate(leave.fromDate)}
+                                {leave.fromDate !== leave.toDate && ` - ${formatDate(leave.toDate)}`}
+                              </span>
+                            </div>
+                            {leave.purpose && (
+                              <div className="pt-2 mt-2 border-t border-slate-100 dark:border-slate-700">
+                                <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 italic">
+                                  "{leave.purpose}"
+                                </p>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Actions */}
+
+                          {canPerformAction(leave) && (hasManagePermission || hasManagePermission) && (
+                            <div className="flex items-center gap-2 mt-auto">
+                              {hasManagePermission && (
+                                <button
+                                  onClick={() => handleAction(leave._id, 'leave', 'approve')}
+                                  className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-green-500/10 py-2 text-sm font-semibold text-green-600 transition-colors hover:bg-green-500 hover:text-white dark:bg-green-500/20 dark:text-green-400 dark:hover:bg-green-500 dark:hover:text-white"
+                                  title="Approve Leave"
+                                >
+                                  <Check /> Approve
+                                </button>
+                              )}
+                              {hasManagePermission && (
+                                <button
+                                  onClick={() => handleAction(leave._id, 'leave', 'reject')}
+                                  className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-500/10 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-500 hover:text-white dark:bg-red-500/20 dark:text-red-400 dark:hover:bg-red-500 dark:hover:text-white"
+                                  title="Reject Leave"
+                                >
+                                  <X /> Reject
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Pending ODs */}
+                {filteredPendingODs.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-2">
+                      <Briefcase />
+                      Pending ODs ({filteredPendingODs.length})
                     </h3>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                    {filteredPendingLeaves.map((leave) => (
-                      <div key={leave._id} className="group relative flex flex-col justify-between rounded-2xl border border-slate-200/60 bg-white p-5 shadow-sm transition-all hover:shadow-md hover:border-blue-200/60 dark:border-slate-800 dark:bg-slate-900">
-                        {/* Status Strip */}
-                        <div className="absolute top-0 left-0 w-1 h-full bg-blue-500/80 rounded-l-2xl group-hover:w-1.5 transition-all" />
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                      {filteredPendingODs.map((od) => (
+                        <div key={od._id} className="group relative flex flex-col justify-between rounded-xl border border-slate-200 border-l-4 border-l-purple-500 bg-white p-5 shadow-sm transition-all hover:shadow-md dark:border-slate-700 dark:bg-slate-800">
 
-                        {/* Header */}
-                        <div className="flex items-start justify-between gap-3 mb-4">
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600 font-bold dark:bg-blue-900/30 dark:text-blue-400">
-                              {getEmployeeInitials({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: '' } as any)}
+                          {/* Header */}
+                          <div className="flex items-start justify-between gap-3 mb-4">
+                            <div className="flex items-center gap-3">
+                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-purple-100 text-purple-600 font-bold dark:bg-purple-900/30 dark:text-purple-400">
+                                {getEmployeeInitials({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: '' } as any)}
+                              </div>
+                              <div>
+                                <h4 className="font-semibold text-slate-900 dark:text-white line-clamp-1">
+                                  {od.employeeId?.first_name} {od.employeeId?.last_name}
+                                </h4>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                                  <span>{od.employeeId?.emp_no}</span>
+                                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                                  {(od.employeeId as any)?.department?.name && (
+                                    <>
+                                      <span>•</span>
+                                      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                                      <span className="truncate max-w-[100px]">{(od.employeeId as any)?.department?.name}</span>
+                                    </>
+                                  )}
+                                </p>
+                              </div>
                             </div>
-                            <div>
-                              <h4 className="font-semibold text-slate-900 dark:text-white line-clamp-1">
-                                {leave.employeeId?.first_name} {leave.employeeId?.last_name}
-                              </h4>
-                              <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
-                                <span>{leave.employeeId?.emp_no}</span>
-                                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                                {(leave.employeeId as any)?.department?.name && (
-                                  <>
-                                    <span>•</span>
-                                    {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                                    <span className="truncate max-w-[100px]">{(leave.employeeId as any)?.department?.name}</span>
-                                  </>
-                                )}
-                              </p>
-                            </div>
-                          </div>
-                          <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(leave.status)}`}>
-                            {leave.status.replace('_', ' ')}
-                          </span>
-                        </div>
-
-                        {/* Content */}
-                        <div className="mb-4 space-y-2.5">
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-slate-500 dark:text-slate-400">Type</span>
-                            <span className="font-medium text-slate-700 dark:text-slate-300">{leave.leaveType}</span>
-                          </div>
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-slate-500 dark:text-slate-400">Duration</span>
-                            <span className="font-medium text-slate-700 dark:text-slate-300">{leave.numberOfDays} Day{leave.numberOfDays !== 1 ? 's' : ''}</span>
-                          </div>
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-slate-500 dark:text-slate-400">Dates</span>
-                            <span className="font-medium text-slate-700 dark:text-slate-300 text-right">
-                              {formatDate(leave.fromDate)}
-                              {leave.fromDate !== leave.toDate && ` - ${formatDate(leave.toDate)}`}
+                            <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(od.status)}`}>
+                              {od.status.replace('_', ' ')}
                             </span>
                           </div>
-                          {leave.purpose && (
-                            <div className="pt-2 mt-2 border-t border-slate-100 dark:border-slate-700">
-                              <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 italic">
-                                "{leave.purpose}"
-                              </p>
+
+                          {/* Content */}
+                          <div className="mb-4 space-y-2.5">
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-slate-500 dark:text-slate-400">Type</span>
+                              <span className="font-medium text-slate-700 dark:text-slate-300">{od.odType}</span>
+                            </div>
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-slate-500 dark:text-slate-400">Duration</span>
+                              <span className="font-medium text-slate-700 dark:text-slate-300">{od.numberOfDays} Day{od.numberOfDays !== 1 ? 's' : ''}</span>
+                            </div>
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-slate-500 dark:text-slate-400">Dates</span>
+                              <span className="font-medium text-slate-700 dark:text-slate-300 text-right">
+                                {formatDate(od.fromDate)}
+                                {od.fromDate !== od.toDate && ` - ${formatDate(od.toDate)}`}
+                              </span>
+                            </div>
+                            {od.purpose && (
+                              <div className="pt-2 mt-2 border-t border-slate-100 dark:border-slate-700">
+                                <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 italic">
+                                  "{od.purpose}"
+                                </p>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Actions */}
+                          {canPerformAction(od) && (hasManagePermission || hasManagePermission) && (
+                            <div className="flex items-center gap-2 mt-auto">
+                              {hasManagePermission && (
+                                <button
+                                  onClick={() => handleAction(od._id, 'od', 'approve')}
+                                  className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-green-500/10 py-2 text-sm font-semibold text-green-600 transition-colors hover:bg-green-500 hover:text-white dark:bg-green-500/20 dark:text-green-400 dark:hover:bg-green-500 dark:hover:text-white"
+                                  title="Approve OD"
+                                >
+                                  <Check /> Approve
+                                </button>
+                              )}
+                              {hasManagePermission && (
+                                <button
+                                  onClick={() => handleAction(od._id, 'od', 'reject')}
+                                  className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-500/10 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-500 hover:text-white dark:bg-red-500/20 dark:text-red-400 dark:hover:bg-red-500 dark:hover:text-white"
+                                  title="Reject OD"
+                                >
+                                  <X /> Reject
+                                </button>
+                              )}
                             </div>
                           )}
                         </div>
-
-                        {/* Actions */}
-
-                        {canPerformAction(leave) && (hasManagePermission || hasManagePermission) && (
-                          <div className="flex items-center gap-2 mt-auto">
-                            {hasManagePermission && (
-                              <button
-                                onClick={() => handleAction(leave._id, 'leave', 'approve')}
-                                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-green-500/10 py-2 text-sm font-semibold text-green-600 transition-colors hover:bg-green-500 hover:text-white dark:bg-green-500/20 dark:text-green-400 dark:hover:bg-green-500 dark:hover:text-white"
-                                title="Approve Leave"
-                              >
-                                <Check /> Approve
-                              </button>
-                            )}
-                            {hasManagePermission && (
-                              <button
-                                onClick={() => handleAction(leave._id, 'leave', 'reject')}
-                                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-500/10 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-500 hover:text-white dark:bg-red-500/20 dark:text-red-400 dark:hover:bg-red-500 dark:hover:text-white"
-                                title="Reject Leave"
-                              >
-                                <X /> Reject
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* Pending ODs */}
-              {filteredPendingODs.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-2">
-                    <Briefcase />
-                    Pending ODs ({filteredPendingODs.length})
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                    {filteredPendingODs.map((od) => (
-                      <div key={od._id} className="group relative flex flex-col justify-between rounded-xl border border-slate-200 border-l-4 border-l-purple-500 bg-white p-5 shadow-sm transition-all hover:shadow-md dark:border-slate-700 dark:bg-slate-800">
-
-                        {/* Header */}
-                        <div className="flex items-start justify-between gap-3 mb-4">
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-purple-100 text-purple-600 font-bold dark:bg-purple-900/30 dark:text-purple-400">
-                              {getEmployeeInitials({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: '' } as any)}
-                            </div>
-                            <div>
-                              <h4 className="font-semibold text-slate-900 dark:text-white line-clamp-1">
-                                {od.employeeId?.first_name} {od.employeeId?.last_name}
-                              </h4>
-                              <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
-                                <span>{od.employeeId?.emp_no}</span>
-                                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                                {(od.employeeId as any)?.department?.name && (
-                                  <>
-                                    <span>•</span>
-                                    {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                                    <span className="truncate max-w-[100px]">{(od.employeeId as any)?.department?.name}</span>
-                                  </>
-                                )}
-                              </p>
-                            </div>
-                          </div>
-                          <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(od.status)}`}>
-                            {od.status.replace('_', ' ')}
-                          </span>
-                        </div>
-
-                        {/* Content */}
-                        <div className="mb-4 space-y-2.5">
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-slate-500 dark:text-slate-400">Type</span>
-                            <span className="font-medium text-slate-700 dark:text-slate-300">{od.odType}</span>
-                          </div>
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-slate-500 dark:text-slate-400">Duration</span>
-                            <span className="font-medium text-slate-700 dark:text-slate-300">{od.numberOfDays} Day{od.numberOfDays !== 1 ? 's' : ''}</span>
-                          </div>
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-slate-500 dark:text-slate-400">Dates</span>
-                            <span className="font-medium text-slate-700 dark:text-slate-300 text-right">
-                              {formatDate(od.fromDate)}
-                              {od.fromDate !== od.toDate && ` - ${formatDate(od.toDate)}`}
-                            </span>
-                          </div>
-                          {od.purpose && (
-                            <div className="pt-2 mt-2 border-t border-slate-100 dark:border-slate-700">
-                              <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 italic">
-                                "{od.purpose}"
-                              </p>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Actions */}
-                        {canPerformAction(od) && (hasManagePermission || hasManagePermission) && (
-                          <div className="flex items-center gap-2 mt-auto">
-                            {hasManagePermission && (
-                              <button
-                                onClick={() => handleAction(od._id, 'od', 'approve')}
-                                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-green-500/10 py-2 text-sm font-semibold text-green-600 transition-colors hover:bg-green-500 hover:text-white dark:bg-green-500/20 dark:text-green-400 dark:hover:bg-green-500 dark:hover:text-white"
-                                title="Approve OD"
-                              >
-                                <Check /> Approve
-                              </button>
-                            )}
-                            {hasManagePermission && (
-                              <button
-                                onClick={() => handleAction(od._id, 'od', 'reject')}
-                                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-500/10 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-500 hover:text-white dark:bg-red-500/20 dark:text-red-400 dark:hover:bg-red-500 dark:hover:text-white"
-                                title="Reject OD"
-                              >
-                                <X /> Reject
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                {totalPending === 0 && (
+                  <div className="text-center py-12 text-slate-500">
+                    No pending approvals
                   </div>
-                </div>
-              )}
-
-              {totalPending === 0 && (
-                <div className="text-center py-12 text-slate-500">
-                  No pending approvals
-                </div>
-              )}
+                )}
+              </>)}
             </div>
           )
           }

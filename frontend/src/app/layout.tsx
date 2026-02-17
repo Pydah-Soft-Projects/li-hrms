@@ -6,6 +6,7 @@ import { WorkspaceProvider } from "@/contexts/WorkspaceContext";
 import { SocketProvider } from "@/contexts/SocketContext";
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+import InstallPrompt from "@/components/InstallPrompt";
 
 
 const plusJakartaSans = Plus_Jakarta_Sans({
@@ -16,6 +17,9 @@ const plusJakartaSans = Plus_Jakarta_Sans({
 export const metadata: Metadata = {
   title: "HRMS Application",
   description: "Human Resource Management System",
+  manifest: "/manifest.json",
+  themeColor: "#0f172a",
+  viewport: "minimum-scale=1, initial-scale=1, width=device-width, shrink-to-fit=no, user-scalable=no, viewport-fit=cover",
 };
 
 export default function RootLayout({
@@ -36,6 +40,7 @@ export default function RootLayout({
           </WorkspaceProvider>
         </AuthProvider>
         <ToastContainer />
+        <InstallPrompt />
       </body>
     </html>
   );

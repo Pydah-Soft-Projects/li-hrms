@@ -2627,57 +2627,57 @@ export default function LeavesPage() {
                 if (!chain || !Array.isArray(chain) || chain.length === 0) return null;
                 const approvedCount = chain.filter((s: any) => s.status === 'approved').length;
                 return (
-                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
-                  <p className="text-xs text-slate-500 uppercase font-semibold mb-4">Approval Timeline</p>
-                  {/* Progress bar */}
-                  <div className="mb-6">
-                    <div className="flex justify-between text-[10px] font-bold text-slate-500 uppercase mb-1">
-                      <span>{approvedCount} of {chain.length} approved</span>
+                  <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                    <p className="text-xs text-slate-500 uppercase font-semibold mb-4">Approval Timeline</p>
+                    {/* Progress bar */}
+                    <div className="mb-6">
+                      <div className="flex justify-between text-[10px] font-bold text-slate-500 uppercase mb-1">
+                        <span>{approvedCount} of {chain.length} approved</span>
+                      </div>
+                      <div className="h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-green-500 to-green-600 transition-all duration-300"
+                          style={{ width: `${(approvedCount / chain.length) * 100}%` }}
+                        />
+                      </div>
                     </div>
-                    <div className="h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-gradient-to-r from-green-500 to-green-600 transition-all duration-300"
-                        style={{ width: `${(approvedCount / chain.length) * 100}%` }}
-                      />
-                    </div>
-                  </div>
-                  {/* Vertical timeline */}
-                  <div className="relative pl-6 border-l-2 border-slate-200 dark:border-slate-700 ml-1">
-                    {chain.map((step: any, idx: number) => {
-                      const stepRole = step.role || step.stepRole || 'step';
-                      const label = step.label || `${stepRole.replace('_', ' ')}`;
-                      const isApproved = step.status === 'approved';
-                      const isRejected = step.status === 'rejected';
-                      const isPending = step.status === 'pending';
-                      const nextRole = wf?.nextApproverRole || wf?.nextApprover;
-                      const isCurrent = isPending && (String(nextRole || '').toLowerCase() === String(stepRole).toLowerCase());
-                      const nodeColor = isApproved ? 'bg-green-500 ring-4 ring-green-200 dark:ring-green-900/50' : isRejected ? 'bg-red-500 ring-4 ring-red-200 dark:ring-red-900/50' : isCurrent ? 'bg-blue-500 ring-4 ring-blue-200 dark:ring-blue-900/50' : 'bg-slate-300 dark:bg-slate-600';
-                      return (
-                        <div key={idx} className="relative pb-6 last:pb-0">
-                          <div className={`absolute -left-[29px] top-0.5 w-4 h-4 rounded-full ${nodeColor} border-2 border-white dark:border-slate-900 shadow-sm`} />
-                          <div className="ml-2">
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-bold text-slate-900 dark:text-white capitalize">{label}</span>
-                              {isApproved && <span className="text-[10px] font-bold text-green-600 dark:text-green-400 uppercase">✓ Approved</span>}
-                              {isRejected && <span className="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase">✗ Rejected</span>}
-                              {isCurrent && <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase">⏳ Your turn</span>}
-                              {isPending && !isCurrent && <span className="text-[10px] font-bold text-slate-400 uppercase">○ Pending</span>}
+                    {/* Vertical timeline */}
+                    <div className="relative pl-6 border-l-2 border-slate-200 dark:border-slate-700 ml-1">
+                      {chain.map((step: any, idx: number) => {
+                        const stepRole = step.role || step.stepRole || 'step';
+                        const label = step.label || `${stepRole.replace('_', ' ')}`;
+                        const isApproved = step.status === 'approved';
+                        const isRejected = step.status === 'rejected';
+                        const isPending = step.status === 'pending';
+                        const nextRole = wf?.nextApproverRole || wf?.nextApprover;
+                        const isCurrent = isPending && (String(nextRole || '').toLowerCase() === String(stepRole).toLowerCase());
+                        const nodeColor = isApproved ? 'bg-green-500 ring-4 ring-green-200 dark:ring-green-900/50' : isRejected ? 'bg-red-500 ring-4 ring-red-200 dark:ring-red-900/50' : isCurrent ? 'bg-blue-500 ring-4 ring-blue-200 dark:ring-blue-900/50' : 'bg-slate-300 dark:bg-slate-600';
+                        return (
+                          <div key={idx} className="relative pb-6 last:pb-0">
+                            <div className={`absolute -left-[29px] top-0.5 w-4 h-4 rounded-full ${nodeColor} border-2 border-white dark:border-slate-900 shadow-sm`} />
+                            <div className="ml-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-bold text-slate-900 dark:text-white capitalize">{label}</span>
+                                {isApproved && <span className="text-[10px] font-bold text-green-600 dark:text-green-400 uppercase">✓ Approved</span>}
+                                {isRejected && <span className="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase">✗ Rejected</span>}
+                                {isCurrent && <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase">⏳ Your turn</span>}
+                                {isPending && !isCurrent && <span className="text-[10px] font-bold text-slate-400 uppercase">○ Pending</span>}
+                              </div>
+                              {isApproved && (
+                                <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
+                                  {step.actionByName || 'Unknown'} ({step.actionByRole || stepRole})
+                                  {step.updatedAt && <span className="ml-1">· {new Date(step.updatedAt).toLocaleString()}</span>}
+                                </p>
+                              )}
+                              {isApproved && step.comments && (
+                                <p className="text-xs text-slate-500 italic mt-0.5">"{step.comments}"</p>
+                              )}
                             </div>
-                            {isApproved && (
-                              <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-                                {step.actionByName || 'Unknown'} ({step.actionByRole || stepRole})
-                                {step.updatedAt && <span className="ml-1">· {new Date(step.updatedAt).toLocaleString()}</span>}
-                              </p>
-                            )}
-                            {isApproved && step.comments && (
-                              <p className="text-xs text-slate-500 italic mt-0.5">"{step.comments}"</p>
-                            )}
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
                 );
               })()}
 
