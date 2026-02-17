@@ -687,7 +687,7 @@ export interface Holiday {
   name: string;
   date: string; // ISO Date string
   endDate?: string; // Optional end date
-  type: 'National' | 'Regional' | 'Optional' | 'Company';
+  type: 'National' | 'Regional' | 'Optional' | 'Company' | 'Academic' | 'Observance' | 'Seasonal';
   isMaster: boolean;
   scope: 'GLOBAL' | 'GROUP';
   applicableTo?: 'ALL' | 'SPECIFIC_GROUPS';
@@ -695,6 +695,8 @@ export interface Holiday {
   groupId?: string | HolidayGroup;
   overridesMasterId?: string | Holiday;
   description?: string;
+  sourceHolidayId?: string | Holiday; // For propagated copies
+  isSynced?: boolean; // True if synced with global, false if edited
   createdBy?: string;
   createdAt?: string;
   updatedAt?: string;

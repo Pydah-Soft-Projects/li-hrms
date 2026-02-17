@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { api, Holiday, HolidayGroup, Division, Department } from '@/lib/api';
+import { toast } from 'react-toastify';
+import Swal from 'sweetalert2';
 import Spinner from '@/components/Spinner';
 import {
     format,
@@ -129,9 +131,10 @@ export default function HolidayManagementPage() {
         if (selectedGroupId === 'GLOBAL') {
             return allHolidays.filter(h => h.scope === 'GLOBAL');
         } else {
+            // With Propagation Logic, we don't need to merge Global holidays manually.
+            // The Group copies already exist in the database.
             return allHolidays.filter(h =>
-                h.scope === 'GLOBAL' ||
-                (h.scope === 'GROUP' && (typeof h.groupId === 'object' ? (h.groupId as any)?._id : h.groupId) === selectedGroupId)
+                (h.scope === 'GROUP' && (h.groupId && typeof h.groupId === 'object' ? h.groupId._id : h.groupId) === selectedGroupId)
             );
         }
     }, [allHolidays, selectedGroupId]);
@@ -312,9 +315,9 @@ export default function HolidayManagementPage() {
                                                                     <span className="text-[8px] opacity-80 font-medium truncate">
                                                                         {h.type}
                                                                     </span>
-                                                                    {selectedGroupId !== 'GLOBAL' && h.scope === 'GLOBAL' && (
-                                                                        <span className="text-[7px] font-bold bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400 px-1 rounded uppercase">
-                                                                            Global
+                                                                    {h.sourceHolidayId && (
+                                                                        <span className={`text-[7px] font-bold px-1 rounded uppercase ${h.isSynced !== false ? 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400' : 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400'}`}>
+                                                                            {h.isSynced !== false ? 'Global' : 'Global (Mod)'}
                                                                         </span>
                                                                     )}
                                                                 </div>
@@ -377,15 +380,15 @@ export default function HolidayManagementPage() {
 
                                             <div className="mt-auto space-y-3">
                                                 <div className="mt-1 space-y-1">
-                                                    {(group.divisionMapping || []).map((map: any, idx: number) => (
+                                                    {(group.divisionMapping || []).map((map, idx: number) => (
                                                         <div key={idx} className="flex flex-wrap items-center gap-1 text-[11px] bg-slate-50 dark:bg-slate-900 px-2 py-1 rounded border border-slate-100 dark:border-slate-700">
                                                             <span className="font-bold text-slate-700 dark:text-slate-300">
-                                                                {typeof map.division === 'object' ? (map.division as any).name : 'Division'}
+                                                                {typeof map.division === 'object' ? map.division.name : 'Division'}
                                                             </span>
                                                             <span className="text-slate-400">→</span>
                                                             <span className="text-blue-600 dark:text-blue-400">
                                                                 {map.departments && map.departments.length > 0 ? (
-                                                                    map.departments.map((d: any, i: number) => (
+                                                                    map.departments.map((d, i: number) => (
                                                                         <span key={i}>
                                                                             {typeof d === 'object' ? d.name : 'Dept'}
                                                                             {i < map.departments.length - 1 ? ', ' : ''}
@@ -431,285 +434,306 @@ export default function HolidayManagementPage() {
             </div>
 
             {/* Holiday Form Modal */}
-            {showHolidayForm && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-                    <div className="w-full max-w-4xl bg-white rounded-2xl shadow-2xl dark:bg-slate-900 border border-slate-200 dark:border-slate-700 overflow-hidden">
-                        <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-700">
-                            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
-                                {editingHoliday ? 'Edit Holiday' : (selectedGroupId === 'GLOBAL' ? 'Add Global Holiday' : `Add Holiday to ${groups.find(g => g._id === selectedGroupId)?.name}`)}
-                            </h2>
-                            <button
-                                onClick={() => {
+            {
+                showHolidayForm && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+                        <div className="w-full max-w-4xl bg-white rounded-2xl shadow-2xl dark:bg-slate-900 border border-slate-200 dark:border-slate-700 overflow-hidden">
+                            <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-700">
+                                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
+                                    {editingHoliday ? 'Edit Holiday' : (selectedGroupId === 'GLOBAL' ? 'Add Global Holiday' : `Add Holiday to ${groups.find(g => g._id === selectedGroupId)?.name}`)}
+                                </h2>
+                                <button
+                                    onClick={() => {
+                                        setShowHolidayForm(false);
+                                        setPrefilledDate(null);
+                                    }}
+                                    className="text-slate-400 hover:text-slate-500 dark:hover:text-slate-300"
+                                >
+                                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            </div>
+
+                            <form onSubmit={async (e) => {
+                                e.preventDefault();
+                                const formData = new FormData(e.currentTarget);
+                                const isGlobalContext = editingHoliday ? editingHoliday.scope === 'GLOBAL' : selectedGroupId === 'GLOBAL';
+                                const isCreatingOverride = !isGlobalContext && editingHoliday?.scope === 'GLOBAL';
+                                const applicableTo = isGlobalContext ? (formData.get('applicableTo') as "ALL" | "SPECIFIC_GROUPS") : 'SPECIFIC_GROUPS';
+
+                                const data: Partial<Holiday> & { isMaster: boolean, scope: string, applicableTo: string, groupId?: string, targetGroupIds?: string[], endDate?: string, overridesMasterId?: string } = {
+                                    name: formData.get('name') as string,
+                                    date: formData.get('date') as string,
+                                    endDate: formData.get('endDate') as string || undefined,
+                                    type: formData.get('type') as any,
+                                    description: formData.get('description') as string,
+                                    isMaster: isGlobalContext,
+                                    scope: isGlobalContext ? 'GLOBAL' : 'GROUP',
+                                    applicableTo,
+                                    groupId: isGlobalContext ? undefined : (selectedGroupId !== 'GLOBAL' ? selectedGroupId : (editingHoliday?.groupId as string)),
+                                    targetGroupIds: isGlobalContext && applicableTo === 'SPECIFIC_GROUPS' ? formData.getAll('targetGroupIds') as string[] : undefined
+                                };
+
+                                if (editingHoliday) {
+                                    if (isCreatingOverride) {
+                                        // Creating a NEW override record, do not send _id
+                                        data.overridesMasterId = editingHoliday._id;
+                                    } else {
+                                        data._id = editingHoliday._id;
+                                    }
+                                }
+
+
+                                try {
+                                    await api.saveHoliday(data);
                                     setShowHolidayForm(false);
                                     setPrefilledDate(null);
-                                }}
-                                className="text-slate-400 hover:text-slate-500 dark:hover:text-slate-300"
-                            >
-                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                            </button>
-                        </div>
-
-                        <form onSubmit={async (e) => {
-                            e.preventDefault();
-                            const formData = new FormData(e.currentTarget);
-                            const isGlobalContext = editingHoliday ? editingHoliday.scope === 'GLOBAL' : selectedGroupId === 'GLOBAL';
-                            const isCreatingOverride = !isGlobalContext && editingHoliday?.scope === 'GLOBAL';
-                            const applicableTo = isGlobalContext ? (formData.get('applicableTo') as "ALL" | "SPECIFIC_GROUPS") : 'SPECIFIC_GROUPS';
-
-                            const data: Partial<Holiday> & { isMaster: boolean, scope: string, applicableTo: string, groupId?: string, targetGroupIds?: string[], endDate?: string, overridesMasterId?: string } = {
-                                name: formData.get('name') as string,
-                                date: formData.get('date') as string,
-                                endDate: formData.get('endDate') as string || undefined,
-                                type: formData.get('type') as any,
-                                description: formData.get('description') as string,
-                                isMaster: isGlobalContext,
-                                scope: isGlobalContext ? 'GLOBAL' : 'GROUP',
-                                applicableTo,
-                                groupId: isGlobalContext ? undefined : (selectedGroupId !== 'GLOBAL' ? selectedGroupId : (editingHoliday?.groupId as string)),
-                                targetGroupIds: isGlobalContext && applicableTo === 'SPECIFIC_GROUPS' ? formData.getAll('targetGroupIds') as string[] : undefined
-                            };
-
-                            if (editingHoliday) {
-                                if (isCreatingOverride) {
-                                    // Creating a NEW override record, do not send _id
-                                    data.overridesMasterId = editingHoliday._id;
-                                } else {
-                                    data._id = editingHoliday._id;
+                                    loadData();
+                                } catch (err: any) {
+                                    console.error(err);
+                                    alert(err.message || 'Failed to save holiday');
                                 }
-                            }
-
-
-                            try {
-                                await api.saveHoliday(data);
-                                setShowHolidayForm(false);
-                                setPrefilledDate(null);
-                                loadData();
-                            } catch (err: any) {
-                                console.error(err);
-                                alert(err.message || 'Failed to save holiday');
-                            }
-                        }} className="flex flex-col">
-                            <div className="grid grid-cols-1 md:grid-cols-3">
-                                {/* Left Panel: Details */}
-                                <div className="md:col-span-2 p-8 space-y-6">
-                                    <div>
-                                        <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Event Title</label>
-                                        <input
-                                            type="text"
-                                            name="name"
-                                            defaultValue={editingHoliday?.name}
-                                            required
-                                            placeholder="e.g., Annual Company Retreat"
-                                            className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white transition-all"
-                                        />
-                                    </div>
-
-                                    <div>
-                                        <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Type</label>
-                                        <select
-                                            name="type"
-                                            defaultValue={editingHoliday?.type || 'National'}
-                                            className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white transition-all appearance-none cursor-pointer"
-                                        >
-                                            <option value="National">National Holiday</option>
-                                            <option value="Regional">Regional Holiday</option>
-                                            <option value="Optional">Optional Holiday</option>
-                                            <option value="Company">Company Holiday</option>
-                                            <option value="Academic">Academic Event</option>
-                                        </select>
-                                    </div>
-
-                                    <div className="grid grid-cols-2 gap-6">
+                            }} className="flex flex-col">
+                                <div className="grid grid-cols-1 md:grid-cols-3">
+                                    {/* Left Panel: Details */}
+                                    <div className="md:col-span-2 p-8 space-y-6">
                                         <div>
-                                            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Start Date *</label>
+                                            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Event Title</label>
                                             <input
-                                                type="date"
-                                                name="date"
-                                                defaultValue={editingHoliday?.date ? new Date(editingHoliday.date).toISOString().split('T')[0] : (prefilledDate || '')}
+                                                type="text"
+                                                name="name"
+                                                defaultValue={editingHoliday?.name}
                                                 required
+                                                placeholder="e.g., Annual Company Retreat"
                                                 className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white transition-all"
                                             />
                                         </div>
+
                                         <div>
-                                            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">End Date (Optional)</label>
-                                            <input
-                                                type="date"
-                                                name="endDate"
-                                                defaultValue={editingHoliday?.endDate ? new Date(editingHoliday.endDate).toISOString().split('T')[0] : ''}
-                                                className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white transition-all"
-                                                placeholder="dd-mm-yyyy"
-                                            />
+                                            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Type</label>
+                                            <select
+                                                name="type"
+                                                defaultValue={editingHoliday?.type || 'National'}
+                                                className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white transition-all appearance-none cursor-pointer"
+                                            >
+                                                <option value="National">National Holiday</option>
+                                                <option value="Regional">Regional Holiday</option>
+                                                <option value="Optional">Optional Holiday</option>
+                                                <option value="Company">Company Holiday</option>
+                                                <option value="Academic">Academic Event</option>
+                                                <option value="Observance">Observance</option>
+                                                <option value="Seasonal">Seasonal</option>
+                                            </select>
                                         </div>
-                                    </div>
 
-                                    <div className="grid grid-cols-2 gap-6">
+                                        <div className="grid grid-cols-2 gap-6">
+                                            <div>
+                                                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Start Date *</label>
+                                                <input
+                                                    type="date"
+                                                    name="date"
+                                                    defaultValue={editingHoliday?.date ? new Date(editingHoliday.date).toISOString().split('T')[0] : (prefilledDate || '')}
+                                                    required
+                                                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white transition-all"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">End Date (Optional)</label>
+                                                <input
+                                                    type="date"
+                                                    name="endDate"
+                                                    defaultValue={editingHoliday?.endDate ? new Date(editingHoliday.endDate).toISOString().split('T')[0] : ''}
+                                                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white transition-all"
+                                                    placeholder="dd-mm-yyyy"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-6">
+                                            <div>
+                                                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Start Time (Optional)</label>
+                                                <input
+                                                    type="time"
+                                                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white transition-all"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">End Time (Optional)</label>
+                                                <input
+                                                    type="time"
+                                                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white transition-all"
+                                                />
+                                            </div>
+                                        </div>
+
                                         <div>
-                                            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Start Time (Optional)</label>
-                                            <input
-                                                type="time"
-                                                className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white transition-all"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">End Time (Optional)</label>
-                                            <input
-                                                type="time"
+                                            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Description</label>
+                                            <textarea
+                                                name="description"
+                                                defaultValue={editingHoliday?.description}
+                                                rows={3}
+                                                placeholder="Provide additional details about the holiday..."
                                                 className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white transition-all"
                                             />
                                         </div>
                                     </div>
 
-                                    <div>
-                                        <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Description</label>
-                                        <textarea
-                                            name="description"
-                                            defaultValue={editingHoliday?.description}
-                                            rows={3}
-                                            placeholder="Provide additional details about the holiday..."
-                                            className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white transition-all"
-                                        />
-                                    </div>
-                                </div>
+                                    {/* Right Panel: Target Audience */}
+                                    <div className="bg-slate-50 dark:bg-slate-800/50 p-8 border-l border-slate-200 dark:border-slate-700">
+                                        <div className="flex items-center gap-2 mb-6">
+                                            <Users className="h-5 w-5 text-slate-500" />
+                                            <h3 className="text-sm font-bold tracking-wider text-slate-900 dark:text-white uppercase">Target Audience</h3>
+                                        </div>
 
-                                {/* Right Panel: Target Audience */}
-                                <div className="bg-slate-50 dark:bg-slate-800/50 p-8 border-l border-slate-200 dark:border-slate-700">
-                                    <div className="flex items-center gap-2 mb-6">
-                                        <Users className="h-5 w-5 text-slate-500" />
-                                        <h3 className="text-sm font-bold tracking-wider text-slate-900 dark:text-white uppercase">Target Audience</h3>
-                                    </div>
-
-                                    <div className="space-y-6">
-                                        {(editingHoliday ? editingHoliday.scope === 'GLOBAL' : selectedGroupId === 'GLOBAL') ? (
-                                            <>
-                                                <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800">
-                                                    <p className="text-xs text-blue-600 dark:text-blue-400 leading-relaxed">
-                                                        Leave fields empty to target everyone globally, or select specific groups below.
-                                                    </p>
-                                                </div>
-
-                                                <div className="space-y-4">
-                                                    <div className="flex items-center gap-2">
-                                                        <input
-                                                            type="radio"
-                                                            name="applicableTo"
-                                                            value="ALL"
-                                                            id="app-all"
-                                                            checked={applicableTo === 'ALL'}
-                                                            onChange={() => setApplicableTo('ALL')}
-                                                            className="w-4 h-4 text-blue-600 border-slate-300 focus:ring-blue-500"
-                                                        />
-                                                        <label htmlFor="app-all" className="text-sm font-medium text-slate-700 dark:text-slate-300">Target All Employees</label>
+                                        <div className="space-y-6">
+                                            {(editingHoliday ? editingHoliday.scope === 'GLOBAL' : selectedGroupId === 'GLOBAL') ? (
+                                                <>
+                                                    <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800">
+                                                        <p className="text-xs text-blue-600 dark:text-blue-400 leading-relaxed">
+                                                            Leave fields empty to target everyone globally, or select specific groups below.
+                                                        </p>
                                                     </div>
-                                                    <div className="flex items-center gap-2">
-                                                        <input
-                                                            type="radio"
-                                                            name="applicableTo"
-                                                            value="SPECIFIC_GROUPS"
-                                                            id="app-specific"
-                                                            checked={applicableTo === 'SPECIFIC_GROUPS'}
-                                                            onChange={() => setApplicableTo('SPECIFIC_GROUPS')}
-                                                            className="w-4 h-4 text-blue-600 border-slate-300 focus:ring-blue-500"
-                                                        />
-                                                        <label htmlFor="app-specific" className="text-sm font-medium text-slate-700 dark:text-slate-300">Target Specific Groups</label>
+
+                                                    <div className="space-y-4">
+                                                        <div className="flex items-center gap-2">
+                                                            <input
+                                                                type="radio"
+                                                                name="applicableTo"
+                                                                value="ALL"
+                                                                id="app-all"
+                                                                checked={applicableTo === 'ALL'}
+                                                                onChange={() => setApplicableTo('ALL')}
+                                                                className="w-4 h-4 text-blue-600 border-slate-300 focus:ring-blue-500"
+                                                            />
+                                                            <label htmlFor="app-all" className="text-sm font-medium text-slate-700 dark:text-slate-300">Target All Employees</label>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <input
+                                                                type="radio"
+                                                                name="applicableTo"
+                                                                value="SPECIFIC_GROUPS"
+                                                                id="app-specific"
+                                                                checked={applicableTo === 'SPECIFIC_GROUPS'}
+                                                                onChange={() => setApplicableTo('SPECIFIC_GROUPS')}
+                                                                className="w-4 h-4 text-blue-600 border-slate-300 focus:ring-blue-500"
+                                                            />
+                                                            <label htmlFor="app-specific" className="text-sm font-medium text-slate-700 dark:text-slate-300">Target Specific Groups</label>
+                                                        </div>
+
+                                                        <div className={`mt-4 pt-4 border-t border-slate-200 dark:border-slate-700 space-y-2 max-h-[200px] overflow-y-auto custom-scrollbar transition-opacity duration-300 ${applicableTo === 'ALL' ? 'opacity-30 pointer-events-none' : 'opacity-100'}`}>
+                                                            <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-2">Holiday Groups</label>
+                                                            {groups.map(g => (
+                                                                <label key={g._id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-white dark:hover:bg-slate-800 transition-colors cursor-pointer group">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        name="targetGroupIds"
+                                                                        value={g._id}
+                                                                        defaultChecked={editingHoliday?.targetGroupIds?.some(tg => (typeof tg === 'object' ? tg._id : tg) === g._id)}
+                                                                        className="w-4 h-4 rounded text-blue-600 border-slate-300 focus:ring-blue-500"
+                                                                    />
+                                                                    <span className="text-sm text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">{g.name}</span>
+                                                                </label>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                </>
+                                            ) : (
+                                                <div className="space-y-6">
+                                                    <div className="p-4 bg-orange-50 dark:bg-orange-900/20 rounded-xl border border-orange-100 dark:border-orange-800">
+                                                        <h4 className="text-xs font-bold text-orange-700 dark:text-orange-400 mb-1">Group Context</h4>
+                                                        <p className="text-[11px] text-orange-600 dark:text-orange-500 leading-normal">
+                                                            This holiday is exclusive to <strong>{groups.find(g => g._id === (editingHoliday?.groupId as string || selectedGroupId))?.name}</strong>.
+                                                        </p>
                                                     </div>
 
-                                                    <div className={`mt-4 pt-4 border-t border-slate-200 dark:border-slate-700 space-y-2 max-h-[200px] overflow-y-auto custom-scrollbar transition-opacity duration-300 ${applicableTo === 'ALL' ? 'opacity-30 pointer-events-none' : 'opacity-100'}`}>
-                                                        <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-2">Holiday Groups</label>
-                                                        {groups.map(g => (
-                                                            <label key={g._id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-white dark:hover:bg-slate-800 transition-colors cursor-pointer group">
-                                                                <input
-                                                                    type="checkbox"
-                                                                    name="targetGroupIds"
-                                                                    value={g._id}
-                                                                    defaultChecked={editingHoliday?.targetGroupIds?.some(tg => (typeof tg === 'object' ? tg._id : tg) === g._id)}
-                                                                    className="w-4 h-4 rounded text-blue-600 border-slate-300 focus:ring-blue-500"
-                                                                />
-                                                                <span className="text-sm text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">{g.name}</span>
-                                                            </label>
+                                                    <div className="space-y-3">
+                                                        <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">Applicable Divisions</label>
+                                                        {groups.find(g => g._id === (editingHoliday?.groupId as string || selectedGroupId))?.divisionMapping.map((m, idx) => (
+                                                            <div key={idx} className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">
+                                                                <div className="text-xs font-bold text-slate-900 dark:text-white">
+                                                                    {typeof m.division === 'object' ? m.division.name : 'Selected Division'}
+                                                                </div>
+                                                                <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                                                                    {m.departments.length > 0 ? m.departments.map(d => typeof d === 'object' ? d.name : 'Dept').join(', ') : 'All Departments'}
+                                                                </div>
+                                                            </div>
                                                         ))}
                                                     </div>
                                                 </div>
-                                            </>
-                                        ) : (
-                                            <div className="space-y-6">
-                                                <div className="p-4 bg-orange-50 dark:bg-orange-900/20 rounded-xl border border-orange-100 dark:border-orange-800">
-                                                    <h4 className="text-xs font-bold text-orange-700 dark:text-orange-400 mb-1">Group Context</h4>
-                                                    <p className="text-[11px] text-orange-600 dark:text-orange-500 leading-normal">
-                                                        This holiday is exclusive to <strong>{groups.find(g => g._id === (editingHoliday?.groupId as string || selectedGroupId))?.name}</strong>.
-                                                    </p>
-                                                </div>
-
-                                                <div className="space-y-3">
-                                                    <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">Applicable Divisions</label>
-                                                    {groups.find(g => g._id === (editingHoliday?.groupId as string || selectedGroupId))?.divisionMapping.map((m, idx) => (
-                                                        <div key={idx} className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 shadow-sm">
-                                                            <div className="text-xs font-bold text-slate-900 dark:text-white">
-                                                                {typeof m.division === 'object' ? m.division.name : 'Selected Division'}
-                                                            </div>
-                                                            <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
-                                                                {m.departments.length > 0 ? m.departments.map(d => typeof d === 'object' ? d.name : 'Dept').join(', ') : 'All Departments'}
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
 
-                            {/* Footer Actions */}
-                            <div className="flex items-center justify-between p-6 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-700 rounded-b-2xl">
-                                <div className="flex gap-4">
-                                    {editingHoliday && (
+                                {/* Footer Actions */}
+                                <div className="flex items-center justify-between p-6 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-700 rounded-b-2xl">
+                                    <div className="flex gap-4">
+                                        {editingHoliday && (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    // With Propagation Logic, deleting from Group View is allowed.
+                                                    // It will only delete the Group Copy (Opt-out), leaving Global intact.
+                                                    Swal.fire({
+                                                        title: 'Are you sure?',
+                                                        text: selectedGroupId !== 'GLOBAL' && editingHoliday.scope === 'GROUP' && (editingHoliday.sourceHolidayId || editingHoliday.isMaster)
+                                                            ? "This will remove this holiday from THIS group only. The Global holiday will remain."
+                                                            : "You won't be able to revert this!",
+                                                        icon: 'warning',
+                                                        showCancelButton: true,
+                                                        confirmButtonColor: '#ef4444',
+                                                        cancelButtonColor: '#64748b',
+                                                        confirmButtonText: 'Yes, delete it!',
+                                                        backdrop: `rgba(0,0,0,0.4)`,
+                                                        buttonsStyling: false,
+                                                        customClass: {
+                                                            popup: 'rounded-3xl shadow-xl border border-slate-100 dark:bg-slate-900 dark:border-slate-700',
+                                                            title: 'text-lg font-bold text-slate-900 dark:text-white',
+                                                            htmlContainer: 'text-sm text-slate-500 dark:text-slate-400',
+                                                            confirmButton: 'px-5 py-2.5 bg-red-600 text-white text-sm font-semibold rounded-xl hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-all shadow-lg shadow-red-500/30',
+                                                            cancelButton: 'px-5 py-2.5 bg-slate-100 text-slate-700 text-sm font-semibold rounded-xl hover:bg-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 transition-all',
+                                                            actions: 'flex gap-3'
+                                                        }
+                                                    }).then((result) => {
+                                                        if (result.isConfirmed) {
+                                                            handleDeleteHoliday(editingHoliday._id);
+                                                            setShowHolidayForm(false);
+                                                        }
+                                                    });
+                                                }}
+                                                className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-colors text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20`}
+                                            >
+                                                <Trash2 className="h-4 w-4" />
+                                                Delete Event
+                                            </button>
+                                        )}
+                                    </div>
+                                    <div className="flex gap-3">
                                         <button
                                             type="button"
                                             onClick={() => {
-                                                const isGroupView = selectedGroupId !== 'GLOBAL';
-                                                if (isGroupView && editingHoliday.scope === 'GLOBAL') {
-                                                    alert('You cannot delete a Global holiday from a Group view. If you need to change this date for this group, please create an override or edit the Global calendar.');
-                                                    return;
-                                                }
-                                                if (confirm('Are you sure you want to delete this holiday?')) {
-                                                    handleDeleteHoliday(editingHoliday._id);
-                                                    setShowHolidayForm(false);
-                                                }
+                                                setShowHolidayForm(false);
+                                                setPrefilledDate(null);
                                             }}
-                                            className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${(selectedGroupId !== 'GLOBAL' && editingHoliday.scope === 'GLOBAL') ? 'text-slate-400 cursor-not-allowed bg-slate-100' : 'text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20'}`}
-                                            disabled={selectedGroupId !== 'GLOBAL' && editingHoliday.scope === 'GLOBAL'}
+                                            className="px-6 py-2.5 text-sm font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
                                         >
-                                            <Trash2 className="h-4 w-4" />
-                                            {selectedGroupId !== 'GLOBAL' && editingHoliday.scope === 'GLOBAL' ? 'Global Event (No Delete)' : 'Delete Event'}
+                                            Cancel
                                         </button>
-                                    )}
+                                        <button
+                                            type="submit"
+                                            className="flex items-center gap-2 px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-lg shadow-blue-500/30 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                                        >
+                                            {editingHoliday ? (
+                                                selectedGroupId !== 'GLOBAL' && editingHoliday.scope === 'GLOBAL' ? 'Create Override' : 'Update Event'
+                                            ) : 'Create Event'}
+                                        </button>
+                                    </div>
                                 </div>
-                                <div className="flex gap-3">
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setShowHolidayForm(false);
-                                            setPrefilledDate(null);
-                                        }}
-                                        className="px-6 py-2.5 text-sm font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        type="submit"
-                                        className="flex items-center gap-2 px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-lg shadow-blue-500/30 transition-all hover:scale-[1.02] active:scale-[0.98]"
-                                    >
-                                        {editingHoliday ? (
-                                            selectedGroupId !== 'GLOBAL' && editingHoliday.scope === 'GLOBAL' ? 'Create Override' : 'Update Event'
-                                        ) : 'Create Event'}
-                                    </button>
-                                </div>
-                            </div>
-                        </form>
+                            </form>
+                        </div>
                     </div>
-                </div>
-            )
+                )
             }
 
             {/* Group Form Modal */}
@@ -760,8 +784,8 @@ function HolidayGroupForm({ editing, divisions, departments, onClose, onSave }: 
     const [description, setDescription] = useState(editing?.description || '');
     const [mapping, setMapping] = useState<{ division: string; departments: string[] }[]>(
         editing?.divisionMapping?.map(m => ({
-            division: typeof m.division === 'object' ? (m.division as any)._id : m.division,
-            departments: m.departments.map(d => typeof d === 'object' ? (d as any)._id : d)
+            division: typeof m.division === 'object' ? m.division._id : m.division,
+            departments: m.departments.map(d => typeof d === 'object' ? d._id : d)
         })) || [{ division: '', departments: [] }]
     );
 
@@ -788,7 +812,8 @@ function HolidayGroupForm({ editing, divisions, departments, onClose, onSave }: 
             onSave();
         } catch (err: any) {
             console.error(err);
-            alert(err.message || 'Failed to save group');
+            const errorMessage = err.response?.data?.message || err.message || 'Failed to save group';
+            toast.error(errorMessage);
         }
     };
 
@@ -864,9 +889,17 @@ function HolidayGroupForm({ editing, divisions, departments, onClose, onSave }: 
                                                 checked={m.departments.length === 0}
                                                 onChange={(e) => {
                                                     if (e.target.checked) {
+                                                        // "All Departments" checked -> Clear specific departments
                                                         updateMapping(idx, 'departments', []);
                                                     } else {
-                                                        // If unchecking, we could optionally leave it empty or pre-select first dept
+                                                        // "All Departments" unchecked -> Select first available department to exit "All" mode
+                                                        const availableDepts = departments
+                                                            .filter(dept => (dept.divisions || [])
+                                                                .some((div: string | Division) => (typeof div === 'object' ? div._id : div) === m.division));
+
+                                                        if (availableDepts.length > 0) {
+                                                            updateMapping(idx, 'departments', [availableDepts[0]._id]);
+                                                        }
                                                     }
                                                 }}
                                                 className="w-3.5 h-3.5 rounded text-blue-600 border-slate-300 focus:ring-blue-500"
@@ -884,7 +917,7 @@ function HolidayGroupForm({ editing, divisions, departments, onClose, onSave }: 
                                         }}
                                         className={`w-full h-24 px-3 py-1.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-800 dark:border-slate-600 dark:text-white transition-opacity ${m.departments.length === 0 ? 'opacity-50 grayscale-[0.5]' : 'opacity-100'}`}
                                     >
-                                        {departments.filter(dept => (dept.divisions || []).some((div: any) => (typeof div === 'object' ? div._id : div) === m.division)).map(dept => (
+                                        {departments.filter(dept => (dept.divisions || []).some((div: string | Division) => (typeof div === 'object' ? div._id : div) === m.division)).map(dept => (
                                             <option key={dept._id} value={dept._id}>{dept.name}</option>
                                         ))}
                                     </select>

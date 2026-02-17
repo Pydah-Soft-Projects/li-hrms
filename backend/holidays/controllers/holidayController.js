@@ -313,10 +313,15 @@ exports.saveHoliday = async (req, res) => {
         }
 
         let holiday;
+        // --- UPDATE LOGIC ---
         if (_id) {
             holiday = await Holiday.findById(_id);
             if (!holiday) return res.status(404).json({ success: false, message: 'Holiday not found' });
 
+            const wasGlobal = holiday.scope === 'GLOBAL';
+            const isNowGlobal = scope === 'GLOBAL';
+
+            // Update the main holiday
             holiday.name = name;
             holiday.date = date;
             holiday.endDate = endDate || null;
@@ -329,8 +334,32 @@ exports.saveHoliday = async (req, res) => {
             holiday.overridesMasterId = overridesMasterId;
             holiday.description = description;
 
+            // If updating a Group Copy (that has a source), break the sync
+            if (holiday.sourceHolidayId) {
+                holiday.isSynced = false;
+            }
+
             await holiday.save();
-        } else {
+
+            // PROPAGATION: If Global Holiday Updated
+            if (isNowGlobal) {
+                // Find all synced copies and update them
+                await Holiday.updateMany(
+                    { sourceHolidayId: holiday._id, isSynced: true },
+                    {
+                        $set: {
+                            name,
+                            date,
+                            endDate: endDate || null,
+                            type,
+                            description
+                        }
+                    }
+                );
+            }
+        }
+        // --- CREATE LOGIC ---
+        else {
             holiday = await Holiday.create({
                 name,
                 date,
@@ -343,8 +372,32 @@ exports.saveHoliday = async (req, res) => {
                 groupId: scope === 'GROUP' ? groupId : undefined,
                 overridesMasterId,
                 description,
-                createdBy: req.user.userId
+                createdBy: req.user.userId,
+                // Default new holidays to synced (if they become copies later logic handles it, but here it's main)
+                isSynced: true
             });
+
+            // PROPAGATION: If Global Holiday Created -> Create Synced Copies for ALL Groups
+            if (scope === 'GLOBAL') {
+                const allGroups = await HolidayGroup.find({ isActive: true });
+                const copies = allGroups.map(group => ({
+                    name,
+                    date,
+                    endDate: endDate || null,
+                    type,
+                    isMaster: false, // Copies are not "Master" definitions, they are instances
+                    scope: 'GROUP',
+                    groupId: group._id,
+                    description,
+                    createdBy: req.user.userId,
+                    sourceHolidayId: holiday._id, // Link to Parent
+                    isSynced: true // Synced by default
+                }));
+
+                if (copies.length > 0) {
+                    await Holiday.insertMany(copies);
+                }
+            }
         }
 
         res.status(200).json({
@@ -371,6 +424,21 @@ exports.deleteHoliday = async (req, res) => {
     try {
         const holiday = await Holiday.findById(req.params.id);
         if (!holiday) return res.status(404).json({ success: false, message: 'Holiday not found' });
+
+        // If deleting a Global Holiday -> Delete it AND all synced copies
+        if (holiday.scope === 'GLOBAL') {
+            // Delete copies that are still synced
+            await Holiday.deleteMany({ sourceHolidayId: holiday._id, isSynced: true });
+
+            // For copies that are NOT synced (overridden), detach them (clear sourceHolidayId)
+            await Holiday.updateMany(
+                { sourceHolidayId: holiday._id, isSynced: false },
+                { $set: { sourceHolidayId: null } }
+            );
+        }
+
+        // If deleting a Group Copy -> Just delete it (Opt-out)
+        // No extra logic needed, just standard delete below
 
         await holiday.deleteOne();
 
