@@ -198,6 +198,7 @@ export default function EmployeesPage() {
   const [applicationSearchTerm, setApplicationSearchTerm] = useState('');
   const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [userRole, setUserRole] = useState<string>('');
+  const canViewApplications = ['hr', 'manager', 'super_admin', 'subadmin'].includes(userRole);
   const [showLeftDateModal, setShowLeftDateModal] = useState(false);
   const [selectedEmployeeForLeftDate, setSelectedEmployeeForLeftDate] = useState<Employee | null>(null);
   const [leftDateForm, setLeftDateForm] = useState({ leftDate: '', leftReason: '' });
@@ -552,6 +553,18 @@ export default function EmployeesPage() {
     loadEmployees(1, false);
   }, [includeLeftEmployees]);
 
+  // Server-side search with debounce
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      // Reset to page 1 for new search
+      setCurrentPage(1);
+      setHasMoreEmployees(true);
+      loadEmployees(1, false);
+    }, 500);
+
+    return () => clearTimeout(handler);
+  }, [searchTerm]);
+
   // Intersection Observer for infinite scroll
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -577,9 +590,14 @@ export default function EmployeesPage() {
 
   useEffect(() => {
     if (activeTab === 'applications') {
+      if (!canViewApplications && userRole) {
+        // Redirect if unauthorized (only if role is loaded)
+        setActiveTab('employees');
+        return;
+      }
       loadApplications();
     }
-  }, [activeTab]);
+  }, [activeTab, canViewApplications, userRole]);
 
   useEffect(() => {
     setFilteredDesignations(designations);
@@ -877,6 +895,7 @@ export default function EmployeesPage() {
         ...(includeLeftEmployees ? { includeLeft: true } : {}),
         page: pageNum,
         limit: 50,
+        search: searchTerm,
       });
       if (response.success) {
         // Ensure paidLeaves is always included and is a number
@@ -1598,11 +1617,9 @@ export default function EmployeesPage() {
 
   const filteredEmployees = employees.filter(emp => {
     // Filter by search term
-    const matchesSearch =
-      emp.emp_no.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      emp.employee_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      emp.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      emp.phone_number?.includes(searchTerm);
+    // Server-side search logic handles this now, so we return true to avoid double-filtering
+    // (which could hide results if client logic differs from server logic)
+    const matchesSearch = true;
 
     // Filter by left employees (if includeLeftEmployees is false, exclude those with leftDate)
     const matchesLeftFilter = includeLeftEmployees || !emp.leftDate;
@@ -2144,8 +2161,7 @@ export default function EmployeesPage() {
 
   return (
     <div className="relative min-h-screen bg-bg-base overflow-x-hidden">
-      {/* Background Grid Pattern */}
-      <div className="pointer-events-none fixed inset-0 z-0 bg-bg-base/50 bg-[linear-gradient(to_right,rgba(0,0,0,0.02)_1px,transparent_1px),linear-gradient(to_bottom,rgba(0,0,0,0.02)_1px,transparent_1px)] dark:bg-[linear-gradient(to_right,rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:42px_42px]"></div>
+
 
       <div className="relative z-10 max-w-[1920px] mx-auto px-4 sm:px-8 py-6 sm:py-8 space-y-8">
         {/* Header - Unified Layout */}
@@ -2191,39 +2207,47 @@ export default function EmployeesPage() {
               </div>
             )}
 
-            {/* Tab Slider */}
-            <div className="relative flex items-center rounded-2xl bg-bg-surface/50 border border-border-base p-1 backdrop-blur-md shadow-sm">
-              <div
-                className={`absolute h-8 rounded-xl bg-bg-base border border-border-base shadow-sm transition-all duration-300 ease-in-out`}
-                style={{
-                  width: activeTab === 'employees' ? 'calc(50% - 4px)' : 'calc(50% - 4px)',
-                  transform: activeTab === 'employees' ? 'translateX(0px)' : 'translateX(calc(100% + 4px))'
-                }}
-              />
-              <button
-                onClick={() => setActiveTab('employees')}
-                className={`relative z-10 px-3 py-1.5 md:px-4 md:py-1.5 text-[10px] md:text-xs font-black uppercase tracking-widest transition-colors ${activeTab === 'employees'
-                  ? 'text-text-primary'
-                  : 'text-text-secondary hover:text-text-primary'
-                  }`}
-              >
-                Employees
-              </button>
-              <button
-                onClick={() => setActiveTab('applications')}
-                className={`relative z-10 px-3 py-1.5 md:px-4 md:py-1.5 text-[10px] md:text-xs font-black uppercase tracking-widest transition-colors flex items-center justify-center gap-2 ${activeTab === 'applications'
-                  ? 'text-text-primary'
-                  : 'text-text-secondary hover:text-text-primary'
-                  }`}
-              >
-                Applications
-                {pendingApplications.length > 0 && (
-                  <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-status-negative px-1.5 text-[10px] text-white font-bold">
-                    {pendingApplications.length}
-                  </span>
-                )}
-              </button>
-            </div>
+            {/* Tab Slider or Single Badge */}
+            {canViewApplications ? (
+              <div className="relative flex items-center rounded-2xl bg-bg-surface/50 border border-border-base p-1 backdrop-blur-md shadow-sm">
+                <div
+                  className={`absolute h-8 rounded-xl bg-bg-base border border-border-base shadow-sm transition-all duration-300 ease-in-out`}
+                  style={{
+                    width: activeTab === 'employees' ? 'calc(50% - 4px)' : 'calc(50% - 4px)',
+                    transform: activeTab === 'employees' ? 'translateX(0px)' : 'translateX(calc(100% + 4px))'
+                  }}
+                />
+                <button
+                  onClick={() => setActiveTab('employees')}
+                  className={`relative z-10 px-3 py-1.5 md:px-4 md:py-1.5 text-[10px] md:text-xs font-black uppercase tracking-widest transition-colors ${activeTab === 'employees'
+                    ? 'text-text-primary'
+                    : 'text-text-secondary hover:text-text-primary'
+                    }`}
+                >
+                  Employees
+                </button>
+                <button
+                  onClick={() => setActiveTab('applications')}
+                  className={`relative z-10 px-3 py-1.5 md:px-4 md:py-1.5 text-[10px] md:text-xs font-black uppercase tracking-widest transition-colors flex items-center justify-center gap-2 ${activeTab === 'applications'
+                    ? 'text-text-primary'
+                    : 'text-text-secondary hover:text-text-primary'
+                    }`}
+                >
+                  Applications
+                  {pendingApplications.length > 0 && (
+                    <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-status-negative px-1.5 text-[10px] text-white font-bold">
+                      {pendingApplications.length}
+                    </span>
+                  )}
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center rounded-xl bg-bg-surface/50 border border-border-base px-3 py-1.5 md:px-4 md:py-2 backdrop-blur-md shadow-sm">
+                <span className="text-[10px] md:text-xs font-black uppercase tracking-widest text-text-primary">
+                  Employees
+                </span>
+              </div>
+            )}
 
             {/* Settings Button */}
             {hasManagePermission && (

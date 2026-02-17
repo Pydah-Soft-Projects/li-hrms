@@ -11,18 +11,9 @@ import WorkspaceSidebar from '@/components/WorkspaceSidebar';
 import MainContent from '@/components/MainContent';
 
 function WorkspaceLayoutContent({ children }: { children: React.ReactNode }) {
-  const { isLoading } = useWorkspace();
+  // const { isLoading } = useWorkspace(); // isLoading removed as we want to show skeletons immediately
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-bg-base flex items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          <Spinner className="w-10 h-10" />
-          <p className="text-text-secondary">Loading modules...</p>
-        </div>
-      </div>
-    );
-  }
+
 
   return (
     <div className="flex min-h-screen bg-bg-base dark:bg-slate-900">
@@ -30,7 +21,7 @@ function WorkspaceLayoutContent({ children }: { children: React.ReactNode }) {
       <MainContent>{children}</MainContent>
     </div>
   );
-}
+};
 
 export default function WorkspaceLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
