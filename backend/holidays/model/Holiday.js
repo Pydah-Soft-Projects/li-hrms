@@ -17,7 +17,7 @@ const holidaySchema = new mongoose.Schema(
         },
         type: {
             type: String,
-            enum: ['National', 'Regional', 'Optional', 'Company'],
+            enum: ['National', 'Regional', 'Optional', 'Company', 'Academic', 'Observance', 'Seasonal'],
             default: 'National',
         },
 
@@ -64,6 +64,23 @@ const holidaySchema = new mongoose.Schema(
             type: mongoose.Schema.Types.ObjectId,
             ref: 'Holiday',
             default: null,
+        },
+
+        // --- Propagation Logic (Copy-on-Write) ---
+
+        // Reference to the original Global Holiday (if this is a copy)
+        sourceHolidayId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Holiday',
+            default: null,
+        },
+
+        // Is this copy still synced with the Global parent?
+        // True = Updates to Global will propagate to this copy.
+        // False = Link broken (User manually edited this copy).
+        isSynced: {
+            type: Boolean,
+            default: true,
         },
 
         description: {
