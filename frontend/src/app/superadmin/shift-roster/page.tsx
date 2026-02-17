@@ -6,6 +6,7 @@ import { toast } from 'react-hot-toast';
 
 import { format, parseISO } from 'date-fns';
 import { Holiday, HolidayGroup } from '@/lib/api';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 type Shift = { _id: string; name: string; code?: string; color?: string };
 type Employee = {
@@ -28,7 +29,6 @@ function formatMonthInput(date: Date) {
 
 function getMonthDays(monthStr: string) {
   const [y, m] = monthStr.split('-').map(Number);
-  const start = new Date(y, m - 1, 1);
   const days: string[] = [];
   const end = new Date(y, m, 0).getDate();
   for (let d = 1; d <= end; d++) {
@@ -61,6 +61,12 @@ function RosterPage() {
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [holidayGroups, setHolidayGroups] = useState<HolidayGroup[]>([]);
 
+  // Pagination State
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalEmployees, setTotalEmployees] = useState(0);
+  const limit = 50;
+
   const [showWeekOff, setShowWeekOff] = useState(false);
   const [weekOffDays, setWeekOffDays] = useState<Record<string, boolean>>(
     weekdays.reduce((acc, w) => ({ ...acc, [w]: false }), {})
@@ -72,7 +78,7 @@ function RosterPage() {
     try {
       setLoading(true);
 
-      const filters: any = {};
+      const filters: any = { page, limit };
       if (selectedDept) filters.department_id = selectedDept;
       if (selectedDivision) filters.division_id = selectedDivision;
 
@@ -122,8 +128,16 @@ function RosterPage() {
       const shiftList = Array.isArray(shiftRes?.data) ? shiftRes.data : (Array.isArray(shiftRes) ? shiftRes : []);
       setShifts(shiftList);
 
-      const empList = Array.isArray(empRes?.data) ? empRes.data : (Array.isArray(empRes) ? empRes : []);
+      const empList = (empRes as any)?.data || [];
       setEmployees(empList);
+
+      if ((empRes as any)?.pagination) {
+        setTotalPages((empRes as any).pagination.totalPages || 1);
+        setTotalEmployees((empRes as any).pagination.total || 0);
+      } else {
+        setTotalPages(1);
+        setTotalEmployees(empList.length);
+      }
 
       // Build division options
       const divList = Array.isArray(divRes?.data) ? divRes.data : (Array.isArray(divRes) ? divRes : []);
@@ -157,6 +171,63 @@ function RosterPage() {
         };
       });
 
+      // NEW: Pre-fill holidays into the map for gaps
+      // Use local fetchedHolidays and fetchedGroups which we need to capture from above
+      let localHolidays: Holiday[] = [];
+      let localGroups: HolidayGroup[] = [];
+
+      if (holidayRes && holidayRes.data) {
+        if (Array.isArray(holidayRes.data)) {
+          localHolidays = holidayRes.data;
+        } else {
+          localHolidays = holidayRes.data.holidays || [];
+          localGroups = holidayRes.data.groups || [];
+        }
+      }
+
+      const daysInMonth = getMonthDays(month);
+
+      empList.forEach((emp: Employee) => {
+        if (!map.has(emp.emp_no)) map.set(emp.emp_no, {});
+        const row = map.get(emp.emp_no)!;
+
+        daysInMonth.forEach(d => {
+          // If we already have an entry (SHIFT, WO, or Saved HOL), skip
+          if (row[d]) return;
+
+          // Check if this day is a holiday for this employee
+          const isHoliday = localHolidays.some(h => {
+            const start = format(parseISO(h.date), 'yyyy-MM-dd');
+            const end = h.endDate ? format(parseISO(h.endDate), 'yyyy-MM-dd') : start;
+
+            if (d < start || d > end) return false;
+
+            if (h.scope === 'GLOBAL') {
+              if (h.applicableTo === 'ALL') {
+                // Check for overrides
+                const override = localHolidays.find(o =>
+                  o.overridesMasterId === h._id &&
+                  o.scope === 'GROUP' &&
+                  checkGroupApplicability(o, emp, localGroups)
+                );
+                return !override;
+              }
+              if (h.applicableTo === 'SPECIFIC_GROUPS') {
+                return checkGroupApplicability(h, emp, localGroups);
+              }
+              return true;
+            } else if (h.scope === 'GROUP') {
+              return checkGroupApplicability(h, emp, localGroups);
+            }
+            return false;
+          });
+
+          if (isHoliday) {
+            row[d] = { shiftId: null, status: 'HOL' };
+          }
+        });
+      });
+
       setRoster(map);
     } catch (err: any) {
       console.error('Error loading roster data:', err);
@@ -169,6 +240,11 @@ function RosterPage() {
     } finally {
       setLoading(false);
     }
+  }, [month, selectedDept, selectedDivision, page]);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setPage(1);
   }, [month, selectedDept, selectedDivision]);
 
   useEffect(() => {
@@ -708,6 +784,36 @@ function RosterPage() {
                 })}
               </tbody>
             </table>
+          </div>
+
+          {/* Pagination Controls */}
+          <div className="flex items-center justify-between px-4 py-3 bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800">
+            <div className="flex items-center text-[10px] text-slate-500 dark:text-slate-400">
+              Showing <span className="font-bold mx-1 text-slate-700 dark:text-slate-200">{employees.length}</span> employees of <span className="font-bold mx-1 text-slate-700 dark:text-slate-200">{totalEmployees}</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page === 1 || loading}
+                className="flex items-center gap-1.5 px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400"
+              >
+                <ChevronLeft className="w-3 h-3" />
+                Prev
+              </button>
+              <div className="flex items-center gap-1 text-[10px] font-bold text-slate-400">
+                <span className="text-blue-600 dark:text-blue-400">{page}</span>
+                <span>/</span>
+                <span>{totalPages}</span>
+              </div>
+              <button
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages || loading}
+                className="flex items-center gap-1.5 px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400"
+              >
+                Next
+                <ChevronRight className="w-3 h-3" />
+              </button>
+            </div>
           </div>
         </div>
       )}
