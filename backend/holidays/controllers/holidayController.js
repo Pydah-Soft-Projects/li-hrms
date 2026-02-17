@@ -360,6 +360,30 @@ exports.saveHoliday = async (req, res) => {
         }
         // --- CREATE LOGIC ---
         else {
+            // Special Case: Bulk Create for Specific Groups (Individually, No Global Master)
+            if (scope === 'GLOBAL' && applicableTo === 'SPECIFIC_GROUPS' && targetGroupIds && targetGroupIds.length > 0) {
+                const holidaysToCreate = targetGroupIds.map(gid => ({
+                    name,
+                    date,
+                    endDate: endDate || null,
+                    type,
+                    isMaster: false,
+                    scope: 'GROUP',
+                    groupId: gid,
+                    description,
+                    createdBy: req.user.userId,
+                    isSynced: false // Independent
+                }));
+
+                const createdHolidays = await Holiday.insertMany(holidaysToCreate);
+
+                return res.status(201).json({
+                    success: true,
+                    data: createdHolidays[0],
+                    message: `Created ${createdHolidays.length} group holidays`
+                });
+            }
+
             holiday = await Holiday.create({
                 name,
                 date,
@@ -377,10 +401,18 @@ exports.saveHoliday = async (req, res) => {
                 isSynced: true
             });
 
-            // PROPAGATION: If Global Holiday Created -> Create Synced Copies for ALL Groups
+            // PROPAGATION: If Global Holiday Created -> Create Synced Copies for ALL or SPECIFIC Groups
             if (scope === 'GLOBAL') {
-                const allGroups = await HolidayGroup.find({ isActive: true });
-                const copies = allGroups.map(group => ({
+                let groupFilter = { isActive: true };
+
+                // If targeting specific groups, filter by ID
+                if (applicableTo === 'SPECIFIC_GROUPS' && targetGroupIds && targetGroupIds.length > 0) {
+                    groupFilter._id = { $in: targetGroupIds };
+                }
+
+                const targetedGroups = await HolidayGroup.find(groupFilter);
+
+                const copies = targetedGroups.map(group => ({
                     name,
                     date,
                     endDate: endDate || null,

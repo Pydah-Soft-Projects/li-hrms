@@ -841,6 +841,20 @@ export const api = {
     });
   },
 
+  createHoliday: async (data: Partial<Holiday>) => {
+    return apiRequest<Holiday>('/holidays', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  updateHoliday: async (data: Partial<Holiday>) => {
+    return apiRequest<Holiday>('/holidays', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
   deleteHoliday: async (id: string) => {
     return apiRequest<void>(`/holidays/${id}`, { method: 'DELETE' });
   },

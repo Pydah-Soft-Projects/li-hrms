@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { api, Holiday, HolidayGroup, Division, Department } from '@/lib/api';
 import { toast } from 'react-toastify';
 import Swal from 'sweetalert2';
-import Spinner from '@/components/Spinner';
+
 import {
     format,
     addMonths,
@@ -18,7 +18,8 @@ import {
     isToday,
     parseISO
 } from 'date-fns';
-import { ChevronLeft, ChevronRight, Plus, Users, Trash2 } from 'lucide-react';
+import { Trash2, Users, Filter, Plus, ChevronLeft, ChevronRight, ChevronDown, Calendar as CalendarIcon, Save, X } from 'lucide-react';
+import { HolidaySkeleton } from './HolidaySkeleton';
 
 export default function HolidayManagementPage() {
     const [activeTab, setActiveTab] = useState<'master' | 'groups'>('master');
@@ -157,7 +158,7 @@ export default function HolidayManagementPage() {
 
     return (
         <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
-            <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+            <div className="mx-auto w-full px-4 py-8 sm:px-6 lg:px-8">
                 {/* Header */}
                 <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
@@ -191,52 +192,59 @@ export default function HolidayManagementPage() {
                 </div>
 
                 {loading ? (
-                    <div className="flex h-64 items-center justify-center">
-                        <Spinner />
-                    </div>
+                    <HolidaySkeleton />
                 ) : (
                     <div>
                         {activeTab === 'master' ? (
                             <div className="space-y-6">
-                                {/* Calendar Header */}
-                                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
-                                    <div className="flex flex-wrap items-center gap-4">
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-sm font-medium text-slate-500 dark:text-slate-400">View:</span>
+                                {/* Calendar Header Controls */}
+                                <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-white dark:bg-slate-900 p-4 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800">
+                                    <div className="flex items-center gap-4">
+                                        <div className="relative group">
+                                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                                <Filter className="h-4 w-4 text-slate-400 group-hover:text-blue-500 transition-colors" />
+                                            </div>
                                             <select
                                                 value={selectedGroupId}
                                                 onChange={(e) => setSelectedGroupId(e.target.value)}
-                                                className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-sm font-semibold text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                className="pl-9 pr-10 py-2 bg-slate-50 dark:bg-slate-800 border-none text-sm font-bold text-slate-700 dark:text-slate-200 rounded-xl cursor-pointer focus:ring-2 focus:ring-blue-500/20 hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-all appearance-none"
                                             >
                                                 <option value="GLOBAL">Global Calendar</option>
                                                 {groups.map(g => (
-                                                    <option key={g._id} value={g._id}>{g.name} (Group)</option>
+                                                    <option key={g._id} value={g._id}>{g.name}</option>
                                                 ))}
                                             </select>
+                                            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
+                                                <ChevronDown className="h-4 w-4 text-slate-400" />
+                                            </div>
                                         </div>
-                                        <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block"></div>
-                                        <h2 className="text-lg font-bold text-slate-900 dark:text-white min-w-[150px]">
-                                            {format(currentMonth, 'MMMM yyyy')}
-                                        </h2>
-                                        <div className="flex items-center gap-1">
-                                            <button
-                                                onClick={prevMonth}
-                                                className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
-                                            >
-                                                <ChevronLeft className="h-5 w-5 text-slate-600 dark:text-slate-400" />
-                                            </button>
-                                            <button
-                                                onClick={() => setCurrentMonth(new Date())}
-                                                className="px-3 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/30 rounded-md transition-colors"
-                                            >
-                                                Today
-                                            </button>
-                                            <button
-                                                onClick={nextMonth}
-                                                className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
-                                            >
-                                                <ChevronRight className="h-5 w-5 text-slate-600 dark:text-slate-400" />
-                                            </button>
+
+                                        <div className="h-8 w-px bg-slate-200 dark:bg-slate-700 hidden sm:block"></div>
+
+                                        <div className="flex items-center gap-3">
+                                            <h2 className="text-lg font-bold text-slate-900 dark:text-white min-w-[140px]">
+                                                {format(currentMonth, 'MMMM yyyy')}
+                                            </h2>
+                                            <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-lg p-1 gap-1">
+                                                <button
+                                                    onClick={prevMonth}
+                                                    className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded-md shadow-sm text-slate-500 dark:text-slate-400 transition-all"
+                                                >
+                                                    <ChevronLeft className="h-4 w-4" />
+                                                </button>
+                                                <button
+                                                    onClick={() => setCurrentMonth(new Date())}
+                                                    className="px-3 py-1 text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider hover:text-blue-600 transition-colors"
+                                                >
+                                                    Today
+                                                </button>
+                                                <button
+                                                    onClick={nextMonth}
+                                                    className="p-1 hover:bg-white dark:hover:bg-slate-700 rounded-md shadow-sm text-slate-500 dark:text-slate-400 transition-all"
+                                                >
+                                                    <ChevronRight className="h-4 w-4" />
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
 
@@ -247,24 +255,25 @@ export default function HolidayManagementPage() {
                                                 setPrefilledDate(null);
                                                 setShowHolidayForm(true);
                                             }}
-                                            className="flex flex-1 sm:flex-none items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-slate-900"
+                                            className="flex flex-1 sm:flex-none items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-blue-500/25 hover:bg-blue-700 hover:scale-105 active:scale-95 transition-all"
                                         >
-                                            <Plus className="h-4 w-4" />
+                                            <Plus className="h-5 w-5" />
                                             Add Holiday
                                         </button>
                                     </div>
                                 </div>
 
                                 {/* Calendar Grid */}
-                                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
-                                    <div className="grid grid-cols-7 border-b border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50">
+                                <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl shadow-slate-200/50 dark:border-slate-800 dark:bg-slate-900 dark:shadow-black/20">
+                                    {/* Days Header */}
+                                    <div className="grid grid-cols-7 border-b border-slate-100 bg-slate-50/80 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900/80">
                                         {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-                                            <div key={day} className="py-3 text-center text-xs font-bold text-slate-500 uppercase tracking-widest">
+                                            <div key={day} className="py-4 text-center text-[11px] font-bold text-slate-400 uppercase tracking-widest">
                                                 {day}
                                             </div>
                                         ))}
                                     </div>
-                                    <div className="grid grid-cols-7 border-slate-200 dark:border-slate-700">
+                                    <div className="grid grid-cols-7 border-slate-100 dark:border-slate-800 bg-slate-100 dark:bg-slate-800 gap-px">
                                         {calendarDays.map((date, idx) => {
                                             const holidays = getHolidaysForDate(date);
                                             const isCurrentMonth = isSameMonth(date, currentMonth);
@@ -280,19 +289,22 @@ export default function HolidayManagementPage() {
                                                             setShowHolidayForm(true);
                                                         }
                                                     }}
-                                                    className={`min-h-[120px] p-2 border-b border-r last:border-r-0 border-slate-100 dark:border-slate-700 transition-colors hover:bg-slate-50 dark:hover:bg-slate-700/30 cursor-pointer ${!isCurrentMonth ? 'bg-slate-50/30 text-slate-300 dark:bg-slate-900/10 dark:text-slate-600' : ''
+                                                    className={`min-h-[140px] p-2 bg-white dark:bg-slate-900 transition-all hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer group relative ${!isCurrentMonth ? 'bg-slate-50/50 text-slate-300 dark:bg-slate-900/50 dark:text-slate-700' : ''
                                                         }`}
                                                 >
-                                                    <div className="flex items-center justify-between mb-1">
-                                                        <span className={`flex h-7 w-7 items-center justify-center rounded-full text-sm font-bold ${isTodayDate
-                                                            ? 'bg-blue-600 text-white shadow-md shadow-blue-500/30'
-                                                            : isCurrentMonth ? 'text-slate-700 dark:text-slate-300' : 'text-slate-400 dark:text-slate-600'
+                                                    <div className="flex items-center justify-between mb-2">
+                                                        <span className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold transition-all ${isTodayDate
+                                                            ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30 scale-110'
+                                                            : isCurrentMonth ? 'text-slate-700 group-hover:bg-slate-100 dark:text-slate-300 dark:group-hover:bg-slate-800' : 'text-slate-400 dark:text-slate-600'
                                                             }`}>
                                                             {format(date, 'd')}
                                                         </span>
+                                                        {holidays.length > 0 && (
+                                                            <span className="h-1.5 w-1.5 rounded-full bg-blue-500 ring-2 ring-blue-100 dark:ring-blue-900/30"></span>
+                                                        )}
                                                     </div>
 
-                                                    <div className="space-y-1 overflow-y-auto max-h-[80px] scrollbar-hide">
+                                                    <div className="space-y-1.5 overflow-y-auto max-h-[90px] scrollbar-hide">
                                                         {holidays.map(h => (
                                                             <div
                                                                 key={h._id}
@@ -302,24 +314,27 @@ export default function HolidayManagementPage() {
                                                                     setPrefilledDate(null);
                                                                     setShowHolidayForm(true);
                                                                 }}
-                                                                className={`group relative flex flex-col rounded-lg border px-2 py-1.5 transition-all hover:ring-2 hover:ring-blue-400/30 cursor-pointer ${h.type === 'National' ? 'bg-emerald-50 border-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:border-emerald-800 dark:text-emerald-400' :
-                                                                    h.type === 'Regional' ? 'bg-blue-50 border-blue-100 text-blue-700 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-400' :
-                                                                        h.type === 'Optional' ? 'bg-purple-50 border-purple-100 text-purple-700 dark:bg-purple-900/30 dark:border-purple-800 dark:text-purple-400' :
-                                                                            'bg-orange-50 border-orange-100 text-orange-700 dark:bg-orange-900/30 dark:border-orange-800 dark:text-orange-400'
+                                                                className={`group/event relative flex flex-col rounded-lg px-2.5 py-1.5 transition-all hover:scale-[1.02] hover:shadow-md cursor-pointer border ${h.type === 'National' ? 'bg-emerald-50 border-emerald-100/50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:border-emerald-800/30 dark:text-emerald-400' :
+                                                                    h.type === 'Regional' ? 'bg-blue-50 border-blue-100/50 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/20 dark:border-blue-800/30 dark:text-blue-400' :
+                                                                        h.type === 'Optional' ? 'bg-fuchsia-50 border-fuchsia-100/50 text-fuchsia-700 hover:bg-fuchsia-100 dark:bg-fuchsia-900/20 dark:border-fuchsia-800/30 dark:text-fuchsia-400' :
+                                                                            h.type === 'Academic' ? 'bg-cyan-50 border-cyan-100/50 text-cyan-700 hover:bg-cyan-100 dark:bg-cyan-900/20 dark:border-cyan-800/30 dark:text-cyan-400' :
+                                                                                h.type === 'Observance' ? 'bg-slate-100 border-slate-200/50 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:border-slate-700/30 dark:text-slate-300' :
+                                                                                    h.type === 'Seasonal' ? 'bg-lime-50 border-lime-100/50 text-lime-700 hover:bg-lime-100 dark:bg-lime-900/20 dark:border-lime-800/30 dark:text-lime-400' :
+                                                                                        'bg-amber-50 border-amber-100/50 text-amber-700 hover:bg-amber-100 dark:bg-amber-900/20 dark:border-amber-800/30 dark:text-amber-400'
                                                                     }`}
                                                             >
-                                                                <span className="text-[10px] font-bold uppercase tracking-tight truncate leading-tight">
-                                                                    {h.name}
-                                                                </span>
-                                                                <div className="flex items-center justify-between gap-1 overflow-hidden">
-                                                                    <span className="text-[8px] opacity-80 font-medium truncate">
-                                                                        {h.type}
+                                                                <div className="flex items-center justify-between gap-2">
+                                                                    <span className="text-[10px] font-bold uppercase tracking-tight truncate leading-tight flex-1">
+                                                                        {h.name}
                                                                     </span>
                                                                     {h.sourceHolidayId && (
-                                                                        <span className={`text-[7px] font-bold px-1 rounded uppercase ${h.isSynced !== false ? 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400' : 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400'}`}>
-                                                                            {h.isSynced !== false ? 'Global' : 'Global (Mod)'}
-                                                                        </span>
+                                                                        <div className={`h-1.5 w-1.5 rounded-full ring-1 ring-offset-1 ring-offset-white dark:ring-offset-slate-900 ${h.isSynced !== false ? 'bg-blue-500 ring-blue-500' : 'bg-amber-500 ring-amber-500'}`} title={h.isSynced !== false ? 'Global Holiday (Synced)' : 'Global Holiday (Modified)'} />
                                                                     )}
+                                                                </div>
+                                                                <div className="flex items-center justify-between gap-1 overflow-hidden mt-0.5">
+                                                                    <span className="text-[9px] opacity-70 font-semibold truncate uppercase tracking-wider">
+                                                                        {h.type}
+                                                                    </span>
                                                                 </div>
                                                             </div>
                                                         ))}
@@ -433,213 +448,261 @@ export default function HolidayManagementPage() {
                 )}
             </div>
 
-            {/* Holiday Form Modal */}
+            {/* Holiday Form Drawer */}
             {
                 showHolidayForm && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-                        <div className="w-full max-w-4xl bg-white rounded-2xl shadow-2xl dark:bg-slate-900 border border-slate-200 dark:border-slate-700 overflow-hidden">
-                            <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-700">
-                                <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
-                                    {editingHoliday ? 'Edit Holiday' : (selectedGroupId === 'GLOBAL' ? 'Add Global Holiday' : `Add Holiday to ${groups.find(g => g._id === selectedGroupId)?.name}`)}
-                                </h2>
+                    <div className="fixed inset-0 z-50 flex justify-end bg-black/50 backdrop-blur-sm transition-opacity">
+                        {/* Drawer Container */}
+                        <div className="w-full max-w-md h-full bg-white dark:bg-slate-900 shadow-2xl border-l border-slate-200 dark:border-slate-700 flex flex-col transform transition-transform animate-in slide-in-from-right duration-300">
+
+                            {/* Drawer Header */}
+                            <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md z-10">
+                                <div>
+                                    <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+                                        {editingHoliday ? 'Edit Holiday' : (selectedGroupId === 'GLOBAL' ? 'Add Global Holiday' : 'Add Group Holiday')}
+                                    </h2>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                        {selectedGroupId === 'GLOBAL' ? 'Visible to all employees' : `For ${groups.find(g => g._id === selectedGroupId)?.name}`}
+                                    </p>
+                                </div>
                                 <button
                                     onClick={() => {
                                         setShowHolidayForm(false);
                                         setPrefilledDate(null);
                                     }}
-                                    className="text-slate-400 hover:text-slate-500 dark:hover:text-slate-300"
+                                    className="p-2 -mr-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
                                 >
-                                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
+                                    <X className="w-5 h-5" />
                                 </button>
                             </div>
 
-                            <form onSubmit={async (e) => {
-                                e.preventDefault();
-                                const formData = new FormData(e.currentTarget);
-                                const isGlobalContext = editingHoliday ? editingHoliday.scope === 'GLOBAL' : selectedGroupId === 'GLOBAL';
-                                const isCreatingOverride = !isGlobalContext && editingHoliday?.scope === 'GLOBAL';
-                                const applicableTo = isGlobalContext ? (formData.get('applicableTo') as "ALL" | "SPECIFIC_GROUPS") : 'SPECIFIC_GROUPS';
+                            {/* Drawer Body - Scrollable */}
+                            <div className="flex-1 overflow-y-auto custom-scrollbar">
+                                <form id="holiday-form" onSubmit={async (e) => {
+                                    e.preventDefault();
+                                    const formData = new FormData(e.currentTarget);
+                                    const isGlobalContext = editingHoliday ? editingHoliday.scope === 'GLOBAL' : selectedGroupId === 'GLOBAL';
+                                    const isCreatingOverride = !isGlobalContext && editingHoliday?.scope === 'GLOBAL';
+                                    const applicableTo = isGlobalContext ? (formData.get('applicableTo') as "ALL" | "SPECIFIC_GROUPS") : 'SPECIFIC_GROUPS';
 
-                                const data: Partial<Holiday> & { isMaster: boolean, scope: string, applicableTo: string, groupId?: string, targetGroupIds?: string[], endDate?: string, overridesMasterId?: string } = {
-                                    name: formData.get('name') as string,
-                                    date: formData.get('date') as string,
-                                    endDate: formData.get('endDate') as string || undefined,
-                                    type: formData.get('type') as any,
-                                    description: formData.get('description') as string,
-                                    isMaster: isGlobalContext,
-                                    scope: isGlobalContext ? 'GLOBAL' : 'GROUP',
-                                    applicableTo,
-                                    groupId: isGlobalContext ? undefined : (selectedGroupId !== 'GLOBAL' ? selectedGroupId : (editingHoliday?.groupId as string)),
-                                    targetGroupIds: isGlobalContext && applicableTo === 'SPECIFIC_GROUPS' ? formData.getAll('targetGroupIds') as string[] : undefined
-                                };
-
-                                if (editingHoliday) {
-                                    if (isCreatingOverride) {
-                                        // Creating a NEW override record, do not send _id
-                                        data.overridesMasterId = editingHoliday._id;
-                                    } else {
-                                        data._id = editingHoliday._id;
+                                    // START LOADING
+                                    const submitBtn = e.currentTarget.querySelector('button[type="submit"]') as HTMLButtonElement;
+                                    if (submitBtn) {
+                                        submitBtn.disabled = true;
+                                        submitBtn.innerHTML = `<span class="flex items-center gap-2"><svg class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Processing...</span>`;
                                     }
-                                }
 
+                                    try {
+                                        const data: Partial<Holiday> & { isMaster: boolean, scope: string, applicableTo: string, groupId?: string, targetGroupIds?: string[], endDate?: string, overridesMasterId?: string } = {
+                                            name: formData.get('name') as string,
+                                            date: formData.get('date') as string,
+                                            endDate: formData.get('endDate') as string || undefined,
+                                            type: formData.get('type') as Holiday['type'],
+                                            description: formData.get('description') as string,
+                                            isMaster: isGlobalContext,
+                                            scope: isGlobalContext ? 'GLOBAL' : 'GROUP',
+                                            applicableTo,
+                                            groupId: isGlobalContext ? undefined : (selectedGroupId !== 'GLOBAL' ? selectedGroupId : (editingHoliday?.groupId as string)),
+                                            targetGroupIds: isGlobalContext && applicableTo === 'SPECIFIC_GROUPS' ? formData.getAll('targetGroupIds') as string[] : undefined
+                                        };
 
-                                try {
-                                    await api.saveHoliday(data);
-                                    setShowHolidayForm(false);
-                                    setPrefilledDate(null);
-                                    loadData();
-                                } catch (err: any) {
-                                    console.error(err);
-                                    alert(err.message || 'Failed to save holiday');
-                                }
-                            }} className="flex flex-col">
-                                <div className="grid grid-cols-1 md:grid-cols-3">
-                                    {/* Left Panel: Details */}
-                                    <div className="md:col-span-2 p-8 space-y-6">
-                                        <div>
-                                            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Event Title</label>
-                                            <input
-                                                type="text"
-                                                name="name"
-                                                defaultValue={editingHoliday?.name}
-                                                required
-                                                placeholder="e.g., Annual Company Retreat"
-                                                className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white transition-all"
-                                            />
+                                        if (editingHoliday) {
+                                            if (isCreatingOverride) {
+                                                data.overridesMasterId = editingHoliday._id;
+                                            } else {
+                                                data._id = editingHoliday._id;
+                                            }
+                                            const res = await api.updateHoliday(data);
+                                            if (!res.success) throw new Error(res.message);
+
+                                            await Swal.fire({
+                                                icon: 'success',
+                                                title: isCreatingOverride ? 'Override Created' : 'Holiday Updated',
+                                                text: isCreatingOverride ? 'Holiday override created successfully.' : 'Holiday details updated successfully.',
+                                                timer: 2000,
+                                                showConfirmButton: false,
+                                                customClass: { popup: 'rounded-2xl' }
+                                            });
+                                        } else {
+                                            const res = await api.createHoliday(data);
+                                            if (!res.success) throw new Error(res.message);
+
+                                            await Swal.fire({
+                                                icon: 'success',
+                                                title: 'Holiday Created',
+                                                text: 'New holiday has been added to the calendar.',
+                                                timer: 2000,
+                                                showConfirmButton: false,
+                                                customClass: { popup: 'rounded-2xl' }
+                                            });
+                                        }
+
+                                        setShowHolidayForm(false);
+                                        loadData();
+                                        setEditingHoliday(null);
+
+                                    } catch (error: unknown) {
+                                        console.error(error);
+                                        const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred.';
+                                        await Swal.fire({
+                                            icon: 'error',
+                                            title: 'Operation Failed',
+                                            text: errorMessage,
+                                            customClass: { popup: 'rounded-2xl' }
+                                        });
+                                    } finally {
+                                        // STOP LOADING
+                                        if (submitBtn) {
+                                            submitBtn.disabled = false;
+                                            submitBtn.innerHTML = editingHoliday ? (
+                                                selectedGroupId !== 'GLOBAL' && editingHoliday.scope === 'GLOBAL' ? 'Create Override' : 'Update Event'
+                                            ) : 'Create Event';
+                                        }
+                                    }
+                                }} className="p-6 space-y-8">
+
+                                    {/* Section 1: Basic Details */}
+                                    <div className="space-y-5">
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <CalendarIcon className="h-4 w-4 text-blue-500" />
+                                            <h3 className="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider">Event Details</h3>
                                         </div>
 
-                                        <div>
-                                            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Type</label>
-                                            <select
-                                                name="type"
-                                                defaultValue={editingHoliday?.type || 'National'}
-                                                className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white transition-all appearance-none cursor-pointer"
-                                            >
-                                                <option value="National">National Holiday</option>
-                                                <option value="Regional">Regional Holiday</option>
-                                                <option value="Optional">Optional Holiday</option>
-                                                <option value="Company">Company Holiday</option>
-                                                <option value="Academic">Academic Event</option>
-                                                <option value="Observance">Observance</option>
-                                                <option value="Seasonal">Seasonal</option>
-                                            </select>
-                                        </div>
-
-                                        <div className="grid grid-cols-2 gap-6">
+                                        <div className="space-y-4">
                                             <div>
-                                                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Start Date *</label>
+                                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Event Title <span className="text-red-500">*</span></label>
                                                 <input
-                                                    type="date"
-                                                    name="date"
-                                                    defaultValue={editingHoliday?.date ? new Date(editingHoliday.date).toISOString().split('T')[0] : (prefilledDate || '')}
+                                                    type="text"
+                                                    name="name"
                                                     required
-                                                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white transition-all"
+                                                    defaultValue={editingHoliday?.name}
+                                                    placeholder="e.g., Independence Day"
+                                                    className="w-full rounded-xl border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:border-blue-500 focus:ring-blue-500 transition-all text-sm py-2.5"
                                                 />
                                             </div>
-                                            <div>
-                                                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">End Date (Optional)</label>
-                                                <input
-                                                    type="date"
-                                                    name="endDate"
-                                                    defaultValue={editingHoliday?.endDate ? new Date(editingHoliday.endDate).toISOString().split('T')[0] : ''}
-                                                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white transition-all"
-                                                    placeholder="dd-mm-yyyy"
-                                                />
-                                            </div>
-                                        </div>
 
-                                        <div className="grid grid-cols-2 gap-6">
-                                            <div>
-                                                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Start Time (Optional)</label>
-                                                <input
-                                                    type="time"
-                                                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white transition-all"
-                                                />
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div>
+                                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Type</label>
+                                                    <select
+                                                        name="type"
+                                                        defaultValue={editingHoliday?.type || 'National'}
+                                                        className="w-full rounded-xl border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:border-blue-500 focus:ring-blue-500 text-sm py-2.5"
+                                                    >
+                                                        <option value="National">National</option>
+                                                        <option value="Regional">Regional</option>
+                                                        <option value="Optional">Optional</option>
+                                                        <option value="Observance">Observance</option>
+                                                        <option value="Seasonal">Seasonal</option>
+                                                        <option value="Academic">Academic</option>
+                                                    </select>
+                                                </div>
                                             </div>
-                                            <div>
-                                                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">End Time (Optional)</label>
-                                                <input
-                                                    type="time"
-                                                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white transition-all"
-                                                />
-                                            </div>
-                                        </div>
 
-                                        <div>
-                                            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Description</label>
-                                            <textarea
-                                                name="description"
-                                                defaultValue={editingHoliday?.description}
-                                                rows={3}
-                                                placeholder="Provide additional details about the holiday..."
-                                                className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white transition-all"
-                                            />
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div>
+                                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Start Date <span className="text-red-500">*</span></label>
+                                                    <input
+                                                        type="date"
+                                                        name="date"
+                                                        required
+                                                        defaultValue={prefilledDate || (editingHoliday ? format(parseISO(editingHoliday.date), 'yyyy-MM-dd') : '')}
+                                                        className="w-full rounded-xl border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:border-blue-500 focus:ring-blue-500 transition-all text-sm py-2.5"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">End Date</label>
+                                                    <input
+                                                        type="date"
+                                                        name="endDate"
+                                                        defaultValue={editingHoliday?.endDate ? format(parseISO(editingHoliday.endDate), 'yyyy-MM-dd') : ''}
+                                                        className="w-full rounded-xl border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:border-blue-500 focus:ring-blue-500 text-sm py-2.5"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Description</label>
+                                                <textarea
+                                                    name="description"
+                                                    rows={3}
+                                                    defaultValue={editingHoliday?.description}
+                                                    className="w-full rounded-xl border-slate-300 dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:border-blue-500 focus:ring-blue-500 text-sm p-3"
+                                                    placeholder="Additional details..."
+                                                />
+                                            </div>
                                         </div>
                                     </div>
 
-                                    {/* Right Panel: Target Audience */}
-                                    <div className="bg-slate-50 dark:bg-slate-800/50 p-8 border-l border-slate-200 dark:border-slate-700">
-                                        <div className="flex items-center gap-2 mb-6">
-                                            <Users className="h-5 w-5 text-slate-500" />
-                                            <h3 className="text-sm font-bold tracking-wider text-slate-900 dark:text-white uppercase">Target Audience</h3>
+                                    <div className="w-full h-px bg-slate-100 dark:bg-slate-700/50"></div>
+
+                                    {/* Section 2: Target Audience */}
+                                    <div className="space-y-5">
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <Users className="h-4 w-4 text-orange-500" />
+                                            <h3 className="text-xs font-bold text-orange-600 dark:text-orange-400 uppercase tracking-wider">Target Audience</h3>
                                         </div>
 
-                                        <div className="space-y-6">
+                                        <div className="space-y-4">
                                             {(editingHoliday ? editingHoliday.scope === 'GLOBAL' : selectedGroupId === 'GLOBAL') ? (
                                                 <>
-                                                    <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800">
-                                                        <p className="text-xs text-blue-600 dark:text-blue-400 leading-relaxed">
-                                                            Leave fields empty to target everyone globally, or select specific groups below.
-                                                        </p>
-                                                    </div>
-
-                                                    <div className="space-y-4">
-                                                        <div className="flex items-center gap-2">
+                                                    <div className="space-y-3">
+                                                        <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${applicableTo === 'ALL' ? 'bg-blue-50 border-blue-200 shadow-sm ring-1 ring-blue-500/20' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-blue-300'}`}>
                                                             <input
                                                                 type="radio"
                                                                 name="applicableTo"
                                                                 value="ALL"
-                                                                id="app-all"
                                                                 checked={applicableTo === 'ALL'}
                                                                 onChange={() => setApplicableTo('ALL')}
-                                                                className="w-4 h-4 text-blue-600 border-slate-300 focus:ring-blue-500"
+                                                                className="mt-1 h-4 w-4 text-blue-600 border-slate-300 focus:ring-blue-500"
                                                             />
-                                                            <label htmlFor="app-all" className="text-sm font-medium text-slate-700 dark:text-slate-300">Target All Employees</label>
-                                                        </div>
-                                                        <div className="flex items-center gap-2">
+                                                            <div>
+                                                                <span className="block text-sm font-bold text-slate-900 dark:text-white">Global (All Employees)</span>
+                                                                <span className="text-xs text-slate-500 dark:text-slate-400">Applies to everyone across all groups</span>
+                                                            </div>
+                                                        </label>
+
+                                                        <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${applicableTo === 'SPECIFIC_GROUPS' ? 'bg-blue-50 border-blue-200 shadow-sm ring-1 ring-blue-500/20' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-blue-300'}`}>
                                                             <input
                                                                 type="radio"
                                                                 name="applicableTo"
                                                                 value="SPECIFIC_GROUPS"
-                                                                id="app-specific"
                                                                 checked={applicableTo === 'SPECIFIC_GROUPS'}
                                                                 onChange={() => setApplicableTo('SPECIFIC_GROUPS')}
-                                                                className="w-4 h-4 text-blue-600 border-slate-300 focus:ring-blue-500"
+                                                                className="mt-1 h-4 w-4 text-blue-600 border-slate-300 focus:ring-blue-500"
                                                             />
-                                                            <label htmlFor="app-specific" className="text-sm font-medium text-slate-700 dark:text-slate-300">Target Specific Groups</label>
+                                                            <div>
+                                                                <span className="block text-sm font-bold text-slate-900 dark:text-white">Specific Holiday Groups</span>
+                                                                <span className="text-xs text-slate-500 dark:text-slate-400">Select specific groups to apply this holiday to</span>
+                                                            </div>
+                                                        </label>
+                                                    </div>
+
+                                                    <div className={`space-y-2 transition-all duration-300 origin-top ${applicableTo === 'SPECIFIC_GROUPS' ? 'opacity-100 max-h-[400px]' : 'opacity-40 max-h-[100px] pointer-events-none blur-[1px]'}`}>
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Select Groups</div>
                                                         </div>
 
-                                                        <div className={`mt-4 pt-4 border-t border-slate-200 dark:border-slate-700 space-y-2 max-h-[200px] overflow-y-auto custom-scrollbar transition-opacity duration-300 ${applicableTo === 'ALL' ? 'opacity-30 pointer-events-none' : 'opacity-100'}`}>
-                                                            <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-2">Holiday Groups</label>
-                                                            {groups.map(g => (
-                                                                <label key={g._id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-white dark:hover:bg-slate-800 transition-colors cursor-pointer group">
+                                                        <div className="max-h-[220px] overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+                                                            {groups.map(group => (
+                                                                <label key={group._id} className="flex items-center gap-3 p-2.5 rounded-lg border border-transparent hover:bg-white hover:border-slate-200 dark:hover:bg-slate-800 dark:hover:border-slate-700 transition-all cursor-pointer group/item">
                                                                     <input
                                                                         type="checkbox"
                                                                         name="targetGroupIds"
-                                                                        value={g._id}
-                                                                        defaultChecked={editingHoliday?.targetGroupIds?.some(tg => (typeof tg === 'object' ? tg._id : tg) === g._id)}
-                                                                        className="w-4 h-4 rounded text-blue-600 border-slate-300 focus:ring-blue-500"
+                                                                        value={group._id}
+                                                                        defaultChecked={editingHoliday?.targetGroupIds?.some(tg => (typeof tg === 'object' ? tg._id : tg) === group._id)}
+                                                                        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 transition-colors"
                                                                     />
-                                                                    <span className="text-sm text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">{g.name}</span>
+                                                                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300 group-hover/item:text-slate-900 dark:group-hover/item:text-white transition-colors">
+                                                                        {group.name}
+                                                                    </span>
                                                                 </label>
                                                             ))}
                                                         </div>
                                                     </div>
                                                 </>
                                             ) : (
-                                                <div className="space-y-6">
+                                                <div className="space-y-4">
                                                     <div className="p-4 bg-orange-50 dark:bg-orange-900/20 rounded-xl border border-orange-100 dark:border-orange-800">
                                                         <h4 className="text-xs font-bold text-orange-700 dark:text-orange-400 mb-1">Group Context</h4>
                                                         <p className="text-[11px] text-orange-600 dark:text-orange-500 leading-normal">
@@ -664,17 +727,17 @@ export default function HolidayManagementPage() {
                                             )}
                                         </div>
                                     </div>
-                                </div>
+                                </form>
+                            </div>
 
-                                {/* Footer Actions */}
-                                <div className="flex items-center justify-between p-6 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-700 rounded-b-2xl">
-                                    <div className="flex gap-4">
+                            {/* Drawer Footer - Fixed */}
+                            <div className="p-6 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+                                <div className="flex items-center justify-between gap-4">
+                                    <div className="flex gap-2">
                                         {editingHoliday && (
                                             <button
                                                 type="button"
                                                 onClick={() => {
-                                                    // With Propagation Logic, deleting from Group View is allowed.
-                                                    // It will only delete the Group Copy (Opt-out), leaving Global intact.
                                                     Swal.fire({
                                                         title: 'Are you sure?',
                                                         text: selectedGroupId !== 'GLOBAL' && editingHoliday.scope === 'GROUP' && (editingHoliday.sourceHolidayId || editingHoliday.isMaster)
@@ -685,52 +748,47 @@ export default function HolidayManagementPage() {
                                                         confirmButtonColor: '#ef4444',
                                                         cancelButtonColor: '#64748b',
                                                         confirmButtonText: 'Yes, delete it!',
-                                                        backdrop: `rgba(0,0,0,0.4)`,
-                                                        buttonsStyling: false,
                                                         customClass: {
-                                                            popup: 'rounded-3xl shadow-xl border border-slate-100 dark:bg-slate-900 dark:border-slate-700',
-                                                            title: 'text-lg font-bold text-slate-900 dark:text-white',
-                                                            htmlContainer: 'text-sm text-slate-500 dark:text-slate-400',
-                                                            confirmButton: 'px-5 py-2.5 bg-red-600 text-white text-sm font-semibold rounded-xl hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-all shadow-lg shadow-red-500/30',
-                                                            cancelButton: 'px-5 py-2.5 bg-slate-100 text-slate-700 text-sm font-semibold rounded-xl hover:bg-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 transition-all',
-                                                            actions: 'flex gap-3'
+                                                            popup: 'rounded-3xl',
+                                                            confirmButton: 'rounded-xl',
+                                                            cancelButton: 'rounded-xl'
                                                         }
                                                     }).then((result) => {
                                                         if (result.isConfirmed) {
                                                             handleDeleteHoliday(editingHoliday._id);
                                                             setShowHolidayForm(false);
+                                                            toast.success('Holiday deleted.');
                                                         }
                                                     });
                                                 }}
-                                                className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-colors text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20`}
+                                                className="p-2.5 text-red-500 hover:bg-red-50 hover:text-red-600 rounded-xl transition-colors"
+                                                title="Delete Holiday"
                                             >
-                                                <Trash2 className="h-4 w-4" />
-                                                Delete Event
+                                                <Trash2 className="h-5 w-5" />
                                             </button>
                                         )}
                                     </div>
-                                    <div className="flex gap-3">
+                                    <div className="flex items-center gap-3">
                                         <button
                                             type="button"
-                                            onClick={() => {
-                                                setShowHolidayForm(false);
-                                                setPrefilledDate(null);
-                                            }}
+                                            onClick={() => setShowHolidayForm(false)}
                                             className="px-6 py-2.5 text-sm font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-colors"
                                         >
                                             Cancel
                                         </button>
                                         <button
                                             type="submit"
-                                            className="flex items-center gap-2 px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-lg shadow-blue-500/30 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                                            form="holiday-form"
+                                            className="flex items-center gap-2 px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-lg shadow-blue-500/30 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed"
                                         >
+                                            <Save className="h-4 w-4" />
                                             {editingHoliday ? (
                                                 selectedGroupId !== 'GLOBAL' && editingHoliday.scope === 'GLOBAL' ? 'Create Override' : 'Update Event'
                                             ) : 'Create Event'}
                                         </button>
                                     </div>
                                 </div>
-                            </form>
+                            </div>
                         </div>
                     </div>
                 )
@@ -792,7 +850,7 @@ function HolidayGroupForm({ editing, divisions, departments, onClose, onSave }: 
     const addMapping = () => setMapping([...mapping, { division: '', departments: [] }]);
     const removeMapping = (idx: number) => setMapping(mapping.filter((_, i) => i !== idx));
 
-    const updateMapping = (idx: number, field: 'division' | 'departments', value: any) => {
+    const updateMapping = (idx: number, field: 'division' | 'departments', value: string | string[]) => {
         const newMapping = [...mapping];
         newMapping[idx] = { ...newMapping[idx], [field]: value };
         setMapping(newMapping);
@@ -808,11 +866,12 @@ function HolidayGroupForm({ editing, divisions, departments, onClose, onSave }: 
                 divisionMapping: mapping.filter(m => m.division),
                 isActive: true
             };
-            await api.saveHolidayGroup(data);
+            const res = await api.saveHolidayGroup(data);
+            if (!res.success) throw new Error(res.message);
             onSave();
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error(err);
-            const errorMessage = err.response?.data?.message || err.message || 'Failed to save group';
+            const errorMessage = err instanceof Error ? err.message : 'Failed to save group';
             toast.error(errorMessage);
         }
     };
