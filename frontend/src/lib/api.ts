@@ -1842,21 +1842,30 @@ export const api = {
   // ==========================================
   // SHIFT ROSTER
   // ==========================================
-  getRoster: async (month: string, params?: { employeeNumber?: string; departmentId?: string; divisionId?: string }) => {
-    const query = new URLSearchParams();
-    query.append('month', month);
-    if (params?.employeeNumber) query.append('employeeNumber', params.employeeNumber);
-    if (params?.departmentId) query.append('departmentId', params.departmentId);
-    if (params?.divisionId) query.append('divisionId', params.divisionId);
-    return apiRequest<any>(`/shifts/roster?${query.toString()}`, { method: 'GET' });
+  // Roster
+  getRoster: (month: string, params?: {
+    departmentId?: string;
+    divisionId?: string;
+    startDate?: string;
+    endDate?: string;
+  }) => {
+    const qs = new URLSearchParams({ month });
+    if (params?.departmentId) qs.append('departmentId', params.departmentId);
+    if (params?.divisionId) qs.append('divisionId', params.divisionId);
+    if (params?.startDate) qs.append('startDate', params.startDate);
+    if (params?.endDate) qs.append('endDate', params.endDate);
+    return apiRequest(`/shifts/roster?${qs.toString()}`);
   },
-
-  saveRoster: async (data: { month: string; strict: boolean; entries: any[] }) => {
-    return apiRequest<any>('/shifts/roster', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  },
+  saveRoster: (data: {
+    month: string;
+    strict: boolean;
+    entries: any[];
+    startDate?: string;
+    endDate?: string;
+  }) => apiRequest('/shifts/roster', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
 
   // ==========================================
   // LEAVE SPLIT APIs

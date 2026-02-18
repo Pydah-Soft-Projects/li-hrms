@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from 'react-hot-toast';
 
@@ -17,15 +18,30 @@ function formatMonthInput(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 }
 
-function getMonthDays(monthStr: string) {
-  const [y, m] = monthStr.split('-').map(Number);
-  const start = new Date(y, m - 1, 1);
+function formatSimpleDate(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// Helper to get array of date strings between two dates
+function getDaysInRange(startDate: Date, endDate: Date) {
   const days: string[] = [];
-  const end = new Date(y, m, 0).getDate();
-  for (let d = 1; d <= end; d++) {
-    days.push(`${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
+  const current = new Date(startDate);
+  // Reset time to avoid issues
+  current.setHours(0, 0, 0, 0);
+  const end = new Date(endDate);
+  end.setHours(0, 0, 0, 0);
+
+  while (current <= end) {
+    days.push(formatSimpleDate(current));
+    current.setDate(current.getDate() + 1);
   }
   return days;
+}
+
+function navigateMonth(current: string, direction: 'prev' | 'next'): string {
+  const [y, m] = current.split('-').map(Number);
+  const d = new Date(y, m - 1 + (direction === 'next' ? 1 : -1), 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
 function shiftLabel(shift?: Shift | null) {
@@ -50,14 +66,58 @@ function RosterPage() {
   const [savingProgress, setSavingProgress] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<'roster' | 'assigned'>('roster');
 
+  // Payroll Cycle Config
+  const [cycleStartDay, setCycleStartDay] = useState<number>(1);
+  const [cycleDates, setCycleDates] = useState<{ startDate: string; endDate: string; label: string } | null>(null);
+
   const [showWeekOff, setShowWeekOff] = useState(false);
   const [weekOffDays, setWeekOffDays] = useState<Record<string, boolean>>(
     weekdays.reduce((acc, w) => ({ ...acc, [w]: false }), {})
   );
 
-  const days = useMemo(() => getMonthDays(month), [month]);
+  // Fetch settings on mount
+  useEffect(() => {
+    api.getSetting('payroll_cycle_start_day').then((res) => {
+      if (res.success && res.data) {
+        setCycleStartDay(Number(res.data.value) || 1);
+      }
+    }).catch(err => console.error('Failed to load payroll cycle settings', err));
+  }, []);
+
+  // Calculate cycle dates whenever month or cycleStartDay changes
+  useEffect(() => {
+    if (!month) return;
+    const [y, m] = month.split('-').map(Number);
+
+    // Standard cycle (1st to end of month)
+    if (cycleStartDay === 1) {
+      const end = new Date(y, m, 0);
+      setCycleDates({
+        startDate: formatSimpleDate(new Date(y, m - 1, 1)),
+        endDate: formatSimpleDate(end),
+        label: new Date(y, m - 1, 1).toLocaleString('default', { month: 'long', year: 'numeric' })
+      });
+    } else {
+      // Custom cycle (e.g. 26th Prev to 25th Curr)
+      const start = new Date(y, m - 2, cycleStartDay); // Previous month
+      const end = new Date(y, m - 1, cycleStartDay - 1); // Current month, day before start
+
+      setCycleDates({
+        startDate: formatSimpleDate(start),
+        endDate: formatSimpleDate(end),
+        label: `${start.getDate()} ${start.toLocaleString('default', { month: 'short' })} - ${end.getDate()} ${end.toLocaleString('default', { month: 'short', year: 'numeric' })}`
+      });
+    }
+  }, [month, cycleStartDay]);
+
+  const days = useMemo(() => {
+    if (!cycleDates) return [];
+    return getDaysInRange(new Date(cycleDates.startDate), new Date(cycleDates.endDate));
+  }, [cycleDates]);
 
   const loadData = async () => {
+    if (!cycleDates) return;
+
     try {
       setLoading(true);
 
@@ -74,7 +134,12 @@ function RosterPage() {
           console.error('Failed to load employees:', err);
           return { data: [] };
         }),
-        api.getRoster(month, { departmentId: selectedDept || undefined, divisionId: selectedDivision || undefined }).catch((err) => {
+        api.getRoster(month, {
+          departmentId: selectedDept || undefined,
+          divisionId: selectedDivision || undefined,
+          startDate: cycleDates.startDate,
+          endDate: cycleDates.endDate
+        }).catch((err) => {
           console.error('Failed to load roster:', err);
           return { data: { entries: [], strict: false } };
         }),
@@ -142,7 +207,7 @@ function RosterPage() {
 
   useEffect(() => {
     loadData();
-  }, [month, selectedDept, selectedDivision]);
+  }, [month, selectedDept, selectedDivision, cycleDates]);
 
   const updateCell = (empNo: string, date: string, value: RosterCell) => {
     setRoster((prev) => {
@@ -230,7 +295,13 @@ function RosterPage() {
       }
 
       setSavingProgress(30);
-      const resp = await api.saveRoster({ month, strict, entries });
+      const resp = await api.saveRoster({
+        month,
+        strict,
+        entries,
+        startDate: cycleDates?.startDate,
+        endDate: cycleDates?.endDate
+      });
       setSavingProgress(90);
 
       if (resp?.success) {
@@ -427,14 +498,25 @@ function RosterPage() {
             </select>
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <label className="text-sm font-medium text-slate-700 dark:text-slate-300 whitespace-nowrap">Month:</label>
-            <input
-              type="month"
-              value={month}
-              onChange={(e) => setMonth(e.target.value)}
-              className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs dark:border-slate-800 dark:bg-slate-950 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
-            />
+          {/* Month Navigator: Prev / Cycle Label / Next */}
+          <div className="flex items-center gap-0 rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm">
+            <button
+              onClick={() => setMonth(navigateMonth(month, 'prev'))}
+              className="flex items-center justify-center w-7 h-7 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors border-r border-slate-200 dark:border-slate-700"
+              title="Previous month"
+            >
+              <ChevronLeft size={14} />
+            </button>
+            <div className="px-3 py-1 bg-white dark:bg-slate-900 text-xs font-semibold text-slate-700 dark:text-slate-200 whitespace-nowrap min-w-[140px] text-center">
+              {cycleDates ? cycleDates.label : month}
+            </div>
+            <button
+              onClick={() => setMonth(navigateMonth(month, 'next'))}
+              className="flex items-center justify-center w-7 h-7 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors border-l border-slate-200 dark:border-slate-700"
+              title="Next month"
+            >
+              <ChevronRight size={14} />
+            </button>
           </div>
 
           <div className="flex items-center gap-1.5 px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
