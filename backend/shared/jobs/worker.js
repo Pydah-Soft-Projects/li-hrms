@@ -365,6 +365,88 @@ const startWorkers = () => {
         }
     }, { connection: redisConfig });
 
+    // Roster Sync Worker
+    const rosterSyncWorker = new Worker('rosterSyncQueue', async (job) => {
+        const { entries, userId } = job.data;
+        console.log(`[Worker] Processing roster sync job: ${job.id} with ${entries.length} entries`);
+
+        try {
+            const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
+
+            // Get today's date in YYYY-MM-DD
+            const now = new Date();
+            const today = now.toISOString().split('T')[0];
+
+            let syncedCount = 0;
+            let removedCount = 0;
+
+            for (const entry of entries) {
+                // Only process future or current dates
+                if (!entry.date || entry.date < today) continue;
+
+                const empNo = String(entry.employeeNumber || '').toUpperCase();
+
+                if (entry.status === 'WO' || entry.status === 'HOL') {
+                    // Update or Create AttendanceDaily
+                    await AttendanceDaily.findOneAndUpdate(
+                        { employeeNumber: empNo, date: entry.date },
+                        {
+                            $set: {
+                                status: entry.status === 'WO' ? 'WEEK_OFF' : 'HOLIDAY',
+                                shifts: [], // Clear shifts
+                                totalWorkingHours: 0,
+                                totalOTHours: 0,
+                                source: ['roster-sync'],
+                                notes: entry.status === 'WO' ? 'Week Off' : 'Holiday'
+                            }
+                        },
+                        { upsert: true, new: true }
+                    );
+                    syncedCount++;
+                } else if (entry.shiftId) {
+                    // It's a shift. Check if currently WO/HOL and remove if so
+                    // We only remove if source is roster-sync or status is plainly WO/HOL without punches
+                    const existing = await AttendanceDaily.findOne({
+                        employeeNumber: empNo,
+                        date: entry.date
+                    });
+
+                    if (existing && (existing.status === 'WEEK_OFF' || existing.status === 'HOLIDAY')) {
+                        // Only remove if it doesn't have punches (totalWorkingHours == 0)
+                        if (!existing.totalWorkingHours || existing.totalWorkingHours === 0) {
+                            await AttendanceDaily.deleteOne({ _id: existing._id });
+                            removedCount++;
+                        }
+                    }
+                }
+            }
+
+            console.log(`[Worker] Roster sync complete: ${syncedCount} synced, ${removedCount} removed`);
+
+            // Notify user via socket if available
+            try {
+                const { app, io } = require('../../server'); // Import from server.js
+                const activeIo = io || (app && typeof app.get === 'function' ? app.get('io') : null);
+
+                if (activeIo) {
+                    activeIo.to(`user_${userId}`).emit('toast_notification', {
+                        type: 'success',
+                        message: `Roster sync complete: ${syncedCount} days updated.`,
+                        title: 'Roster Sync Complete'
+                    });
+                }
+            } catch (notifyErr) {
+                console.warn('[Worker] Failed to notify user:', notifyErr.message);
+            }
+
+            return { success: true, synced: syncedCount, removed: removedCount };
+
+        } catch (error) {
+            console.error(`[Worker] Roster sync failed:`, error);
+            throw error;
+        }
+    }, { connection: redisConfig });
+
     payrollWorker.on('error', (err) => {
         console.error('[Worker] Payroll worker error (check Redis):', err.message);
     });
@@ -387,6 +469,14 @@ const startWorkers = () => {
 
     applicationWorker.on('failed', (job, err) => {
         console.error(`[Worker] Application Job ${job.id} failed: ${err.message}`);
+    });
+
+    rosterSyncWorker.on('completed', (job) => {
+        console.log(`[Worker] Roster Sync Job ${job.id} completed successfully`);
+    });
+
+    rosterSyncWorker.on('failed', (job, err) => {
+        console.error(`[Worker] Roster Sync Job ${job.id} failed: ${err.message}`);
     });
 
     console.log('✅ BullMQ Workers are ready');
