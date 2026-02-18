@@ -6,6 +6,8 @@
 
 const mongoose = require('mongoose');
 const CCLRequest = require('../model/CCLRequest');
+const OD = require('../model/OD');
+
 const LeaveSettings = require('../model/LeaveSettings');
 const Employee = require('../../employees/model/Employee');
 const User = require('../../users/model/User');
@@ -960,15 +962,45 @@ exports.validateCCLDate = async (req, res) => {
       const hasPunches = attData && (attData.inTime || (attData.totalHours && attData.totalHours > 0));
 
       if (!hasPunches) {
-        // Override valid status to false
-        // We return valid=false so the frontend blocks it
-        return res.status(200).json({
-          success: true,
-          valid: false,
-          hasExistingCCL: false,
-          message: 'No attendance punches found. You can only apply for CCL if you worked on this Holiday/Week Off.',
-          date: dateStr,
+        // Fallback: Check for APPROVED OD
+        const od = await OD.findOne({
+          employeeId: employee._id,
+          fromDate: { $lte: new Date(dateStr) },
+          toDate: { $gte: new Date(dateStr) },
+          status: 'approved',
+          isActive: true
         });
+
+        if (od) {
+          // OD Found - Check duration
+          if (od.isHalfDay) {
+            // Half Day OD
+            if (isHalfDay === 'true') {
+              // Allowed: Half Day OD -> Half Day CCL
+            } else {
+              // Blocked: Half Day OD -> Full Day CCL
+              return res.status(200).json({
+                success: true,
+                valid: false,
+                hasExistingCCL: false,
+                message: 'You only had a Half Day OD for this date. You can only apply for Half Day CCL.',
+                date: dateStr,
+              });
+            }
+          } else {
+            // Full Day OD - Allows both Full and Half Day CCL
+            // valid = true (implicitly)
+          }
+        } else {
+          // No OD and No Punches
+          return res.status(200).json({
+            success: true,
+            valid: false,
+            hasExistingCCL: false,
+            message: 'No attendance punches or approved OD found. You can only apply for CCL if you worked (punches) or had an approved OD on this Holiday/Week Off.',
+            date: dateStr,
+          });
+        }
       }
     }
 
