@@ -409,6 +409,7 @@ export interface Shift {
   startTime: string;
   endTime: string;
   duration: number;
+  code?: string;
   payableShifts?: number;
   isActive?: boolean;
   color?: string;
