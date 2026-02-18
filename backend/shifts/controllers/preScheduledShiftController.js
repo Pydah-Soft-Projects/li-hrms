@@ -7,6 +7,7 @@ const PreScheduledShift = require('../model/PreScheduledShift');
 const Shift = require('../model/Shift');
 const Employee = require('../../employees/model/Employee');
 const RosterMeta = require('../model/RosterMeta');
+const { rosterSyncQueue } = require('../../shared/jobs/queueManager');
 
 /**
  * @desc    Create pre-scheduled shift
@@ -474,6 +475,14 @@ exports.saveRoster = async (req, res) => {
       { $set: { strict, updatedBy: req.user._id } },
       { upsert: true, new: true }
     );
+
+    // Dispatch async roster sync job
+    if (bulk.length > 0) {
+      rosterSyncQueue.add('syncRoster', {
+        entries: bulk,
+        userId: req.user._id
+      }).catch(err => console.error('Failed to add roster sync job:', err));
+    }
 
     res.status(200).json({
       success: true,
