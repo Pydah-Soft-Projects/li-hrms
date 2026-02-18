@@ -4173,7 +4173,7 @@ export default function EmployeesPage() {
 
                     // Filter departments that belong to this division
                     return departments
-                      .filter(dept => (dept as any).divisions?.includes(div._id))
+                      .filter(dept => (dept as any).divisions?.some((d: any) => (typeof d === 'string' ? d : d._id) === div._id))
                       .map(d => ({ value: d.name, label: d.name }));
                   }
                 };
