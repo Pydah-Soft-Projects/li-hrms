@@ -5,7 +5,7 @@ import { api } from '@/lib/api';
 import { toast } from 'react-hot-toast';
 
 import { format, parseISO } from 'date-fns';
-import { Holiday, HolidayGroup } from '@/lib/api';
+import { Holiday, HolidayGroup, Shift, Employee } from '@/lib/api';
 import {
   ChevronLeft,
   ChevronRight,
@@ -64,14 +64,7 @@ function checkGroupApplicability(holiday: Holiday, emp: Employee, groups: Holida
   });
 }
 
-type Shift = { _id: string; name: string; code?: string; color?: string };
-type Employee = {
-  _id: string;
-  employee_name?: string;
-  emp_no: string;
-  department?: { name: string; _id: string };
-  division?: { name: string; _id: string };
-};
+// Redundant local types removed; using types from '@/lib/api' instead.
 type RosterCell = { shiftId?: string | null; status?: 'WO' | 'HOL'; notes?: string };
 type RosterState = Map<string, Record<string, RosterCell>>;
 
