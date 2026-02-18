@@ -28,6 +28,7 @@ export const MODULE_CATEGORIES = [
             { code: 'SHIFT_ROSTER', label: 'Shift Roster', href: '/shift-roster' },
             { code: 'CONFUSED_SHIFTS', label: 'Confused Shifts', href: '/confused-shifts' },
             { code: 'SHIFTS', label: 'Shifts', href: '/shifts' },
+            { code: 'HOLIDAY_CALENDAR', label: 'Holiday Calendar', href: '/holidays' },
             { code: 'ATTENDANCE', label: 'Attendance', href: '/attendance' }
         ]
     },

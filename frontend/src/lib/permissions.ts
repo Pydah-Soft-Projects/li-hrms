@@ -77,6 +77,8 @@ export const PAGE_PERMISSIONS: Record<string, UserRole[]> = {
     '/users': ['sub_admin', 'hr', 'manager'],
     '/profile': ['sub_admin', 'hr', 'hod', 'manager', 'employee'],
     '/confused-shifts': ['sub_admin', 'hr', 'hod', 'manager', 'employee'],
+    '/holidays': ['sub_admin', 'hr', 'hod', 'manager', 'employee'],
+    '/superadmin/holidays': ['sub_admin', 'hr', 'manager'],
 };
 
 export function canAccessPage(user: User, pagePath: string): boolean {
@@ -464,6 +466,18 @@ export function canApprovePermission(user: User): boolean {
     return hasAnyRole(user, ['sub_admin', 'hr', 'hod', 'manager', 'employee']) && canManageFeature(user, 'OT_PERMISSIONS');
 }
 
-export function canRejectPermission(user: User): boolean {
+export function canRejectPermission(user: User, minRole: UserRole): boolean {
     return hasAnyRole(user, ['sub_admin', 'hr', 'hod', 'manager', 'employee']) && canManageFeature(user, 'OT_PERMISSIONS');
+}
+
+// ==========================================
+// HOLIDAY CALENDAR PERMISSIONS
+// ==========================================
+
+export function canViewHolidayCalendar(user: User): boolean {
+    return true && canViewFeature(user, 'HOLIDAY_CALENDAR');
+}
+
+export function canManageHolidayCalendar(user: User): boolean {
+    return hasAnyRole(user, ['sub_admin', 'hr', 'manager']) && canManageFeature(user, 'HOLIDAY_CALENDAR');
 }

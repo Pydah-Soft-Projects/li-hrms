@@ -607,6 +607,101 @@ export interface EmployeeApplication extends Partial<Employee> {
   employeeDeductions?: (Deduction & { overrideAmount?: number })[];
 }
 
+export interface LiveAttendanceEmployee {
+  id: string;
+  empNo: string;
+  name: string;
+  department: string;
+  designation: string;
+  division: string;
+  shift: string;
+  shiftStartTime: string | null;
+  shiftEndTime: string | null;
+  inTime: string;
+  outTime: string | null;
+  status: string;
+  date: string;
+  hoursWorked: number;
+  isLate: boolean;
+  lateMinutes: number;
+  isEarlyOut: boolean;
+  earlyOutMinutes: number;
+  otHours: number;
+  extraHours: number;
+}
+
+export interface ShiftStat {
+  name: string;
+  working: number;
+  completed: number;
+}
+
+export interface DepartmentStat {
+  id: string;
+  name: string;
+  divisionId: string;
+  divisionName: string;
+  totalEmployees: number;
+  working: number;
+  completed: number;
+  present: number;
+  absent: number;
+}
+
+export interface LiveAttendanceReportData {
+  date: string;
+  summary: {
+    currentlyWorking: number;
+    completedShift: number;
+    totalPresent: number;
+    totalActiveEmployees: number;
+    absentEmployees: number;
+    shiftBreakdown: ShiftStat[];
+    departmentBreakdown: DepartmentStat[];
+  };
+  currentlyWorking: LiveAttendanceEmployee[];
+  completedShift: LiveAttendanceEmployee[];
+}
+
+export interface LiveAttendanceFilterOption {
+  id: string;
+  name: string;
+}
+
+export interface HolidayGroup {
+  _id: string;
+  name: string;
+  description?: string;
+  divisionMapping: {
+    division: string | Division; // ID or Populated
+    departments: (string | Department)[]; // IDs or Populated
+  }[];
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  createdBy?: string;
+}
+
+export interface Holiday {
+  _id: string;
+  name: string;
+  date: string; // ISO Date string
+  endDate?: string; // Optional end date
+  type: 'National' | 'Regional' | 'Optional' | 'Company' | 'Academic' | 'Observance' | 'Seasonal';
+  isMaster: boolean;
+  scope: 'GLOBAL' | 'GROUP';
+  applicableTo?: 'ALL' | 'SPECIFIC_GROUPS';
+  targetGroupIds?: (string | HolidayGroup)[];
+  groupId?: string | HolidayGroup;
+  overridesMasterId?: string | Holiday;
+  description?: string;
+  sourceHolidayId?: string | Holiday; // For propagated copies
+  isSynced?: boolean; // True if synced with global, false if edited
+  createdBy?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export const api = {
   login: async (identifier: string, password: string) => {
     return apiRequest<LoginResponse>('/auth/login', {
@@ -715,6 +810,53 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(data),
     });
+  },
+
+  // Holidays
+  getAllHolidaysAdmin: async (year?: number) => {
+    const query = year ? `?year=${year}` : '';
+    return apiRequest<{ holidays: Holiday[]; groups: HolidayGroup[] }>(`/holidays/admin${query}`, { method: 'GET' });
+  },
+
+  getMyHolidays: async (year?: number) => {
+    const query = year ? `?year=${year}` : '';
+    return apiRequest<Holiday[]>(`/holidays/my${query}`, { method: 'GET' });
+  },
+
+  saveHolidayGroup: async (data: Partial<HolidayGroup>) => {
+    return apiRequest<HolidayGroup>('/holidays/groups', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  deleteHolidayGroup: async (id: string) => {
+    return apiRequest<void>(`/holidays/groups/${id}`, { method: 'DELETE' });
+  },
+
+  saveHoliday: async (data: Partial<Holiday>) => {
+    return apiRequest<Holiday>('/holidays', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  createHoliday: async (data: Partial<Holiday>) => {
+    return apiRequest<Holiday>('/holidays', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  updateHoliday: async (data: Partial<Holiday>) => {
+    return apiRequest<Holiday>('/holidays', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  deleteHoliday: async (id: string) => {
+    return apiRequest<void>(`/holidays/${id}`, { method: 'DELETE' });
   },
 
   // Shifts
@@ -3015,6 +3157,25 @@ export const api = {
   // Activity Feed
   getRecentActivity: async () => {
     return apiRequest<any>('/attendance/activity/recent', { method: 'GET' });
+  },
+
+  // Live Attendance
+  getLiveAttendanceReport: async (params?: { date?: string; division?: string; department?: string; shift?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.date) query.append('date', params.date);
+    if (params?.division) query.append('division', params.division);
+    if (params?.department) query.append('department', params.department);
+    if (params?.shift) query.append('shift', params.shift);
+    const queryString = query.toString() ? `?${query.toString()}` : '';
+    return apiRequest<LiveAttendanceReportData>(`/attendance/reports/live${queryString}`, { method: 'GET' });
+  },
+
+  getLiveAttendanceFilterOptions: async () => {
+    return apiRequest<{
+      divisions: LiveAttendanceFilterOption[];
+      departments: LiveAttendanceFilterOption[];
+      shifts: LiveAttendanceFilterOption[];
+    }>('/attendance/reports/live/filters', { method: 'GET' });
   },
 
   // Security Gate Pass

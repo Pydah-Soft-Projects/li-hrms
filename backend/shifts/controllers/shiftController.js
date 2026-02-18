@@ -242,18 +242,14 @@ exports.createShift = async (req, res) => {
       finalDuration = Math.round((durationMinutes / 60) * 100) / 100;
     }
 
-    // Validate duration against allowed durations
+    // Validate duration against allowed durations (Warning only in logs)
     if (allowedDurations.length > 0) {
       const isAllowed = allowedDurations.some(
         (allowed) => Math.abs(allowed - finalDuration) < 0.01
       );
 
       if (!isAllowed) {
-        return res.status(400).json({
-          success: false,
-          message: `Duration ${finalDuration} hours is not allowed. Allowed durations: ${allowedDurations.join(', ')} hours`,
-          allowedDurations,
-        });
+        console.warn(`Creating shift with non-standard duration: ${finalDuration} hours`);
       }
     }
 
@@ -356,18 +352,14 @@ exports.updateShift = async (req, res) => {
       shift.duration = duration;
     }
 
-    // Validate duration
+    // Validate duration (Warning only)
     if (allowedDurations.length > 0) {
       const isAllowed = allowedDurations.some(
         (allowed) => Math.abs(allowed - shift.duration) < 0.01
       );
 
       if (!isAllowed) {
-        return res.status(400).json({
-          success: false,
-          message: `Duration ${shift.duration} hours is not allowed. Allowed durations: ${allowedDurations.join(', ')} hours`,
-          allowedDurations,
-        });
+        console.warn(`Updating shift with non-standard duration: ${shift.duration} hours`);
       }
     }
 

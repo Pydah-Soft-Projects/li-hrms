@@ -2,6 +2,15 @@
 
 import React, { useState, useEffect } from 'react';
 import { api, Department, Designation, Division, Shift, User } from '@/lib/api';
+import {
+  X,
+  Plus,
+  Check,
+  AlertCircle,
+  MapPin,
+  ShieldCheck,
+  Briefcase
+} from 'lucide-react';
 import Swal from 'sweetalert2';
 import BulkUpload from '@/components/BulkUpload';
 import {
@@ -766,7 +775,6 @@ export default function DepartmentsPage() {
               </div>
             </div>
           </div>
-
           {/* Action Card */}
           <div className="md:col-span-2 bg-gradient-to-br from-blue-500 to-indigo-600 p-3 md:p-8 rounded-xl md:rounded-3xl shadow-lg shadow-blue-500/20 border border-blue-400/20 relative overflow-hidden group">
             <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -mr-10 -mt-10 blur-3xl transition-all duration-500 group-hover:bg-white/20" />
@@ -837,14 +845,15 @@ export default function DepartmentsPage() {
                 resetDepartmentForm();
               }}
             />
-            <div className="relative z-50 w-full max-w-md rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl shadow-blue-500/10 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/95">
-              <div className="mb-6 flex items-center justify-between">
+            <div className="relative z-50 flex flex-col w-full max-w-3xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden rounded-3xl md:rounded-[2.5rem] border border-slate-200 bg-white shadow-2xl shadow-blue-500/10 dark:border-slate-800 dark:bg-slate-950">
+              {/* Header */}
+              <div className="p-5 sm:p-6 md:p-8 pb-4 flex items-center justify-between border-b border-slate-100 dark:border-slate-800/50">
                 <div>
-                  <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
-                    Create New Department
+                  <h2 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 dark:text-white">
+                    Create New <span className="text-blue-500">Department</span>
                   </h2>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    Add a new department to your organization
+                  <p className="mt-1 text-xs sm:text-sm font-medium text-slate-500 dark:text-slate-400">
+                    Configure organizational structure at scale
                   </p>
                 </div>
                 <button
@@ -852,6 +861,315 @@ export default function DepartmentsPage() {
                     setShowCreateDialog(false);
                     resetDepartmentForm();
                   }}
+                  className="group flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-50 text-slate-400 transition-all hover:bg-red-50 hover:text-red-500 dark:bg-slate-900 dark:text-slate-500 dark:hover:bg-red-500/10"
+                >
+                  <X className="h-6 w-6 transition-transform group-hover:rotate-90" />
+                </button>
+              </div>
+
+              {/* Form Content - Scrollable */}
+              <div className="flex-1 overflow-y-auto p-5 sm:p-6 md:p-8 custom-scrollbar">
+                <form id="createDepartmentForm" onSubmit={handleCreateDepartment} className="space-y-4 sm:space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+                    <div className="space-y-2">
+                      <label className="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
+                        <BuildingIcon className="w-3.5 h-3.5" />
+                        Department Name *
+                      </label>
+                      <input
+                        type="text"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        required
+                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-sm font-medium transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-blue-500/50"
+                        placeholder="e.g., Engineering"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
+                        <AlertCircle className="w-3.5 h-3.5" />
+                        Department Code
+                      </label>
+                      <input
+                        type="text"
+                        value={code}
+                        onChange={(e) => setCode(e.target.value.toUpperCase())}
+                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-sm font-medium transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-blue-500/50"
+                        placeholder="e.g., ENG, MKT, SALES"
+                      />
+                    </div>
+
+                    <div className="md:col-span-2 space-y-2">
+                      <label className="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
+                        <Briefcase className="w-3.5 h-3.5" />
+                        Description
+                      </label>
+                      <textarea
+                        value={description}
+                        onChange={(e) => setDescription(e.target.value)}
+                        rows={3}
+                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-sm font-medium transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-blue-500/50"
+                        placeholder="What define's this department's mission?"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-4 rounded-[2rem] border border-blue-100 bg-blue-50/30 p-6 dark:border-blue-900/30 dark:bg-blue-900/10">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500 text-white shadow-lg shadow-blue-500/20">
+                        <ShieldCheck className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider">
+                          Division HOD Assignments
+                        </h3>
+                        <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                          Delegate management authority per division
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {divisions.map((division) => (
+                        <div key={division._id} className="space-y-1.5 p-4 rounded-2xl bg-white border border-slate-100 dark:bg-slate-900 dark:border-slate-800/50">
+                          <label className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
+                            <MapPin className="w-3 h-3" />
+                            {division.name}
+                          </label>
+                          <select
+                            value={divisionHODMap[division._id] || ''}
+                            onChange={(e) => setDivisionHODMap(prev => ({ ...prev, [division._id]: e.target.value }))}
+                            className="w-full appearance-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium transition-all focus:border-blue-500 focus:bg-white focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
+                          >
+                            <option value="">No Specific HOD</option>
+                            {hodUsers.map((user) => (
+                              <option key={user._id} value={user._id}>
+                                {user.name} ({user.email.split('@')[0]})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </form>
+
+                {error && (
+                  <div className="mt-6 flex items-center gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-600 dark:border-red-900/50 dark:bg-red-900/10 dark:text-red-400">
+                    <div className="flex h-5 w-5 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30">
+                      <AlertCircle className="h-3 w-3" />
+                    </div>
+                    {error}
+                  </div>
+                )}
+              </div>
+
+              {/* Footer Actions */}
+              <div className="p-5 sm:p-6 md:p-8 pt-4 border-t border-slate-100 bg-slate-50/50 dark:border-slate-800/50 dark:bg-slate-900/20">
+                <div className="flex gap-3 sm:gap-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowCreateDialog(false);
+                      resetDepartmentForm();
+                    }}
+                    className="flex-1 rounded-2xl border border-slate-200 bg-white py-4 text-sm font-black uppercase tracking-widest text-slate-500 transition-all hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:bg-slate-800"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    form="createDepartmentForm"
+                    type="submit"
+                    className="flex-[2] rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 py-4 text-sm font-black uppercase tracking-widest text-white shadow-xl shadow-blue-500/20 transition-all hover:-translate-y-1 hover:shadow-2xl hover:shadow-blue-500/30 active:translate-y-0"
+                  >
+                    <span className="flex items-center justify-center gap-2">
+                      <Plus className="h-4 w-4" />
+                      Create Department
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Edit Department Dialog */}
+        {showEditDialog && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <div
+              className="fixed inset-0 bg-slate-900/75 backdrop-blur-md transition-opacity"
+              onClick={() => {
+                setShowEditDialog(null);
+                resetDepartmentForm();
+              }}
+            />
+            <div className="relative z-50 flex flex-col w-full max-w-3xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden rounded-3xl md:rounded-[2.5rem] border border-slate-200 bg-white shadow-2xl shadow-blue-500/10 dark:border-slate-800 dark:bg-slate-950">
+              {/* Header */}
+              <div className="p-5 sm:p-6 md:p-8 pb-4 flex items-center justify-between border-b border-slate-100 dark:border-slate-800/50">
+                <div>
+                  <h2 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 dark:text-white">
+                    Edit <span className="text-blue-500">Department</span>
+                  </h2>
+                  <p className="mt-1 text-xs sm:text-sm font-medium text-slate-500 dark:text-slate-400">
+                    Refine organizational parameters and assignments
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowEditDialog(null);
+                    resetDepartmentForm();
+                  }}
+                  className="group flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-50 text-slate-400 transition-all hover:bg-red-50 hover:text-red-500 dark:bg-slate-900 dark:text-slate-500 dark:hover:bg-red-500/10"
+                >
+                  <X className="h-6 w-6 transition-transform group-hover:rotate-90" />
+                </button>
+              </div>
+
+              {/* Form Content - Scrollable */}
+              <div className="flex-1 overflow-y-auto p-5 sm:p-6 md:p-8 custom-scrollbar">
+                <form id="editDepartmentForm" onSubmit={handleUpdateDepartment} className="space-y-4 sm:space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+                    <div className="space-y-2">
+                      <label className="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
+                        <BuildingIcon className="w-3.5 h-3.5" />
+                        Department Name *
+                      </label>
+                      <input
+                        type="text"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        required
+                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-sm font-medium transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-blue-500/50"
+                        placeholder="e.g., Engineering"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
+                        <AlertCircle className="w-3.5 h-3.5" />
+                        Department Code
+                      </label>
+                      <input
+                        type="text"
+                        value={code}
+                        onChange={(e) => setCode(e.target.value.toUpperCase())}
+                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-sm font-medium transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-blue-500/50"
+                        placeholder="e.g., ENG, MKT, SALES"
+                      />
+                    </div>
+
+                    <div className="md:col-span-2 space-y-2">
+                      <label className="flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
+                        <Briefcase className="w-3.5 h-3.5" />
+                        Description
+                      </label>
+                      <textarea
+                        value={description}
+                        onChange={(e) => setDescription(e.target.value)}
+                        rows={3}
+                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-sm font-medium transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-blue-500/50"
+                        placeholder="What define's this department's mission?"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-4 rounded-[2rem] border border-blue-100 bg-blue-50/30 p-6 dark:border-blue-900/30 dark:bg-blue-900/10">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500 text-white shadow-lg shadow-blue-500/20">
+                        <ShieldCheck className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider">
+                          Division HOD Assignments
+                        </h3>
+                        <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                          Delegate management authority per division
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {divisions.map((division) => (
+                        <div key={division._id} className="space-y-1.5 p-4 rounded-2xl bg-white border border-slate-100 dark:bg-slate-900 dark:border-slate-800/50">
+                          <label className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
+                            <MapPin className="w-3 h-3" />
+                            {division.name}
+                          </label>
+                          <select
+                            value={divisionHODMap[division._id] || ''}
+                            onChange={(e) => setDivisionHODMap(prev => ({ ...prev, [division._id]: e.target.value }))}
+                            className="w-full appearance-none rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium transition-all focus:border-blue-500 focus:bg-white focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
+                          >
+                            <option value="">No Specific HOD</option>
+                            {hodUsers.map((user) => (
+                              <option key={user._id} value={user._id}>
+                                {user.name} ({user.email.split('@')[0]})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </form>
+
+                {error && (
+                  <div className="mt-6 flex items-center gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-600 dark:border-red-900/50 dark:bg-red-900/10 dark:text-red-400">
+                    <div className="flex h-5 w-5 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30">
+                      <AlertCircle className="h-3 w-3" />
+                    </div>
+                    {error}
+                  </div>
+                )}
+              </div>
+
+              {/* Footer Actions */}
+              <div className="p-5 sm:p-6 md:p-8 pt-4 border-t border-slate-100 bg-slate-50/50 dark:border-slate-800/50 dark:bg-slate-900/20">
+                <div className="flex gap-3 sm:gap-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowEditDialog(null);
+                      resetDepartmentForm();
+                    }}
+                    className="flex-1 rounded-2xl border border-slate-200 bg-white py-4 text-sm font-black uppercase tracking-widest text-slate-500 transition-all hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400 dark:hover:bg-slate-800"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    form="editDepartmentForm"
+                    type="submit"
+                    className="flex-[2] rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 py-4 text-sm font-black uppercase tracking-widest text-white shadow-xl shadow-blue-500/20 transition-all hover:-translate-y-1 hover:shadow-2xl hover:shadow-blue-500/30 active:translate-y-0"
+                  >
+                    <span className="flex items-center justify-center gap-2">
+                      <Check className="h-4 w-4" />
+                      Update Department
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Link Designation Dialog */}
+        {showLinkDesignationDialog && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+            <div
+              className="fixed inset-0 bg-slate-900/75 backdrop-blur-md transition-opacity"
+              onClick={() => setShowLinkDesignationDialog(null)}
+            />
+            <div className="relative z-[60] w-full max-w-md rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl shadow-blue-500/10 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/95">
+              <div className="mb-6 flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Link Designation</h2>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    Add an existing designation to this department
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowLinkDesignationDialog(null)}
                   className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 focus:outline-none focus:ring-2 focus:ring-red-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
                 >
                   <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -860,290 +1178,29 @@ export default function DepartmentsPage() {
                 </button>
               </div>
 
-              <form onSubmit={handleCreateDepartment} className="space-y-5">
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                    Department Name *
-                  </label>
-                  <input
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    required
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    placeholder="e.g., Information Technology"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                    Department Code
-                  </label>
-                  <input
-                    type="text"
-                    value={code}
-                    onChange={(e) => setCode(e.target.value.toUpperCase())}
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    placeholder="e.g., IT, HR, FIN"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                    Description
-                  </label>
-                  <textarea
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    rows={3}
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    placeholder="Department description..."
-                  />
-                </div>
-
-
-
-                <div className="space-y-3 rounded-2xl border border-slate-100 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900/50">
-                  <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                    Division HOD Assignments
-                  </h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Assign Head of Department for each division.
-                  </p>
-                  <div className="space-y-3">
-                    {divisions.map((division) => (
-                      <div key={division._id}>
-                        <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">
-                          {division.name}
-                        </label>
-                        <select
-                          value={divisionHODMap[division._id] || ''}
-                          onChange={(e) => setDivisionHODMap(prev => ({ ...prev, [division._id]: e.target.value }))}
-                          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                        >
-                          <option value="">Same as Global / No HOD</option>
-                          {hodUsers.map((user) => (
-                            <option key={user._id} value={user._id}>
-                              {user.name}
-                            </option>
-                          ))}
-                        </select>
+              <div className="max-h-96 overflow-y-auto space-y-2">
+                {unlinkedDesignations.length === 0 ? (
+                  <p className="text-center text-sm text-slate-500 py-4">No unlinked designations available.</p>
+                ) : (
+                  unlinkedDesignations.map(d => (
+                    <div key={d._id} className="flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900/50">
+                      <div>
+                        <p className="font-medium text-slate-900 dark:text-slate-100">{d.name}</p>
+                        {d.code && <p className="text-xs text-slate-500">{d.code}</p>}
                       </div>
-                    ))}
-                  </div>
-                </div>
-
-                {error && (
-                  <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
-                    {error}
-                  </div>
+                      <button
+                        onClick={() => handleLinkDesignation(d._id)}
+                        className="px-3 py-1.5 text-xs font-semibold text-blue-600 bg-blue-100 rounded-lg hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-blue-900/50"
+                      >
+                        Link
+                      </button>
+                    </div>
+                  ))
                 )}
-
-                <div className="flex gap-3 pt-2">
-                  <button
-                    type="submit"
-                    className="flex-1 rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600 hover:shadow-xl hover:shadow-blue-500/40 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2"
-                  >
-                    Create Department
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowCreateDialog(false);
-                      resetDepartmentForm();
-                    }}
-                    className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </form>
+              </div>
             </div>
           </div>
         )
-        }
-
-        {/* Edit Department Dialog */}
-        {
-          showEditDialog && (
-            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-              <div
-                className="fixed inset-0 bg-slate-900/75 backdrop-blur-md transition-opacity"
-                onClick={() => {
-                  setShowEditDialog(null);
-                  resetDepartmentForm();
-                }}
-              />
-              <div className="relative z-50 w-full max-w-md rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl shadow-blue-500/10 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/95">
-                <div className="mb-6 flex items-center justify-between">
-                  <div>
-                    <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Edit Department</h2>
-                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                      Update department information
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setShowEditDialog(null);
-                      resetDepartmentForm();
-                    }}
-                    className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 focus:outline-none focus:ring-2 focus:ring-red-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-                  >
-                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
-
-                <form onSubmit={handleUpdateDepartment} className="space-y-5">
-                  <div>
-                    <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Department Name *
-                    </label>
-                    <input
-                      type="text"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      required
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                      placeholder="e.g., Information Technology"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Department Code
-                    </label>
-                    <input
-                      type="text"
-                      value={code}
-                      onChange={(e) => setCode(e.target.value.toUpperCase())}
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                      placeholder="e.g., IT, HR, FIN"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Description
-                    </label>
-                    <textarea
-                      value={description}
-                      onChange={(e) => setDescription(e.target.value)}
-                      rows={3}
-                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                      placeholder="Department description..."
-                    />
-                  </div>
-
-
-
-                  <div className="space-y-3 rounded-2xl border border-slate-100 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900/50">
-                    <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                      Division HOD Assignments
-                    </h3>
-                    <div className="space-y-3">
-                      {divisions.map((division) => (
-                        <div key={division._id}>
-                          <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">
-                            {division.name}
-                          </label>
-                          <select
-                            value={divisionHODMap[division._id] || ''}
-                            onChange={(e) => setDivisionHODMap(prev => ({ ...prev, [division._id]: e.target.value }))}
-                            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                          >
-                            <option value="">Same as Global / No HOD</option>
-                            {hodUsers.map((user) => (
-                              <option key={user._id} value={user._id}>
-                                {user.name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {error && (
-                    <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
-                      {error}
-                    </div>
-                  )}
-
-                  <div className="flex gap-3 pt-2">
-                    <button
-                      type="submit"
-                      className="flex-1 rounded-2xl bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600 hover:shadow-xl hover:shadow-blue-500/40 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-2"
-                    >
-                      Update Department
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowEditDialog(null);
-                        resetDepartmentForm();
-                      }}
-                      className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </form>
-              </div >
-            </div >
-          )
-        }
-
-        {/* Link Designation Dialog */}
-        {
-          showLinkDesignationDialog && (
-            <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
-              <div
-                className="fixed inset-0 bg-slate-900/75 backdrop-blur-md transition-opacity"
-                onClick={() => setShowLinkDesignationDialog(null)}
-              />
-              <div className="relative z-[60] w-full max-w-md rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl shadow-blue-500/10 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/95">
-                <div className="mb-6 flex items-center justify-between">
-                  <div>
-                    <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Link Designation</h2>
-                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                      Add an existing designation to this department
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => setShowLinkDesignationDialog(null)}
-                    className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 focus:outline-none focus:ring-2 focus:ring-red-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-                  >
-                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
-
-                <div className="max-h-96 overflow-y-auto space-y-2">
-                  {unlinkedDesignations.length === 0 ? (
-                    <p className="text-center text-sm text-slate-500 py-4">No unlinked designations available.</p>
-                  ) : (
-                    unlinkedDesignations.map(d => (
-                      <div key={d._id} className="flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900/50">
-                        <div>
-                          <p className="font-medium text-slate-900 dark:text-slate-100">{d.name}</p>
-                          {d.code && <p className="text-xs text-slate-500">{d.code}</p>}
-                        </div>
-                        <button
-                          onClick={() => handleLinkDesignation(d._id)}
-                          className="px-3 py-1.5 text-xs font-semibold text-blue-600 bg-blue-100 rounded-lg hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-blue-900/50"
-                        >
-                          Link
-                        </button>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            </div>
-          )
         }
 
         {/* Existing Shift Dialog */}
@@ -2227,10 +2284,9 @@ export default function DepartmentsPage() {
               }}
               onClose={() => setShowBulkUploadDesig(false)}
             />
-          )
-        }
-      </div >
-    </div >
+          )}
+      </div>
+    </div>
   );
 }
 

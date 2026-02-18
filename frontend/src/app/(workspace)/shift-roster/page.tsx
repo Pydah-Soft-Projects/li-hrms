@@ -362,7 +362,7 @@ function RosterPage() {
   }
 
   return (
-    <div className="min-h-screen p-6 space-y-4 bg-green-50 dark:bg-green-950/20">
+    <div className="min-h-screen space-y-4 dark:bg-green-950/20">
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-3">
           <div>
