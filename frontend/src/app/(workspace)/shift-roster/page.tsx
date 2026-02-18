@@ -174,8 +174,9 @@ function RosterPage() {
       setDepartments(deptList.map((d: any) => ({ _id: d._id, name: d.name })));
 
       const map: RosterState = new Map();
-      const entries = Array.isArray(rosterRes?.data?.entries) ? rosterRes.data.entries : [];
-      setStrict(Boolean(rosterRes?.data?.strict));
+      const rosterData = rosterRes?.data as { entries?: { employeeNumber: string; date: string; shiftId?: string; status?: string }[]; strict?: boolean } | null;
+      const entries = Array.isArray(rosterData?.entries) ? rosterData!.entries! : [];
+      setStrict(Boolean(rosterData?.strict));
 
       entries.forEach((e: any) => {
         const emp = e.employeeNumber;
