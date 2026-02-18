@@ -947,11 +947,30 @@ exports.validateCCLDate = async (req, res) => {
     }
 
     const valid = isHolWo && !hasConflict;
-    const message = hasConflict
+    let message = hasConflict
       ? conflictMessage
       : isHolWo
         ? 'Date is a holiday or weekly off'
         : 'Date is not a holiday or weekly off for this employee';
+
+    // NEW: Check for actual attendance punches
+    if (valid) {
+      const attData = await getAttendanceForDate(employee.emp_no, dateStr);
+      // Logic: Must have InTime OR TotalHours > 0
+      const hasPunches = attData && (attData.inTime || (attData.totalHours && attData.totalHours > 0));
+
+      if (!hasPunches) {
+        // Override valid status to false
+        // We return valid=false so the frontend blocks it
+        return res.status(200).json({
+          success: true,
+          valid: false,
+          hasExistingCCL: false,
+          message: 'No attendance punches found. You can only apply for CCL if you worked on this Holiday/Week Off.',
+          date: dateStr,
+        });
+      }
+    }
 
     res.status(200).json({
       success: true,
