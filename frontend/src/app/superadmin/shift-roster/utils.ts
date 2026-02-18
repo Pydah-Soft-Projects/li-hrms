@@ -40,6 +40,23 @@ export function formatMonthInput(date: Date) {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 }
 
+export function formatSimpleDate(d: Date) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+export function getDaysInRange(startDate: Date, endDate: Date) {
+    const days: string[] = [];
+    const current = new Date(startDate);
+    current.setHours(0, 0, 0, 0);
+    const end = new Date(endDate);
+    end.setHours(0, 0, 0, 0);
+    while (current <= end) {
+        days.push(formatSimpleDate(current));
+        current.setDate(current.getDate() + 1);
+    }
+    return days;
+}
+
 export function getMonthDays(monthStr: string) {
     const [y, m] = monthStr.split('-').map(Number);
     const days: string[] = [];

@@ -24,7 +24,8 @@ import {
 import {
   checkGroupApplicability,
   formatMonthInput,
-  getMonthDays,
+  formatSimpleDate,
+  getDaysInRange,
   shiftLabel
 } from './utils';
 
@@ -70,7 +71,42 @@ export default function RosterPage() {
     weekdays.reduce((acc, w) => ({ ...acc, [w]: false }), {})
   );
 
-  const days = useMemo(() => getMonthDays(month), [month]);
+  // Payroll Cycle
+  const [cycleStartDay, setCycleStartDay] = useState<number>(1);
+  const [cycleDates, setCycleDates] = useState<{ startDate: string; endDate: string; label: string } | null>(null);
+
+  // Fetch payroll cycle setting on mount
+  useEffect(() => {
+    api.getSetting('payroll_cycle_start_day').then((res) => {
+      if (res.success && res.data) setCycleStartDay(Number(res.data.value) || 1);
+    }).catch(() => { });
+  }, []);
+
+  // Recalculate cycle dates when month or cycleStartDay changes
+  useEffect(() => {
+    if (!month) return;
+    const [y, m] = month.split('-').map(Number);
+    if (cycleStartDay === 1) {
+      setCycleDates({
+        startDate: formatSimpleDate(new Date(y, m - 1, 1)),
+        endDate: formatSimpleDate(new Date(y, m, 0)),
+        label: new Date(y, m - 1, 1).toLocaleString('default', { month: 'long', year: 'numeric' })
+      });
+    } else {
+      const start = new Date(y, m - 2, cycleStartDay);
+      const end = new Date(y, m - 1, cycleStartDay - 1);
+      setCycleDates({
+        startDate: formatSimpleDate(start),
+        endDate: formatSimpleDate(end),
+        label: `${start.getDate()} ${start.toLocaleString('default', { month: 'short' })} - ${end.getDate()} ${end.toLocaleString('default', { month: 'short', year: 'numeric' })}`
+      });
+    }
+  }, [month, cycleStartDay]);
+
+  const days = useMemo(() => {
+    if (!cycleDates) return [];
+    return getDaysInRange(new Date(cycleDates.startDate), new Date(cycleDates.endDate));
+  }, [cycleDates]);
 
   // Debounced search to prevent UI lag
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -127,6 +163,7 @@ export default function RosterPage() {
   }, [employees, holidays, holidayGroups, days]);
 
   const loadData = useCallback(async () => {
+    if (!cycleDates) return;
     setLoading(true);
     try {
       const [shiftRes, divRes, deptRes, holidayRes] = await Promise.all([
@@ -145,21 +182,24 @@ export default function RosterPage() {
           setHolidayGroups(holidayRes.data.groups || []);
         }
       }
-      const empParams: any = { page, limit };
+      const empParams: Record<string, unknown> = { page, limit };
       if (selectedDept) empParams.department_id = selectedDept;
       if (selectedDivision) empParams.division_id = selectedDivision;
-      const empRes = await api.getEmployees(empParams) as any;
+      const empRes = await api.getEmployees(empParams) as { data: Employee[]; pagination?: { totalPages: number; total: number } };
       const empList = empRes.data || [];
       setEmployees(empList);
       setTotalPages(empRes.pagination?.totalPages || 1);
       setTotalEmployees(empRes.pagination?.total || empList.length);
       const rosterRes = await api.getRoster(month, {
         departmentId: selectedDept || undefined,
-        divisionId: selectedDivision || undefined
+        divisionId: selectedDivision || undefined,
+        startDate: cycleDates.startDate,
+        endDate: cycleDates.endDate
       });
-      const entries = rosterRes.data?.entries || [];
+      const rosterData = rosterRes.data as { entries: { employeeNumber: string; date: string; shiftId?: string; status?: string }[]; strict?: boolean } | null;
+      const entries = rosterData?.entries || [];
       const map = new Map<string, Record<string, RosterCell>>();
-      entries.forEach((e: any) => {
+      entries.forEach((e: { employeeNumber: string; date: string; shiftId?: string; status?: string }) => {
         if (!e.employeeNumber) return;
         if (!map.has(e.employeeNumber)) map.set(e.employeeNumber, {});
         map.get(e.employeeNumber)![e.date] = {
@@ -172,7 +212,7 @@ export default function RosterPage() {
       console.error('Error loading roster data:', err);
       toast.error('Failed to load roster');
     } finally { setLoading(false); }
-  }, [month, selectedDept, selectedDivision, page, limit]);
+  }, [month, selectedDept, selectedDivision, page, limit, cycleDates]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -250,7 +290,7 @@ export default function RosterPage() {
     setSaving(true);
     setSavingProgress(0);
     try {
-      const entries: any[] = [];
+      const entries: { employeeNumber: string; date: string; shiftId: string | null; status: string }[] = [];
       roster.forEach((row, empNo) => {
         Object.entries(row).forEach(([date, cell]) => {
           if (cell.shiftId || cell.status) {
@@ -266,7 +306,13 @@ export default function RosterPage() {
       const batchSize = 100;
       for (let i = 0; i < entries.length; i += batchSize) {
         const batch = entries.slice(i, i + batchSize);
-        await api.saveRoster({ month, entries: batch, strict });
+        await api.saveRoster({
+          month,
+          entries: batch,
+          strict,
+          startDate: cycleDates?.startDate,
+          endDate: cycleDates?.endDate
+        });
         setSavingProgress(Math.round(((i + batchSize) / entries.length) * 100));
       }
       toast.success('Roster saved successfully');
@@ -326,7 +372,9 @@ export default function RosterPage() {
         api.getEmployees({ limit: 10000, department_id: selectedDept || undefined, division_id: selectedDivision || undefined }),
         api.getRoster(month, { departmentId: selectedDept || undefined, divisionId: selectedDivision || undefined })
       ]);
-      const allEmps = allEmpsRes.data || [], allEntries = allRosterRes.data?.entries || [];
+      const allEmps = (allEmpsRes.data || []) as { emp_no: string; employee_name?: string; division?: { name: string }; department?: { name: string } }[];
+      const allRosterData = allRosterRes.data as { entries: { employeeNumber: string; date: string; shiftId?: string; status?: string }[] } | null;
+      const allEntries = allRosterData?.entries || [];
       const fullMap = new Map<string, any>();
       allEntries.forEach((e: any) => {
         if (!e.employeeNumber) return;
@@ -393,6 +441,7 @@ export default function RosterPage() {
             selectedDivision={selectedDivision} setSelectedDivision={setSelectedDivision} divisions={divisions}
             selectedDept={selectedDept} setSelectedDept={setSelectedDept} departments={departments}
             month={month} setMonth={setMonth} setPage={setPage}
+            cycleDates={cycleDates}
           />
           <SearchSection onSearchChange={setSearchTerm} />
           <div className="flex items-center gap-3">

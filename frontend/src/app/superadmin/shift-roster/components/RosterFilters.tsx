@@ -1,5 +1,11 @@
 import React, { memo } from 'react';
-import { Building2, Filter, Calendar } from 'lucide-react';
+import { Building2, Filter, ChevronLeft, ChevronRight } from 'lucide-react';
+
+function navigateMonth(current: string, direction: 'prev' | 'next'): string {
+    const [y, m] = current.split('-').map(Number);
+    const d = new Date(y, m - 1 + (direction === 'next' ? 1 : -1), 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
 
 interface RosterFiltersProps {
     selectedDivision: string;
@@ -11,6 +17,7 @@ interface RosterFiltersProps {
     month: string;
     setMonth: (val: string) => void;
     setPage: (p: number) => void;
+    cycleDates?: { startDate: string; endDate: string; label: string } | null;
 }
 
 const RosterFilters = memo(({
@@ -22,7 +29,8 @@ const RosterFilters = memo(({
     departments,
     month,
     setMonth,
-    setPage
+    setPage,
+    cycleDates
 }: RosterFiltersProps) => {
     return (
         <div className="flex flex-wrap items-center gap-3">
@@ -63,18 +71,25 @@ const RosterFilters = memo(({
                 </select>
             </div>
 
-            {/* Month Filter */}
-            <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 transition-all hover:border-blue-500/30">
-                <Calendar size={14} className="text-slate-400" />
-                <input
-                    type="month"
-                    value={month}
-                    onChange={(e) => {
-                        setMonth(e.target.value);
-                        setPage(1);
-                    }}
-                    className="bg-transparent text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 focus:outline-none"
-                />
+            {/* Month Navigator: Prev / Cycle Label / Next */}
+            <div className="flex items-center gap-0 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm bg-white dark:bg-slate-900">
+                <button
+                    onClick={() => { setMonth(navigateMonth(month, 'prev')); setPage(1); }}
+                    className="flex items-center justify-center w-8 h-9 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition-colors border-r border-slate-200 dark:border-slate-800"
+                    title="Previous month"
+                >
+                    <ChevronLeft size={14} />
+                </button>
+                <div className="px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 whitespace-nowrap min-w-[150px] text-center">
+                    {cycleDates ? cycleDates.label : month}
+                </div>
+                <button
+                    onClick={() => { setMonth(navigateMonth(month, 'next')); setPage(1); }}
+                    className="flex items-center justify-center w-8 h-9 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition-colors border-l border-slate-200 dark:border-slate-800"
+                    title="Next month"
+                >
+                    <ChevronRight size={14} />
+                </button>
             </div>
         </div>
     );
