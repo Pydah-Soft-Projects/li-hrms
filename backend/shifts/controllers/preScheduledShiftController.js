@@ -225,15 +225,21 @@ exports.bulkCreatePreScheduledShifts = async (req, res) => {
  */
 exports.getRoster = async (req, res) => {
   try {
-    const { month, employeeNumber, departmentId } = req.query; // month = YYYY-MM
+    const { month, employeeNumber, departmentId, startDate, endDate } = req.query; // month = YYYY-MM
 
     if (!month || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
       return res.status(400).json({ success: false, message: 'Valid month (YYYY-MM) is required' });
     }
 
-    const start = `${month}-01`;
-    const endDate = new Date(parseInt(month.split('-')[0], 10), parseInt(month.split('-')[1], 10), 0).getDate();
-    const end = `${month}-${String(endDate).padStart(2, '0')}`;
+    let start, end;
+    if (startDate && endDate) {
+      start = startDate;
+      end = endDate;
+    } else {
+      start = `${month}-01`;
+      const endDay = new Date(parseInt(month.split('-')[0], 10), parseInt(month.split('-')[1], 10), 0).getDate();
+      end = `${month}-${String(endDay).padStart(2, '0')}`;
+    }
 
     const query = { date: { $gte: start, $lte: end } };
     let empNumbersFilter = null;
@@ -297,7 +303,7 @@ exports.getRoster = async (req, res) => {
  */
 exports.saveRoster = async (req, res) => {
   try {
-    const { month, strict = false, entries } = req.body; // entries: [{ employeeNumber, date, shiftId, status }]
+    const { month, strict = false, entries, startDate, endDate } = req.body; // entries: [{ employeeNumber, date, shiftId, status }]
 
     if (!month || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
       return res.status(400).json({ success: false, message: 'Valid month (YYYY-MM) is required' });
@@ -306,9 +312,15 @@ exports.saveRoster = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Entries array is required' });
     }
 
-    const start = `${month}-01`;
-    const endDate = new Date(parseInt(month.split('-')[0], 10), parseInt(month.split('-')[1], 10), 0).getDate();
-    const end = `${month}-${String(endDate).padStart(2, '0')}`;
+    let start, end;
+    if (startDate && endDate) {
+      start = startDate;
+      end = endDate;
+    } else {
+      start = `${month}-01`;
+      const endDay = new Date(parseInt(month.split('-')[0], 10), parseInt(month.split('-')[1], 10), 0).getDate();
+      end = `${month}-${String(endDay).padStart(2, '0')}`;
+    }
 
     // Validate shifts and employees
     const shiftIds = new Set(entries.filter((e) => e.shiftId).map((e) => e.shiftId));
