@@ -1,0 +1,1005 @@
+﻿
+> frontend@0.1.0 build
+> next build
+
+node.exe : [baseline-browser-mapping] 
+The data in this module is over two 
+months old.  To ensure accurate 
+Baseline data, please update: `npm i 
+baseline-browser-mapping@latest -D`
+At C:\Program Files\nodejs\npm.ps1:29 
+char:3
++   & $NODE_EXE $NPM_CLI_JS $args
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpeci 
+   fied: ([baseline-brows...ping@late  
+  st -D`:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCo 
+   mmandError
+ 
+   Γû▓ Next.js 16.0.7 (Turbopack)
+   - Environments: .env
+
+ ΓÜá The "middleware" file convention 
+is deprecated. Please use "proxy" 
+instead. Learn more: https://nextjs.org
+/docs/messages/middleware-to-proxy
+   Creating an optimized production build ...
+[baseline-browser-mapping] The data in 
+this module is over two months old.  
+To ensure accurate Baseline data, 
+please update: `npm i 
+baseline-browser-mapping@latest -D`
+ Γ£ô Compiled successfully in 38.7s
+   Running TypeScript ...
+   Collecting page data using 3 workers ...
+[baseline-browser-mapping] The data in 
+this module is over two months old.  
+To ensure accurate Baseline data, 
+please update: `npm i 
+baseline-browser-mapping@latest -D`
+[baseline-browser-mapping] The data in 
+this module is over two months old.  
+To ensure accurate Baseline data, 
+please update: `npm i 
+baseline-browser-mapping@latest -D`
+[baseline-browser-mapping] The data in 
+this module is over two months old.  
+To ensure accurate Baseline data, 
+please update: `npm i 
+baseline-browser-mapping@latest -D`
+   Generating static pages using 3 workers (0/62) ...
+[baseline-browser-mapping] The data in 
+this module is over two months old.  
+To ensure accurate Baseline data, 
+please update: `npm i 
+baseline-browser-mapping@latest -D`
+[baseline-browser-mapping] The data in 
+this module is over two months old.  
+To ensure accurate Baseline data, 
+please update: `npm i 
+baseline-browser-mapping@latest -D`
+[baseline-browser-mapping] The data in 
+this module is over two months old.  
+To ensure accurate Baseline data, 
+please update: `npm i 
+baseline-browser-mapping@latest -D`
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/settings/departmental. Please move it 
+to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/settings/departmental. Please move it 
+to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/_not-found. Please move it to 
+viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/_not-found. Please move it to 
+viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/superadmin/holidays. Please move it 
+to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/superadmin/holidays. Please move it 
+to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/allowances-deductions. Please move it 
+to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/allowances-deductions. Please move it 
+to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/arrears. Please move it to viewport 
+export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/arrears. Please move it to viewport 
+export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/superadmin/leaves. Please move it to 
+viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/superadmin/leaves. Please move it to 
+viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/settings. Please move it to viewport 
+export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/settings. Please move it to viewport 
+export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/attendance. Please move it to 
+viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/attendance. Please move it to 
+viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+Couldn't load fs
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/ccl. Please move it to viewport 
+export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in /ccl. 
+Please move it to viewport export 
+instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+Couldn't load zlib
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/shift-roster. Please move it to 
+viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/shift-roster. Please move it to 
+viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/shifts. Please move it to viewport 
+export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/shifts. Please move it to viewport 
+export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/superadmin/live-attendance. Please 
+move it to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/superadmin/live-attendance. Please 
+move it to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/dashboard. Please move it to viewport 
+export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/dashboard. Please move it to viewport 
+export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/confused-shifts. Please move it to 
+viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/confused-shifts. Please move it to 
+viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/login. Please move it to viewport 
+export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/login. Please move it to viewport 
+export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/users. Please move it to viewport 
+export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/users. Please move it to viewport 
+export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in /. 
+Please move it to viewport export 
+instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in /. 
+Please move it to viewport export 
+instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/superadmin/loans. Please move it to 
+viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/superadmin/loans. Please move it to 
+viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/superadmin/ot-permissions. Please 
+move it to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/superadmin/ot-permissions. Please 
+move it to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/superadmin/payments/second-salary. 
+Please move it to viewport export 
+instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/superadmin/payments/second-salary. 
+Please move it to viewport export 
+instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/superadmin/pay-register. Please move 
+it to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/superadmin/pay-register. Please move 
+it to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/employees/form-settings. Please move 
+it to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/employees/form-settings. Please move 
+it to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+   Generating static pages using 3 workers (15/62) 
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/departments. Please move it to 
+viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/departments. Please move it to 
+viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/superadmin/payments. Please move it 
+to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/superadmin/payments. Please move it 
+to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/superadmin/allowances-deductions. 
+Please move it to viewport export 
+instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/superadmin/allowances-deductions. 
+Please move it to viewport export 
+instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/superadmin/arrears. Please move it to 
+viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/superadmin/arrears. Please move it to 
+viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/employees. Please move it to viewport 
+export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/employees. Please move it to viewport 
+export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/holidays. Please move it to viewport 
+export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/holidays. Please move it to viewport 
+export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/leaves. Please move it to viewport 
+export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/leaves. Please move it to viewport 
+export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/superadmin/bonus/batches. Please move 
+it to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/superadmin/bonus/batches. Please move 
+it to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+Couldn't load fs
+Couldn't load zlib
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/superadmin/bonus/calculator. Please 
+move it to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/superadmin/bonus/calculator. Please 
+move it to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/loans. Please move it to viewport 
+export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/loans. Please move it to viewport 
+export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/superadmin/bonus/policies. Please 
+move it to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/superadmin/bonus/policies. Please 
+move it to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/superadmin/ccl. Please move it to 
+viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/superadmin/ccl. Please move it to 
+viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/ot-permissions. Please move it to 
+viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/ot-permissions. Please move it to 
+viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/superadmin/confused-shifts. Please 
+move it to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/superadmin/confused-shifts. Please 
+move it to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/pay-register. Please move it to 
+viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/pay-register. Please move it to 
+viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/superadmin/attendance. Please move it 
+to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/superadmin/attendance. Please move it 
+to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/superadmin/payroll-transactions. 
+Please move it to viewport export 
+instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/superadmin/payroll-transactions. 
+Please move it to viewport export 
+instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/superadmin/payslips/second-salary. 
+Please move it to viewport export 
+instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/superadmin/payslips/second-salary. 
+Please move it to viewport export 
+instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+Attendance rendering. Data length: 0
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/superadmin/security/gate. Please move 
+it to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/superadmin/security/gate. Please move 
+it to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/superadmin/settings/departmental. 
+Please move it to viewport export 
+instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/superadmin/settings/departmental. 
+Please move it to viewport export 
+instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/superadmin/reports. Please move it to 
+viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/superadmin/reports. Please move it to 
+viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/superadmin/payslips. Please move it 
+to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/superadmin/payslips. Please move it 
+to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/superadmin/profile. Please move it to 
+viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/superadmin/profile. Please move it to 
+viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/superadmin/settings. Please move it 
+to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/superadmin/settings. Please move it 
+to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+   Generating static pages using 3 workers (30/62) 
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/payments. Please move it to viewport 
+export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/payments. Please move it to viewport 
+export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/payroll-transactions. Please move it 
+to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/payroll-transactions. Please move it 
+to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/payslips. Please move it to viewport 
+export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/payslips. Please move it to viewport 
+export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/superadmin/dashboard. Please move it 
+to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/superadmin/dashboard. Please move it 
+to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/profile. Please move it to viewport 
+export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/profile. Please move it to viewport 
+export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/reports. Please move it to viewport 
+export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/reports. Please move it to viewport 
+export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/superadmin/departments. Please move 
+it to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/superadmin/departments. Please move 
+it to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+   Generating static pages using 3 workers (46/62) 
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/superadmin/shift-roster. Please move 
+it to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/superadmin/shift-roster. Please move 
+it to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/superadmin/shifts. Please move it to 
+viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/superadmin/shifts. Please move it to 
+viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/superadmin/divisions. Please move it 
+to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/superadmin/divisions. Please move it 
+to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/superadmin/users. Please move it to 
+viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/superadmin/users. Please move it to 
+viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/superadmin/employees/form-settings. 
+Please move it to viewport export 
+instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/superadmin/employees/form-settings. 
+Please move it to viewport export 
+instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/superadmin/workspaces. Please move it 
+to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/superadmin/workspaces. Please move it 
+to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata themeColor 
+is configured in metadata export in 
+/superadmin/employees. Please move it 
+to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ ΓÜá Unsupported metadata viewport is 
+configured in metadata export in 
+/superadmin/employees. Please move it 
+to viewport export instead.
+Read more: https://nextjs.org/docs/app/
+api-reference/functions/generate-viewpo
+rt
+ Γ£ô Generating static pages using 3 workers (62/62) in 2.3s
+   Finalizing page optimization ...
+
+Route (app)
+Γöî Γùï /
+Γö£ Γùï /_not-found
+Γö£ Γùï /allowances-deductions
+Γö£ Γùï /arrears
+Γö£ Γùï /attendance
+Γö£ Γùï /ccl
+Γö£ Γùï /confused-shifts
+Γö£ Γùï /dashboard
+Γö£ Γùï /departments
+Γö£ Γùï /employees
+Γö£ Γùï /employees/form-settings
+Γö£ Γùï /holidays
+Γö£ Γùï /leaves
+Γö£ Γùï /loans
+Γö£ Γùï /login
+Γö£ Γùï /ot-permissions
+Γö£ ╞Æ /outpass/[qrCode]
+Γö£ Γùï /pay-register
+Γö£ Γùï /payments
+Γö£ ╞Æ /payments/[id]
+Γö£ Γùï /payroll-transactions
+Γö£ Γùï /payslips
+Γö£ ╞Æ /payslips/[id]
+Γö£ Γùï /profile
+Γö£ Γùï /reports
+Γö£ Γùï /settings
+Γö£ Γùï /settings/departmental
+Γö£ Γùï /shift-roster
+Γö£ Γùï /shifts
+Γö£ Γùï /superadmin/allowances-deductions
+Γö£ Γùï /superadmin/arrears
+Γö£ Γùï /superadmin/attendance
+Γö£ Γùï /superadmin/bonus/batches
+Γö£ ╞Æ /superadmin/bonus/batches/[id]
+Γö£ Γùï /superadmin/bonus/calculator
+Γö£ Γùï /superadmin/bonus/policies
+Γö£ Γùï /superadmin/ccl
+Γö£ Γùï /superadmin/confused-shifts
+Γö£ Γùï /superadmin/dashboard
+Γö£ Γùï /superadmin/departments
+Γö£ Γùï /superadmin/divisions
+Γö£ Γùï /superadmin/employees
+Γö£ Γùï /superadmin/employees/form-settings
+Γö£ Γùï /superadmin/holidays
+Γö£ Γùï /superadmin/leaves
+Γö£ Γùï /superadmin/live-attendance
+Γö£ Γùï /superadmin/loans
+Γö£ Γùï /superadmin/ot-permissions
+Γö£ Γùï /superadmin/pay-register
+Γö£ Γùï /superadmin/payments
+Γö£ ╞Æ /superadmin/payments/[id]
+Γö£ Γùï /superadmin/payments/second-salary
+Γö£ ╞Æ /superadmin/payments/second-salary/[id]
+Γö£ Γùï /superadmin/payroll-transactions
+Γö£ Γùï /superadmin/payslips
+Γö£ ╞Æ /superadmin/payslips/[id]
+Γö£ Γùï /superadmin/payslips/second-salary
+Γö£ ╞Æ /superadmin/payslips/second-salary/[id]
+Γö£ Γùï /superadmin/profile
+Γö£ Γùï /superadmin/reports
+Γö£ Γùï /superadmin/security/gate
+Γö£ Γùï /superadmin/settings
+Γö£ Γùï /superadmin/settings/departmental
+Γö£ Γùï /superadmin/shift-roster
+Γö£ Γùï /superadmin/shifts
+Γö£ Γùï /superadmin/users
+Γö£ Γùï /superadmin/workspaces
+Γöö Γùï /users
+
+
+╞Æ Proxy (Middleware)
+
+Γùï  (Static)   prerendered as static content
+╞Æ  (Dynamic)  server-rendered on demand
+

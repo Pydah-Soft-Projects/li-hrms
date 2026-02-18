@@ -61,7 +61,7 @@ export default function RecentActivityFeed() {
     }, []);
 
     const formatTime = (isoString: string) => {
-        return new Date(isoString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        return new Date(isoString).toLocaleTimeString('en-US', { timeZone: 'UTC', hour: '2-digit', minute: '2-digit' });
     };
 
     const getInitials = (name: string) => {

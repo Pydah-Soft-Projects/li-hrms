@@ -75,11 +75,11 @@ export default function LiveAttendancePage() {
     return () => clearInterval(interval);
   }, [fetchReportData]);
 
-  // Format time in IST
+  // Format time in IST - Using UTC since backend sends pre-shifted IST as UTC (Resultant Date)
   const formatTime = (dateTimeString: string | null) => {
     if (!dateTimeString) return '-';
     const date = new Date(dateTimeString);
-    return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' });
+    return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'UTC' });
   };
 
   // Format hours worked

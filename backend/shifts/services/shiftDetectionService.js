@@ -14,6 +14,28 @@ const ConfusedShift = require('../model/ConfusedShift');
 const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
 const Settings = require('../../settings/model/Settings');
 
+// IST = UTC + 5:30 (330 minutes). Punch timestamps are stored as UTC.
+// All comparisons against shift HH:MM strings must be done in IST.
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000; // 330 minutes in ms
+
+/**
+ * Return a Date object shifted to IST so .getHours()/.getMinutes() return IST values.
+ * Use ONLY for extracting hour/minute components — do NOT use for arithmetic.
+ */
+const toISTDate = (date) => new Date(new Date(date).getTime() + IST_OFFSET_MS);
+
+/**
+ * Build a UTC Date that represents a given HH:MM time as a "resultant" date (already shifted +5.5h).
+ * e.g. buildISTDate('2024-05-01', 9, 0) → 2024-05-01T09:00:00.000Z
+ * This allows direct comparison with raw logs shifted by IST_OFFSET_MS.
+ */
+const buildISTDate = (dateStr, hours, minutes, addDay = false) => {
+  // Use UTC to create a stable "resultant" date for comparison with pre-shifted logs
+  const d = new Date(`${dateStr}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00Z`);
+  if (addDay) d.setUTCDate(d.getUTCDate() + 1);
+  return d;
+};
+
 /**
  * Convert time string (HH:mm) to minutes from midnight
  */
@@ -31,38 +53,29 @@ const timeToMinutes = (timeStr) => {
  * @returns {Number} - Time difference in minutes (absolute value)
  */
 const calculateTimeDifference = (punchTime, shiftStartTime, date) => {
-  // Get punch time components
+  // punchTime is already pre-shifted to IST (+5.5h) in multiShiftProcessingService.js
   const punchDate = new Date(punchTime);
-  const punchMinutes = punchDate.getHours() * 60 + punchDate.getMinutes();
+  const punchMinutes = punchDate.getUTCHours() * 60 + punchDate.getUTCMinutes();
 
   // Get shift start time components
   const [shiftStartHour, shiftStartMin] = shiftStartTime.split(':').map(Number);
 
-  // Create shift start time on the attendance date
-  const shiftStartDate = new Date(date + 'T00:00:00'); // Parse date properly
-  shiftStartDate.setHours(shiftStartHour, shiftStartMin, 0, 0);
+  // Build shift start as a UTC Date representing that IST time on the attendance date
+  const shiftStartDate = buildISTDate(date, shiftStartHour, shiftStartMin);
 
   // Calculate difference in milliseconds, then convert to minutes
   let differenceMs = Math.abs(punchDate.getTime() - shiftStartDate.getTime());
   let differenceMinutes = differenceMs / (1000 * 60);
 
   // Handle overnight shifts - if shift starts late (20:00+) and punch is early morning (before 12:00)
-  // Consider it might be for the shift that started the previous evening
-  if (shiftStartHour >= 20 && punchDate.getHours() < 12) {
-    // This is likely for a shift that started the previous evening
-    const previousDayShiftStart = new Date(shiftStartDate);
-    previousDayShiftStart.setDate(previousDayShiftStart.getDate() - 1);
+  if (shiftStartHour >= 20 && punchDate.getUTCHours() < 12) {
+    const previousDayShiftStart = buildISTDate(date, shiftStartHour, shiftStartMin);
+    previousDayShiftStart.setTime(previousDayShiftStart.getTime() - 24 * 60 * 60 * 1000);
     const prevDayDiffMs = Math.abs(punchDate.getTime() - previousDayShiftStart.getTime());
-    const prevDayDiffMinutes = prevDayDiffMs / (1000 * 60);
-
-    // For overnight shifts with early morning punch, use previous day's difference
-    // This correctly handles very late arrivals (e.g., 02:50 for 20:00 shift = 6h 50m late)
-    differenceMinutes = prevDayDiffMinutes;
+    differenceMinutes = prevDayDiffMs / (1000 * 60);
   }
 
-  // If difference is more than 12 hours for non-overnight shifts, consider it might be wrapping around
-  // But for overnight shifts, we already handled it above
-  if (differenceMinutes > 12 * 60 && !(shiftStartHour >= 20 && punchDate.getHours() < 12)) {
+  if (differenceMinutes > 12 * 60 && !(shiftStartHour >= 20 && punchDate.getUTCHours() < 12)) {
     differenceMinutes = 24 * 60 - differenceMinutes;
   }
 
@@ -80,7 +93,7 @@ const calculateTimeDifference = (punchTime, shiftStartTime, date) => {
 const isWithinShiftWindow = (punchTime, shiftStartTime, gracePeriodMinutes = 15) => {
   // This function is deprecated - matching now uses proximity, not grace period
   // Keeping for backward compatibility but it should not be used for matching
-  const punchMinutes = punchTime.getHours() * 60 + punchTime.getMinutes();
+  const punchMinutes = punchTime.getUTCHours() * 60 + punchTime.getUTCMinutes();
   const shiftStartMinutes = timeToMinutes(shiftStartTime);
   const graceEndMinutes = shiftStartMinutes + gracePeriodMinutes;
 
@@ -292,7 +305,8 @@ const findCandidateShifts = (inTime, shifts, date, toleranceHours = 3) => {
   const preferredMaxDifference = 35; // 35 minutes max difference for preferred shifts
 
   const inTimeDate = new Date(inTime);
-  const inMinutes = inTimeDate.getHours() * 60 + inTimeDate.getMinutes();
+  const inTimeDateIST = toISTDate(inTimeDate);
+  const inMinutes = inTimeDateIST.getHours() * 60 + inTimeDateIST.getMinutes();
 
   for (const shift of shifts) {
     const difference = calculateTimeDifference(inTime, shift.startTime, date);
@@ -400,7 +414,7 @@ const isAmbiguousArrival = (inTime, candidateShifts, ambiguityThresholdMinutes =
 
     const shift1Start = timeToMinutes(candidateShifts[0].startTime);
     const shift2Start = timeToMinutes(candidateShifts[1].startTime);
-    const inMinutes = inTime.getHours() * 60 + inTime.getMinutes();
+    const inMinutes = toISTDate(inTime).getHours() * 60 + toISTDate(inTime).getMinutes();
 
     // Check if arrival is between two shifts
     const minStart = Math.min(shift1Start, shift2Start);
@@ -558,7 +572,7 @@ const findMatchingShiftsByOutTime = (outTime, shifts, toleranceMinutes = 30) => 
   if (!outTime) return [];
 
   const matches = [];
-  const outMinutes = outTime.getHours() * 60 + outTime.getMinutes();
+  const outMinutes = toISTDate(outTime).getHours() * 60 + toISTDate(outTime).getMinutes();
 
   for (const shift of shifts) {
     const shiftEndMinutes = timeToMinutes(shift.endTime);
@@ -609,94 +623,64 @@ const findMatchingShiftsByOutTime = (outTime, shifts, toleranceMinutes = 30) => 
 const calculateLateIn = (inTime, shiftStartTime, shiftGracePeriod = 15, date = null, globalGracePeriod = null) => {
   if (!inTime) return 0;
 
-  // Priority: Global Settings (dynamic) > Shift Setting > Default 15
   const effectiveGrace = globalGracePeriod !== null ? globalGracePeriod : (shiftGracePeriod || 15);
 
   const inTimeDate = new Date(inTime);
   const [shiftStartHour, shiftStartMin] = shiftStartTime.split(':').map(Number);
   const shiftStartMinutes = shiftStartHour * 60 + shiftStartMin;
 
-  // Create shift start date based on the attendance date
+  // Build shift start as a UTC Date representing that IST time on the attendance date
   let shiftStartDate;
   if (date) {
-    // Use the provided date (attendance date = shift start date)
-    shiftStartDate = new Date(date + 'T00:00:00');
-    shiftStartDate.setHours(shiftStartHour, shiftStartMin, 0, 0);
+    shiftStartDate = buildISTDate(date, shiftStartHour, shiftStartMin);
   } else {
-    // Fallback: use in-time's date
-    shiftStartDate = new Date(inTimeDate);
-    shiftStartDate.setHours(shiftStartHour, shiftStartMin, 0, 0);
+    // Fallback: build on the same calendar date as the punch (already shifted)
+    const istDateStr = inTimeDate.toISOString().slice(0, 10);
+    shiftStartDate = buildISTDate(istDateStr, shiftStartHour, shiftStartMin);
   }
 
-  // Check if this is an overnight shift (starts at 20:00 or later)
   const isOvernightShift = shiftStartMinutes >= 20 * 60;
-  const inTimeOnly = inTimeDate.getHours() * 60 + inTimeDate.getMinutes();
-  const isEarlyMorningInTime = inTimeOnly < 12 * 60; // Before noon
+  const inTimeOnlyIST = inTimeDate.getUTCHours() * 60 + inTimeDate.getUTCMinutes();
+  const isEarlyMorningInTime = inTimeOnlyIST < 12 * 60;
 
-  // Calculate difference from shift start date
   let diffMs = inTimeDate.getTime() - shiftStartDate.getTime();
   let diffMinutes = diffMs / (1000 * 60);
 
-  // Handle overnight shifts - in-time might be on next day
   if (isOvernightShift && date) {
-    // For overnight shifts, if in-time is early morning (next day scenario)
-    // and difference is negative or very large, adjust calculation
     if (isEarlyMorningInTime && diffMinutes < 0) {
-      // In-time is before shift start on same day - this is unusual for overnight shifts
-      // Check if in-time is actually for previous day's shift
-      const previousDayShiftStart = new Date(shiftStartDate);
-      previousDayShiftStart.setDate(previousDayShiftStart.getDate() - 1);
+      const previousDayShiftStart = new Date(shiftStartDate.getTime() - 24 * 60 * 60 * 1000);
       const prevDayDiffMs = inTimeDate.getTime() - previousDayShiftStart.getTime();
       const prevDayDiffMinutes = prevDayDiffMs / (1000 * 60);
-
-      // Use previous day's calculation if it makes more sense (positive and reasonable)
       if (prevDayDiffMinutes >= 0 && prevDayDiffMinutes < 12 * 60) {
         diffMinutes = prevDayDiffMinutes;
       } else {
-        // In-time is before shift start - no late-in
         diffMinutes = 0;
       }
-    } else if (isEarlyMorningInTime && diffMinutes > 12 * 60) {
-      // Very large difference - might be calculation error, but use as is
-      // This handles cases where in-time is way after shift start
     }
 
-    // Apply grace period
-    if (diffMinutes <= effectiveGrace) {
-      return 0; // On time or within grace period
-    }
-
-    const lateIn = Math.round((diffMinutes - effectiveGrace) * 100) / 100;
-    console.log(`[LateIn] Overnight: Start=${shiftStartTime}, InTime=${inTimeDate.toISOString()}, Date=${date}, Diff=${diffMinutes.toFixed(2)}min, LateIn=${lateIn}min`);
+    if (diffMinutes <= effectiveGrace) return 0;
+    const lateIn = Math.round(diffMinutes * 100) / 100;
+    console.log(`[LateIn IST] Overnight: Start=${shiftStartTime}, InTime=${inTimeDate.toISOString().slice(11, 16)} IST, Date=${date}, Diff=${diffMinutes.toFixed(2)}min, LateIn=${lateIn}min`);
     return lateIn;
   }
 
-  // Regular same-day shift (or no date provided)
-  // If difference is negative, in-time is before shift start - no late-in
   if (diffMinutes < 0) {
-    // For overnight shifts without date, check previous day
     if (isOvernightShift) {
-      const previousDayShiftStart = new Date(shiftStartDate);
-      previousDayShiftStart.setDate(previousDayShiftStart.getDate() - 1);
+      const previousDayShiftStart = new Date(shiftStartDate.getTime() - 24 * 60 * 60 * 1000);
       const prevDayDiffMs = inTimeDate.getTime() - previousDayShiftStart.getTime();
       const prevDayDiffMinutes = prevDayDiffMs / (1000 * 60);
-
       if (prevDayDiffMinutes >= 0 && prevDayDiffMinutes < Math.abs(diffMinutes)) {
         diffMinutes = prevDayDiffMinutes;
       } else {
-        diffMinutes = 0; // No late-in
+        diffMinutes = 0;
       }
     } else {
-      diffMinutes = 0; // No late-in
+      diffMinutes = 0;
     }
   }
 
-  // Apply grace period
-  if (diffMinutes <= effectiveGrace) {
-    return 0; // On time or within grace period
-  }
-
-  return Math.round((diffMinutes - effectiveGrace) * 100) / 100; // Round to 2 decimals
+  if (diffMinutes <= effectiveGrace) return 0;
+  return Math.round(diffMinutes * 100) / 100;
 };
 
 /**
@@ -718,59 +702,37 @@ const calculateEarlyOut = (outTime, shiftEndTime, shiftStartTime = null, date = 
   const shiftEndMinutes = shiftEndHour * 60 + shiftEndMin;
   const shiftStartMinutes = shiftStartTime ? timeToMinutes(shiftStartTime) : null;
 
-  // Check if this is an overnight shift (end time < start time)
   const isOvernight = shiftStartMinutes !== null && shiftEndMinutes < shiftStartMinutes;
 
-  // Create shift end date based on the attendance date
+  // Build shift end as a UTC Date representing that IST time
   let shiftEndDate;
   if (date) {
-    // Use the provided date (attendance date = shift start date)
-    const shiftDate = new Date(date + 'T00:00:00');
-    shiftEndDate = new Date(shiftDate);
-
-    if (isOvernight) {
-      // For overnight shifts, end time is on the next day relative to shift start
-      // Example: Shift starts Dec 6 20:00, ends Dec 7 04:00
-      shiftEndDate.setDate(shiftEndDate.getDate() + 1);
-    }
-    shiftEndDate.setHours(shiftEndHour, shiftEndMin, 0, 0);
+    shiftEndDate = buildISTDate(date, shiftEndHour, shiftEndMin, isOvernight);
   } else {
-    // Fallback: use out-time's date
-    shiftEndDate = new Date(outTimeDate);
-    shiftEndDate.setHours(shiftEndHour, shiftEndMin, 0, 0);
+    // Fallback: use out-time's calendar date (already shifted)
+    const istDateStr = outTimeDate.toISOString().slice(0, 10);
+    shiftEndDate = buildISTDate(istDateStr, shiftEndHour, shiftEndMin);
 
-    // For overnight shifts without date, determine if shift end is on same day or next day
     if (isOvernight) {
-      const outTimeOnly = outTimeDate.getHours() * 60 + outTimeDate.getMinutes();
-      // If out-time is early morning and shift end is also early morning,
-      // they might be on the same calendar day
-      if (outTimeOnly < 12 * 60 && shiftEndMinutes < 12 * 60) {
-        // Both are early morning - if out-time is before shift end, it's early out
-        // shiftEndDate is already on same day as out-time
-        if (outTimeOnly >= shiftEndMinutes) {
-          // Out-time is after shift end on same day - shift end must be next day
-          shiftEndDate.setDate(shiftEndDate.getDate() + 1);
+      const outTimeOnlyIST = outTimeDate.getUTCHours() * 60 + outTimeDate.getUTCMinutes();
+      if (outTimeOnlyIST < 12 * 60 && shiftEndMinutes < 12 * 60) {
+        if (outTimeOnlyIST >= shiftEndMinutes) {
+          shiftEndDate.setTime(shiftEndDate.getTime() + 24 * 60 * 60 * 1000);
         }
       } else {
-        // Shift end is early morning, out-time might be on previous day
-        // For overnight shifts, shift end is typically next day
-        shiftEndDate.setDate(shiftEndDate.getDate() + 1);
+        shiftEndDate.setTime(shiftEndDate.getTime() + 24 * 60 * 60 * 1000);
       }
     }
   }
 
-  // Calculate difference in milliseconds
   const diffMs = shiftEndDate.getTime() - outTimeDate.getTime();
   const diffMinutes = diffMs / (1000 * 60);
 
-  // Apply grace period
-  if (diffMinutes <= effectiveGrace) {
-    return 0; // On time or within grace
-  }
+  if (diffMinutes <= effectiveGrace) return 0;
 
-  const earlyOut = Math.round((diffMinutes - effectiveGrace) * 100) / 100;
+  const earlyOut = Math.round(diffMinutes * 100) / 100;
   if (isOvernight && date) {
-    console.log(`[EarlyOut] Overnight: Start=${shiftStartTime}, End=${shiftEndTime}, OutTime=${outTimeDate.toISOString()}, ShiftEndDate=${shiftEndDate.toISOString()}, Date=${date}, Diff=${diffMinutes.toFixed(2)}min, EarlyOut=${earlyOut}min`);
+    console.log(`[EarlyOut IST] Overnight: Start=${shiftStartTime}, End=${shiftEndTime}, OutTime=${outTimeDate.toISOString().slice(11, 16)} IST, ShiftEnd=${shiftEndDate.toISOString()}, Date=${date}, Diff=${diffMinutes.toFixed(2)}min, EarlyOut=${earlyOut}min`);
   }
   return earlyOut;
 };
@@ -1530,6 +1492,7 @@ module.exports = {
   syncShiftsForExistingRecords,
   syncShiftsForExistingRecords,
   autoAssignNearestShift,
-  timeToMinutes
+  timeToMinutes,
+  buildISTDate
 };
 

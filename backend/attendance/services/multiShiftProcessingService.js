@@ -56,15 +56,29 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
         const MAX_SHIFTS = 3;
 
         // Prepare Raw Logs
-        const allPunches = rawLogs.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        // IST Offset: 5.5 hours = 330 minutes
+        const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+
+        const allPunches = rawLogs
+            .map(log => ({
+                ...log.toObject ? log.toObject() : log,
+                timestamp: new Date(new Date(log.timestamp).getTime() + IST_OFFSET_MS)
+            }))
+            .sort((a, b) => a.timestamp - b.timestamp);
+
         const targetDateIns = allPunches.filter(p => {
-            const isTargetDate = isSameDay(new Date(p.timestamp), date);
+            const isTargetDate = isSameDay(p.timestamp, date);
             const isIN = p.punch_state === 0 || p.punch_state === '0' || p.type === 'IN';
             return isTargetDate && isIN;
         });
+
+        // Step 2: Deduplicate targetDateIns (1-hour window as fallback)
+        const { filterDuplicateIns } = require('./multiShiftDetectionService');
+        const validIns = filterDuplicateIns(targetDateIns, 60);
+
         const allOuts = allPunches.filter(p => p.punch_state === 1 || p.punch_state === '1' || p.type === 'OUT');
 
-        // Step 2: Get employee ID & ODs (Moved up for context)
+        // Step 3: Get employee ID & ODs (Moved up for context)
         const employee = await Employee.findOne({ emp_no: employeeNumber.toUpperCase() }).select('_id department_id division_id');
         const employeeId = employee ? employee._id : null;
 
@@ -111,17 +125,24 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
 
         const processedShifts = [];
         let blockUntilTime = null; // The timestamp until which we ignore new IN punches
+        let lastInPunchTime = null; // To handle the 1-hour rule as well
         let shiftCounter = 0;
 
-        for (let i = 0; i < targetDateIns.length; i++) {
+        for (let i = 0; i < validIns.length; i++) {
             if (shiftCounter >= MAX_SHIFTS) break;
 
-            const currentIn = targetDateIns[i];
+            const currentIn = validIns[i];
             const currentInTime = new Date(currentIn.timestamp);
 
             // 1. Smart Filtering Check
             if (blockUntilTime && currentInTime < blockUntilTime) {
-                console.log(`[Multi-Shift] Skipping IN at ${currentIn.timestamp} because it overlaps with previous assigned shift (Blocked until ${blockUntilTime})`);
+                console.log(`[Multi-Shift] Skipping IN at ${currentInTime.toISOString()} because it overlaps with previous assigned shift (Blocked until ${blockUntilTime.toISOString()})`);
+                continue;
+            }
+
+            // 1b. Extra 1-hour safety check from previous IN
+            if (lastInPunchTime && (currentInTime - lastInPunchTime) < (60 * 60 * 1000)) {
+                console.log(`[Multi-Shift] Skipping IN at ${currentInTime.toISOString()} based on 1-hour rule (Last IN: ${lastInPunchTime.toISOString()})`);
                 continue;
             }
 
@@ -131,6 +152,8 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                 const tDiff = new Date(out.timestamp) - currentInTime;
                 return tDiff > 0 && tDiff <= MAX_WINDOW_MS;
             });
+
+            lastInPunchTime = currentInTime;
 
             // --- CONTINUOUS SHIFT SPLITTING CHECK ---
             let isContinuousSplit = false;
@@ -420,14 +443,24 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
         // Step 8: Update or create daily record
         console.log(`[Multi-Shift Processing] Updating daily record with ${totals.totalShifts} shift(s)`);
 
-        const dailyRecord = await AttendanceDaily.findOneAndUpdate(
-            { employeeNumber, date },
-            {
-                $set: updateData,
-                $addToSet: { source: 'biometric-realtime' },
-            },
-            { upsert: true, new: true }
-        );
+        // Switch to .save() to ensure Mongoose hooks (pre-save, post-save) are triggered
+        // findOneAndUpdate bypasses these hooks, which are needed for summary calculations.
+        let dailyRecord = await AttendanceDaily.findOne({ employeeNumber, date });
+
+        if (!dailyRecord) {
+            dailyRecord = new AttendanceDaily({
+                employeeNumber,
+                date,
+            });
+        }
+
+        // Apply updates
+        Object.assign(dailyRecord, updateData);
+        if (!dailyRecord.source.includes('biometric-realtime')) {
+            dailyRecord.source.push('biometric-realtime');
+        }
+
+        await dailyRecord.save();
 
         console.log(`[Multi-Shift Processing] ✓ Daily record updated successfully`);
 

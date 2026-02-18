@@ -144,9 +144,9 @@ export default function AttendancePage() {
       const date = new Date(timeStr);
       if (isNaN(date.getTime())) return timeStr;
 
-      // Primary time display in 12h IST
+      // Primary time display - Using UTC since backend sends pre-shifted IST as UTC (Resultant Date)
       const timeFormatted = date.toLocaleTimeString('en-US', {
-        timeZone: 'Asia/Kolkata',
+        timeZone: 'UTC',
         hour: '2-digit',
         minute: '2-digit',
         hour12: true
@@ -154,9 +154,9 @@ export default function AttendancePage() {
 
       // Optional date prefix for out-of-day punches (e.g., night shifts)
       if (showDateIfDifferent && recordDate) {
-        const timeDateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+        const timeDateStr = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
         if (timeDateStr !== recordDate) {
-          const dateLabel = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          const dateLabel = date.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' });
           return `${dateLabel}, ${timeFormatted}`;
         }
       }
@@ -570,8 +570,9 @@ export default function AttendancePage() {
       setError('');
       setSuccess('');
 
-      // Combine date with time to create proper datetime string
-      const outTimeDateTime = `${selectedDate}T${outTimeInput}:00`;
+      // Combine date with time — Use 'Z' (UTC) to treat the input as a "Resultant Date" (Absolute IST as UTC)
+      // This prevents the backend from subtracting 5:30 from the user's manual entry.
+      const outTimeDateTime = `${selectedDate}T${outTimeInput}:00Z`;
 
       const response = await api.updateAttendanceOutTime(
         selectedEmployee.emp_no,
@@ -620,10 +621,8 @@ export default function AttendancePage() {
       setError('');
       setSuccess('');
 
-      // Combine date with time to create proper datetime string
-      // Note: If In-time crosses midnight (previous day?), we might need more logic,
-      // but usually In-Time is on the selected date.
-      const inTimeDateTime = `${selectedDate}T${inTimeInput}:00`;
+      // Combine date with time — Use 'Z' (UTC) to treat the input as a "Resultant Date" (Absolute IST as UTC)
+      const inTimeDateTime = `${selectedDate}T${inTimeInput}:00Z`;
 
       const response = await api.updateAttendanceInTime(
         selectedEmployee.emp_no,
@@ -1065,9 +1064,8 @@ export default function AttendancePage() {
       setError('');
       setSuccess('');
 
-      // Format datetime for API
-      const outTimeDate = new Date(outTimeValue);
-      const isoString = outTimeDate.toISOString();
+      // Format datetime for API — Use literal Z to treat input as Resultant Date
+      const isoString = outTimeValue.includes('T') ? outTimeValue + 'Z' : outTimeValue;
 
       const response = await api.updateAttendanceOutTime(
         selectedRecordForOutTime.employee.emp_no,
@@ -2137,7 +2135,7 @@ export default function AttendancePage() {
                                         setSelectedShiftRecordId(shift._id);
                                         if (shift.outTime) {
                                           const d = new Date(shift.outTime);
-                                          setOutTimeInput(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
+                                          setOutTimeInput(`${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`);
                                         } else {
                                           setOutTimeInput('');
                                         }

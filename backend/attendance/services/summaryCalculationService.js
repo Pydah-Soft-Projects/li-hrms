@@ -252,17 +252,17 @@ async function calculateAllEmployeesSummary(year, monthNumber) {
 }
 
 /**
- * Recalculate summary when attendance is updated
+ * Recalculate summary for a specific employee and date (triggered on update)
  * @param {string} emp_no - Employee number
  * @param {string} date - Date in YYYY-MM-DD format
  */
 async function recalculateOnAttendanceUpdate(emp_no, date) {
   try {
     const Employee = require('../../employees/model/Employee');
-    const employee = await Employee.findOne({ emp_no, is_active: true });
+    const employee = await Employee.findOne({ emp_no: emp_no.toUpperCase(), is_active: { $ne: false } });
 
     if (!employee) {
-      console.warn(`Employee not found for emp_no: ${emp_no}`);
+      console.warn(`[Summary Calculation] Skip: Employee ${emp_no} not found for summary update`);
       return;
     }
 
@@ -272,8 +272,7 @@ async function recalculateOnAttendanceUpdate(emp_no, date) {
 
     await calculateMonthlySummary(employee._id, emp_no, year, monthNumber);
   } catch (error) {
-    console.error(`Error recalculating summary on attendance update for ${emp_no}, ${date}:`, error);
-    // Don't throw - this is a background operation
+    console.error(`[Summary Calculation] Error in recalculateOnAttendanceUpdate:`, error);
   }
 }
 

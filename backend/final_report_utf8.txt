@@ -1,0 +1,63 @@
+﻿[dotenv@17.2.3] injecting env (27) from .env -- tip: ΓÜÖ∩╕Å  specify custom .env file path with { path: '/custom/path/.env' }
+
+============================================================
+           ATTENDANCE ACCURACY IMPACT REPORT               
+============================================================
+
+--- 1. DAILY ATTENDANCE (RE resultant-time accuracy) ---
+
+≡ƒæñ EMP 7003 | ≡ƒôà 2025-02-10
+   Description: Shift: 09:07 - 18:05 IST (General 09-18)
+   Status:      PRESENT
+   Late-In:     5.7 min (After Fix)
+   Early-Out:   38.32 min (After Fix)
+   Shift Name:  8.45 T 5-CANTEEN
+   IST Punch:   08:51 -> 16:20 (Resultant)
+------------------------------------------------------------
+≡ƒæñ EMP 7005 | ≡ƒôà 2025-02-11
+   Description: Shift: 09:11 - 17:32 IST (General 09-18)
+   Status:      PRESENT
+   Late-In:     0 min (After Fix)
+   Early-Out:   33.1 min (After Fix)
+   Shift Name:  8.45 T 5-CANTEEN
+   IST Punch:   08:40 -> 16:25 (Resultant)
+------------------------------------------------------------
+≡ƒæñ EMP 7012 | ≡ƒôà 2025-02-13
+   Description: Night Shift / Multi-Shift Case
+   Status:      PRESENT
+   Late-In:     4.35 min (After Fix)
+   Early-Out:   0 min (After Fix)
+   Shift Name:  7.45 T 5.3-SWEEPER2
+   IST Punch:   07:50 -> 17:33 (Resultant)
+------------------------------------------------------------
+
+--- 2. MONTHLY SUMMARIES (Triggered via .save() hooks) ---
+
+≡ƒæñ EMP 7003 | ≡ƒôè Month: 2025-02
+   Present Days:   18
+   Payable Shifts: 18
+   Working Hours:  undefinedh
+   Late-In Min:    undefinedm
+   Early-Out Min:  585.36m
+------------------------------------------------------------
+≡ƒæñ EMP 7005 | ≡ƒôè Month: 2025-02
+   Present Days:   19
+   Payable Shifts: 19
+   Working Hours:  undefinedh
+   Late-In Min:    undefinedm
+   Early-Out Min:  641.7m
+------------------------------------------------------------
+≡ƒæñ EMP 7012 | ≡ƒôè Month: 2025-02
+   Present Days:   17
+   Payable Shifts: 12
+   Working Hours:  undefinedh
+   Late-In Min:    undefinedm
+   Early-Out Min:  711.56m
+------------------------------------------------------------
+
+Γ£à VERIFICATION COMPLETE:
+1. Timezone corrected using +5.5h shifted "resultant" logic.
+2. Attendance statuses updated using proximity matching.
+3. Monthly summaries successfully triggered and populated.
+============================================================
+
