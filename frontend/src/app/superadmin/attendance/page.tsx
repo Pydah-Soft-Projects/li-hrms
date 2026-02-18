@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
+import { format, parseISO } from 'date-fns';
 
 interface AttendanceRecord {
   date: string;
@@ -1455,14 +1456,19 @@ export default function AttendancePage() {
                 <th className="sticky left-0 z-30 border-r border-slate-200 bg-slate-100 px-3 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 w-[200px] min-w-[200px]">
                   Employee
                 </th>
-                {daysArray.map((day) => (
-                  <th
-                    key={day}
-                    className="border-r border-slate-200 bg-slate-50 px-1 py-3 text-center text-[9px] font-bold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 w-[35px] min-w-[35px]"
-                  >
-                    {day}
-                  </th>
-                ))}
+                {daysArray.map((day) => {
+                  const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                  const dayName = format(parseISO(dateStr), 'EEE');
+                  return (
+                    <th
+                      key={day}
+                      className="border-r border-slate-200 bg-slate-50 px-1 py-2 text-center text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 w-[35px] min-w-[35px]"
+                    >
+                      <div className="text-[10px] font-bold">{day}</div>
+                      <div className="text-[8px] font-medium uppercase tracking-tighter opacity-70">{dayName}</div>
+                    </th>
+                  );
+                })}
                 {tableType === 'complete' && (
                   <>
                     <th className="border-r border-slate-200 bg-blue-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-blue-700 dark:border-slate-700 dark:bg-blue-900/20 w-[60px] min-w-[60px]">
@@ -1628,6 +1634,12 @@ export default function AttendancePage() {
                     return '';
                   };
 
+                  const getDesignationName = (emp: Employee) => {
+                    if (emp.designation && typeof emp.designation === 'object') return emp.designation.name;
+                    if (emp.designation_id && typeof emp.designation_id === 'object') return emp.designation_id.name;
+                    return 'Staff';
+                  };
+
                   const isHighAbsenteeism = monthAbsent > 2;
 
                   return (
@@ -1646,9 +1658,17 @@ export default function AttendancePage() {
                               {item.employee?.employee_name || 'Unknown Employee'}
                             </div>
                           </div>
-                          <div className="text-[9px] text-slate-500 dark:text-slate-400 truncate mt-1">
-                            {item.employee?.emp_no || '-'}
-                            {item.employee && getDeptName(item.employee) && ` • ${getDeptName(item.employee)}`}
+                          <div className="text-[9px] text-slate-500 dark:text-slate-400 truncate mt-1 flex flex-col gap-0.5">
+                            <div className="flex items-center gap-1">
+                              <span>{item.employee?.emp_no || '-'}</span>
+                              <span>•</span>
+                              <span className="font-medium">{item.employee ? getDesignationName(item.employee) : 'Staff'}</span>
+                            </div>
+                            {item.employee && getDeptName(item.employee) && (
+                              <span className="text-blue-500/80 dark:text-blue-400/80 font-bold tracking-widest uppercase text-[8px]">
+                                {getDeptName(item.employee)}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </td>
