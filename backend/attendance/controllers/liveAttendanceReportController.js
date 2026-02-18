@@ -46,7 +46,7 @@ exports.getLiveAttendanceReport = async (req, res) => {
     // Get all attendance records for the date, with shift populated
     let attendanceRecords = await AttendanceDaily.find(query)
       .populate({
-        path: 'shiftId',
+        path: 'shifts.shiftId',
         select: 'name startTime endTime'
       })
       .lean();
@@ -77,11 +77,15 @@ exports.getLiveAttendanceReport = async (req, res) => {
       const employee = employeeMap[empNo];
       if (!employee) return;
 
+      // For live report, we primarily look at the first shift of the day
+      const firstShift = record.shifts && record.shifts.length > 0 ? record.shifts[0] : null;
+      const shiftDoc = firstShift?.shiftId;
+
       // Department filter if requested
       if (department && employee.department_id?._id?.toString() !== department) return;
 
       // Shift filter if requested
-      if (shift && record.shiftId?._id?.toString() !== shift) return;
+      if (shift && shiftDoc?._id?.toString() !== shift) return;
 
       const employeeData = {
         id: employee._id,
@@ -90,21 +94,21 @@ exports.getLiveAttendanceReport = async (req, res) => {
         department: employee.department_id?.name || 'N/A',
         designation: employee.designation_id?.name || 'N/A',
         division: employee.division_id?.name || 'N/A',
-        shift: record.shiftId?.name || 'N/A',
-        shiftStartTime: record.shiftId?.startTime || record.shiftId?.start_time || null,
-        shiftEndTime: record.shiftId?.endTime || record.shiftId?.end_time || null,
-        inTime: record.inTime || record.in_time || record.inTime || null,
-        outTime: record.outTime || record.out_time || null,
+        shift: shiftDoc?.name || 'N/A',
+        shiftStartTime: shiftDoc?.startTime || shiftDoc?.start_time || null,
+        shiftEndTime: shiftDoc?.endTime || shiftDoc?.end_time || null,
+        inTime: firstShift?.inTime || null,
+        outTime: firstShift?.outTime || null,
         status: record.status,
         statusText: null,
         date: record.date,
         hoursWorked: null,
-        isLate: record.isLateIn || record.is_late_in || false,
-        lateMinutes: record.lateInMinutes || record.late_in_minutes || 0,
-        isEarlyOut: record.isEarlyOut || record.is_early_out || false,
-        earlyOutMinutes: record.earlyOutMinutes || record.early_out_minutes || 0,
-        otHours: record.otHours || record.ot_hours || 0,
-        extraHours: record.extraHours || record.extra_hours || 0
+        isLate: record.totalLateInMinutes > 0,
+        lateMinutes: record.totalLateInMinutes || 0,
+        isEarlyOut: record.totalEarlyOutMinutes > 0,
+        earlyOutMinutes: record.totalEarlyOutMinutes || 0,
+        otHours: record.totalOTHours || 0,
+        extraHours: record.extraHours || 0
       };
 
       // Determine status text and hours worked

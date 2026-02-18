@@ -392,7 +392,8 @@ exports.convertExtraHoursToOT = async (req, res) => {
       employeeId,
       employeeNumber,
       date,
-      req.user?.userId || req.user?._id
+      req.user?._id || req.user?.userId,
+      req.user?.name
     );
 
     if (!result.success) {

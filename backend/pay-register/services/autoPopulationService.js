@@ -51,7 +51,7 @@ async function fetchAttendanceData(emp_no, startDate, endDate) {
   const attendanceRecords = await AttendanceDaily.find({
     employeeNumber: emp_no,
     date: { $gte: startDate, $lte: endDate },
-  }).populate('shiftId', 'name payableShifts');
+  }).populate('shifts.shiftId', 'name payableShifts');
 
   const attendanceMap = {};
   attendanceRecords.forEach((record) => {

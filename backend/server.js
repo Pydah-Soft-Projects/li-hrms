@@ -147,6 +147,10 @@ app.use('/api/payroll-batch', payrollBatchRoutes);
 const bonusRoutes = require('./bonus/routes/bonusRoutes.js');
 app.use('/api/bonus', bonusRoutes);
 
+// Holidays routes
+const holidayRoutes = require('./holidays/index.js');
+app.use('/api/holidays', holidayRoutes);
+
 // Dashboard routes
 const dashboardRoutes = require('./dashboard/index.js');
 app.use('/api/dashboard', dashboardRoutes);
@@ -231,6 +235,7 @@ const startServer = async () => {
       console.log(`   - Pay Register: /api/pay-register`);
       console.log(`   - Bonus: /api/bonus`);
       console.log(`   - Arrears: /api/arrears`);
+      console.log(`   - Holidays: /api/holidays`);
     });
   } catch (error) {
     console.error('❌ Failed to start server:', error.message);

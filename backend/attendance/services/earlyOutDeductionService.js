@@ -161,7 +161,7 @@ async function calculateMonthlyEarlyOutDeductions(employeeNumber, year, monthNum
     const attendanceRecords = await AttendanceDaily.find({
       employeeNumber: employeeNumber.toUpperCase(),
       date: { $gte: startDate, $lte: endDateStr },
-      earlyOutMinutes: { $exists: true, $ne: null, $gt: 0 },
+      totalEarlyOutMinutes: { $exists: true, $ne: null, $gt: 0 },
     });
 
     let totalEarlyOutMinutes = 0;
@@ -184,11 +184,14 @@ async function calculateMonthlyEarlyOutDeductions(employeeNumber, year, monthNum
 
     // Calculate deductions for each day
     for (const record of attendanceRecords) {
-      if (record.earlyOutMinutes > 0) {
-        totalEarlyOutMinutes += record.earlyOutMinutes;
+      // Use totalEarlyOutMinutes from root
+      const earlyOut = record.totalEarlyOutMinutes || 0;
+
+      if (earlyOut > 0) {
+        totalEarlyOutMinutes += earlyOut;
 
         // Calculate deduction for this day - PASS SETTINGS to avoid redundant DB hits
-        const deduction = await calculateEarlyOutDeduction(record.earlyOutMinutes, settings);
+        const deduction = await calculateEarlyOutDeduction(earlyOut, settings);
 
         if (deduction.deductionApplied) {
           if (deduction.deductionDays) {

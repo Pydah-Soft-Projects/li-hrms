@@ -71,6 +71,7 @@ interface AttendanceRecord {
   editHistory?: {
     action: string;
     modifiedBy: string;
+    modifiedByName?: string;
     modifiedAt: string;
     details: string;
   }[];
@@ -126,23 +127,42 @@ interface Designation {
 export default function AttendancePage() {
   const [tableType, setTableType] = useState<'complete' | 'present_absent' | 'in_out' | 'leaves' | 'od' | 'ot'>('complete');
 
-  // Helper to format time in IST
-  const formatTimeIST = (timeStr: string | null, showDateIfDifferent?: boolean, recordDate?: string) => {
+  // Robust time formatter
+  const formatTime = (timeStr: string | null, showDateIfDifferent?: boolean, recordDate?: string) => {
     if (!timeStr) return '-';
+
+    // Handle HH:mm or HH:mm:ss format
+    if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(timeStr)) {
+      const [hours, minutes] = timeStr.split(':').map(Number);
+      const date = new Date();
+      date.setHours(hours, minutes, 0, 0);
+      return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+    }
+
     try {
       const date = new Date(timeStr);
-      let formattedTime = date.toLocaleTimeString('en-US', {
+      if (isNaN(date.getTime())) return timeStr;
+
+      // Primary time display in 12h IST
+      const timeFormatted = date.toLocaleTimeString('en-US', {
         timeZone: 'Asia/Kolkata',
         hour: '2-digit',
         minute: '2-digit',
         hour12: true
       });
-      // Logic for showDateIfDifferent could be added here if needed,
-      // but matching the signature at least prevents the call site error.
-      // For now, minimal implementation to satisfy type checker.
-      return formattedTime;
+
+      // Optional date prefix for out-of-day punches (e.g., night shifts)
+      if (showDateIfDifferent && recordDate) {
+        const timeDateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+        if (timeDateStr !== recordDate) {
+          const dateLabel = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          return `${dateLabel}, ${timeFormatted}`;
+        }
+      }
+
+      return timeFormatted;
     } catch {
-      return '-';
+      return timeStr;
     }
   };
 
@@ -1165,36 +1185,7 @@ export default function AttendancePage() {
     return '';
   };
 
-  const formatTime = (time: string | null, showDateIfDifferent?: boolean, recordDate?: string) => {
-    if (!time) return '-';
-    try {
-      const date = new Date(time);
-      // Use Local Time to match user's perspective (e.g., IST)
-      const h = String(date.getHours()).padStart(2, '0');
-      const m = String(date.getMinutes()).padStart(2, '0');
-      const timeStr = `${h}:${m}`;
 
-      // If showDateIfDifferent is true and recordDate is provided, check if dates differ
-      if (showDateIfDifferent && recordDate) {
-        // Compare Local Date vs recordDate
-        const y = date.getFullYear();
-        const mo = String(date.getMonth() + 1).padStart(2, '0');
-        const d = String(date.getDate()).padStart(2, '0');
-        const timeDateStr = `${y}-${mo}-${d}`;
-
-        if (timeDateStr !== recordDate) {
-          // Dates are different - show date with time
-          const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-          const dateStr = `${monthNames[date.getMonth()]} ${date.getDate()}`;
-          return `${dateStr}, ${timeStr}`;
-        }
-      }
-
-      return timeStr;
-    } catch {
-      return time;
-    }
-  };
 
   const formatHours = (hours: number | null) => {
     if (hours === null || hours === undefined) return '-';
@@ -1241,6 +1232,11 @@ export default function AttendancePage() {
                         type="text"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            loadMonthlyAttendance(true);
+                          }
+                        }}
                         placeholder="Search..."
                         className="w-40 h-9 pl-9 pr-3 text-xs rounded-xl border border-slate-200 bg-white focus:border-green-500 focus:ring-2 focus:ring-green-500/10 transition-all dark:border-slate-700 dark:bg-slate-800 dark:text-white shadow-sm"
                       />
@@ -1425,6 +1421,7 @@ export default function AttendancePage() {
               { label: 'HD', name: 'Half Day', color: 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-900/10 dark:text-orange-400 dark:border-orange-900/30' },
               { label: 'A', name: 'Absent', color: 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700' },
               { label: '!', name: 'Conflict', color: 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-800' },
+              { label: '✎', name: 'Edited', color: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/10 dark:text-indigo-400 dark:border-indigo-800' },
             ].map((item) => (
               <div key={item.label} className="flex items-center gap-2 group cursor-help">
                 <div className={`w-6 h-6 flex items-center justify-center rounded text-[10px] font-bold border shadow-sm transition-all duration-200 group-hover:scale-110 group-hover:shadow-md ${item.color}`}>
@@ -1711,11 +1708,20 @@ export default function AttendancePage() {
                                   )}
                                   {tableType === 'in_out' && (
                                     <div className="text-[8px] font-medium leading-tight">
-                                      <div className="text-green-600 dark:text-green-400">{record?.inTime ? formatTime(record.inTime) : '-'}</div>
-                                      <div className="text-red-600 dark:text-red-400">{record?.outTime ? formatTime(record.outTime) : '-'}</div>
-                                      {isMultiShift && <div className="text-[7px] text-blue-600 font-bold">Multi</div>}
-                                      <div className="text-green-600 dark:text-green-400">{record?.inTime ? formatTimeIST(record.inTime) : '-'}</div>
-                                      <div className="text-red-600 dark:text-red-400">{record?.outTime ? formatTimeIST(record.outTime) : '-'}</div>
+                                      {shifts && shifts.length > 0 ? (
+                                        shifts.map((s: any, idx: number) => (
+                                          <div key={idx} className={idx > 0 ? "mt-1 pt-1 border-t border-slate-100 dark:border-slate-800" : ""}>
+                                            <div className="text-green-600 dark:text-green-400">{formatTime(s.inTime)}</div>
+                                            <div className="text-red-600 dark:text-red-400">{formatTime(s.outTime)}</div>
+                                          </div>
+                                        ))
+                                      ) : (
+                                        <>
+                                          <div className="text-green-600 dark:text-green-400">{record?.inTime ? formatTime(record.inTime) : '-'}</div>
+                                          <div className="text-red-600 dark:text-red-400">{record?.outTime ? formatTime(record.outTime) : '-'}</div>
+                                        </>
+                                      )}
+                                      {isMultiShift && <div className="text-[7px] text-blue-600 font-bold mt-0.5">Multi</div>}
                                     </div>
                                   )}
                                   {tableType === 'leaves' && (
@@ -1933,7 +1939,7 @@ export default function AttendancePage() {
 
         {showDetailDialog && attendanceDetail && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+            <div className="w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900 scrollbar-thin scrollbar-thumb-slate-300 dark:scrollbar-thumb-slate-600">
               <div className="mb-4 flex items-center justify-between">
                 <h3 className="text-lg font-bold text-slate-900 dark:text-white">
                   Attendance Details - {selectedDate}
@@ -1962,390 +1968,310 @@ export default function AttendancePage() {
                 </button>
               </div>
 
-              {/* Multi-Shift View */}
-              {attendanceDetail.shifts && attendanceDetail.shifts.length > 0 ? (
-                <div className="space-y-4 mb-4">
-                  {/* Daily Summary Card for Multi-Shift */}
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/50">
-                    <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Daily Status</label>
-                        <div className="mt-1">
-                          <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${attendanceDetail.status === 'PRESENT' ? 'bg-green-50 text-green-700 ring-green-600/20' :
-                            attendanceDetail.status === 'HALF_DAY' ? 'bg-yellow-50 text-yellow-800 ring-yellow-600/20' :
-                              attendanceDetail.status === 'ABSENT' ? 'bg-red-50 text-red-700 ring-red-600/10' :
-                                'bg-gray-50 text-gray-600 ring-gray-500/10'
-                            }`}>
-                            {attendanceDetail.status || 'N/A'}
-                          </span>
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Total Hours</label>
-                        <div className="mt-1 text-sm font-bold text-slate-900 dark:text-white">
-                          {attendanceDetail.totalWorkingHours ? attendanceDetail.totalWorkingHours.toFixed(2) : '0'} hrs
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">OT Hours</label>
-                        <div className="mt-1 text-sm font-bold text-orange-600 dark:text-orange-400">
-                          {attendanceDetail.totalOTHours ? attendanceDetail.totalOTHours.toFixed(2) : '0'} hrs
-                        </div>
-                      </div>
-                      {attendanceDetail.extraHours && attendanceDetail.extraHours > 0 && (
-                        <div>
-                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Extra Hours</label>
-                          <div className="mt-1 text-sm font-bold text-purple-600 dark:text-purple-400">
-                            {attendanceDetail.extraHours.toFixed(2)} hrs
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* OT Conversion Actions */}
-                    {attendanceDetail.extraHours && attendanceDetail.extraHours > 0 && !hasExistingOT && (
-                      <div className="mt-3 flex justify-end">
-                        <button
-                          onClick={handleConvertExtraHoursToOT}
-                          disabled={convertingToOT}
-                          className="rounded-lg bg-gradient-to-r from-purple-500 to-indigo-500 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:from-purple-600 hover:to-indigo-600 disabled:opacity-50"
-                        >
-                          {convertingToOT ? 'Converting...' : 'Convert Extra to OT'}
-                        </button>
-                      </div>
-                    )}
-                    {hasExistingOT && (
-                      <div className="mt-3 text-right">
-                        <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-700">
-                          OT Converted
+              {/* Unified Header / Daily Summary */}
+              <div className="space-y-4 mb-4">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/50">
+                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Daily Status</label>
+                      <div className="mt-1">
+                        <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${attendanceDetail.status === 'PRESENT' ? 'bg-green-50 text-green-700 ring-green-600/20' :
+                          attendanceDetail.status === 'HALF_DAY' ? 'bg-yellow-50 text-yellow-800 ring-yellow-600/20' :
+                            attendanceDetail.status === 'ABSENT' ? 'bg-red-50 text-red-700 ring-red-600/10' :
+                              'bg-gray-50 text-gray-600 ring-gray-500/10'
+                          }`}>
+                          {attendanceDetail.status || 'N/A'}
                         </span>
                       </div>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Total Hours</label>
+                      <div className="mt-1 text-sm font-bold text-slate-900 dark:text-white">
+                        {attendanceDetail.totalWorkingHours ? attendanceDetail.totalWorkingHours.toFixed(2) : (attendanceDetail.totalHours ? attendanceDetail.totalHours.toFixed(2) : '0')} hrs
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">OT Hours</label>
+                      <div className="mt-1 text-sm font-bold text-orange-600 dark:text-orange-400">
+                        {attendanceDetail.totalOTHours ? attendanceDetail.totalOTHours.toFixed(2) : (attendanceDetail.otHours ? attendanceDetail.otHours.toFixed(2) : '0')} hrs
+                      </div>
+                    </div>
+                    {(attendanceDetail.extraHours && attendanceDetail.extraHours > 0) ? (
+                      <div>
+                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Extra Hours</label>
+                        <div className="mt-1 text-sm font-bold text-purple-600 dark:text-purple-400">
+                          {attendanceDetail.extraHours.toFixed(2)} hrs
+                        </div>
+                      </div>
+                    ) : (
+                      attendanceDetail.status === 'PRESENT' && (
+                        <div>
+                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Expected</label>
+                          <div className="mt-1 text-sm font-bold text-slate-700 dark:text-slate-300">
+                            {attendanceDetail.expectedHours || '-'} hrs
+                          </div>
+                        </div>
+                      )
                     )}
                   </div>
 
-                  {/* Individual Shifts List */}
-                  {attendanceDetail.shifts.map((shift: any, index: number) => {
-                    // FIX for shiftId being object or string (consistent with legacy view)
-                    const shiftName = shift.shiftName || (shift.shiftId && typeof shift.shiftId === 'object' ? shift.shiftId.name : 'Unknown Shift');
-                    const shiftIdVal = shift.shiftId && typeof shift.shiftId === 'object' ? shift.shiftId._id : shift.shiftId;
-                    const isEditingThisShift = editingShift && selectedShiftRecordId === shift._id;
-                    const isEditingThisOutTime = editingOutTime && selectedShiftRecordId === shift._id;
-
-                    return (
-                      <div key={shift._id || index} className="rounded-lg border border-slate-200 p-4 dark:border-slate-700">
-                        <div className="mb-2 flex items-center justify-between">
-                          <div className="font-semibold text-sm">{shiftName}</div>
-                          <div className="text-xs text-slate-500">
-                            {shift.workingHours ? `${shift.workingHours.toFixed(2)} hrs` : '-'}
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-4">
-                          {/* Shift Selection */}
-                          <div>
-                            <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Shift</label>
-                            <div className="mt-1 flex items-center gap-2">
-                              {!isEditingThisShift ? (
-                                <>
-                                  <div className="text-sm text-slate-900 dark:text-white truncate max-w-[100px]" title={shiftName}>{shiftName}</div>
-                                  <button
-                                    onClick={() => {
-                                      setEditingShift(true);
-                                      setSelectedShiftRecordId(shift._id);
-                                      setSelectedShiftId(shiftIdVal);
-                                    }}
-                                    className="rounded bg-blue-100 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-200"
-                                  >
-                                    Change
-                                  </button>
-                                </>
-                              ) : (
-                                <div className="flex flex-col gap-2 w-full">
-                                  <select
-                                    value={selectedShiftId || ''}
-                                    onChange={(e) => setSelectedShiftId(e.target.value)}
-                                    className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
-                                  >
-                                    <option value="">Select Shift</option>
-                                    {availableShifts.map((s) => (
-                                      <option key={s._id} value={s._id}>{s.name} ({s.startTime}-{s.endTime})</option>
-                                    ))}
-                                  </select>
-                                  <div className="flex gap-2">
-                                    <button onClick={handleAssignShift} className="rounded bg-green-500 px-2 py-1 text-xs text-white">Save</button>
-                                    <button onClick={() => { setEditingShift(false); setSelectedShiftRecordId(null); }} className="rounded bg-slate-400 px-2 py-1 text-xs text-white">Cancel</button>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Times */}
-                          <div>
-                            <div className="flex justify-between mb-1">
-                              <span className="text-xs text-slate-500">In:</span>
-                              <span className="text-sm font-medium">{formatTime(shift.inTime)}</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                              <span className="text-xs text-slate-500">Out:</span>
-                              {!isEditingThisOutTime ? (
-                                <div className="flex items-center gap-2">
-                                  <span className="text-sm font-medium">{formatTime(shift.outTime) || '-'}</span>
-                                  <button
-                                    onClick={() => {
-                                      setEditingOutTime(true);
-                                      setSelectedShiftRecordId(shift._id);
-                                      if (shift.outTime) {
-                                        const d = new Date(shift.outTime);
-                                        setOutTimeInput(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
-                                      } else {
-                                        setOutTimeInput('');
-                                      }
-                                    }}
-                                    className="rounded bg-blue-100 px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-200"
-                                  >
-                                    {shift.outTime ? 'Edit' : 'Add'}
-                                  </button>
-                                </div>
-                              ) : (
-                                <div className="flex flex-col gap-1 w-full ml-2">
-                                  <input
-                                    type="time"
-                                    value={outTimeInput}
-                                    onChange={(e) => setOutTimeInput(e.target.value)}
-                                    className="w-full rounded border border-slate-300 px-1 py-0.5 text-xs"
-                                  />
-                                  <div className="flex gap-1">
-                                    <button onClick={handleSaveOutTime} className="rounded bg-green-500 px-1 py-0.5 text-[10px] text-white">Save</button>
-                                    <button onClick={() => { setEditingOutTime(false); setSelectedShiftRecordId(null); }} className="rounded bg-slate-400 px-1 py-0.5 text-[10px] text-white">Cancel</button>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Extra Info - use shift data for multi-shift view */}
-                          <div className="mt-2 text-xs text-slate-500 flex gap-4">
-                            <span>Late: {shift.lateInMinutes ?? 0}m</span>
-                            <span>Early: {shift.earlyOutMinutes ?? 0}m</span>
-                            <span>Status: {shift.status ?? '-'}</span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
+                  {/* OT Conversion Actions */}
+                  {attendanceDetail.extraHours > 0 && !hasExistingOT && (
+                    <div className="mt-3 flex justify-end">
+                      <button
+                        onClick={handleConvertExtraHoursToOT}
+                        disabled={convertingToOT}
+                        className="rounded-lg bg-gradient-to-r from-purple-500 to-indigo-500 px-4 py-2 text-xs font-bold text-white shadow-md shadow-purple-500/20 transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
+                      >
+                        {convertingToOT ? 'Converting...' : 'Convert Extra to OT'}
+                      </button>
+                    </div>
+                  )}
+                  {hasExistingOT && (
+                    <div className="mt-3 text-right">
+                      <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-1 text-[10px] font-bold text-green-700 uppercase tracking-wider dark:bg-green-900/30 dark:text-green-400">
+                        OT Converted
+                      </span>
+                    </div>
+                  )}
                 </div>
-              ) : (
-                /* Existing Legacy / Single Shift View */
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Status</label>
-                      <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
-                        {attendanceDetail.status || 'ABSENT'}
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Shift</label>
-                      <div className="mt-1 flex items-center gap-2">
-                        {!editingShift ? (
-                          <>
-                            <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                              {attendanceDetail.shiftId && typeof attendanceDetail.shiftId === 'object'
-                                ? attendanceDetail.shiftId.name
-                                : '-'}
+
+                {/* Shift Details (Multi-Shift Display) */}
+                {attendanceDetail.shifts && attendanceDetail.shifts.length > 0 ? (
+                  <div className="space-y-3">
+                    <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Attendance Segments</h4>
+                    {attendanceDetail.shifts.map((shift: any, index: number) => {
+                      const shiftName = shift.shiftName || (shift.shiftId && typeof shift.shiftId === 'object' ? shift.shiftId.name : 'Unknown Shift');
+                      const shiftIdVal = shift.shiftId && typeof shift.shiftId === 'object' ? shift.shiftId._id : shift.shiftId;
+                      const isEditingThisShift = editingShift && selectedShiftRecordId === shift._id;
+                      const isEditingThisOutTime = editingOutTime && selectedShiftRecordId === shift._id;
+
+                      return (
+                        <div key={shift._id || index} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900 transition-all hover:shadow-md">
+                          <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-2 dark:border-slate-800">
+                            <div className="flex items-center gap-2">
+                              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-100 text-[10px] font-bold text-slate-500 dark:bg-slate-800">
+                                {index + 1}
+                              </span>
+                              <div className="font-bold text-sm text-slate-800 dark:text-white">{shiftName}</div>
                             </div>
-                            <button
-                              onClick={() => {
-                                setEditingShift(true);
-                                if (attendanceDetail.shiftId && typeof attendanceDetail.shiftId === 'object') {
-                                  setSelectedShiftId(attendanceDetail.shiftId._id);
-                                }
-                              }}
-                              className="rounded-lg bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-all hover:bg-blue-600"
-                            >
-                              {attendanceDetail.shiftId ? 'Change' : 'Assign'}
-                            </button>
-                          </>
-                        ) : (
-                          <div className="flex-1 flex items-center gap-2">
-                            <select
-                              value={selectedShiftId || ''}
-                              onChange={(e) => setSelectedShiftId(e.target.value)}
-                              className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-                            >
-                              <option value="">Select Shift</option>
-                              {availableShifts.map((shift) => (
-                                <option key={shift._id} value={shift._id}>
-                                  {shift.name} ({shift.startTime} - {shift.endTime})
-                                </option>
-                              ))}
-                            </select>
-                            <button
-                              onClick={handleAssignShift}
-                              disabled={savingShift || !selectedShiftId}
-                              className="rounded-lg bg-green-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              {savingShift ? 'Saving...' : 'Save'}
-                            </button>
-                            <button
-                              onClick={() => {
-                                setEditingShift(false);
-                                setSelectedShiftId('');
-                                setSelectedShiftRecordId(null);
-                              }}
-                              className="rounded-lg bg-slate-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-slate-600"
-                            >
-                              Cancel
-                            </button>
+                            <div className="text-[11px] font-bold text-slate-500 bg-slate-50 dark:bg-slate-800/50 px-2 py-0.5 rounded-full">
+                              {shift.workingHours ? `${shift.workingHours.toFixed(2)} hrs` : '0.00 hrs'}
+                            </div>
                           </div>
-                        )}
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-600 dark:text-slate-400">In Time</label>
-                      <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
-                        {formatTime(attendanceDetail.inTime)}
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Out Time</label>
-                      <div className="mt-1 flex items-center gap-2">
-                        {!editingOutTime ? (
-                          <>
-                            <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                              {attendanceDetail.outTime ? formatTime(attendanceDetail.outTime, true, selectedDate || '') : '-'}
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                            {/* Shift Selection */}
+                            <div className="flex flex-col gap-1.5">
+                              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Configured Shift</label>
+                              <div className="flex items-center gap-3">
+                                {!isEditingThisShift ? (
+                                  <>
+                                    <div className="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate" title={shiftName}>{shiftName}</div>
+                                    <button
+                                      onClick={() => {
+                                        setEditingShift(true);
+                                        setSelectedShiftRecordId(shift._id);
+                                        setSelectedShiftId(shiftIdVal);
+                                      }}
+                                      className="rounded-lg bg-blue-50 px-2.5 py-1 text-[10px] font-bold text-blue-600 hover:bg-blue-100 transition-colors dark:bg-blue-900/20 dark:text-blue-400"
+                                    >
+                                      Change
+                                    </button>
+                                  </>
+                                ) : (
+                                  <div className="flex flex-col gap-2 w-full">
+                                    <select
+                                      value={selectedShiftId || ''}
+                                      onChange={(e) => setSelectedShiftId(e.target.value)}
+                                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                    >
+                                      <option value="">Select Shift</option>
+                                      {availableShifts.map((s) => (
+                                        <option key={s._id} value={s._id}>{s.name} ({s.startTime}-{s.endTime})</option>
+                                      ))}
+                                    </select>
+                                    <div className="flex gap-2">
+                                      <button onClick={handleAssignShift} className="flex-1 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-green-700">Save</button>
+                                      <button onClick={() => { setEditingShift(false); setSelectedShiftRecordId(null); }} className="flex-1 rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-300 dark:bg-slate-700 dark:text-white dark:hover:bg-slate-600">Cancel</button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                            {!attendanceDetail.outTime && (
-                              <button
-                                onClick={() => {
-                                  setEditingOutTime(true);
-                                  if (attendanceDetail.outTime) {
-                                    const date = new Date(attendanceDetail.outTime);
-                                    setOutTimeInput(`${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`);
-                                  }
-                                }}
-                                className="rounded-lg bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-all hover:bg-blue-600"
-                              >
-                                Add
-                              </button>
+
+                            {/* Punch Times */}
+                            <div className="grid grid-cols-2 gap-4">
+                              <div className="flex flex-col gap-1">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-emerald-600/70">Check-In</label>
+                                <div className="text-sm font-black text-slate-800 dark:text-white">{formatTime(shift.inTime)}</div>
+                              </div>
+                              <div className="flex flex-col gap-1">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-rose-600/70">Check-Out</label>
+                                {!isEditingThisOutTime ? (
+                                  <div className="flex items-center gap-2">
+                                    <div className="text-sm font-black text-slate-800 dark:text-white">{formatTime(shift.outTime, true, selectedDate || '')}</div>
+                                    <button
+                                      onClick={() => {
+                                        setEditingOutTime(true);
+                                        setSelectedShiftRecordId(shift._id);
+                                        if (shift.outTime) {
+                                          const d = new Date(shift.outTime);
+                                          setOutTimeInput(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
+                                        } else {
+                                          setOutTimeInput('');
+                                        }
+                                      }}
+                                      className="rounded-lg bg-slate-100 p-1 text-slate-400 hover:bg-blue-50 hover:text-blue-600 transition-all dark:bg-slate-800"
+                                    >
+                                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                      </svg>
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="flex flex-col gap-2">
+                                    <input
+                                      type="time"
+                                      value={outTimeInput}
+                                      onChange={(e) => setOutTimeInput(e.target.value)}
+                                      className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800"
+                                    />
+                                    <div className="flex gap-1.5">
+                                      <button onClick={handleSaveOutTime} className="flex-1 rounded-md bg-green-600 px-2 py-1 text-[10px] font-bold text-white shadow-sm">Save</button>
+                                      <button onClick={() => { setEditingOutTime(false); setSelectedShiftRecordId(null); }} className="flex-1 rounded-md bg-slate-200 px-2 py-1 text-[10px] font-bold text-slate-700 dark:bg-slate-700 dark:text-white">Cancel</button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Secondary Metrics */}
+                          <div className="mt-4 flex flex-wrap gap-4 border-t border-slate-50 pt-3 dark:border-slate-800">
+                            {shift.lateInMinutes > 0 && (
+                              <div className="flex items-center gap-1.5">
+                                <div className="h-1.5 w-1.5 rounded-full bg-orange-500 animate-pulse"></div>
+                                <span className="text-[10px] font-bold text-orange-600">Late: {shift.lateInMinutes}m</span>
+                              </div>
                             )}
-                            {attendanceDetail.outTime && (
-                              <button
-                                onClick={() => {
-                                  setEditingOutTime(true);
-                                  const date = new Date(attendanceDetail.outTime);
-                                  setOutTimeInput(`${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`);
-                                }}
-                                className="rounded-lg bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-all hover:bg-blue-600"
-                              >
-                                Edit
-                              </button>
+                            {shift.earlyOutMinutes > 0 && (
+                              <div className="flex items-center gap-1.5">
+                                <div className="h-1.5 w-1.5 rounded-full bg-orange-500 animate-pulse"></div>
+                                <span className="text-[10px] font-bold text-orange-600">Early: {shift.earlyOutMinutes}m</span>
+                              </div>
                             )}
-                          </>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Status</span>
+                              <span className={`text-[10px] font-black uppercase ${shift.status === 'PRESENT' ? 'text-green-600' : 'text-slate-500'}`}>{shift.status || '-'}</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  /* Call-to-action for missing attendance on absent day? */
+                  attendanceDetail.status === 'ABSENT' ? (
+                    <div className="rounded-xl border border-dashed border-slate-200 p-8 text-center dark:border-slate-700 bg-slate-50/50">
+                      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-400 dark:bg-slate-800">
+                        <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </div>
+                      <h5 className="mt-4 text-sm font-bold text-slate-900 dark:text-white">No attendance records today</h5>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Employee was marked as absent for this date.</p>
+                      <div className="mt-6 flex justify-center gap-3">
+                        {!editingInTime ? (
+                          <button
+                            onClick={() => {
+                              setEditingInTime(true);
+                              setInTimeInput('09:00'); // Default suggestion
+                            }}
+                            className="rounded-xl bg-blue-600 px-6 py-2.5 text-xs font-bold text-white shadow-lg shadow-blue-500/25 transition-all hover:bg-blue-700 active:scale-95"
+                          >
+                            Mark as Present
+                          </button>
                         ) : (
-                          <div className="flex-1 flex items-center gap-2">
+                          <div className="flex items-center gap-2">
                             <input
                               type="time"
-                              value={outTimeInput}
-                              onChange={(e) => setOutTimeInput(e.target.value)}
-                              className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                              value={inTimeInput}
+                              onChange={(e) => setInTimeInput(e.target.value)}
+                              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm ring-1 ring-slate-200"
                             />
-                            <button
-                              onClick={handleSaveOutTime}
-                              disabled={savingOutTime || !outTimeInput}
-                              className="rounded-lg bg-green-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              {savingOutTime ? 'Saving...' : 'Save'}
-                            </button>
-                            <button
-                              onClick={() => {
-                                setEditingOutTime(false);
-                                setOutTimeInput('');
-                              }}
-                              className="rounded-lg bg-slate-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-slate-600"
-                            >
-                              Cancel
-                            </button>
+                            <button onClick={handleSaveInTime} className="rounded-lg bg-green-600 px-4 py-1.5 text-xs font-bold text-white shadow-sm">Save</button>
+                            <button onClick={() => setEditingInTime(false)} className="rounded-lg bg-slate-500 px-4 py-1.5 text-xs font-bold text-white shadow-sm">Cancel</button>
                           </div>
                         )}
                       </div>
                     </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Total Hours</label>
-                      <div className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
-                        {formatHours(attendanceDetail.totalHours)}
-                      </div>
-                    </div>
-                    {attendanceDetail.isLateIn && attendanceDetail.lateInMinutes && (
-                      <div>
-                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Late In</label>
-                        <div className="mt-1 text-sm font-semibold text-orange-600 dark:text-orange-400">
-                          +{attendanceDetail.lateInMinutes} minutes
-                        </div>
-                      </div>
-                    )}
-                    {attendanceDetail.isEarlyOut && attendanceDetail.earlyOutMinutes && (
-                      <div>
-                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Early Out</label>
-                        <div className="mt-1 text-sm font-semibold text-orange-600 dark:text-orange-400">
-                          -{attendanceDetail.earlyOutMinutes} minutes
-                        </div>
-                        {attendanceDetail.earlyOutDeduction?.deductionApplied && (
-                          <p className="text-[11px] text-amber-600 dark:text-amber-400">
-                            Deduction: {attendanceDetail.earlyOutDeduction.deductionType?.replace('_', ' ')}
-                            {attendanceDetail.earlyOutDeduction.deductionDays ? ` (${attendanceDetail.earlyOutDeduction.deductionDays} day(s))` : ''}
-                            {attendanceDetail.earlyOutDeduction.deductionAmount ? ` (₹${attendanceDetail.earlyOutDeduction.deductionAmount})` : ''}
-                          </p>
-                        )}
-                      </div>
-                    )}
-                    {attendanceDetail.otHours && attendanceDetail.otHours > 0 && (
-                      <div>
-                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400">OT Hours</label>
-                        <div className="mt-1 text-sm font-semibold text-orange-600 dark:text-orange-400">
-                          {attendanceDetail.otHours.toFixed(2)} hrs
-                        </div>
-                      </div>
-                    )}
-                    {attendanceDetail.extraHours && attendanceDetail.extraHours > 0 && (
-                      <div className="col-span-2">
-                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Extra Hours</label>
-                        <div className="mt-1 flex items-center justify-between">
-                          <div className="text-sm font-semibold text-purple-600 dark:text-purple-400">
-                            {attendanceDetail.extraHours.toFixed(2)} hrs
-                          </div>
-                          {!hasExistingOT && attendanceDetail.shiftId && (
-                            <button
-                              onClick={handleConvertExtraHoursToOT}
-                              disabled={convertingToOT}
-                              className="ml-3 rounded-lg bg-gradient-to-r from-purple-500 to-indigo-500 px-3 py-1.5 text-xs font-semibold text-white shadow-md shadow-purple-500/30 transition-all hover:from-purple-600 hover:to-indigo-600 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              {convertingToOT ? 'Converting...' : 'Convert to OT'}
-                            </button>
-                          )}
-                          {hasExistingOT && (
-                            <span className="ml-3 rounded-full bg-green-100 px-2 py-1 text-[10px] font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                              Already Converted
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                    {attendanceDetail.permissionHours && attendanceDetail.permissionHours > 0 && (
-                      <div>
-                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Permission Hours</label>
-                        <div className="mt-1 text-sm font-semibold text-cyan-600 dark:text-cyan-400">
-                          {attendanceDetail.permissionHours.toFixed(2)} hrs ({attendanceDetail.permissionCount || 0} permissions)
-                        </div>
-                      </div>
-                    )}
+                  ) : null
+                )}
 
-                  </div>
+                {/* Shared Metrics / Deductions (Unified Footer) */}
+                <div className="grid grid-cols-2 gap-4 mt-2">
+                  {/* Late In Display - Support Multi-Shift */}
+                  {(() => {
+                    const shiftsWithLate = attendanceDetail.shifts?.filter((s: any) => s.lateInMinutes && s.lateInMinutes > 0) || [];
+                    const hasRootLate = attendanceDetail.isLateIn && attendanceDetail.lateInMinutes;
+
+                    if (shiftsWithLate.length > 0 || hasRootLate) {
+                      return (
+                        <div className="p-3 rounded-xl bg-orange-50/50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-800/50">
+                          <label className="text-[10px] font-black uppercase tracking-widest text-orange-600/70">Late In Aggregate</label>
+                          <div className="mt-1 text-sm font-bold text-orange-700 dark:text-orange-400">
+                            +{attendanceDetail.lateInMinutes || 0} minutes
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+
+                  {/* Early Out Display - Support Multi-Shift */}
+                  {(() => {
+                    const shiftsWithEarly = attendanceDetail.shifts?.filter((s: any) => s.earlyOutMinutes && s.earlyOutMinutes > 0) || [];
+                    const hasRootEarly = attendanceDetail.isEarlyOut && attendanceDetail.lateInMinutes;
+
+                    if (shiftsWithEarly.length > 0 || hasRootEarly) {
+                      return (
+                        <div className="p-3 rounded-xl bg-orange-50/50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-800/50">
+                          <label className="text-[10px] font-black uppercase tracking-widest text-orange-600/70">Early Out Aggregate</label>
+                          <div className="mt-1 text-sm font-bold text-orange-700 dark:text-orange-400">
+                            -{attendanceDetail.earlyOutMinutes || 0} minutes
+                          </div>
+                          {attendanceDetail.earlyOutDeduction?.deductionApplied && (
+                            <p className="mt-1 text-[10px] font-bold text-rose-600 italic">
+                              Deduction: {attendanceDetail.earlyOutDeduction.deductionType?.replace('_', ' ')}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
                 </div>
-              )}
 
-              {/* Leave Conflicts - Show for BOTH modes */}
+                {attendanceDetail.otHours > 0 && (
+                  <div className="p-3 rounded-xl bg-green-50/50 dark:bg-green-900/10 border border-green-100 dark:border-green-800/50 mt-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-green-600/70">Overtime Hours</label>
+                    <div className="mt-1 text-sm font-bold text-green-800 dark:text-green-400">
+                      {attendanceDetail.otHours.toFixed(2)} hrs approved
+                    </div>
+                  </div>
+                )}
+
+                {attendanceDetail.permissionHours > 0 && (
+                  <div className="p-3 rounded-xl bg-cyan-50/50 dark:bg-cyan-900/10 border border-cyan-100 dark:border-cyan-800/50 mt-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-cyan-600/70">Permission Hours</label>
+                    <div className="mt-1 text-sm font-bold text-cyan-800 dark:text-cyan-400">
+                      {attendanceDetail.permissionHours.toFixed(2)} hrs ({attendanceDetail.permissionCount || 0} applications)
+                    </div>
+                  </div>
+                )}
+              </div>
+              {/* Leave Conflicts */}
               {attendanceDetail.status === 'PRESENT' && leaveConflicts.length > 0 && (
                 <div className="mt-4 rounded-lg border border-red-300 bg-red-50 p-4 dark:border-red-800 dark:bg-red-900/20">
                   <div className="mb-3 flex items-center gap-2">
@@ -2692,27 +2618,27 @@ export default function AttendancePage() {
                 )}
 
               {/* Audit Log / Edit History */}
-              {attendanceDetail.isEdited && attendanceDetail.editHistory && attendanceDetail.editHistory.length > 0 && (
+              {attendanceDetail.editHistory && attendanceDetail.editHistory.length > 0 && (
                 <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/50">
-                  <h4 className="mb-2 text-sm font-bold text-slate-900 dark:text-white">Edit History</h4>
-                  <div className="space-y-2 max-h-40 overflow-y-auto">
+                  <h4 className="mb-2 text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider text-[10px]">Edit History</h4>
+                  <div className="space-y-3 max-h-48 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-300 dark:scrollbar-thumb-slate-600">
                     {attendanceDetail.editHistory.map((edit: any, index: number) => (
-                      <div key={index} className="flex flex-col text-xs border-b border-slate-200 pb-2 last:border-0 last:pb-0 dark:border-slate-700">
-                        <div className="flex items-center justify-between">
-                          <span className="font-medium text-slate-700 dark:text-slate-300">
-                            {edit.action === 'OUT_TIME_UPDATE' ? 'Out-Time Update' :
-                              edit.action === 'SHIFT_CHANGE' ? 'Shift Change' :
-                                edit.action === 'OT_CONVERSION' ? 'Overtime Conversion' : edit.action}
+                      <div key={index} className="flex flex-col text-xs border-l-2 border-slate-200 pl-3 py-1 last:border-0 last:pb-0 dark:border-slate-700">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-bold text-blue-600 dark:text-blue-400 uppercase text-[9px]">
+                            {edit.action?.replace(/_/g, ' ')}
                           </span>
-                          <span className="text-slate-500 dark:text-slate-400">
+                          <span className="text-[10px] text-slate-400">
                             {new Date(edit.modifiedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                           </span>
                         </div>
-                        <div className="text-slate-500 dark:text-slate-400 mt-1">
+                        <div className="text-slate-600 dark:text-slate-400 font-medium">
                           {edit.details}
                         </div>
-                        <div className="text-slate-400 dark:text-slate-500 text-[10px] mt-0.5 italic">
-                          By: {edit.modifiedBy && typeof edit.modifiedBy === 'object' ? (edit.modifiedBy.name || 'Unknown') : 'User'}
+                        <div className="text-slate-500 dark:text-slate-500 text-[10px] mt-1 italic">
+                          Modified by: <span className="font-bold text-slate-700 dark:text-slate-300">
+                            {edit.modifiedByName || (edit.modifiedBy && typeof edit.modifiedBy === 'object' ? (edit.modifiedBy.name || 'Unknown') : 'System')}
+                          </span>
                         </div>
                       </div>
                     ))}
@@ -2722,6 +2648,7 @@ export default function AttendancePage() {
             </div>
           </div>
         )}
+
 
         {/* Monthly Summary Modal */}
         {
@@ -2841,7 +2768,8 @@ export default function AttendancePage() {
                 )}
               </div>
             </div>
-          )}
+          )
+        }
 
         {/* Payslip Modal */}
         {
@@ -3078,7 +3006,8 @@ export default function AttendancePage() {
                 )}
               </div>
             </div>
-          )}
+          )
+        }
       </div>
     </div >
   );

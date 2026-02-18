@@ -339,6 +339,8 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                 const expectedDuration = shiftAssignment.expectedHours || 8;
                 const totalDuration = pShift.workingHours || 0;
 
+                pShift.expectedHours = expectedDuration; // Enrich shift segment with expectedHours
+
                 if (shiftAssignment.expectedHours) {
                     pShift.extraHours = Math.max(0, Math.round((totalDuration - shiftAssignment.expectedHours) * 100) / 100);
                 }
@@ -346,16 +348,18 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                 // Determine Base Payable Value
                 const basePayable = assignedShiftDef && assignedShiftDef.payableShifts !== undefined ? assignedShiftDef.payableShifts : 1;
 
-                if (pShift.workingHours >= (expectedDuration * 0.9)) {
+                if (pShift.workingHours >= (expectedDuration / 60 * 0.9)) {
                     pShift.status = 'PRESENT';
                     pShift.payableShift = basePayable;
-                } else if (pShift.workingHours >= (expectedDuration * 0.45)) {
+                } else if (pShift.workingHours >= (expectedDuration / 60 * 0.45)) {
                     pShift.status = 'HALF_DAY';
                     pShift.payableShift = basePayable * 0.5;
                 } else {
                     pShift.status = 'ABSENT';
                     pShift.payableShift = 0;
                 }
+                console.log(`[MultiShift] Processing segment ${shiftCounter} for ${employeeNumber}: Working=${pShift.workingHours}, Expected=${expectedDuration}`);
+                console.log(`[MultiShift] Segment ${shiftCounter} Status: ${pShift.status}, Payable: ${pShift.payableShift}`);
             }
 
             processedShifts.push(pShift);
@@ -396,21 +400,20 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
             payableShifts: totalPayableShifts,
 
             // Backward compatibility fields (Metrics)
-            inTime: totals.firstInTime,
-            outTime: totals.lastOutTime,
-            totalHours: totals.totalWorkingHours,
+            // inTime, outTime, totalHours removed - using aggregate fields
             odHours,
             odDetails,
             status,
             lastSyncedAt: new Date(),
 
             // Primary shift fields (from first shift)
-            shiftId: processedShifts[0]?.shiftId || null,
-            lateInMinutes: processedShifts[0]?.lateInMinutes || null,
-            earlyOutMinutes: processedShifts[0]?.earlyOutMinutes || null,
-            isLateIn: processedShifts[0]?.isLateIn || false,
-            isEarlyOut: processedShifts[0]?.isEarlyOut || false,
-            expectedHours: processedShifts[0]?.expectedHours || 8, // Use detected expected hours
+            // shiftId, lateInMinutes, etc. removed - using shifts array
+
+            // New Aggregate Fields (if not already handled by pre-save, but good to set explicitly if we have them)
+            totalLateInMinutes: processedShifts.reduce((acc, s) => acc + (s.lateInMinutes || 0), 0),
+            totalEarlyOutMinutes: processedShifts.reduce((acc, s) => acc + (s.earlyOutMinutes || 0), 0),
+            totalExpectedHours: processedShifts.reduce((acc, s) => acc + (s.expectedHours || 0), 0),
+
             otHours: totals.totalOTHours,
         };
 

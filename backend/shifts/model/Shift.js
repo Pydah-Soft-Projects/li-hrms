@@ -108,9 +108,7 @@ shiftSchema.pre('save', async function () {
       );
 
       if (!isAllowed) {
-        throw new Error(
-          `Duration ${this.duration} hours is not allowed. Allowed durations: ${durationValues.join(', ')} hours`
-        );
+        console.warn(`Saving shift with non-standard duration: ${this.duration} hours`);
       }
     }
   }
