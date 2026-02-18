@@ -62,7 +62,26 @@ const applicationQueue = new Queue('applicationQueue', {
 const attendanceUploadQueue = new Queue('attendanceUploadQueue', {
     connection: redisConfig,
     defaultJobOptions: {
-        attempts: 1, // Don't retry parsing potentially corrupt files
+        attempts: 1,
+        removeOnComplete: {
+            count: 50,
+            age: 3600,
+        },
+        removeOnFail: {
+            count: 200,
+            age: 86400,
+        }
+    }
+});
+
+const rosterSyncQueue = new Queue('rosterSyncQueue', {
+    connection: redisConfig,
+    defaultJobOptions: {
+        attempts: 2,
+        backoff: {
+            type: 'exponential',
+            delay: 5000,
+        },
         removeOnComplete: {
             count: 50,
             age: 3600,
@@ -78,5 +97,6 @@ module.exports = {
     payrollQueue,
     attendanceSyncQueue,
     applicationQueue,
-    attendanceUploadQueue
+    attendanceUploadQueue,
+    rosterSyncQueue
 };
