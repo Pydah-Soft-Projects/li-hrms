@@ -79,7 +79,8 @@ export default function LiveAttendancePage() {
   const formatTime = (dateTimeString: string | null) => {
     if (!dateTimeString) return '-';
     const date = new Date(dateTimeString);
-    return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' });
+    // Backend provides pre-shifted IST as UTC — render as UTC to avoid double-shifting
+    return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'UTC' });
   };
 
   // Format hours worked

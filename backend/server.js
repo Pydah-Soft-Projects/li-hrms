@@ -208,6 +208,12 @@ const startServer = async () => {
 
     // Create HTTP server and initialize Socket.io
     const server = http.createServer(app);
+
+    // Set high timeout for bulk data operations (10 minutes)
+    server.timeout = 600 * 1000;
+    server.keepAliveTimeout = 65 * 1000;
+    server.headersTimeout = 66 * 1000;
+
     initSocket(server, allowedOrigins);
 
     // Start server

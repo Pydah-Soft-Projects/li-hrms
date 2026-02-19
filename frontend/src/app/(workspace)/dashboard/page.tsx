@@ -139,28 +139,38 @@ export default function DashboardPage() {
     return data[0].status || 'Running';
   };
 
+  const formatTimeIST = (dateString: string | Date | null | undefined) => {
+    if (!dateString) return '--:--';
+    const date = new Date(dateString);
+    return date.toLocaleTimeString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    }).toUpperCase();
+  };
+
   return (
     <div className="relative min-h-screen -m-4 sm:-m-5 lg:-m-6">
-      {/* Background Grid Pattern */}
-      <div className="pointer-events-none fixed inset-0 z-0 bg-bg-base/50 bg-[linear-gradient(to_right,rgba(0,0,0,0.02)_1px,transparent_1px),linear-gradient(to_bottom,rgba(0,0,0,0.02)_1px,transparent_1px)] dark:bg-[linear-gradient(to_right,rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:42px_42px]"></div>
+
 
       <div className="relative z-10 pt-11 p-4 sm:p-5 lg:p-6 space-y-6">
         {/* Header */}
-        <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20">
+        <div className="flex flex-nowrap items-center justify-between gap-2 md:gap-4 mb-6 md:mb-8">
+          <div className="flex items-center gap-3 md:gap-4 min-w-0 flex-1">
+            <div className="w-12 h-12 rounded-2xl hidden md:flex bg-gradient-to-br from-indigo-500 to-indigo-600 items-center justify-center text-white shadow-lg shadow-indigo-500/20 shrink-0">
               <LayoutDashboard className="w-6 h-6" />
             </div>
-            <div>
-              <h1 className="text-2xl font-black tracking-tight text-text-primary capitalize">Welcome Back, {user?.name?.split(' ')[0]}</h1>
-              <p className="text-sm text-text-secondary font-medium">Here&apos;s what&apos;s happening today</p>
+            <div className="min-w-0 flex-1">
+              <h1 className="text-base md:text-2xl font-black tracking-tight text-text-primary capitalize truncate">Welcome Back, {user?.name?.split(' ')[0]}</h1>
+              <p className="text-[10px] md:text-sm text-text-secondary font-medium truncate">Here&apos;s what&apos;s happening today</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3 px-4 py-2 rounded-full bg-bg-surface/50 border border-border-base backdrop-blur-md shadow-sm">
-            <Calendar className="w-4 h-4 text-indigo-500" />
-            <span className="text-sm font-bold text-text-secondary">
-              {currentDate.toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'short' })}
+          <div className="flex items-center gap-1.5 md:gap-3 px-2 py-1 md:px-4 md:py-2 rounded-full bg-bg-surface/50 border border-border-base backdrop-blur-md shadow-sm shrink-0">
+            <Calendar className="w-3 h-3 md:w-4 md:h-4 text-indigo-500" />
+            <span className="text-[10px] md:text-sm font-bold text-text-secondary whitespace-nowrap">
+              {currentDate.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' })}
             </span>
           </div>
         </div>
@@ -179,21 +189,38 @@ export default function DashboardPage() {
                   <p className="text-[10px] md:text-xs font-bold text-white/70 uppercase tracking-wide md:tracking-widest">Your Work Status</p>
                   <h3 className="text-base md:text-2xl font-black text-white capitalize">{isPresent(attendanceData) ? 'Clocked In' : 'Not Clocked In'}</h3>
                 </div>
-              </div>
-
-              <div className="flex flex-wrap gap-2 md:gap-4 items-center w-full md:w-auto">
-                <div className="flex-1 md:flex-initial px-3 py-2 md:px-5 md:py-2.5 rounded-xl md:rounded-2xl bg-black/10 backdrop-blur-md border border-white/10 flex flex-col items-center min-w-[80px] md:min-w-[100px]">
-                  <span className="text-[8px] md:text-[10px] font-bold text-white/60 uppercase">In Time</span>
-                  <span className="text-sm md:text-lg font-black text-white font-mono">{attendanceData?.[0]?.inTime ? new Date(attendanceData[0].inTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}</span>
-                </div>
-                <div className="flex-1 md:flex-initial px-3 py-2 md:px-5 md:py-2.5 rounded-xl md:rounded-2xl bg-black/10 backdrop-blur-md border border-white/10 flex flex-col items-center min-w-[80px] md:min-w-[100px]">
-                  <span className="text-[8px] md:text-[10px] font-bold text-white/60 uppercase">Expected Out</span>
-                  <span className="text-sm md:text-lg font-black text-white font-mono">{attendanceData?.[0]?.outTime ? new Date(attendanceData[0].outTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}</span>
-                </div>
                 <div className={`px-4 py-2 md:px-6 md:py-3 rounded-xl md:rounded-2xl font-black text-[10px] md:text-xs uppercase tracking-wide md:tracking-widest shadow-lg ${isPresent(attendanceData) ? 'bg-white text-indigo-700' : 'bg-white/10 text-white border border-white/20'
                   }`}>
                   {getStatusDisplay(attendanceData)}
                 </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2 md:gap-4 items-center w-full md:w-auto">
+                <div className="flex-1 md:flex-initial px-3 py-2 md:px-5 md:py-2.5 rounded-xl md:rounded-2xl bg-black/10 backdrop-blur-md border border-white/10 flex flex-col items-center min-w-[80px] md:min-w-[100px] relative overflow-hidden">
+                  <span className="text-[8px] md:text-[10px] font-bold text-white/60 uppercase">In Time</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm md:text-lg font-black text-white font-mono">
+                      {attendanceData?.[0]?.inTime
+                        ? formatTimeIST(attendanceData[0].inTime)
+                        : (attendanceData?.[0]?.shifts?.[0]?.inTime
+                          ? formatTimeIST(attendanceData[0].shifts[0].inTime)
+                          : '--:--')
+                      }
+                    </span>
+                  </div>
+                </div>
+                <div className="flex-1 md:flex-initial px-3 py-2 md:px-5 md:py-2.5 rounded-xl md:rounded-2xl bg-black/10 backdrop-blur-md border border-white/10 flex flex-col items-center min-w-[80px] md:min-w-[100px]">
+                  <span className="text-[8px] md:text-[10px] font-bold text-white/60 uppercase">Expected Out</span>
+                  <span className="text-sm md:text-lg font-black text-white font-mono">
+                    {attendanceData?.[0]?.outTime
+                      ? formatTimeIST(attendanceData[0].outTime)
+                      : (attendanceData?.[0]?.shifts?.[0]?.shiftEndTime
+                        ? formatTimeIST(`${new Date().toISOString().split('T')[0]}T${attendanceData[0].shifts[0].shiftEndTime}`)
+                        : '--:--')
+                    }
+                  </span>
+                </div>
+
               </div>
             </div>
             <div className="bg-black/10 rounded-xl md:rounded-2xl p-3 md:p-4 border border-white/10 backdrop-blur-sm mt-3 md:mt-4">
@@ -202,37 +229,73 @@ export default function DashboardPage() {
                   <div key={recordIdx} className="w-full">
                     {record.shifts && record.shifts.length > 0 ? (
                       record.shifts.map((shift: any, shiftIdx: number) => (
-                        <div key={`${recordIdx}-${shiftIdx}`} className={`flex flex-col md:flex-row md:items-center md:justify-between gap-2 md:gap-0 ${shiftIdx > 0 ? 'mt-3 md:mt-4 pt-3 md:pt-4 border-t border-white/10' : ''}`}>
-                          <div className="flex flex-col">
-                            <span className="text-[8px] md:text-[10px] font-semibold text-emerald-100 uppercase tracking-wide md:tracking-wider">Shift Info</span>
-                            <span className="text-[10px] md:text-xs font-bold text-white">{shift.shiftName || shift.shiftId?.name || 'General Shift'}</span>
+                        <div key={`${recordIdx}-${shiftIdx}`} className={`flex flex-col px-5 md:flex-row md:items-center md:justify-between gap-2 md:gap-0 ${shiftIdx > 0 ? 'mt-3 md:mt-4 pt-3 md:pt-4 border-t border-white/10' : ''}`}>
+                          <div className="flex flex-row justify-between items-center w-full md:w-auto md:flex-col md:items-start">
+                            <div className="flex flex-col">
+                              <span className="text-[8px] md:text-[10px] font-semibold text-emerald-100 uppercase tracking-wide md:tracking-wider">Shift Info</span>
+                              <span className="text-[10px] md:text-xs font-bold text-white">{shift.shiftName || shift.shiftId?.name || 'General Shift'}</span>
+                            </div>
+                            {shift.inTime && (
+                              <div className="flex flex-col items-end md:hidden">
+                                <span className="text-[8px] font-semibold text-emerald-100 uppercase tracking-wide">Status</span>
+                                <span className={`text-[10px] font-bold uppercase tracking-wide ${shift.isLateIn ? 'text-red-300' : 'text-emerald-300'}`}>
+                                  {shift.isLateIn ? 'Late' : 'On Time'}
+                                </span>
+                              </div>
+                            )}
                           </div>
-                          <div className="flex gap-4 md:gap-0">
+                          <div className="flex gap-4 md:gap-8 w-full md:w-auto">
+                            {shift.inTime && (
+                              <div className="hidden md:flex flex-col flex-1 md:flex-initial md:items-center">
+                                <span className="text-[8px] md:text-[10px] font-semibold text-emerald-100 uppercase tracking-wide md:tracking-wider">Status</span>
+                                <span className={`text-[10px] md:text-xs font-bold uppercase tracking-wide ${shift.isLateIn ? 'text-red-300' : 'text-emerald-300'}`}>
+                                  {shift.isLateIn ? 'Late' : 'On Time'}
+                                </span>
+                              </div>
+                            )}
                             <div className="flex flex-col flex-1 md:flex-initial md:items-center">
                               <span className="text-[8px] md:text-[10px] font-semibold text-emerald-100 uppercase tracking-wide md:tracking-wider">In Time</span>
-                              <span className="text-xs md:text-sm font-bold text-white font-mono">{shift.inTime ? new Date(shift.inTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}</span>
+                              <span className="text-xs md:text-sm font-bold text-white font-mono">{formatTimeIST(shift.inTime)}</span>
                             </div>
-                            <div className="flex flex-col flex-1 md:flex-initial md:items-end">
+                            <div className="flex flex-col flex-1 items-end md:flex-initial md:items-end">
                               <span className="text-[8px] md:text-[10px] font-semibold text-emerald-100 uppercase tracking-wide md:tracking-wider">Out Time</span>
-                              <span className="text-xs md:text-sm font-bold text-white font-mono">{shift.outTime ? new Date(shift.outTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}</span>
+                              <span className="text-xs md:text-sm font-bold text-white font-mono">{formatTimeIST(shift.outTime)}</span>
                             </div>
                           </div>
                         </div>
                       ))
                     ) : (
                       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 md:gap-0">
-                        <div className="flex flex-col">
-                          <span className="text-[8px] md:text-[10px] font-semibold text-emerald-100 uppercase tracking-wide md:tracking-wider">Shift Info</span>
-                          <span className="text-[10px] md:text-xs font-bold text-white">{record.shiftId?.name || record.shift || 'General Shift'}</span>
+                        <div className="flex flex-row justify-between items-center w-full md:w-auto md:flex-col md:items-start">
+                          <div className="flex flex-col">
+                            <span className="text-[8px] md:text-[10px] font-semibold text-emerald-100 uppercase tracking-wide md:tracking-wider">Shift Info</span>
+                            <span className="text-[10px] md:text-xs font-bold text-white">{record.shiftId?.name || record.shift || 'General Shift'}</span>
+                          </div>
+                          {record.inTime && (
+                            <div className="flex flex-col items-end md:hidden">
+                              <span className="text-[8px] font-semibold text-emerald-100 uppercase tracking-wide">Status</span>
+                              <span className={`text-[10px] font-bold uppercase tracking-wide ${record.isLateIn ? 'text-red-300' : 'text-emerald-300'}`}>
+                                {record.isLateIn ? 'Late' : 'On Time'}
+                              </span>
+                            </div>
+                          )}
                         </div>
-                        <div className="flex gap-4 md:gap-0">
+                        <div className="flex gap-4 md:gap-8 w-full md:w-auto">
+                          {record.inTime && (
+                            <div className="hidden md:flex flex-col flex-1 md:flex-initial md:items-center">
+                              <span className="text-[8px] md:text-[10px] font-semibold text-emerald-100 uppercase tracking-wide md:tracking-wider">Status</span>
+                              <span className={`text-[10px] md:text-xs font-bold uppercase tracking-wide ${record.isLateIn ? 'text-red-300' : 'text-emerald-300'}`}>
+                                {record.isLateIn ? 'Late' : 'On Time'}
+                              </span>
+                            </div>
+                          )}
                           <div className="flex flex-col flex-1 md:flex-initial md:items-center">
                             <span className="text-[8px] md:text-[10px] font-semibold text-emerald-100 uppercase tracking-wide md:tracking-wider">In Time</span>
-                            <span className="text-xs md:text-sm font-bold text-white font-mono">{record.inTime ? new Date(record.inTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}</span>
+                            <span className="text-xs md:text-sm font-bold text-white font-mono">{formatTimeIST(record.inTime)}</span>
                           </div>
-                          <div className="flex flex-col flex-1 md:flex-initial md:items-end">
+                          <div className="flex flex-col flex-1 items-end md:flex-initial md:items-end">
                             <span className="text-[8px] md:text-[10px] font-semibold text-emerald-100 uppercase tracking-wide md:tracking-wider">Out Time</span>
-                            <span className="text-xs md:text-sm font-bold text-white font-mono">{record.outTime ? new Date(record.outTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}</span>
+                            <span className="text-xs md:text-sm font-bold text-white font-mono">{formatTimeIST(record.outTime)}</span>
                           </div>
                         </div>
                       </div>
@@ -303,7 +366,7 @@ function HRDashboard({ stats }: { stats: DashboardStats }) {
           </div>
         </div>
 
-        <div className="lg:col-span-2 p-4 md:p-8 rounded-2xl md:rounded-3xl bg-bg-surface/50 border border-border-base backdrop-blur-md shadow-sm">
+        {/* <div className="lg:col-span-2 p-4 md:p-8 rounded-2xl md:rounded-3xl bg-bg-surface/50 border border-border-base backdrop-blur-md shadow-sm">
           <h2 className="text-base md:text-xl font-black text-text-primary mb-4 md:mb-6 flex items-center gap-2 md:gap-3">
             <span className="w-1.5 md:w-2 h-4 md:h-6 bg-blue-500 rounded-full" />
             System Updates
@@ -313,7 +376,7 @@ function HRDashboard({ stats }: { stats: DashboardStats }) {
             <NotificationItem icon="!" title="Payroll Deadline" desc="Finalize arrears by tomorrow" status="Urgent" color="warning" />
             <NotificationItem icon="i" title="Policy Update" desc="New OT rules active next cycle" status="Info" color="primary" />
           </div>
-        </div>
+        </div> */}
       </div>
     </div>
   );

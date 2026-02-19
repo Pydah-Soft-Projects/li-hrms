@@ -368,6 +368,7 @@ export function canManageBonusBatches(user: User): boolean {
  * Respects user-specific featureControl overrides
  */
 export function hasFeatureAccess(user: User, featureCode: string): boolean {
+    if (!user) return false;
     // If user has featureControl array, check if feature is included
     if (user.featureControl && Array.isArray(user.featureControl)) {
         // Backward compatibility: Exact match checks for full access or legacy format
@@ -387,6 +388,7 @@ export function hasFeatureAccess(user: User, featureCode: string): boolean {
  * Accepts 'feature', 'feature:read', or 'feature:write'
  */
 export function canViewFeature(user: User, featureCode: string): boolean {
+    if (!user) return false;
     if (!user.featureControl || user.featureControl.length === 0) return true; // Default allow if empty (legacy/role-based)
 
     return user.featureControl.includes(featureCode) ||
@@ -399,6 +401,7 @@ export function canViewFeature(user: User, featureCode: string): boolean {
  * Accepts 'feature' or 'feature:write'
  */
 export function canManageFeature(user: User, featureCode: string): boolean {
+    if (!user) return false;
     if (!user.featureControl || user.featureControl.length === 0) return true; // Default allow if empty (legacy/role-based)
 
     return user.featureControl.includes(featureCode) ||

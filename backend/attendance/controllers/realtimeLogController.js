@@ -78,7 +78,11 @@ exports.receiveRealTimeLogs = async (req, res) => {
 
             if (VALID_LOG_TYPES.includes(typeUpper)) {
                 // Parse timestamp safe
-                const timestamp = new Date(log.timestamp);
+                // Parse timestamp safe - treat as UTC
+                const timestampStr = typeof log.timestamp === 'string' && !log.timestamp.endsWith('Z')
+                    ? `${log.timestamp}Z`
+                    : log.timestamp;
+                const timestamp = new Date(timestampStr);
                 if (isNaN(timestamp.getTime())) continue;
 
                 rawLogsToSave.push({

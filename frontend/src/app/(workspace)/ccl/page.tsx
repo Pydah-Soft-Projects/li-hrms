@@ -116,7 +116,7 @@ const formatDate = (d: string) => {
 
 const formatTime = (t: string | Date | null) => {
   if (!t) return '-';
-  return new Date(t).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  return new Date(t).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' });
 };
 
 export default function CCLPage() {
@@ -378,42 +378,41 @@ export default function CCLPage() {
   const list = activeTab === 'my' ? filteredCCLs : filteredPendingCCLs;
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 pb-10">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 pb-10 pt-1">
       {/* Sticky Header */}
-      <div className="sticky top-4 z-40 px-4 mb-8">
-        <div className="max-w-[1920px] mx-auto bg-white/70 dark:bg-slate-900/70 backdrop-blur-2xl rounded-[2.5rem] border border-white/20 dark:border-slate-800 shadow-2xl shadow-slate-200/50 dark:shadow-none min-h-[4.5rem] flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-6 sm:px-8 py-4 sm:py-0">
+      <div className="sticky px-2 top-4 z-40 md:px-4 mb-2 md:mb-8">
+        <div className="max-w-[1920px] mx-auto md:bg-white/70 md:dark:bg-slate-900/70 md:backdrop-blur-2xl md:rounded-[2.5rem] md:border md:border-white/20 md:dark:border-slate-800 md:shadow-2xl md:shadow-slate-200/50 md:dark:shadow-none min-h-[4.5rem] flex flex-row items-center justify-between gap-4 px-0 sm:px-8 py-2 md:py-0">
           <div className="flex items-center gap-4">
-            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20">
+            <div className="hidden md:flex h-10 w-10 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-600 items-center justify-center text-white shadow-lg shadow-indigo-500/20">
               <Briefcase className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="text-xl font-black bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 uppercase tracking-tight">
+              <h1 className="text-base md:text-xl font-black bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 uppercase tracking-tight whitespace-nowrap">
                 Compensatory Leave
               </h1>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">
+              <p className="hidden md:flex text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] items-center gap-2">
                 Workspace <span className="h-1 w-1 rounded-full bg-slate-300"></span> Leave Management
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto overflow-x-auto hide-scrollbar">
+          <div className="flex items-center gap-2 sm:gap-3 w-auto overflow-x-auto hide-scrollbar">
 
 
             {(canApplyCCLForSelf || canApplyCCLForOthers) && (
               <button
                 onClick={() => setShowForm(true)}
-                className="group h-10 sm:h-11 px-4 sm:px-6 rounded-xl sm:rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-[9px] sm:text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-slate-900/10 dark:shadow-white/10 shrink-0"
+                className="group h-7 sm:h-11 p-1 sm:px-6 rounded-full sm:rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-[9px] sm:text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-slate-900/10 dark:shadow-white/10 shrink-0"
               >
-                <Plus className="w-3.5 h-3.5" />
+                <Plus className="w-5 h-5 sm:w-3.5 sm:h-3.5" />
                 <span className="hidden sm:inline">Apply CCL</span>
-                <span className="sm:hidden">Apply</span>
               </button>
             )}
           </div>
         </div>
       </div>
 
-      <div className="max-w-[1920px] mx-auto px-6">
+      <div className="max-w-[1920px] mx-auto px-2 sm:px-6">
         {/* Toast Container */}
         <ToastContainer
           position="top-right"
@@ -429,7 +428,8 @@ export default function CCLPage() {
         />
 
         {/* Stats Grid */}
-        <div className="mb-8 grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {/* Stats Grid - Desktop */}
+        <div className="hidden md:grid mb-8 grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard
             title="Approved CCLs"
             value={stats.my.approved}
@@ -468,25 +468,76 @@ export default function CCLPage() {
           />
         </div>
 
+        {/* Mobile Stats (Grouped) */}
+        <div className="md:hidden grid grid-cols-1 gap-3 mb-6">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-3 opacity-10">
+              <Calendar className="w-12 h-12 text-blue-500" />
+            </div>
+            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">CCL Stats</h3>
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+                  <span className="text-xs text-slate-600 dark:text-slate-400">Approved</span>
+                </div>
+                <span className="text-sm font-bold text-slate-900 dark:text-white">{stats.my.approved}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-2 h-2 rounded-full bg-amber-500"></div>
+                  <span className="text-xs text-slate-600 dark:text-slate-400">Pending</span>
+                </div>
+                <span className="text-sm font-bold text-slate-900 dark:text-white">{stats.my.pending}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-2 h-2 rounded-full bg-rose-500"></div>
+                  <span className="text-xs text-slate-600 dark:text-slate-400">Rejected</span>
+                </div>
+                <span className="text-sm font-bold text-slate-900 dark:text-white">{stats.my.rejected}</span>
+              </div>
+            </div>
+            {/* Pending Approvals Summary for Management */}
+            {stats.pendingApproval > 0 && (
+              <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-2 h-2 rounded-full bg-indigo-500"></div>
+                    <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">Approvals Pending</span>
+                  </div>
+                  <span className="text-sm font-bold text-indigo-600 dark:text-indigo-400">{stats.pendingApproval}</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Controls Section (Filters) */}
         <div className="mb-6 animate-in fade-in slide-in-from-top-4 duration-500">
-          <div className="p-5 sm:p-6 rounded-4xl border border-white/20 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl shadow-xl shadow-slate-200/50 dark:shadow-none transition-all">
-            <div className="flex flex-wrap items-center gap-6">
+          <div className="md:p-5 md:rounded-[2.5rem] md:border md:border-white/20 md:dark:border-slate-800 md:bg-white/60 md:dark:bg-slate-900/60 md:backdrop-blur-xl md:shadow-xl md:shadow-slate-200/50 md:dark:shadow-none transition-all">
+            <div className="flex flex-wrap items-center gap-2 md:gap-6">
               {/* Search & Toggle */}
               <div className="flex items-center gap-2 w-full md:w-auto md:flex-1">
                 <div className="flex-1 min-w-[200px] relative group">
-                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
+                  <div className="absolute inset-0 bg-blue-500/5 rounded-2xl blur-xl transition-opacity opacity-0 group-focus-within:opacity-100" />
                   <input
                     type="text"
                     placeholder="Search Employee..."
                     value={cclFilters.employeeNumber}
                     onChange={(e) => setCclFilters(prev => ({ ...prev, employeeNumber: e.target.value }))}
-                    className="w-full h-11 pl-11 pr-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all dark:text-white"
+                    className="relative w-full h-10 md:h-11 pl-4 pr-12 rounded-xl md:rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs md:text-sm font-semibold focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all dark:text-white shadow-sm"
                   />
+                  {/* Embedded Search Button */}
+                  <button
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-blue-500 text-white shadow-lg shadow-blue-500/20 active:scale-95 transition-all"
+                  >
+                    <Search className="w-4 h-4" />
+                  </button>
                 </div>
                 <button
                   onClick={() => setShowFilters(!showFilters)}
-                  className={`md:hidden h-11 w-11 flex items-center justify-center rounded-2xl border transition-all ${showFilters
+                  className={`md:hidden h-10 w-10 flex items-center justify-center rounded-xl border transition-all ${showFilters
                     ? 'bg-blue-500 border-blue-500 text-white'
                     : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400'
                     }`}
@@ -495,14 +546,14 @@ export default function CCLPage() {
                 </button>
               </div>
 
-              <div className={`flex flex-wrap items-center gap-4 w-full md:w-auto ${showFilters ? 'flex' : 'hidden md:flex'}`}>
+              <div className={`grid grid-cols-2 gap-2 w-full md:flex md:w-auto md:items-center md:gap-4 ${showFilters ? 'grid' : 'hidden md:flex'}`}>
                 {/* Status Filter */}
                 <div className="relative">
                   <Filter className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
                   <select
                     value={cclFilters.status}
                     onChange={(e) => setCclFilters(prev => ({ ...prev, status: e.target.value }))}
-                    className="h-10 pl-9 pr-8 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all appearance-none cursor-pointer"
+                    className="h-10 pl-9 pr-8 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all appearance-none cursor-pointer w-full"
                   >
                     <option value="">All Status</option>
                     <option value="pending">Pending</option>
@@ -512,7 +563,7 @@ export default function CCLPage() {
                 </div>
 
                 {/* Date Range */}
-                <div className="flex items-center flex-wrap sm:flex-nowrap gap-2 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                <div className="col-span-2 flex items-center flex-nowrap gap-2 px-0 py-0 bg-transparent border-0 md:px-3 md:py-1.5 md:rounded-xl md:bg-slate-100 md:dark:bg-slate-800 md:border md:border-slate-200 md:dark:border-slate-700">
                   <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                   <input
                     type="date"
@@ -535,7 +586,7 @@ export default function CCLPage() {
 
         {/* Tabs */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-          <div className="inline-flex items-center p-1 rounded-xl bg-slate-100/50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 backdrop-blur-sm shadow-inner overflow-x-auto scrollbar-hide">
+          <div className="grid grid-cols-2 sm:inline-flex items-center p-1 rounded-xl bg-slate-100/50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 backdrop-blur-sm shadow-inner w-full sm:w-auto gap-1 sm:gap-0">
             {[
               { id: 'my', label: 'My CCL', icon: Calendar, count: myCCLs.length, activeColor: 'blue' },
               { id: 'pending', label: 'Pending Approvals', icon: Clock3, count: pendingCCLs.length, activeColor: 'orange' }
@@ -543,7 +594,7 @@ export default function CCLPage() {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`group relative flex items-center gap-2 px-4 sm:px-6 py-2 rounded-lg text-xs font-bold transition-all duration-300 whitespace-nowrap ${activeTab === tab.id
+                className={`group relative flex items-center justify-center gap-2 px-2 sm:px-6 py-2 rounded-lg text-[10px] sm:text-xs font-bold transition-all duration-300 whitespace-nowrap ${activeTab === tab.id
                   ? `bg-white dark:bg-slate-700 text-${tab.id === 'my' ? 'blue' : 'orange'}-600 dark:text-${tab.id === 'my' ? 'blue' : 'orange'}-400 shadow-sm ring-1 ring-slate-200/50 dark:ring-0`
                   : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
                   }`}
@@ -786,12 +837,12 @@ export default function CCLPage() {
         showForm && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setShowForm(false)} />
-            <div className="relative z-50 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-white/20 dark:border-slate-800 shadow-2xl p-6 sm:p-8 animate-in zoom-in-95 duration-300">
-              <div className="mb-8">
-                <h2 className="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300">
+            <div className="relative z-50 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-white/20 dark:border-slate-800 shadow-2xl p-4 sm:p-8 animate-in zoom-in-95 duration-300">
+              <div className="mb-4 sm:mb-8">
+                <h2 className="text-lg sm:text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300">
                   Apply CCL
                 </h2>
-                <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">Compensatory leave for holiday/week-off work.</p>
+                <p className="text-slate-500 dark:text-slate-400 text-xs sm:text-sm mt-1">Compensatory leave for holiday/week-off work.</p>
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-6">
@@ -916,14 +967,14 @@ export default function CCLPage() {
                   <button
                     type="button"
                     onClick={() => setShowForm(false)}
-                    className="flex-1 h-11 rounded-xl border border-slate-200 bg-white text-xs font-black uppercase tracking-widest text-slate-600 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                    className="flex-1 h-11 rounded-xl border border-slate-200 bg-white text-[10px] font-black uppercase tracking-widest text-slate-600 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={loading}
-                    className="flex-1 h-11 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-black uppercase tracking-widest transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+                    className="flex-1 h-11 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-[10px] font-black uppercase tracking-widest transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
                   >
                     {loading ? 'Submitting...' : 'Apply Request'}
                   </button>
