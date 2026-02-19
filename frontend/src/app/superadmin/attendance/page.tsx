@@ -137,7 +137,7 @@ export default function AttendancePage() {
       const [hours, minutes] = timeStr.split(':').map(Number);
       const date = new Date();
       date.setHours(hours, minutes, 0, 0);
-      return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+      return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'UTC' });
     }
 
     try {
@@ -146,7 +146,7 @@ export default function AttendancePage() {
 
       // Primary time display in 12h IST
       const timeFormatted = date.toLocaleTimeString('en-US', {
-        timeZone: 'Asia/Kolkata',
+        timeZone: 'UTC',
         hour: '2-digit',
         minute: '2-digit',
         hour12: true
@@ -571,7 +571,7 @@ export default function AttendancePage() {
       setSuccess('');
 
       // Combine date with time to create proper datetime string
-      const outTimeDateTime = `${selectedDate}T${outTimeInput}:00`;
+      const outTimeDateTime = `${selectedDate}T${outTimeInput}:00Z`;
 
       const response = await api.updateAttendanceOutTime(
         selectedEmployee.emp_no,
@@ -623,7 +623,7 @@ export default function AttendancePage() {
       // Combine date with time to create proper datetime string
       // Note: If In-time crosses midnight (previous day?), we might need more logic,
       // but usually In-Time is on the selected date.
-      const inTimeDateTime = `${selectedDate}T${inTimeInput}:00`;
+      const inTimeDateTime = `${selectedDate}T${inTimeInput}:00Z`;
 
       const response = await api.updateAttendanceInTime(
         selectedEmployee.emp_no,
@@ -1065,9 +1065,8 @@ export default function AttendancePage() {
       setError('');
       setSuccess('');
 
-      // Format datetime for API
-      const outTimeDate = new Date(outTimeValue);
-      const isoString = outTimeDate.toISOString();
+      // Format datetime for API - treat datetime-local as UTC
+      const isoString = outTimeValue.includes('Z') ? outTimeValue : `${outTimeValue}:00Z`;
 
       const response = await api.updateAttendanceOutTime(
         selectedRecordForOutTime.employee.emp_no,
@@ -2137,7 +2136,7 @@ export default function AttendancePage() {
                                         setSelectedShiftRecordId(shift._id);
                                         if (shift.outTime) {
                                           const d = new Date(shift.outTime);
-                                          setOutTimeInput(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
+                                          setOutTimeInput(`${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`);
                                         } else {
                                           setOutTimeInput('');
                                         }
