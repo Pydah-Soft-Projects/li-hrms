@@ -139,10 +139,20 @@ export default function DashboardPage() {
     return data[0].status || 'Running';
   };
 
+  const formatTimeIST = (dateString: string | Date | null | undefined) => {
+    if (!dateString) return '--:--';
+    const date = new Date(dateString);
+    return date.toLocaleTimeString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    }).toUpperCase();
+  };
+
   return (
     <div className="relative min-h-screen -m-4 sm:-m-5 lg:-m-6">
-      {/* Background Grid Pattern */}
-      <div className="pointer-events-none fixed inset-0 z-0 bg-bg-base/50 bg-[linear-gradient(to_right,rgba(0,0,0,0.02)_1px,transparent_1px),linear-gradient(to_bottom,rgba(0,0,0,0.02)_1px,transparent_1px)] dark:bg-[linear-gradient(to_right,rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:42px_42px]"></div>
+
 
       <div className="relative z-10 pt-11 p-4 sm:p-5 lg:p-6 space-y-6">
         {/* Header */}
@@ -191,9 +201,9 @@ export default function DashboardPage() {
                   <div className="flex items-center gap-2">
                     <span className="text-sm md:text-lg font-black text-white font-mono">
                       {attendanceData?.[0]?.inTime
-                        ? new Date(attendanceData[0].inTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                        ? formatTimeIST(attendanceData[0].inTime)
                         : (attendanceData?.[0]?.shifts?.[0]?.inTime
-                          ? new Date(attendanceData[0].shifts[0].inTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                          ? formatTimeIST(attendanceData[0].shifts[0].inTime)
                           : '--:--')
                       }
                     </span>
@@ -203,9 +213,9 @@ export default function DashboardPage() {
                   <span className="text-[8px] md:text-[10px] font-bold text-white/60 uppercase">Expected Out</span>
                   <span className="text-sm md:text-lg font-black text-white font-mono">
                     {attendanceData?.[0]?.outTime
-                      ? new Date(attendanceData[0].outTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                      ? formatTimeIST(attendanceData[0].outTime)
                       : (attendanceData?.[0]?.shifts?.[0]?.shiftEndTime
-                        ? new Date(`${new Date().toISOString().split('T')[0]}T${attendanceData[0].shifts[0].shiftEndTime}`).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                        ? formatTimeIST(`${new Date().toISOString().split('T')[0]}T${attendanceData[0].shifts[0].shiftEndTime}`)
                         : '--:--')
                     }
                   </span>
@@ -245,11 +255,11 @@ export default function DashboardPage() {
                             )}
                             <div className="flex flex-col flex-1 md:flex-initial md:items-center">
                               <span className="text-[8px] md:text-[10px] font-semibold text-emerald-100 uppercase tracking-wide md:tracking-wider">In Time</span>
-                              <span className="text-xs md:text-sm font-bold text-white font-mono">{shift.inTime ? new Date(shift.inTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}</span>
+                              <span className="text-xs md:text-sm font-bold text-white font-mono">{formatTimeIST(shift.inTime)}</span>
                             </div>
                             <div className="flex flex-col flex-1 items-end md:flex-initial md:items-end">
                               <span className="text-[8px] md:text-[10px] font-semibold text-emerald-100 uppercase tracking-wide md:tracking-wider">Out Time</span>
-                              <span className="text-xs md:text-sm font-bold text-white font-mono">{shift.outTime ? new Date(shift.outTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}</span>
+                              <span className="text-xs md:text-sm font-bold text-white font-mono">{formatTimeIST(shift.outTime)}</span>
                             </div>
                           </div>
                         </div>
@@ -281,11 +291,11 @@ export default function DashboardPage() {
                           )}
                           <div className="flex flex-col flex-1 md:flex-initial md:items-center">
                             <span className="text-[8px] md:text-[10px] font-semibold text-emerald-100 uppercase tracking-wide md:tracking-wider">In Time</span>
-                            <span className="text-xs md:text-sm font-bold text-white font-mono">{record.inTime ? new Date(record.inTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}</span>
+                            <span className="text-xs md:text-sm font-bold text-white font-mono">{formatTimeIST(record.inTime)}</span>
                           </div>
                           <div className="flex flex-col flex-1 items-end md:flex-initial md:items-end">
                             <span className="text-[8px] md:text-[10px] font-semibold text-emerald-100 uppercase tracking-wide md:tracking-wider">Out Time</span>
-                            <span className="text-xs md:text-sm font-bold text-white font-mono">{record.outTime ? new Date(record.outTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'}</span>
+                            <span className="text-xs md:text-sm font-bold text-white font-mono">{formatTimeIST(record.outTime)}</span>
                           </div>
                         </div>
                       </div>

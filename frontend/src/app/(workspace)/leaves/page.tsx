@@ -31,7 +31,8 @@ import {
   AlertCircle,
   Clock,
   Check,
-  Circle
+  Circle,
+  Loader2
 } from 'lucide-react';
 
 // Custom Stat Card
@@ -416,7 +417,9 @@ export default function LeavesPage() {
 
   // Employees for "Apply For" selection
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [defaultEmployees, setDefaultEmployees] = useState<Employee[]>([]); // Store initial loaded employees
   const [employeeSearch, setEmployeeSearch] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
   const [searchTerm, setSearchTerm] = useState(''); // Global search for lists
   const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
@@ -838,6 +841,7 @@ export default function LeavesPage() {
             }
 
             setEmployees(employeesList);
+            setDefaultEmployees(employeesList); // Set defaults
           } else {
             // Suppress error for deactivated accounts as this is expected state for some contexts
             if (response.message !== 'Employee account is deactivated') {
@@ -924,6 +928,52 @@ export default function LeavesPage() {
 
 
   // Filter employees based on search
+  // Filter employees based on search
+  // Debounced Search Effect
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      // If search is empty, revert to default
+      if (!employeeSearch.trim()) {
+        if (employees.length !== defaultEmployees.length) {
+          setEmployees(defaultEmployees);
+        }
+        return;
+      }
+
+      // If search matches one of the local employees, we can show that (client-side filter)
+      // BUT for better coverage, we'll fetch from server if it's not a generic query
+      setIsSearching(true);
+
+      try {
+        const query: any = { is_active: true, search: employeeSearch };
+
+        // Apply same restrictions as loadEmployees
+        if (currentUser.role === 'hod') {
+          const deptId = typeof currentUser.department === 'object' && currentUser.department ? currentUser.department._id : currentUser.department;
+          if (deptId) {
+            query.department_id = deptId;
+          }
+        }
+
+        // Keep current user in list if they match (handled by backend or we append)
+        const response = await api.getEmployees(query);
+
+        if (response.success && Array.isArray(response.data)) {
+          // Ensure the currently selected employee is preserved if they wouldn't be in the new list?
+          // For now just show results.
+          setEmployees(response.data);
+        }
+      } catch (err) {
+        console.error('Error searching employees:', err);
+      } finally {
+        setIsSearching(false);
+      }
+
+    }, 500); // 500ms debounce
+
+    return () => clearTimeout(timer);
+  }, [employeeSearch, currentUser, defaultEmployees]); // Depend on defaultEmployees for revert
+
   const filteredEmployees = useMemo(() => {
     return employees.filter((emp) => {
       const searchLower = employeeSearch.toLowerCase();
@@ -2509,18 +2559,18 @@ export default function LeavesPage() {
         {showApplyDialog && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setShowApplyDialog(false)} />
-            <div className="relative z-50 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-white/20 dark:border-slate-800 shadow-2xl p-6 sm:p-8 animate-in zoom-in-95 duration-300">
+            <div className="relative z-50 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-white/20 dark:border-slate-800 shadow-2xl p-5 sm:p-8 animate-in zoom-in-95 duration-300">
               {/* Type Toggle */}
-              <div className="inline-flex w-full p-1 rounded-2xl bg-slate-100/50 dark:bg-slate-800/50 border border-slate-200/50 dark:border-slate-700/50 mb-8">
+              <div className="inline-flex w-full p-1 rounded-2xl bg-slate-100/50 dark:bg-slate-800/50 border border-slate-200/50 dark:border-slate-700/50 mb-6 sm:mb-8">
                 <button
                   type="button"
                   onClick={() => setApplyType('leave')}
-                  className={`flex-1 py-3.5 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${applyType === 'leave'
+                  className={`flex-1 py-2 sm:py-3.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${applyType === 'leave'
                     ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm shadow-blue-500/10'
                     : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
                     }`}
                 >
-                  <div className="flex items-center justify-center gap-2">
+                  <div className="flex items-center justify-center px-2 gap-1">
                     <Calendar className="w-4 h-4" />
                     Leave Request
                   </div>
@@ -2528,7 +2578,7 @@ export default function LeavesPage() {
                 <button
                   type="button"
                   onClick={() => setApplyType('od')}
-                  className={`flex-1 py-3.5 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${applyType === 'od'
+                  className={`flex-1 py-2 sm:py-3.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${applyType === 'od'
                     ? 'bg-white dark:bg-slate-700 text-purple-600 dark:text-purple-400 shadow-sm shadow-purple-500/10'
                     : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
                     }`}
@@ -2540,18 +2590,18 @@ export default function LeavesPage() {
                 </button>
               </div>
 
-              <div className="mb-8">
-                <h2 className="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300">
+              <div className="mb-6 sm:mb-8">
+                <h2 className="text-lg sm:text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300">
                   New {applyType === 'leave' ? 'Leave' : 'OD'} Application
                 </h2>
-                <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">Please fill in the details of your request.</p>
+                <p className="text-slate-500 dark:text-slate-400 text-xs sm:sm mt-1">Please fill in the details of your request.</p>
               </div>
 
               <form onSubmit={handleApply} className="space-y-4">
                 {/* Apply For - Employee Selection (Hidden for Employees) */}
                 {currentUser?.role !== 'employee' && (
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">
                       Apply For Employee *
                     </label>
                     <div className="relative">
@@ -2607,15 +2657,26 @@ export default function LeavesPage() {
                             }}
                             onFocus={() => setShowEmployeeDropdown(true)}
                             placeholder="Search by name, emp no, or department..."
-                            className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20"
+                            className="w-full pl-10 pr-4 py-2 sm:py-2.5 rounded-xl border border-slate-200 bg-white text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20"
+                            onBlur={() => {
+                              // Delay hiding to allow click event on options to fire
+                              setTimeout(() => setShowEmployeeDropdown(false), 200);
+                            }}
                           />
 
                           {/* Employee Dropdown */}
                           {showEmployeeDropdown && (
                             <div className="absolute z-10 w-full mt-1 max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-800">
-                              {filteredEmployees.length === 0 ? (
+                              {isSearching ? (
+                                <div className="p-4 flex flex-col items-center justify-center text-slate-500 gap-2">
+                                  <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
+                                  <span className="text-xs">Searching employees...</span>
+                                </div>
+                              ) : filteredEmployees.length === 0 ? (
                                 <div className="p-4 text-center text-sm text-slate-500">
-                                  {employeeSearch ? 'No employees found' : 'Type to search employees'}
+                                  {employeeSearch
+                                    ? 'No employees found'
+                                    : 'Type to search employees'}
                                 </div>
                               ) : (
                                 filteredEmployees.slice(0, 10).map((emp, idx) => (
@@ -2654,7 +2715,7 @@ export default function LeavesPage() {
 
                 {/* Type Selection */}
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">
                     {applyType === 'leave' ? 'Leave Type' : 'OD Type'} *
                   </label>
                   {((applyType === 'leave' && leaveTypes.length === 1) || (applyType === 'od' && odTypes.length === 1)) ? (
@@ -2677,7 +2738,7 @@ export default function LeavesPage() {
                         }
                       }}
                       required
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                     >
                       <option value="">Select {applyType === 'leave' ? 'leave' : 'OD'} type</option>
                       {(applyType === 'leave' ? leaveTypes : odTypes).map((type) => (
@@ -2690,12 +2751,12 @@ export default function LeavesPage() {
                 {/* OD Type Extended Selector */}
                 {applyType === 'od' && (
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">Duration Type</label>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-3">Duration Type</label>
                     <div className="grid grid-cols-3 gap-2">
                       <button
                         type="button"
                         onClick={() => setFormData({ ...formData, odType_extended: 'full_day', isHalfDay: false })}
-                        className={`py-2.5 px-3 rounded-lg text-sm font-medium transition-all ${formData.odType_extended === 'full_day'
+                        className={`py-2 px-2 sm:py-2.5 sm:px-3 rounded-lg text-xs sm:text-sm font-medium transition-all ${formData.odType_extended === 'full_day'
                           ? 'bg-purple-500 text-white shadow-md'
                           : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300'
                           }`}
@@ -2705,7 +2766,7 @@ export default function LeavesPage() {
                       <button
                         type="button"
                         onClick={() => setFormData({ ...formData, odType_extended: 'half_day', isHalfDay: true, halfDayType: formData.halfDayType || 'first_half' })}
-                        className={`py-2.5 px-3 rounded-lg text-sm font-medium transition-all ${formData.odType_extended === 'half_day'
+                        className={`py-2 px-2 sm:py-2.5 sm:px-3 rounded-lg text-xs sm:text-sm font-medium transition-all ${formData.odType_extended === 'half_day'
                           ? 'bg-purple-500 text-white shadow-md'
                           : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300'
                           }`}
@@ -2715,7 +2776,7 @@ export default function LeavesPage() {
                       <button
                         type="button"
                         onClick={() => setFormData({ ...formData, odType_extended: 'hours', isHalfDay: false })}
-                        className={`py-2.5 px-3 rounded-lg text-sm font-medium transition-all ${formData.odType_extended === 'hours'
+                        className={`py-2 px-2 sm:py-2.5 sm:px-3 rounded-lg text-xs sm:text-sm font-medium transition-all ${formData.odType_extended === 'hours'
                           ? 'bg-purple-500 text-white shadow-md'
                           : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300'
                           }`}
@@ -2731,39 +2792,39 @@ export default function LeavesPage() {
                   (applyType === 'od' && (formData.odType_extended === 'half_day' || formData.odType_extended === 'hours'))) ? (
                   /* Single Date Input for Half Day / Specific Hours */
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Date *</label>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">Date *</label>
                     <input
                       type="date"
                       min={new Date().toISOString().split('T')[0]}
                       value={formData.fromDate} // Use fromDate as the single source of truth
                       onChange={(e) => setFormData({ ...formData, fromDate: e.target.value, toDate: e.target.value })}
                       required
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                     />
                   </div>
                 ) : (
                   /* Two Date Inputs for Full Day */
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">From Date *</label>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">From Date *</label>
                       <input
                         type="date"
                         min={new Date().toISOString().split('T')[0]}
                         value={formData.fromDate}
                         onChange={(e) => setFormData({ ...formData, fromDate: e.target.value })}
                         required
-                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">To Date *</label>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">To Date *</label>
                       <input
                         type="date"
                         min={new Date().toISOString().split('T')[0]}
                         value={formData.toDate}
                         onChange={(e) => setFormData({ ...formData, toDate: e.target.value })}
                         required
-                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                       />
                     </div>
                   </div>
@@ -2773,23 +2834,23 @@ export default function LeavesPage() {
                 {applyType === 'od' && formData.odType_extended === 'hours' && (
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Start Time *</label>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">Start Time *</label>
                       <input
                         type="time"
                         value={formData.odStartTime || ''}
                         onChange={(e) => setFormData({ ...formData, odStartTime: e.target.value })}
                         required
-                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">End Time *</label>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">End Time *</label>
                       <input
                         type="time"
                         value={formData.odEndTime || ''}
                         onChange={(e) => setFormData({ ...formData, odEndTime: e.target.value })}
                         required
-                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                       />
                     </div>
                     {formData.odStartTime && formData.odEndTime && (
@@ -2857,13 +2918,13 @@ export default function LeavesPage() {
 
                 {/* Purpose */}
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Purpose *</label>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">Purpose *</label>
                   <textarea
                     value={formData.purpose}
                     onChange={(e) => setFormData({ ...formData, purpose: e.target.value })}
                     required
                     rows={2}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                     placeholder="Reason..."
                   />
                 </div>
@@ -2872,13 +2933,13 @@ export default function LeavesPage() {
                 {applyType === 'od' && (
                   <div className="space-y-4">
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Place to Visit *</label>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">Place to Visit *</label>
                       <input
                         type="text"
                         value={formData.placeVisited}
                         onChange={(e) => setFormData({ ...formData, placeVisited: e.target.value })}
                         required
-                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                         placeholder="Location"
                       />
                     </div>
@@ -2899,24 +2960,24 @@ export default function LeavesPage() {
 
                 {/* Contact Number */}
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Contact Number *</label>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">Contact Number *</label>
                   <input
                     type="tel"
                     value={formData.contactNumber}
                     onChange={(e) => setFormData({ ...formData, contactNumber: e.target.value })}
                     required
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                   />
                 </div>
 
                 {/* Remarks */}
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Remarks</label>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">Remarks</label>
                   <input
                     type="text"
                     value={formData.remarks}
                     onChange={(e) => setFormData({ ...formData, remarks: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                   />
                 </div>
 
@@ -2925,13 +2986,13 @@ export default function LeavesPage() {
                   <button
                     type="button"
                     onClick={() => setShowApplyDialog(false)}
-                    className="flex-1 py-2.5 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                    className="flex-1 py-2 sm:py-2.5 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className={`flex-1 py-2.5 text-sm font-bold text-white rounded-xl ${applyType === 'leave' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-purple-600 hover:bg-purple-700'}`}
+                    className={`flex-1 py-2 sm:py-2.5 text-sm font-bold text-white rounded-xl ${applyType === 'leave' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-purple-600 hover:bg-purple-700'}`}
                   >
                     Apply {applyType === 'leave' ? 'Leave' : 'OD'}
                   </button>
@@ -3314,7 +3375,7 @@ export default function LeavesPage() {
                         setEditFormData({ ...editFormData, fromDate: newFromDate, toDate: newToDate });
                       }}
                       required
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                     />
                   </div>
                   <div>
@@ -3428,7 +3489,7 @@ export default function LeavesPage() {
                           value={editFormData.odStartTime || ''}
                           onChange={(e) => setEditFormData({ ...editFormData, odStartTime: e.target.value })}
                           required={editFormData.odType_extended === 'hours'}
-                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                         />
                       </div>
                       <div>
@@ -3438,7 +3499,7 @@ export default function LeavesPage() {
                           value={editFormData.odEndTime || ''}
                           onChange={(e) => setEditFormData({ ...editFormData, odEndTime: e.target.value })}
                           required={editFormData.odType_extended === 'hours'}
-                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                         />
                       </div>
                     </div>
@@ -3502,7 +3563,7 @@ export default function LeavesPage() {
 
                 {/* Purpose */}
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Purpose *</label>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">Purpose *</label>
                   <textarea
                     value={editFormData.purpose}
                     onChange={(e) => setEditFormData({ ...editFormData, purpose: e.target.value })}
@@ -3521,14 +3582,14 @@ export default function LeavesPage() {
                       value={editFormData.placeVisited}
                       onChange={(e) => setEditFormData({ ...editFormData, placeVisited: e.target.value })}
                       required
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                     />
                   </div>
                 )}
 
                 {/* Contact Number */}
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Contact Number *</label>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">Contact Number *</label>
                   <input
                     type="tel"
                     value={editFormData.contactNumber}
@@ -3540,7 +3601,7 @@ export default function LeavesPage() {
 
                 {/* Remarks */}
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Remarks</label>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">Remarks</label>
                   <input
                     type="text"
                     value={editFormData.remarks}
@@ -3558,7 +3619,7 @@ export default function LeavesPage() {
                     <select
                       value={editFormData.status || selectedItem.status}
                       onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value })}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                     >
                       <option value="pending">Pending</option>
                       <option value="hod_approved">HOD Approved</option>

@@ -8,6 +8,7 @@ import { WorkspaceProvider, useWorkspace } from '@/contexts/WorkspaceContext';
 import { SidebarProvider } from '@/contexts/SidebarContext';
 import Spinner from '@/components/Spinner';
 import WorkspaceSidebar from '@/components/WorkspaceSidebar';
+import MobileBottomNav from '@/components/MobileBottomNav';
 import MainContent from '@/components/MainContent';
 
 function WorkspaceLayoutContent({ children }: { children: React.ReactNode }) {
@@ -17,8 +18,14 @@ function WorkspaceLayoutContent({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen bg-bg-base dark:bg-slate-900">
-      <WorkspaceSidebar />
+      <div className="hidden sm:block">
+        <WorkspaceSidebar />
+      </div>
       <MainContent>{children}</MainContent>
+      {/* Mobile Bottom Navigation */}
+      <div className="sm:hidden">
+        <MobileBottomNav />
+      </div>
     </div>
   );
 };

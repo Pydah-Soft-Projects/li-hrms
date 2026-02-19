@@ -444,7 +444,7 @@ export default function OTAndPermissionsPage() {
           // Check attendance for permission
           if (permissionFormData.date) {
             api.getAttendanceDetail(empNo, permissionFormData.date).then(attendanceRes => {
-              if (!attendanceRes.success || !attendanceRes.data || !attendanceRes.data.inTime) {
+              if (!attendanceRes.success || !attendanceRes.data || !attendanceRes.data.shifts || attendanceRes.data.shifts.length === 0 || !attendanceRes.data.shifts[0].inTime) {
                 setPermissionValidationError('No attendance record found or employee has no in-time for this date. Permission cannot be created without attendance.');
               } else {
                 setPermissionValidationError('');
@@ -561,9 +561,13 @@ export default function OTAndPermissionsPage() {
           setOTFormData(prev => ({ ...prev, employeeId, employeeNumber, date }));
         } else {
           // Get shift from attendance
-          if (attendance.shiftId) {
-            const shiftId = typeof attendance.shiftId === 'string' ? attendance.shiftId : attendance.shiftId._id;
+          if (attendance.shifts && attendance.shifts.length > 0) {
+            const firstShift = attendance.shifts[0];
+            const shiftId = (firstShift.shiftId && typeof firstShift.shiftId === 'object') ? (firstShift.shiftId as any)._id : firstShift.shiftId;
+
+            // Try to find full shift object in shifts list
             const shift = shifts.find(s => s._id === shiftId);
+
             if (shift) {
               setSelectedShift(shift);
               setOTFormData(prev => ({ ...prev, employeeId, employeeNumber, date, shiftId: shift._id }));
@@ -574,27 +578,38 @@ export default function OTAndPermissionsPage() {
               suggestedOutTime.setHours(endHour + 1, endMin, 0, 0);
               const suggestedOutTimeStr = suggestedOutTime.toISOString().slice(0, 16);
               setOTFormData(prev => ({ ...prev, otOutTime: suggestedOutTimeStr }));
-            } else {
-              // Shift not found in shifts list, try to get from attendance data
-              if (attendance.shiftId && typeof attendance.shiftId === 'object') {
-                const shiftData = attendance.shiftId;
-                setSelectedShift({
-                  _id: shiftData._id,
-                  name: shiftData.name || 'Unknown',
-                  startTime: shiftData.startTime || '',
-                  endTime: shiftData.endTime || '',
-                  duration: shiftData.duration || 0,
-                });
-                setOTFormData(prev => ({ ...prev, employeeId, employeeNumber, date, shiftId: shiftData._id }));
+            } else if (firstShift.shiftId && typeof firstShift.shiftId === 'object') {
+              // Shift not found in global list but present in attendance (populated)
+              const shiftData = firstShift.shiftId as any;
+              setSelectedShift({
+                _id: shiftData._id,
+                name: shiftData.name || 'Unknown',
+                startTime: shiftData.startTime || '',
+                endTime: shiftData.endTime || '',
+                duration: shiftData.duration || 0,
+              });
+              setOTFormData(prev => ({ ...prev, employeeId, employeeNumber, date, shiftId: shiftData._id }));
 
-                // Auto-suggest OT out time
-                if (shiftData.endTime) {
-                  const [endHour, endMin] = shiftData.endTime.split(':').map(Number);
-                  const suggestedOutTime = new Date(date);
-                  suggestedOutTime.setHours(endHour + 1, endMin, 0, 0);
-                  const suggestedOutTimeStr = suggestedOutTime.toISOString().slice(0, 16);
-                  setOTFormData(prev => ({ ...prev, otOutTime: suggestedOutTimeStr }));
-                }
+              // Auto-suggest OT out time
+              if (shiftData.endTime) {
+                const [endHour, endMin] = shiftData.endTime.split(':').map(Number);
+                const suggestedOutTime = new Date(date);
+                suggestedOutTime.setHours(endHour + 1, endMin, 0, 0);
+                const suggestedOutTimeStr = suggestedOutTime.toISOString().slice(0, 16);
+                setOTFormData(prev => ({ ...prev, otOutTime: suggestedOutTimeStr }));
+              }
+            } else {
+              // Fallback if shiftId is just an ID but not found in list, or missing
+              // Try using embedded fields if available
+              if (firstShift.shiftName) {
+                setSelectedShift({
+                  _id: shiftId as string,
+                  name: firstShift.shiftName || 'Unknown',
+                  startTime: firstShift.shiftStartTime || '',
+                  endTime: firstShift.shiftEndTime || '',
+                  duration: firstShift.duration || 0,
+                });
+                setOTFormData(prev => ({ ...prev, employeeId, employeeNumber, date, shiftId: shiftId as string }));
               }
             }
           } else {
@@ -629,7 +644,7 @@ export default function OTAndPermissionsPage() {
       return;
     }
 
-    if (!attendanceData || !attendanceData.inTime) {
+    if (!attendanceData || !attendanceData.shifts || attendanceData.shifts.length === 0 || !attendanceData.shifts[0].inTime) {
       const errorMsg = 'Attendance record not found or incomplete. OT cannot be created without attendance.';
       setValidationError(errorMsg);
       showToast(errorMsg, 'error');
@@ -722,7 +737,7 @@ export default function OTAndPermissionsPage() {
     if (permissionFormData.employeeNumber && permissionFormData.date) {
       try {
         const attendanceRes = await api.getAttendanceDetail(permissionFormData.employeeNumber, permissionFormData.date);
-        if (!attendanceRes.success || !attendanceRes.data || !attendanceRes.data.inTime) {
+        if (!attendanceRes.success || !attendanceRes.data || !attendanceRes.data.shifts || attendanceRes.data.shifts.length === 0 || !attendanceRes.data.shifts[0].inTime) {
           const errorMsg = 'No attendance record found or employee has no in-time for this date. Permission cannot be created without attendance.';
           setPermissionValidationError(errorMsg);
           showToast(errorMsg, 'error');
@@ -1936,25 +1951,25 @@ export default function OTAndPermissionsPage() {
                   <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md animate-in fade-in duration-300" onClick={() => setShowOTDialog(false)} />
                   <div className="relative z-50 w-full max-w-lg overflow-hidden rounded-[2.5rem] border border-white/20 bg-white dark:bg-slate-900 shadow-2xl animate-in zoom-in-95 duration-300 flex flex-col max-h-[90vh]">
                     {/* Header */}
-                    <div className="flex items-center justify-between p-6 sm:p-8 border-b border-slate-100 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md">
-                      <div className="flex items-center gap-4">
-                        <div className="h-12 w-12 rounded-2xl bg-blue-500/10 flex items-center justify-center">
-                          <Timer className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                    <div className="flex items-center justify-between p-4 sm:p-8 border-b border-slate-100 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md">
+                      <div className="flex items-center gap-3 sm:gap-4">
+                        <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-2xl bg-blue-500/10 flex items-center justify-center">
+                          <Timer className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600 dark:text-blue-400" />
                         </div>
                         <div>
-                          <h2 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Apply Overtime</h2>
+                          <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Apply Overtime</h2>
                           <p className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-500">Workspace Request</p>
                         </div>
                       </div>
                       <button
                         onClick={() => { setShowOTDialog(false); resetOTForm(); }}
-                        className="h-10 w-10 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-all active:scale-95"
+                        className="h-9 w-9 sm:h-10 sm:w-10 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-all active:scale-95"
                       >
-                        <X className="h-5 w-5" />
+                        <X className="h-4 w-4 sm:h-5 sm:w-5" />
                       </button>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto p-6 sm:p-8 space-y-6">
+                    <div className="flex-1 overflow-y-auto p-4 sm:p-8 space-y-4 sm:space-y-6">
                       {validationError && (
                         <div className="flex gap-3 p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400 animate-in slide-in-from-top-2 duration-300">
                           <XCircle className="w-5 h-5 shrink-0" />
@@ -1976,7 +1991,7 @@ export default function OTAndPermissionsPage() {
                                 handleEmployeeSelect(employee._id || employee.emp_no, employee.emp_no, otFormData.date);
                               }
                             }}
-                            className="w-full h-12 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all dark:text-white appearance-none cursor-pointer"
+                            className="w-full h-10 sm:h-12 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all dark:text-white appearance-none cursor-pointer"
                           >
                             <option value="">Choose an employee...</option>
                             {employees.map((emp, i) => (
@@ -2002,7 +2017,7 @@ export default function OTAndPermissionsPage() {
                               setOTFormData(prev => ({ ...prev, date: e.target.value }));
                               if (otFormData.employeeId) handleEmployeeSelect(otFormData.employeeId, otFormData.employeeNumber, e.target.value);
                             }}
-                            className="w-full h-12 pl-12 pr-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all dark:text-white cursor-pointer"
+                            className="w-full h-10 sm:h-12 pl-12 pr-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all dark:text-white cursor-pointer"
                           />
                         </div>
                       </div>
@@ -2023,11 +2038,11 @@ export default function OTAndPermissionsPage() {
                             <div className="grid grid-cols-2 gap-4">
                               <div className="space-y-1">
                                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">In Time</p>
-                                <p className="text-xs font-bold text-slate-900 dark:text-white">{formatTime(attendanceData.inTime)}</p>
+                                <p className="text-xs font-bold text-slate-900 dark:text-white">{formatTime(attendanceData.shifts && attendanceData.shifts.length > 0 ? attendanceData.shifts[0].inTime : null)}</p>
                               </div>
                               <div className="space-y-1">
                                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Out Time</p>
-                                <p className="text-xs font-bold text-slate-900 dark:text-white">{formatTime(attendanceData.outTime)}</p>
+                                <p className="text-xs font-bold text-slate-900 dark:text-white">{formatTime(attendanceData.shifts && attendanceData.shifts.length > 0 ? attendanceData.shifts[0].outTime : null)}</p>
                               </div>
                             </div>
                           )}
@@ -2089,7 +2104,7 @@ export default function OTAndPermissionsPage() {
                           type="datetime-local"
                           value={otFormData.otOutTime}
                           onChange={(e) => setOTFormData(prev => ({ ...prev, otOutTime: e.target.value }))}
-                          className="w-full h-12 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all dark:text-white cursor-pointer"
+                          className="w-full h-10 sm:h-12 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all dark:text-white cursor-pointer"
                         />
                       </div>
 
@@ -2119,17 +2134,17 @@ export default function OTAndPermissionsPage() {
                     </div>
 
                     {/* Footer */}
-                    <div className="sticky bottom-0 z-10 p-6 sm:p-8 border-t border-slate-100 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md flex items-center justify-end gap-3">
+                    <div className="sticky bottom-0 z-10 p-4 sm:p-8 border-t border-slate-100 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md flex items-center justify-end gap-3">
                       <button
                         onClick={() => { setShowOTDialog(false); resetOTForm(); }}
-                        className="h-12 px-6 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-slate-900 dark:hover:text-white transition-all"
+                        className="h-10 sm:h-12 px-4 sm:px-6 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-slate-900 dark:hover:text-white transition-all"
                       >
                         Dismiss
                       </button>
                       <button
                         onClick={handleCreateOT}
                         disabled={dataLoading}
-                        className="h-12 px-8 rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-[10px] font-black uppercase tracking-widest shadow-xl shadow-slate-900/10 dark:shadow-white/10 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
+                        className="h-10 sm:h-12 px-5 sm:px-8 rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-[10px] font-black uppercase tracking-widest shadow-xl shadow-slate-900/10 dark:shadow-white/10 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
                       >
                         {dataLoading ? 'Processing...' : 'Submit Request'}
                       </button>
@@ -2149,25 +2164,25 @@ export default function OTAndPermissionsPage() {
                   <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md animate-in fade-in duration-300" onClick={() => setShowPermissionDialog(false)} />
                   <div className="relative z-50 w-full max-w-lg overflow-hidden rounded-[2.5rem] border border-white/20 bg-white dark:bg-slate-900 shadow-2xl animate-in zoom-in-95 duration-300 flex flex-col max-h-[90vh]">
                     {/* Header */}
-                    <div className="flex items-center justify-between p-6 sm:p-8 border-b border-slate-100 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md">
-                      <div className="flex items-center gap-4">
-                        <div className="h-12 w-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center">
-                          <Zap className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+                    <div className="flex items-center justify-between p-4 sm:p-8 border-b border-slate-100 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md">
+                      <div className="flex items-center gap-3 sm:gap-4">
+                        <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center">
+                          <Zap className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-600 dark:text-emerald-400" />
                         </div>
                         <div>
-                          <h2 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Apply Permission</h2>
+                          <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Apply Permission</h2>
                           <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-500">Short Duration Break</p>
                         </div>
                       </div>
                       <button
                         onClick={() => { setShowPermissionDialog(false); resetPermissionForm(); }}
-                        className="h-10 w-10 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-all active:scale-95"
+                        className="h-9 w-9 sm:h-10 sm:w-10 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-all active:scale-95"
                       >
-                        <X className="h-5 w-5" />
+                        <X className="h-4 w-4 sm:h-5 sm:w-5" />
                       </button>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto p-6 sm:p-8 space-y-6">
+                    <div className="flex-1 overflow-y-auto p-4 sm:p-8 space-y-4 sm:space-y-6">
                       {permissionValidationError && (
                         <div className="flex gap-3 p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400 animate-in slide-in-from-top-2 duration-300">
                           <XCircle className="w-5 h-5 shrink-0" />
@@ -2196,12 +2211,12 @@ export default function OTAndPermissionsPage() {
                                 if (permissionFormData.date) {
                                   try {
                                     const res = await api.getAttendanceDetail(emp.emp_no, permissionFormData.date);
-                                    if (!res.success || !res.data || !res.data.inTime) setPermissionValidationError('No active attendance for this date.');
+                                    if (!res.success || !res.data || !res.data.shifts || res.data.shifts.length === 0 || !res.data.shifts[0].inTime) setPermissionValidationError('No active attendance for this date.');
                                   } catch (err) { console.error(err); }
                                 }
                               }
                             }}
-                            className="w-full h-12 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all dark:text-white appearance-none cursor-pointer"
+                            className="w-full h-10 sm:h-12 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all dark:text-white appearance-none cursor-pointer"
                           >
                             <option value="">Choose employee...</option>
                             {employees.map((emp, i) => (
@@ -2227,12 +2242,12 @@ export default function OTAndPermissionsPage() {
                               if (permissionFormData.employeeNumber && d) {
                                 try {
                                   const res = await api.getAttendanceDetail(permissionFormData.employeeNumber, d);
-                                  if (!res.success || !res.data || !res.data.inTime) setPermissionValidationError('No active attendance for this date.');
+                                  if (!res.success || !res.data || !res.data.shifts || res.data.shifts.length === 0 || !res.data.shifts[0].inTime) setPermissionValidationError('No active attendance for this date.');
                                   else setPermissionValidationError('');
                                 } catch (err) { console.error(err); }
                               }
                             }}
-                            className="w-full h-12 pl-12 pr-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all dark:text-white cursor-pointer"
+                            className="w-full h-10 sm:h-12 pl-12 pr-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all dark:text-white cursor-pointer"
                           />
                         </div>
                       </div>
@@ -2267,7 +2282,7 @@ export default function OTAndPermissionsPage() {
                           placeholder="e.g., Personal errand, Medical..."
                           value={permissionFormData.purpose}
                           onChange={(e) => setPermissionFormData(prev => ({ ...prev, purpose: e.target.value }))}
-                          className="w-full h-12 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all dark:text-white"
+                          className="w-full h-10 sm:h-12 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all dark:text-white"
                         />
                       </div>
 
@@ -2294,17 +2309,17 @@ export default function OTAndPermissionsPage() {
                     </div>
 
                     {/* Footer */}
-                    <div className="sticky bottom-0 z-10 p-6 sm:p-8 border-t border-slate-100 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md flex items-center justify-end gap-3">
+                    <div className="sticky bottom-0 z-10 p-4 sm:p-8 border-t border-slate-100 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md flex items-center justify-end gap-3">
                       <button
                         onClick={() => { setShowPermissionDialog(false); resetPermissionForm(); }}
-                        className="h-12 px-6 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-slate-900 dark:hover:text-white transition-all"
+                        className="h-10 sm:h-12 px-4 sm:px-6 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-slate-900 dark:hover:text-white transition-all"
                       >
                         Cancel
                       </button>
                       <button
                         onClick={handleCreatePermission}
                         disabled={dataLoading}
-                        className="h-12 px-8 rounded-2xl bg-emerald-500 text-white text-[10px] font-black uppercase tracking-widest shadow-xl shadow-emerald-500/20 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
+                        className="h-10 sm:h-12 px-5 sm:px-8 rounded-2xl bg-emerald-500 text-white text-[10px] font-black uppercase tracking-widest shadow-xl shadow-emerald-500/20 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50"
                       >
                         {dataLoading ? 'Processing...' : 'Request Permission'}
                       </button>
