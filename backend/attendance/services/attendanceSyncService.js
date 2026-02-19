@@ -50,10 +50,14 @@ const processAndAggregateLogs = async (rawLogs, previousDayLinking = false, skip
     if (!skipInsertion) {
       for (const log of rawLogs) {
         try {
-          const date = formatDate(log.timestamp);
+          const timestampStr = typeof log.timestamp === 'string' && !log.timestamp.endsWith('Z')
+            ? `${log.timestamp}Z`
+            : log.timestamp;
+          const timestamp = new Date(timestampStr);
+          const date = formatDate(timestamp);
           const logData = {
             employeeNumber: log.employeeNumber,
-            timestamp: new Date(log.timestamp),
+            timestamp: timestamp,
             type: log.type,
             source: log.source || 'mssql',
             date: date,

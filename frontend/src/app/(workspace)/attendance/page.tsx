@@ -284,7 +284,7 @@ export default function AttendancePage() {
       if (isNaN(date.getTime())) return timeStr; // Fallback to raw string if invalid date
 
       const timeFormatted = date.toLocaleTimeString('en-US', {
-        timeZone: 'Asia/Kolkata',
+        timeZone: 'UTC',
         hour: '2-digit',
         minute: '2-digit',
         hour12: true
@@ -1121,7 +1121,7 @@ export default function AttendancePage() {
 
       // Combine date with time to create proper datetime string
 
-      const outTimeDateTime = `${selectedDate}T${outTimeInput}:00`;
+      const outTimeDateTime = `${selectedDate}T${outTimeInput}:00Z`;
 
 
 
@@ -3430,7 +3430,7 @@ export default function AttendancePage() {
                                           setSelectedShiftRecordId(s._id);
                                           if (s.outTime) {
                                             const date = new Date(s.outTime);
-                                            setOutTimeInput(`${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`);
+                                            setOutTimeInput(`${String(date.getUTCHours()).padStart(2, '0')}:${String(date.getUTCMinutes()).padStart(2, '0')}`);
                                           }
                                         }}
                                         className="rounded-md bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400"
@@ -3448,7 +3448,7 @@ export default function AttendancePage() {
                                         setEditingOutTime(true);
                                         if (attendanceDetail.outTime) {
                                           const date = new Date(attendanceDetail.outTime);
-                                          setOutTimeInput(`${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`);
+                                          setOutTimeInput(`${String(date.getUTCHours()).padStart(2, '0')}:${String(date.getUTCMinutes()).padStart(2, '0')}`);
                                         }
                                       }}
                                       className="rounded-md bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400"

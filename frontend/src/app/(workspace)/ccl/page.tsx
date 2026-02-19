@@ -116,7 +116,7 @@ const formatDate = (d: string) => {
 
 const formatTime = (t: string | Date | null) => {
   if (!t) return '-';
-  return new Date(t).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  return new Date(t).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' });
 };
 
 export default function CCLPage() {

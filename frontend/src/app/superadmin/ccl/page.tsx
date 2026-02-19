@@ -13,8 +13,8 @@ const StatusBadge = ({ status }: { status: string }) => {
   return (
     <span
       className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${isApproved ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' :
-          isRejected ? 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
-            'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+        isRejected ? 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+          'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
         }`}
     >
       <span className={`w-1.5 h-1.5 rounded-full ${isApproved ? 'bg-emerald-500' : isRejected ? 'bg-red-500' : 'bg-amber-500'}`} />
@@ -68,7 +68,7 @@ const formatDate = (d: string) => {
 
 const formatTime = (t: string | Date | null) => {
   if (!t) return '-';
-  return new Date(t).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  return new Date(t).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' });
 };
 
 export default function SuperadminCCLPage() {

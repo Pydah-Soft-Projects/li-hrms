@@ -73,7 +73,7 @@ export default function OutpassPage() {
     if (!time) return '-';
     try {
       const date = new Date(time);
-      return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+      return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'UTC' });
     } catch {
       return time;
     }
@@ -83,11 +83,11 @@ export default function OutpassPage() {
     if (!dateStr) return '-';
     try {
       const date = typeof dateStr === 'string' ? new Date(dateStr) : dateStr;
-      return date.toLocaleDateString('en-US', { 
-        year: 'numeric', 
-        month: 'long', 
-        day: 'numeric', 
-        weekday: 'long' 
+      return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        weekday: 'long'
       });
     } catch {
       return dateStr;
@@ -98,13 +98,14 @@ export default function OutpassPage() {
     if (!time) return '-';
     try {
       const date = new Date(time);
-      return date.toLocaleString('en-US', { 
-        year: 'numeric', 
-        month: 'short', 
+      return date.toLocaleString('en-US', {
+        year: 'numeric',
+        month: 'short',
         day: 'numeric',
-        hour: '2-digit', 
+        hour: '2-digit',
         minute: '2-digit',
-        hour12: true 
+        hour12: true,
+        timeZone: 'UTC'
       });
     } catch {
       return time;

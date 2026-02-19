@@ -342,8 +342,8 @@ export default function ConfusedShiftsPage() {
         {/* Messages */}
         {(error || success) && (
           <div className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${success
-              ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400'
-              : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400'
+            ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400'
+            : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400'
             }`}>
             {success || error}
           </div>
@@ -398,14 +398,14 @@ export default function ConfusedShiftsPage() {
                       <div>
                         <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">In-Time</p>
                         <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
-                          {new Date(record.inTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                          {new Date(record.inTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })}
                         </p>
                       </div>
                       {record.outTime && (
                         <div>
                           <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Out-Time</p>
                           <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
-                            {new Date(record.outTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                            {new Date(record.outTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })}
                           </p>
                         </div>
                       )}
@@ -428,8 +428,8 @@ export default function ConfusedShiftsPage() {
                               <div
                                 key={shift._id || idx}
                                 className={`rounded-xl border p-3 ${isPossible
-                                    ? 'border-blue-300 bg-blue-50/50 dark:border-blue-700 dark:bg-blue-900/30'
-                                    : 'border-slate-200 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-900/50'
+                                  ? 'border-blue-300 bg-blue-50/50 dark:border-blue-700 dark:bg-blue-900/30'
+                                  : 'border-slate-200 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-900/50'
                                   }`}
                               >
                                 <div className="flex items-center justify-between">
@@ -540,14 +540,14 @@ export default function ConfusedShiftsPage() {
                     <div>
                       <span className="text-slate-500 dark:text-slate-400">In-Time:</span>{' '}
                       <span className="font-medium text-slate-900 dark:text-slate-100">
-                        {new Date(selectedRecord.inTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                        {new Date(selectedRecord.inTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })}
                       </span>
                     </div>
                     {selectedRecord.outTime && (
                       <div>
                         <span className="text-slate-500 dark:text-slate-400">Out-Time:</span>{' '}
                         <span className="font-medium text-slate-900 dark:text-slate-100">
-                          {new Date(selectedRecord.outTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                          {new Date(selectedRecord.outTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })}
                         </span>
                       </div>
                     )}
