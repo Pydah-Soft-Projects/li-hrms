@@ -553,17 +553,16 @@ export default function EmployeesPage() {
     loadEmployees(1, false);
   }, [includeLeftEmployees]);
 
-  // Server-side search with debounce
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      // Reset to page 1 for new search
-      setCurrentPage(1);
-      setHasMoreEmployees(true);
-      loadEmployees(1, false);
-    }, 500);
-
-    return () => clearTimeout(handler);
-  }, [searchTerm]);
+  // Server-side search with debounce removed - Search only on Enter or Button click
+  // useEffect(() => {
+  //   const handler = setTimeout(() => {
+  //     // Reset to page 1 for new search
+  //     setCurrentPage(1);
+  //     setHasMoreEmployees(true);
+  //     loadEmployees(1, false);
+  //   }, 500);
+  //   return () => clearTimeout(handler);
+  // }, [searchTerm]);
 
   // Intersection Observer for infinite scroll
   useEffect(() => {
@@ -2163,12 +2162,12 @@ export default function EmployeesPage() {
     <div className="relative min-h-screen bg-bg-base overflow-x-hidden">
 
 
-      <div className="relative z-10 max-w-[1920px] mx-auto px-4 sm:px-8 py-6 sm:py-8 space-y-8">
+      <div className="relative z-10 max-w-[1920px] mx-auto  sm:px-8 py-6 sm:py-8 space-y-8">
         {/* Header - Unified Layout */}
         <div className="space-y-4 mb-2">
           {/* Top Row: Title and Icon */}
           <div className="flex items-center gap-4">
-            <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl md:rounded-2xl bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20">
+            <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl md:rounded-2xl hidden md:flex bg-gradient-to-br from-indigo-500 to-indigo-600 items-center justify-center text-white shadow-lg shadow-indigo-500/20">
               <Users className="w-5 h-5 md:w-6 md:h-6" />
             </div>
             <div>
@@ -2189,13 +2188,13 @@ export default function EmployeesPage() {
                   <span className="text-xs font-bold text-indigo-500 uppercase tracking-wider">{commonDivision.name}</span>
                 )}
               </div>
-              <h1 className="text-xl md:text-2xl font-black tracking-tight text-text-primary">Employee Management</h1>
-              <p className="text-xs md:text-sm text-text-secondary font-medium">Manage workforce records • <span className="text-indigo-500">Source: {dataSource.toUpperCase()}</span></p>
+              <h1 className="text-base md:text-2xl font-black tracking-tight text-text-primary">Employee Management</h1>
+              {/* <p className="text-xs md:text-sm text-text-secondary font-medium">Manage workforce records • <span className="text-indigo-500">Source: {dataSource.toUpperCase()}</span></p> */}
             </div>
           </div>
 
           {/* Bottom Row: Action Buttons - Full Width on Desktop */}
-          <div className="flex flex-wrap md:flex-nowrap items-center gap-3">
+          <div className="flex flex-wrap md:flex-nowrap items-center gap-1.5 md:gap-3">
             {(commonDivision || commonDepartment) && (
               <div className="hidden items-center gap-2 sm:flex">
                 {commonDivision && (
@@ -2209,7 +2208,7 @@ export default function EmployeesPage() {
 
             {/* Tab Slider or Single Badge */}
             {canViewApplications ? (
-              <div className="relative flex items-center rounded-2xl bg-bg-surface/50 border border-border-base p-1 backdrop-blur-md shadow-sm">
+              <div className="relative grid grid-cols-2 items-center rounded-2xl bg-bg-surface/50 border border-border-base p-1 backdrop-blur-md shadow-sm">
                 <div
                   className={`absolute h-8 rounded-xl bg-bg-base border border-border-base shadow-sm transition-all duration-300 ease-in-out`}
                   style={{
@@ -2219,7 +2218,7 @@ export default function EmployeesPage() {
                 />
                 <button
                   onClick={() => setActiveTab('employees')}
-                  className={`relative z-10 px-3 py-1.5 md:px-4 md:py-1.5 text-[10px] md:text-xs font-black uppercase tracking-widest transition-colors ${activeTab === 'employees'
+                  className={`relative z-10 w-full flex items-center justify-center px-2 py-1 md:px-4 md:py-1.5 text-[9px] md:text-xs font-black uppercase tracking-widest transition-colors ${activeTab === 'employees'
                     ? 'text-text-primary'
                     : 'text-text-secondary hover:text-text-primary'
                     }`}
@@ -2228,14 +2227,15 @@ export default function EmployeesPage() {
                 </button>
                 <button
                   onClick={() => setActiveTab('applications')}
-                  className={`relative z-10 px-3 py-1.5 md:px-4 md:py-1.5 text-[10px] md:text-xs font-black uppercase tracking-widest transition-colors flex items-center justify-center gap-2 ${activeTab === 'applications'
+                  className={`relative z-10 w-full px-2 py-1 md:px-4 md:py-1.5 text-[9px] md:text-xs font-black uppercase tracking-widest transition-colors flex items-center justify-center gap-2 ${activeTab === 'applications'
                     ? 'text-text-primary'
                     : 'text-text-secondary hover:text-text-primary'
                     }`}
                 >
-                  Applications
+                  <span className="md:hidden">Apps</span>
+                  <span className="hidden md:inline">Applications</span>
                   {pendingApplications.length > 0 && (
-                    <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-status-negative px-1.5 text-[10px] text-white font-bold">
+                    <span className="flex h-4 min-w-[16px] md:h-5 md:min-w-[20px] items-center justify-center rounded-full bg-status-negative px-1 text-[9px] md:text-[10px] text-white font-bold">
                       {pendingApplications.length}
                     </span>
                   )}
@@ -2253,7 +2253,7 @@ export default function EmployeesPage() {
             {hasManagePermission && (
               <Link
                 href="/employees/form-settings"
-                className="flex items-center justify-center rounded-xl md:rounded-2xl border border-border-base bg-bg-surface/50 p-2 md:p-2.5 text-text-secondary transition-all hover:bg-bg-surface hover:text-indigo-500 backdrop-blur-md shadow-sm"
+                className="flex items-center justify-center rounded-xl md:rounded-2xl border border-border-base bg-bg-surface/50 p-1.5 md:p-2.5 text-text-secondary transition-all hover:bg-bg-surface hover:text-indigo-500 backdrop-blur-md shadow-sm"
                 title="Form Settings"
               >
                 <Settings className="h-4 w-4 md:h-5 md:w-5" />
@@ -2264,7 +2264,7 @@ export default function EmployeesPage() {
             {hasManagePermission && (
               <button
                 onClick={() => setShowBulkUpload(true)}
-                className="flex items-center gap-2 rounded-xl md:rounded-2xl border border-border-base bg-bg-surface/50 px-3 py-2 md:px-4 md:py-2.5 text-xs md:text-sm font-bold text-text-secondary transition-all hover:bg-bg-surface hover:text-indigo-500 backdrop-blur-md shadow-sm"
+                className="flex items-center gap-2 rounded-xl md:rounded-2xl border border-border-base bg-bg-surface/50 px-2 py-1.5 md:px-4 md:py-2.5 text-xs md:text-sm font-bold text-text-secondary transition-all hover:bg-bg-surface hover:text-indigo-500 backdrop-blur-md shadow-sm"
               >
                 <div className="w-4 h-4 md:w-5 md:h-5 flex items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-500">
                   <Upload className="h-3 w-3 md:h-3.5 md:w-3.5" />
@@ -2273,25 +2273,38 @@ export default function EmployeesPage() {
               </button>
             )}
 
-            {/* New Application Button - Desktop Only */}
+            {/* New Application Button - Responsive */}
             {hasManagePermission && (
-              <button
-                onClick={() => setShowApplicationDialog(true)}
-                className="hidden md:flex md:items-center md:gap-2 md:rounded-2xl md:bg-gradient-to-br md:from-indigo-500 md:to-indigo-600 md:px-5 md:py-2.5 md:text-xs md:font-black md:uppercase md:tracking-widest md:text-white md:shadow-xl md:shadow-indigo-500/20 md:transition-all md:hover:scale-[1.02] md:active:scale-95"
-              >
-                <Plus className="h-4 w-4" />
-                <span>New Application</span>
-              </button>
+              <>
+                {/* Mobile: Icon Only */}
+                <button
+                  onClick={() => setShowApplicationDialog(true)}
+                  className="md:hidden flex items-center justify-center rounded-xl border border-border-base bg-bg-surface/50 p-1.5 text-text-secondary transition-all hover:bg-bg-surface hover:text-indigo-500 backdrop-blur-md shadow-sm"
+                  title="New Application"
+                >
+                  <Plus className="h-4 w-4" />
+                </button>
+
+                {/* Desktop: Full Button */}
+                <button
+                  onClick={() => setShowApplicationDialog(true)}
+                  className="hidden md:flex md:items-center md:gap-2 md:rounded-2xl md:bg-gradient-to-br md:from-indigo-500 md:to-indigo-600 md:px-5 md:py-2.5 md:text-xs md:font-black md:uppercase md:tracking-widest md:text-white md:shadow-xl md:shadow-indigo-500/20 md:transition-all md:hover:scale-[1.02] md:active:scale-95"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>New Application</span>
+                </button>
+              </>
             )}
 
           </div>
         </div>
 
         {/* Pagination Controls & Search */}
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 md:gap-6 p-4 md:p-5 sm:p-6 rounded-[2.5rem] border border-border-base bg-bg-surface/40 backdrop-blur-2xl shadow-xl shadow-indigo-500/5">
+        {/* Pagination Controls & Search */}
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 md:gap-6 md:p-5 md:rounded-[2.5rem] md:border md:border-border-base md:bg-bg-surface/40 md:backdrop-blur-2xl md:shadow-xl md:shadow-indigo-500/5">
           {/* Search Section - Full width on desktop, stacked on mobile */}
           <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 md:gap-4 flex-1">
-            <div className="relative flex-1 lg:max-w-2xl group">
+            <div className="relative flex-1 lg:max-w-2xl group w-full">
               <div className="absolute inset-0 bg-indigo-500/5 rounded-2xl blur-xl transition-opacity opacity-0 group-focus-within:opacity-100" />
               <Search className="absolute left-3 md:left-4 top-1/2 -translate-y-1/2 w-3.5 h-3.5 md:w-4 md:h-4 text-text-secondary transition-colors group-focus-within:text-indigo-500" />
               <input
@@ -2300,27 +2313,27 @@ export default function EmployeesPage() {
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && loadEmployees(1, false)}
-                className="relative w-full h-10 md:h-12 pl-10 md:pl-12 pr-3 md:pr-4 rounded-xl md:rounded-2xl border border-border-base bg-bg-base/60 text-xs md:text-sm font-semibold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-text-primary placeholder:text-text-secondary/40 shadow-sm"
+                className="relative w-full h-10 md:h-12 pl-10 md:pl-12 pr-10 md:pr-4 rounded-xl md:rounded-2xl border border-border-base bg-bg-base/60 text-xs md:text-sm font-semibold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-text-primary placeholder:text-text-secondary/40 shadow-sm"
               />
+              {/* Mobile Embedded Search Button */}
+              <button
+                onClick={() => loadEmployees(1, false)}
+                className="md:hidden absolute right-1.5 top-1/2 -translate-y-1/2 p-2 rounded-lg bg-indigo-500 text-white shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"
+              >
+                <Search className="w-4 h-4" />
+              </button>
             </div>
+
+            {/* Desktop Search Button */}
             <button
               onClick={() => loadEmployees(1, false)}
-              className="h-10 md:h-12 px-6 md:px-8 rounded-xl md:rounded-2xl bg-gradient-to-br from-indigo-500 to-indigo-600 text-white text-[10px] font-black uppercase tracking-[0.2em] shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/40 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 whitespace-nowrap flex-shrink-0"
+              className="hidden md:flex h-10 md:h-12 px-6 md:px-8 rounded-xl md:rounded-2xl bg-gradient-to-br from-indigo-500 to-indigo-600 text-white text-[10px] font-black uppercase tracking-[0.2em] shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/40 hover:scale-[1.02] active:scale-95 transition-all items-center justify-center gap-2 whitespace-nowrap flex-shrink-0"
             >
               <Search className="w-3 h-3 md:w-3.5 h-3.5" />
               <span>Search</span>
             </button>
 
-            {/* New Application Button - Mobile Only, Full Width */}
-            {hasManagePermission && (
-              <button
-                onClick={() => setShowApplicationDialog(true)}
-                className="md:hidden h-10 px-6 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-600 text-white text-[10px] font-black uppercase tracking-[0.2em] shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/40 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 whitespace-nowrap"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>New Application</span>
-              </button>
-            )}
+
           </div>
 
           {/* Desktop: Pagination on right */}
@@ -2356,42 +2369,41 @@ export default function EmployeesPage() {
               <span className="text-[10px] font-black uppercase tracking-widest text-text-secondary mb-0.5">Total Records</span>
               <span className="text-sm font-black text-indigo-500">{totalCount}</span>
             </div>
+
           </div>
 
-          {/* Mobile: Pagination below search */}
-          <div className="lg:hidden flex items-center justify-between sm:justify-end gap-4 sm:gap-6 md:gap-8 flex-shrink-0">
+          {/* Mobile: Minimized Pagination */}
+          <div className="lg:hidden flex items-center justify-between mt-2 w-full px-2 gap-2">
+
+            {/* Total Count */}
+            <span className="text-[10px] font-black uppercase tracking-widest text-text-secondary whitespace-nowrap">
+              Total: <span className="text-indigo-500">{totalCount}</span>
+            </span>
+
+            {/* Controls */}
             <div className="flex items-center gap-3">
-              <span className="text-[10px] font-black uppercase tracking-widest text-text-secondary">Page</span>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => loadEmployees(currentPage - 1, false)}
-                  disabled={currentPage <= 1 || loading}
-                  className="w-10 h-10 flex items-center justify-center rounded-xl border border-border-base bg-bg-base/50 text-text-secondary hover:text-indigo-500 hover:border-indigo-500/50 disabled:opacity-30 disabled:hover:border-border-base disabled:hover:text-text-secondary transition-all"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-                <div className="min-w-[80px] text-center px-1">
-                  <span className="text-sm font-black text-text-primary">{currentPage}</span>
-                  <span className="mx-1.5 text-[10px] font-bold text-text-secondary">of</span>
-                  <span className="text-sm font-black text-text-primary">{totalPages || 1}</span>
-                </div>
-                <button
-                  onClick={() => loadEmployees(currentPage + 1, false)}
-                  disabled={currentPage >= totalPages || loading}
-                  className="w-10 h-10 flex items-center justify-center rounded-xl border border-border-base bg-bg-base/50 text-text-secondary hover:text-indigo-500 hover:border-indigo-500/50 disabled:opacity-30 disabled:hover:border-border-base disabled:hover:text-text-secondary transition-all"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
+              <button
+                onClick={() => loadEmployees(currentPage - 1, false)}
+                disabled={currentPage <= 1 || loading}
+                className="w-8 h-8 flex items-center justify-center rounded-lg bg-bg-surface border border-border-base text-text-secondary hover:text-indigo-500 disabled:opacity-30 disabled:hover:text-text-secondary transition-all shadow-sm"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
 
-            <div className="hidden sm:block h-8 w-px bg-border-base"></div>
+              <span className="text-xs font-black text-text-primary uppercase tracking-widest">
+                {currentPage} / {totalPages || 1}
+              </span>
 
-            <div className="flex flex-col items-end">
-              <span className="text-[10px] font-black uppercase tracking-widest text-text-secondary mb-0.5">Total Records</span>
-              <span className="text-sm font-black text-indigo-500">{totalCount}</span>
+              <button
+                onClick={() => loadEmployees(currentPage + 1, false)}
+                disabled={currentPage >= totalPages || loading}
+                className="w-8 h-8 flex items-center justify-center rounded-lg bg-bg-surface border border-border-base text-text-secondary hover:text-indigo-500 disabled:opacity-30 disabled:hover:text-text-secondary transition-all shadow-sm"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
             </div>
           </div>
+
         </div>
       </div>
 
@@ -4161,7 +4173,7 @@ export default function EmployeesPage() {
 
                     // Filter departments that belong to this division
                     return departments
-                      .filter(dept => (dept as any).divisions?.includes(div._id))
+                      .filter(dept => (dept as any).divisions?.some((d: any) => (typeof d === 'string' ? d : d._id) === div._id))
                       .map(d => ({ value: d.name, label: d.name }));
                   }
                 };

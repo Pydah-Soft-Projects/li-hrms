@@ -23,3 +23,7 @@ export const getEmployeeInitials = (emp: EmployeeMinimal | null | undefined) => 
     }
     return (name[0] || 'E').toUpperCase();
 };
+
+export function cn(...classes: (string | undefined | null | false)[]) {
+    return classes.filter(Boolean).join(' ');
+}

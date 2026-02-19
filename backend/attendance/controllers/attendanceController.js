@@ -495,7 +495,7 @@ exports.updateOutTime = async (req, res) => {
       modifiedBy: req.user._id,
       modifiedByName: req.user.name,
       modifiedAt: new Date(),
-      details: `Out time updated manually to ${outTimeDate.toLocaleTimeString()}`
+      details: `Out time updated manually to ${outTimeDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })}`
     });
 
     // Recalculate metrics for this segment
@@ -1047,7 +1047,7 @@ exports.updateInTime = async (req, res) => {
       modifiedBy: req.user?._id || req.user?.userId,
       modifiedByName: req.user.name,
       modifiedAt: new Date(),
-      details: `In time updated manually to ${newInTime.toLocaleTimeString()}`
+      details: `In time updated manually to ${newInTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })}`
     });
 
     // Recalculate Metrics for this shift
