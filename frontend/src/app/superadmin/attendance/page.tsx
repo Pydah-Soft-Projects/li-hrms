@@ -137,16 +137,15 @@ export default function AttendancePage() {
       const [hours, minutes] = timeStr.split(':').map(Number);
       const date = new Date();
       date.setHours(hours, minutes, 0, 0);
-      return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'UTC' });
+      return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
     }
 
     try {
       const date = new Date(timeStr);
       if (isNaN(date.getTime())) return timeStr;
 
-      // Primary time display in 12h IST
+      // Primary time display in 12h IST (Uses browser local time)
       const timeFormatted = date.toLocaleTimeString('en-US', {
-        timeZone: 'UTC',
         hour: '2-digit',
         minute: '2-digit',
         hour12: true
@@ -571,7 +570,10 @@ export default function AttendancePage() {
       setSuccess('');
 
       // Combine date with time to create proper datetime string
-      const outTimeDateTime = `${selectedDate}T${outTimeInput}:00Z`;
+      const [hours, mins] = outTimeInput.split(':').map(Number);
+      const date = new Date(selectedDate);
+      date.setHours(hours, mins, 0, 0);
+      const outTimeDateTime = date.toISOString();
 
       const response = await api.updateAttendanceOutTime(
         selectedEmployee.emp_no,
@@ -623,7 +625,10 @@ export default function AttendancePage() {
       // Combine date with time to create proper datetime string
       // Note: If In-time crosses midnight (previous day?), we might need more logic,
       // but usually In-Time is on the selected date.
-      const inTimeDateTime = `${selectedDate}T${inTimeInput}:00Z`;
+      const date = new Date(selectedDate);
+      const [hours, mins] = inTimeInput.split(':').map(Number);
+      date.setHours(hours, mins, 0, 0);
+      const inTimeDateTime = date.toISOString();
 
       const response = await api.updateAttendanceInTime(
         selectedEmployee.emp_no,
@@ -1065,8 +1070,11 @@ export default function AttendancePage() {
       setError('');
       setSuccess('');
 
-      // Format datetime for API - treat datetime-local as UTC
-      const isoString = outTimeValue.includes('Z') ? outTimeValue : `${outTimeValue}:00Z`;
+      // Format datetime for API - Convert local input to UTC
+      const [hours, mins] = outTimeValue.split(':').map(Number);
+      const date = new Date(selectedRecordForOutTime.date);
+      date.setHours(hours, mins, 0, 0);
+      const isoString = date.toISOString();
 
       const response = await api.updateAttendanceOutTime(
         selectedRecordForOutTime.employee.emp_no,
@@ -2136,7 +2144,7 @@ export default function AttendancePage() {
                                         setSelectedShiftRecordId(shift._id);
                                         if (shift.outTime) {
                                           const d = new Date(shift.outTime);
-                                          setOutTimeInput(`${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`);
+                                          setOutTimeInput(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
                                         } else {
                                           setOutTimeInput('');
                                         }
