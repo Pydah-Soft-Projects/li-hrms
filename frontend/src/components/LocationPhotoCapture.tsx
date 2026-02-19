@@ -414,12 +414,12 @@ export default function LocationPhotoCapture({
                 </div>
             ) : (
                 <div className="relative rounded-2xl overflow-hidden border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
-                    <div className="flex gap-4 p-4">
+                    <div className="flex flex-col sm:flex-row gap-4 p-4">
                         <div className="relative group shrink-0">
                             <img
                                 src={preview}
                                 alt="Evidence Preview"
-                                className="h-24 w-24 rounded-xl object-cover ring-2 ring-white dark:ring-slate-700 shadow-md"
+                                className="w-full h-48 sm:h-24 sm:w-24 rounded-xl object-cover ring-2 ring-white dark:ring-slate-700 shadow-md"
                             />
                             <div className="absolute inset-0 bg-black/20 rounded-xl hidden group-hover:block transition-all" />
                         </div>
@@ -480,14 +480,14 @@ export default function LocationPhotoCapture({
                         </div>
                     </div>
                     {/* Grid Info */}
-                    <div className="bg-slate-50 dark:bg-slate-900/50 px-4 py-2 border-t border-slate-100 dark:border-slate-800 grid grid-cols-2 divide-x divide-slate-200 dark:divide-slate-700">
-                        <div className="pr-4">
+                    <div className="bg-slate-50 dark:bg-slate-900/50 px-4 py-2 border-t border-slate-100 dark:border-slate-800 grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-0 sm:divide-x divide-slate-200 dark:divide-slate-700">
+                        <div className="sm:pr-4">
                             <span className="block text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-0.5">Device Lat/Lon</span>
                             <span className="block text-xs font-mono text-slate-700 dark:text-slate-300">
                                 {deviceLocation?.latitude.toFixed(6)}, {deviceLocation?.longitude.toFixed(6)}
                             </span>
                         </div>
-                        <div className="pl-4">
+                        <div className="sm:pl-4 border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-100 dark:border-slate-800">
                             <span className="block text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-0.5">Photo Lat/Lon</span>
                             <span className="block text-xs font-mono text-slate-700 dark:text-slate-300">
                                 {exifLocation ? `${exifLocation.latitude.toFixed(6)}, ${exifLocation.longitude.toFixed(6)}` : 'N/A'}
