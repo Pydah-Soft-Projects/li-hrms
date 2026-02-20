@@ -17,7 +17,7 @@ const axios = require('axios');
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:5000';
 const SYNC_ENDPOINT = `${BACKEND_URL}/api/internal/attendance/sync`;
 const SYSTEM_KEY = 'hrms-microservice-secret-key-999';
-const BATCH_SIZE = 100; // Optimal batch size with delays
+const BATCH_SIZE = 200; // Optimal batch size with delays
 const RETRY_ATTEMPTS = 3;
 const DELAY_BETWEEN_BATCHES = 1000; // 1s delay to prevent backend overload
 
@@ -39,7 +39,7 @@ const AttendanceLog =
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 async function main() {
-    const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/biometric_logs';
+    const mongoURI = process.env.MONGODB_URI || 'mongodb+srv://teampydah:TeamPydah@teampydah.y4zj6wh.mongodb.net/biometric_logs';
 
     console.log('\n🚀 Starting Biometric Log Resync...\n');
     console.log('🔌 Connecting to MongoDB...');

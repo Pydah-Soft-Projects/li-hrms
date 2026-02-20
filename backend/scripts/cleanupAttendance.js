@@ -12,14 +12,14 @@
 const mongoose = require('mongoose');
 require('dotenv').config();
 
-const MONGO_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/hrms';
+const MONGO_URI = process.env.MONGODB_URI || 'mongodb+srv://teampydah:TeamPydah@teampydah.y4zj6wh.mongodb.net/hrms';
 
 async function main() {
     console.log('\n🗑️ Starting Attendance Data Cleanup\n');
 
     try {
         await mongoose.connect(MONGO_URI);
-        console.log('✅ Connected to HRMS database');
+        console.log('✅ Connected to HRMS database', MONGO_URI );
 
         const AttendanceDaily = mongoose.connection.collection('attendancedailies');
         const AttendanceRawLog = mongoose.connection.collection('attendancerawlogs');

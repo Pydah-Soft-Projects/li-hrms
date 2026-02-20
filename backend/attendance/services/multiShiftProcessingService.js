@@ -27,15 +27,40 @@ function getOverlapMinutes(startA, endA, startB, endB) {
 }
 
 /**
- * Helper to parse HH:MM to a Date object on a specific refernce date
+ * Helper to parse HH:MM to a Date object on a specific refernce date (TIMEZONE AWARE)
+ * Ensures Shift Times are always interpreted as IST
  */
 function timeStringToDate(timeStr, refDate, isNextDay = false) {
     if (!timeStr) return null;
-    const [hours, mins] = timeStr.split(':').map(Number);
-    const date = new Date(refDate);
-    date.setHours(hours, mins, 0, 0);
-    if (isNextDay) date.setDate(date.getDate() + 1);
-    return date;
+
+    // Extract YYYY-MM-DD from refDate
+    // We must ensure we get the date part in IST context, not UTC
+    // const d = new Date(refDate);
+    // const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+    // Better: If refDate is a string (YYYY-MM-DD), use it directly
+    let dateStr;
+    if (typeof refDate === 'string' && refDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        dateStr = refDate;
+    } else {
+        const d = new Date(refDate);
+        // Convert to IST to get correct Year-Month-Day
+        const istDate = new Date(d.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+        dateStr = `${istDate.getFullYear()}-${String(istDate.getMonth() + 1).padStart(2, '0')}-${String(istDate.getDate()).padStart(2, '0')}`;
+    }
+
+    // Construct timestamp with offset
+    // YYYY-MM-DD + T + HH:mm + :00 + +05:30
+    const [hours, mins] = timeStr.split(':');
+    let targetDateStr = dateStr;
+
+    if (isNextDay) {
+        const d = new Date(dateStr);
+        d.setDate(d.getDate() + 1);
+        targetDateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    return new Date(`${targetDateStr}T${hours}:${mins}:00+05:30`);
 }
 
 /**
