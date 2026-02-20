@@ -200,7 +200,9 @@ const getShiftsForEmployee = async (employeeNumber, date) => {
     if (preScheduled && preScheduled.shiftId) {
       rosteredShift = preScheduled.shiftId;
       rosterRecordId = preScheduled._id;
-      allCandidateShifts.set(preScheduled.shiftId._id.toString(), preScheduled.shiftId);
+      const s = preScheduled.shiftId.toObject ? preScheduled.shiftId.toObject() : { ...preScheduled.shiftId };
+      s.sourcePriority = 1; // Highest Priority
+      allCandidateShifts.set(s._id.toString(), s);
     }
 
     // 2. Designation shifts (Context-Specific & Division Defaults)
@@ -356,6 +358,12 @@ const findCandidateShifts = (inTime, shifts, date, toleranceHours = 3) => {
   }
 
   return candidates.sort((a, b) => {
+    // 1. HARD PRIORITY: Rostered Shift (Priority 1) always wins if it's a candidate
+    // This satisfies "assign rostered shift only" while allowing fallbacks if roster is far away
+    if (a.sourcePriority === 1 && b.sourcePriority !== 1) return -1;
+    if (a.sourcePriority !== 1 && b.sourcePriority === 1) return 1;
+
+    // 2. Standard proximity sorting for organizational/fallback shifts
     if (a.isPreferred && !b.isPreferred) return -1;
     if (!a.isPreferred && b.isPreferred) return 1;
     if (a.isStartBeforeLog && !b.isStartBeforeLog) return -1;
