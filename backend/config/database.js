@@ -26,7 +26,7 @@ const connectMongoDB = async () => {
       minPoolSize: 10,
       socketTimeoutMS: 45000,
     });
-    console.log('✅ MongoDB connected successfully (Pool Size: 500)');
+    console.log('✅ MongoDB connected successfully (Pool Size: 500)', mongoURI);
   } catch (error) {
     console.error('❌ MongoDB connection error:', error.message);
     if (process.env.NODE_ENV !== 'test') {
