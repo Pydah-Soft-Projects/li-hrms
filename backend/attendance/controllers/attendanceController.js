@@ -12,13 +12,13 @@ const OD = require('../../leaves/model/OD');
 const MonthlyAttendanceSummary = require('../model/MonthlyAttendanceSummary');
 const { calculateMonthlySummary } = require('../services/summaryCalculationService');
 const Settings = require('../../settings/model/Settings');
+const { extractISTComponents } = require('../../shared/utils/dateUtils');
 
 /**
  * Format date to YYYY-MM-DD
  */
 const formatDate = (date) => {
-  const d = new Date(date);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return extractISTComponents(date).dateStr;
 };
 
 /**
@@ -37,10 +37,10 @@ exports.getAttendanceCalendar = async (req, res) => {
       });
     }
 
-    // Default to current month if not provided
-    const currentDate = new Date();
-    const targetYear = parseInt(year) || currentDate.getFullYear();
-    const targetMonth = parseInt(month) || (currentDate.getMonth() + 1);
+    // Default to current month if not provided (IST Aware)
+    const { year: curYear, month: curMonth } = extractISTComponents(new Date());
+    const targetYear = parseInt(year) || curYear;
+    const targetMonth = parseInt(month) || curMonth;
 
     // Get employee with scope validation
     const employee = await Employee.findOne({

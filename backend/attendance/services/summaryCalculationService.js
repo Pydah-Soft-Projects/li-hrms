@@ -3,6 +3,7 @@ const Leave = require('../../leaves/model/Leave');
 const OD = require('../../leaves/model/OD');
 const MonthlyAttendanceSummary = require('../model/MonthlyAttendanceSummary');
 const Shift = require('../../shifts/model/Shift');
+const { createISTDate, extractISTComponents } = require('../../shared/utils/dateUtils');
 
 /**
  * Calculate and update monthly attendance summary for an employee
@@ -17,11 +18,16 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber) {
     // Get or create summary
     const summary = await MonthlyAttendanceSummary.getOrCreate(employeeId, emp_no, year, monthNumber);
 
-    // Calculate date range for the month
-    const startDate = new Date(year, monthNumber - 1, 1);
-    const endDate = new Date(year, monthNumber, 0); // Last day of month
     const startDateStr = `${year}-${String(monthNumber).padStart(2, '0')}-01`;
-    const endDateStr = `${year}-${String(monthNumber).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`;
+    const startDate = createISTDate(startDateStr);
+
+    // Get last day of month via IST
+    const nextMonthYear = monthNumber === 12 ? year + 1 : year;
+    const nextMonthNum = monthNumber === 12 ? 1 : monthNumber + 1;
+    const nextMonthFirstDay = createISTDate(`${nextMonthYear}-${String(nextMonthNum).padStart(2, '0')}-01`);
+    const endDate = new Date(nextMonthFirstDay.getTime() - 1000);
+    const { day: lastDay } = extractISTComponents(endDate);
+    const endDateStr = `${year}-${String(monthNumber).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 
     // 1. Get all attendance records for this month (Using .lean() and projections)
     const attendanceRecords = await AttendanceDaily.find({
@@ -75,17 +81,13 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber) {
     // Calculate total leave days in this month - count each day individually
     let totalLeaveDays = 0;
     for (const leave of approvedLeaves) {
-      const leaveStart = new Date(leave.fromDate);
-      const leaveEnd = new Date(leave.toDate);
-      // Reset time to avoid timezone issues
-      leaveStart.setHours(0, 0, 0, 0);
-      leaveEnd.setHours(23, 59, 59, 999);
+      const leaveStart = createISTDate(extractISTComponents(leave.fromDate).dateStr, '00:00');
+      const leaveEnd = createISTDate(extractISTComponents(leave.toDate).dateStr, '23:59');
 
       // Count each day in the leave range that falls within the month
       let currentDate = new Date(leaveStart);
       while (currentDate <= leaveEnd) {
-        const currentYear = currentDate.getFullYear();
-        const currentMonth = currentDate.getMonth() + 1;
+        const { year: currentYear, month: currentMonth } = extractISTComponents(currentDate);
 
         // Check if this date is within the target month
         if (currentYear === year && currentMonth === monthNumber) {
@@ -120,18 +122,13 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber) {
         continue;
       }
 
-      const odStart = new Date(od.fromDate);
-      const odEnd = new Date(od.toDate);
-
-      // Reset time to avoid timezone issues
-      odStart.setHours(0, 0, 0, 0);
-      odEnd.setHours(23, 59, 59, 999);
+      const odStart = createISTDate(extractISTComponents(od.fromDate).dateStr, '00:00');
+      const odEnd = createISTDate(extractISTComponents(od.toDate).dateStr, '23:59');
 
       // Count each day in the OD range that falls within the month
       let currentDate = new Date(odStart);
       while (currentDate <= odEnd) {
-        const currentYear = currentDate.getFullYear();
-        const currentMonth = currentDate.getMonth() + 1;
+        const { year: currentYear, month: currentMonth } = extractISTComponents(currentDate);
 
         // Check if this date is within the target month
         if (currentYear === year && currentMonth === monthNumber) {
@@ -266,9 +263,7 @@ async function recalculateOnAttendanceUpdate(emp_no, date) {
       return;
     }
 
-    const dateObj = new Date(date);
-    const year = dateObj.getFullYear();
-    const monthNumber = dateObj.getMonth() + 1;
+    const { year, month: monthNumber } = extractISTComponents(date);
 
     await calculateMonthlySummary(employee._id, emp_no, year, monthNumber);
   } catch (error) {
@@ -294,16 +289,15 @@ async function recalculateOnLeaveApproval(leave) {
       return;
     }
 
-    // Calculate all months affected by this leave
-    const leaveStart = new Date(leave.fromDate);
-    const leaveEnd = new Date(leave.toDate);
+    // Calculate all months affected by this leave using IST components
+    const { year: startYear, month: startMonth } = extractISTComponents(leave.fromDate);
+    const { year: endYear, month: endMonthNum } = extractISTComponents(leave.toDate);
 
-    let currentDate = new Date(leaveStart.getFullYear(), leaveStart.getMonth(), 1);
-    const endMonth = new Date(leaveEnd.getFullYear(), leaveEnd.getMonth(), 1);
+    let currentDate = createISTDate(`${startYear}-${String(startMonth).padStart(2, '0')}-01`);
+    const endBoundary = createISTDate(`${endYear}-${String(endMonthNum).padStart(2, '0')}-01`);
 
-    while (currentDate <= endMonth) {
-      const year = currentDate.getFullYear();
-      const monthNumber = currentDate.getMonth() + 1;
+    while (currentDate <= endBoundary) {
+      const { year, month: monthNumber } = extractISTComponents(currentDate);
 
       await calculateMonthlySummary(employee._id, employee.emp_no, year, monthNumber);
 
@@ -333,16 +327,15 @@ async function recalculateOnODApproval(od) {
       return;
     }
 
-    // Calculate all months affected by this OD
-    const odStart = new Date(od.fromDate);
-    const odEnd = new Date(od.toDate);
+    // Calculate all months affected by this OD using IST components
+    const { year: startYear, month: startMonth } = extractISTComponents(od.fromDate);
+    const { year: endYear, month: endMonthNum } = extractISTComponents(od.toDate);
 
-    let currentDate = new Date(odStart.getFullYear(), odStart.getMonth(), 1);
-    const endMonth = new Date(odEnd.getFullYear(), odEnd.getMonth(), 1);
+    let currentDate = createISTDate(`${startYear}-${String(startMonth).padStart(2, '0')}-01`);
+    const endBoundary = createISTDate(`${endYear}-${String(endMonthNum).padStart(2, '0')}-01`);
 
-    while (currentDate <= endMonth) {
-      const year = currentDate.getFullYear();
-      const monthNumber = currentDate.getMonth() + 1;
+    while (currentDate <= endBoundary) {
+      const { year, month: monthNumber } = extractISTComponents(currentDate);
 
       await calculateMonthlySummary(employee._id, employee.emp_no, year, monthNumber);
 

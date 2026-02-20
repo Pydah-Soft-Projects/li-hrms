@@ -1,4 +1,5 @@
 const Loan = require('../../loans/model/Loan');
+const { extractISTComponents, createISTDate } = require('../../shared/utils/dateUtils');
 
 /**
  * Loan & Advance Processing Service
@@ -181,11 +182,11 @@ async function updateLoanRecordsAfterEMI(emiBreakdown, month, userId) {
       loan.repayment.totalPaid = (loan.repayment.totalPaid || 0) + emi.emiAmount;
       loan.repayment.installmentsPaid = (loan.repayment.installmentsPaid || 0) + 1;
       loan.repayment.lastPaymentDate = new Date();
-      
-      // Calculate next payment date (next month)
-      const nextDate = new Date();
-      nextDate.setMonth(nextDate.getMonth() + 1);
-      loan.repayment.nextPaymentDate = nextDate;
+
+      // Calculate next payment date (next month) - robust in IST
+      const { year, month } = extractISTComponents(new Date());
+      const nextMonthFirstDay = createISTDate(`${month === 12 ? year + 1 : year}-${String(month === 12 ? 1 : month + 1).padStart(2, '0')}-01`);
+      loan.repayment.nextPaymentDate = nextMonthFirstDay;
 
       // Add transaction log
       loan.transactions.push({

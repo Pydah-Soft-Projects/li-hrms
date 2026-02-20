@@ -1,5 +1,6 @@
 const { Worker } = require('bullmq');
 const { redisConfig } = require('../../config/redis');
+const { extractISTComponents, createISTDate } = require('../../shared/utils/dateUtils');
 
 // Start the workers
 const startWorkers = () => {
@@ -49,7 +50,8 @@ const startWorkers = () => {
                 } else {
                     const { getSecondSalaryEmployeeQuery } = require('../../payroll/services/payrollEmployeeQueryHelper');
                     const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
-                    const [year, monthNum] = month ? month.split('-').map(Number) : [new Date().getFullYear(), new Date().getMonth() + 1];
+                    const { year: curYear, month: curMonth } = extractISTComponents(new Date());
+                    const [year, monthNum] = month ? month.split('-').map(Number) : [curYear, curMonth];
                     const { startDate, endDate } = month ? await getPayrollDateRange(year, monthNum) : { startDate: null, endDate: null };
                     const leftDateRange = (startDate && endDate) ? { start: new Date(startDate), end: new Date(endDate) } : undefined;
                     const query = getSecondSalaryEmployeeQuery({ departmentId, divisionId, leftDateRange });
@@ -101,7 +103,8 @@ const startWorkers = () => {
                 } else {
                     const { getRegularPayrollEmployeeQuery } = require('../../payroll/services/payrollEmployeeQueryHelper');
                     const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
-                    const [year, monthNum] = month ? month.split('-').map(Number) : [new Date().getFullYear(), new Date().getMonth() + 1];
+                    const { year: curYear, month: curMonth } = extractISTComponents(new Date());
+                    const [year, monthNum] = month ? month.split('-').map(Number) : [curYear, curMonth];
                     const { startDate, endDate } = month ? await getPayrollDateRange(year, monthNum) : { startDate: null, endDate: null };
                     const leftDateRange = (startDate && endDate) ? { start: new Date(startDate), end: new Date(endDate) } : undefined;
                     const query = getRegularPayrollEmployeeQuery({ departmentId, divisionId, leftDateRange });
@@ -202,7 +205,7 @@ const startWorkers = () => {
                     if (application.status !== 'pending') throw new Error(`Application ${id} is already ${application.status}`);
 
                     const finalSalary = approvedSalary !== undefined ? approvedSalary : application.proposedSalary;
-                    const finalDOJ = doj ? new Date(doj) : new Date();
+                    const finalDOJ = doj ? createISTDate(extractISTComponents(doj).dateStr) : createISTDate(extractISTComponents(new Date()).dateStr);
 
                     application.status = 'approved';
                     application.approvedSalary = finalSalary;
@@ -373,9 +376,8 @@ const startWorkers = () => {
         try {
             const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
 
-            // Get today's date in YYYY-MM-DD
-            const now = new Date();
-            const today = now.toISOString().split('T')[0];
+            // Get today's date in YYYY-MM-DD (IST)
+            const { dateStr: today } = extractISTComponents(new Date());
 
             let syncedCount = 0;
             let removedCount = 0;

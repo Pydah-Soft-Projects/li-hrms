@@ -6,6 +6,7 @@
 const AttendanceDaily = require('../model/AttendanceDaily');
 const Shift = require('../../shifts/model/Shift');
 const { calculateMonthlySummary } = require('./summaryCalculationService');
+const { createISTDate } = require('../../shared/utils/dateUtils');
 
 /**
  * Detect and update extra hours for an attendance record
@@ -65,7 +66,6 @@ const detectExtraHours = async (employeeNumber, date) => {
     const outTimeDate = new Date(lastShift.outTime);
 
     // Use centralized helper to get shift end time in IST context
-    const { createDateWithOffset } = require('../../shifts/services/shiftDetectionService');
 
     const [startH, startM] = shift.startTime.split(':').map(Number);
     const [endH, endM] = shift.endTime.split(':').map(Number);
@@ -73,7 +73,7 @@ const detectExtraHours = async (employeeNumber, date) => {
     // Determine if overnight: Start > End (e.g., 22:00 > 06:00)
     const isOvernight = (startH * 60 + startM) > (endH * 60 + endM);
 
-    let shiftEndDate = createDateWithOffset(date, shift.endTime);
+    let shiftEndDate = createISTDate(date, shift.endTime);
     if (isOvernight) {
       shiftEndDate.setDate(shiftEndDate.getDate() + 1);
     }
