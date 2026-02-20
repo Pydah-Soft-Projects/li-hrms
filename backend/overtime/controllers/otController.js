@@ -40,12 +40,12 @@ exports.createOT = async (req, res) => {
     }
 
     // Validate Date (Must be today or future)
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const checkDate = new Date(date);
-    checkDate.setHours(0, 0, 0, 0);
+    // Get IST "Today" (YYYY-MM-DD)
+    const now = new Date();
+    const istNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+    const todayStr = `${istNow.getFullYear()}-${String(istNow.getMonth() + 1).padStart(2, '0')}-${String(istNow.getDate()).padStart(2, '0')}`;
 
-    if (checkDate < today) {
+    if (date < todayStr) {
       return res.status(400).json({
         success: false,
         message: 'OT requests are restricted to current or future dates only.'
