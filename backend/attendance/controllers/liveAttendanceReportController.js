@@ -33,59 +33,105 @@ const calculateHoursWorked = (inTime) => {
 // @desc    Get live attendance report
 // @route   GET /api/attendance/reports/live
 // @access  Private (Super Admin only)
+// @desc    Get live attendance report
+// @route   GET /api/attendance/reports/live
+// @access  Private (Super Admin only)
 exports.getLiveAttendanceReport = async (req, res) => {
   try {
-    const { date, department, shift } = req.query;
+    const { date, division, department, shift } = req.query;
 
+    // Use existing extractISTComponents if possible, or simple format
     // Default to today if no date provided
-    const targetDate = date ? formatDate(new Date(date)) : formatDate(new Date());
+    const targetDate = date ? date : formatDate(new Date());
 
-    // Build query for attendance records
-    const query = { date: targetDate };
+    // 1. Build employee base query for "Total Workforce"
+    const employeeQuery = { is_active: true };
+    if (division) employeeQuery.division_id = division;
+    if (department) employeeQuery.department_id = department;
 
-    // Get all attendance records for the date, with shift populated
-    let attendanceRecords = await AttendanceDaily.find(query)
+    // Fetch all applicable active employees
+    const activeEmployees = await Employee.find(employeeQuery)
+      .select('_id emp_no employee_name division_id department_id designation_id')
+      .populate({ path: 'division_id', select: 'name' })
+      .populate({ path: 'department_id', select: 'name' })
+      .populate({ path: 'designation_id', select: 'name' })
+      .lean();
+
+    const totalActiveCount = activeEmployees.length;
+    const empNos = activeEmployees.map(e => e.emp_no);
+
+    // 2. Fetch attendance records for these employees on target date
+    const attendanceRecords = await AttendanceDaily.find({
+      date: targetDate,
+      employeeNumber: { $in: empNos }
+    })
       .populate({
         path: 'shifts.shiftId',
         select: 'name startTime endTime'
       })
       .lean();
 
-    // Collect unique employee numbers and fetch employee docs
-    const empNumbers = [...new Set(attendanceRecords.map(r => r.employeeNumber).filter(Boolean))];
-    let employeeMap = {};
-    if (empNumbers.length > 0) {
-      const employees = await Employee.find({ emp_no: { $in: empNumbers } })
-        .select('_id emp_no employee_name division_id department_id designation_id')
-        .populate({ path: 'division_id', select: 'name' })
-        .populate({ path: 'department_id', select: 'name' })
-        .populate({ path: 'designation_id', select: 'name' })
-        .lean();
+    // Map records by emp_no for easy lookup
+    const attendanceMap = attendanceRecords.reduce((acc, r) => {
+      acc[r.employeeNumber] = r;
+      return acc;
+    }, {});
 
-      employeeMap = employees.reduce((acc, e) => {
-        acc[e.emp_no] = e;
-        return acc;
-      }, {});
-    }
-
-    // Categorize employees
+    // 3. Initialize categories and breakdowns
     const currentlyWorking = [];
     const completedShift = [];
+    const shiftBreakdownMap = {}; // name -> { working, completed }
+    const deptBreakdownMap = {}; // deptId -> { name, divisionName, total, present, working, completed, absent }
 
-    attendanceRecords.forEach(record => {
-      const empNo = record.employeeNumber;
-      const employee = employeeMap[empNo];
-      if (!employee) return;
+    // Initialize shift breakdown from all shifts if none filtered, or just relevant ones
+    const allShifts = await Shift.find({ isActive: true }).select('name').lean();
+    allShifts.forEach(s => {
+      shiftBreakdownMap[s.name] = { name: s.name, working: 0, completed: 0 };
+    });
 
-      // For live report, we primarily look at the first shift of the day
+    // 4. Process all active employees to categorize
+    activeEmployees.forEach(employee => {
+      const record = attendanceMap[employee.emp_no];
+      const deptId = employee.department_id?._id?.toString() || 'unknown';
+
+      // Initialize dept breakdown if not seen
+      if (!deptBreakdownMap[deptId]) {
+        deptBreakdownMap[deptId] = {
+          id: deptId,
+          name: employee.department_id?.name || 'Unknown',
+          divisionId: employee.division_id?._id || 'unknown',
+          divisionName: employee.division_id?.name || 'Unknown',
+          totalEmployees: 0,
+          present: 0,
+          working: 0,
+          completed: 0,
+          absent: 0
+        };
+      }
+      deptBreakdownMap[deptId].totalEmployees++;
+
+      if (!record) {
+        // ABSENT
+        deptBreakdownMap[deptId].absent++;
+        return;
+      }
+
+      // PRESENT
       const firstShift = record.shifts && record.shifts.length > 0 ? record.shifts[0] : null;
       const shiftDoc = firstShift?.shiftId;
 
-      // Department filter if requested
-      if (department && employee.department_id?._id?.toString() !== department) return;
+      // Filter by shift if requested
+      if (shift && shiftDoc?._id?.toString() !== shift) {
+        // If we came here, the employee is technically present but doesn't match the shift filter
+        // For the purpose of "Live Pulse", we usually want the counts to reflect the filtered view
+        // But Total Active should remain constant for the scope? 
+        // Actually, if a shift is selected, we should probably only focus on people assigned to/working that shift.
+        // For simplicity, we filter the employee out of the results if they don't match selected shift
+        deptBreakdownMap[deptId].totalEmployees--; // Adjust back
+        return;
+      }
 
-      // Shift filter if requested
-      if (shift && shiftDoc?._id?.toString() !== shift) return;
+      deptBreakdownMap[deptId].present++;
 
       const employeeData = {
         id: employee._id,
@@ -100,43 +146,48 @@ exports.getLiveAttendanceReport = async (req, res) => {
         inTime: firstShift?.inTime || null,
         outTime: firstShift?.outTime || null,
         status: record.status,
-        statusText: null,
         date: record.date,
-        hoursWorked: null,
         isLate: record.totalLateInMinutes > 0,
         lateMinutes: record.totalLateInMinutes || 0,
         isEarlyOut: record.totalEarlyOutMinutes > 0,
         earlyOutMinutes: record.totalEarlyOutMinutes || 0,
         otHours: record.totalOTHours || 0,
-        extraHours: record.extraHours || 0
+        extraHours: record.extraHours || 0,
+        hoursWorked: 0
       };
 
-      // Determine status text and hours worked
-      const hasIn = !!(employeeData.inTime);
-      const hasOut = !!(employeeData.outTime);
+      const hasIn = !!employeeData.inTime;
+      const hasOut = !!employeeData.outTime;
+      const shiftName = shiftDoc?.name || 'Default';
+
+      if (!shiftBreakdownMap[shiftName]) {
+        shiftBreakdownMap[shiftName] = { name: shiftName, working: 0, completed: 0 };
+      }
 
       if (hasIn && !hasOut) {
         employeeData.hoursWorked = calculateHoursWorked(employeeData.inTime);
         employeeData.statusText = 'Working';
         currentlyWorking.push(employeeData);
+        shiftBreakdownMap[shiftName].working++;
+        deptBreakdownMap[deptId].working++;
       } else if (hasIn && hasOut) {
         const inDateTime = new Date(employeeData.inTime);
         const outDateTime = new Date(employeeData.outTime);
-        const diffMs = outDateTime - inDateTime;
-        employeeData.hoursWorked = diffMs / (1000 * 60 * 60);
+        employeeData.hoursWorked = (outDateTime - inDateTime) / (1000 * 60 * 60);
         employeeData.statusText = 'Completed';
         completedShift.push(employeeData);
+        shiftBreakdownMap[shiftName].completed++;
+        deptBreakdownMap[deptId].completed++;
       } else {
-        employeeData.hoursWorked = 0;
-        employeeData.statusText = 'Absent';
+        // Technically present but no punch? (e.g. manual status)
+        employeeData.statusText = 'Present';
       }
     });
 
-    // Sort currently working by latest in_time first (default)
-    currentlyWorking.sort((a, b) => new Date(b.inTime) - new Date(a.inTime));
-
-    // Sort completed shift by latest out_time first (default)
-    completedShift.sort((a, b) => new Date(b.outTime) - new Date(a.outTime));
+    // 5. Finalize data
+    const totalPresent = currentlyWorking.length + completedShift.length;
+    const finalShiftBreakdown = Object.values(shiftBreakdownMap).filter(s => s.working > 0 || s.completed > 0);
+    const finalDeptBreakdown = Object.values(deptBreakdownMap);
 
     res.status(200).json({
       success: true,
@@ -145,10 +196,14 @@ exports.getLiveAttendanceReport = async (req, res) => {
         summary: {
           currentlyWorking: currentlyWorking.length,
           completedShift: completedShift.length,
-          totalEmployees: currentlyWorking.length + completedShift.length
+          totalPresent,
+          totalActiveEmployees: totalActiveCount, // Count within the filter scope
+          absentEmployees: totalActiveCount - totalPresent,
+          shiftBreakdown: finalShiftBreakdown,
+          departmentBreakdown: finalDeptBreakdown
         },
-        currentlyWorking,
-        completedShift
+        currentlyWorking: currentlyWorking.sort((a, b) => new Date(b.inTime) - new Date(a.inTime)),
+        completedShift: completedShift.sort((a, b) => new Date(b.outTime) - new Date(a.outTime))
       }
     });
   } catch (error) {
