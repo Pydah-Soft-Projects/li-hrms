@@ -256,7 +256,7 @@ async function calculateAllEmployeesSummary(year, monthNumber) {
 async function recalculateOnAttendanceUpdate(emp_no, date) {
   try {
     const Employee = require('../../employees/model/Employee');
-    const employee = await Employee.findOne({ emp_no, is_active: true });
+    const employee = await Employee.findOne({ emp_no: emp_no.toUpperCase() });
 
     if (!employee) {
       console.warn(`Employee not found for emp_no: ${emp_no}`);

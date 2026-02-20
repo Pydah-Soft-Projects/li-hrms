@@ -450,5 +450,38 @@ attendanceDailySchema.post('save', async function () {
   }
 });
 
+/**
+ * Handle findOneAndUpdate to trigger summary recalculation
+ * Since findOneAndUpdate bypasses 'save' hooks, we need this explicit hook
+ */
+attendanceDailySchema.post('findOneAndUpdate', async function () {
+  try {
+    const query = this.getQuery();
+    const update = this.getUpdate();
+
+    // We only trigger if shifts were updated (sync/multi-shift) OR status was updated
+    const isShiftsUpdate = update.$set?.shifts || update.shifts;
+    const isStatusUpdate = update.$set?.status || update.status;
+    const isManualOverride = update.$set?.isEdited || update.isEdited;
+
+    if (query.employeeNumber && query.date && (isShiftsUpdate || isStatusUpdate || isManualOverride)) {
+      const { recalculateOnAttendanceUpdate } = require('../services/summaryCalculationService');
+      const { detectExtraHours } = require('../services/extraHoursService');
+
+      console.log(`[AttendanceDaily Hook] Triggering recalculation for ${query.employeeNumber} on ${query.date} (findOneAndUpdate)`);
+
+      // Recalculate summary (handles monthly summary update)
+      await recalculateOnAttendanceUpdate(query.employeeNumber, query.date);
+
+      // Detect extra hours (only if it was a shifts update)
+      if (isShiftsUpdate) {
+        await detectExtraHours(query.employeeNumber, query.date);
+      }
+    }
+  } catch (error) {
+    console.error('Error in post-findOneAndUpdate hook:', error);
+  }
+});
+
 module.exports = mongoose.models.AttendanceDaily || mongoose.model('AttendanceDaily', attendanceDailySchema);
 
