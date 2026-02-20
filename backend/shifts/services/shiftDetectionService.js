@@ -1364,7 +1364,7 @@ module.exports = {
   calculateLateIn,
   calculateEarlyOut,
   isWithinShiftWindow,
-  syncShiftsForExistingRecords,
+  createDateWithOffset,
   syncShiftsForExistingRecords,
   autoAssignNearestShift,
   timeToMinutes

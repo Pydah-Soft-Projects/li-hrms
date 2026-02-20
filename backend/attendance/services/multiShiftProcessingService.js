@@ -98,10 +98,10 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
         let approvedODs = [];
 
         if (employeeId) {
-            const dayStart = new Date(date);
-            dayStart.setHours(0, 0, 0, 0);
-            const dayEnd = new Date(date);
-            dayEnd.setHours(23, 59, 59, 999);
+            const { createDateWithOffset } = require('../../shifts/services/shiftDetectionService');
+            const dayStart = createDateWithOffset(date, '00:00');
+            const dayEnd = createDateWithOffset(date, '23:59');
+            dayEnd.setSeconds(59, 999);
 
             approvedODs = await OD.find({
                 employeeId,
