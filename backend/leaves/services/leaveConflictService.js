@@ -8,28 +8,24 @@ const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
 const Employee = require('../../employees/model/Employee');
 const Shift = require('../../shifts/model/Shift');
 const { recalculateOnAttendanceUpdate } = require('../../attendance/services/summaryCalculationService');
+const { createISTDate, extractISTComponents } = require('../../shared/utils/dateUtils');
 
 /**
  * Format date to YYYY-MM-DD
  */
 const formatDate = (date) => {
-  const d = new Date(date);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return extractISTComponents(date).dateStr;
 };
 
 /**
  * Check if a date falls within a date range
  */
 const isDateInRange = (date, startDate, endDate) => {
-  const checkDate = new Date(date);
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-  
-  start.setHours(0, 0, 0, 0);
-  end.setHours(23, 59, 59, 999);
-  checkDate.setHours(0, 0, 0, 0);
-  
-  return checkDate >= start && checkDate <= end;
+  const dateStr = extractISTComponents(date).dateStr;
+  const startStr = extractISTComponents(startDate).dateStr;
+  const endStr = extractISTComponents(endDate).dateStr;
+
+  return dateStr >= startStr && dateStr <= endStr;
 };
 
 /**
@@ -48,10 +44,10 @@ const determineWorkedHalf = (inTime, outTime, shift) => {
   const inMinutes = inTime.getHours() * 60 + inTime.getMinutes();
   const [shiftStartHour, shiftStartMin] = shift.startTime.split(':').map(Number);
   const [shiftEndHour, shiftEndMin] = shift.endTime.split(':').map(Number);
-  
+
   const shiftStartMinutes = shiftStartHour * 60 + shiftStartMin;
   const shiftEndMinutes = shiftEndHour * 60 + shiftEndMin;
-  
+
   // Calculate mid-shift point
   let shiftDurationMinutes;
   if (shiftEndMinutes < shiftStartMinutes) {
@@ -60,9 +56,9 @@ const determineWorkedHalf = (inTime, outTime, shift) => {
   } else {
     shiftDurationMinutes = shiftEndMinutes - shiftStartMinutes;
   }
-  
+
   const midShiftMinutes = shiftStartMinutes + (shiftDurationMinutes / 2);
-  
+
   // If worked before mid-shift, second half was taken as leave
   // If worked after mid-shift, first half was taken as leave
   if (inMinutes < midShiftMinutes) {
@@ -80,10 +76,10 @@ const determineWorkedHalf = (inTime, outTime, shift) => {
  */
 const isHalfDayWork = (attendance, shift) => {
   if (!attendance.inTime) return false;
-  
+
   // If no out-time, consider it half-day
   if (!attendance.outTime) return true;
-  
+
   // If shift not available, use total hours
   if (!shift || !shift.duration) {
     // Consider less than 6 hours as half-day
@@ -92,11 +88,11 @@ const isHalfDayWork = (attendance, shift) => {
     }
     return false;
   }
-  
+
   // Compare worked hours with expected hours
   const workedHours = attendance.totalHours || 0;
   const expectedHours = shift.duration || 8;
-  
+
   // If worked less than 60% of expected hours, consider it half-day
   return workedHours < (expectedHours * 0.6);
 };
@@ -112,7 +108,7 @@ const isHalfDayWork = (attendance, shift) => {
 const revokeFullDayLeave = async (leaveId, userId, userName, userRole) => {
   try {
     const leave = await Leave.findById(leaveId);
-    
+
     if (!leave) {
       return {
         success: false,
@@ -122,7 +118,7 @@ const revokeFullDayLeave = async (leaveId, userId, userName, userRole) => {
 
     // Update leave status to pending
     leave.status = 'pending';
-    
+
     // Add workflow history
     leave.workflow.history.push({
       step: leave.workflow.currentStep,
@@ -137,13 +133,16 @@ const revokeFullDayLeave = async (leaveId, userId, userName, userRole) => {
     await leave.save();
 
     // Recalculate monthly summary for affected months
-    const fromDate = new Date(leave.fromDate);
-    const toDate = new Date(leave.toDate);
-    
+    const fromDateStr = extractISTComponents(leave.fromDate).dateStr;
+    const toDateStr = extractISTComponents(leave.toDate).dateStr;
+
     // Recalculate for each date in the leave range
-    for (let d = new Date(fromDate); d <= toDate; d.setDate(d.getDate() + 1)) {
+    let d = createISTDate(fromDateStr);
+    const e = createISTDate(toDateStr);
+    while (d <= e) {
       const dateStr = formatDate(d);
       await recalculateOnAttendanceUpdate(leave.emp_no, dateStr);
+      d.setDate(d.getDate() + 1);
     }
 
     return {
@@ -174,7 +173,7 @@ const revokeFullDayLeave = async (leaveId, userId, userName, userRole) => {
 const updateLeaveForAttendance = async (leaveId, attendanceDate, attendance, userId, userName, userRole) => {
   try {
     const leave = await Leave.findById(leaveId).populate('employeeId');
-    
+
     if (!leave) {
       return {
         success: false,
@@ -182,14 +181,13 @@ const updateLeaveForAttendance = async (leaveId, attendanceDate, attendance, use
       };
     }
 
-    const attDate = new Date(attendanceDate);
-    const leaveStart = new Date(leave.fromDate);
-    const leaveEnd = new Date(leave.toDate);
+    const attDateStr = extractISTComponents(attendanceDate).dateStr;
+    const leaveStartStr = extractISTComponents(leave.fromDate).dateStr;
+    const leaveEndStr = extractISTComponents(leave.toDate).dateStr;
 
-    // Normalize dates for comparison
-    leaveStart.setHours(0, 0, 0, 0);
-    leaveEnd.setHours(23, 59, 59, 999);
-    attDate.setHours(0, 0, 0, 0);
+    const attDate = createISTDate(attDateStr);
+    const leaveStart = createISTDate(leaveStartStr);
+    const leaveEnd = createISTDate(leaveEndStr);
 
     // Get shift for half-day determination
     let shift = null;
@@ -213,7 +211,7 @@ const updateLeaveForAttendance = async (leaveId, attendanceDate, attendance, use
     if (formatDate(leaveStart) === formatDate(leaveEnd) && !isHalfDay) {
       // Delete the leave entirely
       await Leave.findByIdAndDelete(leaveId);
-      
+
       // Recalculate monthly summary
       await recalculateOnAttendanceUpdate(leave.emp_no, attendanceDate);
 
@@ -258,7 +256,7 @@ const updateLeaveForAttendance = async (leaveId, attendanceDate, attendance, use
       if (isHalfDay) {
         // Create new half-day leave for the first day
         const workedHalf = determineWorkedHalf(attendance.inTime, attendance.outTime, shift);
-        
+
         const halfDayLeave = new Leave({
           employeeId: leave.employeeId,
           emp_no: leave.emp_no,
@@ -295,9 +293,9 @@ const updateLeaveForAttendance = async (leaveId, attendanceDate, attendance, use
         // Update original leave - move start date forward
         leaveStart.setDate(leaveStart.getDate() + 1);
         leave.fromDate = new Date(leaveStart);
-        
+
         // Recalculate number of days
-        const daysDiff = Math.ceil((leaveEnd - leaveStart) / (1000 * 60 * 60 * 24)) + 1;
+        const daysDiff = Math.ceil((leaveEnd.getTime() - leaveStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
         leave.numberOfDays = Math.max(0.5, daysDiff);
 
         leave.workflow.history.push({
@@ -317,9 +315,9 @@ const updateLeaveForAttendance = async (leaveId, attendanceDate, attendance, use
         // Full day attendance - remove first day from leave
         leaveStart.setDate(leaveStart.getDate() + 1);
         leave.fromDate = new Date(leaveStart);
-        
+
         // Recalculate number of days
-        const daysDiff = Math.ceil((leaveEnd - leaveStart) / (1000 * 60 * 60 * 24)) + 1;
+        const daysDiff = Math.ceil((leaveEnd.getTime() - leaveStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
         leave.numberOfDays = Math.max(0.5, daysDiff);
 
         // If no days left, delete the leave
@@ -347,7 +345,7 @@ const updateLeaveForAttendance = async (leaveId, attendanceDate, attendance, use
 
       return {
         ...results,
-        message: isHalfDay 
+        message: isHalfDay
           ? 'Half-day leave created for first day, original leave updated'
           : 'First day removed from leave',
       };
@@ -358,7 +356,7 @@ const updateLeaveForAttendance = async (leaveId, attendanceDate, attendance, use
       if (isHalfDay) {
         // Create new half-day leave for the last day
         const workedHalf = determineWorkedHalf(attendance.inTime, attendance.outTime, shift);
-        
+
         const halfDayLeave = new Leave({
           employeeId: leave.employeeId,
           emp_no: leave.emp_no,
@@ -395,9 +393,9 @@ const updateLeaveForAttendance = async (leaveId, attendanceDate, attendance, use
         // Update original leave - move end date backward
         leaveEnd.setDate(leaveEnd.getDate() - 1);
         leave.toDate = new Date(leaveEnd);
-        
+
         // Recalculate number of days
-        const daysDiff = Math.ceil((leaveEnd - leaveStart) / (1000 * 60 * 60 * 24)) + 1;
+        const daysDiff = Math.ceil((leaveEnd.getTime() - leaveStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
         leave.numberOfDays = Math.max(0.5, daysDiff);
 
         // If no days left, delete the leave
@@ -423,9 +421,9 @@ const updateLeaveForAttendance = async (leaveId, attendanceDate, attendance, use
         // Full day attendance - remove last day from leave
         leaveEnd.setDate(leaveEnd.getDate() - 1);
         leave.toDate = new Date(leaveEnd);
-        
+
         // Recalculate number of days
-        const daysDiff = Math.ceil((leaveEnd - leaveStart) / (1000 * 60 * 60 * 24)) + 1;
+        const daysDiff = Math.ceil((leaveEnd.getTime() - leaveStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
         leave.numberOfDays = Math.max(0.5, daysDiff);
 
         // If no days left, delete the leave
@@ -453,7 +451,7 @@ const updateLeaveForAttendance = async (leaveId, attendanceDate, attendance, use
 
       return {
         ...results,
-        message: isHalfDay 
+        message: isHalfDay
           ? 'Half-day leave created for last day, original leave updated'
           : 'Last day removed from leave',
       };
@@ -464,13 +462,13 @@ const updateLeaveForAttendance = async (leaveId, attendanceDate, attendance, use
       if (isHalfDay) {
         // Create half-day leave for the middle day
         const workedHalf = determineWorkedHalf(attendance.inTime, attendance.outTime, shift);
-        
+
         const halfDayLeave = new Leave({
           employeeId: leave.employeeId,
           emp_no: leave.emp_no,
           leaveType: leave.leaveType,
-          fromDate: new Date(attDate),
-          toDate: new Date(attDate),
+          fromDate: createISTDate(attDateStr),
+          toDate: createISTDate(attDateStr),
           numberOfDays: 0.5,
           isHalfDay: true,
           halfDayType: workedHalf,
@@ -500,11 +498,11 @@ const updateLeaveForAttendance = async (leaveId, attendanceDate, attendance, use
 
         // Split original leave into two leaves
         // Leave 1: Before the attended day
-        const leave1End = new Date(attDate);
+        const leave1End = createISTDate(attDateStr);
         leave1End.setDate(leave1End.getDate() - 1);
-        
-        const daysBefore = Math.ceil((leave1End - leaveStart) / (1000 * 60 * 60 * 24)) + 1;
-        
+
+        const daysBefore = Math.ceil((leave1End.getTime() - leaveStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
         if (daysBefore > 0) {
           const leave1 = new Leave({
             employeeId: leave.employeeId,
@@ -542,11 +540,11 @@ const updateLeaveForAttendance = async (leaveId, attendanceDate, attendance, use
         }
 
         // Leave 2: After the attended day
-        const leave2Start = new Date(attDate);
+        const leave2Start = createISTDate(attDateStr);
         leave2Start.setDate(leave2Start.getDate() + 1);
-        
-        const daysAfter = Math.ceil((leaveEnd - leave2Start) / (1000 * 60 * 60 * 24)) + 1;
-        
+
+        const daysAfter = Math.ceil((leaveEnd.getTime() - leave2Start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
         if (daysAfter > 0) {
           const leave2 = new Leave({
             employeeId: leave.employeeId,
@@ -590,11 +588,11 @@ const updateLeaveForAttendance = async (leaveId, attendanceDate, attendance, use
       } else {
         // Full day attendance - split leave into two
         // Leave 1: Before the attended day
-        const leave1End = new Date(attDate);
+        const leave1End = createISTDate(attDateStr);
         leave1End.setDate(leave1End.getDate() - 1);
-        
-        const daysBefore = Math.ceil((leave1End - leaveStart) / (1000 * 60 * 60 * 24)) + 1;
-        
+
+        const daysBefore = Math.ceil((leave1End.getTime() - leaveStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
         if (daysBefore > 0) {
           const leave1 = new Leave({
             employeeId: leave.employeeId,
@@ -632,11 +630,11 @@ const updateLeaveForAttendance = async (leaveId, attendanceDate, attendance, use
         }
 
         // Leave 2: After the attended day
-        const leave2Start = new Date(attDate);
+        const leave2Start = createISTDate(attDateStr);
         leave2Start.setDate(leave2Start.getDate() + 1);
-        
-        const daysAfter = Math.ceil((leaveEnd - leave2Start) / (1000 * 60 * 60 * 24)) + 1;
-        
+
+        const daysAfter = Math.ceil((leaveEnd.getTime() - leave2Start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
         if (daysAfter > 0) {
           const leave2 = new Leave({
             employeeId: leave.employeeId,
@@ -683,7 +681,7 @@ const updateLeaveForAttendance = async (leaveId, attendanceDate, attendance, use
 
       return {
         ...results,
-        message: isHalfDay 
+        message: isHalfDay
           ? 'Half-day leave created, original leave split into two parts'
           : 'Leave split into two parts due to attendance on middle day',
       };
@@ -711,15 +709,8 @@ const updateLeaveForAttendance = async (leaveId, attendanceDate, attendance, use
  */
 const getLeaveConflicts = async (employeeNumber, date) => {
   try {
-    const attDate = new Date(date);
-    const employee = await Employee.findOne({ emp_no: employeeNumber });
-
-    if (!employee) {
-      return {
-        success: false,
-        message: 'Employee not found',
-      };
-    }
+    const attDateStr = extractISTComponents(date).dateStr;
+    const attDateBoundary = createISTDate(attDateStr);
 
     // Find leaves that overlap with this date
     const leaves = await Leave.find({
@@ -727,8 +718,8 @@ const getLeaveConflicts = async (employeeNumber, date) => {
       status: { $in: ['approved', 'hod_approved', 'hr_approved'] },
       $or: [
         {
-          fromDate: { $lte: attDate },
-          toDate: { $gte: attDate },
+          fromDate: { $lte: attDateBoundary },
+          toDate: { $gte: attDateBoundary },
         },
       ],
     }).sort({ fromDate: 1 });
