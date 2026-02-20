@@ -4,6 +4,7 @@
  */
 
 const mongoose = require('mongoose');
+const { extractISTComponents } = require('../../shared/utils/dateUtils');
 
 const attendanceDailySchema = new mongoose.Schema(
   {
@@ -422,9 +423,7 @@ attendanceDailySchema.post('save', async function () {
 
     // If shifts array was modified, we need to recalculate the entire month
     if (this.isModified('shifts')) {
-      const dateObj = new Date(this.date);
-      const year = dateObj.getFullYear();
-      const monthNumber = dateObj.getMonth() + 1;
+      const { year, month: monthNumber } = extractISTComponents(this.date);
 
       const Employee = require('../../employees/model/Employee');
       const employee = await Employee.findOne({ emp_no: this.employeeNumber, is_active: { $ne: false } });

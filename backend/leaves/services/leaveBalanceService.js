@@ -2,6 +2,7 @@ const MonthlyLeaveRecord = require('../model/MonthlyLeaveRecord');
 const Leave = require('../model/Leave');
 const LeaveSettings = require('../model/LeaveSettings');
 const Employee = require('../../employees/model/Employee');
+const { createISTDate, extractISTComponents } = require('../../shared/utils/dateUtils');
 
 /**
  * Get financial year from a date
@@ -9,11 +10,8 @@ const Employee = require('../../employees/model/Employee');
  * @returns {String} Financial year in format "YYYY-YYYY" (e.g., "2024-2025")
  */
 function getFinancialYear(date) {
-  const year = date.getFullYear();
-  const month = date.getMonth() + 1; // 1-12
+  const { year, month } = extractISTComponents(date);
   // Assuming financial year starts from April (month 4)
-  // If month is Jan-Mar, financial year is previous year - current year
-  // If month is Apr-Dec, financial year is current year - next year
   if (month >= 4) {
     return `${year}-${year + 1}`;
   } else {
@@ -29,9 +27,8 @@ function getFinancialYear(date) {
  * @returns {Object} MonthlyLeaveRecord
  */
 async function getOrCreateMonthlyRecord(employeeId, emp_no, date) {
-  const year = date.getFullYear();
-  const monthNumber = date.getMonth() + 1;
-  const month = `${year}-${String(monthNumber).padStart(2, '0')}`;
+  const { year, month: monthNumber, dateStr } = extractISTComponents(date);
+  const month = dateStr.substring(0, 7); // YYYY-MM
   const financialYear = getFinancialYear(date);
 
   let record = await MonthlyLeaveRecord.findOne({
@@ -113,8 +110,12 @@ async function recalculateMonthlyRecord(employeeId, month) {
 
   // Get all approved leaves for this month
   const [year, monthNum] = month.split('-').map(Number);
-  const startDate = new Date(year, monthNum - 1, 1);
-  const endDate = new Date(year, monthNum, 0, 23, 59, 59, 999);
+  const startDate = createISTDate(`${year}-${String(monthNum).padStart(2, '0')}-01`);
+
+  const nextMonthYear = monthNum === 12 ? year + 1 : year;
+  const nextMonthNum = monthNum === 12 ? 1 : monthNum + 1;
+  const nextMonthFirstDay = createISTDate(`${nextMonthYear}-${String(nextMonthNum).padStart(2, '0')}-01`);
+  const endDate = new Date(nextMonthFirstDay.getTime() - 1000);
 
   // Get regular approved leaves (non-split)
   const leaves = await Leave.find({
@@ -155,16 +156,13 @@ async function recalculateMonthlyRecord(employeeId, month) {
   // Process each leave
   for (const leave of leaves) {
     // Check if this leave falls within the month
-    const leaveStart = new Date(leave.fromDate);
-    const leaveEnd = new Date(leave.toDate);
-    leaveStart.setHours(0, 0, 0, 0);
-    leaveEnd.setHours(23, 59, 59, 999);
+    const leaveStart = createISTDate(extractISTComponents(leave.fromDate).dateStr, '00:00');
+    const leaveEnd = createISTDate(extractISTComponents(leave.toDate).dateStr, '23:59');
 
     let daysInMonth = 0;
     let currentDate = new Date(leaveStart);
     while (currentDate <= leaveEnd) {
-      const currentYear = currentDate.getFullYear();
-      const currentMonth = currentDate.getMonth() + 1;
+      const { year: currentYear, month: currentMonth } = extractISTComponents(currentDate);
       if (currentYear === year && currentMonth === monthNum) {
         daysInMonth += leave.isHalfDay ? 0.5 : 1;
       }
@@ -224,9 +222,7 @@ async function recalculateMonthlyRecord(employeeId, month) {
 
   // Process leave splits (split-approved leaves)
   for (const split of splits) {
-    const splitDate = new Date(split.date);
-    const splitYear = splitDate.getFullYear();
-    const splitMonth = splitDate.getMonth() + 1;
+    const { year: splitYear, month: splitMonth } = extractISTComponents(split.date);
 
     // Only process splits for this month
     if (splitYear !== year || splitMonth !== monthNum) {
@@ -314,14 +310,15 @@ async function updateMonthlyRecordOnLeaveAction(leave, action) {
     }
 
     // Get all months this leave spans
-    const startDate = new Date(leave.fromDate);
-    const endDate = new Date(leave.toDate);
+    const { year: startYear, month: startMonth } = extractISTComponents(leave.fromDate);
+    const { year: endYear, month: endMonthNum } = extractISTComponents(leave.toDate);
     const months = new Set();
 
-    let currentDate = new Date(startDate);
-    while (currentDate <= endDate) {
-      const year = currentDate.getFullYear();
-      const monthNum = currentDate.getMonth() + 1;
+    let currentDate = createISTDate(`${startYear}-${String(startMonth).padStart(2, '0')}-01`);
+    const endBoundary = createISTDate(`${endYear}-${String(endMonthNum).padStart(2, '0')}-01`);
+
+    while (currentDate <= endBoundary) {
+      const { year, month: monthNum } = extractISTComponents(currentDate);
       const month = `${year}-${String(monthNum).padStart(2, '0')}`;
       months.add(month);
       currentDate.setMonth(currentDate.getMonth() + 1);

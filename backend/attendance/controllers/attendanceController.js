@@ -12,13 +12,13 @@ const OD = require('../../leaves/model/OD');
 const MonthlyAttendanceSummary = require('../model/MonthlyAttendanceSummary');
 const { calculateMonthlySummary } = require('../services/summaryCalculationService');
 const Settings = require('../../settings/model/Settings');
+const { extractISTComponents } = require('../../shared/utils/dateUtils');
 
 /**
  * Format date to YYYY-MM-DD
  */
 const formatDate = (date) => {
-  const d = new Date(date);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return extractISTComponents(date).dateStr;
 };
 
 /**
@@ -37,10 +37,10 @@ exports.getAttendanceCalendar = async (req, res) => {
       });
     }
 
-    // Default to current month if not provided
-    const currentDate = new Date();
-    const targetYear = parseInt(year) || currentDate.getFullYear();
-    const targetMonth = parseInt(month) || (currentDate.getMonth() + 1);
+    // Default to current month if not provided (IST Aware)
+    const { year: curYear, month: curMonth } = extractISTComponents(new Date());
+    const targetYear = parseInt(year) || curYear;
+    const targetMonth = parseInt(month) || curMonth;
 
     // Get employee with scope validation
     const employee = await Employee.findOne({
@@ -532,23 +532,15 @@ exports.updateOutTime = async (req, res) => {
       // 3. Recalculate Extra Hours
       shiftSegment.extraHours = 0;
       if (shiftSegment.outTime) {
+        const { createDateWithOffset } = require('../../shifts/services/shiftDetectionService');
         const [endH, endM] = shiftDetails.endTime.split(':').map(Number);
-        // ... (Logic for shift end date construction)
-        let shiftEndDate = new Date(shiftSegment.inTime); // Base on inTime date usually
-        // Adjust to shift end time
-        shiftEndDate.setHours(endH, endM, 0, 0);
-        // Verify if shiftEndDate should be next day relative to inTime
-        const [startH, startM] = shiftDetails.startTime.split(':').map(Number);
-        if ((endH * 60 + endM) < (startH * 60 + startM)) {
-          // If end time is smaller than start time, it's next day relative to shift start
-          // But wait, shiftSegment.inTime might be late. 
-          // Better to use 'date' param as base.
-          shiftEndDate = new Date(date);
-          shiftEndDate.setHours(endH, endM, 0, 0);
-          if (isOvernightShift) shiftEndDate.setDate(shiftEndDate.getDate() + 1);
-        } else {
-          shiftEndDate = new Date(date); // Same day
-          shiftEndDate.setHours(endH, endM, 0, 0);
+
+        // Calculate shift end date robustly
+        let shiftEndDate = createDateWithOffset(date, shiftDetails.endTime);
+
+        // Handle overnight shift end date
+        if (isOvernightShift) {
+          shiftEndDate.setDate(shiftEndDate.getDate() + 1);
         }
 
         const grace = shiftDetails.gracePeriod || 15;
@@ -728,27 +720,16 @@ exports.assignShift = async (req, res) => {
       // Reset extra hours
       shiftSegment.extraHours = 0;
 
+      const { createDateWithOffset } = require('../../shifts/services/shiftDetectionService');
       const [endH, endM] = shift.endTime.split(':').map(Number);
       const [startH, startM] = shift.startTime.split(':').map(Number);
 
-      let shiftEndDate = new Date(shiftSegment.inTime || date); // Use inTime date or attendance date
-      // Reset time components
-      shiftEndDate.setHours(endH, endM, 0, 0);
-
       // Handle overnight
       let isOvernight = startH > 20 || (endH * 60 + endM) < (startH * 60 + startM);
-      // Logic check: if using 'date' parameter, we need to be careful.
-      // E.g. Date=2024-05-01. Shift 22:00-06:00.
-      // If inTime is 2024-05-01 22:00. End is 2024-05-02 06:00.
+
+      let shiftEndDate = createDateWithOffset(date, shift.endTime);
       if (isOvernight) {
-        // If shiftEndDate < inTime (roughly), add a day.
-        // Actually, if we constructed shiftEndDate on 'date', and it's overnight, end is date+1.
-        shiftEndDate = new Date(date);
-        shiftEndDate.setHours(endH, endM, 0, 0);
         shiftEndDate.setDate(shiftEndDate.getDate() + 1);
-      } else {
-        shiftEndDate = new Date(date);
-        shiftEndDate.setHours(endH, endM, 0, 0);
       }
 
       const grace = shift.gracePeriod || 15;

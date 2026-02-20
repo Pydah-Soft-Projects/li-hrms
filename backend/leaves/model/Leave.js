@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { extractISTComponents, createISTDate } = require('../../shared/utils/dateUtils');
 
 /**
  * Leave Model
@@ -441,8 +442,14 @@ LeaveSchema.index({ appliedAt: -1 });
 LeaveSchema.pre('save', async function () {
   if (this.isModified('fromDate') || this.isModified('toDate')) {
     if (this.fromDate && this.toDate) {
-      const diffTime = Math.abs(this.toDate - this.fromDate);
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // +1 to include both days
+      const from = extractISTComponents(this.fromDate);
+      const to = extractISTComponents(this.toDate);
+
+      const d1 = createISTDate(from.dateStr);
+      const d2 = createISTDate(to.dateStr);
+
+      const diffTime = Math.abs(d2.getTime() - d1.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
 
       if (this.isHalfDay) {
         this.numberOfDays = 0.5;

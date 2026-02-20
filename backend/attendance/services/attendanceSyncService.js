@@ -14,6 +14,7 @@ const OD = require('../../leaves/model/OD');
 const { detectAndAssignShift } = require('../../shifts/services/shiftDetectionService');
 const { detectExtraHours } = require('./extraHoursService');
 const Settings = require('../../settings/model/Settings');
+const { extractISTComponents, createISTDate } = require('../../shared/utils/dateUtils');
 
 const MAX_PAIRING_WINDOW_HOURS = 25; // Maximum allowed duration for a shift (prevents multi-day jumps)
 
@@ -21,8 +22,7 @@ const MAX_PAIRING_WINDOW_HOURS = 25; // Maximum allowed duration for a shift (pr
  * Format date to YYYY-MM-DD
  */
 const formatDate = (date) => {
-  const d = new Date(date);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return extractISTComponents(date).dateStr;
 };
 
 /**
@@ -204,13 +204,16 @@ const syncAttendanceFromMSSQL = async (fromDate = null, toDate = null) => {
       throw new Error('MSSQL configuration is incomplete');
     }
 
-    // Set default date range if not provided
+    // Set default date range if not provided (IST aware)
     if (!fromDate) {
-      fromDate = new Date();
+      const { year, month, day } = extractISTComponents(new Date());
+      fromDate = createISTDate(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`);
       fromDate.setDate(fromDate.getDate() - 7); // Last 7 days
     }
     if (!toDate) {
-      toDate = new Date();
+      const { dateStr } = extractISTComponents(new Date());
+      toDate = createISTDate(dateStr);
+      // toDate should represent the end of the day or just the date boundary
     }
 
     // Fetch logs from MSSQL

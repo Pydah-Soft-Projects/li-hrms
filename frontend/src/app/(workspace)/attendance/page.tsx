@@ -272,10 +272,11 @@ export default function AttendancePage() {
       const [hours, minutes] = timeStr.split(':').map(Number);
       const date = new Date();
       date.setHours(hours, minutes, 0, 0);
-      return date.toLocaleTimeString('en-US', {
+      return date.toLocaleTimeString('en-IN', {
         hour: '2-digit',
         minute: '2-digit',
-        hour12: true
+        hour12: true,
+        timeZone: 'Asia/Kolkata'
       });
     }
 
@@ -283,17 +284,29 @@ export default function AttendancePage() {
       const date = new Date(timeStr);
       if (isNaN(date.getTime())) return timeStr; // Fallback to raw string if invalid date
 
-      const timeFormatted = date.toLocaleTimeString('en-US', {
+      const timeFormatted = date.toLocaleTimeString('en-IN', {
         hour: '2-digit',
         minute: '2-digit',
-        hour12: true
+        hour12: true,
+        timeZone: 'Asia/Kolkata'
       });
 
       // If showDateIfDifferent is true and recordDate is provided, check if dates differ
       if (showDateIfDifferent && recordDate) {
-        const timeDateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-        if (timeDateStr !== recordDate) {
-          const dateLabel = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        // Use IST date for comparison
+        const istDateStr = new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'Asia/Kolkata',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        }).format(date);
+
+        if (istDateStr !== recordDate) {
+          const dateLabel = date.toLocaleDateString('en-IN', {
+            month: 'short',
+            day: 'numeric',
+            timeZone: 'Asia/Kolkata'
+          });
           return `${dateLabel}, ${timeFormatted}`;
         }
       }
