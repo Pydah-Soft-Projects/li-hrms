@@ -79,8 +79,7 @@ export default function LiveAttendancePage() {
   const formatTime = (dateTimeString: string | null) => {
     if (!dateTimeString) return '-';
     const date = new Date(dateTimeString);
-    // Backend provides pre-shifted IST as UTC — render as UTC to avoid double-shifting
-    return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'UTC' });
+    return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' });
   };
 
   // Format hours worked
@@ -166,7 +165,7 @@ export default function LiveAttendancePage() {
       currentY = (doc as any).lastAutoTable.finalY + 15;
 
       // Shift Breakdown
-      if (reportData.summary.shiftBreakdown?.length > 0) {
+      if (reportData.summary.shiftBreakdown.length > 0) {
         doc.setFontSize(14);
         doc.setFont('helvetica', 'bold');
         doc.text('Shift Utilization Breakdown', 15, currentY);
@@ -194,7 +193,7 @@ export default function LiveAttendancePage() {
       }
 
       // Department Breakdown
-      if (reportData.summary.departmentBreakdown?.length > 0) {
+      if (reportData.summary.departmentBreakdown && reportData.summary.departmentBreakdown.length > 0) {
         if (currentY > 240) { doc.addPage(); currentY = 20; }
         doc.setFontSize(14);
         doc.setFont('helvetica', 'bold');
@@ -567,7 +566,7 @@ export default function LiveAttendancePage() {
         )}
 
         {/* Shift Overview Breakdown */}
-        {reportData && reportData.summary.shiftBreakdown?.length > 0 && (
+        {reportData && reportData.summary.shiftBreakdown.length > 0 && (
           <div className="rounded-3xl border border-slate-200 bg-white/70 p-8 backdrop-blur-xl shadow-sm space-y-6">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-black uppercase tracking-[0.2em] text-slate-500">
