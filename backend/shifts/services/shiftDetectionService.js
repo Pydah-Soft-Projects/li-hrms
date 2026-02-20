@@ -13,6 +13,7 @@ const PreScheduledShift = require('../model/PreScheduledShift');
 const ConfusedShift = require('../model/ConfusedShift');
 const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
 const Settings = require('../../settings/model/Settings');
+const { extractISTComponents, createISTDate } = require('../../shared/utils/dateUtils');
 
 /**
  * Convert time string (HH:mm) to minutes from midnight
@@ -34,9 +35,9 @@ const timeToMinutes = (timeStr) => {
  * Helper to construct a Date object for a specific date and time in the target timezone (default IST)
  * Ensures consistency regardless of server timezone (UTC, etc)
  */
+// DEPRECATED: Replaced by shared createISTDate in dateUtils
 const createDateWithOffset = (dateStr, timeStr, offset = '+05:30') => {
-  // Construct ISO string with offset: YYYY-MM-DDTHH:mm:00+05:30
-  return new Date(`${dateStr}T${timeStr}:00${offset}`);
+  return createISTDate(dateStr, timeStr);
 };
 
 /**
@@ -48,9 +49,22 @@ const createDateWithOffset = (dateStr, timeStr, offset = '+05:30') => {
  * @returns {Number} - Time difference in minutes (absolute value)
  */
 const calculateTimeDifference = (punchTime, shiftStartTime, date) => {
-  // Get punch time components
-  const punchDate = new Date(punchTime);
-  const punchMinutes = punchDate.getHours() * 60 + punchDate.getMinutes();
+  // Get punch time components in IST correctly
+  const d = new Date(punchTime);
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Kolkata',
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: false
+  });
+  const parts = formatter.formatToParts(d);
+  const components = {};
+  parts.forEach(({ type, value }) => {
+    if (type !== 'literal') components[type] = parseInt(value);
+  });
+
+  const punchMinutes = (components.hour % 24) * 60 + components.minute;
+  const punchDate = d; // Still use same object for getTime()
 
   // Get shift start time components
   const [shiftStartHour, shiftStartMin] = shiftStartTime.split(':').map(Number);
@@ -68,9 +82,10 @@ const calculateTimeDifference = (punchTime, shiftStartTime, date) => {
   // Logic simplified: Check previous day
   if (shiftStartHour >= 20) {
     // Check if punch is actually closer to "Yesterday's Shift"
-    const prevDate = new Date(date);
-    prevDate.setDate(prevDate.getDate() - 1);
-    const prevDateStr = prevDate.toISOString().split('T')[0];
+    const { year, month, day } = extractISTComponents(date);
+    const d = createISTDate(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`);
+    d.setDate(d.getDate() - 1);
+    const { dateStr: prevDateStr } = extractISTComponents(d);
 
     const prevShiftStart = createDateWithOffset(prevDateStr, shiftStartTime);
     const prevDiff = Math.abs(punchDate.getTime() - prevShiftStart.getTime()) / (1000 * 60);
@@ -1364,7 +1379,7 @@ module.exports = {
   calculateLateIn,
   calculateEarlyOut,
   isWithinShiftWindow,
-  syncShiftsForExistingRecords,
+  createDateWithOffset,
   syncShiftsForExistingRecords,
   autoAssignNearestShift,
   timeToMinutes

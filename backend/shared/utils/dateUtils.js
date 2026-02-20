@@ -1,4 +1,40 @@
-const Settings = require('../../settings/model/Settings');
+/**
+ * Helper to construct a Date object for a specific date and time in IST (+05:30)
+ * ensures consistency regardless of server timezone.
+ * @param {string} dateStr - YYYY-MM-DD
+ * @param {string} timeStr - HH:mm
+ * @returns {Date}
+ */
+function createISTDate(dateStr, timeStr = '00:00') {
+    return new Date(`${dateStr}T${timeStr}:00+05:30`);
+}
+
+/**
+ * Extract date components in IST
+ * @param {Date|string} dateInput 
+ * @returns {{year: number, month: number, day: number, dateStr: string}}
+ */
+function extractISTComponents(dateInput) {
+    const d = new Date(dateInput);
+    const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric'
+    });
+    const parts = formatter.formatToParts(d);
+    const components = {};
+    parts.forEach(({ type, value }) => {
+        if (type !== 'literal') components[type] = parseInt(value);
+    });
+
+    const year = components.year;
+    const month = components.month;
+    const day = components.day;
+    const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+    return { year, month, day, dateStr };
+}
 
 /**
  * Get the date range for a payroll month based on settings
@@ -17,7 +53,12 @@ async function getPayrollDateRange(year, monthNumber) {
     if (startDay === 1 && endDay >= 28) {
         // Treat as full calendar month
         const startDate = `${year}-${String(monthNumber).padStart(2, '0')}-01`;
-        const lastDayInMonth = new Date(year, monthNumber, 0).getDate();
+        // Last day of month - construct via IST to be safe
+        const lastDayDate = new Date(year, monthNumber, 0); // This is local, but since it's just getting days in month, it's mostly okay. 
+        // More robust:
+        const nextMonthFirstDay = createISTDate(`${monthNumber === 12 ? year + 1 : year}-${String(monthNumber === 12 ? 1 : monthNumber + 1).padStart(2, '0')}-01`);
+        const lastDayInMonth = new Date(nextMonthFirstDay.getTime() - 1000).getDate();
+
         // Use the minimum of endDay and actual last day
         const resolvedEndDay = Math.min(endDay, lastDayInMonth);
         const endDate = `${year}-${String(monthNumber).padStart(2, '0')}-${String(resolvedEndDay).padStart(2, '0')}`;
@@ -32,14 +73,13 @@ async function getPayrollDateRange(year, monthNumber) {
     }
 
     // Dynamic logic:
-    // If Start Day <= End Day: Likely within the same calendar month
-    // If Start Day > End Day: Likely spans from previous month to current month
-
     let startDateStr, endDateStr;
 
     if (startDay < endDay) {
         // Same month (e.g., 1st to 15th)
-        const lastDayInMonth = new Date(year, monthNumber, 0).getDate();
+        const nextMonthFirstDay = createISTDate(`${monthNumber === 12 ? year + 1 : year}-${String(monthNumber === 12 ? 1 : monthNumber + 1).padStart(2, '0')}-01`);
+        const lastDayInMonth = new Date(nextMonthFirstDay.getTime() - 1000).getDate();
+
         const resolvedStartDay = Math.min(startDay, lastDayInMonth);
         const resolvedEndDay = Math.min(endDay, lastDayInMonth);
 
@@ -47,22 +87,25 @@ async function getPayrollDateRange(year, monthNumber) {
         endDateStr = `${year}-${String(monthNumber).padStart(2, '0')}-${String(resolvedEndDay).padStart(2, '0')}`;
     } else {
         // Spans months (e.g., 26th of prev to 25th of current)
-        const prevMonthDate = new Date(year, monthNumber - 2, 1);
-        const prevYear = prevMonthDate.getFullYear();
-        const prevMonth = prevMonthDate.getMonth() + 1;
-        const prevMonthLastDay = new Date(prevYear, prevMonth, 0).getDate();
+        const prevMonth = monthNumber === 1 ? 12 : monthNumber - 1;
+        const prevYear = monthNumber === 1 ? year - 1 : year;
+
+        const currMonthFirstDay = createISTDate(`${year}-${String(monthNumber).padStart(2, '0')}-01`);
+        const prevMonthLastDay = new Date(currMonthFirstDay.getTime() - 1000).getDate();
 
         const resolvedStartDay = Math.min(startDay, prevMonthLastDay);
         startDateStr = `${prevYear}-${String(prevMonth).padStart(2, '0')}-${String(resolvedStartDay).padStart(2, '0')}`;
 
-        const currMonthLastDay = new Date(year, monthNumber, 0).getDate();
+        const nextMonthFirstDay = createISTDate(`${monthNumber === 12 ? year + 1 : year}-${String(monthNumber === 12 ? 1 : monthNumber + 1).padStart(2, '0')}-01`);
+        const currMonthLastDay = new Date(nextMonthFirstDay.getTime() - 1000).getDate();
+
         const resolvedEndDay = Math.min(endDay, currMonthLastDay);
         endDateStr = `${year}-${String(monthNumber).padStart(2, '0')}-${String(resolvedEndDay).padStart(2, '0')}`;
     }
 
     // Calculate total days
-    const start = new Date(startDateStr);
-    const end = new Date(endDateStr);
+    const start = createISTDate(startDateStr);
+    const end = createISTDate(endDateStr);
     const diffTime = Math.abs(end - start);
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
 
@@ -83,16 +126,19 @@ async function getPayrollDateRange(year, monthNumber) {
  */
 function getAllDatesInRange(startDate, endDate) {
     const result = [];
-    let d = new Date(startDate);
-    const e = new Date(endDate);
+    let d = createISTDate(startDate);
+    const e = createISTDate(endDate);
     while (d <= e) {
-        result.push(d.toISOString().split('T')[0]);
-        d.setUTCDate(d.getUTCDate() + 1);
+        const { dateStr } = extractISTComponents(d);
+        result.push(dateStr);
+        d.setDate(d.getDate() + 1);
     }
     return result;
 }
 
 module.exports = {
+    createISTDate,
+    extractISTComponents,
     getPayrollDateRange,
     getAllDatesInRange
 };
