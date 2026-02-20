@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { createISTDate, extractISTComponents } = require('../../shared/utils/dateUtils');
 
 /**
  * Monthly Attendance Summary Model
@@ -199,9 +200,13 @@ monthlyAttendanceSummarySchema.statics.getOrCreate = async function (employeeId,
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
   const monthName = `${monthNames[monthNumber - 1]} ${year}`;
-  
-  // Get total days in month
-  const totalDaysInMonth = new Date(year, monthNumber, 0).getDate();
+
+  // Get total days in month via IST
+  const nextMonthFirst = monthNumber === 12
+    ? createISTDate(`${year + 1}-01-01`)
+    : createISTDate(`${year}-${String(monthNumber + 1).padStart(2, '0')}-01`);
+  const lastDayOfMonth = new Date(nextMonthFirst.getTime() - 1000);
+  const totalDaysInMonth = extractISTComponents(lastDayOfMonth).day;
 
   let summary = await this.findOne({ employeeId, month: monthStr });
 
