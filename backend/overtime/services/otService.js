@@ -148,10 +148,9 @@ const createOTRequest = async (data, userId) => {
       }
     }
 
-    // Calculate OT In Time (shift end time on the date)
-    const [shiftEndHour, shiftEndMin] = shift.endTime.split(':').map(Number);
-    const otInTime = new Date(date);
-    otInTime.setHours(shiftEndHour, shiftEndMin, 0, 0);
+    // Use centralized helper to get OT In Time (shift end time) in IST context
+    const { createDateWithOffset } = require('../../shifts/services/shiftDetectionService');
+    const otInTime = createDateWithOffset(date, shift.endTime);
 
     // Ensure otOutTime is a Date object
     const otOutTimeDate = otOutTime instanceof Date ? otOutTime : new Date(otOutTime);
@@ -407,8 +406,8 @@ const approveOTRequest = async (otId, userId, userRole) => {
           await attendanceRecord.save();
 
           // Recalculate summary
-          const dateObj = new Date(otRequest.date);
-          await calculateMonthlySummary(otRequest.employeeId, otRequest.employeeNumber, dateObj.getFullYear(), dateObj.getMonth() + 1);
+          const [year, month] = otRequest.date.split('-').map(Number);
+          await calculateMonthlySummary(otRequest.employeeId, otRequest.employeeNumber, year, month);
         }
       } else {
         // --- MOVE TO NEXT STEP ---
@@ -445,10 +444,8 @@ const approveOTRequest = async (otId, userId, userRole) => {
       await attendanceRecord.save();
 
       // Recalculate monthly summary
-      const dateObj = new Date(otRequest.date);
-      const year = dateObj.getFullYear();
-      const monthNumber = dateObj.getMonth() + 1;
-      await calculateMonthlySummary(otRequest.employeeId, otRequest.employeeNumber, year, monthNumber);
+      const [year, month] = otRequest.date.split('-').map(Number);
+      await calculateMonthlySummary(otRequest.employeeId, otRequest.employeeNumber, year, month);
     }
 
     return {
@@ -630,13 +627,12 @@ const convertExtraHoursToOT = async (employeeId, employeeNumber, date, userId, u
     }
 
     // Calculate OT times
-    const [shiftEndHour, shiftEndMin] = shift.endTime.split(':').map(Number);
-    const otInTime = new Date(date);
-    otInTime.setHours(shiftEndHour, shiftEndMin, 0, 0);
+    const { createDateWithOffset } = require('../../shifts/services/shiftDetectionService');
+    const otInTime = createDateWithOffset(date, shift.endTime);
 
     // OT out time = shift end time + extra hours
     const otOutTime = new Date(otInTime);
-    otOutTime.setHours(otOutTime.getHours() + attendanceRecord.extraHours);
+    otOutTime.setMinutes(otOutTime.getMinutes() + (attendanceRecord.extraHours * 60));
 
     // Use extra hours as OT hours
     const otHours = Math.round(attendanceRecord.extraHours * 100) / 100;
@@ -692,10 +688,8 @@ const convertExtraHoursToOT = async (employeeId, employeeNumber, date, userId, u
     await attendanceRecord.save();
 
     // Recalculate monthly summary
-    const dateObj = new Date(date);
-    const year = dateObj.getFullYear();
-    const monthNumber = dateObj.getMonth() + 1;
-    await calculateMonthlySummary(employeeId, employeeNumber.toUpperCase(), year, monthNumber);
+    const [year, month] = date.split('-').map(Number);
+    await calculateMonthlySummary(employeeId, employeeNumber.toUpperCase(), year, month);
 
     return {
       success: true,

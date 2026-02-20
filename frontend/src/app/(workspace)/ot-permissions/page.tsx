@@ -256,6 +256,13 @@ interface PermissionRequest {
   };
 }
 
+// Helper to get IST "Today" (YYYY-MM-DD)
+const getTodayIST = () => {
+  const now = new Date();
+  const istNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  return `${istNow.getFullYear()}-${String(istNow.getMonth() + 1).padStart(2, '0')}-${String(istNow.getDate()).padStart(2, '0')}`;
+};
+
 export default function OTAndPermissionsPage() {
 
   const { user: currentUser } = useAuth();
@@ -297,7 +304,7 @@ export default function OTAndPermissionsPage() {
   const [otFormData, setOTFormData] = useState({
     employeeId: '',
     employeeNumber: '',
-    date: new Date().toISOString().split('T')[0],
+    date: getTodayIST(),
     otOutTime: '',
     shiftId: '',
     manuallySelectedShiftId: '',
@@ -307,7 +314,7 @@ export default function OTAndPermissionsPage() {
   const [permissionFormData, setPermissionFormData] = useState({
     employeeId: '',
     employeeNumber: '',
-    date: new Date().toISOString().split('T')[0],
+    date: getTodayIST(),
     permissionStartTime: '',
     permissionEndTime: '',
     purpose: '',
@@ -895,7 +902,7 @@ export default function OTAndPermissionsPage() {
     setOTFormData({
       employeeId: '',
       employeeNumber: '',
-      date: new Date().toISOString().split('T')[0],
+      date: getTodayIST(),
       otOutTime: '',
       shiftId: '',
       manuallySelectedShiftId: '',
@@ -915,7 +922,13 @@ export default function OTAndPermissionsPage() {
     if (!time) return '-';
     try {
       const date = new Date(time);
-      return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'UTC' });
+      if (isNaN(date.getTime())) return time;
+      return date.toLocaleTimeString('en-IN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+        timeZone: 'Asia/Kolkata'
+      });
     } catch {
       return time;
     }
@@ -925,7 +938,7 @@ export default function OTAndPermissionsPage() {
     setPermissionFormData({
       employeeId: '',
       employeeNumber: '',
-      date: new Date().toISOString().split('T')[0],
+      date: getTodayIST(),
       permissionStartTime: '',
       permissionEndTime: '',
       purpose: '',
@@ -956,8 +969,19 @@ export default function OTAndPermissionsPage() {
 
   const formatDate = (dateStr: string) => {
     if (!dateStr) return '-';
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+    try {
+      // If it's already YYYY-MM-DD, try to keep it simple but safe
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+        const [y, m, d] = dateStr.split('-').map(Number);
+        const date = new Date(y, m - 1, d);
+        return date.toLocaleDateString('en-IN', { year: 'numeric', month: 'short', day: 'numeric' });
+      }
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) return dateStr;
+      return date.toLocaleDateString('en-IN', { year: 'numeric', month: 'short', day: 'numeric' });
+    } catch {
+      return dateStr;
+    }
   };
 
   return (

@@ -64,48 +64,24 @@ const detectExtraHours = async (employeeNumber, date) => {
     const shift = lastShift.shiftId;
     const outTimeDate = new Date(lastShift.outTime);
 
-    // Parse the attendance date string (YYYY-MM-DD) - this is the shift start date
-    const dateParts = date.split('-');
-    const attendanceYear = parseInt(dateParts[0], 10);
-    const attendanceMonth = parseInt(dateParts[1], 10) - 1; // Month is 0-indexed
-    const attendanceDay = parseInt(dateParts[2], 10);
+    // Use centralized helper to get shift end time in IST context
+    const { createDateWithOffset } = require('../../shifts/services/shiftDetectionService');
 
-    // Get out-time's date components (in local timezone to match shift end time)
-    const outTimeYear = outTimeDate.getFullYear();
-    const outTimeMonth = outTimeDate.getMonth();
-    const outTimeDay = outTimeDate.getDate();
-    const outTimeHour = outTimeDate.getHours();
-    const outTimeMinute = outTimeDate.getMinutes();
+    const [startH, startM] = shift.startTime.split(':').map(Number);
+    const [endH, endM] = shift.endTime.split(':').map(Number);
 
-    // Determine the correct date for shift end time
-    // For same-day shifts: shift end is on the same date as shift start
-    // For overnight shifts: shift end is on the next day from shift start
-    let shiftEndYear = attendanceYear;
-    let shiftEndMonth = attendanceMonth;
-    let shiftEndDay = attendanceDay;
+    // Determine if overnight: Start > End (e.g., 22:00 > 06:00)
+    const isOvernight = (startH * 60 + startM) > (endH * 60 + endM);
 
+    let shiftEndDate = createDateWithOffset(date, shift.endTime);
     if (isOvernight) {
-      // For overnight shifts, end time is on the next day relative to shift start
-      // Example: Shift starts Dec 6 20:00, ends Dec 7 04:00
-      // Attendance date = Dec 6, so shift end = Dec 7 04:00
-      const shiftStartDate = new Date(attendanceYear, attendanceMonth, attendanceDay);
-      shiftStartDate.setDate(shiftStartDate.getDate() + 1);
-      shiftEndYear = shiftStartDate.getFullYear();
-      shiftEndMonth = shiftStartDate.getMonth();
-      shiftEndDay = shiftStartDate.getDate();
+      shiftEndDate.setDate(shiftEndDate.getDate() + 1);
     }
 
-    // Create shift end time using the determined date
-    // Use local timezone to match outTime's local representation
-    const shiftEndTime = new Date(shiftEndYear, shiftEndMonth, shiftEndDay, shiftEndHour, shiftEndMin, 0, 0);
-
-    // Add grace period to shift end time for extra hours calculation
-    // Extra hours only count AFTER the grace period (shift end + grace period)
-    const shiftEndWithGrace = new Date(shiftEndTime);
+    const gracePeriodMinutes = shift.gracePeriod || 15;
+    const shiftEndWithGrace = new Date(shiftEndDate);
     shiftEndWithGrace.setMinutes(shiftEndWithGrace.getMinutes() + gracePeriodMinutes);
 
-    // Convert both to timestamps for accurate comparison (milliseconds since epoch)
-    // This ensures timezone-independent comparison
     const shiftEndWithGraceTimestamp = shiftEndWithGrace.getTime();
     const outTimeTimestamp = outTimeDate.getTime();
 
@@ -113,20 +89,11 @@ const detectExtraHours = async (employeeNumber, date) => {
     console.log(`[ExtraHours] Employee: ${employeeNumber}, Attendance Date: ${date}`);
     console.log(`[ExtraHours] Shift: ${shift.startTime} - ${shift.endTime}, Overnight: ${isOvernight}`);
     console.log(`[ExtraHours] Grace Period: ${gracePeriodMinutes} minutes`);
-    console.log(`[ExtraHours] Shift End Date: ${shiftEndYear}-${String(shiftEndMonth + 1).padStart(2, '0')}-${String(shiftEndDay).padStart(2, '0')}`);
-    console.log(`[ExtraHours] Shift End Time: ${shiftEndTime.toISOString()} (Local: ${shiftEndTime.toLocaleString()})`);
-    console.log(`[ExtraHours] Shift End + Grace: ${shiftEndWithGrace.toISOString()} (Local: ${shiftEndWithGrace.toLocaleString()})`);
-    console.log(`[ExtraHours] Out Time Date: ${outTimeYear}-${String(outTimeMonth + 1).padStart(2, '0')}-${String(outTimeDay).padStart(2, '0')} ${String(outTimeHour).padStart(2, '0')}:${String(outTimeMinute).padStart(2, '0')}`);
-    console.log(`[ExtraHours] Out Time: ${outTimeDate.toISOString()} (Local: ${outTimeDate.toLocaleString()})`);
-    console.log(`[ExtraHours] Timestamp Comparison:`);
-    console.log(`[ExtraHours]   OutTime: ${outTimeTimestamp}`);
-    console.log(`[ExtraHours]   ShiftEnd+Grace: ${shiftEndWithGraceTimestamp}`);
-    console.log(`[ExtraHours]   Difference: ${outTimeTimestamp - shiftEndWithGraceTimestamp} ms (${Math.round((outTimeTimestamp - shiftEndWithGraceTimestamp) / (1000 * 60))} minutes)`);
-    console.log(`[ExtraHours]   Result: ${outTimeTimestamp > shiftEndWithGraceTimestamp ? 'EXTRA HOURS DETECTED' : 'NO EXTRA HOURS'}`);
+    console.log(`[ExtraHours] Shift End (IST Context): ${shiftEndDate.toISOString()}`);
+    console.log(`[ExtraHours] Out Time: ${outTimeDate.toISOString()}`);
+    console.log(`[ExtraHours] Result: ${outTimeTimestamp > shiftEndWithGraceTimestamp ? 'EXTRA HOURS DETECTED' : 'NO EXTRA HOURS'}`);
     console.log(`[ExtraHours] ========================================`);
 
-    // Calculate extra hours (only if outTime is after shift end + grace period)
-    // Extra hours start counting AFTER the grace period
     if (outTimeTimestamp > shiftEndWithGraceTimestamp) {
       const diffMs = outTimeTimestamp - shiftEndWithGraceTimestamp;
       let extraHours = Math.round((diffMs / (1000 * 60 * 60)) * 100) / 100;
@@ -159,15 +126,13 @@ const detectExtraHours = async (employeeNumber, date) => {
         }
 
         // Recalculate monthly summary
-        const dateObj = new Date(date);
-        const year = dateObj.getFullYear();
-        const monthNumber = dateObj.getMonth() + 1;
+        const [year, month] = date.split('-').map(Number);
 
         const Employee = require('../../employees/model/Employee');
         const employee = await Employee.findOne({ emp_no: attendanceRecord.employeeNumber, is_active: { $ne: false } });
 
         if (employee) {
-          await calculateMonthlySummary(employee._id, employee.emp_no, year, monthNumber);
+          await calculateMonthlySummary(employee._id, employee.emp_no, year, month);
         }
 
         return {
@@ -195,15 +160,13 @@ const detectExtraHours = async (employeeNumber, date) => {
       await attendanceRecord.save();
 
       // Recalculate monthly summary
-      const dateObj = new Date(date);
-      const year = dateObj.getFullYear();
-      const monthNumber = dateObj.getMonth() + 1;
+      const [year, month] = date.split('-').map(Number);
 
       const Employee = require('../../employees/model/Employee');
       const employee = await Employee.findOne({ emp_no: attendanceRecord.employeeNumber, is_active: { $ne: false } });
 
       if (employee) {
-        await calculateMonthlySummary(employee._id, employee.emp_no, year, monthNumber);
+        await calculateMonthlySummary(employee._id, employee.emp_no, year, month);
       }
     }
 
