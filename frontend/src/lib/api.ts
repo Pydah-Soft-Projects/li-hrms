@@ -1384,6 +1384,14 @@ export const api = {
     });
   },
 
+  // Bulk resend credentials
+  bulkResendCredentials: async (filters: { search?: string; divisionId?: string; departmentId?: string; designationId?: string; includeLeft?: string }) => {
+    return apiRequest<any>('/employees/bulk-resend-credentials', {
+      method: 'POST',
+      body: JSON.stringify(filters),
+    });
+  },
+
   // Bulk export passwords
   bulkExportEmployeePasswords: async (data: { empNos?: string[]; passwordMode: string }) => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
