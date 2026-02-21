@@ -95,6 +95,10 @@ export function canViewEmployees(user: User): boolean {
     return hasAnyRole(user, ['sub_admin', 'hr', 'hod', 'manager', 'employee']) && canViewFeature(user, 'EMPLOYEES');
 }
 
+export function canViewApplications(user: User): boolean {
+    return hasAnyRole(user, ['sub_admin', 'hr', 'manager']) && canVerifyFeature(user, 'EMPLOYEES');
+}
+
 export function canCreateEmployee(user: User): boolean {
     return hasAnyRole(user, ['sub_admin', 'hr', 'manager', 'employee']) && canManageFeature(user, 'EMPLOYEES');
 }
@@ -415,6 +419,19 @@ export function hasGranularPermission(user: User, featureCode: string, type: 're
     if (type === 'read') return canViewFeature(user, featureCode);
     if (type === 'write') return canManageFeature(user, featureCode);
     return false;
+}
+
+/**
+ * Check if user has VERIFY permission for a feature.
+ * This is completely independent of read/write — must be explicitly granted.
+ * Accepts 'feature:verify' ONLY. Write does NOT imply verify.
+ */
+export function canVerifyFeature(user: User, featureCode: string): boolean {
+    if (!user) return false;
+    if (!user.featureControl || user.featureControl.length === 0) return true; // Default allow if empty (legacy/role-based)
+
+    return user.featureControl.includes(featureCode) ||
+        user.featureControl.includes(`${featureCode}:verify`);
 }
 
 // ==========================================

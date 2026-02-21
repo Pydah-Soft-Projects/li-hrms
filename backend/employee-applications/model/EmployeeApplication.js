@@ -11,7 +11,7 @@ const employeeApplicationSchema = new mongoose.Schema(
     // Application Status
     status: {
       type: String,
-      enum: ['pending', 'approved', 'rejected'],
+      enum: ['pending', 'verified', 'approved', 'rejected'],
       default: 'pending',
     },
 
@@ -64,6 +64,12 @@ const employeeApplicationSchema = new mongoose.Schema(
       type: Number,
       default: null, // Will be set to approvedSalary on approval
     },
+    second_salary: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
 
     // Personal Information
     gender: {
@@ -230,6 +236,15 @@ const employeeApplicationSchema = new mongoose.Schema(
     approvedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
+      default: null,
+    },
+    verifiedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    verifiedAt: {
+      type: Date,
       default: null,
     },
     rejectedBy: {
