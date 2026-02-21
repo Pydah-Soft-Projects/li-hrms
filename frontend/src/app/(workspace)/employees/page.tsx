@@ -2620,10 +2620,10 @@ export default function EmployeesPage() {
                               <button
                                 onClick={async (e) => {
                                   e.stopPropagation();
-                                  if (!confirm(`Resend credentials to ${employee.employee_name}?`)) return;
+                                  if (!confirm(`Resend credentials to ${employee.employee_name}? Their current credentials will be sent without resetting the password.`)) return;
                                   setIsResending(employee.emp_no);
                                   try {
-                                    await api.resendEmployeeCredentials(employee.emp_no, { passwordMode, notificationChannels });
+                                    await api.resendEmployeeCredentials(employee.emp_no, { notificationChannels });
                                     setSuccess('Credentials sent!');
                                   } catch (err) {
                                     setError('Failed to resend');
@@ -2785,10 +2785,10 @@ export default function EmployeesPage() {
                       <button
                         onClick={async (e) => {
                           e.stopPropagation();
-                          if (!confirm(`Resend credentials to ${employee.employee_name}?`)) return;
+                          if (!confirm(`Resend credentials to ${employee.employee_name}? Their current credentials will be sent without resetting the password.`)) return;
                           setIsResending(employee.emp_no);
                           try {
-                            await api.resendEmployeeCredentials(employee.emp_no, { passwordMode, notificationChannels });
+                            await api.resendEmployeeCredentials(employee.emp_no, { notificationChannels });
                             setSuccess('Credentials sent!');
                           } catch (err) {
                             setError('Failed to resend');

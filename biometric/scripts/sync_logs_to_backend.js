@@ -46,15 +46,19 @@ async function main() {
     await mongoose.connect(mongoURI);
     console.log(`✅ Connected to: ${mongoURI}\n`);
 
-    // ── STEP 2: Resend ALL logs to backend ────────────────────────────────────
+    // ── STEP 2: Resend logs to backend (Filtered by date) ────────────────────
+    const END_DATE = new Date('2026-01-30T23:59:59.999Z');
+    const query = { timestamp: { $lte: END_DATE } };
+
     console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('STEP: Resend ALL AttendanceLog records to backend');
+    console.log('STEP: Resend AttendanceLog records to backend');
+    console.log(`   Filter   : Up to ${END_DATE.toISOString()}`);
     console.log(`   Endpoint : ${SYNC_ENDPOINT}`);
     console.log(`   Batch    : ${BATCH_SIZE} logs per request`);
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
-    const totalLogs = await AttendanceLog.countDocuments({});
-    console.log(`   Total logs in DB: ${totalLogs}\n`);
+    const totalLogs = await AttendanceLog.countDocuments(query);
+    console.log(`   Total logs matching filter: ${totalLogs}\n`);
 
     if (totalLogs === 0) {
         console.log('   ℹ️  No logs to send.');
@@ -67,7 +71,7 @@ async function main() {
 
         for (let skip = 0; skip < totalLogs; skip += BATCH_SIZE) {
             batchNum++;
-            const logs = await AttendanceLog.find({})
+            const logs = await AttendanceLog.find(query)
                 .sort({ timestamp: 1 })
                 .skip(skip)
                 .limit(BATCH_SIZE)

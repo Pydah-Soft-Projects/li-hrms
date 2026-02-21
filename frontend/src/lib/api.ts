@@ -1377,7 +1377,7 @@ export const api = {
   },
 
   // Resend credentials
-  resendEmployeeCredentials: async (empNo: string, data: { passwordMode: string; notificationChannels: any }) => {
+  resendEmployeeCredentials: async (empNo: string, data: { notificationChannels?: any }) => {
     return apiRequest<any>(`/employees/${empNo}/resend-credentials`, {
       method: 'POST',
       body: JSON.stringify(data),

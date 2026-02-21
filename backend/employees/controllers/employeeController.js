@@ -791,6 +791,7 @@ exports.createEmployee = async (req, res) => {
         employeeAllowances,
         employeeDeductions,
         password: rawPassword, // Will be hashed by pre-save hook
+        plain_password: rawPassword, // Store raw password for credential resend
       });
       results.mongodb = true;
     } catch (mongoError) {
@@ -1510,23 +1511,34 @@ exports.getAllowanceDeductionDefaults = async (req, res) => {
 exports.resendEmployeePassword = async (req, res) => {
   try {
     const { empNo } = req.params;
-    const { passwordMode, notificationChannels } = req.body;
+    const { notificationChannels } = req.body;
 
-    const employee = await Employee.findOne({ emp_no: empNo.toUpperCase() });
+    const employee = await Employee.findOne({ emp_no: empNo.toUpperCase() }).select('+plain_password');
     if (!employee) {
       return res.status(404).json({ success: false, message: 'Employee not found' });
     }
 
-    // Generate a new temporary password
-    const newPassword = await generatePassword(employee, passwordMode || null);
-    employee.password = newPassword;
-    await employee.save();
+    // Use stored plain password (do NOT reset)
+    // For legacy accounts that have no plain_password stored, fall back to
+    // generating a new one (and save it so future resends work correctly).
+    let passwordToSend = employee.plain_password;
 
-    // Send credentials
+    if (!passwordToSend) {
+      // Legacy path: no plain_password stored yet – generate once and save
+      const { passwordMode } = req.body;
+      passwordToSend = await generatePassword(employee, passwordMode || null);
+      // Save the plain password AND re-hash the main password field
+      employee.password = passwordToSend;
+      employee.plain_password = passwordToSend;
+      await employee.save();
+    }
+
+    // Send existing credentials (no password change)
     const notificationResults = await sendCredentials(
       employee,
-      newPassword,
-      notificationChannels || { email: true, sms: true }
+      passwordToSend,
+      notificationChannels || { email: true, sms: true },
+      false // isReset = false – this is a resend, not a reset
     );
 
     res.status(200).json({
