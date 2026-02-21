@@ -5,6 +5,7 @@
 
 const EmployeeApplication = require('../model/EmployeeApplication');
 const Employee = require('../../employees/model/Employee');
+const EmployeeHistory = require('../../employees/model/EmployeeHistory');
 const Department = require('../../departments/model/Department');
 const Designation = require('../../departments/model/Designation');
 const EmployeeApplicationFormSettings = require('../model/EmployeeApplicationFormSettings');
@@ -114,6 +115,14 @@ const createApplicationInternal = async (rawData, settings, creatorId) => {
     createdBy: creatorId,
     status: 'pending',
   });
+
+  // Log history
+  await EmployeeHistory.create({
+    emp_no: empNo,
+    event: 'application_created',
+    performedBy: creatorId,
+    details: { proposedSalary: application.proposedSalary },
+  }).catch(err => console.error('Failed to log application creation history:', err.message));
 
   return application;
 };
@@ -471,6 +480,7 @@ exports.getApplications = async (req, res) => {
     const applications = await EmployeeApplication.find(filter)
       .populate('createdBy', 'name email')
       .populate('approvedBy', 'name email')
+      .populate('verifiedBy', 'name email')
       .populate('rejectedBy', 'name email')
       .populate('division_id', 'name')
       .populate('department_id', 'name code')
@@ -500,6 +510,7 @@ exports.getApplication = async (req, res) => {
     const application = await EmployeeApplication.findById(req.params.id)
       .populate('createdBy', 'name email')
       .populate('approvedBy', 'name email')
+      .populate('verifiedBy', 'name email')
       .populate('rejectedBy', 'name email')
       .populate('division_id', 'name')
       .populate('department_id', 'name code')
@@ -534,12 +545,10 @@ exports.getApplication = async (req, res) => {
 };
 
 /**
- * Helper logic for approving a single application
- * This contains the core logic to be shared between individual and bulk approval
+ * Step 2: Verification Helper
+ * Creates the employee record and sets status to 'verified'
  */
-const approveSingleApplicationInternal = async (applicationId, approvalData, approverId) => {
-  const { approvedSalary, doj, comments, employeeAllowances, employeeDeductions, ctcSalary, calculatedSalary } = approvalData;
-
+const verifySingleApplicationInternal = async (applicationId, approverId) => {
   const application = await EmployeeApplication.findById(applicationId);
 
   if (!application) {
@@ -550,65 +559,18 @@ const approveSingleApplicationInternal = async (applicationId, approvalData, app
     throw new Error(`Application for ${application.emp_no} is already ${application.status}`);
   }
 
-  // Use approvedSalary if provided, otherwise use proposedSalary
-  const finalSalary = approvedSalary !== undefined ? approvedSalary : application.proposedSalary;
+  // Determine initial DOJ (defaults to current date for the employee record)
+  const finalDOJ = application.doj || new Date();
 
-  if (!finalSalary || finalSalary <= 0) {
-    throw new Error(`Valid approved salary is required for ${application.emp_no}`);
-  }
+  // Set status to verified
+  application.status = 'verified';
+  application.verifiedBy = approverId;
+  application.verifiedAt = new Date();
 
-  // Determine DOJ: use provided doj, or default to current date
-  const finalDOJ = doj ? new Date(doj) : new Date();
-
-  // Set approval data but DON'T SAVE YET
-  application.status = 'approved';
-  application.approvedSalary = finalSalary;
-  application.doj = finalDOJ;
-  application.approvedBy = approverId;
-  application.approvalComments = comments || null;
-  application.approvedAt = new Date();
-
-  // Normalize employee allowances and deductions
-  const normalizeOverrides = (list) =>
-    Array.isArray(list)
-      ? list
-        .filter((item) => item && (item.masterId || item.name))
-        .map((item) => ({
-          masterId: item.masterId || null,
-          code: item.code || null,
-          name: item.name || '',
-          category: item.category || null,
-          type: item.type || null,
-          amount: item.amount ?? item.overrideAmount ?? null,
-          percentage: item.percentage ?? null,
-          percentageBase: item.percentageBase ?? null,
-          minAmount: item.minAmount ?? null,
-          maxAmount: item.maxAmount ?? null,
-          basedOnPresentDays: item.basedOnPresentDays ?? false,
-          isOverride: true,
-        }))
-      : [];
-
-  let finalEmployeeAllowances = employeeAllowances ? normalizeOverrides(employeeAllowances) : (application.employeeAllowances || []);
-  let finalEmployeeDeductions = employeeDeductions ? normalizeOverrides(employeeDeductions) : (application.employeeDeductions || []);
-
-  let finalCtcSalary = ctcSalary !== undefined && ctcSalary !== null ? ctcSalary : null;
-  let finalCalculatedSalary = calculatedSalary !== undefined && calculatedSalary !== null ? calculatedSalary : null;
-
-  if ((finalCtcSalary === null || finalCalculatedSalary === null) && (finalEmployeeAllowances.length > 0 || finalEmployeeDeductions.length > 0)) {
-    const totalAllowances = (finalEmployeeAllowances || []).reduce((sum, a) => sum + (a.amount || 0), 0);
-    const totalDeductions = (finalEmployeeDeductions || []).reduce((sum, d) => sum + (d.amount || 0), 0);
-    if (finalCtcSalary === null) finalCtcSalary = finalSalary + totalAllowances;
-    if (finalCalculatedSalary === null) finalCalculatedSalary = finalSalary + totalAllowances - totalDeductions;
-  }
-
-  application.employeeAllowances = finalEmployeeAllowances;
-  application.employeeDeductions = finalEmployeeDeductions;
-  application.ctcSalary = finalCtcSalary;
-  application.calculatedSalary = finalCalculatedSalary;
-
-  // Resolve Qualification Labels if stored as IDs (for existing applications or robustness)
+  // Prepare employee data (Proposed salary is stored but salaryStatus is pending)
   const appObj = application.toObject();
+
+  // Resolve Qualification Labels if needed
   if (appObj.qualifications && Array.isArray(appObj.qualifications)) {
     const settings = await EmployeeApplicationFormSettings.getActiveSettings();
     if (settings) {
@@ -619,38 +581,46 @@ const approveSingleApplicationInternal = async (applicationId, approvalData, app
   const { permanentFields, dynamicFields } = transformApplicationToEmployee(
     appObj,
     {
-      gross_salary: finalSalary,
+      gross_salary: application.proposedSalary, // Use proposed as initial
       doj: finalDOJ,
-      ctcSalary: finalCtcSalary,
-      calculatedSalary: finalCalculatedSalary,
     }
   );
 
   const employeeData = {
     ...permanentFields,
     dynamicFields: dynamicFields || {},
-    employeeAllowances: finalEmployeeAllowances,
-    employeeDeductions: finalEmployeeDeductions,
-    ctcSalary: finalCtcSalary,
-    calculatedSalary: finalCalculatedSalary,
+    employeeAllowances: application.employeeAllowances || [],
+    employeeDeductions: application.employeeDeductions || [],
+    salaryStatus: 'pending_approval',
+    verifiedBy: approverId,
+    verifiedAt: new Date(),
   };
 
   const results = { mongodb: false, mssql: false };
 
+  // Generate and set password
   const password = await generatePassword(employeeData, null);
   employeeData.password = password;
 
-  // Create in MongoDB
   try {
     await Employee.create(employeeData);
     results.mongodb = true;
     await application.save();
+
+    // Log History
+    await EmployeeHistory.create({
+      emp_no: application.emp_no,
+      event: 'employee_verified',
+      performedBy: approverId,
+      details: { stage: 2, action: 'Employee record created' },
+    }).catch(err => console.error('History log failed:', err.message));
+
   } catch (mongoError) {
-    console.error(`[ApproveApplication] MongoDB create error for ${employeeData.emp_no}:`, mongoError);
-    throw new Error(`Failed to create employee record in MongoDB for ${employeeData.emp_no}`);
+    console.error(`[VerifyApplication] MongoDB error for ${employeeData.emp_no}:`, mongoError);
+    throw new Error(`Failed to create employee record: ${mongoError.message}`);
   }
 
-  // Create in MSSQL (OPTIONAL/FAIL-SAFE)
+  // Create in MSSQL (OPTIONAL)
   const { isHRMSConnected, employeeExistsMSSQL, createEmployeeMSSQL } = sqlHelper;
   if (isHRMSConnected && isHRMSConnected()) {
     try {
@@ -660,29 +630,168 @@ const approveSingleApplicationInternal = async (applicationId, approvalData, app
         results.mssql = true;
       }
     } catch (mssqlError) {
-      console.error(`[ApproveApplication] MSSQL sync error (non-blocking) for ${employeeData.emp_no}:`, mssqlError.message);
+      console.error(`[VerifyApplication] MSSQL error:`, mssqlError.message);
     }
   }
 
-  // Send credentials notification
+  // Send credentials
   let notificationResults = null;
-  if (results.mongodb) {
-    try {
-      notificationResults = await sendCredentials(
-        employeeData,
-        password,
-        { email: true, sms: true }
-      );
-    } catch (notifError) {
-      console.error(`[ApproveApplication] Notification error (non-blocking) for ${employeeData.emp_no}:`, notifError.message);
-    }
+  try {
+    notificationResults = await sendCredentials(employeeData, password, { email: true, sms: true });
+  } catch (notifError) {
+    console.error(`[VerifyApplication] Notification error:`, notifError.message);
   }
 
   return { application, results, notificationResults };
 };
 
 /**
- * @desc    Approve employee application (Superadmin)
+ * Step 3: Salary Approval Helper
+ * Finalizes salary and sets status to 'approved'
+ */
+const approveSalaryInternal = async (applicationId, salaryData, approverId) => {
+  const { approvedSalary, doj, comments, employeeAllowances, employeeDeductions, ctcSalary, calculatedSalary, second_salary } = salaryData;
+
+  const application = await EmployeeApplication.findById(applicationId);
+  if (!application) throw new Error('Application not found');
+  if (application.status !== 'verified') throw new Error('Application must be verified before salary approval');
+
+  const finalSalary = approvedSalary || application.proposedSalary;
+  const finalDOJ = doj ? new Date(doj) : application.doj;
+
+  // Update Application
+  application.status = 'approved';
+  application.approvedSalary = finalSalary;
+  application.doj = finalDOJ;
+  application.approvedBy = approverId;
+  application.approvalComments = comments;
+  application.approvedAt = new Date();
+
+  if (employeeAllowances) application.employeeAllowances = employeeAllowances;
+  if (employeeDeductions) application.employeeDeductions = employeeDeductions;
+  if (ctcSalary) application.ctcSalary = ctcSalary;
+  if (calculatedSalary) application.calculatedSalary = calculatedSalary;
+  if (second_salary !== undefined) application.second_salary = second_salary;
+
+  await application.save();
+
+  // Update Employee
+  const employee = await Employee.findOne({ emp_no: application.emp_no });
+  if (employee) {
+    employee.gross_salary = finalSalary;
+    employee.doj = finalDOJ;
+    employee.salaryStatus = 'approved';
+    employee.salaryApprovedBy = approverId;
+    employee.salaryApprovedAt = new Date();
+    // Also sync verifiedBy if it was missing in the employee record
+    if (!employee.verifiedBy) {
+      employee.verifiedBy = application.verifiedBy;
+      employee.verifiedAt = application.verifiedAt;
+    }
+
+    if (second_salary !== undefined) employee.second_salary = second_salary;
+    if (employeeAllowances) employee.employeeAllowances = employeeAllowances;
+    if (employeeDeductions) employee.employeeDeductions = employeeDeductions;
+    if (ctcSalary) employee.ctcSalary = ctcSalary;
+    if (calculatedSalary) employee.calculatedSalary = calculatedSalary;
+
+    await employee.save();
+
+    // Sync to MSSQL if needed (Salary update)
+    const { isHRMSConnected, updateEmployeeMSSQL } = sqlHelper;
+    if (isHRMSConnected && isHRMSConnected()) {
+      await updateEmployeeMSSQL(employee.emp_no, employee.toObject()).catch(e => console.error('MSSQL update failed:', e.message));
+    }
+  }
+
+  // Log History
+  await EmployeeHistory.create({
+    emp_no: application.emp_no,
+    event: 'salary_approved',
+    performedBy: approverId,
+    details: { gross_salary: finalSalary, stage: 3 },
+    comments: comments
+  }).catch(err => console.error('History log failed:', err.message));
+
+  return application;
+};
+
+/**
+ * Helper logic for approving a single application (LEGACY SUPPORT / DUAL ACTION)
+ * This contains the core logic to be shared between individual and bulk approval
+ */
+const approveSingleApplicationInternal = async (applicationId, approvalData, approverId) => {
+  // We can opt to make this call both verify and approve salary sequentially for backward compatibility
+  const verifyResult = await verifySingleApplicationInternal(applicationId, approverId);
+  const approveResult = await approveSalaryInternal(applicationId, approvalData, approverId);
+  return { application: approveResult, results: verifyResult.results, notificationResults: verifyResult.notificationResults };
+};
+
+/**
+ * @desc    Verify employee application (HR/Manager) - Stage 2
+ * @route   PUT /api/employee-applications/:id/verify
+ * @access  Private (HR, Manager, Sub Admin, Super Admin)
+ */
+exports.verifyApplication = async (req, res) => {
+  try {
+    const result = await verifySingleApplicationInternal(req.params.id, req.user._id);
+
+    await result.application.populate([
+      { path: 'createdBy', select: 'name email' },
+      { path: 'verifiedBy', select: 'name email' },
+      { path: 'division_id', select: 'name' },
+      { path: 'department_id', select: 'name code' },
+      { path: 'designation_id', select: 'name code' },
+    ]);
+
+    res.status(200).json({
+      success: true,
+      message: 'Application verified and employee record created. Credentials sent.',
+      data: result.application,
+      results: result.results,
+      notificationResults: result.notificationResults,
+    });
+  } catch (error) {
+    console.error('Error verifying application:', error);
+    res.status(400).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * @desc    Approve salary (Superadmin) - Stage 3
+ * @route   PUT /api/employee-applications/:id/approve-salary
+ * @access  Private (Super Admin, Sub Admin)
+ */
+exports.approveSalary = async (req, res) => {
+  try {
+    if (!['super_admin', 'sub_admin'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, message: 'Not authorized' });
+    }
+
+    const application = await approveSalaryInternal(req.params.id, req.body, req.user._id);
+
+    await application.populate([
+      { path: 'createdBy', select: 'name email' },
+      { path: 'verifiedBy', select: 'name email' },
+      { path: 'approvedBy', select: 'name email' },
+      { path: 'division_id', select: 'name' },
+      { path: 'department_id', select: 'name code' },
+      { path: 'designation_id', select: 'name code' },
+    ]);
+
+    res.status(200).json({
+      success: true,
+      message: 'Salary approved and employee finalized successfully',
+      data: application,
+    });
+  } catch (error) {
+    console.error('Error approving salary:', error);
+    res.status(400).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * @desc    Approve employee application (LEGACY / Superadmin)
  * @route   PUT /api/employee-applications/:id/approve
  * @access  Private (Super Admin, Sub Admin)
  */
@@ -701,7 +810,6 @@ exports.approveApplication = async (req, res) => {
     await result.application.populate([
       { path: 'createdBy', select: 'name email' },
       { path: 'approvedBy', select: 'name email' },
-      { path: 'approvedBy', select: 'name email' },
       { path: 'division_id', select: 'name' },
       { path: 'department_id', select: 'name code' },
       { path: 'designation_id', select: 'name code' },
@@ -709,12 +817,8 @@ exports.approveApplication = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: result.results.mssql
-        ? 'Employee application approved and employee created successfully in both databases'
-        : 'Employee application approved and employee created successfully in MongoDB. MSSQL sync skipped/failed.',
+      message: 'Employee application processed successfully',
       data: result.application,
-      savedTo: result.results,
-      notificationResults: result.notificationResults
     });
   } catch (error) {
     console.error('Error approving employee application:', error);
