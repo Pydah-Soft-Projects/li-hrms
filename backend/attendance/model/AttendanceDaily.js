@@ -323,30 +323,23 @@ attendanceDailySchema.pre('save', async function () {
 
     // 2. Status Determination
     // Logic:
-    // - PRESENT: If any shift is PRESENT (or payable >= 1)
-    // - HALF_DAY: Only if exactly ONE shift and it is HALF_DAY
-    // - ABSENT: Otherwise (or handled by fallback)
-    const hasPresentShift = this.shifts.some(s => s.status === 'complete' || s.status === 'PRESENT' || (s.payableShift && s.payableShift >= 1));
+    // - PRESENT: If any shift is 'PRESENT' OR the sum of payable units is >= 1.0
+    // - HALF_DAY: If any shift is 'HALF_DAY' OR the sum of payable units is >= 0.5
+    // - ABSENT/PARTIAL: Fallback
+    const hasPresentShift = this.shifts.some(s => s.status === 'complete' || s.status === 'PRESENT');
+    const hasHalfDayShift = this.shifts.some(s => s.status === 'HALF_DAY');
+    const totalPayable = this.shifts.reduce((acc, s) => acc + (s.payableShift || 0), 0);
+    this.payableShifts = totalPayable;
 
-    if (hasPresentShift) {
+    if (hasPresentShift || totalPayable >= 0.95) { // 0.95 to account for floating point
       this.status = 'PRESENT';
-    } else if (this.shifts.length === 1 && (this.shifts[0].status === 'HALF_DAY' || this.shifts[0].payableShift === 0.5)) {
+    } else if (hasHalfDayShift || totalPayable >= 0.45) { // 0.45 to account for floating point
       this.status = 'HALF_DAY';
     } else {
-      // If multi-shift but none present, checking aggregated payable might handle edge cases like 0.5 + 0.5
-      let totalPayable = this.shifts.reduce((acc, s) => acc + (s.payableShift || 0), 0);
-      this.payableShifts = totalPayable;
-
-      if (totalPayable >= 1) {
-        this.status = 'PRESENT';
-      } else if (totalPayable > 0) {
-        this.status = 'HALF_DAY'; // Or PARTIAL
-      } else {
-        // Fallback to whatever the individual outcomes were, but usually absent/partial
-        this.status = this.shifts.length > 0 ? 'PARTIAL' : 'ABSENT';
-      }
+      // Check if there are any punches at all to distinguish between ABSENT and PARTIAL
+      const hasPunches = this.shifts.some(s => s.inTime || (s.outTime && s.outTime !== s.inTime));
+      this.status = hasPunches ? 'PARTIAL' : 'ABSENT';
     }
-
   } else {
     // Legacy/No-Shift Logic (likely unused now but good for safety)
     if (this.totalWorkingHours > 0) {
