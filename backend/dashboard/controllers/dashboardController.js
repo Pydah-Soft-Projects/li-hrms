@@ -7,6 +7,17 @@ const EmployeeApplication = require('../../employee-applications/model/EmployeeA
 const OD = require('../../leaves/model/OD');
 const { getEmployeeIdsInScope } = require('../../shared/middleware/dataScopeMiddleware');
 
+/**
+ * Format a Date object to YYYY-MM-DD string (IST-safe)
+ * AttendanceDaily stores date as String in YYYY-MM-DD format.
+ */
+function toDateStr(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 // @desc    Get dashboard statistics
 // @route   GET /api/dashboard/stats
 // @access  Private
@@ -25,25 +36,20 @@ exports.getDashboardStats = async (req, res) => {
     const role = user.role;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const todayStr = toDateStr(today);
 
     let stats = {};
 
     // 1. Super Admin / Sub Admin - Global Stats
     if (['super_admin', 'sub_admin'].includes(role)) {
-      // Total Employees (Active)
       const totalEmployees = await Employee.countDocuments({ is_active: true });
-
-      // Pending Leaves (Global)
       const pendingLeaves = await Leave.countDocuments({ status: 'pending' });
-
-      // Approved Leaves (Global - maybe for this month?)
-      // "Ready for Payroll" implies approved leaves that are processed or final. Let's just count approved for now.
       const approvedLeaves = await Leave.countDocuments({ status: 'approved' });
 
-      // Active Today (Present count)
+      // AttendanceDaily.date is stored as a YYYY-MM-DD string
       const todayPresent = await AttendanceDaily.countDocuments({
-        date: today,
-        status: { $in: ['P', 'WO-P', 'PH-P'] }, // Present, Weekoff Present, Holiday Present
+        date: todayStr,
+        status: { $in: ['PRESENT', 'HALF_DAY'] },
       });
 
       stats = {
@@ -51,35 +57,32 @@ exports.getDashboardStats = async (req, res) => {
         pendingLeaves,
         approvedLeaves,
         todayPresent,
-        // Mock data for things we don't have easy queries for yet
         upcomingHolidays: 2,
       };
     }
 
-    else if (role === 'hr') {
-      // Use divisionMapping via getEmployeeIdsInScope (handles empty departments = all in division)
+    // 2. HR / Manager - Scoped Team Stats
+    else if (['hr', 'manager'].includes(role)) {
       const scopedEmployeeIds = await getEmployeeIdsInScope(user);
 
-      // Total Employees (Scoped via divisionMapping)
       const totalEmployees = await Employee.countDocuments(
         scopedEmployeeIds.length > 0 ? { _id: { $in: scopedEmployeeIds }, is_active: true } : { _id: null }
       );
 
-      // Pending / Approved Leaves (Scoped via divisionMapping)
       const leaveScopeFilter = scopedEmployeeIds.length > 0 ? { employeeId: { $in: scopedEmployeeIds } } : { _id: null };
       const pendingLeaves = await Leave.countDocuments({ status: 'pending', ...leaveScopeFilter });
       const approvedLeaves = await Leave.countDocuments({ status: 'approved', ...leaveScopeFilter });
 
-      // Active Today (Scoped - AttendanceDaily uses employeeNumber)
       const scopedEmpNos = scopedEmployeeIds.length > 0
         ? (await Employee.find({ _id: { $in: scopedEmployeeIds } }).select('emp_no').lean()).map(e => e.emp_no)
         : [];
+
       const todayPresent = scopedEmpNos.length > 0
         ? await AttendanceDaily.countDocuments({
-            date: today,
-            status: { $in: ['P', 'WO-P', 'PH-P'] },
-            employeeNumber: { $in: scopedEmpNos }
-          })
+          date: todayStr,
+          status: { $in: ['PRESENT', 'HALF_DAY'] },
+          employeeNumber: { $in: scopedEmpNos }
+        })
         : 0;
 
       stats = {
@@ -91,6 +94,7 @@ exports.getDashboardStats = async (req, res) => {
       };
     }
 
+    // 3. HOD - Department Stats
     else if (role === 'hod') {
       const scopedEmployeeIds = await getEmployeeIdsInScope(user);
       const scopedEmpNos = scopedEmployeeIds.length > 0
@@ -105,10 +109,10 @@ exports.getDashboardStats = async (req, res) => {
 
       const teamPresent = scopedEmpNos.length > 0
         ? await AttendanceDaily.countDocuments({
-            date: today,
-            employeeNumber: { $in: scopedEmpNos },
-            status: { $in: ['P', 'WO-P', 'PH-P'] },
-          })
+          date: todayStr,
+          employeeNumber: { $in: scopedEmpNos },
+          status: { $in: ['PRESENT', 'HALF_DAY'] },
+        })
         : 0;
 
       const teamPendingApprovals = await Leave.countDocuments({
@@ -120,24 +124,21 @@ exports.getDashboardStats = async (req, res) => {
         totalEmployees: teamSize,
         todayPresent: teamPresent,
         teamPendingApprovals,
-        approvedLeaves: 0, // Placeholder
+        approvedLeaves: 0,
         upcomingHolidays: 2,
       };
 
-      // Efficiency Score Calculation
-      // Formula: (Total Present Records This Month / (Team Size * Days PassedThisMonth)) * 100
+      // Efficiency Score
       const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-      const daysPassed = today.getDate(); // 1 to 31
+      const startOfMonthStr = toDateStr(startOfMonth);
+      const daysPassed = today.getDate();
 
-      // Get total present records for the whole department this month
-      // We need to match by departmentId in AttendanceDaily if available, or by empNumbers
-      // AttendanceDaily has departmentId field
       const totalDeptPresentThisMonth = scopedEmpNos.length > 0
         ? await AttendanceDaily.countDocuments({
-            employeeNumber: { $in: scopedEmpNos },
-            date: { $gte: startOfMonth.toISOString().slice(0, 10), $lte: today.toISOString().slice(0, 10) },
-            status: { $in: ['P', 'WO-P', 'PH-P'] }
-          })
+          employeeNumber: { $in: scopedEmpNos },
+          date: { $gte: startOfMonthStr, $lte: todayStr },
+          status: { $in: ['PRESENT', 'HALF_DAY'] }
+        })
         : 0;
 
       let efficiencyScore = 0;
@@ -160,33 +161,24 @@ exports.getDashboardStats = async (req, res) => {
       stats.departmentFeed = recentPendingRequests;
     }
 
-    // 3. Employee - Personal Stats
+    // 4. Employee - Personal Stats
     else {
       const employeeId = user.employeeId;
 
       if (!employeeId) {
-        // Fallback if no employee ID linked
         return res.json({ success: true, data: {} });
       }
 
-      // My Pending Leaves
-      const myPendingLeaves = await Leave.countDocuments({
-        emp_no: employeeId,
-        status: 'pending'
-      });
-
-      // My Approved Leaves (This Year/Month?)
-      const myApprovedLeaves = await Leave.countDocuments({
-        emp_no: employeeId,
-        status: 'approved'
-      });
-
-      // Attendance (Days present this month)
       const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+      const startOfMonthStr = toDateStr(startOfMonth);
+
+      const myPendingLeaves = await Leave.countDocuments({ emp_no: employeeId, status: 'pending' });
+      const myApprovedLeaves = await Leave.countDocuments({ emp_no: employeeId, status: 'approved' });
+
       const myAttendance = await AttendanceDaily.countDocuments({
         employeeNumber: employeeId,
-        date: { $gte: startOfMonth },
-        status: { $in: ['P', 'WO-P', 'PH-P'] }
+        date: { $gte: startOfMonthStr, $lte: todayStr },
+        status: { $in: ['PRESENT', 'HALF_DAY'] }
       });
 
       const leaveBalance = myApprovedLeaves - myPendingLeaves;
@@ -194,7 +186,7 @@ exports.getDashboardStats = async (req, res) => {
       stats = {
         myPendingLeaves,
         myApprovedLeaves,
-        todayPresent: myAttendance, // Reusing key
+        todayPresent: myAttendance,
         upcomingHolidays: 2,
         leaveBalance
       };
@@ -213,6 +205,7 @@ exports.getDashboardStats = async (req, res) => {
     });
   }
 };
+
 // @desc    Get detailed analytics for superadmin
 // @route   GET /api/dashboard/analytics
 // @access  Private (Super Admin)
@@ -228,13 +221,24 @@ exports.getSuperAdminAnalytics = async (req, res) => {
     yesterday.setDate(yesterday.getDate() - 1);
     const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
 
+    const startOfToday = new Date(today);
+    const endOfToday = new Date(today);
+    endOfToday.setHours(23, 59, 59, 999);
+
+    // Convert to YYYY-MM-DD strings for AttendanceDaily queries
+    const todayStr = toDateStr(today);
+    const yesterdayStr = toDateStr(yesterday);
+    const startOfMonthStr = toDateStr(startOfMonth);
+
     const [
       totalEmployees,
       activeEmployees,
       totalDepartments,
       totalUsers,
-      todayStats,
-      yesterdayStats,
+      todayPresentCount,
+      todayAbsentCount,
+      yesterdayPresentCount,
+      yesterdayAbsentCount,
       pendingLeaves,
       pendingODs,
       pendingApplications,
@@ -246,46 +250,51 @@ exports.getSuperAdminAnalytics = async (req, res) => {
       Employee.countDocuments({ is_active: true }),
       Department.countDocuments(),
       User.countDocuments(),
-      // Today Stats
-      AttendanceDaily.aggregate([
-        { $match: { date: today } },
-        {
-          $group: {
-            _id: null,
-            present: { $sum: { $cond: [{ $in: ["$status", ["P", "WO-P", "PH-P", "PRESENT"]] }, 1, 0] } },
-            absent: { $sum: { $cond: [{ $eq: ["$status", "ABSENT"] }, 1, 0] } }
-          }
-        }
-      ]),
-      // Yesterday Stats
-      AttendanceDaily.aggregate([
-        { $match: { date: yesterday } },
-        {
-          $group: {
-            _id: null,
-            present: { $sum: { $cond: [{ $in: ["$status", ["P", "WO-P", "PH-P", "PRESENT"]] }, 1, 0] } },
-            absent: { $sum: { $cond: [{ $eq: ["$status", "ABSENT"] }, 1, 0] } }
-          }
-        }
-      ]),
-      Leave.countDocuments({ status: 'pending' }),
-      OD.countDocuments ? await OD.countDocuments({ status: 'pending' }).catch(() => 0) : 0, // Fallback if OD model not exists/imported correctly
-      EmployeeApplication.countDocuments({ status: 'pending' }),
+
+      // Today present - using string date
       AttendanceDaily.countDocuments({
-        date: { $gte: startOfMonth, $lte: today },
-        status: { $in: ["P", "WO-P", "PH-P", "PRESENT", "PARTIAL"] }
+        date: todayStr,
+        status: { $in: ['PRESENT', 'HALF_DAY'] }
       }),
-      // For distributions (Simplified - getting all active leaves/ods for today)
+      // Today absent
+      AttendanceDaily.countDocuments({
+        date: todayStr,
+        status: 'ABSENT'
+      }),
+
+      // Yesterday present
+      AttendanceDaily.countDocuments({
+        date: yesterdayStr,
+        status: { $in: ['PRESENT', 'HALF_DAY'] }
+      }),
+      // Yesterday absent
+      AttendanceDaily.countDocuments({
+        date: yesterdayStr,
+        status: 'ABSENT'
+      }),
+
+      Leave.countDocuments({ status: 'pending' }),
+      OD.countDocuments ? OD.countDocuments({ status: 'pending' }).catch(() => 0) : Promise.resolve(0),
+      EmployeeApplication.countDocuments({ status: 'pending' }),
+
+      // Monthly present count using string date range
+      AttendanceDaily.countDocuments({
+        date: { $gte: startOfMonthStr, $lte: todayStr },
+        status: { $in: ['PRESENT', 'HALF_DAY'] }
+      }),
+
+      // Active leave approvals today
       Leave.find({
         status: 'approved',
-        fromDate: { $lte: today },
-        toDate: { $gte: today }
+        fromDate: { $lte: endOfToday },
+        toDate: { $gte: startOfToday }
       }).populate('department', 'name'),
-      OD.find ? await OD.find({
+
+      OD.find ? OD.find({
         status: 'approved',
-        fromDate: { $lte: today },
-        toDate: { $gte: today }
-      }).populate('department', 'name').catch(() => []) : []
+        fromDate: { $lte: endOfToday },
+        toDate: { $gte: startOfToday }
+      }).populate('department', 'name').catch(() => []) : Promise.resolve([])
     ]);
 
     // Process Distributions
@@ -309,13 +318,13 @@ exports.getSuperAdminAnalytics = async (req, res) => {
       activeEmployees,
       totalDepartments,
       totalUsers,
-      todayPresent: todayStats[0]?.present || 0,
-      todayAbsent: todayStats[0]?.absent || 0,
+      todayPresent: todayPresentCount,
+      todayAbsent: todayAbsentCount,
       todayOnLeave: allLeaves.length,
       todayODs: allODs.length,
-      yesterdayPresent: yesterdayStats[0]?.present || 0,
-      yesterdayAbsent: yesterdayStats[0]?.absent || 0,
-      yesterdayOnLeave: 0, // Would need another query for yesterday's leaves if critical
+      yesterdayPresent: yesterdayPresentCount,
+      yesterdayAbsent: yesterdayAbsentCount,
+      yesterdayOnLeave: 0,
       yesterdayODs: 0,
       pendingLeaves,
       pendingODs,
