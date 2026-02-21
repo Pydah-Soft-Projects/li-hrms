@@ -1146,10 +1146,6 @@ export default function PayRegisterPage() {
 
   return (
     <div className="relative min-h-screen">
-      {/* Background */}
-      <div className="pointer-events-none fixed inset-0 bg-[linear-gradient(to_right,#e2e8f01f_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f01f_1px,transparent_1px)] bg-[size:28px_28px] dark:bg-[linear-gradient(to_right,rgba(148,163,184,0.12)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.12)_1px,transparent_1px)]" />
-      <div className="pointer-events-none fixed inset-0 bg-gradient-to-br from-blue-50/40 via-blue-50/35 to-transparent dark:from-slate-900/60 dark:via-slate-900/65 dark:to-slate-900/80" />
-
       <div className="relative z-10 mx-auto max-w-[1920px] p-6">
         {/* Header - real content; only Period and Employee count use skeleton when loading */}
         <div className="mb-1 flex flex-wrap items-center justify-between gap-4 pb-2">
@@ -1356,12 +1352,12 @@ export default function PayRegisterPage() {
                 <p className="text-xs font-medium text-slate-600 dark:text-slate-400">
                   {paginationTotal > 0
                     ? (() => {
-                        const from = (page - 1) * PAGE_SIZE + 1;
-                        const to = Math.min(page * PAGE_SIZE, paginationTotal);
-                        return paginationTotal <= PAGE_SIZE
-                          ? `${paginationTotal} employee${paginationTotal !== 1 ? 's' : ''}`
-                          : `Showing ${from}–${to} of ${paginationTotal} employees`;
-                      })()
+                      const from = (page - 1) * PAGE_SIZE + 1;
+                      const to = Math.min(page * PAGE_SIZE, paginationTotal);
+                      return paginationTotal <= PAGE_SIZE
+                        ? `${paginationTotal} employee${paginationTotal !== 1 ? 's' : ''}`
+                        : `Showing ${from}–${to} of ${paginationTotal} employees`;
+                    })()
                     : `${payRegisters.length} employee${payRegisters.length !== 1 ? 's' : ''} listed`}
                 </p>
               )}
@@ -1777,86 +1773,86 @@ export default function PayRegisterPage() {
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                 {getSummaryRows().map((row) => {
-                    const employee = typeof row.pr.employeeId === 'object' ? row.pr.employeeId : null;
-                    const empNo =
-                      typeof row.pr.employeeId === 'object' ? row.pr.employeeId.emp_no : row.pr.emp_no;
-                    const empName = typeof row.pr.employeeId === 'object' ? row.pr.employeeId.employee_name : '';
-                    const department =
-                      typeof row.pr.employeeId === 'object' && row.pr.employeeId.department_id
-                        ? typeof row.pr.employeeId.department_id === 'object'
-                          ? row.pr.employeeId.department_id.name
-                          : ''
-                        : '';
-                    const leftDate = employee && 'leftDate' in employee ? (employee as any).leftDate : null;
-                    const leftDateStr = leftDate ? (typeof leftDate === 'string' ? new Date(leftDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '') : '';
-                    return (
-                      <tr key={row.pr._id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                        <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-2 text-[11px] font-medium text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white">
-                          <div>
-                            <div className="font-semibold truncate">{empName}</div>
-                            <div className="text-[9px] text-slate-500 dark:text-slate-400 truncate">
-                              {empNo}
-                              {department && ` • ${department}`}
-                            </div>
-                            {leftDateStr && (
-                              <div className="text-[9px] text-amber-600 dark:text-amber-400 font-medium mt-0.5" title="Left in this payroll period">
-                                Left {leftDateStr}
-                              </div>
-                            )}
+                  const employee = typeof row.pr.employeeId === 'object' ? row.pr.employeeId : null;
+                  const empNo =
+                    typeof row.pr.employeeId === 'object' ? row.pr.employeeId.emp_no : row.pr.emp_no;
+                  const empName = typeof row.pr.employeeId === 'object' ? row.pr.employeeId.employee_name : '';
+                  const department =
+                    typeof row.pr.employeeId === 'object' && row.pr.employeeId.department_id
+                      ? typeof row.pr.employeeId.department_id === 'object'
+                        ? row.pr.employeeId.department_id.name
+                        : ''
+                      : '';
+                  const leftDate = employee && 'leftDate' in employee ? (employee as any).leftDate : null;
+                  const leftDateStr = leftDate ? (typeof leftDate === 'string' ? new Date(leftDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '') : '';
+                  return (
+                    <tr key={row.pr._id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                      <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-2 text-[11px] font-medium text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white">
+                        <div>
+                          <div className="font-semibold truncate">{empName}</div>
+                          <div className="text-[9px] text-slate-500 dark:text-slate-400 truncate">
+                            {empNo}
+                            {department && ` • ${department}`}
                           </div>
-                        </td>
-                        <td className="text-center px-2 py-2">{row.present.toFixed(1)}</td>
-                        <td className="text-center px-2 py-2">{row.absent.toFixed(1)}</td>
-                        <td className="text-center px-2 py-2">{row.leave.toFixed(1)}</td>
-                        <td className="text-center px-2 py-2 font-medium text-green-600 dark:text-green-400">{row.paidLeave.toFixed(1)}</td>
-                        <td className="text-center px-2 py-2 font-medium text-red-600 dark:text-red-400">{row.lop.toFixed(1)}</td>
-                        <td className="text-center px-2 py-2">{row.od.toFixed(1)}</td>
-                        <td className="text-center px-2 py-2">{row.ot.toFixed(1)}</td>
-                        <td className="text-center px-2 py-2">{row.extra.toFixed(1)}</td>
-                        <td className="text-center px-2 py-2 font-bold text-amber-600 dark:text-amber-400">{row.lateCount}</td>
-                        <td className="text-center px-2 py-2">{row.holidayAndWeekoffs.toFixed(1)}</td>
-                        <td className="text-center px-2 py-2 font-bold text-blue-600 dark:text-blue-400">{row.totalPaidDays.toFixed(1)}</td>
-                        <td className="text-center px-2 py-2">{row.monthDays}</td>
-                        <td
-                          className={`text-center px-2 py-2 font-semibold ${row.matchesMonth
-                            ? 'text-green-700 dark:text-green-400'
-                            : 'text-red-700 dark:text-red-400'
-                            }`}
-                        >
-                          {row.countedDays.toFixed(1)}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            {/* Pagination below Summary table */}
-            {paginationTotalPages > 1 && (
-              <div className="flex items-center justify-center gap-2 p-4 border-t border-slate-200 dark:border-slate-700">
-                <button
-                  type="button"
-                  onClick={() => { setPage(p => Math.max(1, p - 1)); loadPayRegisters(Math.max(1, page - 1), false); }}
-                  disabled={page <= 1 || loading}
-                  className="h-8 px-3 text-xs font-medium rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Previous
-                </button>
-                <span className="text-xs font-medium text-slate-600 dark:text-slate-400">
-                  Page {page} of {paginationTotalPages}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => { setPage(p => Math.min(paginationTotalPages, p + 1)); loadPayRegisters(Math.min(paginationTotalPages, page + 1), false); }}
-                  disabled={page >= paginationTotalPages || loading}
-                  className="h-8 px-3 text-xs font-medium rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Next
-                </button>
-              </div>
-            )}
+                          {leftDateStr && (
+                            <div className="text-[9px] text-amber-600 dark:text-amber-400 font-medium mt-0.5" title="Left in this payroll period">
+                              Left {leftDateStr}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td className="text-center px-2 py-2">{row.present.toFixed(1)}</td>
+                      <td className="text-center px-2 py-2">{row.absent.toFixed(1)}</td>
+                      <td className="text-center px-2 py-2">{row.leave.toFixed(1)}</td>
+                      <td className="text-center px-2 py-2 font-medium text-green-600 dark:text-green-400">{row.paidLeave.toFixed(1)}</td>
+                      <td className="text-center px-2 py-2 font-medium text-red-600 dark:text-red-400">{row.lop.toFixed(1)}</td>
+                      <td className="text-center px-2 py-2">{row.od.toFixed(1)}</td>
+                      <td className="text-center px-2 py-2">{row.ot.toFixed(1)}</td>
+                      <td className="text-center px-2 py-2">{row.extra.toFixed(1)}</td>
+                      <td className="text-center px-2 py-2 font-bold text-amber-600 dark:text-amber-400">{row.lateCount}</td>
+                      <td className="text-center px-2 py-2">{row.holidayAndWeekoffs.toFixed(1)}</td>
+                      <td className="text-center px-2 py-2 font-bold text-blue-600 dark:text-blue-400">{row.totalPaidDays.toFixed(1)}</td>
+                      <td className="text-center px-2 py-2">{row.monthDays}</td>
+                      <td
+                        className={`text-center px-2 py-2 font-semibold ${row.matchesMonth
+                          ? 'text-green-700 dark:text-green-400'
+                          : 'text-red-700 dark:text-red-400'
+                          }`}
+                      >
+                        {row.countedDays.toFixed(1)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
-        )
+          {/* Pagination below Summary table */}
+          {paginationTotalPages > 1 && (
+            <div className="flex items-center justify-center gap-2 p-4 border-t border-slate-200 dark:border-slate-700">
+              <button
+                type="button"
+                onClick={() => { setPage(p => Math.max(1, p - 1)); loadPayRegisters(Math.max(1, page - 1), false); }}
+                disabled={page <= 1 || loading}
+                className="h-8 px-3 text-xs font-medium rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Previous
+              </button>
+              <span className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                Page {page} of {paginationTotalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => { setPage(p => Math.min(paginationTotalPages, p + 1)); loadPayRegisters(Math.min(paginationTotalPages, page + 1), false); }}
+                disabled={page >= paginationTotalPages || loading}
+                className="h-8 px-3 text-xs font-medium rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Next
+              </button>
+            </div>
+          )}
+        </div>
+      )
       }
 
       {/* Table Tabs */}
@@ -1951,20 +1947,20 @@ export default function PayRegisterPage() {
           <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-xs">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
-                  <th className="sticky left-0 z-10 w-[180px] border-r border-slate-200 bg-slate-50 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                    Employee
-                  </th>
-                  {daysArray.map((day) => (
-                    <th
-                      key={day}
-                      className={'w-[calc((100%-180px-' + (activeTable === 'leaves' ? '320px' : '80px') + '/' + daysArray.length + ')] border-r border-slate-200 px-1 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'}
-                    >
-                      {parseInt(day.split('-')[2])}
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
+                    <th className="sticky left-0 z-10 w-[180px] border-r border-slate-200 bg-slate-50 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                      Employee
                     </th>
-                  ))}
-                  {activeTable === 'present' && (
+                    {daysArray.map((day) => (
+                      <th
+                        key={day}
+                        className={'w-[calc((100%-180px-' + (activeTable === 'leaves' ? '320px' : '80px') + '/' + daysArray.length + ')] border-r border-slate-200 px-1 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'}
+                      >
+                        {parseInt(day.split('-')[2])}
+                      </th>
+                    ))}
+                    {activeTable === 'present' && (
                       <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-green-50 dark:bg-green-900/20">
                         Total Present Days
                       </th>
@@ -2274,7 +2270,7 @@ export default function PayRegisterPage() {
                 </button>
               </div>
             )}
-            </div>
+          </div>
         )}
       </div>
 
