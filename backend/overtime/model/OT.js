@@ -220,7 +220,7 @@ const otSchema = new mongoose.Schema(
           stepOrder: Number,
           role: String,
           label: String,
-          status: { type: String, enum: ['pending', 'approved', 'rejected', 'skipped', 'forwarded'], default: 'pending' },
+          status: { type: String, enum: ['pending', 'approved', 'rejected', 'skipped'], default: 'pending' },
           isCurrent: { type: Boolean, default: false },
           actionBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
           actionAt: Date,

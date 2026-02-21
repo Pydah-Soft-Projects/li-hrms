@@ -16,7 +16,9 @@ exports.getSettings = async (req, res) => {
         if (!settings) {
             settings = {
                 payPerHour: 0,
+                multiplier: 1.5,
                 minOTHours: 0,
+                roundingMinutes: 15,
                 workflow: {
                     isEnabled: false,
                     steps: [],
@@ -44,7 +46,7 @@ exports.getSettings = async (req, res) => {
 // @access  Private (Super Admin)
 exports.saveSettings = async (req, res) => {
     try {
-        const { payPerHour, minOTHours, workflow } = req.body;
+        const { payPerHour, multiplier, minOTHours, roundingMinutes, workflow } = req.body;
 
         // Find existing settings or create new
         let settings = await OvertimeSettings.getActiveSettings();
@@ -57,7 +59,9 @@ exports.saveSettings = async (req, res) => {
 
         // Update settings
         if (payPerHour !== undefined) settings.payPerHour = payPerHour;
+        if (multiplier !== undefined) settings.multiplier = multiplier;
         if (minOTHours !== undefined) settings.minOTHours = minOTHours;
+        if (roundingMinutes !== undefined) settings.roundingMinutes = roundingMinutes;
         if (workflow !== undefined) settings.workflow = workflow;
 
         settings.updatedBy = req.user._id;

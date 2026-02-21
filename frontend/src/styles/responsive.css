@@ -1,0 +1,121 @@
+/* Global Responsive Utilities */
+@layer utilities {
+  /* Prevent horizontal overflow */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  /* Text truncation utilities */
+  .truncate-2-lines {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .truncate-3-lines {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+}
+
+/* Ensure all containers respect boundaries */
+* {
+  box-sizing: border-box;
+}
+
+/* Prevent overflow on main containers */
+html, body {
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
+/* Responsive container constraints */
+.container-responsive {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+/* Card responsive constraints */
+.card-responsive {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+/* Button responsive constraints */
+.btn-responsive {
+  min-width: 0;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Input responsive constraints */
+.input-responsive {
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+}
+
+/* Grid responsive */
+.grid-responsive {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+}
+
+/* Flex responsive */
+.flex-responsive {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* Mobile-first breakpoints */
+@media (min-width: 320px) {
+  .xs\:block { display: block; }
+  .xs\:flex { display: flex; }
+  .xs\:p-4 { padding: 1rem; }
+}
+
+@media (min-width: 375px) {
+  .mobile-m\:text-sm { font-size: 0.875rem; }
+}
+
+@media (min-width: 425px) {
+  .mobile-l\:text-base { font-size: 1rem; }
+}
+
+/* Ensure tables are responsive */
+.table-responsive {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table-responsive table {
+  min-width: 600px;
+  width: 100%;
+}
+
+/* Image responsive */
+img, video {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Prevent text overflow */
+.text-safe {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  hyphens: auto;
+}

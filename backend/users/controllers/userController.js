@@ -1,7 +1,5 @@
 const User = require('../model/User');
 const Employee = require('../../employees/model/Employee');
-const Workspace = require('../../workspaces/model/Workspace');
-const RoleAssignment = require('../../workspaces/model/RoleAssignment');
 const Department = require('../../departments/model/Department');
 const Division = require('../../departments/model/Division');
 const jwt = require('jsonwebtoken');
@@ -17,17 +15,6 @@ const generateToken = (userId) => {
 };
 
 
-// Get workspace code by role type
-const getWorkspaceCodeByRole = (role) => {
-  const roleToWorkspace = {
-    super_admin: null, // Super admin doesn't need workspace assignment typically
-    sub_admin: 'SUBADMIN',
-    hr: 'HR',
-    hod: 'HOD',
-    employee: 'EMP',
-  };
-  return roleToWorkspace[role] || 'EMP';
-};
 
 // @desc    Register a new user
 // @route   POST /api/users/register
@@ -40,19 +27,16 @@ exports.registerUser = async (req, res) => {
       name,
       role,
       roles,
-      department,
-      departments,
       employeeId,
       employeeRef,
       autoGeneratePassword,
       assignWorkspace,
       scope,
-      departmentType,
       featureControl,
       dataScope,
-      allowedDivisions,
       divisionMapping,
     } = req.body;
+    const { department, division } = req.body;
 
     // Validate required fields
     if (!email || !name || !role) {
@@ -81,47 +65,34 @@ exports.registerUser = async (req, res) => {
     }
 
     // Validate role-specific requirements
-    if (role === 'hod' && (!department || !req.body.division)) {
+    if (role === 'hod' && (!department || !division)) {
       return res.status(400).json({
         success: false,
-        message: 'HOD must be assigned to a department AND a division',
+        message: 'HOD must be assigned to a department AND a division (via divisionMapping or division+department)',
       });
     }
 
-
-    // Build roles array
     const userRoles = roles && roles.length > 0 ? roles : [role];
 
-    // Build division mapping if division is provided (legacy HOD selection)
-    let finalDivisionMapping = divisionMapping || [];
-    if (role === 'hod' && req.body.division && department && finalDivisionMapping.length === 0) {
-      finalDivisionMapping = [{
-        division: req.body.division,
-        departments: [department]
-      }];
+    let finalDivisionMapping = Array.isArray(divisionMapping) ? divisionMapping : [];
+
+    // Fallback logic if divisionMapping is missing but division/department are provided
+    if (finalDivisionMapping.length === 0 && division && department) {
+      finalDivisionMapping = [{ division, departments: [department] }];
     }
 
-    // Build allowed divisions if mapping exists but allowedDivisions is empty
-    let finalAllowedDivisions = allowedDivisions || [];
-    if (finalAllowedDivisions.length === 0 && finalDivisionMapping.length > 0) {
-      finalAllowedDivisions = finalDivisionMapping.map(m => m.division);
-    }
-
-    // Build user object conditionally to avoid null values on unique sparse fields
     const userData = {
       email: email.toLowerCase(),
       password: userPassword,
       name,
       role,
       roles: userRoles,
-      department: department || null,
-      departments: departments || (department ? [department] : []),
       scope: scope || 'global',
-      departmentType: departmentType || 'single',
-      featureControl: featureControl || [],
+      featureControl: featureControl ? featureControl.flatMap(fc =>
+        fc.includes(':') ? [fc] : [`${fc}:read`, `${fc}:write`]
+      ) : [],
       createdBy: req.user?._id,
-      dataScope: dataScope || undefined, // Use model default if not provided
-      allowedDivisions: finalAllowedDivisions,
+      dataScope: dataScope || undefined,
       divisionMapping: finalDivisionMapping,
     };
 
@@ -150,8 +121,9 @@ exports.registerUser = async (req, res) => {
     }
 
     // Manager Sync: Update Division manager reference
-    if (role === 'manager' && finalAllowedDivisions && finalAllowedDivisions.length === 1) {
-      const divisionId = finalAllowedDivisions[0];
+    const managerDivisionId = finalDivisionMapping.length === 1 ? (finalDivisionMapping[0].division?._id || finalDivisionMapping[0].division) : null;
+    if (role === 'manager' && managerDivisionId) {
+      const divisionId = managerDivisionId;
       // 1. Unset this user from being manager of any OTHER divisions (safety cleanup)
       await Division.updateMany(
         { manager: user._id },
@@ -162,52 +134,6 @@ exports.registerUser = async (req, res) => {
       await Division.findByIdAndUpdate(divisionId, { manager: user._id });
     }
 
-    // Auto-assign to workspace if requested
-    let workspaceAssignment = null;
-    if (assignWorkspace !== false) {
-      const workspaceCode = getWorkspaceCodeByRole(role);
-      if (workspaceCode) {
-        const workspace = await Workspace.findOne({ code: workspaceCode, isActive: true });
-        if (workspace) {
-          // Build scope config for HR (multiple departments) or HOD (single department)
-          const scopeConfig = {};
-          if (role === 'hr' && departments && departments.length > 0) {
-            scopeConfig.departments = departments;
-            scopeConfig.allDepartments = false;
-          } else if (role === 'hod' && department) {
-            scopeConfig.departments = [department];
-            scopeConfig.allDepartments = false;
-          } else if (role === 'sub_admin' || role === 'super_admin') {
-            scopeConfig.allDepartments = true;
-          }
-
-          workspaceAssignment = await RoleAssignment.create({
-            userId: user._id,
-            workspaceId: workspace._id,
-            role: 'member',
-            isPrimary: true,
-            scopeConfig,
-            assignedBy: req.user?._id,
-          });
-
-          // Also assign to Employee Portal for HOD/HR so they can apply leaves
-          if (role === 'hod' || role === 'hr') {
-            const empWorkspace = await Workspace.findOne({ code: 'EMP', isActive: true });
-            if (empWorkspace) {
-              await RoleAssignment.create({
-                userId: user._id,
-                workspaceId: empWorkspace._id,
-                role: 'member',
-                isPrimary: false,
-                scopeConfig: { departments: [], allDepartments: false },
-                assignedBy: req.user?._id,
-              });
-            }
-          }
-        }
-      }
-    }
-
     // Return user without password, but include generated password if auto-generated
     const responseData = {
       user: {
@@ -216,19 +142,14 @@ exports.registerUser = async (req, res) => {
         name: user.name,
         role: user.role,
         roles: user.roles,
-        department: user.department,
-        departments: user.departments,
         employeeId: user.employeeId,
         employeeRef: user.employeeRef,
         scope: user.scope,
-        departmentType: user.departmentType,
         dataScope: user.dataScope,
-        allowedDivisions: user.allowedDivisions,
         divisionMapping: user.divisionMapping,
         isActive: user.isActive,
         createdAt: user.createdAt,
       },
-      workspaceAssigned: !!workspaceAssignment,
     };
 
     // Include generated password in response (only shown once)
@@ -257,23 +178,21 @@ exports.registerUser = async (req, res) => {
 exports.createUserFromEmployee = async (req, res) => {
   try {
     const {
-      employeeId, // emp_no
+      employeeId: empNo,
       email,
       password,
       role,
       roles,
-      departments, // For HR: multiple departments
       autoGeneratePassword,
       scope,
-      departmentType,
       featureControl,
       dataScope,
-      allowedDivisions,
       divisionMapping,
     } = req.body;
+    const { departments, department, division } = req.body;
 
     // Find employee (including password for inheritance)
-    const employee = await Employee.findOne({ emp_no: employeeId })
+    const employee = await Employee.findOne({ emp_no: empNo })
       .select('+password')
       .populate('department_id', 'name')
       .populate('designation_id', 'name');
@@ -337,91 +256,72 @@ exports.createUserFromEmployee = async (req, res) => {
       });
     }
 
-    // Build department assignments
-    const department = employee.department_id?._id || employee.department_id;
-    let userDepartments = [];
+    const empDeptId = employee.department_id?._id || employee.department_id;
+    let finalDivisionMapping = Array.isArray(divisionMapping) ? divisionMapping : [];
 
-    if (role === 'hr' && departments && departments.length > 0) {
-      userDepartments = departments;
-    } else if (department) {
-      userDepartments = [department];
+    // Priority 1: Use divisionMapping if provided from frontend
+    // Priority 2: Use division + department if provided from frontend
+    // Priority 3: Auto-generate from employee's department (fallback for simple registration)
+    if (finalDivisionMapping.length === 0) {
+      if (division && department) {
+        finalDivisionMapping = [{ division, departments: [department] }];
+      } else if (departments?.length > 0 || empDeptId) {
+        // Fallback: Auto-generate from departments (only if nothing specific was sent)
+        const deptIds = (role === 'hr' && departments?.length > 0) ? departments : (empDeptId ? [empDeptId] : []);
+        if (deptIds.length > 0) {
+          const depts = await Department.find({ _id: { $in: deptIds } }).select('divisions').lean();
+          const mapByDiv = new Map();
+          for (const d of depts) {
+            const divs = d.divisions || [];
+            for (const div of divs) {
+              const divId = (div?._id || div).toString();
+              if (!mapByDiv.has(divId)) mapByDiv.set(divId, new Set());
+              mapByDiv.get(divId).add(d._id.toString());
+            }
+          }
+          finalDivisionMapping = Array.from(mapByDiv.entries()).map(([divId, deptSet]) => ({
+            division: divId,
+            departments: Array.from(deptSet),
+          }));
+        }
+      }
     }
 
-    // Build roles array
     const userRoles = roles && roles.length > 0 ? roles : [role];
 
-    // Create user
     const user = await User.create({
       email: userEmail.toLowerCase(),
       password: userPassword,
       name: employee.employee_name,
       role: role || 'employee',
       roles: userRoles,
-      department: department,
-      departments: userDepartments,
       employeeId: employee.emp_no,
       employeeRef: employee._id,
       scope: scope || 'global',
-      departmentType: departmentType || (role === 'hr' ? 'multiple' : 'single'),
-      featureControl: featureControl || [],
+      featureControl: featureControl ? featureControl.flatMap(fc =>
+        fc.includes(':') ? [fc] : [`${fc}:read`, `${fc}:write`]
+      ) : [],
       dataScope: dataScope || undefined,
-      allowedDivisions: allowedDivisions || (divisionMapping ? divisionMapping.map(m => m.division) : []),
-      divisionMapping: divisionMapping || [],
+      divisionMapping: finalDivisionMapping,
       createdBy: req.user?._id,
     });
 
-    // Valid HOD Sync: Update Department with HOD ID
-    if (role === 'hod' && department) {
-      await Department.findByIdAndUpdate(department, { hod: user._id });
+    const deptIdsFromMapping = finalDivisionMapping.flatMap(m => m.departments || []);
+    if (role === 'hod' && deptIdsFromMapping.length > 0) {
+      const divId = finalDivisionMapping[0]?.division?._id || finalDivisionMapping[0]?.division;
+      const dept = await Department.findById(deptIdsFromMapping[0]);
+      if (dept) {
+        const idx = dept.divisionHODs.findIndex(dh => (dh.division?.toString() || dh.division) === (divId?.toString() || divId));
+        if (idx > -1) dept.divisionHODs[idx].hod = user._id;
+        else dept.divisionHODs.push({ division: divId, hod: user._id });
+        await dept.save();
+      }
     }
-
-    // Valid HR Sync: Update Departments with HR ID
-    if (role === 'hr' && userDepartments.length > 0) {
+    if (role === 'hr' && deptIdsFromMapping.length > 0) {
       await Department.updateMany(
-        { _id: { $in: userDepartments } },
+        { _id: { $in: deptIdsFromMapping } },
         { hr: user._id }
       );
-    }
-
-    // Auto-assign to workspace
-    const workspaceCode = getWorkspaceCodeByRole(role || 'employee');
-    let workspaceAssignment = null;
-
-    if (workspaceCode) {
-      const workspace = await Workspace.findOne({ code: workspaceCode, isActive: true });
-      if (workspace) {
-        const scopeConfig = {};
-        if (role === 'hr') {
-          scopeConfig.departments = userDepartments;
-          scopeConfig.allDepartments = false;
-        } else if (role === 'hod') {
-          scopeConfig.departments = department ? [department] : [];
-          scopeConfig.allDepartments = false;
-        }
-
-        workspaceAssignment = await RoleAssignment.create({
-          userId: user._id,
-          workspaceId: workspace._id,
-          role: 'member',
-          isPrimary: true,
-          scopeConfig,
-          assignedBy: req.user?._id,
-        });
-
-        // Also assign to Employee Portal for HOD/HR
-        if (role === 'hod' || role === 'hr') {
-          const empWorkspace = await Workspace.findOne({ code: 'EMP', isActive: true });
-          if (empWorkspace) {
-            await RoleAssignment.create({
-              userId: user._id,
-              workspaceId: empWorkspace._id,
-              role: 'member',
-              isPrimary: false,
-              assignedBy: req.user?._id,
-            });
-          }
-        }
-      }
     }
 
     // Response
@@ -432,14 +332,10 @@ exports.createUserFromEmployee = async (req, res) => {
         name: user.name,
         role: user.role,
         roles: user.roles,
-        department: user.department,
-        departments: user.departments,
         employeeId: user.employeeId,
         employeeRef: user.employeeRef,
         scope: user.scope,
-        departmentType: user.departmentType,
         dataScope: user.dataScope,
-        allowedDivisions: user.allowedDivisions,
         divisionMapping: user.divisionMapping,
         isActive: user.isActive,
       },
@@ -450,7 +346,6 @@ exports.createUserFromEmployee = async (req, res) => {
         department: employee.department_id,
         designation: employee.designation_id,
       },
-      workspaceAssigned: !!workspaceAssignment,
     };
 
     if (autoGeneratePassword) {
@@ -477,13 +372,26 @@ exports.createUserFromEmployee = async (req, res) => {
 // @access  Private (Super Admin, Sub Admin, HR)
 exports.getAllUsers = async (req, res) => {
   try {
-    const { role, department, isActive, search, page = 1, limit = 50 } = req.query;
-    const query = {};
+    const { role, department, division, isActive, search, page = 1, limit = 50 } = req.query;
+    const query = req.metadataScopeFilter ? { ...req.metadataScopeFilter } : {};
 
     if (role) query.role = role;
+
     if (department) {
-      query.$or = [{ department: department }, { departments: department }];
+      if (division) {
+        // Strict intersection for specific department search within a division
+        query.divisionMapping = {
+          $elemMatch: {
+            division: division,
+            departments: department
+          }
+        };
+      } else {
+        query['divisionMapping.departments'] = department;
+      }
     }
+
+
     if (isActive !== undefined) query.isActive = isActive === 'true';
     if (search) {
       query.$or = [
@@ -497,8 +405,6 @@ exports.getAllUsers = async (req, res) => {
 
     const [users, total] = await Promise.all([
       User.find(query)
-        .populate('department', 'name code')
-        .populate('departments', 'name code')
         .populate('divisionMapping.division', 'name code')
         .populate('divisionMapping.departments', 'name code')
         .populate('employeeRef', 'emp_no employee_name')
@@ -533,8 +439,6 @@ exports.getAllUsers = async (req, res) => {
 exports.getUser = async (req, res) => {
   try {
     const user = await User.findById(req.params.id)
-      .populate('department', 'name code')
-      .populate('departments', 'name code')
       .populate('divisionMapping.division', 'name code')
       .populate('divisionMapping.departments', 'name code')
       .populate('employeeRef')
@@ -547,28 +451,9 @@ exports.getUser = async (req, res) => {
       });
     }
 
-    // Get user's workspace assignments
-    const workspaces = await RoleAssignment.find({
-      userId: user._id,
-      isActive: true,
-    })
-      .populate('workspaceId', 'name code type')
-      .select('workspaceId role isPrimary scopeConfig');
-
     res.status(200).json({
       success: true,
-      data: {
-        user,
-        workspaces: workspaces.map((w) => ({
-          _id: w.workspaceId?._id,
-          name: w.workspaceId?.name,
-          code: w.workspaceId?.code,
-          type: w.workspaceId?.type,
-          role: w.role,
-          isPrimary: w.isPrimary,
-          scopeConfig: w.scopeConfig,
-        })),
-      },
+      data: user,
     });
   } catch (error) {
     console.error('Error fetching user:', error);
@@ -589,18 +474,15 @@ exports.updateUser = async (req, res) => {
       name,
       role,
       roles,
-      department,
-      departments,
       isActive,
       employeeId,
       employeeRef,
       scope,
-      departmentType,
       featureControl,
       dataScope,
-      allowedDivisions,
-      divisionMapping
+      divisionMapping,
     } = req.body;
+    const { department, division } = req.body;
 
     const user = await User.findById(req.params.id);
     if (!user) {
@@ -621,173 +503,79 @@ exports.updateUser = async (req, res) => {
     // Track if role changed for workspace update
     const roleChanged = role && role !== user.role;
 
-    // Capture old values for sync
-    const oldDepartments = user.departments ? user.departments.map(d => d.toString()) : [];
-    const oldDepartment = user.department ? user.department.toString() : null;
+    const oldMapping = user.divisionMapping || [];
+    const oldDeptIds = new Set();
+    oldMapping.forEach(m => {
+      (m.departments || []).forEach(d => oldDeptIds.add((d?._id || d).toString()));
+    });
 
-    // Update fields
     if (name !== undefined) user.name = name;
     if (role !== undefined) {
       user.role = role;
       user.roles = roles || [role];
     }
-    if (department !== undefined) user.department = department;
-    if (departments !== undefined) user.departments = departments;
     if (isActive !== undefined) user.isActive = isActive;
     if (employeeId !== undefined) user.employeeId = employeeId;
     if (employeeRef !== undefined) user.employeeRef = employeeRef;
     if (scope !== undefined) user.scope = scope;
-    if (departmentType !== undefined) user.departmentType = departmentType;
     if (featureControl !== undefined) user.featureControl = featureControl;
     if (dataScope !== undefined) user.dataScope = dataScope;
-    if (allowedDivisions !== undefined) user.allowedDivisions = allowedDivisions;
-    if (divisionMapping !== undefined) user.divisionMapping = divisionMapping;
-
-    // Update Division Mapping if provided (for HOD re-assignment)
-    if (req.body.division && department) {
-      user.divisionMapping = [{
-        division: req.body.division,
-        departments: [department]
-      }];
+    if (divisionMapping !== undefined) {
+      user.divisionMapping = divisionMapping;
+    } else if (division && department) {
+      user.divisionMapping = [{ division, departments: [department] }];
     }
 
     await user.save();
 
-    // Sync: Reverse Sync (User -> Department)
-    // If user removed from a department, unset them as HOD/HR there
-    if (departments !== undefined) {
-      const newCtxDepartments = departments.map(d => d.toString());
-      const removedDepartments = oldDepartments.filter(d => !newCtxDepartments.includes(d));
+    const newDeptIds = new Set();
+    (user.divisionMapping || []).forEach(m => {
+      (m.departments || []).forEach(d => newDeptIds.add((d?._id || d).toString()));
+    });
+    const removedDeptIds = [...oldDeptIds].filter(d => !newDeptIds.has(d));
 
-      if (removedDepartments.length > 0) {
-        // Unset HOD
-        await Department.updateMany(
-          { _id: { $in: removedDepartments }, hod: user._id },
-          { $unset: { hod: "" } }
-        );
-        // Unset HR
-        await Department.updateMany(
-          { _id: { $in: removedDepartments }, hr: user._id },
-          { $unset: { hr: "" } }
-        );
-      }
-    }
-
-    // Sync: Reverse Sync (User -> Division for Managers)
-    if (role === 'manager' && allowedDivisions !== undefined && allowedDivisions.length > 0) {
-      // Currently we enforce 1 division for manager in UI, but allowedDivisions is array
-      const newDivisionId = allowedDivisions[0];
-
-      // 1. Find if user was managing a different division previously (that is NOT the new one)
-      // We can just unset user from ALL divisions first to be safe, or just check 'old' vs 'new'
-      // Safer: Unset user from all divisions
-      await Division.updateMany(
-        { manager: user._id },
-        { $unset: { manager: "" } }
-      );
-
-      // 2. Assign user to the new division
-      await Division.findByIdAndUpdate(newDivisionId, { manager: user._id });
-    } else if (role === 'manager' && allowedDivisions !== undefined && allowedDivisions.length === 0) {
-      // If manager has NO divisions assigned (cleared), remove them from div model
-      await Division.updateMany(
-        { manager: user._id },
-        { $unset: { manager: "" } }
-      );
-    } else if (role !== 'manager' && roleChanged) {
-      // If user WAS a manager but is no longer (role changed), remove them from any division
-      await Division.updateMany(
-        { manager: user._id },
-        { $unset: { manager: "" } }
-      );
-    }
-
-    // Sync: Handle Single Department Change (mainly for HODs)
-    if (department !== undefined && oldDepartment && oldDepartment !== (department || '')) {
-      // If user was HOD of the old department, unset it
-      await Department.findOneAndUpdate(
-        { _id: oldDepartment, hod: user._id },
+    if (removedDeptIds.length > 0) {
+      await Department.updateMany(
+        { _id: { $in: removedDeptIds }, hod: user._id },
         { $unset: { hod: "" } }
       );
+      await Department.updateMany(
+        { _id: { $in: removedDeptIds }, hr: user._id },
+        { $unset: { hr: "" } }
+      );
     }
 
-    // Valid HOD Sync: Update Department with HOD ID for Specific Division
-    if (user.role === 'hod' && user.department && user.divisionMapping && user.divisionMapping.length > 0) {
-      // We assume single division for HOD for now based on current logic
-      const divisionId = user.divisionMapping[0].division;
-      if (divisionId) {
-        const dept = await Department.findById(user.department);
+    const managerDivId = user.divisionMapping?.[0]?.division?._id || user.divisionMapping?.[0]?.division;
+    if (role === 'manager' && managerDivId) {
+      await Division.updateMany({ manager: user._id }, { $unset: { manager: "" } });
+      await Division.findByIdAndUpdate(managerDivId, { manager: user._id });
+    } else if (role === 'manager' || roleChanged) {
+      await Division.updateMany({ manager: user._id }, { $unset: { manager: "" } });
+    }
+
+    if (user.role === 'hod' && user.divisionMapping?.length > 0) {
+      const divId = user.divisionMapping[0].division?._id || user.divisionMapping[0].division;
+      const deptId = (user.divisionMapping[0].departments || [])[0]?._id || (user.divisionMapping[0].departments || [])[0];
+      if (divId && deptId) {
+        const dept = await Department.findById(deptId);
         if (dept) {
-          const existingIndex = dept.divisionHODs.findIndex(dh => dh.division.toString() === divisionId.toString());
-          if (existingIndex > -1) {
-            dept.divisionHODs[existingIndex].hod = user._id;
-          } else {
-            dept.divisionHODs.push({ division: divisionId, hod: user._id });
-          }
+          const idx = dept.divisionHODs.findIndex(dh => (dh.division?.toString() || dh.division) === (divId?.toString() || divId));
+          if (idx > -1) dept.divisionHODs[idx].hod = user._id;
+          else dept.divisionHODs.push({ division: divId, hod: user._id });
           await dept.save();
         }
       }
     }
 
-    // Valid HR Sync: Update Departments with HR ID
-    if (user.role === 'hr' && user.departments && user.departments.length > 0) {
+    if (user.role === 'hr' && newDeptIds.size > 0) {
       await Department.updateMany(
-        { _id: { $in: user.departments } },
+        { _id: { $in: Array.from(newDeptIds) } },
         { hr: user._id }
       );
     }
 
-    // If role changed, update workspace assignment
-    if (roleChanged) {
-      // Deactivate old workspace assignments
-      await RoleAssignment.updateMany({ userId: user._id }, { isActive: false });
-
-      // Create new workspace assignment
-      const workspaceCode = getWorkspaceCodeByRole(role);
-      if (workspaceCode) {
-        const workspace = await Workspace.findOne({ code: workspaceCode, isActive: true });
-        if (workspace) {
-          const scopeConfig = {};
-          if (role === 'hr') {
-            scopeConfig.departments = departments || user.departments;
-            scopeConfig.allDepartments = false;
-          } else if (role === 'hod') {
-            scopeConfig.departments = department ? [department] : user.department ? [user.department] : [];
-            scopeConfig.allDepartments = false;
-          } else if (role === 'sub_admin') {
-            scopeConfig.allDepartments = true;
-          }
-
-          await RoleAssignment.create({
-            userId: user._id,
-            workspaceId: workspace._id,
-            role: 'member',
-            isPrimary: true,
-            scopeConfig,
-            assignedBy: req.user?._id,
-          });
-
-          // Also assign Employee Portal for HOD/HR
-          if (role === 'hod' || role === 'hr') {
-            const empWorkspace = await Workspace.findOne({ code: 'EMP', isActive: true });
-            if (empWorkspace) {
-              await RoleAssignment.create({
-                userId: user._id,
-                workspaceId: empWorkspace._id,
-                role: 'member',
-                isPrimary: false,
-                assignedBy: req.user?._id,
-              });
-            }
-          }
-        }
-      }
-    }
-
     // Fetch updated user with populated fields
     const updatedUser = await User.findById(user._id)
-      .populate('department', 'name code')
-      .populate('departments', 'name code')
       .populate('divisionMapping.division', 'name code')
       .populate('divisionMapping.departments', 'name code')
       .select('-password');
@@ -897,11 +685,6 @@ exports.toggleUserStatus = async (req, res) => {
     user.isActive = !user.isActive;
     await user.save();
 
-    // Also deactivate workspace assignments if user deactivated
-    if (!user.isActive) {
-      await RoleAssignment.updateMany({ userId: user._id }, { isActive: false });
-    }
-
     res.status(200).json({
       success: true,
       message: `User ${user.isActive ? 'activated' : 'deactivated'} successfully`,
@@ -937,9 +720,6 @@ exports.deleteUser = async (req, res) => {
         message: 'Cannot delete super admin user',
       });
     }
-
-    // Delete workspace assignments
-    await RoleAssignment.deleteMany({ userId: user._id });
 
     await user.deleteOne();
 

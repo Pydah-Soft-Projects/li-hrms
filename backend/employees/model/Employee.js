@@ -154,6 +154,13 @@ const employeeSchema = new mongoose.Schema(
       min: 0,
     },
 
+    // Compensatory Off balance (credited when CCL requests are approved)
+    compensatoryOffs: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
     // Employee-level Allowance & Deduction Overrides (only store items the employee edited)
     employeeAllowances: {
       type: [

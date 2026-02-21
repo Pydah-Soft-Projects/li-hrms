@@ -6,13 +6,13 @@
 const Employee = require('../../employees/model/Employee');
 const AttendanceDaily = require('../model/AttendanceDaily');
 const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
+const { extractISTComponents, createISTDate } = require('../../shared/utils/dateUtils');
 
 /**
  * Format date to YYYY-MM-DD
  */
 const formatDate = (date) => {
-    const d = new Date(date);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    return extractISTComponents(date).dateStr;
 };
 
 /**
@@ -24,12 +24,12 @@ const ensureDailyRecordsExist = async (dateStr) => {
     try {
         console.log(`[AbsenteeismService] Ensuring daily records exist for ${dateStr}...`);
 
-        // Fetch all active employees
-        // We also include employees who left on or after this date (in case of re-runs)
+        // Fetch all active employees (using IST date comparison)
+        const dateBoundary = createISTDate(dateStr);
         const activeEmployees = await Employee.find({
             $or: [
                 { is_active: true },
-                { leftDate: { $gte: new Date(dateStr) } }
+                { leftDate: { $gte: dateBoundary } }
             ]
         }).select('emp_no _id');
 
@@ -89,14 +89,13 @@ const ensureDailyRecordsExist = async (dateStr) => {
  */
 const checkConsecutiveAbsences = async (requestDateStr) => {
     try {
-        console.log(`[AbsenteeismService] Checking for consecutive absences ending on ${requestDateStr}...`);
-
-        // Determine the 3 dates to check (requestDate, requestDate-1, requestDate-2)
-        const dateObj = new Date(requestDateStr);
+        // Determine the 3 dates to check (requestDate, requestDate-1, requestDate-2) - IST Aware
+        const { year, month, day } = extractISTComponents(requestDateStr);
+        const dateObj = createISTDate(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`);
 
         const datesToCheck = [];
         for (let i = 0; i < 3; i++) {
-            const d = new Date(dateObj);
+            const d = createISTDate(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`);
             d.setDate(d.getDate() - i);
             datesToCheck.push(formatDate(d));
         }

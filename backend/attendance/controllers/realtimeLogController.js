@@ -82,8 +82,14 @@ exports.receiveRealTimeLogs = async (req, res) => {
             // They will be stored in rawData for break/OT tracking but won't trigger attendance processing
 
             if (VALID_LOG_TYPES.includes(typeUpper)) {
+                // Parse timestamp safe
+                // Parse timestamp safe - treat as UTC
+                const timestampStr = typeof log.timestamp === 'string' && !log.timestamp.endsWith('Z')
+                    ? `${log.timestamp}Z`
+                    : log.timestamp;
+                const timestamp = new Date(timestampStr);
+                if (isNaN(timestamp.getTime())) continue;
                 // Robust timestamp normalization
-                let timestamp;
                 const rawTimestampStr = log.timestamp;
 
                 // If the machine sends a bare string like "2026-02-03 10:54:04"

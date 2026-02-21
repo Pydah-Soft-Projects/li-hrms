@@ -35,7 +35,26 @@ exports.getSetting = async (req, res) => {
   try {
     const setting = await Settings.findOne({ key: req.params.key });
 
-    if (!setting) {
+        if (!setting) {
+      // Return default values for known payroll settings to avoid 404 errors on first load
+      const defaults = {
+        'include_missing_employee_components': true,
+        'enable_absent_deduction': false,
+        'lop_days_per_absent': 1
+      };
+
+      if (defaults[req.params.key] !== undefined) {
+        return res.status(200).json({
+          success: true,
+          data: {
+            key: req.params.key,
+            value: defaults[req.params.key],
+            category: 'payroll',
+            isDefault: true
+          }
+        });
+      }
+
       return res.status(404).json({
         success: false,
         message: 'Setting not found',
@@ -125,9 +144,7 @@ exports.upsertSetting = async (req, res) => {
         description: description || `Setting for ${key}`,
         category:
           category ||
-          (key === 'include_missing_employee_components' ||
-            key === 'enable_absent_deduction' ||
-            key === 'lop_days_per_absent'
+          (['include_missing_employee_components', 'enable_absent_deduction', 'lop_days_per_absent'].includes(key)
             ? 'payroll'
             : 'general'),
       },

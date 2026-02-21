@@ -409,6 +409,7 @@ export interface Shift {
   startTime: string;
   endTime: string;
   duration: number;
+  code?: string;
   payableShifts?: number;
   isActive?: boolean;
   color?: string;
@@ -668,11 +669,53 @@ export interface LiveAttendanceFilterOption {
   name: string;
 }
 
+export interface HolidayGroup {
+  _id: string;
+  name: string;
+  description?: string;
+  divisionMapping: {
+    division: string | Division; // ID or Populated
+    departments: (string | Department)[]; // IDs or Populated
+  }[];
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  createdBy?: string;
+}
+
+export interface Holiday {
+  _id: string;
+  name: string;
+  date: string; // ISO Date string
+  endDate?: string; // Optional end date
+  type: 'National' | 'Regional' | 'Optional' | 'Company' | 'Academic' | 'Observance' | 'Seasonal';
+  isMaster: boolean;
+  scope: 'GLOBAL' | 'GROUP';
+  applicableTo?: 'ALL' | 'SPECIFIC_GROUPS';
+  targetGroupIds?: (string | HolidayGroup)[];
+  groupId?: string | HolidayGroup;
+  overridesMasterId?: string | Holiday;
+  description?: string;
+  sourceHolidayId?: string | Holiday; // For propagated copies
+  isSynced?: boolean; // True if synced with global, false if edited
+  createdBy?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export const api = {
   login: async (identifier: string, password: string) => {
     return apiRequest<LoginResponse>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ identifier, email: identifier, password }),
+    });
+  },
+
+  /** SSO login: exchange external token for HRMS session (same response shape as login). */
+  ssoLogin: async (encryptedToken: string) => {
+    return apiRequest<LoginResponse>('/auth/sso-login', {
+      method: 'POST',
+      body: JSON.stringify({ encryptedToken }),
     });
   },
   // Payroll include-missing setting (global)
@@ -689,6 +732,38 @@ export const api = {
         description: 'Include Missing Allowances & Deductions for Employees',
       }),
     });
+  },
+
+  getAbsentDeductionSettings: async () => {
+    const [enableRes, lopRes] = await Promise.all([
+      apiRequest<Setting>('/settings/enable_absent_deduction', { method: 'GET' }),
+      apiRequest<Setting>('/settings/lop_days_per_absent', { method: 'GET' })
+    ]);
+    return {
+      enable: enableRes.success ? !!enableRes.data?.value : false,
+      lopDays: lopRes.success ? Number(lopRes.data?.value) : 1
+    };
+  },
+
+  saveAbsentDeductionSettings: async (enable: boolean, lopDays: number) => {
+    return Promise.all([
+      apiRequest<Setting>('/settings', {
+        method: 'POST',
+        body: JSON.stringify({
+          key: 'enable_absent_deduction',
+          value: enable,
+          category: 'payroll'
+        }),
+      }),
+      apiRequest<Setting>('/settings', {
+        method: 'POST',
+        body: JSON.stringify({
+          key: 'lop_days_per_absent',
+          value: lopDays,
+          category: 'payroll'
+        }),
+      })
+    ]);
   },
 
   // Employee allowance/deduction defaults (resolved with includeMissing)
@@ -736,6 +811,53 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(data),
     });
+  },
+
+  // Holidays
+  getAllHolidaysAdmin: async (year?: number) => {
+    const query = year ? `?year=${year}` : '';
+    return apiRequest<{ holidays: Holiday[]; groups: HolidayGroup[] }>(`/holidays/admin${query}`, { method: 'GET' });
+  },
+
+  getMyHolidays: async (year?: number) => {
+    const query = year ? `?year=${year}` : '';
+    return apiRequest<Holiday[]>(`/holidays/my${query}`, { method: 'GET' });
+  },
+
+  saveHolidayGroup: async (data: Partial<HolidayGroup>) => {
+    return apiRequest<HolidayGroup>('/holidays/groups', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  deleteHolidayGroup: async (id: string) => {
+    return apiRequest<void>(`/holidays/groups/${id}`, { method: 'DELETE' });
+  },
+
+  saveHoliday: async (data: Partial<Holiday>) => {
+    return apiRequest<Holiday>('/holidays', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  createHoliday: async (data: Partial<Holiday>) => {
+    return apiRequest<Holiday>('/holidays', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  updateHoliday: async (data: Partial<Holiday>) => {
+    return apiRequest<Holiday>('/holidays', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  deleteHoliday: async (id: string) => {
+    return apiRequest<void>(`/holidays/${id}`, { method: 'DELETE' });
   },
 
   // Shifts
@@ -818,6 +940,10 @@ export const api = {
     return apiRequest<any>('/dashboard/stats', { method: 'GET' });
   },
 
+  getDashboardAnalytics: async () => {
+    return apiRequest<any>('/dashboard/analytics', { method: 'GET' });
+  },
+
   getEmployeesWithoutAccount: async () => {
     return apiRequest<any>('/users/employees-without-account', { method: 'GET' });
   },
@@ -880,8 +1006,11 @@ export const api = {
   },
 
   // Departments
-  getDepartments: async (isActive?: boolean) => {
-    const query = isActive !== undefined ? `?isActive=${isActive}` : '';
+  getDepartments: async (isActive?: boolean, divisionId?: string) => {
+    const params = new URLSearchParams();
+    if (isActive !== undefined) params.append('isActive', String(isActive));
+    if (divisionId) params.append('division', divisionId);
+    const query = params.toString() ? `?${params.toString()}` : '';
     return apiRequest<Department[]>(`/departments${query}`, { method: 'GET' });
   },
 
@@ -904,8 +1033,11 @@ export const api = {
 
 
   // Divisions
-  getDivisions: async (isActive?: boolean) => {
-    const query = isActive !== undefined ? `?isActive=${isActive}` : '';
+  getDivisions: async (isActive?: boolean, divisionId?: string) => {
+    const params = new URLSearchParams();
+    if (isActive !== undefined) params.append('isActive', String(isActive));
+    if (divisionId) params.append('division', divisionId);
+    const query = params.toString() ? `?${params.toString()}` : '';
     return apiRequest<Division[]>(`/divisions${query}`, { method: 'GET' });
   },
 
@@ -1434,6 +1566,13 @@ export const api = {
     return apiRequest<any>('/employees/settings', { method: 'GET' });
   },
 
+  updateEmployeeSettings: async (data: any) => {
+    return apiRequest<any>('/employees/settings', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
   // Workspaces
   getMyWorkspaces: async () => {
     return apiRequest<any>('/workspaces/my-workspaces', { method: 'GET' });
@@ -1684,8 +1823,8 @@ export const api = {
     return apiRequest<any>('/leaves/pending-approvals', { method: 'GET' });
   },
 
-  // Process leave action (approve/reject/forward)
-  processLeaveAction: async (id: string, action: 'approve' | 'reject' | 'forward', comments?: string) => {
+  // Process leave action (approve/reject)
+  processLeaveAction: async (id: string, action: 'approve' | 'reject', comments?: string) => {
     return apiRequest<any>(`/leaves/${id}/action`, {
       method: 'PUT',
       body: JSON.stringify({ action, comments }),
@@ -1703,21 +1842,30 @@ export const api = {
   // ==========================================
   // SHIFT ROSTER
   // ==========================================
-  getRoster: async (month: string, params?: { employeeNumber?: string; departmentId?: string; divisionId?: string }) => {
-    const query = new URLSearchParams();
-    query.append('month', month);
-    if (params?.employeeNumber) query.append('employeeNumber', params.employeeNumber);
-    if (params?.departmentId) query.append('departmentId', params.departmentId);
-    if (params?.divisionId) query.append('divisionId', params.divisionId);
-    return apiRequest<any>(`/shifts/roster?${query.toString()}`, { method: 'GET' });
+  // Roster
+  getRoster: (month: string, params?: {
+    departmentId?: string;
+    divisionId?: string;
+    startDate?: string;
+    endDate?: string;
+  }) => {
+    const qs = new URLSearchParams({ month });
+    if (params?.departmentId) qs.append('departmentId', params.departmentId);
+    if (params?.divisionId) qs.append('divisionId', params.divisionId);
+    if (params?.startDate) qs.append('startDate', params.startDate);
+    if (params?.endDate) qs.append('endDate', params.endDate);
+    return apiRequest(`/shifts/roster?${qs.toString()}`);
   },
-
-  saveRoster: async (data: { month: string; strict: boolean; entries: any[] }) => {
-    return apiRequest<any>('/shifts/roster', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  },
+  saveRoster: (data: {
+    month: string;
+    strict: boolean;
+    entries: any[];
+    startDate?: string;
+    endDate?: string;
+  }) => apiRequest('/shifts/roster', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  }),
 
   // ==========================================
   // LEAVE SPLIT APIs
@@ -1786,6 +1934,56 @@ export const api = {
   // Delete leave
   deleteLeave: async (id: string) => {
     return apiRequest<any>(`/leaves/${id}`, { method: 'DELETE' });
+  },
+
+  // ==========================================
+  // CCL (Compensatory Casual Leave) APIs
+  // ==========================================
+  getCCLAssignedByUsers: async (params: { employeeId?: string; empNo?: string }) => {
+    const q = new URLSearchParams();
+    if (params.employeeId) q.append('employeeId', params.employeeId);
+    if (params.empNo) q.append('empNo', params.empNo);
+    return apiRequest<any>(`/leaves/ccl/assigned-by-users?${q.toString()}`, { method: 'GET' });
+  },
+  validateCCLDate: async (date: string, params?: { employeeId?: string; empNo?: string; isHalfDay?: boolean; halfDayType?: 'first_half' | 'second_half' | null }) => {
+    const q = new URLSearchParams();
+    q.append('date', date);
+    if (params?.employeeId) q.append('employeeId', params.employeeId);
+    if (params?.empNo) q.append('empNo', params.empNo);
+    if (params?.isHalfDay !== undefined) q.append('isHalfDay', String(params.isHalfDay));
+    if (params?.halfDayType) q.append('halfDayType', params.halfDayType);
+    return apiRequest<any>(`/leaves/ccl/validate-date?${q.toString()}`, { method: 'GET' });
+  },
+  getMyCCLs: async () => apiRequest<any>('/leaves/ccl/my', { method: 'GET' }),
+  getPendingCCLApprovals: async () => apiRequest<any>('/leaves/ccl/pending-approvals', { method: 'GET' }),
+  getCCLs: async (params?: { status?: string; employeeId?: string; fromDate?: string; toDate?: string; page?: number; limit?: number }) => {
+    const q = new URLSearchParams();
+    if (params?.status) q.append('status', params.status);
+    if (params?.employeeId) q.append('employeeId', params.employeeId);
+    if (params?.fromDate) q.append('fromDate', params.fromDate);
+    if (params?.toDate) q.append('toDate', params.toDate);
+    if (params?.page) q.append('page', String(params.page));
+    if (params?.limit) q.append('limit', String(params.limit));
+    return apiRequest<any>(`/leaves/ccl${q.toString() ? `?${q.toString()}` : ''}`, { method: 'GET' });
+  },
+  getCCL: async (id: string) => apiRequest<any>(`/leaves/ccl/${id}`, { method: 'GET' }),
+  applyCCL: async (data: { date: string; isHalfDay: boolean; halfDayType?: 'first_half' | 'second_half'; assignedBy: string; purpose: string; empNo?: string; employeeId?: string }) => {
+    return apiRequest<any>('/leaves/ccl', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+  processCCLAction: async (id: string, action: 'approve' | 'reject', comments?: string) => {
+    return apiRequest<any>(`/leaves/ccl/${id}/action`, {
+      method: 'PUT',
+      body: JSON.stringify({ action, comments }),
+    });
+  },
+  cancelCCL: async (id: string, reason?: string) => {
+    return apiRequest<any>(`/leaves/ccl/${id}/cancel`, {
+      method: 'PUT',
+      body: JSON.stringify({ reason }),
+    });
   },
 
   // Get leave conflicts for attendance date
@@ -1870,8 +2068,8 @@ export const api = {
     return apiRequest<any>('/leaves/od/pending-approvals', { method: 'GET' });
   },
 
-  // Process OD action (approve/reject/forward)
-  processODAction: async (id: string, action: 'approve' | 'reject' | 'forward', comments?: string) => {
+  // Process OD action (approve/reject)
+  processODAction: async (id: string, action: 'approve' | 'reject', comments?: string) => {
     return apiRequest<any>(`/leaves/od/${id}/action`, {
       method: 'PUT',
       body: JSON.stringify({ action, comments }),
@@ -1909,29 +2107,29 @@ export const api = {
   // LEAVE/OD SETTINGS
   // ==========================================
 
-  // Get leave/OD settings
-  getLeaveSettings: async (type: 'leave' | 'od') => {
+  // Get leave/OD/CCL settings
+  getLeaveSettings: async (type: 'leave' | 'od' | 'ccl') => {
     return apiRequest<any>(`/leaves/settings/${type}`, { method: 'GET' });
   },
 
-  // Save leave/OD settings
-  saveLeaveSettings: async (type: 'leave' | 'od', data: any) => {
+  // Save leave/OD/CCL settings
+  saveLeaveSettings: async (type: 'leave' | 'od' | 'ccl', data: any) => {
     return apiRequest<any>(`/leaves/settings/${type}`, {
       method: 'POST',
       body: JSON.stringify(data),
     });
   },
 
-  // Update leave/OD settings (alias for saveLeaveSettings)
-  updateLeaveSettings: async (type: 'leave' | 'od', data: any) => {
+  // Update leave/OD/CCL settings (alias for saveLeaveSettings)
+  updateLeaveSettings: async (type: 'leave' | 'od' | 'ccl', data: any) => {
     return apiRequest<any>(`/leaves/settings/${type}`, {
       method: 'POST',
       body: JSON.stringify(data),
     });
   },
 
-  // Get leave/OD types
-  getLeaveTypes: async (type: 'leave' | 'od') => {
+  // Get leave/OD/CCL types
+  getLeaveTypes: async (type: 'leave' | 'od' | 'ccl') => {
     return apiRequest<any>(`/leaves/types/${type}`, { method: 'GET' });
   },
 
@@ -1957,6 +2155,17 @@ export const api = {
     return apiRequest<any>(`/loans/settings/${type}`, {
       method: 'PUT',
       body: JSON.stringify(data),
+    });
+  },
+
+  getLoanWorkflow: async (type: 'loan' | 'salary_advance') => {
+    return apiRequest<any>(`/loans/settings/${type}/workflow`, { method: 'GET' });
+  },
+
+  updateLoanWorkflow: async (type: 'loan' | 'salary_advance', workflow: any) => {
+    return apiRequest<any>(`/loans/settings/${type}/workflow`, {
+      method: 'PUT',
+      body: JSON.stringify(workflow),
     });
   },
 
@@ -2061,8 +2270,8 @@ export const api = {
     return apiRequest<any>(`/loans/${id}/settlement-preview${query}`, { method: 'GET' });
   },
 
-  // Add leave/OD type
-  addLeaveType: async (type: 'leave' | 'od', data: any) => {
+  // Add leave/OD/CCL type
+  addLeaveType: async (type: 'leave' | 'od' | 'ccl', data: any) => {
     return apiRequest<any>(`/leaves/types/${type}`, {
       method: 'POST',
       body: JSON.stringify(data),
@@ -2594,7 +2803,13 @@ export const api = {
     return apiRequest<any>('/ot/settings', { method: 'GET' });
   },
 
-  saveOvertimeSettings: async (data: { otPayPerHour?: number; minOTHours?: number; workflow?: any }) => {
+  saveOvertimeSettings: async (data: {
+    payPerHour?: number;
+    multiplier?: number;
+    minOTHours?: number;
+    roundingMinutes?: number;
+    workflow?: any
+  }) => {
     return apiRequest<any>('/ot/settings', {
       method: 'POST',
       body: JSON.stringify(data),

@@ -155,9 +155,14 @@ const admsParser = {
             if (parts.length >= 2) {
                 // Basic check for ATTLOG format (tab separated values without keys)
                 if (!parts[0].includes('=')) {
+                    // Normalize timestamp string: "2023-12-25 10:45:00" -> "2023/12/25 10:45:00 +05:30"
+                    // Adding the offset ensures correct UTC calculation regardless of server timezone
+                    const offset = process.env.TIMEZONE_OFFSET || '+05:30';
+                    const timeStr = parts[1].replace(/-/g, '/') + ' ' + offset;
+
                     records.push({
                         userId: parts[0],
-                        timestamp: new Date(parts[1].replace(/-/g, '/')),
+                        timestamp: new Date(timeStr),
                         inOutMode: parseInt(parts[2]) || 0,
                         status: parseInt(parts[3]) || 0
                     });

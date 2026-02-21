@@ -396,10 +396,9 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
     const limitNum = parseInt(limit) || 50; // Default limit 50
     const skip = (pageNum - 1) * limitNum;
 
-    const rangeStart = new Date(startDate);
-    rangeStart.setHours(0, 0, 0, 0);
-    const rangeEnd = new Date(endDate);
-    rangeEnd.setHours(23, 59, 59, 999);
+    // Use UTC boundaries so "left in period" matches payroll calculation (excludes e.g. 25 Dec when period is 26 Dec–25 Jan).
+    const rangeStart = new Date(startDate + 'T00:00:00.000Z');
+    const rangeEnd = new Date(endDate + 'T23:59:59.999Z');
 
     // Build Employee Query - include active employees OR those who left within this specific payroll cycle
     let employeeQuery = {
@@ -461,12 +460,12 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
 
     const employeeIds = employees.map(e => e._id);
 
-    // 2. Bulk Fetch Existing Pay Registers (Include dailyRecords)
+    // 2. Bulk Fetch Existing Pay Registers (Include dailyRecords); include leftDate/leftReason so frontend can show "Left" employees
     const payRegisters = await PayRegisterSummary.find({
       employeeId: { $in: employeeIds },
       month
     })
-      .populate('employeeId', 'employee_name emp_no department_id designation_id')
+      .populate('employeeId', 'employee_name emp_no department_id designation_id leftDate leftReason')
       .select('employeeId emp_no month status totals lastEditedAt dailyRecords startDate endDate totalDaysInMonth');
 
     // Map for O(1) Access

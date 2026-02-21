@@ -21,6 +21,7 @@ const {
   buildBaseComponents,
 } = require('./allowanceDeductionResolverService');
 const Settings = require('../../settings/model/Settings');
+const { createISTDate, extractISTComponents } = require('../../shared/utils/dateUtils');
 
 /**
  * Normalize employee override payloads to ensure consistent structure
@@ -732,7 +733,7 @@ async function calculatePayroll(employeeId, month, userId) {
 
     // Set calculation metadata
     payrollRecord.set('calculationMetadata', {
-      calculatedAt: new Date(),
+      calculatedAt: new Date(), // This will be stored as UTC in MongoDB automatically, but let's be aware.
       calculatedBy: userId,
       calculationVersion: '1.0',
       settingsSnapshot: {
@@ -1241,7 +1242,7 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
         employeeId,
         emp_no: employee.emp_no,
         month,
-        monthName: new Date(month).toLocaleString('default', { month: 'long', year: 'numeric' }),
+        monthName: createISTDate(`${month}-01`).toLocaleString('en-IN', { month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' }),
         year: Number(month.split('-')[0]),
         monthNumber: Number(month.split('-')[1]),
         totalDaysInMonth: monthDays,

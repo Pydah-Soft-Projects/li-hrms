@@ -92,15 +92,17 @@ const createPermissionRequest = async (data, userId) => {
 
       // Check monthly limit (if set, 0 = unlimited)
       if (resolvedPermissionSettings.monthlyLimit !== null && resolvedPermissionSettings.monthlyLimit > 0) {
-        const dateObj = new Date(date);
-        const month = dateObj.getMonth() + 1;
-        const year = dateObj.getFullYear();
-        const monthStart = new Date(year, month - 1, 1);
-        const monthEnd = new Date(year, month, 0, 23, 59, 59);
+        const [year, month] = date.split('-').map(Number);
+
+        // Use IST boundaries (+05:30)
+        const monthStart = new Date(`${year}-${String(month).padStart(2, '0')}-01T00:00:00+05:30`);
+        // Last day of the month
+        const lastDay = new Date(year, month, 0).getDate();
+        const monthEnd = new Date(`${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}T23:59:59+05:30`);
 
         const existingPermissionsThisMonth = await Permission.countDocuments({
           employeeId: employeeId,
-          date: { $gte: monthStart, $lte: monthEnd },
+          date: { $gte: `${year}-${String(month).padStart(2, '0')}-01`, $lte: `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}` },
           status: { $in: ['pending', 'approved'] },
           isActive: true,
         });
@@ -268,8 +270,27 @@ const approvePermissionRequest = async (permissionId, userId, baseUrl = '', user
       const myRole = String(userRole || '').toLowerCase().trim();
       const requiredRole = String(currentStep.role || '').toLowerCase().trim();
 
-      // Basic Role Match
-      if (myRole !== requiredRole && myRole !== 'super_admin') {
+      // Basic Role Match & Reporting Manager Check
+      let isAuthorizedRole = myRole === requiredRole || myRole === 'super_admin';
+
+      if (!isAuthorizedRole && requiredRole === 'reporting_manager') {
+        // 1. Check if user is the assigned Reporting Manager
+        const targetEmployee = await Employee.findById(permissionRequest.employeeId);
+        const managers = targetEmployee?.dynamicFields?.reporting_to;
+
+        if (managers && Array.isArray(managers) && managers.length > 0) {
+          const userIdStr = (fullUser._id || fullUser.userId).toString();
+          isAuthorizedRole = managers.some(m => (m._id || m).toString() === userIdStr);
+        }
+
+        // 2. Fallback to HOD if no managers assigned OR if user is an HOD for the employee
+        if (!isAuthorizedRole && myRole === 'hod') {
+          // checkJurisdiction will handle the departmental scoping
+          isAuthorizedRole = true;
+        }
+      }
+
+      if (!isAuthorizedRole) {
         return { success: false, message: `Unauthorized. Required: ${requiredRole.toUpperCase()}` };
       }
 
@@ -330,8 +351,8 @@ const approvePermissionRequest = async (permissionId, userId, baseUrl = '', user
             attendanceRecord.permissionDeduction = (attendanceRecord.permissionDeduction || 0) + deductionAmount;
           }
           await attendanceRecord.save();
-          const dateObj = new Date(permissionRequest.date);
-          await calculateMonthlySummary(permissionRequest.employeeId, permissionRequest.employeeNumber, dateObj.getFullYear(), dateObj.getMonth() + 1);
+          const [year, month] = permissionRequest.date.split('-').map(Number);
+          await calculateMonthlySummary(permissionRequest.employeeId, permissionRequest.employeeNumber, year, month);
         }
       } else {
         // --- MOVE TO NEXT STEP ---

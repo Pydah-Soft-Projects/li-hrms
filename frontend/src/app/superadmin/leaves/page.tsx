@@ -153,6 +153,19 @@ interface LeaveApplication {
   appliedBy?: { _id: string; name: string; email: string };
   workflow?: {
     nextApprover?: string;
+    nextApproverRole?: string;
+    approvalChain?: Array<{
+      stepOrder?: number;
+      role?: string;
+      stepRole?: string;
+      label?: string;
+      status?: string;
+      actionBy?: string | { _id: string };
+      actionByName?: string;
+      actionByRole?: string;
+      comments?: string;
+      updatedAt?: string;
+    }>;
     history?: any[];
   };
   changeHistory?: Array<{
@@ -674,7 +687,7 @@ export default function LeavesPage() {
     }
   };
 
-  const handleAction = async (id: string, type: 'leave' | 'od', action: 'approve' | 'reject' | 'forward', comments: string = '') => {
+  const handleAction = async (id: string, type: 'leave' | 'od', action: 'approve' | 'reject', comments: string = '') => {
     try {
       let response;
       if (type === 'leave') {
@@ -915,15 +928,17 @@ export default function LeavesPage() {
       setDetailType(type);
       setShowDetailDialog(true);
 
-      // Check if revocation is possible (within 3 hours)
-      if (enrichedItem.status === 'approved' || enrichedItem.status === 'hod_approved' || enrichedItem.status === 'hr_approved') {
-        const approvalTime = (enrichedItem as LeaveApplication).approvals?.hr?.approvedAt || (enrichedItem as LeaveApplication).approvals?.hod?.approvedAt;
-        if (approvalTime) {
-          const hoursSinceApproval = (new Date().getTime() - new Date(approvalTime).getTime()) / (1000 * 60 * 60);
-          setCanRevoke(hoursSinceApproval <= 3);
-        } else {
-          setCanRevoke(false);
-        }
+      // Check if revocation is possible: only by the approver of the last step, within 3 hours
+      const wf = (enrichedItem as any).workflow;
+      const chain = wf?.approvalChain || [];
+      const approvedSteps = chain.filter((s: any) => s.status === 'approved');
+      const lastApproved = approvedSteps[approvedSteps.length - 1];
+      const userId = (auth.getUser() as any)?._id;
+      if (lastApproved && userId) {
+        const approverId = (lastApproved.actionBy?._id || lastApproved.actionBy)?.toString?.() || String(lastApproved.actionBy);
+        const approvedAt = lastApproved.updatedAt || (enrichedItem as any).approvals?.[lastApproved.role || lastApproved.stepRole]?.approvedAt;
+        const hoursSince = approvedAt ? (Date.now() - new Date(approvedAt).getTime()) / (1000 * 60 * 60) : 999;
+        setCanRevoke(approverId === userId && hoursSince <= 3);
       } else {
         setCanRevoke(false);
       }
@@ -1008,7 +1023,7 @@ export default function LeavesPage() {
     }
   };
 
-  const handleDetailAction = async (action: 'approve' | 'reject' | 'forward' | 'cancel') => {
+  const handleDetailAction = async (action: 'approve' | 'reject' | 'cancel') => {
     if (!selectedItem) return;
 
     try {
@@ -1077,6 +1092,16 @@ export default function LeavesPage() {
   };
 
   const totalPending = pendingLeaves.length + pendingODs.length;
+
+  const canPerformAction = (item: LeaveApplication | ODApplication) => {
+    const user = auth.getUser() as any;
+    if (!user || user.role === 'employee') return false;
+    if (['super_admin', 'sub_admin'].includes(user.role)) return !['approved', 'rejected', 'cancelled'].includes(item.status);
+    // Strict: nextApproverRole must match user.role (current step = user's turn)
+    const next = String((item as any).workflow?.nextApproverRole || (item as any).workflow?.nextApprover || '').toLowerCase();
+    const role = String(user.role || '').toLowerCase();
+    return next && (role === next || (next === 'final_authority' && role === 'hr') || (next === 'reporting_manager' && ['manager', 'hod'].includes(role)));
+  };
 
   if (loading) {
     return (
@@ -2595,53 +2620,71 @@ export default function LeavesPage() {
                 </div>
               )}
 
-              {/* Workflow History */}
-              {selectedItem.workflow?.history && selectedItem.workflow.history.length > 0 && (
-                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
-                  <p className="text-xs text-slate-500 uppercase font-semibold mb-3">Approval History</p>
-                  <div className="space-y-3">
-                    {selectedItem.workflow.history
-                      .filter((entry: any, idx: number, arr: any[]) => {
-                        // Remove duplicates - check if same action, same timestamp, same person
-                        return idx === arr.findIndex((e: any) =>
-                          e.action === entry.action &&
-                          e.actionBy?.toString() === entry.actionBy?.toString() &&
-                          Math.abs(new Date(e.timestamp).getTime() - new Date(entry.timestamp).getTime()) < 1000
-                        );
-                      })
-                      .map((entry: any, idx: number) => (
-                        <div key={idx} className="flex items-start gap-3 text-sm">
-                          <div className={`w-2 h-2 mt-1.5 rounded-full ${entry.action === 'approved' ? 'bg-green-500' :
-                            entry.action === 'rejected' ? 'bg-red-500' :
-                              entry.action === 'forwarded' ? 'bg-blue-500' :
-                                entry.action === 'revoked' ? 'bg-orange-500' :
-                                  entry.action === 'status_changed' ? 'bg-purple-500' :
-                                    'bg-slate-400'
-                            }`} />
-                          <div>
-                            <span className="font-medium text-slate-900 dark:text-white capitalize">
-                              {entry.action?.replace('_', ' ')}
-                            </span>
-                            <span className="text-slate-500"> by {entry.actionByName || 'Unknown'}</span>
-                            <p className="text-xs text-slate-400 mt-0.5">
-                              {new Date(entry.timestamp).toLocaleString()}
-                            </p>
-                            {entry.comments && (
-                              <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 italic">
-                                "{entry.comments}"
-                              </p>
-                            )}
+              {/* Approval Steps - Timeline / Progress */}
+              {(() => {
+                const wf = (selectedItem as any).workflow;
+                const chain = wf?.approvalChain;
+                if (!chain || !Array.isArray(chain) || chain.length === 0) return null;
+                const approvedCount = chain.filter((s: any) => s.status === 'approved').length;
+                return (
+                  <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+                    <p className="text-xs text-slate-500 uppercase font-semibold mb-4">Approval Timeline</p>
+                    {/* Progress bar */}
+                    <div className="mb-6">
+                      <div className="flex justify-between text-[10px] font-bold text-slate-500 uppercase mb-1">
+                        <span>{approvedCount} of {chain.length} approved</span>
+                      </div>
+                      <div className="h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-green-500 to-green-600 transition-all duration-300"
+                          style={{ width: `${(approvedCount / chain.length) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                    {/* Vertical timeline */}
+                    <div className="relative pl-6 border-l-2 border-slate-200 dark:border-slate-700 ml-1">
+                      {chain.map((step: any, idx: number) => {
+                        const stepRole = step.role || step.stepRole || 'step';
+                        const label = step.label || `${stepRole.replace('_', ' ')}`;
+                        const isApproved = step.status === 'approved';
+                        const isRejected = step.status === 'rejected';
+                        const isPending = step.status === 'pending';
+                        const nextRole = wf?.nextApproverRole || wf?.nextApprover;
+                        const isCurrent = isPending && (String(nextRole || '').toLowerCase() === String(stepRole).toLowerCase());
+                        const nodeColor = isApproved ? 'bg-green-500 ring-4 ring-green-200 dark:ring-green-900/50' : isRejected ? 'bg-red-500 ring-4 ring-red-200 dark:ring-red-900/50' : isCurrent ? 'bg-blue-500 ring-4 ring-blue-200 dark:ring-blue-900/50' : 'bg-slate-300 dark:bg-slate-600';
+                        return (
+                          <div key={idx} className="relative pb-6 last:pb-0">
+                            <div className={`absolute -left-[29px] top-0.5 w-4 h-4 rounded-full ${nodeColor} border-2 border-white dark:border-slate-900 shadow-sm`} />
+                            <div className="ml-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-bold text-slate-900 dark:text-white capitalize">{label}</span>
+                                {isApproved && <span className="text-[10px] font-bold text-green-600 dark:text-green-400 uppercase">✓ Approved</span>}
+                                {isRejected && <span className="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase">✗ Rejected</span>}
+                                {isCurrent && <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase">⏳ Your turn</span>}
+                                {isPending && !isCurrent && <span className="text-[10px] font-bold text-slate-400 uppercase">○ Pending</span>}
+                              </div>
+                              {isApproved && (
+                                <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
+                                  {step.actionByName || 'Unknown'} ({step.actionByRole || stepRole})
+                                  {step.updatedAt && <span className="ml-1">· {new Date(step.updatedAt).toLocaleString()}</span>}
+                                </p>
+                              )}
+                              {isApproved && step.comments && (
+                                <p className="text-xs text-slate-500 italic mt-0.5">"{step.comments}"</p>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* Action Section */}
               <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-4">
-                {/* Revoke Button (if within 3 hours) */}
-                {canRevoke && (selectedItem.status === 'approved' || selectedItem.status === 'hod_approved' || selectedItem.status === 'hr_approved') && (
+                {/* Revoke Button - only for approver of last step, within 3 hours */}
+                {canRevoke && (selectedItem.status === 'approved' || selectedItem.status === 'hod_approved' || selectedItem.status === 'manager_approved' || selectedItem.status === 'hr_approved') && (
                   <div className="p-3 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800">
                     <p className="text-xs font-semibold text-orange-800 dark:text-orange-300 mb-2">
                       ⏰ Revoke Approval (Within 3 hours)
@@ -2724,8 +2767,8 @@ export default function LeavesPage() {
                   </button>
                 )}
 
-                {/* Approval Actions */}
-                {!['approved', 'rejected', 'cancelled'].includes(selectedItem.status) && (
+                {/* Approval Actions - only show to current approver */}
+                {!['approved', 'rejected', 'cancelled'].includes(selectedItem.status) && canPerformAction(selectedItem) && (
                   <>
                     <p className="text-xs text-slate-500 uppercase font-semibold">Take Action</p>
 
@@ -2751,12 +2794,6 @@ export default function LeavesPage() {
                         className="px-4 py-2.5 text-sm font-semibold text-white bg-red-500 rounded-xl hover:bg-red-600 transition-colors flex items-center gap-2"
                       >
                         <XIcon /> Reject
-                      </button>
-                      <button
-                        onClick={() => handleDetailAction('forward')}
-                        className="px-4 py-2.5 text-sm font-semibold text-white bg-blue-500 rounded-xl hover:bg-blue-600 transition-colors"
-                      >
-                        Forward to HR
                       </button>
                     </div>
                   </>

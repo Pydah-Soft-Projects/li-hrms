@@ -10,6 +10,7 @@ const {
   getEmployeeIdsInScope,
   checkJurisdiction
 } = require('../../shared/middleware/dataScopeMiddleware');
+const Department = require('../../departments/model/Department');
 
 /**
  * Get employee settings from database
@@ -120,7 +121,7 @@ const getWorkflowSettings = async () => {
       workflow: {
         isEnabled: true,
         steps: [
-          { stepOrder: 1, stepName: 'HOD Approval', approverRole: 'hod', availableActions: ['approve', 'reject', 'forward'], approvedStatus: 'hod_approved', rejectedStatus: 'hod_rejected', nextStepOnApprove: 2, isActive: true },
+          { stepOrder: 1, stepName: 'HOD Approval', approverRole: 'hod', availableActions: ['approve', 'reject'], approvedStatus: 'hod_approved', rejectedStatus: 'hod_rejected', nextStepOnApprove: 2, isActive: true },
           { stepOrder: 2, stepName: 'HR Approval', approverRole: 'hr', availableActions: ['approve', 'reject'], approvedStatus: 'approved', rejectedStatus: 'hr_rejected', nextStepOnApprove: null, isActive: true },
         ],
         finalAuthority: { role: 'hr', anyHRCanApprove: true },
@@ -191,12 +192,28 @@ exports.getODs = async (req, res) => {
 // @desc    Get my ODs (for logged-in employee)
 // @route   GET /api/od/my
 // @access  Private
+// Returns ODs applied BY me OR applied FOR me (by HOD/Manager/HR on my behalf)
 exports.getMyODs = async (req, res) => {
   try {
     const { status, fromDate, toDate } = req.query;
+    const orConditions = [{ appliedBy: req.user._id }];
+
+    if (req.user.employeeRef) orConditions.push({ employeeId: req.user.employeeRef });
+    if (req.user.employeeId) orConditions.push({ emp_no: String(req.user.employeeId).trim() });
+    // Fallback: User may have emp_no but no employeeRef - resolve Employee by emp_no
+    if (!req.user.employeeRef && req.user.employeeId) {
+      const emp = await Employee.findOne({
+        $or: [
+          { emp_no: String(req.user.employeeId).trim() },
+          { emp_no: { $regex: new RegExp(`^${String(req.user.employeeId).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } }
+        ]
+      }).select('_id');
+      if (emp) orConditions.push({ employeeId: emp._id });
+    }
+
     const filter = {
       isActive: true,
-      appliedBy: req.user._id,
+      $or: orConditions,
     };
 
     if (status) filter.status = status;
@@ -204,8 +221,10 @@ exports.getMyODs = async (req, res) => {
     if (toDate) filter.toDate = { ...filter.toDate, $lte: new Date(toDate) };
 
     const ods = await OD.find(filter)
+      .populate('employeeId', 'employee_name emp_no')
       .populate('department', 'name')
       .populate('designation', 'name')
+      .populate('appliedBy', 'name email')
       .populate('assignedBy', 'name email')
       .sort({ createdAt: -1 });
 
@@ -304,6 +323,9 @@ exports.applyOD = async (req, res) => {
 
     // Use empNo as primary identifier (from frontend)
     if (empNo) {
+      // Check if this is self-application
+      const isSelf = req.user.emp_no && (req.user.emp_no === empNo || req.user.emp_no.toLowerCase() === empNo.toLowerCase());
+
       // Check if user has permission to apply for others
       // Allow hod, hr, sub_admin, super_admin to apply for anyone (Global Logic)
       // Manager is handled separately with detailed scoping
@@ -312,8 +334,13 @@ exports.applyOD = async (req, res) => {
 
       console.log(`[Apply OD] User ${req.user._id} (${req.user.role}) applying for employee ${empNo}`);
 
+      // 0. SELF APPLICATION CHECK
+      if (isSelf) {
+        console.log(`[Apply OD] ✅ Self Application Authorization granted`);
+        employee = await findEmployeeByEmpNo(empNo);
+      }
       // 1. GLOBAL ADMIN CHECK
-      if (isGlobalAdmin) {
+      else if (isGlobalAdmin) {
         console.log(`[Apply OD] ✅ Global Admin Authorization granted`);
         // We still need the employee for data populating later
         employee = await findEmployeeByEmpNo(empNo);
@@ -345,44 +372,25 @@ exports.applyOD = async (req, res) => {
 
         employee = targetEmployee;
 
-        // --- ENFORCE SCOPE ---
-        const { allowedDivisions, divisionMapping } = req.user;
+        const scopeUser = await User.findById(req.user._id).select('role divisionMapping').lean();
+        const userForScope = scopeUser || req.user;
+        let scopedEmployeeIds = await getEmployeeIdsInScope(userForScope);
+        let isInScope = scopedEmployeeIds.some(id => id.toString() === targetEmployee._id.toString());
 
-        // A. Division Check
-        const employeeDivisionId = targetEmployee.division_id?.toString();
-        const isDivisionScoped = allowedDivisions?.some(divId => divId.toString() === employeeDivisionId);
-
-        // B. Department Check
-        let isDepartmentScoped = false;
-        const targetDeptId = (targetEmployee.department_id || targetEmployee.department)?.toString();
-
-        if (isDivisionScoped) {
-          if (!divisionMapping || divisionMapping.length === 0) {
-            isDepartmentScoped = true; // All departments in this division
-          } else {
-            const mapping = divisionMapping.find(m => m.division?.toString() === employeeDivisionId);
-            if (mapping) {
-              if (!mapping.departments || mapping.departments.length === 0) {
-                isDepartmentScoped = true;
-              } else {
-                isDepartmentScoped = mapping.departments.some(d => d.toString() === targetDeptId);
-              }
-            }
+        if (!isInScope && req.user.role === 'hod') {
+          const empDeptId = (targetEmployee.department_id?._id || targetEmployee.department_id)?.toString();
+          const empDivId = (targetEmployee.division_id?._id || targetEmployee.division_id)?.toString();
+          if (empDeptId && empDivId) {
+            const dept = await Department.findOne({
+              _id: empDeptId,
+              'divisionHODs.hod': req.user._id,
+              'divisionHODs.division': empDivId
+            }).select('_id');
+            isInScope = !!dept;
           }
         }
 
-        // Direct Department Check (common for HOD or unmapped Manager)
-        if (!isDepartmentScoped) {
-          if (req.user.department && req.user.department.toString() === targetDeptId) {
-            isDepartmentScoped = true;
-          } else if (req.user.departments && req.user.departments.length > 0) {
-            isDepartmentScoped = req.user.departments.some(d => d.toString() === targetDeptId);
-          }
-        }
-
-        console.log(`[Apply OD] ${req.user.role} Scope Check: Div(${employeeDivisionId}) Allowed? ${isDivisionScoped}. Dept Allowed? ${isDepartmentScoped}`);
-
-        if (!isDivisionScoped && !isDepartmentScoped) {
+        if (!isInScope) {
           console.log(`[Apply OD] ❌ ${req.user.role} blocked from applying for employee ${empNo} outside scope.`);
           return res.status(403).json({
             success: false,
@@ -430,16 +438,19 @@ exports.applyOD = async (req, res) => {
           });
         }
         console.log(`[Apply OD] ✅ Workspace Authorization granted`);
+        // Find employee by emp_no (checks MongoDB first, then MSSQL based on settings)
+        employee = await findEmployeeByEmpNo(empNo);
       }
 
 
-
-      // Find employee by emp_no (checks MongoDB first, then MSSQL based on settings)
-      employee = await findEmployeeByEmpNo(empNo);
     } else if (employeeId) {
       // Legacy: Check if user has permission to apply for others
       // Allow hod, hr, sub_admin, super_admin (backward compatibility)
-      const hasRolePermission = ['hod', 'hr', 'sub_admin', 'super_admin'].includes(req.user.role);
+
+      // Check if this is self-application
+      const isSelf = req.user.employeeRef && req.user.employeeRef.toString() === employeeId.toString();
+
+      const hasRolePermission = ['hod', 'hr', 'sub_admin', 'super_admin'].includes(req.user.role) || isSelf;
 
       console.log(`[Apply OD] User ${req.user._id} (${req.user.role}) applying for employee ${employeeId}(legacy)`);
       console.log(`[Apply OD] Has role permission: ${hasRolePermission} `);
@@ -580,15 +591,28 @@ exports.applyOD = async (req, res) => {
 
     // Initialize Workflow (Dynamic)
     const approvalSteps = [];
+    const reportingManagers = employee.dynamicFields?.reporting_to || employee.dynamicFields?.reporting_to_ || [];
+    const hasReportingManager = Array.isArray(reportingManagers) && reportingManagers.length > 0;
 
-    // 1. Always start with HOD as per requirements
-    approvalSteps.push({
-      stepOrder: 1,
-      role: 'hod',
-      label: 'HOD Approval',
-      status: 'pending',
-      isCurrent: true
-    });
+    // 1. Prioritize Reporting Manager if configured or available
+    if (hasReportingManager) {
+      approvalSteps.push({
+        stepOrder: 1,
+        role: 'reporting_manager',
+        label: 'Reporting Manager Approval',
+        status: 'pending',
+        isCurrent: true
+      });
+    } else {
+      // Fallback to HOD as per requirements
+      approvalSteps.push({
+        stepOrder: 1,
+        role: 'hod',
+        label: 'HOD Approval',
+        status: 'pending',
+        isCurrent: true
+      });
+    }
 
     // 2. Add other steps from settings, avoiding duplicate HOD if it's already first
     if (workflowSettings?.workflow?.steps && workflowSettings.workflow.steps.length > 0) {
@@ -607,12 +631,13 @@ exports.applyOD = async (req, res) => {
     }
 
     let workflowData = {
-      currentStepRole: 'hod',
-      nextApproverRole: 'hod',
-      currentStep: 'hod', // Legacy
-      nextApprover: 'hod', // Legacy
+      currentStepRole: approvalSteps[0]?.role || 'hod',
+      nextApproverRole: approvalSteps[0]?.role || 'hod',
+      currentStep: approvalSteps[0]?.role || 'hod', // Legacy
+      nextApprover: approvalSteps[0]?.role || 'hod', // Legacy
       approvalChain: approvalSteps,
       finalAuthority: workflowSettings?.workflow?.finalAuthority?.role || 'hr',
+      reportingManagerIds: hasReportingManager ? reportingManagers.map(m => (m._id || m).toString()) : [],
       history: [
         {
           step: 'employee',
@@ -1010,10 +1035,12 @@ exports.cancelOD = async (req, res) => {
 // @desc    Get pending approvals for current user
 // @route   GET /api/od/pending-approvals
 // @access  Private
+// Data scope: Show ODs to ALL workflow participants (roles in approvalChain) with division/department scope.
+// Approve/Reject buttons shown only when nextApproverRole === user.role (enforced in frontend via canPerformAction).
 exports.getPendingApprovals = async (req, res) => {
   try {
     const userRole = req.user.role;
-    // Base filter: Active AND Not Applied by Me (Self-requests go to "My Leaves")
+    // Base filter: Active AND Not Applied by Me (Self-requests go to "My ODs")
     let filter = {
       isActive: true,
       appliedBy: { $ne: req.user._id }
@@ -1022,26 +1049,30 @@ exports.getPendingApprovals = async (req, res) => {
     // 1. Super Admin / Sub Admin: View all non-final ODs
     if (['sub_admin', 'super_admin'].includes(userRole)) {
       filter.status = { $nin: ['approved', 'rejected', 'cancelled'] };
-    } else if (userRole === 'manager') {
-      // 2. Manager: Strict Scope Check
+    }
+    // 2. Scoped Roles (HOD, HR, Manager) - show to ALL whose role is in the workflow
+    else if (['hod', 'hr', 'manager'].includes(userRole)) {
+      const roleVariants = [userRole];
+      if (userRole === 'hr') roleVariants.push('final_authority');
+
       filter['$or'] = [
-        { 'workflow.nextApprover': 'manager' },
-        { 'workflow.nextApproverRole': 'manager' }
+        { 'workflow.approvalChain': { $elemMatch: { role: { $in: roleVariants } } } },
+        { 'workflow.reportingManagerIds': req.user._id.toString() }
       ];
 
       const employeeIds = await getEmployeeIdsInScope(req.user);
       if (employeeIds.length > 0) {
         filter.employeeId = { $in: employeeIds };
       } else {
-        console.warn(`[GetPendingApprovals] Manager ${req.user._id} has no employees in scope.`);
+        console.warn(`[GetPendingODApprovals] User ${req.user._id} (${userRole}) has no employees in scope.`);
         filter.employeeId = { $in: [] };
       }
+      filter.status = { $nin: ['approved', 'rejected', 'cancelled'] };
     }
     else {
-      return res.status(403).json({
-        success: false,
-        error: 'Not authorized to view pending approvals',
-      });
+      // Check if user is a reporting manager even if they don't have an admin role
+      filter['workflow.reportingManagerIds'] = req.user._id.toString();
+      filter.status = { $nin: ['approved', 'rejected', 'cancelled'] };
     }
 
     const ods = await OD.find(filter)
@@ -1124,6 +1155,16 @@ exports.processODAction = async (req, res) => {
 
     if (isGlobalAdmin) {
       canProcess = true;
+    } else if (requiredRole === 'reporting_manager') {
+      // Logic for Reporting Manager (Virtual Role)
+      const managers = od.workflow?.reportingManagerIds || [];
+      if (managers.includes(fullUser._id.toString())) {
+        canProcess = true;
+      }
+      // Fallback to HOD if user is an HOD for the employee
+      if (!canProcess && userRole === 'hod') {
+        canProcess = checkJurisdiction(fullUser, od);
+      }
     } else if (isRoleMatch) {
       // 2. If roles match, enforce Jurisdictional Check
       canProcess = checkJurisdiction(fullUser, od);
@@ -1237,18 +1278,10 @@ exports.processODAction = async (req, res) => {
         break;
 
       case 'forward':
-        if (requiredRole !== 'hod') {
-          return res.status(400).json({ success: false, error: 'Only HOD can forward applications' });
-        }
-        // Forwarding typically skips to HR
-        od.status = 'hod_approved';
-        if (!od.approvals) od.approvals = {};
-        od.approvals.hod = { status: 'forwarded', approvedBy: req.user._id, approvedAt: new Date(), comments };
-
-        od.workflow.nextApprover = 'hr';
-        od.workflow.currentStep = 'hr';
-        historyEntry.action = 'forwarded';
-        break;
+        return res.status(400).json({
+          success: false,
+          error: 'Forward action is disabled. Use Approve or Reject only. Each step must be approved or rejected in sequence.',
+        });
 
       default:
         return res.status(400).json({

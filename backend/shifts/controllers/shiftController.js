@@ -61,10 +61,9 @@ exports.getScopedShiftData = async (req, res) => {
     const userId = req.user.userId;
     // We assume req.user has role, but we need full data scope details
     const user = await User.findById(userId)
-      .select('role dataScope allowedDivisions divisionMapping departments department departmentType')
-      .populate('allowedDivisions')
-      .populate('departments')
-      .populate('department');
+      .select('role dataScope divisionMapping')
+      .populate('divisionMapping.division')
+      .populate('divisionMapping.departments');
 
     if (!user) {
       // Fallback for Employee login if needed, though they usually use simple views
@@ -81,32 +80,13 @@ exports.getScopedShiftData = async (req, res) => {
     let departments = [];
     let designations = [];
 
-    // 1. DIVISIONS
     let divQuery = { isActive: true };
-    if (!isGlobal) {
-      const allowedDivIds = new Set();
-
-      if (user.allowedDivisions && user.allowedDivisions.length > 0) {
-        user.allowedDivisions.forEach(d => {
-          if (d && d._id) allowedDivIds.add(d._id.toString());
-        });
-      }
-
-      if (user.divisionMapping && user.divisionMapping.length > 0) {
-        user.divisionMapping.forEach(dm => {
-          if (dm.division) allowedDivIds.add(dm.division.toString());
-        });
-      }
-
-      if (allowedDivIds.size > 0) {
-        divQuery._id = { $in: Array.from(allowedDivIds) };
-      } else if (dataScope === 'division') {
-        // If scope is division but no allowed divisions, restricted.
-        divQuery._id = { $in: [] };
-      } else {
-        // Fallback if strictly department scope but no division mapping?
-        // We might not fetch divisions in that case, which is fine.
-      }
+    if (!isGlobal && user.divisionMapping?.length > 0) {
+      const allowedDivIds = new Set(
+        user.divisionMapping.map(dm => (dm.division?._id || dm.division)?.toString()).filter(Boolean)
+      );
+      if (allowedDivIds.size > 0) divQuery._id = { $in: Array.from(allowedDivIds) };
+      else divQuery._id = { $in: [] };
     }
 
     // Only fetch divisions if we are global or have a filter (don't fetch all if restricted and no filter matches)
@@ -116,35 +96,16 @@ exports.getScopedShiftData = async (req, res) => {
         .lean();
     }
 
-    // 2. DEPARTMENTS
     let deptQuery = { isActive: true };
     if (!isGlobal) {
-      // Collect allowed Department IDs
-      let allowedDeptIds = [];
-
-      if (user.departments && user.departments.length > 0) {
-        allowedDeptIds = user.departments.map(d => d._id || d);
-      } else if (user.department) {
-        allowedDeptIds = [user.department._id || user.department];
-      }
-
-      if (user.divisionMapping && user.divisionMapping.length > 0) {
-        const mappedIds = user.divisionMapping.flatMap(dm => dm.departments || []);
-        allowedDeptIds = [...allowedDeptIds, ...mappedIds];
-      }
-
-      // Important: Prioritize specific department access if defined
+      const allowedDeptIds = (user.divisionMapping || []).flatMap(dm =>
+        (dm.departments || []).map(d => d?._id || d)
+      );
       if (allowedDeptIds.length > 0) {
         deptQuery._id = { $in: allowedDeptIds };
-      }
-
-      // Fallback: If NO specific departments are defined, but Divisions are accessible,
-      // allow access to all departments within those divisions.
-      // This supports the "Manager of Division" use case where user.departments is empty.
-      if (divisions.length > 0 && allowedDeptIds.length === 0) {
-        deptQuery.division = { $in: divisions.map(d => d._id) };
-      } else if (allowedDeptIds.length === 0) {
-        // No divisions found AND no departments allowed -> Access Denied
+      } else if (divisions.length > 0) {
+        deptQuery.divisions = { $in: divisions.map(d => d._id) };
+      } else {
         deptQuery._id = { $in: [] };
       }
     }
@@ -281,18 +242,14 @@ exports.createShift = async (req, res) => {
       finalDuration = Math.round((durationMinutes / 60) * 100) / 100;
     }
 
-    // Validate duration against allowed durations
+    // Validate duration against allowed durations (Warning only in logs)
     if (allowedDurations.length > 0) {
       const isAllowed = allowedDurations.some(
         (allowed) => Math.abs(allowed - finalDuration) < 0.01
       );
 
       if (!isAllowed) {
-        return res.status(400).json({
-          success: false,
-          message: `Duration ${finalDuration} hours is not allowed. Allowed durations: ${allowedDurations.join(', ')} hours`,
-          allowedDurations,
-        });
+        console.warn(`Creating shift with non-standard duration: ${finalDuration} hours`);
       }
     }
 
@@ -395,18 +352,14 @@ exports.updateShift = async (req, res) => {
       shift.duration = duration;
     }
 
-    // Validate duration
+    // Validate duration (Warning only)
     if (allowedDurations.length > 0) {
       const isAllowed = allowedDurations.some(
         (allowed) => Math.abs(allowed - shift.duration) < 0.01
       );
 
       if (!isAllowed) {
-        return res.status(400).json({
-          success: false,
-          message: `Duration ${shift.duration} hours is not allowed. Allowed durations: ${allowedDurations.join(', ')} hours`,
-          allowedDurations,
-        });
+        console.warn(`Updating shift with non-standard duration: ${shift.duration} hours`);
       }
     }
 

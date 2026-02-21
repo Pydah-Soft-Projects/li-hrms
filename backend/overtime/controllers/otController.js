@@ -40,12 +40,12 @@ exports.createOT = async (req, res) => {
     }
 
     // Validate Date (Must be today or future)
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const checkDate = new Date(date);
-    checkDate.setHours(0, 0, 0, 0);
+    // Get IST "Today" (YYYY-MM-DD)
+    const now = new Date();
+    const istNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+    const todayStr = `${istNow.getFullYear()}-${String(istNow.getMonth() + 1).padStart(2, '0')}-${String(istNow.getDate()).padStart(2, '0')}`;
 
-    if (checkDate < today) {
+    if (date < todayStr) {
       return res.status(400).json({
         success: false,
         message: 'OT requests are restricted to current or future dates only.'
@@ -89,40 +89,10 @@ exports.createOT = async (req, res) => {
         });
       }
 
-      // Verify Scope
-      const { allowedDivisions, divisionMapping } = req.user;
+      const scopedEmployeeIds = await getEmployeeIdsInScope(req.user);
+      const isInScope = scopedEmployeeIds.some(id => id.toString() === targetEmployee._id.toString());
 
-      const employeeDivisionId = targetEmployee.division_id?.toString();
-      const isDivisionScoped = allowedDivisions?.some(divId => divId.toString() === employeeDivisionId);
-
-      let isDepartmentScoped = false;
-      const targetDeptId = (targetEmployee.department_id || targetEmployee.department)?.toString();
-
-      if (isDivisionScoped) {
-        if (!divisionMapping || divisionMapping.length === 0) {
-          isDepartmentScoped = true; // All departments in this division
-        } else {
-          const mapping = divisionMapping.find(m => m.division?.toString() === employeeDivisionId);
-          if (mapping) {
-            if (!mapping.departments || mapping.departments.length === 0) {
-              isDepartmentScoped = true;
-            } else {
-              isDepartmentScoped = mapping.departments.some(d => d.toString() === targetDeptId);
-            }
-          }
-        }
-      }
-
-      // Direct Department Check (fallback for HOD/unmapped Managers)
-      if (!isDepartmentScoped) {
-        if (req.user.department && req.user.department.toString() === targetDeptId) {
-          isDepartmentScoped = true;
-        } else if (req.user.departments && req.user.departments.length > 0) {
-          isDepartmentScoped = req.user.departments.some(d => d.toString() === targetDeptId);
-        }
-      }
-
-      if (!isDivisionScoped && !isDepartmentScoped) {
+      if (!isInScope) {
         return res.status(403).json({
           success: false,
           message: `You are not authorized to apply for OT for employees outside your assigned data scope.`
@@ -229,6 +199,59 @@ exports.getOTRequests = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error fetching OT requests',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * @desc    Get pending OT approvals (for HOD/Manager/HR)
+ * @route   GET /api/ot/pending-approvals
+ * @access  Private (manager, hod, hr, sub_admin, super_admin)
+ * Data scope: Show OTs to ALL workflow participants (roles in approvalChain) with division/department scope.
+ */
+exports.getPendingOTApprovals = async (req, res) => {
+  try {
+    const userRole = req.user.role;
+    const baseFilter = {
+      isActive: true,
+      requestedBy: { $ne: req.user._id }
+    };
+
+    const finalStatuses = ['approved', 'rejected'];
+
+    if (['sub_admin', 'super_admin'].includes(userRole)) {
+      baseFilter.status = { $nin: finalStatuses };
+    } else if (['hod', 'hr', 'manager'].includes(userRole)) {
+      const roleVariants = [userRole];
+      if (userRole === 'hr') roleVariants.push('final_authority');
+      baseFilter['workflow.approvalChain'] = {
+        $elemMatch: { role: { $in: roleVariants } }
+      };
+      const employeeIds = await getEmployeeIdsInScope(req.user);
+      baseFilter.employeeId = employeeIds.length > 0 ? { $in: employeeIds } : { $in: [] };
+      baseFilter.status = { $nin: finalStatuses };
+    } else {
+      baseFilter['workflow.approvalChain'] = { $elemMatch: { role: userRole } };
+      baseFilter.status = { $nin: finalStatuses };
+    }
+
+    const otRequests = await OT.find(baseFilter)
+      .populate('employeeId', 'emp_no employee_name department designation')
+      .populate('shiftId', 'name startTime endTime duration')
+      .populate('requestedBy', 'name email')
+      .sort({ requestedAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      count: otRequests.length,
+      data: otRequests,
+    });
+  } catch (error) {
+    console.error('Error fetching pending OT approvals:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching pending OT approvals',
       error: error.message,
     });
   }
@@ -369,7 +392,8 @@ exports.convertExtraHoursToOT = async (req, res) => {
       employeeId,
       employeeNumber,
       date,
-      req.user?.userId || req.user?._id
+      req.user?._id || req.user?.userId,
+      req.user?.name
     );
 
     if (!result.success) {
