@@ -563,6 +563,7 @@ export interface Employee {
   leftReason?: string;
   created_at?: string;
   updated_at?: string;
+  salaryStatus?: 'pending_approval' | 'approved';
   // Populated fields (from virtuals or population)
   department?: any;
   division?: any;
