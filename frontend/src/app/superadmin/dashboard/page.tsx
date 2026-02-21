@@ -208,9 +208,6 @@ export default function SuperAdminDashboard() {
 
   return (
     <div className="relative min-h-screen">
-      {/* Background */}
-      <div className="pointer-events-none fixed inset-0 z-0 bg-base bg-[linear-gradient(to_right,rgba(0,0,0,0.04)_1px,transparent_1px),linear-gradient(to_bottom,rgba(0,0,0,0.04)_1px,transparent_1px)] dark:bg-[linear-gradient(to_right,rgba(255,255,255,0.08)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.08)_1px,transparent_1px)] bg-[size:42px_42px] dark:bg-black"></div>
-
       <div className="relative z-10 mx-auto max-w-[1920px] ">
         {/* Header */}
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
