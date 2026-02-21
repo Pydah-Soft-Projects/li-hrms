@@ -125,7 +125,7 @@ export default function Sidebar() {
       <button
         onClick={() => setIsMobileOpen(true)}
         type="button"
-        className="fixed top-3 left-3 z-10 inline-flex items-center p-2 text-sm text-slate-500 rounded-lg sm:hidden hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-gray-200 dark:text-slate-400 dark:hover:bg-slate-700 dark:focus:ring-gray-600"
+        className="fixed top-3 left-3 z-[100] inline-flex items-center p-2 text-sm text-slate-500 rounded-lg sm:hidden hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-gray-200 dark:text-slate-400 dark:hover:bg-slate-700 dark:focus:ring-gray-600"
       >
         <span className="sr-only">Open sidebar</span>
         <Menu className="w-6 h-6" />
@@ -134,14 +134,14 @@ export default function Sidebar() {
       {/* Overlay for mobile */}
       {isMobileOpen && (
         <div
-          className="fixed inset-0 z-10 bg-gray-900/50 sm:hidden backdrop-blur-sm transition-opacity"
+          className="fixed inset-0 z-[90] bg-gray-900/50 sm:hidden backdrop-blur-sm transition-opacity"
           onClick={() => setIsMobileOpen(false)}
         />
       )}
 
       {/* Sidebar Aside */}
       <aside
-        className={`fixed top-0 left-0 h-screen bg-white dark:bg-black border-r border-slate-200/60 dark:border-slate-800 transition-all duration-300 ease-in-out z-10
+        className={`fixed top-0 left-0 h-screen bg-white dark:bg-black border-r border-slate-200/60 dark:border-slate-800 transition-all duration-300 ease-in-out z-[100]
           ${isMobileOpen ? 'translate-x-0 w-64' : '-translate-x-full sm:translate-x-0'} 
           ${isCollapsed ? 'sm:w-[70px]' : 'sm:w-[240px]'} 
           `}

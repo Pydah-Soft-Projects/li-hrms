@@ -36,8 +36,8 @@ export default function RecentActivityFeed() {
             // Create a dedicated API method for this or use raw fetch wrapper if api lib is strict
             // Assuming api.get returns the data payload directly or axios response
             const response = await api.getRecentActivity();
-            if (response.data && response.data.success) {
-                setActivities(response.data.data);
+            if (response.success && response.data) {
+                setActivities(response.data);
                 setError(null);
             }
         } catch (err) {

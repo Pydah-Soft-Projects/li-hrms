@@ -234,6 +234,11 @@ const employeeSchema = new mongoose.Schema(
       default: null,
       select: false,
     },
+    plain_password: {
+      type: String,
+      default: null,
+      select: false, // Not returned by default for security
+    },
     resetPasswordToken: String,
     resetPasswordExpire: Date,
     lastLogin: Date,
