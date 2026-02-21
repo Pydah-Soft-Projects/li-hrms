@@ -361,6 +361,7 @@ attendanceDailySchema.pre('save', async function () {
     // Legacy/No-Shift Logic (likely unused now but good for safety)
     if (this.totalWorkingHours > 0) {
       this.status = 'PRESENT'; // Simplified fallback
+    }
     // Legacy mapping for direct updates without shifts array
     if (this.inTime && this.outTime) {
       this.calculateTotalHours();

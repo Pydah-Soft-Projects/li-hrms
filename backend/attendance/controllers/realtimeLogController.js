@@ -90,7 +90,6 @@ exports.receiveRealTimeLogs = async (req, res) => {
                 const timestamp = new Date(timestampStr);
                 if (isNaN(timestamp.getTime())) continue;
                 // Robust timestamp normalization
-                let timestamp;
                 const rawTimestampStr = log.timestamp;
 
                 // If the machine sends a bare string like "2026-02-03 10:54:04"
