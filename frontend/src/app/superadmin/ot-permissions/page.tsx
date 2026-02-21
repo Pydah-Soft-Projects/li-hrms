@@ -683,7 +683,7 @@ export default function OTAndPermissionsPage() {
     if (!time) return '-';
     try {
       const date = new Date(time);
-      return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'UTC' });
+      return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' });
     } catch {
       return time;
     }
@@ -1651,7 +1651,7 @@ export default function OTAndPermissionsPage() {
                           <span className="block text-xs uppercase tracking-wider text-slate-500 font-bold mb-1">Captured At</span>
                           <span className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
                             <svg className="h-3.5 w-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                            {selectedEvidenceItem.geoLocation.capturedAt ? new Date(selectedEvidenceItem.geoLocation.capturedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Unknown'}
+                            {selectedEvidenceItem.geoLocation.capturedAt ? new Date(selectedEvidenceItem.geoLocation.capturedAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' }) : 'Unknown'}
                           </span>
                         </div>
                         {selectedEvidenceItem.geoLocation.address && (

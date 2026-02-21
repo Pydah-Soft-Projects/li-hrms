@@ -322,6 +322,16 @@ attendanceDailySchema.pre('save', async function () {
     this.totalExpectedHours = totalExpected; // Placeholder or calculate if possible
 
     // 2. Status Determination
+    // Payable shifts = cumulative of each assigned shift's payableShift (multi-shift day = sum)
+    const totalPayable = this.shifts.reduce((sum, s) => sum + (s.payableShift || 0), 0);
+    this.payableShifts = Math.round(totalPayable * 100) / 100;
+
+    // 2. Metrics (Backward Compatibility)
+    this.inTime = firstIn;
+    this.outTime = lastOut;
+    this.totalHours = this.totalWorkingHours;
+
+    // 3. Status Determination
     // Logic:
     // - PRESENT: If any shift is PRESENT (or payable >= 1)
     // - HALF_DAY: Only if exactly ONE shift and it is HALF_DAY
@@ -351,6 +361,34 @@ attendanceDailySchema.pre('save', async function () {
     // Legacy/No-Shift Logic (likely unused now but good for safety)
     if (this.totalWorkingHours > 0) {
       this.status = 'PRESENT'; // Simplified fallback
+    // Legacy mapping for direct updates without shifts array
+    if (this.inTime && this.outTime) {
+      this.calculateTotalHours();
+      if (this.expectedHours) {
+        const effectiveHours = (this.totalHours || 0) + (this.odHours || 0);
+        // Normalize duration to hours if it looks like minutes (e.g. > 20)
+        // expectedHours is usually in hours for legacy, but shift duration is often in hours too. 
+        // Let's assume expectedHours is in HOURS.
+        const durationHours = this.expectedHours;
+
+        if (effectiveHours >= (durationHours * 0.8)) {
+          this.status = 'PRESENT';
+          this.payableShifts = 1;
+        } else if (effectiveHours >= (durationHours * 0.35)) {
+          this.status = 'HALF_DAY';
+          this.payableShifts = 0.5;
+        } else {
+          this.status = 'ABSENT';
+          this.payableShifts = 0;
+        }
+      } else if (this.status !== 'HALF_DAY' && this.status !== 'ABSENT') {
+        // Fallback if expectedHours is missing but we have in/out
+        this.status = 'PRESENT';
+        this.payableShifts = 1;
+      }
+    } else if (this.inTime || this.outTime) {
+      this.status = 'PARTIAL';
+      this.payableShifts = 0;
     } else {
       // No punches - use roster status if available, else default to ABSENT
       this.payableShifts = 0;

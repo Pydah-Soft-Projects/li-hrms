@@ -1,5 +1,8 @@
 'use client';
 
+// Disable static generation for this page since it requires runtime data
+export const dynamic = 'force-dynamic';
+
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
@@ -126,6 +129,13 @@ interface Designation {
 }
 
 export default function AttendancePage() {
+  // Prevent SSR errors by only rendering on client side
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
   const [tableType, setTableType] = useState<'complete' | 'present_absent' | 'in_out' | 'leaves' | 'od' | 'ot'>('complete');
 
   // Robust time formatter
@@ -241,6 +251,13 @@ export default function AttendancePage() {
   const [loadingConflicts, setLoadingConflicts] = useState(false);
   const [revokingLeave, setRevokingLeave] = useState(false);
   const [updatingLeave, setUpdatingLeave] = useState(false);
+
+  // Attendance detail PDF download
+  const [downloadingAttendancePdf, setDownloadingAttendancePdf] = useState(false);
+
+  // Export dialog state
+  const [showExportDialog, setShowExportDialog] = useState(false);
+  const [exportingAttendance, setExportingAttendance] = useState(false);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth() + 1;
@@ -944,6 +961,101 @@ export default function AttendancePage() {
     }
   };
 
+  const handleExportAttendance = async (params: {
+    startDate: string;
+    endDate: string;
+    divisionId?: string;
+    departmentId?: string;
+    designationId?: string;
+  }) => {
+    try {
+      setExportingAttendance(true);
+      const { startDate: start, endDate: end, divisionId: divId, departmentId: deptId, designationId: desigId } = params;
+
+      const startD = new Date(start);
+      const endD = new Date(end);
+      const monthsToFetch: { year: number; month: number }[] = [];
+      let curr = new Date(startD.getFullYear(), startD.getMonth(), 1);
+      const endMonth = new Date(endD.getFullYear(), endD.getMonth(), 1);
+
+      while (curr <= endMonth) {
+        monthsToFetch.push({ year: curr.getFullYear(), month: curr.getMonth() + 1 });
+        curr.setMonth(curr.getMonth() + 1);
+      }
+
+      const allRows: Record<string, string | number>[] = [];
+
+      for (const { year: y, month: m } of monthsToFetch) {
+        const resp = await api.getMonthlyAttendance(y, m, {
+          limit: 5000,
+          divisionId: divId,
+          departmentId: deptId,
+          designationId: desigId,
+        });
+
+        if (!resp.success || !resp.data) continue;
+
+        const monthStart = new Date(y, m - 1, 1);
+        const monthEnd = new Date(y, m, 0);
+        const rangeStart = startD > monthStart ? startD : monthStart;
+        const rangeEnd = endD < monthEnd ? endD : monthEnd;
+
+        (resp.data as MonthlyAttendanceData[]).forEach((item) => {
+          const emp = item.employee;
+          const empNo = emp.emp_no || '';
+          const empName = emp.employee_name || '';
+          const divName = (emp.division || emp.division_id)?.name || '';
+          const deptName = (emp.department || emp.department_id)?.name || '';
+          const desigName = (emp.designation || emp.designation_id)?.name || '';
+
+          for (let d = new Date(rangeStart.getTime()); d <= rangeEnd; d.setDate(d.getDate() + 1)) {
+            const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            const rec = item.dailyAttendance?.[dateStr] || null;
+
+            const status = rec?.status ?? '-';
+            const inTime = rec?.inTime != null ? (typeof rec.inTime === 'string' ? rec.inTime : String(rec.inTime)) : '';
+            const outTime = rec?.outTime != null ? (typeof rec.outTime === 'string' ? rec.outTime : String(rec.outTime)) : '';
+            const totalHours = rec?.totalHours ?? '';
+            const otHours = rec?.otHours ?? '';
+
+            allRows.push({
+              'Emp No': empNo,
+              'Employee Name': empName,
+              'Division': divName,
+              'Department': deptName,
+              'Designation': desigName,
+              'Date': dateStr,
+              'Status': status,
+              'In Time': inTime,
+              'Out Time': outTime,
+              'Total Hours': totalHours,
+              'OT Hours': otHours,
+            });
+          }
+        });
+      }
+
+      if (allRows.length === 0) {
+        toast.info('No attendance data found for the selected criteria.');
+        setShowExportDialog(false);
+        return;
+      }
+
+      const ws = XLSX.utils.json_to_sheet(allRows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Attendance');
+      const fileName = `attendance_export_${start}_to_${end}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+      toast.success('Attendance exported successfully');
+      setShowExportDialog(false);
+    } catch (err: any) {
+      console.error('Export attendance error:', err);
+      toast.error(err?.message || 'Failed to export attendance');
+    } finally {
+      setExportingAttendance(false);
+    }
+  };
+
   const handleViewPayslip = async (employee: Employee) => {
     setSelectedEmployeeForPayslip(employee);
     setShowPayslipModal(true);
@@ -1151,11 +1263,11 @@ export default function AttendancePage() {
 
   const getStatusColor = (record: AttendanceRecord | null) => {
     if (!record) return '';
-    if (record.status === 'PRESENT') return 'bg-green-50 border-green-200 text-green-800 dark:bg-green-900/10 dark:border-green-800 dark:text-green-400';
-    if (record.status === 'PARTIAL') return 'bg-yellow-50 border-yellow-200 text-yellow-800 dark:bg-yellow-900/10 dark:border-yellow-800 dark:text-yellow-400';
-    if (record.status === 'HALF_DAY') return 'bg-orange-50 border-orange-200 text-orange-800 dark:bg-orange-900/10 dark:border-orange-800 dark:text-orange-400';
-    if (record.status === 'HOLIDAY') return 'bg-red-50 border-red-200 text-red-800 dark:bg-red-900/10 dark:border-red-800 dark:text-red-400';
-    if (record.status === 'WEEK_OFF') return 'bg-orange-50 border-orange-200 text-orange-800 dark:bg-orange-900/10 dark:border-orange-800 dark:text-orange-400';
+    if (record?.status === 'PRESENT') return 'bg-green-50 border-green-200 text-green-800 dark:bg-green-900/10 dark:border-green-800 dark:text-green-400';
+    if (record?.status === 'PARTIAL') return 'bg-yellow-50 border-yellow-200 text-yellow-800 dark:bg-yellow-900/10 dark:border-yellow-800 dark:text-yellow-400';
+    if (record?.status === 'HALF_DAY') return 'bg-orange-50 border-orange-200 text-orange-800 dark:bg-orange-900/10 dark:border-orange-800 dark:text-orange-400';
+    if (record?.status === 'HOLIDAY') return 'bg-red-50 border-red-200 text-red-800 dark:bg-red-900/10 dark:border-red-800 dark:text-red-400';
+    if (record?.status === 'WEEK_OFF') return 'bg-orange-50 border-orange-200 text-orange-800 dark:bg-orange-900/10 dark:border-orange-800 dark:text-orange-400';
     return '';
   };
 
@@ -1165,29 +1277,29 @@ export default function AttendancePage() {
     }
 
     // Priority: Conflict (purple) > Leave (orange) > OD (blue) > Absent (gray) > Present (default)
-    if (record.isConflict) {
+    if (record?.isConflict) {
       return 'bg-purple-100 border-purple-300 dark:bg-purple-900/30 dark:border-purple-700';
     }
-    if (record.hasLeave && !record.hasOD) {
-      if (record.leaveInfo?.numberOfDays && record.leaveInfo.numberOfDays >= 3) {
+    if (record?.hasLeave && !record?.hasOD) {
+      if (record?.leaveInfo?.numberOfDays && record.leaveInfo.numberOfDays >= 3) {
         return 'bg-amber-200 border-amber-400 dark:bg-amber-900/50 dark:border-amber-600';
       }
       return 'bg-orange-100 border-orange-300 dark:bg-orange-900/30 dark:border-orange-700';
     }
-    if (record.hasOD && !record.hasLeave) {
+    if (record?.hasOD && !record?.hasLeave) {
       return 'bg-blue-100 border-blue-300 dark:bg-blue-900/30 dark:border-blue-700';
     }
-    if (record.hasLeave && record.hasOD) {
+    if (record?.hasLeave && record?.hasOD) {
       // Both leave and OD - show as conflict
       return 'bg-purple-100 border-purple-300 dark:bg-purple-900/30 dark:border-purple-700';
     }
-    if (record.status === 'ABSENT' || record.status === 'LEAVE' || record.status === 'OD' || record.status === 'HALF_DAY') {
+    if (record?.status === 'ABSENT' || record?.status === 'LEAVE' || record?.status === 'OD' || record?.status === 'HALF_DAY') {
       return 'bg-slate-100 dark:bg-slate-800';
     }
-    if (record.status === 'HOLIDAY') {
+    if (record?.status === 'HOLIDAY') {
       return 'bg-red-100 dark:bg-red-900/20 border-red-300 dark:border-red-700';
     }
-    if (record.status === 'WEEK_OFF') {
+    if (record?.status === 'WEEK_OFF') {
       return 'bg-orange-100 dark:bg-orange-900/20 border-orange-300 dark:border-orange-700';
     }
     return '';
@@ -1200,6 +1312,207 @@ export default function AttendancePage() {
     return `${hours.toFixed(2)}h`;
   };
 
+  const handleDownloadAttendancePdf = () => {
+    if (!attendanceDetail || !selectedDate) return;
+    setDownloadingAttendancePdf(true);
+    toast.info('Generating attendance PDF...', { autoClose: 1000 });
+    try {
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      let y = 14;
+      const lineHeight = 6;
+      const sectionGap = 4;
+
+      const addSection = (title: string, rows: [string, string][]) => {
+        if (y > 260) {
+          doc.addPage();
+          y = 14;
+        }
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'bold');
+        doc.text(title, 14, y);
+        y += lineHeight;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        for (const [label, value] of rows) {
+          if (value == null || value === '') continue;
+          doc.text(label + ': ', 14, y);
+          const text = String(value);
+          const maxW = pageWidth - 14 - 20;
+          const lines = doc.splitTextToSize(text, maxW);
+          doc.text(lines, 14 + doc.getTextWidth(label + ': '), y);
+          y += lineHeight * lines.length;
+        }
+        y += sectionGap;
+      };
+
+      // Title
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Attendance Details', 14, y);
+      y += lineHeight + 2;
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Date: ${selectedDate}`, 14, y);
+      y += lineHeight;
+      if (selectedEmployee) {
+        doc.text(`Employee: ${selectedEmployee.employee_name} (${selectedEmployee.emp_no})`, 14, y);
+        y += lineHeight;
+        const dept = selectedEmployee.department?.name || selectedEmployee.department_id?.name || '';
+        const div = selectedEmployee.division?.name || selectedEmployee.division_id?.name || '';
+        if (dept || div) {
+          doc.text([dept, div].filter(Boolean).join(' / '), 14, y);
+          y += lineHeight;
+        }
+      }
+      y += sectionGap;
+
+      const status = attendanceDetail.status || 'N/A';
+      const shiftName = attendanceDetail.shiftId && typeof attendanceDetail.shiftId === 'object'
+        ? attendanceDetail.shiftId.name
+        : attendanceDetail.shifts?.[0]?.shiftId && typeof attendanceDetail.shifts[0].shiftId === 'object'
+          ? (attendanceDetail.shifts[0].shiftId as { name: string }).name
+          : '-';
+
+      // Summary / Single shift
+      const summaryRows: [string, string][] = [
+        ['Status', status],
+        ['Shift', shiftName],
+        ['In Time', formatTime(attendanceDetail.inTime)],
+        ['Out Time', attendanceDetail.outTime ? formatTime(attendanceDetail.outTime, true, selectedDate) : '-'],
+        ['Total Hours', formatHours(attendanceDetail.totalHours)],
+        ...(attendanceDetail.totalWorkingHours != null ? [['Total Working Hours', `${attendanceDetail.totalWorkingHours.toFixed(2)} hrs`] as [string, string]] : []),
+        ...(attendanceDetail.totalOTHours != null ? [['OT Hours', `${attendanceDetail.totalOTHours.toFixed(2)} hrs`] as [string, string]] : []),
+        ...(attendanceDetail.isLateIn && attendanceDetail.lateInMinutes != null ? [['Late In', `+${attendanceDetail.lateInMinutes} minutes`] as [string, string]] : []),
+        ...(attendanceDetail.isEarlyOut && attendanceDetail.earlyOutMinutes != null ? [['Early Out', `-${attendanceDetail.earlyOutMinutes} minutes`] as [string, string]] : []),
+        ...(attendanceDetail.earlyOutDeduction?.deductionApplied ? [['Early-Out Deduction', `${attendanceDetail.earlyOutDeduction.deductionType?.replace('_', ' ')}${attendanceDetail.earlyOutDeduction.deductionDays ? ` (${attendanceDetail.earlyOutDeduction.deductionDays} day(s))` : ''}${attendanceDetail.earlyOutDeduction.deductionAmount ? ` (₹${attendanceDetail.earlyOutDeduction.deductionAmount})` : ''}`] as [string, string]] : []),
+        ...(attendanceDetail.otHours && attendanceDetail.otHours > 0 ? [['OT Hours', `${attendanceDetail.otHours.toFixed(2)} hrs`] as [string, string]] : []),
+        ...(attendanceDetail.extraHours && attendanceDetail.extraHours > 0 ? [['Extra Hours', `${attendanceDetail.extraHours.toFixed(2)} hrs`] as [string, string]] : []),
+        ...(attendanceDetail.permissionHours && attendanceDetail.permissionHours > 0 ? [['Permission Hours', `${attendanceDetail.permissionHours.toFixed(2)} hrs (${attendanceDetail.permissionCount || 0} permissions)`] as [string, string]] : []),
+      ];
+      addSection('Summary', summaryRows);
+
+      // Multi-shift table
+      if (attendanceDetail.shifts && attendanceDetail.shifts.length > 0) {
+        if (y > 240) {
+          doc.addPage();
+          y = 14;
+        }
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Shift-wise Details', 14, y);
+        y += lineHeight;
+        const shiftRows = attendanceDetail.shifts.map((s: any) => {
+          const name = s.shiftName || (s.shiftId && typeof s.shiftId === 'object' ? s.shiftId.name : 'Shift');
+          return [name, formatTime(s.inTime), formatTime(s.outTime), s.workingHours != null ? `${s.workingHours.toFixed(2)}h` : '-', s.otHours != null ? `${s.otHours.toFixed(2)}h` : '-'];
+        });
+        autoTable(doc, {
+          startY: y,
+          head: [['Shift', 'In', 'Out', 'Working Hrs', 'OT Hrs']],
+          body: shiftRows,
+          theme: 'grid',
+          headStyles: { fillColor: [59, 130, 246], fontSize: 8 },
+          bodyStyles: { fontSize: 8 },
+        });
+        y = (doc as any).lastAutoTable.finalY + sectionGap;
+      }
+
+      // Leave info
+      if (attendanceDetail.hasLeave && attendanceDetail.leaveInfo) {
+        const li = attendanceDetail.leaveInfo;
+        const leaveRows: [string, string][] = [
+          ['Purpose', li.purpose || ''],
+          ['Leave Type', li.leaveType || 'N/A'],
+          ['Half Day', li.isHalfDay ? (li.halfDayType === 'first_half' ? 'First Half' : 'Second Half') : 'No'],
+          ['Date Range', li.fromDate && li.toDate ? `${new Date(li.fromDate).toLocaleDateString('en-US')} - ${new Date(li.toDate).toLocaleDateString('en-US')}` : ''],
+          ['Total Days', li.numberOfDays != null ? `${li.numberOfDays} day(s)` : ''],
+          ['Day in Leave', li.dayInLeave != null ? `${li.dayInLeave}` : ''],
+          ['Applied On', li.appliedAt ? new Date(li.appliedAt).toLocaleString('en-US') : ''],
+          ['Approved By', li.approvedBy?.name || li.approvedBy?.email || ''],
+          ['Approved On', li.approvedAt ? new Date(li.approvedAt).toLocaleString('en-US') : ''],
+        ].filter(([, v]) => v !== '') as [string, string][];
+        addSection('Leave Information', leaveRows);
+        if (attendanceDetail.isConflict) {
+          doc.setFontSize(9);
+          doc.setTextColor(200, 0, 0);
+          doc.text('Conflict: Leave approved but attendance logged for this date.', 14, y);
+          y += lineHeight + sectionGap;
+          doc.setTextColor(0, 0, 0);
+        }
+      }
+
+      // OD info
+      if (attendanceDetail.hasOD && attendanceDetail.odInfo) {
+        const od = attendanceDetail.odInfo;
+        const odRows: [string, string][] = [
+          ['Purpose', od.purpose || ''],
+          ['Place Visited', od.placeVisited || ''],
+          ['OD Type', od.odType || 'N/A'],
+          ['Date Range', od.fromDate && od.toDate ? `${new Date(od.fromDate).toLocaleDateString('en-US')} - ${new Date(od.toDate).toLocaleDateString('en-US')}` : ''],
+          ...(od.odType_extended === 'hours' && od.durationHours != null ? [['OD Hours', `${Math.floor(od.durationHours)}h ${Math.round((od.durationHours % 1) * 60)}m`] as [string, string], ['Time', od.odStartTime && od.odEndTime ? `${od.odStartTime} - ${od.odEndTime}` : '']] : []),
+          ...(od.odType_extended !== 'hours' ? [['Total Days', od.numberOfDays != null ? `${od.numberOfDays} day(s)` : ''] as [string, string], ['Day in OD', od.dayInOD != null ? `${od.dayInOD}` : ''] as [string, string]] : []),
+          ['Applied On', od.appliedAt ? new Date(od.appliedAt).toLocaleString('en-US') : ''],
+          ['Approved By', od.approvedBy?.name || od.approvedBy?.email || ''],
+          ['Approved On', od.approvedAt ? new Date(od.approvedAt).toLocaleString('en-US') : ''],
+        ].filter(([, v]) => v !== '') as [string, string][];
+        addSection('On Duty (OD) Information', odRows);
+        if (attendanceDetail.earlyOutMinutes != null) {
+          doc.text(`Early-Out: ${attendanceDetail.earlyOutMinutes} min`, 14, y);
+          y += lineHeight;
+          if (attendanceDetail.earlyOutDeduction?.deductionApplied) {
+            doc.text(`Deduction: ${attendanceDetail.earlyOutDeduction.deductionType?.replace('_', ' ')}`, 14, y);
+            y += lineHeight;
+          }
+        }
+        y += sectionGap;
+      }
+
+      // Leave conflicts
+      if (attendanceDetail.status === 'PRESENT' && leaveConflicts.length > 0) {
+        addSection('Leave Conflict', leaveConflicts.map((c: any) => [
+          `${c.leaveType} (${c.numberOfDays} day(s))`,
+          `${new Date(c.fromDate).toLocaleDateString('en-US')} - ${new Date(c.toDate).toLocaleDateString('en-US')}${c.isHalfDay ? ` (${c.halfDayType === 'first_half' ? 'First Half' : 'Second Half'})` : ''}`,
+        ]));
+      }
+
+      // Edit history
+      if (attendanceDetail.isEdited && attendanceDetail.editHistory && attendanceDetail.editHistory.length > 0) {
+        if (y > 220) {
+          doc.addPage();
+          y = 14;
+        }
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Edit History', 14, y);
+        y += lineHeight;
+        const historyRows = attendanceDetail.editHistory.map((edit: any) => [
+          edit.action === 'OUT_TIME_UPDATE' ? 'Out-Time Update' : edit.action === 'SHIFT_CHANGE' ? 'Shift Change' : edit.action === 'OT_CONVERSION' ? 'Overtime Conversion' : edit.action,
+          new Date(edit.modifiedAt).toLocaleString('en-US'),
+          edit.details || '',
+          typeof edit.modifiedBy === 'object' && edit.modifiedBy?.name ? edit.modifiedBy.name : 'User',
+        ]);
+        autoTable(doc, {
+          startY: y,
+          head: [['Action', 'Date', 'Details', 'By']],
+          body: historyRows,
+          theme: 'grid',
+          headStyles: { fillColor: [100, 116, 139], fontSize: 8 },
+          bodyStyles: { fontSize: 7 },
+        });
+        y = (doc as any).lastAutoTable.finalY + sectionGap;
+      }
+
+      const fileName = `Attendance_${selectedEmployee?.emp_no || 'Employee'}_${selectedDate}.pdf`;
+      doc.save(fileName);
+      toast.success('Attendance PDF downloaded.');
+    } catch (err) {
+      console.error('Error generating attendance PDF:', err);
+      toast.error('Failed to generate attendance PDF');
+    } finally {
+      setDownloadingAttendancePdf(false);
+    }
+  };
+
   const daysInMonth = getDaysInMonth();
   const daysArray = useMemo(() => Array.from({ length: daysInMonth }, (_, i) => i + 1), [daysInMonth]);
 
@@ -1207,6 +1520,12 @@ export default function AttendancePage() {
 
 
   console.log('Attendance rendering. Data length:', filteredMonthlyData.length);
+
+  // Don't render during SSR to avoid pre-rendering errors
+  if (!isMounted) {
+    return null;
+  }
+
   return (
     <div className="relative min-h-screen">
       {/* Background */}
@@ -1397,6 +1716,17 @@ export default function AttendancePage() {
                   </svg>
                 )}
                 <span className="hidden md:inline text-xs font-semibold">Sync</span>
+              </button>
+
+              <button
+                onClick={() => setShowExportDialog(true)}
+                title="Export Attendance"
+                className="h-9 flex items-center px-4 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-green-600 hover:border-green-200 transition-all shadow-sm active:scale-95 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300"
+              >
+                <svg className="mr-2 h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Export
               </button>
 
               <button
@@ -1611,8 +1941,8 @@ export default function AttendancePage() {
                     ? item.presentDays
                     : dailyValues.reduce((sum, record: any) => {
                       if (!record) return sum;
-                      if (record.status === 'PRESENT' || record.status === 'PARTIAL') return sum + 1;
-                      if (record.status === 'HALF_DAY') return sum + 0.5;
+                      if (record?.status === 'PRESENT' || record?.status === 'PARTIAL') return sum + 1;
+                      if (record?.status === 'HALF_DAY') return sum + 0.5;
                       return sum;
                     }, 0);
 
@@ -1689,20 +2019,20 @@ export default function AttendancePage() {
 
                         let displayStatus = 'A';
                         if (record) {
-                          if (record.status === 'PRESENT') displayStatus = 'P';
-                          else if (record.status === 'HALF_DAY') displayStatus = 'HD';
-                          else if (record.status === 'PARTIAL') displayStatus = 'PT';
-                          else if (record.status === 'HOLIDAY') displayStatus = 'H';
-                          else if (record.status === 'WEEK_OFF') displayStatus = 'WO';
-                          else if (record.status === 'LEAVE' || record.hasLeave) {
-                            displayStatus = (record.leaveInfo?.numberOfDays && record.leaveInfo.numberOfDays >= 3) ? 'LL' : 'L';
+                          if (record?.status === 'PRESENT') displayStatus = 'P';
+                          else if (record?.status === 'HALF_DAY') displayStatus = 'HD';
+                          else if (record?.status === 'PARTIAL') displayStatus = 'PT';
+                          else if (record?.status === 'HOLIDAY') displayStatus = 'H';
+                          else if (record?.status === 'WEEK_OFF') displayStatus = 'WO';
+                          else if (record?.status === 'LEAVE' || record?.hasLeave) {
+                            displayStatus = (record?.leaveInfo?.numberOfDays && record.leaveInfo.numberOfDays >= 3) ? 'LL' : 'L';
                           }
-                          else if (record.status === 'OD' || record.hasOD) displayStatus = 'OD';
-                          else if (record.status === '-') displayStatus = '-';
+                          else if (record?.status === 'OD' || record?.hasOD) displayStatus = 'OD';
+                          else if (record?.status === '-') displayStatus = '-';
                           else displayStatus = 'A';
                         }
 
-                        const hasData = record && record.status !== '-';
+                        const hasData = record && record?.status !== '-';
 
                         return (
                           <td
@@ -1863,37 +2193,40 @@ export default function AttendancePage() {
                   />
                 </div>
 
-                <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
-                  <button
-                    onClick={handleDownloadTemplate}
-                    className="text-blue-600 hover:underline dark:text-blue-400"
-                  >
-                    Download Template
-                  </button>
-                </div>
+              </div>
 
-                <div className="flex gap-3">
-                  <button
-                    onClick={handleExcelUpload}
-                    disabled={!uploadFile || uploading}
-                    className="flex-1 rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {uploading ? 'Uploading...' : 'Upload'}
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowUploadDialog(false);
-                      setUploadFile(null);
-                    }}
-                    className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-                  >
-                    Cancel
-                  </button>
-                </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={handleExcelUpload}
+                  disabled={!uploadFile || uploading}
+                  className="flex-1 rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {uploading ? 'Uploading...' : 'Upload'}
+                </button>
+                <button
+                  onClick={() => {
+                    setShowUploadDialog(false);
+                    setUploadFile(null);
+                  }}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                >
+                  Cancel
+                </button>
               </div>
             </div>
           </div>
+
         )}
+
+        {/* Export Attendance Dialog */}
+        <ExportAttendanceDialog
+          open={showExportDialog}
+          onClose={() => setShowExportDialog(false)}
+          divisions={divisions}
+          departments={departments}
+          onExport={handleExportAttendance}
+          exporting={exportingAttendance}
+        />
 
         {showOutTimeDialog && selectedRecordForOutTime && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
@@ -2040,7 +2373,46 @@ export default function AttendancePage() {
                         </div>
                       )
                     )}
+                  </h3>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={handleDownloadAttendancePdf}
+                      disabled={downloadingAttendancePdf}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50 dark:bg-slate-700 dark:hover:bg-slate-600"
+                    >
+                      {downloadingAttendancePdf ? (
+                        <>
+                          <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                          </svg>
+                          Generating…
+                        </>
+                      ) : (
+                        <>
+                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                          Download PDF
+                        </>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowDetailDialog(false);
+                        setError('');
+                        setSuccess('');
+                      }}
+                      className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
+                      aria-label="Close"
+                    >
+                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
                   </div>
+                </div>
 
                   {/* OT Conversion Actions */}
                   {attendanceDetail.extraHours > 0 && !hasExistingOT && (
@@ -2086,6 +2458,7 @@ export default function AttendancePage() {
                               {shift.workingHours ? `${shift.workingHours.toFixed(2)} hrs` : '0.00 hrs'}
                             </div>
                           </div>
+                        </div>
 
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                             {/* Shift Selection */}
@@ -2173,6 +2546,7 @@ export default function AttendancePage() {
                               </div>
                             </div>
                           </div>
+                        </div>
 
                           {/* Secondary Metrics */}
                           <div className="mt-4 flex flex-wrap gap-4 border-t border-slate-50 pt-3 dark:border-slate-800">
@@ -2307,342 +2681,525 @@ export default function AttendancePage() {
                     </svg>
                     <h4 className="text-base font-semibold text-red-900 dark:text-red-200">Leave Conflict Detected</h4>
                   </div>
-                  <p className="mb-3 text-sm text-red-800 dark:text-red-300">
-                    Employee has approved leave but attendance is logged for this date.
-                  </p>
-                  {leaveConflicts.map((conflict) => (
-                    <div key={conflict.leaveId} className="mb-3 rounded-lg border border-red-200 bg-white p-3 dark:border-red-700 dark:bg-slate-800">
-                      <div className="mb-2 text-sm font-medium text-red-900 dark:text-red-200">
-                        {conflict.leaveType} - {conflict.numberOfDays} day(s)
-                      </div>
-                      <div className="mb-2 text-xs text-red-700 dark:text-red-300">
-                        {new Date(conflict.fromDate).toLocaleDateString()}
-                        {conflict.fromDate !== conflict.toDate && ` - ${new Date(conflict.toDate).toLocaleDateString()}`}
-                        {conflict.isHalfDay && ` (${conflict.halfDayType === 'first_half' ? 'First Half' : 'Second Half'})`}
-                      </div>
-                      <div className="flex gap-2">
-                        {conflict.conflictType === 'full_day' ? (
-                          <button
-                            onClick={() => handleRevokeLeave(conflict.leaveId)}
-                            disabled={revokingLeave}
-                            className="rounded-lg bg-red-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition-all hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {revokingLeave ? 'Revoking...' : 'Revoke Leave'}
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => handleUpdateLeave(conflict.leaveId)}
-                            disabled={updatingLeave}
-                            className="rounded-lg bg-orange-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition-all hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {updatingLeave ? 'Updating...' : 'Update Leave'}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Leave Information */}
-              {attendanceDetail.hasLeave && attendanceDetail.leaveInfo && (
-                <div className="mt-4 rounded-lg border border-orange-200 bg-orange-50 p-4 dark:border-orange-800 dark:bg-orange-900/20">
-                  <h4 className="mb-3 text-base font-semibold text-orange-900 dark:text-orange-200">Leave Information</h4>
-
-                  {/* Purpose/Reason */}
-                  {attendanceDetail.leaveInfo.purpose ? (
-                    <div className="mb-3">
-                      <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Purpose/Reason</label>
-                      <div className="mt-1 text-sm text-orange-900 dark:text-orange-100">
-                        {attendanceDetail.leaveInfo.purpose}
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {/* Remarks / Notes */}
-                  {attendanceDetail.notes && (
-                    <div className="col-span-2 rounded-xl bg-blue-50/50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-800/50 p-4 mt-2">
-                      <div className="flex items-start gap-3">
-                        <div className="mt-0.5 text-blue-600 dark:text-blue-400">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-black uppercase tracking-widest text-blue-600/70 dark:text-blue-400/70">System Remarks</label>
-                          <div className="mt-1 text-sm font-bold text-blue-900 dark:text-blue-100 leading-relaxed italic">
-                            &quot;{attendanceDetail.notes}&quot;
+                  <div>
+                    <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Shift</label>
+                    <div className="mt-1 flex items-center gap-2">
+                      {!editingShift ? (
+                        <>
+                          <div className="text-sm font-semibold text-slate-900 dark:text-white">
+                            {attendanceDetail.shiftId && typeof attendanceDetail.shiftId === 'object'
+                              ? attendanceDetail.shiftId.name
+                              : '-'}
                           </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  <div className="grid grid-cols-2 gap-3 text-sm mb-3">
-                    <div>
-                      <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Leave Type</label>
-                      <div className="mt-1 font-semibold text-orange-900 dark:text-orange-100">
-                        {attendanceDetail.leaveInfo.leaveType || 'N/A'}
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Half Day</label>
-                      <div className="mt-1 font-semibold text-orange-900 dark:text-orange-100">
-                        {attendanceDetail.leaveInfo.isHalfDay ? 'Yes' : 'No'}
-                        {attendanceDetail.leaveInfo.isHalfDay && attendanceDetail.leaveInfo.halfDayType && (
-                          <span className="ml-1 text-xs">({attendanceDetail.leaveInfo.halfDayType === 'first_half' ? 'First Half' : 'Second Half'})</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Date Range */}
-                  {attendanceDetail.leaveInfo.fromDate && attendanceDetail.leaveInfo.toDate && (
-                    <div className="mb-3">
-                      <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Date Range</label>
-                      <div className="mt-1 text-sm font-semibold text-orange-900 dark:text-orange-100">
-                        {new Date(attendanceDetail.leaveInfo.fromDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })} - {new Date(attendanceDetail.leaveInfo.toDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Number of Days and Day in Leave */}
-                  <div className="grid grid-cols-2 gap-3 text-sm mb-3">
-                    <div>
-                      <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Total Days</label>
-                      <div className="mt-1 font-semibold text-orange-900 dark:text-orange-100">
-                        {attendanceDetail.leaveInfo.numberOfDays !== undefined && attendanceDetail.leaveInfo.numberOfDays !== null
-                          ? `${attendanceDetail.leaveInfo.numberOfDays} ${attendanceDetail.leaveInfo.numberOfDays === 1 ? 'day' : 'days'}`
-                          : 'N/A'}
-                      </div>
-                    </div>
-                    {attendanceDetail.leaveInfo.dayInLeave !== undefined && attendanceDetail.leaveInfo.dayInLeave !== null && (
-                      <div>
-                        <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Day in Leave</label>
-                        <div className="mt-1 font-semibold text-orange-900 dark:text-orange-100">
-                          {attendanceDetail.leaveInfo.dayInLeave === 1 ? '1st day' : attendanceDetail.leaveInfo.dayInLeave === 2 ? '2nd day' : attendanceDetail.leaveInfo.dayInLeave === 3 ? '3rd day' : `${attendanceDetail.leaveInfo.dayInLeave}th day`}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Applied Date */}
-                  {attendanceDetail.leaveInfo.appliedAt && (
-                    <div className="mb-3">
-                      <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Applied On</label>
-                      <div className="mt-1 text-sm text-orange-900 dark:text-orange-100">
-                        {new Date(attendanceDetail.leaveInfo.appliedAt).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Approved By and When */}
-                  {attendanceDetail.leaveInfo.approvedBy && (
-                    <div className="mb-3 grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Approved By</label>
-                        <div className="mt-1 text-sm font-semibold text-orange-900 dark:text-orange-100">
-                          {attendanceDetail.leaveInfo.approvedBy.name || attendanceDetail.leaveInfo.approvedBy.email || 'N/A'}
-                        </div>
-                      </div>
-                      {attendanceDetail.leaveInfo.approvedAt && (
-                        <div>
-                          <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Approved On</label>
-                          <div className="mt-1 text-sm text-orange-900 dark:text-orange-100">
-                            {new Date(attendanceDetail.leaveInfo.approvedAt).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                          </div>
+                          <button
+                            onClick={() => {
+                              setEditingShift(true);
+                              if (attendanceDetail.shiftId && typeof attendanceDetail.shiftId === 'object') {
+                                setSelectedShiftId(attendanceDetail.shiftId._id);
+                              }
+                            }}
+                            className="rounded-lg bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-all hover:bg-blue-600"
+                          >
+                            {attendanceDetail.shiftId ? 'Change' : 'Assign'}
+                          </button>
+                        </>
+                      ) : (
+                        <div className="flex-1 flex items-center gap-2">
+                          <select
+                            value={selectedShiftId || ''}
+                            onChange={(e) => setSelectedShiftId(e.target.value)}
+                            className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                          >
+                            <option value="">Select Shift</option>
+                            {availableShifts.map((shift) => (
+                              <option key={shift._id} value={shift._id}>
+                                {shift.name} ({shift.startTime} - {shift.endTime})
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            onClick={handleAssignShift}
+                            disabled={savingShift || !selectedShiftId}
+                            className="rounded-lg bg-green-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {savingShift ? 'Saving...' : 'Save'}
+                          </button>
+                          <button
+                            onClick={() => {
+                              setEditingShift(false);
+                              setSelectedShiftId('');
+                              setSelectedShiftRecordId(null);
+                            }}
+                            className="rounded-lg bg-slate-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-slate-600"
+                          >
+                            Cancel
+                          </button>
                         </div>
                       )}
                     </div>
-                  )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
-                  {attendanceDetail.isConflict && (
-                    <div className="mt-2 rounded border border-red-300 bg-red-50 p-2 text-xs font-semibold text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
-                      ⚠️ Conflict: Leave approved but attendance logged for this date
-                    </div>
+        {/* Leave Conflicts - Show for BOTH modes */}
+        {attendanceDetail && attendanceDetail.status === 'PRESENT' && leaveConflicts.length > 0 && (
+          <div className="mt-4 rounded-lg border border-red-300 bg-red-50 p-4 dark:border-red-800 dark:bg-red-900/20">
+            <div className="mb-3 flex items-center gap-2">
+              <svg className="h-5 w-5 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <h4 className="text-base font-semibold text-red-900 dark:text-red-200">Leave Conflict Detected</h4>
+            </div>
+            <p className="mb-3 text-sm text-red-800 dark:text-red-300">
+              Employee has approved leave but attendance is logged for this date.
+            </p>
+            {leaveConflicts.map((conflict) => (
+              <div key={conflict.leaveId} className="mb-3 rounded-lg border border-red-200 bg-white p-3 dark:border-red-700 dark:bg-slate-800">
+                <div className="mb-2 text-sm font-medium text-red-900 dark:text-red-200">
+                  {conflict.leaveType} - {conflict.numberOfDays} day(s)
+                </div>
+                <div className="mb-2 text-xs text-red-700 dark:text-red-300">
+                  {new Date(conflict.fromDate).toLocaleDateString()}
+                  {conflict.fromDate !== conflict.toDate && ` - ${new Date(conflict.toDate).toLocaleDateString()}`}
+                  {conflict.isHalfDay && ` (${conflict.halfDayType === 'first_half' ? 'First Half' : 'Second Half'})`}
+                </div>
+                <div className="flex gap-2">
+                  {conflict.conflictType === 'full_day' ? (
+                    <button
+                      onClick={() => handleRevokeLeave(conflict.leaveId)}
+                      disabled={revokingLeave}
+                      className="rounded-lg bg-red-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition-all hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {revokingLeave ? 'Revoking...' : 'Revoke Leave'}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleUpdateLeave(conflict.leaveId)}
+                      disabled={updatingLeave}
+                      className="rounded-lg bg-orange-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition-all hover:bg-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {updatingLeave ? 'Updating...' : 'Update Leave'}
+                    </button>
                   )}
                 </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Leave Information */}
+        {attendanceDetail && attendanceDetail.hasLeave && attendanceDetail.leaveInfo && (
+          <div className="mt-4 rounded-lg border border-orange-200 bg-orange-50 p-4 dark:border-orange-800 dark:bg-orange-900/20">
+            <h4 className="mb-3 text-base font-semibold text-orange-900 dark:text-orange-200">Leave Information</h4>
+
+            {/* Purpose/Reason */}
+            {attendanceDetail.leaveInfo.purpose ? (
+              <div className="mb-3">
+                <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Purpose/Reason</label>
+                <div className="mt-1 text-sm text-orange-900 dark:text-orange-100">
+                  {attendanceDetail.leaveInfo.purpose}
+                </div>
+              </div>
+            ) : null}
+
+            {/* Remarks / Notes */}
+            {attendanceDetail.notes && (
+              <div className="col-span-2 rounded-xl bg-blue-50/50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-800/50 p-4 mt-2">
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 text-blue-600 dark:text-blue-400">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-blue-600/70 dark:text-blue-400/70">System Remarks</label>
+                    <div className="mt-1 text-sm font-bold text-blue-900 dark:text-blue-100 leading-relaxed italic">
+                      &quot;{attendanceDetail.notes}&quot;
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-3 text-sm mb-3">
+              <div>
+                <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Leave Type</label>
+                <div className="mt-1 font-semibold text-orange-900 dark:text-orange-100">
+                  {attendanceDetail.leaveInfo.leaveType || 'N/A'}
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Half Day</label>
+                <div className="mt-1 font-semibold text-orange-900 dark:text-orange-100">
+                  {attendanceDetail.leaveInfo.isHalfDay ? 'Yes' : 'No'}
+                  {attendanceDetail.leaveInfo.isHalfDay && attendanceDetail.leaveInfo.halfDayType && (
+                    <span className="ml-1 text-xs">({attendanceDetail.leaveInfo.halfDayType === 'first_half' ? 'First Half' : 'Second Half'})</span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Date Range */}
+            {attendanceDetail.leaveInfo.fromDate && attendanceDetail.leaveInfo.toDate && (
+              <div className="mb-3">
+                <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Date Range</label>
+                <div className="mt-1 text-sm font-semibold text-orange-900 dark:text-orange-100">
+                  {new Date(attendanceDetail.leaveInfo.fromDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })} - {new Date(attendanceDetail.leaveInfo.toDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+                </div>
+              </div>
+            )}
+
+            {/* Number of Days and Day in Leave */}
+            <div className="grid grid-cols-2 gap-3 text-sm mb-3">
+              <div>
+                <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Total Days</label>
+                <div className="mt-1 font-semibold text-orange-900 dark:text-orange-100">
+                  {attendanceDetail.leaveInfo.numberOfDays !== undefined && attendanceDetail.leaveInfo.numberOfDays !== null
+                    ? `${attendanceDetail.leaveInfo.numberOfDays} ${attendanceDetail.leaveInfo.numberOfDays === 1 ? 'day' : 'days'}`
+                    : 'N/A'}
+                </div>
+              </div>
+              {attendanceDetail.leaveInfo.dayInLeave !== undefined && attendanceDetail.leaveInfo.dayInLeave !== null && (
+                <div>
+                  <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Day in Leave</label>
+                  <div className="mt-1 font-semibold text-orange-900 dark:text-orange-100">
+                    {attendanceDetail.leaveInfo.dayInLeave === 1 ? '1st day' : attendanceDetail.leaveInfo.dayInLeave === 2 ? '2nd day' : attendanceDetail.leaveInfo.dayInLeave === 3 ? '3rd day' : `${attendanceDetail.leaveInfo.dayInLeave}th day`}
+                  </div>
+                </div>
               )}
+            </div>
 
-              {/* OD Information */}
-              {attendanceDetail.hasOD && attendanceDetail.odInfo && (
-                <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
-                  <h4 className="mb-3 text-base font-semibold text-blue-900 dark:text-blue-200">On Duty (OD) Information</h4>
+            {/* Applied Date */}
+            {attendanceDetail.leaveInfo.appliedAt && (
+              <div className="mb-3">
+                <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Applied On</label>
+                <div className="mt-1 text-sm text-orange-900 dark:text-orange-100">
+                  {new Date(attendanceDetail.leaveInfo.appliedAt).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                </div>
+              </div>
+            )}
 
-                  {/* Early-Out Info */}
-                  {attendanceDetail.earlyOutMinutes !== undefined && attendanceDetail.earlyOutMinutes !== null && (
-                    <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-700 dark:bg-amber-900/20">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-xs font-medium text-amber-700 dark:text-amber-300">Early-Out Minutes</p>
-                          <p className="text-lg font-semibold text-amber-900 dark:text-amber-100">
-                            {attendanceDetail.earlyOutMinutes} min
-                          </p>
-                        </div>
-                        {attendanceDetail.earlyOutDeduction?.deductionApplied && (
-                          <div className="text-right">
-                            <p className="text-xs font-medium text-amber-700 dark:text-amber-300">Deduction Applied</p>
-                            <p className="text-sm font-semibold text-amber-900 dark:text-amber-100 capitalize">
-                              {attendanceDetail.earlyOutDeduction.deductionType?.replace('_', ' ') || 'N/A'}
-                            </p>
-                            {attendanceDetail.earlyOutDeduction.deductionDays && (
-                              <p className="text-xs text-amber-700 dark:text-amber-300">
-                                {attendanceDetail.earlyOutDeduction.deductionDays} day(s)
-                              </p>
-                            )}
-                            {attendanceDetail.earlyOutDeduction.deductionAmount && (
-                              <p className="text-xs text-amber-700 dark:text-amber-300">
-                                ₹{attendanceDetail.earlyOutDeduction.deductionAmount}
-                              </p>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                      {attendanceDetail.earlyOutDeduction?.reason && (
-                        <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
-                          {attendanceDetail.earlyOutDeduction.reason}
+            {/* Approved By and When */}
+            {attendanceDetail.leaveInfo.approvedBy && (
+              <div className="mb-3 grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Approved By</label>
+                  <div className="mt-1 text-sm font-semibold text-orange-900 dark:text-orange-100">
+                    {attendanceDetail.leaveInfo.approvedBy.name || attendanceDetail.leaveInfo.approvedBy.email || 'N/A'}
+                  </div>
+                </div>
+                {attendanceDetail.leaveInfo.approvedAt && (
+                  <div>
+                    <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Approved On</label>
+                    <div className="mt-1 text-sm text-orange-900 dark:text-orange-100">
+                      {new Date(attendanceDetail.leaveInfo.approvedAt).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {attendanceDetail && attendanceDetail.isConflict && (
+              <div className="mt-2 rounded border border-red-300 bg-red-50 p-2 text-xs font-semibold text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
+                ⚠️ Conflict: Leave approved but attendance logged for this date
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* OD Information */}
+        {attendanceDetail && attendanceDetail.hasOD && attendanceDetail.odInfo && (
+          <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
+            <h4 className="mb-3 text-base font-semibold text-blue-900 dark:text-blue-200">On Duty (OD) Information</h4>
+
+            {/* Early-Out Info */}
+            {attendanceDetail.earlyOutMinutes !== undefined && attendanceDetail.earlyOutMinutes !== null && (
+              <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-700 dark:bg-amber-900/20">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-medium text-amber-700 dark:text-amber-300">Early-Out Minutes</p>
+                    <p className="text-lg font-semibold text-amber-900 dark:text-amber-100">
+                      {attendanceDetail.earlyOutMinutes} min
+                    </p>
+                  </div>
+                  {attendanceDetail.earlyOutDeduction?.deductionApplied && (
+                    <div className="text-right">
+                      <p className="text-xs font-medium text-amber-700 dark:text-amber-300">Deduction Applied</p>
+                      <p className="text-sm font-semibold text-amber-900 dark:text-amber-100 capitalize">
+                        {attendanceDetail.earlyOutDeduction.deductionType?.replace('_', ' ') || 'N/A'}
+                      </p>
+                      {attendanceDetail.earlyOutDeduction.deductionDays && (
+                        <p className="text-xs text-amber-700 dark:text-amber-300">
+                          {attendanceDetail.earlyOutDeduction.deductionDays} day(s)
+                        </p>
+                      )}
+                      {attendanceDetail.earlyOutDeduction.deductionAmount && (
+                        <p className="text-xs text-amber-700 dark:text-amber-300">
+                          ₹{attendanceDetail.earlyOutDeduction.deductionAmount}
                         </p>
                       )}
                     </div>
                   )}
+                </div>
+                {attendanceDetail.earlyOutDeduction?.reason && (
+                  <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
+                    {attendanceDetail.earlyOutDeduction.reason}
+                  </p>
+                )}
+              </div>
+            )}
 
-                  {/* Purpose/Reason */}
-                  {attendanceDetail.odInfo.purpose && (
-                    <div className="mb-3">
-                      <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Purpose/Reason</label>
-                      <div className="mt-1 text-sm text-blue-900 dark:text-blue-100">
-                        {attendanceDetail.odInfo.purpose}
-                      </div>
-                    </div>
-                  )}
+            {/* Purpose/Reason */}
+            {attendanceDetail.odInfo.purpose && (
+              <div className="mb-3">
+                <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Purpose/Reason</label>
+                <div className="mt-1 text-sm text-blue-900 dark:text-blue-100">
+                  {attendanceDetail.odInfo.purpose}
+                </div>
+              </div>
+            )}
 
-                  {/* Place Visited */}
-                  {attendanceDetail.odInfo.placeVisited && (
-                    <div className="mb-3">
-                      <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Place Visited</label>
-                      <div className="mt-1 text-sm text-blue-900 dark:text-blue-100">
-                        {attendanceDetail.odInfo.placeVisited}
-                      </div>
-                    </div>
-                  )}
+            {/* Place Visited */}
+            {attendanceDetail.odInfo.placeVisited && (
+              <div className="mb-3">
+                <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Place Visited</label>
+                <div className="mt-1 text-sm text-blue-900 dark:text-blue-100">
+                  {attendanceDetail.odInfo.placeVisited}
+                </div>
+              </div>
+            )}
 
-                  <div className="grid grid-cols-2 gap-3 text-sm mb-3">
-                    <div>
-                      <label className="text-xs font-medium text-blue-700 dark:text-blue-300">OD Type</label>
-                      <div className="mt-1 font-semibold text-blue-900 dark:text-blue-100">
-                        {attendanceDetail.odInfo.odType || 'N/A'}
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-blue-700 dark:text-blue-300">
-                        {attendanceDetail.odInfo.odType_extended === 'hours' ? 'Duration Type' : 'Half Day'}
-                      </label>
-                      <div className="mt-1 font-semibold text-blue-900 dark:text-blue-100">
-                        {attendanceDetail.odInfo.odType_extended === 'hours' ? (
-                          'Hour-Based OD'
-                        ) : attendanceDetail.odInfo.isHalfDay ? (
-                          <>
-                            Yes
-                            {attendanceDetail.odInfo.halfDayType && (
-                              <span className="ml-1 text-xs">({attendanceDetail.odInfo.halfDayType === 'first_half' ? 'First Half' : 'Second Half'})</span>
-                            )}
-                          </>
-                        ) : (
-                          'No'
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Date Range */}
-                  {attendanceDetail.odInfo.fromDate && attendanceDetail.odInfo.toDate && (
-                    <div className="mb-3">
-                      <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Date Range</label>
-                      <div className="mt-1 text-sm font-semibold text-blue-900 dark:text-blue-100">
-                        {new Date(attendanceDetail.odInfo.fromDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })} - {new Date(attendanceDetail.odInfo.toDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Hour-Based OD: Show Hours */}
-                  {attendanceDetail.odInfo.odType_extended === 'hours' && attendanceDetail.odInfo.durationHours && (
-                    <div className="mb-3 p-3 rounded-lg bg-blue-100 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-700">
-                      <label className="text-xs font-medium text-blue-700 dark:text-blue-300 block mb-2">OD Hours</label>
-                      <div className="text-lg font-bold text-blue-900 dark:text-blue-100">
-                        {(() => {
-                          const hours = Math.floor(attendanceDetail.odInfo.durationHours || 0);
-                          const mins = Math.round((attendanceDetail.odInfo.durationHours || 0) % 1 * 60);
-                          return `${hours}h ${mins}m`;
-                        })()}
-                      </div>
-                      {attendanceDetail.odInfo.odStartTime && attendanceDetail.odInfo.odEndTime && (
-                        <div className="text-sm text-blue-700 dark:text-blue-300 mt-1">
-                          Time: {attendanceDetail.odInfo.odStartTime} - {attendanceDetail.odInfo.odEndTime}
-                        </div>
+            <div className="grid grid-cols-2 gap-3 text-sm mb-3">
+              <div>
+                <label className="text-xs font-medium text-blue-700 dark:text-blue-300">OD Type</label>
+                <div className="mt-1 font-semibold text-blue-900 dark:text-blue-100">
+                  {attendanceDetail.odInfo.odType || 'N/A'}
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-blue-700 dark:text-blue-300">
+                  {attendanceDetail.odInfo.odType_extended === 'hours' ? 'Duration Type' : 'Half Day'}
+                </label>
+                <div className="mt-1 font-semibold text-blue-900 dark:text-blue-100">
+                  {attendanceDetail.odInfo.odType_extended === 'hours' ? (
+                    'Hour-Based OD'
+                  ) : attendanceDetail.odInfo.isHalfDay ? (
+                    <>
+                      Yes
+                      {attendanceDetail.odInfo.halfDayType && (
+                        <span className="ml-1 text-xs">({attendanceDetail.odInfo.halfDayType === 'first_half' ? 'First Half' : 'Second Half'})</span>
                       )}
-                    </div>
-                  )}
-
-                  {/* Full Day / Half Day: Show Days */}
-                  {attendanceDetail.odInfo.odType_extended !== 'hours' && (
-                    <div className="grid grid-cols-2 gap-3 text-sm mb-3">
-                      <div>
-                        <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Total Days</label>
-                        <div className="mt-1 font-semibold text-blue-900 dark:text-blue-100">
-                          {attendanceDetail.odInfo.numberOfDays || 'N/A'} {attendanceDetail.odInfo.numberOfDays === 1 ? 'day' : 'days'}
-                        </div>
-                      </div>
-                      {attendanceDetail.odInfo.dayInOD && (
-                        <div>
-                          <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Day in OD</label>
-                          <div className="mt-1 font-semibold text-blue-900 dark:text-blue-100">
-                            {attendanceDetail.odInfo.dayInOD === 1 ? '1st day' : attendanceDetail.odInfo.dayInOD === 2 ? '2nd day' : attendanceDetail.odInfo.dayInOD === 3 ? '3rd day' : `${attendanceDetail.odInfo.dayInOD}th day`}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Applied Date */}
-                  {attendanceDetail.odInfo.appliedAt && (
-                    <div className="mb-3">
-                      <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Applied On</label>
-                      <div className="mt-1 text-sm text-blue-900 dark:text-blue-100">
-                        {new Date(attendanceDetail.odInfo.appliedAt).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Approved By and When */}
-                  {attendanceDetail.odInfo.approvedBy && (
-                    <div className="mb-3 grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Approved By</label>
-                        <div className="mt-1 text-sm font-semibold text-blue-900 dark:text-blue-100">
-                          {attendanceDetail.odInfo.approvedBy.name || attendanceDetail.odInfo.approvedBy.email || 'N/A'}
-                        </div>
-                      </div>
-                      {attendanceDetail.odInfo.approvedAt && (
-                        <div>
-                          <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Approved On</label>
-                          <div className="mt-1 text-sm text-blue-900 dark:text-blue-100">
-                            {new Date(attendanceDetail.odInfo.approvedAt).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                    </>
+                  ) : (
+                    'No'
                   )}
                 </div>
-              )}
+              </div>
+            </div>
 
-              {/* Only show conflict for full-day OD (not for half-day or hour-based OD) */}
-              {attendanceDetail.isConflict &&
-                attendanceDetail.odInfo &&
-                attendanceDetail.odInfo.odType_extended !== 'half_day' &&
-                attendanceDetail.odInfo.odType_extended !== 'hours' && (
-                  <div className="mt-2 rounded border border-red-300 bg-red-50 p-2 text-xs font-semibold text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
-                    ⚠️ Conflict: OD approved but attendance logged for this date
+            {/* Date Range */}
+            {attendanceDetail.odInfo.fromDate && attendanceDetail.odInfo.toDate && (
+              <div className="mb-3">
+                <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Date Range</label>
+                <div className="mt-1 text-sm font-semibold text-blue-900 dark:text-blue-100">
+                  {new Date(attendanceDetail.odInfo.fromDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })} - {new Date(attendanceDetail.odInfo.toDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+                </div>
+              </div>
+            )}
+
+            {/* Hour-Based OD: Show Hours */}
+            {attendanceDetail.odInfo.odType_extended === 'hours' && attendanceDetail.odInfo.durationHours && (
+              <div className="mb-3 p-3 rounded-lg bg-blue-100 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-700">
+                <label className="text-xs font-medium text-blue-700 dark:text-blue-300 block mb-2">OD Hours</label>
+                <div className="text-lg font-bold text-blue-900 dark:text-blue-100">
+                  {(() => {
+                    const hours = Math.floor(attendanceDetail.odInfo.durationHours || 0);
+                    const mins = Math.round((attendanceDetail.odInfo.durationHours || 0) % 1 * 60);
+                    return `${hours}h ${mins}m`;
+                  })()}
+                </div>
+                {attendanceDetail.odInfo.odStartTime && attendanceDetail.odInfo.odEndTime && (
+                  <div className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                    Time: {attendanceDetail.odInfo.odStartTime} - {attendanceDetail.odInfo.odEndTime}
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Full Day / Half Day: Show Days */}
+            {attendanceDetail.odInfo.odType_extended !== 'hours' && (
+              <div className="grid grid-cols-2 gap-3 text-sm mb-3">
+                <div>
+                  <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Total Days</label>
+                  <div className="mt-1 font-semibold text-blue-900 dark:text-blue-100">
+                    {attendanceDetail.odInfo.numberOfDays || 'N/A'} {attendanceDetail.odInfo.numberOfDays === 1 ? 'day' : 'days'}
+                  </div>
+                </div>
+                {attendanceDetail.odInfo.dayInOD && (
+                  <div>
+                    <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Day in OD</label>
+                    <div className="mt-1 font-semibold text-blue-900 dark:text-blue-100">
+                      {attendanceDetail.odInfo.dayInOD === 1 ? '1st day' : attendanceDetail.odInfo.dayInOD === 2 ? '2nd day' : attendanceDetail.odInfo.dayInOD === 3 ? '3rd day' : `${attendanceDetail.odInfo.dayInOD}th day`}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Applied Date */}
+            {attendanceDetail.odInfo.appliedAt && (
+              <div className="mb-3">
+                <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Applied On</label>
+                <div className="mt-1 text-sm text-blue-900 dark:text-blue-100">
+                  {new Date(attendanceDetail.odInfo.appliedAt).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                </div>
+              </div>
+            )}
+
+            {/* Approved By and When */}
+            {attendanceDetail.odInfo.approvedBy && (
+              <div className="mb-3 grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Approved By</label>
+                  <div className="mt-1 text-sm font-semibold text-blue-900 dark:text-blue-100">
+                    {attendanceDetail.odInfo.approvedBy.name || attendanceDetail.odInfo.approvedBy.email || 'N/A'}
+                  </div>
+                </div>
+                {attendanceDetail.odInfo.approvedAt && (
+                  <div>
+                    <label className="text-xs font-medium text-blue-700 dark:text-blue-300">Approved On</label>
+                    <div className="mt-1 text-sm text-blue-900 dark:text-blue-100">
+                      {new Date(attendanceDetail.odInfo.approvedAt).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Only show conflict for full-day OD (not for half-day or hour-based OD) */}
+        {attendanceDetail && attendanceDetail.isConflict &&
+          attendanceDetail.odInfo &&
+          attendanceDetail.odInfo.odType_extended !== 'half_day' &&
+          attendanceDetail.odInfo.odType_extended !== 'hours' && (
+            <div className="mt-2 rounded border border-red-300 bg-red-50 p-2 text-xs font-semibold text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
+              ⚠️ Conflict: OD approved but attendance logged for this date
+            </div>
+          )}
+
+        {/* Audit Log / Edit History */}
+        {attendanceDetail && attendanceDetail.isEdited && attendanceDetail.editHistory && attendanceDetail.editHistory.length > 0 && (
+          <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/50">
+            <h4 className="mb-2 text-sm font-bold text-slate-900 dark:text-white">Edit History</h4>
+            <div className="space-y-2 max-h-40 overflow-y-auto">
+              {attendanceDetail.editHistory.map((edit: any, index: number) => (
+                <div key={index} className="flex flex-col text-xs border-b border-slate-200 pb-2 last:border-0 last:pb-0 dark:border-slate-700">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-slate-700 dark:text-slate-300">
+                      {edit.action === 'OUT_TIME_UPDATE' ? 'Out-Time Update' :
+                        edit.action === 'SHIFT_CHANGE' ? 'Shift Change' :
+                          edit.action === 'OT_CONVERSION' ? 'Overtime Conversion' : edit.action}
+                    </span>
+                    <span className="text-slate-500 dark:text-slate-400">
+                      {new Date(edit.modifiedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                  <div className="text-slate-500 dark:text-slate-400 mt-1">
+                    {edit.details}
+                  </div>
+                  <div className="text-slate-400 dark:text-slate-500 text-[10px] mt-0.5 italic">
+                    By: {edit.modifiedBy && typeof edit.modifiedBy === 'object' ? (edit.modifiedBy.name || 'Unknown') : 'User'}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+
+
+      {/* Monthly Summary Modal */}
+      {
+        showSummaryModal && selectedEmployeeForSummary !== null && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <div className="w-full max-w-4xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900 print:shadow-none">
+              <div className="mb-4 flex items-center justify-between print:hidden">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Monthly Attendance Summary</h3>
+                <button
+                  onClick={() => {
+                    setShowSummaryModal(false);
+                    setSelectedEmployeeForSummary(null);
+                    setMonthlySummary(null);
+                  }}
+                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {loadingSummary ? (
+                <div className="flex items-center justify-center p-12">
+                  <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
+                </div>
+              ) : monthlySummary ? (
+                <div className="space-y-6">
+                  {/* Employee Details */}
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">
+                    <h4 className="mb-3 text-base font-bold text-slate-900 dark:text-white">Employee Details</h4>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <span className="font-medium text-slate-600 dark:text-slate-400">Name:</span>
+                        <span className="ml-2 text-slate-900 dark:text-white">{selectedEmployeeForSummary?.employee_name || '-'}</span>
+                      </div>
+                      <div>
+                        <span className="font-medium text-slate-600 dark:text-slate-400">Employee Number:</span>
+                        <span className="ml-2 text-slate-900 dark:text-white">{selectedEmployeeForSummary?.emp_no || '-'}</span>
+                      </div>
+                      {selectedEmployeeForSummary && selectedEmployeeForSummary.department && (
+                        <div>
+                          <span className="font-medium text-slate-600 dark:text-slate-400">Department:</span>
+                          <span className="ml-2 text-slate-900 dark:text-white">{((selectedEmployeeForSummary as any).department_id?.name || (selectedEmployeeForSummary.department as any)?.name || '-')}</span>
+                        </div>
+                      )}
+                      {selectedEmployeeForSummary && selectedEmployeeForSummary.designation && (
+                        <div>
+                          <span className="font-medium text-slate-600 dark:text-slate-400">Designation:</span>
+                          <span className="ml-2 text-slate-900 dark:text-white">{((selectedEmployeeForSummary as any).designation_id?.name || (selectedEmployeeForSummary.designation as any)?.name || '-')}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Monthly Summary Table */}
+                  <div className="rounded-lg border border-slate-200 dark:border-slate-700">
+                    <table className="w-full border-collapse text-sm">
+                      <thead className="bg-slate-100 dark:bg-slate-800">
+                        <tr>
+                          <th className="border border-slate-300 px-4 py-2 text-left font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Month</th>
+                          <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Total Leaves</th>
+                          <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Total ODs</th>
+                          <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Present Days</th>
+                          <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Total Days</th>
+                          <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Payable Shifts</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td className="border border-slate-300 px-4 py-2 text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.monthName || `${monthNames[month - 1]} ${year}`}</td>
+                          <td className="border border-slate-300 px-4 py-2 text-right text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalLeaves || 0}</td>
+                          <td className="border border-slate-300 px-4 py-2 text-right text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalODs || 0}</td>
+                          <td className="border border-slate-300 px-4 py-2 text-right text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalPresentDays || 0}</td>
+                          <td className="border border-slate-300 px-4 py-2 text-right text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalDaysInMonth || 0}</td>
+                          <td className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalPayableShifts?.toFixed(2) || '0.00'}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
 
               {/* Audit Log / Edit History */}
               {attendanceDetail.editHistory && attendanceDetail.editHistory.length > 0 && (
@@ -2670,11 +3227,36 @@ export default function AttendancePage() {
                       </div>
                     ))}
                   </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex justify-end gap-3 print:hidden">
+                    <button
+                      onClick={handleExportPDF}
+                      className="rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600"
+                    >
+                      Export as PDF
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowSummaryModal(false);
+                        setSelectedEmployeeForSummary(null);
+                        setMonthlySummary(null);
+                      }}
+                      className="rounded-xl border border-slate-200 bg-white px-6 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-12 text-center text-slate-500 dark:text-slate-400">
+                  No summary data available
                 </div>
               )}
             </div>
           </div>
-        )}
+        )
+      }
 
 
         {/* Monthly Summary Modal */}
@@ -2686,9 +3268,10 @@ export default function AttendancePage() {
                   <h3 className="text-lg font-bold text-slate-900 dark:text-white">Monthly Attendance Summary</h3>
                   <button
                     onClick={() => {
-                      setShowSummaryModal(false);
-                      setSelectedEmployeeForSummary(null);
-                      setMonthlySummary(null);
+                      setShowPayslipModal(false);
+                      setSelectedEmployeeForPayslip(null);
+                      setPayslipData(null);
+                      setError('');
                     }}
                     className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
                   >
@@ -2697,95 +3280,48 @@ export default function AttendancePage() {
                     </svg>
                   </button>
                 </div>
+              </div>
 
-                {loadingSummary ? (
-                  <div className="flex items-center justify-center p-12">
-                    <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
+              {loadingPayslip ? (
+                <div className="flex items-center justify-center p-12">
+                  <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
+                </div>
+              ) : error && !error.includes('not found') ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-200">
+                  {error}
+                </div>
+              ) : payslipData ? (
+                <div className="space-y-4 print:space-y-3">
+                  {/* Payslip Header */}
+                  <div className="border-b-2 border-slate-300 pb-3 dark:border-slate-600">
+                    <h2 className="text-center text-xl font-bold text-slate-900 dark:text-white">
+                      PAYSLIP FOR THE MONTH OF: {(() => {
+                        const monthStr = payslipData.month || `${monthNames[month - 1]} ${year}`;
+                        // Format as "DEC 19" style
+                        const monthMatch = monthStr.match(/(\w+)\s+(\d{4})/);
+                        if (monthMatch) {
+                          const monthName = monthMatch[1].substring(0, 3).toUpperCase();
+                          const yearShort = monthMatch[2].substring(2);
+                          return `${monthName} ${yearShort}`;
+                        }
+                        return monthStr.toUpperCase();
+                      })()}
+                    </h2>
                   </div>
-                ) : monthlySummary ? (
-                  <div className="space-y-6">
-                    {/* Employee Details */}
-                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">
-                      <h4 className="mb-3 text-base font-bold text-slate-900 dark:text-white">Employee Details</h4>
-                      <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div>
-                          <span className="font-medium text-slate-600 dark:text-slate-400">Name:</span>
-                          <span className="ml-2 text-slate-900 dark:text-white">{selectedEmployeeForSummary?.employee_name || '-'}</span>
-                        </div>
-                        <div>
-                          <span className="font-medium text-slate-600 dark:text-slate-400">Employee Number:</span>
-                          <span className="ml-2 text-slate-900 dark:text-white">{selectedEmployeeForSummary?.emp_no || '-'}</span>
-                        </div>
-                        {selectedEmployeeForSummary && selectedEmployeeForSummary.department && (
-                          <div>
-                            <span className="font-medium text-slate-600 dark:text-slate-400">Department:</span>
-                            <span className="ml-2 text-slate-900 dark:text-white">{((selectedEmployeeForSummary as any).department_id?.name || (selectedEmployeeForSummary.department as any)?.name || '-')}</span>
-                          </div>
-                        )}
-                        {selectedEmployeeForSummary && selectedEmployeeForSummary.designation && (
-                          <div>
-                            <span className="font-medium text-slate-600 dark:text-slate-400">Designation:</span>
-                            <span className="ml-2 text-slate-900 dark:text-white">{((selectedEmployeeForSummary as any).designation_id?.name || (selectedEmployeeForSummary.designation as any)?.name || '-')}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
 
-                    {/* Monthly Summary Table */}
-                    <div className="rounded-lg border border-slate-200 dark:border-slate-700">
-                      <table className="w-full border-collapse text-sm">
-                        <thead className="bg-slate-100 dark:bg-slate-800">
-                          <tr>
-                            <th className="border border-slate-300 px-4 py-2 text-left font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Month</th>
-                            <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Total Leaves</th>
-                            <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Total ODs</th>
-                            <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Present Days</th>
-                            <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Total Days</th>
-                            <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Payable Shifts</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <tr>
-                            <td className="border border-slate-300 px-4 py-2 text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.monthName || `${monthNames[month - 1]} ${year}`}</td>
-                            <td className="border border-slate-300 px-4 py-2 text-right text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalLeaves || 0}</td>
-                            <td className="border border-slate-300 px-4 py-2 text-right text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalODs || 0}</td>
-                            <td className="border border-slate-300 px-4 py-2 text-right text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalPresentDays || 0}</td>
-                            <td className="border border-slate-300 px-4 py-2 text-right text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalDaysInMonth || 0}</td>
-                            <td className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalPayableShifts?.toFixed(2) || '0.00'}</td>
-                          </tr>
-                        </tbody>
-                      </table>
+                  {/* Employee Details - Matching exact format from image */}
+                  <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
+                    <div className="flex">
+                      <span className="font-semibold text-slate-700 dark:text-slate-300 w-24">Emp Code:</span>
+                      <span className="text-slate-900 dark:text-white">{payslipData.employee?.emp_no || '-'}</span>
                     </div>
-
-                    {/* Footer with Signature and Timestamp */}
-                    <div className="mt-8 flex items-end justify-between border-t border-slate-200 pt-4 dark:border-slate-700 print:mt-12">
-                      <div>
-                        <div className="mb-2 text-sm font-medium text-slate-600 dark:text-slate-400">Authorized Signature</div>
-                        <div className="h-12 w-48 border-b border-slate-300 dark:border-slate-600"></div>
-                      </div>
-                      <div className="text-xs text-slate-500 dark:text-slate-400">
-                        Printed: {new Date().toLocaleString()}
-                      </div>
+                    <div className="flex">
+                      <span className="font-semibold text-slate-700 dark:text-slate-300 w-32">Emp Name:</span>
+                      <span className="text-slate-900 dark:text-white">{payslipData.employee?.name || '-'}</span>
                     </div>
-
-                    {/* Action Buttons */}
-                    <div className="flex justify-end gap-3 print:hidden">
-                      <button
-                        onClick={handleExportPDF}
-                        className="rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600"
-                      >
-                        Export as PDF
-                      </button>
-                      <button
-                        onClick={() => {
-                          setShowSummaryModal(false);
-                          setSelectedEmployeeForSummary(null);
-                          setMonthlySummary(null);
-                        }}
-                        className="rounded-xl border border-slate-200 bg-white px-6 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-                      >
-                        Close
-                      </button>
+                    <div className="flex">
+                      <span className="font-semibold text-slate-700 dark:text-slate-300 w-24">Department:</span>
+                      <span className="text-slate-900 dark:text-white">{payslipData.employee?.department || '-'}</span>
                     </div>
                   </div>
                 ) : (
@@ -2857,181 +3393,161 @@ export default function AttendancePage() {
                         })()}
                       </h2>
                     </div>
-
-                    {/* Employee Details - Matching exact format from image */}
-                    <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
-                      <div className="flex">
-                        <span className="font-semibold text-slate-700 dark:text-slate-300 w-24">Emp Code:</span>
-                        <span className="text-slate-900 dark:text-white">{payslipData.employee?.emp_no || '-'}</span>
-                      </div>
-                      <div className="flex">
-                        <span className="font-semibold text-slate-700 dark:text-slate-300 w-32">Emp Name:</span>
-                        <span className="text-slate-900 dark:text-white">{payslipData.employee?.name || '-'}</span>
-                      </div>
-                      <div className="flex">
-                        <span className="font-semibold text-slate-700 dark:text-slate-300 w-24">Department:</span>
-                        <span className="text-slate-900 dark:text-white">{payslipData.employee?.department || '-'}</span>
-                      </div>
-                      <div className="flex">
-                        <span className="font-semibold text-slate-700 dark:text-slate-300 w-32">Designation:</span>
-                        <span className="text-slate-900 dark:text-white">{payslipData.employee?.designation || '-'}</span>
-                      </div>
-                      <div className="flex">
-                        <span className="font-semibold text-slate-700 dark:text-slate-300 w-24">Location:</span>
-                        <span className="text-slate-900 dark:text-white">{payslipData.employee?.location || '-'}</span>
-                      </div>
-                      <div className="flex">
-                        <span className="font-semibold text-slate-700 dark:text-slate-300 w-32">Bank A/c No.:</span>
-                        <span className="text-slate-900 dark:text-white">{payslipData.employee?.bank_account_no || '-'}</span>
-                      </div>
-                      <div className="flex">
-                        <span className="font-semibold text-slate-700 dark:text-slate-300 w-24">PAID LEAVES:</span>
-                        <span className="text-slate-900 dark:text-white">{payslipData.employee?.paidLeaves || 0}</span>
-                      </div>
-                      <div className="flex">
-                        <span className="font-semibold text-slate-700 dark:text-slate-300 w-32">PAID DAYS:</span>
-                        <span className="font-bold text-slate-900 dark:text-white">{payslipData.paidDays || payslipData.totalPayableShifts || 0}</span>
-                      </div>
-                      <div className="flex">
-                        <span className="font-semibold text-slate-700 dark:text-slate-300 w-24">PF Code No.:</span>
-                        <span className="text-slate-900 dark:text-white">{payslipData.employee?.pf_number || '-'}</span>
-                      </div>
-                      <div className="flex">
-                        <span className="font-semibold text-slate-700 dark:text-slate-300 w-32">PF UAN:</span>
-                        <span className="text-slate-900 dark:text-white">{payslipData.employee?.pf_number || '-'}</span>
-                      </div>
-                      <div className="flex">
-                        <span className="font-semibold text-slate-700 dark:text-slate-300 w-24">ESI No.:</span>
-                        <span className="text-slate-900 dark:text-white">{payslipData.employee?.esi_number || '-'}</span>
-                      </div>
+                    <div className="flex">
+                      <span className="font-semibold text-slate-700 dark:text-slate-300 w-24">Location:</span>
+                      <span className="text-slate-900 dark:text-white">{payslipData.employee?.location || '-'}</span>
                     </div>
+                    <div className="flex">
+                      <span className="font-semibold text-slate-700 dark:text-slate-300 w-32">Bank A/c No.:</span>
+                      <span className="text-slate-900 dark:text-white">{payslipData.employee?.bank_account_no || '-'}</span>
+                    </div>
+                    <div className="flex">
+                      <span className="font-semibold text-slate-700 dark:text-slate-300 w-24">PAID LEAVES:</span>
+                      <span className="text-slate-900 dark:text-white">{payslipData.employee?.paidLeaves || 0}</span>
+                    </div>
+                    <div className="flex">
+                      <span className="font-semibold text-slate-700 dark:text-slate-300 w-32">PAID DAYS:</span>
+                      <span className="font-bold text-slate-900 dark:text-white">{payslipData.paidDays || payslipData.totalPayableShifts || 0}</span>
+                    </div>
+                    <div className="flex">
+                      <span className="font-semibold text-slate-700 dark:text-slate-300 w-24">PF Code No.:</span>
+                      <span className="text-slate-900 dark:text-white">{payslipData.employee?.pf_number || '-'}</span>
+                    </div>
+                    <div className="flex">
+                      <span className="font-semibold text-slate-700 dark:text-slate-300 w-32">PF UAN:</span>
+                      <span className="text-slate-900 dark:text-white">{payslipData.employee?.pf_number || '-'}</span>
+                    </div>
+                    <div className="flex">
+                      <span className="font-semibold text-slate-700 dark:text-slate-300 w-24">ESI No.:</span>
+                      <span className="text-slate-900 dark:text-white">{payslipData.employee?.esi_number || '-'}</span>
+                    </div>
+                  </div>
 
-                    {/* Earnings and Deductions Side by Side */}
-                    <div className="grid grid-cols-2 gap-4">
-                      {/* Earnings Section - Left Side */}
-                      <div className="border border-slate-300 dark:border-slate-600">
-                        <h3 className="border-b border-slate-300 bg-slate-100 px-4 py-2 text-left font-bold text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white">
-                          EARNINGS
-                        </h3>
-                        <div className="divide-y divide-slate-200 dark:divide-slate-700">
+                  {/* Earnings and Deductions Side by Side */}
+                  <div className="grid grid-cols-2 gap-4">
+                    {/* Earnings Section - Left Side */}
+                    <div className="border border-slate-300 dark:border-slate-600">
+                      <h3 className="border-b border-slate-300 bg-slate-100 px-4 py-2 text-left font-bold text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white">
+                        EARNINGS
+                      </h3>
+                      <div className="divide-y divide-slate-200 dark:divide-slate-700">
+                        <div className="flex justify-between px-4 py-2">
+                          <span className="text-slate-700 dark:text-slate-300">Basic:</span>
+                          <span className="font-semibold text-slate-900 dark:text-white">{payslipData.earnings?.basicPay?.toFixed(2) || '0.00'}</span>
+                        </div>
+                        {/* Map allowances - VDA, HRA, WA, etc. */}
+                        {payslipData.earnings?.allowances && payslipData.earnings.allowances.length > 0 && payslipData.earnings.allowances.map((allowance: any, idx: number) => (
+                          <div key={idx} className="flex justify-between px-4 py-2">
+                            <span className="text-slate-700 dark:text-slate-300">{allowance.name?.toUpperCase() || 'ALLOWANCE'}:</span>
+                            <span className="font-semibold text-slate-900 dark:text-white">{allowance.amount?.toFixed(2) || '0.00'}</span>
+                          </div>
+                        ))}
+                        {payslipData.earnings?.incentive !== 0 && (
                           <div className="flex justify-between px-4 py-2">
-                            <span className="text-slate-700 dark:text-slate-300">Basic:</span>
-                            <span className="font-semibold text-slate-900 dark:text-white">{payslipData.earnings?.basicPay?.toFixed(2) || '0.00'}</span>
+                            <span className="text-slate-700 dark:text-slate-300">INCENTIVE:</span>
+                            <span className="font-semibold text-slate-900 dark:text-white">{payslipData.earnings?.incentive?.toFixed(2) || '0.00'}</span>
                           </div>
-                          {/* Map allowances - VDA, HRA, WA, etc. */}
-                          {payslipData.earnings?.allowances && payslipData.earnings.allowances.length > 0 && payslipData.earnings.allowances.map((allowance: any, idx: number) => (
-                            <div key={idx} className="flex justify-between px-4 py-2">
-                              <span className="text-slate-700 dark:text-slate-300">{allowance.name?.toUpperCase() || 'ALLOWANCE'}:</span>
-                              <span className="font-semibold text-slate-900 dark:text-white">{allowance.amount?.toFixed(2) || '0.00'}</span>
-                            </div>
-                          ))}
-                          {payslipData.earnings?.incentive !== 0 && (
-                            <div className="flex justify-between px-4 py-2">
-                              <span className="text-slate-700 dark:text-slate-300">INCENTIVE:</span>
-                              <span className="font-semibold text-slate-900 dark:text-white">{payslipData.earnings?.incentive?.toFixed(2) || '0.00'}</span>
-                            </div>
-                          )}
-                          {payslipData.earnings?.otPay > 0 && (
-                            <div className="flex justify-between px-4 py-2">
-                              <span className="text-slate-700 dark:text-slate-300">OT PAY:</span>
-                              <span className="font-semibold text-slate-900 dark:text-white">{payslipData.earnings?.otPay?.toFixed(2) || '0.00'}</span>
-                            </div>
-                          )}
-                          <div className="flex justify-between border-t-2 border-slate-300 bg-slate-100 px-4 py-2 font-bold dark:border-slate-600 dark:bg-slate-800">
-                            <span className="text-slate-900 dark:text-white">Gross Salary Rs.:</span>
-                            <span className="text-slate-900 dark:text-white">{payslipData.earnings?.grossSalary?.toFixed(2) || '0.00'}</span>
+                        )}
+                        {payslipData.earnings?.otPay > 0 && (
+                          <div className="flex justify-between px-4 py-2">
+                            <span className="text-slate-700 dark:text-slate-300">OT PAY:</span>
+                            <span className="font-semibold text-slate-900 dark:text-white">{payslipData.earnings?.otPay?.toFixed(2) || '0.00'}</span>
                           </div>
-                        </div>
-                      </div>
-
-                      {/* Deductions Section - Right Side */}
-                      <div className="border border-slate-300 dark:border-slate-600">
-                        <h3 className="border-b border-slate-300 bg-slate-100 px-4 py-2 text-left font-bold text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white">
-                          DEDUCTIONS
-                        </h3>
-                        <div className="divide-y divide-slate-200 dark:divide-slate-700">
-                          {/* Other deductions first (PF, ESIC, TDS, etc.) */}
-                          {payslipData.deductions?.otherDeductions && payslipData.deductions.otherDeductions.length > 0 && payslipData.deductions.otherDeductions.map((deduction: any, idx: number) => (
-                            <div key={idx} className="flex justify-between px-4 py-2">
-                              <span className="text-slate-700 dark:text-slate-300">{deduction.name || 'Deduction'}:</span>
-                              <span className="font-semibold text-red-600 dark:text-red-400">{deduction.amount?.toFixed(2) || '0.00'}</span>
-                            </div>
-                          ))}
-                          {/* TDS - if exists in other deductions, otherwise show if configured */}
-                          {payslipData.deductions?.attendanceDeduction > 0 && (
-                            <div className="flex justify-between px-4 py-2">
-                              <span className="text-slate-700 dark:text-slate-300">Attendance Deduction:</span>
-                              <span className="font-semibold text-red-600 dark:text-red-400">{payslipData.deductions.attendanceDeduction.toFixed(2)}</span>
-                            </div>
-                          )}
-                          {payslipData.deductions?.permissionDeduction > 0 && (
-                            <div className="flex justify-between px-4 py-2">
-                              <span className="text-slate-700 dark:text-slate-300">Permission Deduction:</span>
-                              <span className="font-semibold text-red-600 dark:text-red-400">{payslipData.deductions.permissionDeduction.toFixed(2)}</span>
-                            </div>
-                          )}
-                          {payslipData.deductions?.leaveDeduction > 0 && (
-                            <div className="flex justify-between px-4 py-2">
-                              <span className="text-slate-700 dark:text-slate-300">Leave Deduction:</span>
-                              <span className="font-semibold text-red-600 dark:text-red-400">{payslipData.deductions.leaveDeduction.toFixed(2)}</span>
-                            </div>
-                          )}
-                          {payslipData.loanAdvance?.advanceDeduction > 0 && (
-                            <div className="flex justify-between px-4 py-2">
-                              <span className="text-slate-700 dark:text-slate-300">AdV:</span>
-                              <span className="font-semibold text-red-600 dark:text-red-400">{payslipData.loanAdvance.advanceDeduction.toFixed(2)}</span>
-                            </div>
-                          )}
-                          {payslipData.loanAdvance?.totalEMI > 0 && (
-                            <div className="flex justify-between px-4 py-2">
-                              <span className="text-slate-700 dark:text-slate-300">Loan EMI:</span>
-                              <span className="font-semibold text-red-600 dark:text-red-400">{payslipData.loanAdvance.totalEMI.toFixed(2)}</span>
-                            </div>
-                          )}
-                          {/* BANK PAY and CASH PAY - these would be calculated from net salary */}
-                          <div className="flex justify-between border-t-2 border-slate-300 bg-slate-100 px-4 py-2 font-bold dark:border-slate-600 dark:bg-slate-800">
-                            <span className="text-slate-900 dark:text-white">Total Deductions:</span>
-                            <span className="text-red-600 dark:text-red-400">
-                              {((payslipData.deductions?.totalDeductions || 0) + (payslipData.loanAdvance?.totalEMI || 0) + (payslipData.loanAdvance?.advanceDeduction || 0)).toFixed(2)}
-                            </span>
-                          </div>
+                        )}
+                        <div className="flex justify-between border-t-2 border-slate-300 bg-slate-100 px-4 py-2 font-bold dark:border-slate-600 dark:bg-slate-800">
+                          <span className="text-slate-900 dark:text-white">Gross Salary Rs.:</span>
+                          <span className="text-slate-900 dark:text-white">{payslipData.earnings?.grossSalary?.toFixed(2) || '0.00'}</span>
                         </div>
                       </div>
                     </div>
 
-                    {/* Net Salary and Payment Details */}
-                    <div className="space-y-3">
-                      {/* Net Salary */}
-                      <div className="border-2 border-green-500 bg-green-50 p-3 dark:border-green-600 dark:bg-green-900/20">
-                        <div className="flex justify-between items-center">
-                          <span className="text-lg font-bold text-green-900 dark:text-green-200">Net Salary:</span>
-                          <span className="text-2xl font-bold text-green-900 dark:text-green-200">{payslipData.netSalary?.toFixed(2) || '0.00'}</span>
+                    {/* Deductions Section - Right Side */}
+                    <div className="border border-slate-300 dark:border-slate-600">
+                      <h3 className="border-b border-slate-300 bg-slate-100 px-4 py-2 text-left font-bold text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-white">
+                        DEDUCTIONS
+                      </h3>
+                      <div className="divide-y divide-slate-200 dark:divide-slate-700">
+                        {/* Other deductions first (PF, ESIC, TDS, etc.) */}
+                        {payslipData.deductions?.otherDeductions && payslipData.deductions.otherDeductions.length > 0 && payslipData.deductions.otherDeductions.map((deduction: any, idx: number) => (
+                          <div key={idx} className="flex justify-between px-4 py-2">
+                            <span className="text-slate-700 dark:text-slate-300">{deduction.name || 'Deduction'}:</span>
+                            <span className="font-semibold text-red-600 dark:text-red-400">{deduction.amount?.toFixed(2) || '0.00'}</span>
+                          </div>
+                        ))}
+                        {/* TDS - if exists in other deductions, otherwise show if configured */}
+                        {payslipData.deductions?.attendanceDeduction > 0 && (
+                          <div className="flex justify-between px-4 py-2">
+                            <span className="text-slate-700 dark:text-slate-300">Attendance Deduction:</span>
+                            <span className="font-semibold text-red-600 dark:text-red-400">{payslipData.deductions.attendanceDeduction.toFixed(2)}</span>
+                          </div>
+                        )}
+                        {payslipData.deductions?.permissionDeduction > 0 && (
+                          <div className="flex justify-between px-4 py-2">
+                            <span className="text-slate-700 dark:text-slate-300">Permission Deduction:</span>
+                            <span className="font-semibold text-red-600 dark:text-red-400">{payslipData.deductions.permissionDeduction.toFixed(2)}</span>
+                          </div>
+                        )}
+                        {payslipData.deductions?.leaveDeduction > 0 && (
+                          <div className="flex justify-between px-4 py-2">
+                            <span className="text-slate-700 dark:text-slate-300">Leave Deduction:</span>
+                            <span className="font-semibold text-red-600 dark:text-red-400">{payslipData.deductions.leaveDeduction.toFixed(2)}</span>
+                          </div>
+                        )}
+                        {payslipData.loanAdvance?.advanceDeduction > 0 && (
+                          <div className="flex justify-between px-4 py-2">
+                            <span className="text-slate-700 dark:text-slate-300">AdV:</span>
+                            <span className="font-semibold text-red-600 dark:text-red-400">{payslipData.loanAdvance.advanceDeduction.toFixed(2)}</span>
+                          </div>
+                        )}
+                        {payslipData.loanAdvance?.totalEMI > 0 && (
+                          <div className="flex justify-between px-4 py-2">
+                            <span className="text-slate-700 dark:text-slate-300">Loan EMI:</span>
+                            <span className="font-semibold text-red-600 dark:text-red-400">{payslipData.loanAdvance.totalEMI.toFixed(2)}</span>
+                          </div>
+                        )}
+                        {/* BANK PAY and CASH PAY - these would be calculated from net salary */}
+                        <div className="flex justify-between border-t-2 border-slate-300 bg-slate-100 px-4 py-2 font-bold dark:border-slate-600 dark:bg-slate-800">
+                          <span className="text-slate-900 dark:text-white">Total Deductions:</span>
+                          <span className="text-red-600 dark:text-red-400">
+                            {((payslipData.deductions?.totalDeductions || 0) + (payslipData.loanAdvance?.totalEMI || 0) + (payslipData.loanAdvance?.advanceDeduction || 0)).toFixed(2)}
+                          </span>
                         </div>
                       </div>
-
-                      {/* Rupees In Words */}
-                      <div className="border border-slate-300 bg-slate-50 px-4 py-2 dark:border-slate-600 dark:bg-slate-800">
-                        <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Rupees In Words:</span>
-                        <span className="ml-2 text-sm text-slate-900 dark:text-white">{numberToWords(payslipData.netSalary || 0)}</span>
-                      </div>
-                    </div>
-
-                    {/* Print Button */}
-                    <div className="flex justify-end gap-3 print:hidden">
-                      <button
-                        onClick={() => window.print()}
-                        className="rounded-lg bg-gradient-to-r from-blue-500 to-indigo-600 px-6 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:from-blue-600 hover:to-indigo-700"
-                      >
-                        Print Payslip
-                      </button>
                     </div>
                   </div>
-                ) : (
-                  <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4 text-yellow-800 dark:border-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-200">
-                    {error || 'Payslip not found. Please calculate payroll first.'}
+
+                  {/* Net Salary and Payment Details */}
+                  <div className="space-y-3">
+                    {/* Net Salary */}
+                    <div className="border-2 border-green-500 bg-green-50 p-3 dark:border-green-600 dark:bg-green-900/20">
+                      <div className="flex justify-between items-center">
+                        <span className="text-lg font-bold text-green-900 dark:text-green-200">Net Salary:</span>
+                        <span className="text-2xl font-bold text-green-900 dark:text-green-200">{payslipData.netSalary?.toFixed(2) || '0.00'}</span>
+                      </div>
+                    </div>
+
+                    {/* Rupees In Words */}
+                    <div className="border border-slate-300 bg-slate-50 px-4 py-2 dark:border-slate-600 dark:bg-slate-800">
+                      <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Rupees In Words:</span>
+                      <span className="ml-2 text-sm text-slate-900 dark:text-white">{numberToWords(payslipData.netSalary || 0)}</span>
+                    </div>
                   </div>
-                )}
-              </div>
+
+                  {/* Print Button */}
+                  <div className="flex justify-end gap-3 print:hidden">
+                    <button
+                      onClick={() => window.print()}
+                      className="rounded-lg bg-gradient-to-r from-blue-500 to-indigo-600 px-6 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:from-blue-600 hover:to-indigo-700"
+                    >
+                      Print Payslip
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4 text-yellow-800 dark:border-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-200">
+                  {error || 'Payslip not found. Please calculate payroll first.'}
+                </div>
+              )}
             </div>
           )
         }

@@ -71,50 +71,114 @@ exports.getLiveAttendanceReport = async (req, res) => {
       })
       .lean();
 
-    // Map records by emp_no for easy lookup
-    const attendanceMap = attendanceRecords.reduce((acc, r) => {
-      acc[r.employeeNumber] = r;
-      return acc;
-    }, {});
+    // Normalize emp numbers for lookup (uppercase, trim - AttendanceDaily stores uppercase)
+    const empNumbers = [...new Set(
+      attendanceRecords.map(r => r.employeeNumber && String(r.employeeNumber).trim().toUpperCase()).filter(Boolean)
+    )];
+    let employeeMap = {};
+    if (empNumbers.length > 0) {
+      const empQuery = { emp_no: { $in: empNumbers }, is_active: { $ne: false } };
+      if (division) empQuery.division_id = division;
+      if (department) empQuery.department_id = department;
 
-    // 3. Initialize categories and breakdowns
+      const employees = await Employee.find(empQuery)
+        .select('_id emp_no employee_name division_id department_id designation_id')
+        .populate({ path: 'division_id', select: 'name' })
+        .populate({ path: 'department_id', select: 'name' })
+        .populate({ path: 'designation_id', select: 'name' })
+        .lean();
+
+      // Map by normalized emp_no (uppercase) for reliable lookup
+      employeeMap = employees.reduce((acc, e) => {
+        const key = e.emp_no ? String(e.emp_no).trim().toUpperCase() : null;
+        if (key) acc[key] = e;
+        return acc;
+      }, {});
+    }
+
+    // Categorize employees and calculate shift-wise stats
     const currentlyWorking = [];
     const completedShift = [];
-    const shiftBreakdownMap = {}; // name -> { working, completed }
-    const deptBreakdownMap = {}; // deptId -> { name, divisionName, total, present, working, completed, absent }
+    const shiftStats = {}; // { shiftId: { name, working, completed } }
+    const departmentStats = {}; // { "divId_deptId": { divisionId, divisionName, id, name, totalEmployees, working, completed, present, absent } }
 
-    // Initialize shift breakdown from all shifts if none filtered, or just relevant ones
-    const allShifts = await Shift.find({ isActive: true }).select('name').lean();
-    allShifts.forEach(s => {
-      shiftBreakdownMap[s.name] = { name: s.name, working: 0, completed: 0 };
+    // Get total employee count per division-department combination
+    // Include employees without division (treat as "No Division")
+    // Apply division/department filters when provided
+    const aggMatch = {
+      is_active: { $ne: false },
+      department_id: { $exists: true, $ne: null }
+    };
+    if (division) aggMatch.division_id = division;
+    if (department) aggMatch.department_id = department;
+
+    const divDeptEmployeeCounts = await Employee.aggregate([
+      { $match: aggMatch },
+      {
+        $group: {
+          _id: {
+            division: '$division_id',
+            department: '$department_id'
+          },
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $lookup: {
+          from: 'divisions',
+          localField: '_id.division',
+          foreignField: '_id',
+          as: 'divisionDoc'
+        }
+      },
+      {
+        $lookup: {
+          from: 'departments',
+          localField: '_id.department',
+          foreignField: '_id',
+          as: 'departmentDoc'
+        }
+      },
+      {
+        $addFields: {
+          divisionName: { $arrayElemAt: ['$divisionDoc.name', 0] },
+          departmentName: { $arrayElemAt: ['$departmentDoc.name', 0] }
+        }
+      }
+    ]);
+
+    // Initialize department stats with division-department combinations
+    divDeptEmployeeCounts.forEach(item => {
+      const divId = item._id.division ? item._id.division.toString() : 'no-division';
+      const divName = item.divisionName || 'No Division';
+      const deptId = item._id.department ? item._id.department.toString() : null;
+      if (!deptId) return;
+
+      const key = `${divId}_${deptId}`;
+      departmentStats[key] = {
+        divisionId: divId,
+        divisionName: divName,
+        id: deptId,
+        name: item.departmentName || 'Unknown',
+        totalEmployees: item.count,
+        working: 0,
+        completed: 0,
+        present: 0,
+        absent: 0
+      };
     });
 
-    // 4. Process all active employees to categorize
-    activeEmployees.forEach(employee => {
-      const record = attendanceMap[employee.emp_no];
-      const deptId = employee.department_id?._id?.toString() || 'unknown';
+    attendanceRecords.forEach(record => {
+      const empNoRaw = record.employeeNumber;
+      const empNo = empNoRaw ? String(empNoRaw).trim().toUpperCase() : null;
+      const employee = empNo ? employeeMap[empNo] : null;
+      if (!employee) return;
 
-      // Initialize dept breakdown if not seen
-      if (!deptBreakdownMap[deptId]) {
-        deptBreakdownMap[deptId] = {
-          id: deptId,
-          name: employee.department_id?.name || 'Unknown',
-          divisionId: employee.division_id?._id || 'unknown',
-          divisionName: employee.division_id?.name || 'Unknown',
-          totalEmployees: 0,
-          present: 0,
-          working: 0,
-          completed: 0,
-          absent: 0
-        };
-      }
-      deptBreakdownMap[deptId].totalEmployees++;
+      // Division filter if requested
+      if (division && employee.division_id?._id?.toString() !== division) return;
 
-      if (!record) {
-        // ABSENT
-        deptBreakdownMap[deptId].absent++;
-        return;
-      }
+      // Department filter if requested
+      if (department && employee.department_id?._id?.toString() !== department) return;
 
       // PRESENT
       const firstShift = record.shifts && record.shifts.length > 0 ? record.shifts[0] : null;
@@ -132,6 +196,35 @@ exports.getLiveAttendanceReport = async (req, res) => {
       }
 
       deptBreakdownMap[deptId].present++;
+
+      const shiftId = record.shiftId?._id?.toString() || 'manual';
+      if (!shiftStats[shiftId]) {
+        shiftStats[shiftId] = {
+          name: record.shiftId?.name || 'Manual/Unknown',
+          working: 0,
+          completed: 0
+        };
+      }
+
+      // Initialize dept stats if not exists (handling edge case of dept/div deleted but emp has it)
+      const divId = employee.division_id?._id?.toString() || 'no-division';
+      const divName = employee.division_id?.name || 'No Division';
+      const deptId = employee.department_id?._id?.toString();
+      const key = deptId ? `${divId}_${deptId}` : null;
+
+      if (key && !departmentStats[key]) {
+        departmentStats[key] = {
+          divisionId: divId,
+          divisionName: divName,
+          id: deptId,
+          name: employee.department_id?.name || 'Unknown',
+          totalEmployees: 0,
+          working: 0,
+          completed: 0,
+          present: 0,
+          absent: 0
+        };
+      }
 
       const employeeData = {
         id: employee._id,
@@ -162,6 +255,25 @@ exports.getLiveAttendanceReport = async (req, res) => {
 
       if (!shiftBreakdownMap[shiftName]) {
         shiftBreakdownMap[shiftName] = { name: shiftName, working: 0, completed: 0 };
+        isLate: record.isLateIn || record.is_late_in || false,
+        lateMinutes: record.lateInMinutes || record.late_in_minutes || 0,
+        isEarlyOut: record.isEarlyOut || record.is_early_out || false,
+        earlyOutMinutes: record.earlyOutMinutes || record.early_out_minutes || 0,
+        otHours: record.otHours || record.ot_hours || 0,
+        extraHours: record.extraHours || record.extra_hours || 0
+      };
+
+      // Determine status text and hours worked
+      // For multi-shift: last shift without outTime = still working
+      let hasIn = !!(employeeData.inTime);
+      let hasOut = !!(employeeData.outTime);
+      if (record.shifts && record.shifts.length > 0) {
+        const lastShift = record.shifts[record.shifts.length - 1];
+        hasIn = !!(lastShift?.inTime);
+        hasOut = !!(lastShift?.outTime);
+        if (hasIn && !hasOut) {
+          employeeData.inTime = lastShift.inTime;
+        }
       }
 
       if (hasIn && !hasOut) {
@@ -170,6 +282,11 @@ exports.getLiveAttendanceReport = async (req, res) => {
         currentlyWorking.push(employeeData);
         shiftBreakdownMap[shiftName].working++;
         deptBreakdownMap[deptId].working++;
+        shiftStats[shiftId].working++;
+        if (key && departmentStats[key]) {
+          departmentStats[key].working++;
+          departmentStats[key].present++;
+        }
       } else if (hasIn && hasOut) {
         const inDateTime = new Date(employeeData.inTime);
         const outDateTime = new Date(employeeData.outTime);
@@ -188,6 +305,39 @@ exports.getLiveAttendanceReport = async (req, res) => {
     const totalPresent = currentlyWorking.length + completedShift.length;
     const finalShiftBreakdown = Object.values(shiftBreakdownMap).filter(s => s.working > 0 || s.completed > 0);
     const finalDeptBreakdown = Object.values(deptBreakdownMap);
+        shiftStats[shiftId].completed++;
+        if (key && departmentStats[key]) {
+          departmentStats[key].completed++;
+          departmentStats[key].present++;
+        }
+      }
+    });
+
+    // Fetch total active employees count (respect filters when applied)
+    const totalCountQuery = { is_active: { $ne: false } };
+    if (division) totalCountQuery.division_id = division;
+    if (department) totalCountQuery.department_id = department;
+    const totalActiveEmployees = await Employee.countDocuments(totalCountQuery);
+
+    // Sort currently working by latest in_time first (default)
+    currentlyWorking.sort((a, b) => new Date(b.inTime) - new Date(a.inTime));
+
+    // Sort completed shift by latest out_time first (default)
+    completedShift.sort((a, b) => new Date(b.outTime) - new Date(a.outTime));
+
+    // Finalize department stats (calculate absent for all departments)
+    Object.keys(departmentStats).forEach(key => {
+      const dept = departmentStats[key];
+      // Absent = Total Employees - Present (working + completed)
+      dept.absent = Math.max(0, dept.totalEmployees - dept.present);
+    });
+
+    // Sort department breakdown: by division name, then department name
+    const departmentBreakdown = Object.values(departmentStats)
+      .sort((a, b) => {
+        const divCmp = (a.divisionName || '').localeCompare(b.divisionName || '');
+        return divCmp !== 0 ? divCmp : (a.name || '').localeCompare(b.name || '');
+      });
 
     res.status(200).json({
       success: true,
@@ -201,6 +351,11 @@ exports.getLiveAttendanceReport = async (req, res) => {
           absentEmployees: totalActiveCount - totalPresent,
           shiftBreakdown: finalShiftBreakdown,
           departmentBreakdown: finalDeptBreakdown
+          totalPresent: currentlyWorking.length + completedShift.length,
+          totalActiveEmployees: totalActiveEmployees,
+          absentEmployees: Math.max(0, totalActiveEmployees - (currentlyWorking.length + completedShift.length)),
+          shiftBreakdown: Object.values(shiftStats),
+          departmentBreakdown
         },
         currentlyWorking: currentlyWorking.sort((a, b) => new Date(b.inTime) - new Date(a.inTime)),
         completedShift: completedShift.sort((a, b) => new Date(b.outTime) - new Date(a.outTime))
