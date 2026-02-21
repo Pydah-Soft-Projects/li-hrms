@@ -39,7 +39,17 @@ const detectExtraHours = async (employeeNumber, date) => {
     }
 
     // Need both shift and outTime to calculate extra hours
-    // For extra hours calculation, we look at the last shift of the day
+    // Robustness: If the record was processed by the Multi-Shift engine, we skip this legacy service
+    // because the engine already calculates per-shift extra hours which aggregate into the daily total.
+    if (attendanceRecord.shifts && attendanceRecord.shifts.length > 0) {
+      console.log(`[ExtraHours] Skipping legacy detection for ${employeeNumber} on ${date} (Multi-shift/Smart-Pairing engine handled it)`);
+      return {
+        success: true,
+        message: 'Multi-shift engine take precedence',
+        extraHours: attendanceRecord.extraHours,
+      };
+    }
+
     const lastShift = attendanceRecord.shifts && attendanceRecord.shifts.length > 0
       ? attendanceRecord.shifts[attendanceRecord.shifts.length - 1]
       : null;

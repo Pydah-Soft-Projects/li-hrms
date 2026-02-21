@@ -50,21 +50,9 @@ const createDateWithOffset = (dateStr, timeStr, offset = '+05:30') => {
  */
 const calculateTimeDifference = (punchTime, shiftStartTime, date) => {
   // Get punch time components in IST correctly
-  const d = new Date(punchTime);
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Asia/Kolkata',
-    hour: 'numeric',
-    minute: 'numeric',
-    hour12: false
-  });
-  const parts = formatter.formatToParts(d);
-  const components = {};
-  parts.forEach(({ type, value }) => {
-    if (type !== 'literal') components[type] = parseInt(value);
-  });
-
-  const punchMinutes = (components.hour % 24) * 60 + components.minute;
-  const punchDate = d; // Still use same object for getTime()
+  const { hour, minute } = extractISTComponents(punchTime);
+  const punchMinutes = (hour % 24) * 60 + minute;
+  const punchDate = new Date(punchTime);
 
   // Get shift start time components
   const [shiftStartHour, shiftStartMin] = shiftStartTime.split(':').map(Number);

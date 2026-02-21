@@ -460,6 +460,21 @@ exports.updateOutTime = async (req, res) => {
       });
     }
 
+    // Get shift details
+    let shiftDetails = shiftSegment.shiftId;
+    // If shiftId is just an ID (not populated), fetch it
+    if (shiftDetails && !shiftDetails.startTime) {
+      shiftDetails = await Shift.findById(shiftSegment.shiftId);
+    }
+
+    // Handle overnight logic
+    let isOvernightShift = false;
+    if (shiftDetails && shiftDetails.startTime && shiftDetails.endTime) {
+      const [startH, startM] = shiftDetails.startTime.split(':').map(Number);
+      const [endH, endM] = shiftDetails.endTime.split(':').map(Number);
+      isOvernightShift = startH > 20 || (endH * 60 + endM) < (startH * 60 + startM);
+    }
+
     // Auto-adjust date if needed (e.g. if outTime is earlier than inTime on same date)
     if (outTimeDate < shiftSegment.inTime && outTimeDate.toDateString() === shiftSegment.inTime.toDateString()) {
       outTimeDate.setDate(outTimeDate.getDate() + 1);
@@ -468,15 +483,24 @@ exports.updateOutTime = async (req, res) => {
     // Update outTime
     shiftSegment.outTime = outTimeDate;
 
-    // Get shift details
-    let shiftDetails = shiftSegment.shiftId;
-    if (shiftDetails && !shiftDetails.startTime) {
-      shiftDetails = await Shift.findById(shiftSegment.shiftId);
+    // Mark as manually edited
+    if (!attendanceRecord.source) attendanceRecord.source = [];
+    if (!attendanceRecord.source.includes('manual')) {
+      attendanceRecord.source.push('manual');
     }
+
+    attendanceRecord.isEdited = true;
+    attendanceRecord.editHistory.push({
+      action: 'OUT_TIME_UPDATE',
+      modifiedBy: req.user._id,
+      modifiedByName: req.user.name,
+      modifiedAt: new Date(),
+      details: `Out time updated manually to ${outTimeDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })}`
+    });
 
     // Recalculate metrics for this segment
     if (shiftDetails) {
-      const { calculateLateIn, calculateEarlyOut, createDateWithOffset } = require('../../shifts/services/shiftDetectionService');
+      const { calculateLateIn, calculateEarlyOut } = require('../../shifts/services/shiftDetectionService');
       const globalLateInGrace = generalConfig.late_in_grace_time ?? null;
       const globalEarlyOutGrace = generalConfig.early_out_grace_time ?? null;
 
@@ -508,9 +532,8 @@ exports.updateOutTime = async (req, res) => {
       // 3. Recalculate Extra Hours
       shiftSegment.extraHours = 0;
       if (shiftSegment.outTime) {
-        const [startH, startM] = shiftDetails.startTime.split(':').map(Number);
+        const { createDateWithOffset } = require('../../shifts/services/shiftDetectionService');
         const [endH, endM] = shiftDetails.endTime.split(':').map(Number);
-        const isOvernightShift = startH > endH || (startH === endH && startM > endM);
 
         // Calculate shift end date robustly
         let shiftEndDate = createDateWithOffset(date, shiftDetails.endTime);
@@ -553,21 +576,6 @@ exports.updateOutTime = async (req, res) => {
         shiftSegment.payableShift = 0;
       }
     }
-
-    // Mark as manually edited
-    if (!attendanceRecord.source) attendanceRecord.source = [];
-    if (!attendanceRecord.source.includes('manual')) {
-      attendanceRecord.source.push('manual');
-    }
-
-    attendanceRecord.isEdited = true;
-    attendanceRecord.editHistory.push({
-      action: 'OUT_TIME_UPDATE',
-      modifiedBy: req.user._id,
-      modifiedByName: req.user.name,
-      modifiedAt: new Date(),
-      details: `Out time updated manually to ${outTimeDate.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' })}`
-    });
 
     // Save the record to trigger pre-save hooks (which calculate global aggregates)
     await attendanceRecord.save();
@@ -612,12 +620,11 @@ exports.assignShift = async (req, res) => {
       });
     }
 
-    // Get models
+    // Get attendance record
     const AttendanceDaily = require('../model/AttendanceDaily');
     const Shift = require('../../shifts/model/Shift');
     const Settings = require('../../settings/model/Settings');
 
-    // Get attendance record
     const attendanceRecord = await AttendanceDaily.findOne({
       employeeNumber: employeeNumber.toUpperCase(),
       date: date,
@@ -631,7 +638,7 @@ exports.assignShift = async (req, res) => {
     }
 
     // Verify shift exists
-    const shift = await Shift.findById(shiftId).select('name startTime endTime duration gracePeriod payableShifts');
+    const shift = await Shift.findById(shiftId);
     if (!shift) {
       return res.status(404).json({
         success: false,
@@ -655,115 +662,107 @@ exports.assignShift = async (req, res) => {
       await confusedShift.save();
     }
 
-    // Handle Shifts Array (Multi-shift model or Legacy)
-    if (attendanceRecord.shifts && attendanceRecord.shifts.length > 0) {
-      let shiftSegment;
-      if (shiftRecordId) {
-        shiftSegment = attendanceRecord.shifts.id(shiftRecordId);
-        if (!shiftSegment) {
-          return res.status(404).json({
-            success: false,
-            message: 'Shift segment not found',
-          });
-        }
-      } else {
-        // Default to first shift if not specified
-        shiftSegment = attendanceRecord.shifts[0];
+    // Ensure we have shifts
+    if (!attendanceRecord.shifts || attendanceRecord.shifts.length === 0) {
+      // If legacy data with no shifts array, we might need to migrate on the fly or fail?
+      // Ideally migration script handled this.
+      // Let's check if we can create one from root if needed? 
+      // No, assuming migration is done.
+      return res.status(400).json({
+        success: false,
+        message: 'No shifts found for this attendance record',
+      });
+    }
+
+    let shiftSegment;
+    if (shiftRecordId) {
+      shiftSegment = attendanceRecord.shifts.id(shiftRecordId);
+      if (!shiftSegment) {
+        return res.status(404).json({
+          success: false,
+          message: 'Shift segment not found',
+        });
+      }
+    } else {
+      // Default to finding a segment that matches or just the first one?
+      // If assigning a shift, we usually want to assign it to the 'current' or 'main' shift.
+      // Taking the first one or the one without a valid shiftId?
+      shiftSegment = attendanceRecord.shifts[0];
+    }
+
+    // Update shift details
+    shiftSegment.shiftId = shiftId;
+    shiftSegment.shiftName = shift.name;
+    shiftSegment.shiftStartTime = shift.startTime;
+    shiftSegment.shiftEndTime = shift.endTime;
+    shiftSegment.duration = shift.duration; // Assuming duration is in minutes
+
+    // Recalculate metrics
+    const { calculateLateIn, calculateEarlyOut } = require('../../shifts/services/shiftDetectionService');
+    const generalConfig = await Settings.getSettingsByCategory('general');
+    const globalLateInGrace = generalConfig.late_in_grace_time ?? null;
+    const globalEarlyOutGrace = generalConfig.early_out_grace_time ?? null;
+
+    // Recalculate Late In
+    if (shiftSegment.inTime) {
+      const lateIn = calculateLateIn(shiftSegment.inTime, shift.startTime, shift.gracePeriod || 15, date, globalLateInGrace);
+      shiftSegment.lateInMinutes = lateIn > 0 ? lateIn : 0;
+      shiftSegment.isLateIn = lateIn > 0;
+    }
+
+    // Recalculate Early Out
+    if (shiftSegment.outTime) {
+      const earlyOut = calculateEarlyOut(shiftSegment.outTime, shift.endTime, shift.startTime, date, globalEarlyOutGrace);
+      shiftSegment.earlyOutMinutes = earlyOut > 0 ? earlyOut : 0;
+      shiftSegment.isEarlyOut = earlyOut > 0;
+
+      // Recalculate Extra Hours
+      // Reset extra hours
+      shiftSegment.extraHours = 0;
+
+      const { createDateWithOffset } = require('../../shifts/services/shiftDetectionService');
+      const [endH, endM] = shift.endTime.split(':').map(Number);
+      const [startH, startM] = shift.startTime.split(':').map(Number);
+
+      // Handle overnight
+      let isOvernight = startH > 20 || (endH * 60 + endM) < (startH * 60 + startM);
+
+      let shiftEndDate = createDateWithOffset(date, shift.endTime);
+      if (isOvernight) {
+        shiftEndDate.setDate(shiftEndDate.getDate() + 1);
       }
 
-      // Update shift details
-      shiftSegment.shiftId = shiftId;
-      shiftSegment.shiftName = shift.name;
-      shiftSegment.shiftStartTime = shift.startTime;
-      shiftSegment.shiftEndTime = shift.endTime;
-      shiftSegment.duration = shift.duration;
+      const grace = shift.gracePeriod || 15;
+      shiftEndDate.setMinutes(shiftEndDate.getMinutes() + grace);
 
-      // Recalculate metrics
-      const { calculateLateIn, calculateEarlyOut, createDateWithOffset } = require('../../shifts/services/shiftDetectionService');
-      const generalConfig = await Settings.getSettingsByCategory('general');
-      const globalLateInGrace = generalConfig.late_in_grace_time ?? null;
-      const globalEarlyOutGrace = generalConfig.early_out_grace_time ?? null;
-
-      // Recalculate Late In
-      if (shiftSegment.inTime) {
-        const lateIn = calculateLateIn(shiftSegment.inTime, shift.startTime, shift.gracePeriod || 15, date, globalLateInGrace);
-        shiftSegment.lateInMinutes = lateIn > 0 ? lateIn : 0;
-        shiftSegment.isLateIn = lateIn > 0;
+      if (shiftSegment.outTime > shiftEndDate) {
+        const diffMs = shiftSegment.outTime - shiftEndDate;
+        shiftSegment.extraHours = Math.round((diffMs / (1000 * 60 * 60)) * 100) / 100;
       }
+    }
 
-      // Recalculate Early Out
-      if (shiftSegment.outTime) {
-        const earlyOut = calculateEarlyOut(shiftSegment.outTime, shift.endTime, shift.startTime, date, globalEarlyOutGrace);
-        shiftSegment.earlyOutMinutes = earlyOut > 0 ? earlyOut : 0;
-        shiftSegment.isEarlyOut = earlyOut > 0;
+    // Recalculate Working Hours (logic check)
+    if (shiftSegment.inTime && shiftSegment.outTime) {
+      // ... Working hours are difference of punches, not dependent on shift definition (usually).
+      // But status might change.
+    }
 
-        // Recalculate Extra Hours
-        shiftSegment.extraHours = 0;
-        const [startH, startM] = shift.startTime.split(':').map(Number);
-        const [endH, endM] = shift.endTime.split(':').map(Number);
-        const isOvernight = startH > endH || (startH === endH && startM > endM);
-
-        let shiftEndDate = createDateWithOffset(date, shift.endTime);
-        if (isOvernight) {
-          shiftEndDate.setDate(shiftEndDate.getDate() + 1);
-        }
-
-        const grace = shift.gracePeriod || 15;
-        shiftEndDate.setMinutes(shiftEndDate.getMinutes() + grace);
-
-        if (shiftSegment.outTime > shiftEndDate) {
-          const diffMs = shiftSegment.outTime - shiftEndDate;
-          shiftSegment.extraHours = Math.round((diffMs / (1000 * 60 * 60)) * 100) / 100;
-        }
-      }
-
-      // Update Status based on rules
-      const workingH = shiftSegment.workingHours || 0;
+    // Update Status based on rules
+    if (shiftSegment.workingHours !== undefined) {
       const durationHours = shift.duration > 20 ? (shift.duration / 60) : (shift.duration || 8);
-      const basePayable = shift.payableShifts !== undefined ? shift.payableShifts : 1;
+      let basePayable = shift.payableShifts ?? 1;
       shiftSegment.expectedHours = Math.round(durationHours * 100) / 100;
 
-      if (workingH >= (durationHours * 0.9)) {
+      if (shiftSegment.workingHours >= (durationHours * 0.9)) {
         shiftSegment.status = 'PRESENT';
         shiftSegment.payableShift = basePayable;
-      } else if (workingH >= (durationHours * 0.45)) {
+      } else if (shiftSegment.workingHours >= (durationHours * 0.45)) {
         shiftSegment.status = 'HALF_DAY';
         shiftSegment.payableShift = basePayable * 0.5;
       } else {
         shiftSegment.status = 'ABSENT';
         shiftSegment.payableShift = 0;
       }
-
-      attendanceRecord.editHistory.push({
-        action: 'SHIFT_CHANGE',
-        modifiedBy: req.user?._id || req.user?.userId,
-        modifiedByName: req.user.name,
-        modifiedAt: new Date(),
-        details: `Changed shift to ${shift.name} for segment`
-      });
-
-    } else {
-      // GLOBAL/LEGACY MODE
-      attendanceRecord.shiftId = shiftId;
-      const { calculateLateIn, calculateEarlyOut } = require('../../shifts/services/shiftDetectionService');
-      const generalConfig = await Settings.getSettingsByCategory('general');
-
-      const lateInMinutes = calculateLateIn(attendanceRecord.inTime, shift.startTime, shift.gracePeriod || 15, date, generalConfig.late_in_grace_time);
-      const earlyOutMinutes = attendanceRecord.outTime ? calculateEarlyOut(attendanceRecord.outTime, shift.endTime, shift.startTime, date, generalConfig.early_out_grace_time) : null;
-
-      attendanceRecord.lateInMinutes = lateInMinutes > 0 ? lateInMinutes : null;
-      attendanceRecord.earlyOutMinutes = earlyOutMinutes && earlyOutMinutes > 0 ? earlyOutMinutes : null;
-      attendanceRecord.isLateIn = lateInMinutes > 0;
-      attendanceRecord.isEarlyOut = earlyOutMinutes && earlyOutMinutes > 0;
-      attendanceRecord.expectedHours = shift.duration;
-
-      attendanceRecord.editHistory.push({
-        action: 'SHIFT_CHANGE',
-        modifiedBy: req.user?._id || req.user?.userId,
-        modifiedByName: req.user.name,
-        modifiedAt: new Date(),
-        details: `Changed shift to ${shift.name} (Global)`
-      });
     }
 
     // Mark as manually edited
@@ -771,11 +770,19 @@ exports.assignShift = async (req, res) => {
     if (!attendanceRecord.source.includes('manual')) {
       attendanceRecord.source.push('manual');
     }
+
     attendanceRecord.isEdited = true;
+    attendanceRecord.editHistory.push({
+      action: 'SHIFT_CHANGE',
+      modifiedBy: req.user?._id || req.user?.userId,
+      modifiedByName: req.user.name,
+      modifiedAt: new Date(),
+      details: `Changed shift to ${shift.name}`
+    });
 
     await attendanceRecord.save();
 
-    // Update roster tracking
+    // Update roster tracking for manual assignment
     const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
     const rosterRecord = await PreScheduledShift.findOne({
       employeeNumber: employeeNumber.toUpperCase(),
@@ -783,10 +790,17 @@ exports.assignShift = async (req, res) => {
     });
 
     if (rosterRecord) {
+      const isDeviation = rosterRecord.shiftId && rosterRecord.shiftId.toString() !== shiftId.toString();
       rosterRecord.actualShiftId = shiftId;
-      rosterRecord.isDeviation = rosterRecord.shiftId && rosterRecord.shiftId.toString() !== shiftId.toString();
+      rosterRecord.isDeviation = !!isDeviation;
       rosterRecord.attendanceDailyId = attendanceRecord._id;
       await rosterRecord.save();
+    }
+
+    // Detect extra hours (Global)
+    if (attendanceRecord.outTime) {
+      const { detectExtraHours } = require('../services/extraHoursService');
+      await detectExtraHours(employeeNumber.toUpperCase(), date);
     }
 
     // Recalculate monthly summary
@@ -796,7 +810,8 @@ exports.assignShift = async (req, res) => {
     const updatedRecord = await AttendanceDaily.findOne({
       employeeNumber: employeeNumber.toUpperCase(),
       date: date,
-    }).populate('shifts.shiftId', 'name startTime endTime duration payableShifts');
+    })
+      .populate('shifts.shiftId', 'name startTime endTime duration payableShifts');
 
     res.status(200).json({
       success: true,
