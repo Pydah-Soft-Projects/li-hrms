@@ -4517,7 +4517,7 @@ export default function AttendancePage() {
                       {/* Rupees In Words */}
                       <div className="border border-slate-300 bg-slate-50 px-4 py-2 dark:border-slate-600 dark:bg-slate-800">
                         <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Rupees In Words:</span>
-                        <span className="ml-2 text-sm text-slate-900 dark:text-white">{numberToWords(payslipData.netSalary || 0)}</span>
+                        {/* removed numberToWords display */}
                       </div>
 
                     </div>

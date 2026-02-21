@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
 import { format, parseISO } from 'date-fns';
-import { customSwal, alertSuccess, alertError, alertConfirm, alertLoading } from '@/lib/customSwal';
+import { alertSuccess, alertError, alertConfirm, alertLoading } from '@/lib/customSwal';
 
 interface AttendanceRecord {
   date: string;
@@ -1038,9 +1038,12 @@ export default function AttendancePage() {
   };
 
   const handleSyncShifts = async () => {
-    if (!confirm('This will sync shifts for all attendance records that don\'t have shifts assigned. This may take a few minutes. Continue?')) {
-      return;
-    }
+    const result = await alertConfirm(
+      'Sync Shifts?',
+      'This will sync shifts for all attendance records that don\'t have shifts assigned. This may take a few minutes.',
+      'Yes, Sync Now'
+    );
+    if (!result.isConfirmed) return;
 
     try {
       setSyncingShifts(true);
@@ -1048,17 +1051,19 @@ export default function AttendancePage() {
       setSuccess('');
       const response = await api.syncShifts();
       if (response.success) {
-        setSuccess(response.message || `Processed ${response.data?.processed || 0} records: ${response.data?.assigned || 0} assigned, ${response.data?.confused || 0} flagged for review`);
+        alertSuccess('Success', response.message || `Processed ${response.data?.processed || 0} records: ${response.data?.assigned || 0} assigned, ${response.data?.confused || 0} flagged for review`);
         loadMonthlyAttendance();
       } else {
-        setError(response.message || 'Failed to sync shifts');
+        alertError('Failed', response.message || 'Failed to sync shifts');
       }
     } catch (err: any) {
-      setError(err.message || 'An error occurred during shift sync');
+      alertError('Error', err.message || 'An error occurred during shift sync');
     } finally {
       setSyncingShifts(false);
     }
   };
+
+
 
   const handleUpdateOutTime = async () => {
     if (!selectedRecordForOutTime || !outTimeValue) {
@@ -1207,38 +1212,7 @@ export default function AttendancePage() {
   // Virtualized row component
 
 
-  const handleBulkResendCredentials = async () => {
-    const result = await alertConfirm(
-      'Bulk Resend Credentials?',
-      `This will resend login credentials to all employees matching the current filters (${totalCount} found). This operation may take some time.`,
-      'Yes, Resend All'
-    );
 
-    if (result.isConfirmed) {
-      alertLoading('Resending Credentials', 'Processing bulk requests, please wait...');
-      try {
-        const response = await api.bulkResendCredentials({
-          search: searchQuery,
-          divisionId: selectedDivision,
-          departmentId: selectedDepartment,
-          designationId: selectedDesignation,
-          includeLeft: 'false'
-        });
-
-        if (response.success) {
-          alertSuccess(
-            'Success',
-            `Bulk resend operation complete. Sent: ${response.data.successCount}, Failed: ${response.data.failCount}`
-          );
-        } else {
-          alertError('Failed', response.message || 'Error occurred during bulk resend');
-        }
-      } catch (err: any) {
-        console.error('Error in bulk resend:', err);
-        alertError('Error', err.message || 'An unexpected error occurred');
-      }
-    }
-  };
 
   console.log('Attendance rendering. Data length:', filteredMonthlyData.length);
   return (
@@ -1440,16 +1414,7 @@ export default function AttendancePage() {
                 Upload
               </button>
 
-              <button
-                onClick={handleBulkResendCredentials}
-                title="Bulk Resend Credentials"
-                className="h-9 flex items-center px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-xs font-bold text-white shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 hover:-translate-y-0.5 transition-all active:scale-95 ml-1"
-              >
-                <svg className="mr-2 h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                </svg>
-                Resend All
-              </button>
+
             </div>
           </div>
         </div>
@@ -3053,7 +3018,7 @@ export default function AttendancePage() {
                       {/* Rupees In Words */}
                       <div className="border border-slate-300 bg-slate-50 px-4 py-2 dark:border-slate-600 dark:bg-slate-800">
                         <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Rupees In Words:</span>
-                        <span className="ml-2 text-sm text-slate-900 dark:text-white">{numberToWords(payslipData.netSalary || 0)}</span>
+                        {/* removed numberToWords display */}
                       </div>
                     </div>
 
