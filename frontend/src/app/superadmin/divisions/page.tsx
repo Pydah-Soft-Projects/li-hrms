@@ -33,17 +33,17 @@ function StatCard({ title, value, icon, trend, color }: {
     };
 
     return (
-        <div className="relative p-3 md:p-5 rounded-2xl md:rounded-3xl transition-all duration-300 hover:shadow-xl hover:-translate-y-1 group bg-white border border-slate-100 shadow-sm h-40 flex flex-col justify-between">
-            <div className="flex items-start justify-between mb-2 md:mb-4">
-                <div className={`w-10 h-10 md:w-8 md:h-8 rounded-xl md:rounded-2xl bg-gradient-to-br ${gradients[color]} flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform duration-300`}>
-                    {React.isValidElement(icon) ? React.cloneElement(icon as React.ReactElement<any>, { className: 'w-5 h-5 md:w-5 md:h-5' }) : icon}
-                </div>
+        <div className="relative p-4 rounded-2xl transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 group bg-white border border-slate-100 shadow-sm flex items-center gap-4">
+            <div className={`shrink-0 w-10 h-10 rounded-xl bg-gradient-to-br ${gradients[color]} flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform duration-300`}>
+                {React.isValidElement(icon) ? React.cloneElement(icon as React.ReactElement<any>, { className: 'w-5 h-5' }) : icon}
             </div>
-            <div>
-                <p className="text-slate-500 font-semibold text-[9px] md:text-xs mb-0.5 md:mb-1 uppercase tracking-wider truncate">{title}</p>
-                <h3 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight">{value}</h3>
-                <div className={`mt-1.5 md:mt-1 inline-flex items-center gap-1 md:gap-2 px-1.5 py-0.5 md:px-3 md:py-1 rounded-full text-[8px] md:text-xs font-bold ${bgColors[color]} text-${color}-700`}>
-                    {trend}
+            <div className="min-w-0">
+                <p className="text-slate-400 font-bold text-[10px] uppercase tracking-widest mb-1 truncate">{title}</p>
+                <div className="flex items-center gap-2">
+                    <h3 className="text-xl font-black text-slate-900 tracking-tight">{value}</h3>
+                    <div className={`hidden sm:inline-flex items-center px-1.5 py-0.5 rounded-full text-[8px] font-bold ${bgColors[color]} text-${color}-700 whitespace-nowrap`}>
+                        {trend}
+                    </div>
                 </div>
             </div>
         </div>
@@ -113,6 +113,8 @@ export default function DivisionsPage() {
     const [managerId, setManagerId] = useState('');
     const [selectedDeptIds, setSelectedDeptIds] = useState<string[]>([]);
     const [selectedShifts, setSelectedShifts] = useState<{ shiftId: string; gender: string }[]>([]);
+
+    const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
 
     // Hierarchical Shift Assignment State
     const [targetScope, setTargetScope] = useState<'division' | 'department' | 'designation'>('division');
@@ -371,50 +373,18 @@ export default function DivisionsPage() {
 
     return (
         <div className="relative min-h-screen">
-            {/* Background Pattern */}
-            <div className="pointer-events-none fixed inset-0 bg-[linear-gradient(to_right,#e2e8f01f_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f01f_1px,transparent_1px)] bg-[size:28px_28px] dark:bg-[linear-gradient(to_right,rgba(148,163,184,0.12)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.12)_1px,transparent_1px)]" />
 
-            <div className="relative z-10 p-6 sm:p-8 lg:p-10">
-                {/* Header Section - Dashboard Style */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-2 md:gap-6 mb-8">
-                    {/* Page Role Card */}
-                    <div className="md:col-span-1 bg-white p-3 md:p-6 rounded-xl md:rounded-3xl shadow-sm border border-slate-100 relative overflow-hidden group hover:shadow-md transition-shadow">
-                        <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-50 to-white rounded-full -mr-10 -mt-10 blur-2xl transition-all duration-500 group-hover:bg-blue-100/60" />
 
-                        <div className="relative z-10 flex items-center h-full gap-3 md:gap-5">
-                            <div className="w-12 h-12 md:w-16 md:h-16 md:ml-4 rounded-xl md:rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/20 ring-2 md:ring-4 ring-blue-50 shrink-0">
-                                <BuildingIcon className="w-6 h-6 md:w-8 md:h-8" />
-                            </div>
-                            <div className="flex flex-col justify-center">
-                                <p className="text-slate-500 font-medium text-[10px] md:text-xs uppercase tracking-wider mb-0.5">Organization</p>
-                                <h3 className="text-lg md:text-2xl font-black text-slate-900 tracking-tight capitalize">
-                                    Divisions
-                                </h3>
-                                <div className="flex items-center gap-2 mt-1">
-                                    <span className="text-xs font-semibold text-slate-400">Master Control</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Action Card */}
-                    <div className="md:col-span-2 bg-gradient-to-br from-blue-500 to-indigo-600 p-3 md:p-8 rounded-xl md:rounded-3xl shadow-lg shadow-blue-500/20 border border-blue-400/20 relative overflow-hidden group">
-                        <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -mr-10 -mt-10 blur-3xl transition-all duration-500 group-hover:bg-white/20" />
-
-                        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between h-full gap-4">
-                            <div>
-                                <h3 className="text-xl md:text-2xl font-bold text-white mb-1">Structure Your Workspace</h3>
-                                <p className="text-blue-100 text-sm md:text-base opacity-90">Create and manage top-level organizational units to group your departments and workforce.</p>
-                            </div>
-                            <button
-                                onClick={() => { resetForm(); setShowCreateDialog(true); }}
-                                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-6 py-4 text-sm font-bold text-blue-600 shadow-xl transition-all hover:scale-105 active:scale-95 whitespace-nowrap"
-                            >
-                                <span className="text-xl">+</span>
-                                <span>Create Division</span>
-                            </button>
-                        </div>
-                    </div>
+            <div className="relative z-10 px-6 py-2 sm:p-8 lg:p-10">
+                <div className="mb-8 flex items-center justify-between gap-4">
+                    <h1 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-white">Divisions</h1>
+                    <button
+                        onClick={() => { resetForm(); setShowCreateDialog(true); }}
+                        className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-all hover:bg-blue-700 active:scale-95"
+                    >
+                        <span className="text-lg leading-none">+</span>
+                        <span>Create Division</span>
+                    </button>
                 </div>
 
                 {/* Stats Grid */}
@@ -451,80 +421,175 @@ export default function DivisionsPage() {
 
                 {/* Main Content Area */}
                 <div className="bg-white rounded-3xl border border-slate-100 p-4 md:p-8 shadow-sm">
-                    <div className="flex items-center justify-between mb-8">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
                         <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
                             <span className="w-1.5 h-6 bg-blue-500 rounded-full" />
                             Organizational Units
                         </h2>
-                        <span className="text-xs font-semibold text-slate-400 uppercase tracking-widest">{divisions.length} Divisions Found</span>
+                        <div className="flex items-center gap-4">
+                            <span className="text-xs font-semibold text-slate-400 uppercase tracking-widest hidden sm:inline-block">{divisions.length} Divisions Found</span>
+                            <div className="flex bg-slate-100 p-1 rounded-lg">
+                                <button
+                                    onClick={() => setViewMode('cards')}
+                                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${viewMode === 'cards' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                >
+                                    Cards
+                                </button>
+                                <button
+                                    onClick={() => setViewMode('table')}
+                                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${viewMode === 'table' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                >
+                                    Table
+                                </button>
+                            </div>
+                        </div>
                     </div>
 
-                    <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3">
-                        {divisions.map((div) => (
-                            <div key={div._id} className="group relative flex flex-col p-5 md:p-6 rounded-2xl md:rounded-3xl bg-white border border-slate-300 hover:border-blue-200 hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
-                                <div className="flex items-start justify-between mb-6">
-                                    <div className="flex items-center gap-4">
-                                        <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center font-black shadow-inner border border-blue-100 group-hover:scale-110 transition-transform">
-                                            {div.code.substring(0, 2)}
-                                        </div>
-                                        <div>
-                                            <h3 className="text-lg font-bold text-slate-900 tracking-tight group-hover:text-blue-600 transition-colors">{div.name}</h3>
-                                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{div.code}</span>
-                                        </div>
-                                    </div>
-                                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button onClick={() => { setShowEditDialog(div); setName(div.name); setCode(div.code); setDescription(div.description || ''); setManagerId(typeof div.manager === 'string' ? div.manager : div.manager?._id || ''); }} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"><EditIcon /></button>
-                                        <button onClick={() => handleDeleteDivision(div._id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors"><TrashIcon /></button>
-                                    </div>
-                                </div>
-
-                                {div.description && (
-                                    <p className="text-sm text-slate-500 line-clamp-2 mb-6 min-h-[40px]">
-                                        {div.description}
-                                    </p>
-                                )}
-
-                                <div className="mt-auto space-y-4">
-                                    <div className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50 border border-slate-100/50">
-                                        <div className="w-8 h-8 rounded-xl bg-white flex items-center justify-center text-slate-400 shadow-sm">
-                                            <UserIcon className="w-4 h-4" />
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Manager</p>
-                                            <p className="text-sm font-bold text-slate-700 truncate">{div.manager ? (typeof div.manager === 'string' ? div.manager : (div.manager as any).name) : 'Vacant Position'}</p>
-                                        </div>
-                                    </div>
-
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <button
-                                            onClick={() => { setShowLinkDeptDialog(div); setSelectedDeptIds(div.departments?.map(d => typeof d === 'string' ? d : d._id) || []); }}
-                                            className="flex flex-col items-center justify-center p-3 rounded-2xl bg-indigo-50/50 border border-indigo-100/50 hover:bg-indigo-50 hover:border-indigo-200 transition-all group/btn"
-                                        >
-                                            <span className="text-lg font-black text-indigo-600">{div.departments?.length || 0}</span>
-                                            <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">Departments</span>
-                                        </button>
-                                        <button
-                                            onClick={() => openShiftDialog(div)}
-                                            className="flex flex-col items-center justify-center p-3 rounded-2xl bg-amber-50/50 border border-amber-100/50 hover:bg-amber-50 hover:border-amber-200 transition-all group/btn"
-                                        >
-                                            <span className="text-lg font-black text-amber-600 tracking-tighter">Assign</span>
-                                            <span className="text-[10px] font-bold text-amber-400 uppercase tracking-widest">Shifts</span>
-                                        </button>
-                                    </div>
-                                </div>
+                    {divisions.length === 0 ? (
+                        <div className="py-20 text-center">
+                            <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
+                                <BuildingIcon className="w-10 h-10" />
                             </div>
-                        ))}
+                            <h3 className="text-xl font-bold text-slate-900">No divisions yet</h3>
+                            <p className="text-slate-500 mt-2">Start by creating your first organizational unit.</p>
+                        </div>
+                    ) : viewMode === 'cards' ? (
+                        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3">
+                            {divisions.map((div) => (
+                                <div key={div._id} className="group relative flex flex-col p-5 md:p-6 rounded-2xl md:rounded-3xl bg-white border border-slate-300 hover:border-blue-200 hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
+                                    <div className="flex items-start justify-between mb-6">
+                                        <div className="flex items-center gap-4">
+                                            <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center font-black shadow-inner border border-blue-100 group-hover:scale-110 transition-transform">
+                                                {div.code.substring(0, 2)}
+                                            </div>
+                                            <div>
+                                                <h3 className="text-lg font-bold text-slate-900 tracking-tight group-hover:text-blue-600 transition-colors">{div.name}</h3>
+                                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{div.code}</span>
+                                            </div>
+                                        </div>
+                                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <button onClick={() => { setShowEditDialog(div); setName(div.name); setCode(div.code); setDescription(div.description || ''); setManagerId(typeof div.manager === 'string' ? div.manager : div.manager?._id || ''); }} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"><EditIcon /></button>
+                                            <button onClick={() => handleDeleteDivision(div._id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors"><TrashIcon /></button>
+                                        </div>
+                                    </div>
 
-                        {divisions.length === 0 && (
-                            <div className="col-span-full py-20 text-center">
-                                <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
-                                    <BuildingIcon className="w-10 h-10" />
+                                    {div.description && (
+                                        <p className="text-sm text-slate-500 line-clamp-2 mb-6 min-h-[40px]">
+                                            {div.description}
+                                        </p>
+                                    )}
+
+                                    <div className="mt-auto space-y-4">
+                                        <div className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50 border border-slate-100/50">
+                                            <div className="w-8 h-8 rounded-xl bg-white flex items-center justify-center text-slate-400 shadow-sm">
+                                                <UserIcon className="w-4 h-4" />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Manager</p>
+                                                <p className="text-sm font-bold text-slate-700 truncate">{div.manager ? (typeof div.manager === 'string' ? div.manager : (div.manager as any).name) : 'Vacant Position'}</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <button
+                                                onClick={() => { setShowLinkDeptDialog(div); setSelectedDeptIds(div.departments?.map(d => typeof d === 'string' ? d : d._id) || []); }}
+                                                className="flex flex-col items-center justify-center p-3 rounded-2xl bg-indigo-50/50 border border-indigo-100/50 hover:bg-indigo-50 hover:border-indigo-200 transition-all group/btn"
+                                            >
+                                                <span className="text-lg font-black text-indigo-600">{div.departments?.length || 0}</span>
+                                                <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">Departments</span>
+                                            </button>
+                                            <button
+                                                onClick={() => openShiftDialog(div)}
+                                                className="flex flex-col items-center justify-center p-3 rounded-2xl bg-amber-50/50 border border-amber-100/50 hover:bg-amber-50 hover:border-amber-200 transition-all group/btn"
+                                            >
+                                                <span className="text-lg font-black text-amber-600 tracking-tighter">Assign</span>
+                                                <span className="text-[10px] font-bold text-amber-400 uppercase tracking-widest">Shifts</span>
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
-                                <h3 className="text-xl font-bold text-slate-900">No divisions yet</h3>
-                                <p className="text-slate-500 mt-2">Start by creating your first organizational unit.</p>
-                            </div>
-                        )}
-                    </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left text-sm text-slate-600">
+                                <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
+                                    <tr>
+                                        <th className="px-4 py-3 font-semibold rounded-tl-xl">Division</th>
+                                        <th className="px-4 py-3 font-semibold">Code</th>
+                                        <th className="px-4 py-3 font-semibold">Manager</th>
+                                        <th className="px-4 py-3 font-semibold text-center">Departments</th>
+                                        <th className="px-4 py-3 font-semibold text-right rounded-tr-xl">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {divisions.map((div) => (
+                                        <tr key={div._id} className="hover:bg-slate-50/50 transition-colors">
+                                            <td className="px-4 py-4 whitespace-nowrap">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs ring-1 ring-blue-100">
+                                                        {div.code.substring(0, 2)}
+                                                    </div>
+                                                    <div>
+                                                        <div className="font-bold text-slate-900">{div.name}</div>
+                                                        {div.description && <div className="text-xs text-slate-400 max-w-[200px] truncate">{div.description}</div>}
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="px-4 py-4 whitespace-nowrap">
+                                                <span className="px-2 py-1 bg-slate-100 text-slate-600 font-medium text-xs rounded-md border border-slate-200">
+                                                    {div.code}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-4 whitespace-nowrap">
+                                                <div className="flex items-center gap-2">
+                                                    <UserIcon className="w-4 h-4 text-slate-400" />
+                                                    <span className="font-medium text-slate-700">
+                                                        {div.manager ? (typeof div.manager === 'string' ? div.manager : (div.manager as any).name) : 'Vacant'}
+                                                    </span>
+                                                </div>
+                                            </td>
+                                            <td className="px-4 py-4 whitespace-nowrap text-center">
+                                                <div className="inline-flex items-center gap-2">
+                                                    <span className="font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md min-w-[2rem] text-center">
+                                                        {div.departments?.length || 0}
+                                                    </span>
+                                                    <button
+                                                        onClick={() => { setShowLinkDeptDialog(div); setSelectedDeptIds(div.departments?.map(d => typeof d === 'string' ? d : d._id) || []); }}
+                                                        className="text-xs font-semibold text-indigo-500 hover:text-indigo-700 underline underline-offset-2"
+                                                    >
+                                                        Manage
+                                                    </button>
+                                                </div>
+                                            </td>
+                                            <td className="px-4 py-4 whitespace-nowrap text-right">
+                                                <div className="flex items-center justify-end gap-2">
+                                                    <button
+                                                        onClick={() => openShiftDialog(div)}
+                                                        className="px-2.5 py-1 text-xs font-medium text-amber-600 bg-amber-50 rounded-md hover:bg-amber-100 transition-colors"
+                                                    >
+                                                        Shifts
+                                                    </button>
+                                                    <button
+                                                        onClick={() => { setShowEditDialog(div); setName(div.name); setCode(div.code); setDescription(div.description || ''); setManagerId(typeof div.manager === 'string' ? div.manager : div.manager?._id || ''); }}
+                                                        className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+                                                    >
+                                                        <EditIcon />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleDeleteDivision(div._id)}
+                                                        className="p-1.5 text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                                                    >
+                                                        <TrashIcon />
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
                 </div>
 
                 {/* Create/Edit Dialog */}
