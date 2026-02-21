@@ -92,8 +92,11 @@ router.get('/', getApplications);
 // Get single application
 router.get('/:id', getApplication);
 
-// Approve application (Superadmin)
-router.put('/:id/approve', authorize('super_admin', 'sub_admin'), approveApplication);
+// Verify application (HR/Manager) - Stage 2: Create Employee
+router.put('/:id/verify', authorize('super_admin', 'sub_admin', 'hr', 'manager'), require('./controllers/employeeApplicationController').verifyApplication);
+
+// Approve salary (Superadmin) - Stage 3: Finalize Salary
+router.put('/:id/approve-salary', authorize('super_admin', 'sub_admin'), require('./controllers/employeeApplicationController').approveSalary);
 
 // Reject application (Superadmin)
 router.put('/:id/reject', authorize('super_admin', 'sub_admin'), rejectApplication);
