@@ -248,6 +248,30 @@ const employeeSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+    // 3-Step Approval Workflow Fields
+    salaryStatus: {
+      type: String,
+      enum: ['pending_approval', 'approved'],
+      default: 'pending_approval',
+    },
+    verifiedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    verifiedAt: {
+      type: Date,
+      default: null,
+    },
+    salaryApprovedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    salaryApprovedAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: {

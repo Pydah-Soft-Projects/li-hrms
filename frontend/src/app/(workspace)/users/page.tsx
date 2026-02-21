@@ -1802,6 +1802,7 @@ export default function UsersPage() {
                                 {category.modules.map((module) => {
                                   const hasRead = formData.featureControl?.includes(`${module.code}:read`) || false;
                                   const hasWrite = formData.featureControl?.includes(`${module.code}:write`) || false;
+                                  const hasVerify = (module as any).verifiable ? (formData.featureControl?.includes(`${module.code}:verify`) || false) : false;
 
                                   const toggleRead = () => {
                                     const currentFeatures = formData.featureControl || [];
@@ -1818,6 +1819,15 @@ export default function UsersPage() {
                                     const newFeatures = hasWrite
                                       ? currentFeatures.filter(f => f !== writePerm)
                                       : [...currentFeatures, writePerm];
+                                    setFormData({ ...formData, featureControl: newFeatures });
+                                  };
+
+                                  const toggleVerify = () => {
+                                    const currentFeatures = formData.featureControl || [];
+                                    const verifyPerm = `${module.code}:verify`;
+                                    const newFeatures = hasVerify
+                                      ? currentFeatures.filter(f => f !== verifyPerm)
+                                      : [...currentFeatures, verifyPerm];
                                     setFormData({ ...formData, featureControl: newFeatures });
                                   };
 
@@ -1850,6 +1860,20 @@ export default function UsersPage() {
                                         >
                                           Write
                                         </button>
+                                        {/* Verify Toggle — only for verifiable modules (e.g. EMPLOYEES) */}
+                                        {(module as any).verifiable && (
+                                          <button
+                                            type="button"
+                                            onClick={toggleVerify}
+                                            title="Verify: grants access to the Applications tab and ability to verify applications. Independent of Read/Write."
+                                            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasVerify
+                                              ? 'bg-violet-500 text-white shadow-sm'
+                                              : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                              }`}
+                                          >
+                                            Verify
+                                          </button>
+                                        )}
                                       </div>
                                     </div>
                                   );
@@ -2446,6 +2470,7 @@ export default function UsersPage() {
                                 {category.modules.map((module) => {
                                   const hasRead = formData.featureControl?.includes(`${module.code}:read`) || false;
                                   const hasWrite = formData.featureControl?.includes(`${module.code}:write`) || false;
+                                  const hasVerify = (module as any).verifiable ? (formData.featureControl?.includes(`${module.code}:verify`) || false) : false;
 
                                   const toggleRead = () => {
                                     const currentFeatures = formData.featureControl || [];
@@ -2462,6 +2487,15 @@ export default function UsersPage() {
                                     const newFeatures = hasWrite
                                       ? currentFeatures.filter(f => f !== writePerm)
                                       : [...currentFeatures, writePerm];
+                                    setFormData({ ...formData, featureControl: newFeatures });
+                                  };
+
+                                  const toggleVerify = () => {
+                                    const currentFeatures = formData.featureControl || [];
+                                    const verifyPerm = `${module.code}:verify`;
+                                    const newFeatures = hasVerify
+                                      ? currentFeatures.filter(f => f !== verifyPerm)
+                                      : [...currentFeatures, verifyPerm];
                                     setFormData({ ...formData, featureControl: newFeatures });
                                   };
 
@@ -2492,6 +2526,20 @@ export default function UsersPage() {
                                         >
                                           Write
                                         </button>
+                                        {/* Verify Toggle — only for verifiable modules (e.g. EMPLOYEES) */}
+                                        {(module as any).verifiable && (
+                                          <button
+                                            type="button"
+                                            onClick={toggleVerify}
+                                            title="Verify: grants access to the Applications tab and ability to verify applications. Independent of Read/Write."
+                                            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasVerify
+                                              ? 'bg-violet-500 text-white shadow-sm'
+                                              : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                              }`}
+                                          >
+                                            Verify
+                                          </button>
+                                        )}
                                       </div>
                                     </div>
                                   );
@@ -2878,8 +2926,9 @@ export default function UsersPage() {
                                 const modulesWithPerms = category.modules.map(m => ({
                                   ...m,
                                   hasRead: selectedViewUser.featureControl?.includes(`${m.code}:read`) || false,
-                                  hasWrite: selectedViewUser.featureControl?.includes(`${m.code}:write`) || false
-                                })).filter(m => m.hasRead || m.hasWrite);
+                                  hasWrite: selectedViewUser.featureControl?.includes(`${m.code}:write`) || false,
+                                  hasVerify: (m as any).verifiable ? (selectedViewUser.featureControl?.includes(`${m.code}:verify`) || false) : false
+                                })).filter(m => m.hasRead || m.hasWrite || m.hasVerify);
 
                                 if (modulesWithPerms.length === 0) return null;
 
@@ -2904,6 +2953,11 @@ export default function UsersPage() {
                                             {m.hasWrite && (
                                               <span className="flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2 py-1 text-[9px] font-black text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400">
                                                 <div className="h-1 w-1 rounded-full bg-emerald-500" /> WRITE
+                                              </span>
+                                            )}
+                                            {(m as any).hasVerify && (
+                                              <span className="flex items-center gap-1.5 rounded-lg bg-violet-50 px-2 py-1 text-[9px] font-black text-violet-600 dark:bg-violet-500/10 dark:text-violet-400">
+                                                <div className="h-1 w-1 rounded-full bg-violet-500" /> VERIFY
                                               </span>
                                             )}
                                           </div>
