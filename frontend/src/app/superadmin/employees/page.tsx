@@ -762,7 +762,7 @@ export default function EmployeesPage() {
   useEffect(() => {
     const deptId = formData.department_id;
     // Check both gross_salary and proposedSalary (form might use either)
-    const gross = formData.gross_salary || (formData as any).proposedSalary ;
+    const gross = formData.gross_salary || (formData as any).proposedSalary;
     if (deptId && gross !== undefined && gross !== null && Number(gross) > 0) {
       // If editing and salary changed, preserve current overrides so user edits aren't lost
       const preserveOverrides = !!editingEmployee && (Object.keys(overrideAllowances).length > 0 || Object.keys(overrideDeductions).length > 0);
@@ -2747,11 +2747,10 @@ export default function EmployeesPage() {
                                     <button
                                       onClick={async (e) => {
                                         e.stopPropagation();
-                                        if (!confirm(`Resend credentials to ${employee.employee_name}? This will reset their password.`)) return;
+                                        if (!confirm(`Resend credentials to ${employee.employee_name}? Their current credentials will be sent without resetting the password.`)) return;
                                         setIsResending(employee.emp_no);
                                         try {
                                           const res = await api.resendEmployeeCredentials(employee.emp_no, {
-                                            passwordMode,
                                             notificationChannels: notificationChannels
                                           });
                                           if (res.success) setSuccess('Credentials sent successfully!');

@@ -435,7 +435,7 @@ const disambiguateWithOutTime = (inTime, outTime, candidateShifts, date, toleran
 
   const scoredCandidates = candidateShifts.map(candidate => {
     const inTimeScore = candidate.differenceMinutes;
-    // UPDATED: Use createDateWithOffset to correctly compare out-time against Shift End
+    // Use createDateWithOffset to correctly compare out-time against Shift End
     const shiftEndDate = createDateWithOffset(date, candidate.endTime);
 
     // Check overnight
@@ -448,16 +448,36 @@ const disambiguateWithOutTime = (inTime, outTime, candidateShifts, date, toleran
     const outTimeDiffMs = Math.abs(outTime.getTime() - shiftEndDate.getTime());
     const outTimeScore = outTimeDiffMs / (1000 * 60);
 
-    const combinedScore = (inTimeScore * 0.6) + (outTimeScore * 0.4);
+    // PRIORITY BOOST: If this is a rostered shift (Priority 1), reduce its score significantly.
+    // This acts as a strong tie-breaker.
+    const priorityMultiplier = (candidate.sourcePriority === 1) ? 0.3 : 1.0;
+
+    const rawCombinedScore = (inTimeScore * 0.6) + (outTimeScore * 0.4);
+    const combinedScore = rawCombinedScore * priorityMultiplier;
+
     return { ...candidate, outTimeScore, combinedScore };
   });
 
   scoredCandidates.sort((a, b) => a.combinedScore - b.combinedScore);
 
   if (scoredCandidates.length >= 2) {
-    const topScore = scoredCandidates[0].combinedScore;
-    const secondScore = scoredCandidates[1].combinedScore;
-    if (secondScore - topScore > toleranceMinutes * 0.5) return scoredCandidates[0];
+    const top = scoredCandidates[0];
+    const second = scoredCandidates[1];
+
+    // RULE 1: If the top match is a Rostered Shift (Priority 1) and the second is not,
+    // we take the roster match unless the second one is a "perfect" out-time match while the roster is way off.
+    if (top.sourcePriority === 1 && second.sourcePriority !== 1) {
+      // Only stay confused if the second one is much closer to out-time (by 60+ mins)
+      if (second.outTimeScore < top.outTimeScore - 60) return null;
+      return top;
+    }
+
+    // RULE 2: Relaxed Threshold for Organizational Shifts
+    // If one match is "clear' (matches out-time closely while others don't), accept it.
+    // We reduce the threshold from 30 to 15 if the top match is very close to out-time (within 30 mins).
+    const dynamicThreshold = (top.outTimeScore < 30) ? 15 : toleranceMinutes * 0.5;
+    if (second.combinedScore - top.combinedScore > dynamicThreshold) return top;
+
     return null;
   }
   return scoredCandidates[0];
@@ -852,6 +872,31 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
       if (allSameStartTime) {
         // Multiple shifts with same start time
         if (!outTime) {
+          // No out-time available - CHECK ROSTER FIRST
+          const rosteredCandidate = candidateShifts.find(c => c.sourcePriority === 1);
+          if (rosteredCandidate) {
+            const shift = shifts.find(s => s._id.toString() === rosteredCandidate.shiftId.toString());
+            if (shift) {
+              const lateInMinutes = calculateLateIn(inTime, shift.startTime, shift.gracePeriod || 15, date, globalLateInGrace);
+              await updateRosterTracking(shift._id);
+              return {
+                success: true,
+                assignedShift: shift._id,
+                shiftName: shift.name,
+                shiftStartTime: shift.startTime,
+                shiftEndTime: shift.endTime,
+                source: `${source}_roster_blind`, // Blind match because no out-time
+                lateInMinutes: lateInMinutes > 0 ? lateInMinutes : null,
+                earlyOutMinutes: null,
+                isLateIn: lateInMinutes > 0,
+                isEarlyOut: false,
+                expectedHours: shift.duration,
+                matchMethod: 'roster_blind',
+                rosterRecordId: rosterRecordId,
+              };
+            }
+          }
+
           // No out-time available - create ConfusedShift
           const confusedShiftData = {
             employeeNumber: employeeNumber.toUpperCase(),
@@ -884,6 +929,45 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
           };
         } else {
           // Out-time available - try to disambiguate
+
+          // PRE-STEP: If exactly one candidate is Rostered (Priority 1), check if it's "reasonable"
+          // If the rostered shift out-time match is within tolerance, prioritize it over stay confused.
+          const rosteredCandidate = candidateShifts.find(c => c.sourcePriority === 1);
+          if (rosteredCandidate) {
+            const shiftEndDate = createDateWithOffset(date, rosteredCandidate.endTime);
+            const shiftStartMinutes = timeToMinutes(rosteredCandidate.startTime);
+            const shiftEndMinutes = timeToMinutes(rosteredCandidate.endTime);
+            if (shiftEndMinutes < shiftStartMinutes) shiftEndDate.setDate(shiftEndDate.getDate() + 1);
+
+            const outTimeDiffMins = Math.abs(outTime.getTime() - shiftEndDate.getTime()) / (1000 * 60);
+
+            // If rostered shift out-time is within 90 mins, we can trust it as a "clear intention"
+            // especially since we have no other better information.
+            if (outTimeDiffMins < 90) {
+              const shift = shifts.find(s => s._id.toString() === rosteredCandidate.shiftId.toString());
+              if (shift) {
+                const lateInMinutes = calculateLateIn(inTime, shift.startTime, shift.gracePeriod || 15, date, globalLateInGrace);
+                const earlyOutMinutes = calculateEarlyOut(outTime, shift.endTime, shift.startTime, date, globalEarlyOutGrace);
+                await updateRosterTracking(shift._id);
+                return {
+                  success: true,
+                  assignedShift: shift._id,
+                  shiftName: shift.name,
+                  shiftStartTime: shift.startTime,
+                  shiftEndTime: shift.endTime,
+                  source: `${source}_roster_priority`,
+                  lateInMinutes: lateInMinutes > 0 ? lateInMinutes : null,
+                  earlyOutMinutes: earlyOutMinutes && earlyOutMinutes > 0 ? earlyOutMinutes : null,
+                  isLateIn: lateInMinutes > 0,
+                  isEarlyOut: earlyOutMinutes && earlyOutMinutes > 0,
+                  expectedHours: shift.duration,
+                  matchMethod: 'roster_priority',
+                  rosterRecordId: rosterRecordId,
+                };
+              }
+            }
+          }
+
           const bestMatch = disambiguateWithOutTime(inTime, outTime, candidateShifts, date);
 
           if (bestMatch) {
