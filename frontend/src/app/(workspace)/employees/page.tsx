@@ -12,7 +12,8 @@ import { auth } from '@/lib/auth';
 import {
   canViewEmployees,
   canEditEmployee,
-  canViewApplications as hasViewApplicationsPermission
+  canViewApplications as hasViewApplicationsPermission,
+  canVerifyFeature
 } from '@/lib/permissions';
 import {
   Users,
@@ -206,6 +207,7 @@ export default function EmployeesPage() {
   const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [userRole, setUserRole] = useState<string>('');
   const [canViewApplications, setCanViewApplications] = useState(false);
+  const [hasVerifyPermission, setHasVerifyPermission] = useState(false);
   const [showLeftDateModal, setShowLeftDateModal] = useState(false);
   const [selectedEmployeeForLeftDate, setSelectedEmployeeForLeftDate] = useState<Employee | null>(null);
   const [leftDateForm, setLeftDateForm] = useState({ leftDate: '', leftReason: '' });
@@ -556,7 +558,10 @@ export default function EmployeesPage() {
     const user = auth.getUser();
     if (user) {
       setUserRole(user.role);
-      setCanViewApplications(hasViewApplicationsPermission(user as any)); // Use the specific permission function
+      const hasAppView = hasViewApplicationsPermission(user as any);
+      setCanViewApplications(hasAppView);
+      // Verify permission is strictly independent — must have EMPLOYEES:verify explicitly granted
+      setHasVerifyPermission(canVerifyFeature(user as any, 'EMPLOYEES'));
       setCurrentUser(user);
     }
     loadEmployees(1, false); // Load first page
@@ -612,7 +617,7 @@ export default function EmployeesPage() {
   useEffect(() => {
     if (activeTab === 'applications') {
       if (!canViewApplications && userRole) {
-        // Redirect if unauthorized (only if role is loaded)
+        // Redirect to employees tab if user has no verify permission
         setActiveTab('employees');
         return;
       }
@@ -5084,7 +5089,7 @@ export default function EmployeesPage() {
 
             {/* Actions */}
             <div className="mt-8 flex gap-3 border-t border-slate-100 pt-6 dark:border-slate-800">
-              {hasManagePermission && viewingApplication.status === 'pending' && (
+              {hasVerifyPermission && viewingApplication.status === 'pending' && (
                 <button
                   onClick={() => {
                     handleVerifyApplication(viewingApplication);

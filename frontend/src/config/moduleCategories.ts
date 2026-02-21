@@ -13,7 +13,7 @@ export const MODULE_CATEGORIES = [
         name: 'Employee Management',
         icon: '👥',
         modules: [
-            { code: 'EMPLOYEES', label: 'Employees', href: '/employees' },
+            { code: 'EMPLOYEES', label: 'Employees', href: '/employees', verifiable: true },
             { code: 'PROFILE', label: 'My Profile', href: '/profile' }
         ]
     },
@@ -82,10 +82,11 @@ export function getModulesForCategory(categoryCode: string) {
 export function isModuleEnabled(moduleCode: string, featureControl: string[] | null): boolean {
     if (!featureControl || featureControl.length === 0) return true; // If no feature control or empty, allow all
 
-    // Check for exact match OR :read OR :write permissions
+    // Check for exact match OR :read OR :write OR :verify permissions
     return featureControl.includes(moduleCode) ||
         featureControl.includes(`${moduleCode}:read`) ||
-        featureControl.includes(`${moduleCode}:write`);
+        featureControl.includes(`${moduleCode}:write`) ||
+        featureControl.includes(`${moduleCode}:verify`);
 }
 
 // Helper to check if a category has any enabled modules
