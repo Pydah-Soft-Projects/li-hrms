@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
 import { format, parseISO } from 'date-fns';
+import { customSwal, alertSuccess, alertError, alertConfirm, alertLoading } from '@/lib/customSwal';
 
 interface AttendanceRecord {
   date: string;
@@ -1206,6 +1207,39 @@ export default function AttendancePage() {
   // Virtualized row component
 
 
+  const handleBulkResendCredentials = async () => {
+    const result = await alertConfirm(
+      'Bulk Resend Credentials?',
+      `This will resend login credentials to all employees matching the current filters (${totalCount} found). This operation may take some time.`,
+      'Yes, Resend All'
+    );
+
+    if (result.isConfirmed) {
+      alertLoading('Resending Credentials', 'Processing bulk requests, please wait...');
+      try {
+        const response = await api.bulkResendCredentials({
+          search: searchQuery,
+          divisionId: selectedDivision,
+          departmentId: selectedDepartment,
+          designationId: selectedDesignation,
+          includeLeft: 'false'
+        });
+
+        if (response.success) {
+          alertSuccess(
+            'Success',
+            `Bulk resend operation complete. Sent: ${response.data.successCount}, Failed: ${response.data.failCount}`
+          );
+        } else {
+          alertError('Failed', response.message || 'Error occurred during bulk resend');
+        }
+      } catch (err: any) {
+        console.error('Error in bulk resend:', err);
+        alertError('Error', err.message || 'An unexpected error occurred');
+      }
+    }
+  };
+
   console.log('Attendance rendering. Data length:', filteredMonthlyData.length);
   return (
     <div className="relative min-h-screen">
@@ -1404,6 +1438,17 @@ export default function AttendancePage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                 </svg>
                 Upload
+              </button>
+
+              <button
+                onClick={handleBulkResendCredentials}
+                title="Bulk Resend Credentials"
+                className="h-9 flex items-center px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-xs font-bold text-white shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 hover:-translate-y-0.5 transition-all active:scale-95 ml-1"
+              >
+                <svg className="mr-2 h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                </svg>
+                Resend All
               </button>
             </div>
           </div>

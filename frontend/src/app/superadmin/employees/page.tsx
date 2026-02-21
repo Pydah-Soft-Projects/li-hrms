@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import * as XLSX from 'xlsx';
 import { api, Employee, Department, Division, Designation, EmployeeApplication, Allowance, Deduction } from '@/lib/api';
+import { customSwal, alertSuccess, alertError, alertConfirm, alertLoading } from '@/lib/customSwal';
 import { auth } from '@/lib/auth';
 import BulkUpload from '@/components/BulkUpload';
 import DynamicEmployeeForm from '@/components/DynamicEmployeeForm';
@@ -2743,16 +2744,24 @@ export default function EmployeesPage() {
                                     <button
                                       onClick={async (e) => {
                                         e.stopPropagation();
-                                        if (!confirm(`Resend credentials to ${employee.employee_name}? Their current credentials will be sent without resetting the password.`)) return;
+                                        const result = await alertConfirm(
+                                          'Resend Credentials?',
+                                          `Resend credentials to ${employee.employee_name}? Their current credentials will be sent without resetting the password.`
+                                        );
+                                        if (!result.isConfirmed) return;
+
                                         setIsResending(employee.emp_no);
                                         try {
                                           const res = await api.resendEmployeeCredentials(employee.emp_no, {
                                             notificationChannels: notificationChannels
                                           });
-                                          if (res.success) setSuccess('Credentials sent successfully!');
-                                          else setError(res.message || 'Failed to send');
-                                        } catch (err) {
-                                          setError('Failed to resend');
+                                          if (res.success) {
+                                            alertSuccess('Sent!', 'Credentials sent successfully!');
+                                          } else {
+                                            alertError('Failed', res.message || 'Failed to send');
+                                          }
+                                        } catch (err: any) {
+                                          alertError('Error', err.message || 'Failed to resend');
                                         } finally {
                                           setIsResending(null);
                                         }
