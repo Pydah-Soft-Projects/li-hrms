@@ -762,7 +762,7 @@ export default function EmployeesPage() {
   useEffect(() => {
     const deptId = formData.department_id;
     // Check both gross_salary and proposedSalary (form might use either)
-    const gross = formData.gross_salary || (formData as any).proposedSalary ;
+    const gross = formData.gross_salary || (formData as any).proposedSalary;
     if (deptId && gross !== undefined && gross !== null && Number(gross) > 0) {
       // If editing and salary changed, preserve current overrides so user edits aren't lost
       const preserveOverrides = !!editingEmployee && (Object.keys(overrideAllowances).length > 0 || Object.keys(overrideDeductions).length > 0);
@@ -2039,10 +2039,6 @@ export default function EmployeesPage() {
 
   return (
     <div className="relative min-h-screen">
-      {/* Background */}
-      <div className="pointer-events-none fixed inset-0 bg-[linear-gradient(to_right,#e2e8f01f_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f01f_1px,transparent_1px)] bg-[size:28px_28px] dark:bg-[linear-gradient(to_right,rgba(148,163,184,0.12)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.12)_1px,transparent_1px)]" />
-      <div className="pointer-events-none fixed inset-0 bg-gradient-to-br from-green-50/40 via-green-50/35 to-transparent dark:from-slate-900/60 dark:via-slate-900/65 dark:to-slate-900/80" />
-
       <div className="relative z-10 mx-auto max-w-[1920px]">
         {/* Header - Unified Layout */}
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -2747,11 +2743,10 @@ export default function EmployeesPage() {
                                     <button
                                       onClick={async (e) => {
                                         e.stopPropagation();
-                                        if (!confirm(`Resend credentials to ${employee.employee_name}? This will reset their password.`)) return;
+                                        if (!confirm(`Resend credentials to ${employee.employee_name}? Their current credentials will be sent without resetting the password.`)) return;
                                         setIsResending(employee.emp_no);
                                         try {
                                           const res = await api.resendEmployeeCredentials(employee.emp_no, {
-                                            passwordMode,
                                             notificationChannels: notificationChannels
                                           });
                                           if (res.success) setSuccess('Credentials sent successfully!');
