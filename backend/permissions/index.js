@@ -5,10 +5,12 @@
 const express = require('express');
 const router = express.Router();
 const { protect, authorize } = require('../authentication/middleware/authMiddleware');
+const { applyScopeFilter } = require('../shared/middleware/dataScopeMiddleware');
 const {
   createPermission,
   getPermissions,
   getPermission,
+  getPendingPermissionApprovals,
   approvePermission,
   rejectPermission,
   getOutpass,
@@ -25,8 +27,11 @@ router.use(protect);
 // Create permission request
 router.post('/', createPermission);
 
-// Get permission requests
-router.get('/', getPermissions);
+// Pending permission approvals (must come before /:id)
+router.get('/pending-approvals', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), getPendingPermissionApprovals);
+
+// Get permission requests - employee allowed; applyScopeFilter restricts to own/scope
+router.get('/', authorize('employee', 'manager', 'hod', 'hr', 'sub_admin', 'super_admin'), applyScopeFilter, getPermissions);
 
 // Get single permission request
 router.get('/:id', getPermission);

@@ -148,7 +148,7 @@ const ODSchema = new mongoose.Schema(
     // Current status
     status: {
       type: String,
-      enum: ['draft', 'pending', 'hod_approved', 'hod_rejected', 'manager_approved', 'manager_rejected', 'hr_approved', 'hr_rejected', 'approved', 'rejected', 'cancelled'],
+      enum: ['draft', 'pending', 'reporting_manager_approved', 'reporting_manager_rejected', 'hod_approved', 'hod_rejected', 'manager_approved', 'manager_rejected', 'hr_approved', 'hr_rejected', 'approved', 'rejected', 'cancelled'],
       default: 'draft',
     },
 
@@ -175,6 +175,9 @@ const ODSchema = new mongoose.Schema(
         type: String,
         default: null
       },
+
+      // IDs of assigned reporting managers for visibility bridging
+      reportingManagerIds: [String],
 
       // Is the entire workflow completed?
       isCompleted: {
@@ -214,7 +217,7 @@ const ODSchema = new mongoose.Schema(
           step: String,
           action: {
             type: String,
-            enum: ['submitted', 'approved', 'rejected', 'forwarded', 'returned', 'cancelled', 'assigned', 'revoked', 'status_changed'],
+            enum: ['submitted', 'approved', 'rejected', 'returned', 'cancelled', 'assigned', 'revoked', 'status_changed'],
           },
           actionBy: {
             type: mongoose.Schema.Types.ObjectId,
@@ -236,7 +239,7 @@ const ODSchema = new mongoose.Schema(
       hod: {
         status: {
           type: String,
-          enum: ['pending', 'approved', 'rejected', 'forwarded', null],
+          enum: ['pending', 'approved', 'rejected', null],
           default: null,
         },
         approvedBy: {

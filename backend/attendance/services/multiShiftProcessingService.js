@@ -27,15 +27,40 @@ function getOverlapMinutes(startA, endA, startB, endB) {
 }
 
 /**
- * Helper to parse HH:MM to a Date object on a specific refernce date
+ * Helper to parse HH:MM to a Date object on a specific refernce date (TIMEZONE AWARE)
+ * Ensures Shift Times are always interpreted as IST
  */
 function timeStringToDate(timeStr, refDate, isNextDay = false) {
     if (!timeStr) return null;
-    const [hours, mins] = timeStr.split(':').map(Number);
-    const date = new Date(refDate);
-    date.setHours(hours, mins, 0, 0);
-    if (isNextDay) date.setDate(date.getDate() + 1);
-    return date;
+
+    // Extract YYYY-MM-DD from refDate
+    // We must ensure we get the date part in IST context, not UTC
+    // const d = new Date(refDate);
+    // const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+    // Better: If refDate is a string (YYYY-MM-DD), use it directly
+    let dateStr;
+    if (typeof refDate === 'string' && refDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        dateStr = refDate;
+    } else {
+        const d = new Date(refDate);
+        // Convert to IST to get correct Year-Month-Day
+        const istDate = new Date(d.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+        dateStr = `${istDate.getFullYear()}-${String(istDate.getMonth() + 1).padStart(2, '0')}-${String(istDate.getDate()).padStart(2, '0')}`;
+    }
+
+    // Construct timestamp with offset
+    // YYYY-MM-DD + T + HH:mm + :00 + +05:30
+    const [hours, mins] = timeStr.split(':');
+    let targetDateStr = dateStr;
+
+    if (isNextDay) {
+        const d = new Date(dateStr);
+        d.setDate(d.getDate() + 1);
+        targetDateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    return new Date(`${targetDateStr}T${hours}:${mins}:00+05:30`);
 }
 
 /**
@@ -79,10 +104,10 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
         let approvedODs = [];
 
         if (employeeId) {
-            const dayStart = new Date(date);
-            dayStart.setHours(0, 0, 0, 0);
-            const dayEnd = new Date(date);
-            dayEnd.setHours(23, 59, 59, 999);
+            const { createDateWithOffset } = require('../../shifts/services/shiftDetectionService');
+            const dayStart = createDateWithOffset(date, '00:00');
+            const dayEnd = createDateWithOffset(date, '23:59');
+            dayEnd.setSeconds(59, 999);
 
             approvedODs = await OD.find({
                 employeeId,
@@ -345,6 +370,8 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                 const expectedDuration = shiftAssignment.expectedHours || 8;
                 const totalDuration = pShift.workingHours || 0;
 
+                pShift.expectedHours = expectedDuration; // Enrich shift segment with expectedHours
+
                 if (shiftAssignment.expectedHours) {
                     pShift.extraHours = Math.max(0, Math.round((totalDuration - shiftAssignment.expectedHours) * 100) / 100);
                 }
@@ -362,6 +389,8 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                     pShift.status = 'ABSENT';
                     pShift.payableShift = 0;
                 }
+                console.log(`[MultiShift] Processing segment ${shiftCounter} for ${employeeNumber}: Working=${pShift.workingHours}, Expected=${expectedDuration}`);
+                console.log(`[MultiShift] Segment ${shiftCounter} Status: ${pShift.status}, Payable: ${pShift.payableShift}`);
             }
 
             processedShifts.push(pShift);
@@ -402,37 +431,52 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
             payableShifts: totalPayableShifts,
 
             // Backward compatibility fields (Metrics)
-            inTime: totals.firstInTime,
-            outTime: totals.lastOutTime,
-            totalHours: totals.totalWorkingHours,
+            // inTime, outTime, totalHours removed - using aggregate fields
             odHours,
             odDetails,
             status,
             lastSyncedAt: new Date(),
 
             // Primary shift fields (from first shift)
-            shiftId: processedShifts[0]?.shiftId || null,
-            lateInMinutes: processedShifts[0]?.lateInMinutes || null,
-            earlyOutMinutes: processedShifts[0]?.earlyOutMinutes || null,
-            isLateIn: processedShifts[0]?.isLateIn || false,
-            isEarlyOut: processedShifts[0]?.isEarlyOut || false,
-            expectedHours: processedShifts[0]?.expectedHours || 8, // Use detected expected hours
+            // shiftId, lateInMinutes, etc. removed - using shifts array
+
+            // New Aggregate Fields (if not already handled by pre-save, but good to set explicitly if we have them)
+            totalLateInMinutes: processedShifts.reduce((acc, s) => acc + (s.lateInMinutes || 0), 0),
+            totalEarlyOutMinutes: processedShifts.reduce((acc, s) => acc + (s.earlyOutMinutes || 0), 0),
+            totalExpectedHours: processedShifts.reduce((acc, s) => acc + (s.expectedHours || 0), 0),
+
             otHours: totals.totalOTHours,
         };
 
         // Step 8: Update or create daily record
         console.log(`[Multi-Shift Processing] Updating daily record with ${totals.totalShifts} shift(s)`);
 
-        const dailyRecord = await AttendanceDaily.findOneAndUpdate(
-            { employeeNumber, date },
-            {
-                $set: updateData,
-                $addToSet: { source: 'biometric-realtime' },
-            },
-            { upsert: true, new: true }
-        );
+        let dailyRecord = await AttendanceDaily.findOne({ employeeNumber, date });
 
-        console.log(`[Multi-Shift Processing] ✓ Daily record updated successfully`);
+        if (!dailyRecord) {
+            dailyRecord = new AttendanceDaily({
+                employeeNumber,
+                date,
+                shifts: processedShifts,
+                ...updateData
+            });
+        } else {
+            // Update individual fields
+            Object.keys(updateData).forEach(key => {
+                dailyRecord[key] = updateData[key];
+            });
+        }
+
+        // Standardize source tracking
+        if (!dailyRecord.source) dailyRecord.source = [];
+        if (!dailyRecord.source.includes('biometric-realtime')) {
+            dailyRecord.source.push('biometric-realtime');
+        }
+
+        // Trigger hooks via .save()
+        await dailyRecord.save();
+
+        console.log(`[Multi-Shift Processing] ✓ Daily record updated and hooks triggered successfully`);
 
         // findOneAndUpdate does not trigger post-save hook — recalculate monthly summary so totalPayableShifts etc. stay correct
         const { recalculateOnAttendanceUpdate } = require('./summaryCalculationService');

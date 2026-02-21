@@ -5,16 +5,15 @@ const Department = require('../../departments/model/Department');
 const mongoose = require('mongoose');
 const { calculateSecondSalary } = require('./secondSalaryCalculationService');
 const SecondSalaryBatchService = require('./secondSalaryBatchService');
-
 /**
  * Service to handle 2nd Salary operations
  */
 class SecondSalaryService {
     /**
      * Calculate and generate 2nd salary for a department
-     * @param {Object} params - { departmentId, divisionId, month, userId }
+     * @param {Object} params - { departmentId, divisionId, month, userId, scopeFilter }
      */
-    async runSecondSalaryPayroll({ departmentId, divisionId, month, userId }) {
+    async runSecondSalaryPayroll({ departmentId, divisionId, month, userId, scopeFilter = {} }) {
         try {
             const { payrollQueue } = require('../../shared/jobs/queueManager');
 
@@ -25,29 +24,45 @@ class SecondSalaryService {
                 if (!department) throw new Error('Department not found');
             }
 
-            // 2. Find eligible employees (must have second_salary > 0)
-            const query = {
-                is_active: true,
-                second_salary: { $gt: 0 }
-            };
-            if (departmentId && departmentId !== 'all') query.department_id = departmentId;
+            // 2. Find eligible employees (same set as regular payroll: scope + active or left this month)
+            const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
+            const [year, monthNum] = month ? String(month).split('-').map(Number) : [new Date().getFullYear(), new Date().getMonth() + 1];
+            const { startDate, endDate } = month ? await getPayrollDateRange(year, monthNum) : { startDate: null, endDate: null };
+            // Use UTC boundaries so "26 Dec–25 Jan" excludes 25 Dec left (avoids TZ shifting 26 Dec 00:00 local into 25 Dec UTC).
+            const leftStart = startDate ? new Date(startDate + 'T00:00:00.000Z') : null;
+            const leftEnd = endDate ? new Date(endDate + 'T23:59:59.999Z') : null;
+
+            const query = { ...scopeFilter };
             if (divisionId && divisionId !== 'all') query.division_id = divisionId;
-
-            const employeesCount = await Employee.countDocuments(query);
-
-            if (employeesCount === 0) {
-                throw new Error('No employees with 2nd salary found matching the filters');
+            if (departmentId && departmentId !== 'all') query.department_id = departmentId;
+            if (leftStart && leftEnd) {
+                query.$or = [
+                    { is_active: true, leftDate: null },
+                    { leftDate: { $gte: leftStart, $lte: leftEnd } },
+                ];
+            } else {
+                query.is_active = true;
             }
 
-            // 3. Queue the job for background processing
+            const employees = await Employee.find(query).select('_id');
+            const employeesCount = employees.length;
+            const employeeIds = employees.map((e) => e._id.toString());
+
+            if (employeesCount === 0) {
+                throw new Error('No employees found matching the filters (active or left in this payroll month)');
+            }
+
+            // 3. Queue the job for background processing (pass employeeIds so worker uses same list)
+            // Use unique jobId per run so a new job is always created (avoids stuck "waiting" job blocking new runs)
             const job = await payrollQueue.add('second_salary_calculation', {
                 action: 'second_salary_batch',
                 departmentId: departmentId === 'all' ? null : departmentId,
                 divisionId: divisionId === 'all' ? null : divisionId,
                 month,
-                userId
+                userId,
+                employeeIds
             }, {
-                jobId: `second_salary_${month}_${departmentId || 'all'}_${divisionId || 'all'}`
+                jobId: `second_salary_${month}_${departmentId || 'all'}_${divisionId || 'all'}_${Date.now()}`
             });
 
             console.log(`[SecondSalaryService] Queued background job ${job.id} for ${employeesCount} employees`);

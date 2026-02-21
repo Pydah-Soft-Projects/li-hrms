@@ -13,7 +13,6 @@ import {
   User as UserIcon,
   Trash2,
   RotateCw,
-  Copy,
   CheckCircle,
   Users,
   UserCheck,
@@ -35,7 +34,8 @@ import {
   ShieldCheck,
   Info,
   RefreshCw,
-  Lock
+  Lock,
+  Clock
 } from 'lucide-react';
 
 // Custom Stat Card for User Management
@@ -135,6 +135,7 @@ export default function UsersPage() {
   const [showViewDialog, setShowViewDialog] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [selectedViewUser, setSelectedViewUser] = useState<User | null>(null);
+  const [activeTab, setActiveTab] = useState<'overview' | 'permissions'>('overview');
 
   const [formData, setFormData] = useState<UserFormData>({
     email: '',
@@ -291,30 +292,51 @@ export default function UsersPage() {
 
       // Handle scoping
       payload.dataScope = formData.dataScope as DataScope;
-      if (formData.dataScope === 'department') {
-        (payload as any).department = formData.department || null;
-      } else if (formData.dataScope === 'division') {
-        payload.allowedDivisions = (formData.allowedDivisions || []).map(d => typeof d === 'string' ? d : d._id);
+
+      // Always include divisionMapping if available
+      if (formData.divisionMapping && formData.divisionMapping.length > 0) {
         payload.divisionMapping = (formData.divisionMapping || []).map(m => ({
           division: typeof m.division === 'string' ? m.division : m.division._id,
           departments: (m.departments || []).map(d => typeof d === 'string' ? d : d._id)
         }));
+      }
 
-        // Manager specific: Map selected departments to divisionMapping
-        if (formData.role === 'manager' && payload.allowedDivisions && payload.allowedDivisions.length === 1) {
-          const divId = payload.allowedDivisions[0];
-          const depts = (formData.departments || []).map((d: any) => typeof d === 'string' ? d : d._id);
-          payload.divisionMapping = [{
-            division: divId,
-            departments: depts
-          }];
+      if (formData.dataScope === 'department') {
+        (payload as any).department = formData.department || null;
+      } else if (formData.dataScope === 'division') {
+        payload.allowedDivisions = (formData.allowedDivisions || []).map(d => typeof d === 'string' ? d : d._id);
+
+        // For Manager/HOD specific mapping if divisionMapping is not already set or needs overrides
+        if (!payload.divisionMapping || payload.divisionMapping.length === 0) {
+          if (formData.role === 'manager' && payload.allowedDivisions && payload.allowedDivisions.length === 1) {
+            const divId = payload.allowedDivisions[0];
+            const depts = (formData.departments || []).map((d: any) => typeof d === 'string' ? d : d._id);
+            payload.divisionMapping = [{
+              division: divId,
+              departments: depts
+            }];
+          } else if (formData.role === 'hod' && formData.division && formData.department) {
+            payload.divisionMapping = [{
+              division: formData.division,
+              departments: [formData.department]
+            }];
+          }
         }
       }
 
-      // Force HOD to use 'department' scope and include department field
+      // Force HOD to use 'department' scope and ensure divisionMapping is correct
       if (formData.role === 'hod') {
         payload.dataScope = 'department';
         (payload as any).department = formData.department || null;
+        (payload as any).division = formData.division || null;
+
+        // HOD MUST have a specific mapping
+        if (formData.division && formData.department) {
+          payload.divisionMapping = [{
+            division: formData.division,
+            departments: [formData.department]
+          }];
+        }
       }
 
       // Add feature control (always send to ensure overrides work)
@@ -358,23 +380,49 @@ export default function UsersPage() {
 
       // Handle scoping
       payload.dataScope = employeeFormData.dataScope || 'all';
+
+      // Always include divisionMapping if available
+      if (employeeFormData.divisionMapping && employeeFormData.divisionMapping.length > 0) {
+        payload.divisionMapping = (employeeFormData.divisionMapping || []).map(m => ({
+          division: typeof m.division === 'string' ? m.division : m.division?._id,
+          departments: (m.departments || []).map(d => typeof d === 'string' ? d : d?._id)
+        })) as any;
+      }
+
       if (payload.dataScope === 'department') {
         payload.department = (employeeFormData.departments || [])[0] || null;
       } else if (payload.dataScope === 'division') {
         payload.allowedDivisions = (employeeFormData.allowedDivisions || []).map(d => typeof d === 'string' ? d : d._id);
-        payload.divisionMapping = (employeeFormData.divisionMapping || []).map(m => ({
-          division: typeof m.division === 'string' ? m.division : m.division._id,
-          departments: (m.departments || []).map(d => typeof d === 'string' ? d : d._id)
-        }));
 
-        // Manager specific: Map selected departments to divisionMapping
-        if (employeeFormData.role === 'manager' && payload.allowedDivisions && payload.allowedDivisions.length === 1) {
-          const divId = payload.allowedDivisions[0];
-          const depts = (employeeFormData.departments || []).map((d: any) => typeof d === 'string' ? d : d._id);
+        // For HOD/Manager specific mapping overrides
+        if (!payload.divisionMapping || payload.divisionMapping.length === 0) {
+          if (employeeFormData.role === 'manager' && payload.allowedDivisions && payload.allowedDivisions.length === 1) {
+            const divId = payload.allowedDivisions[0];
+            const depts = (employeeFormData.departments || []).map((d: any) => typeof d === 'string' ? d : d._id);
+            payload.divisionMapping = [{
+              division: divId,
+              departments: depts
+            }] as any;
+          } else if (employeeFormData.role === 'hod' && employeeFormData.division && (employeeFormData.departments || []).length > 0) {
+            payload.divisionMapping = [{
+              division: employeeFormData.division,
+              departments: [employeeFormData.departments![0]]
+            }] as any;
+          }
+        }
+      }
+
+      // HOD specific override for employee upgrade
+      if (employeeFormData.role === 'hod') {
+        payload.dataScope = 'department';
+        payload.department = employeeFormData.department || (employeeFormData.departments || [])[0] || null;
+        (payload as any).division = employeeFormData.division || null;
+
+        if (employeeFormData.division && (employeeFormData.department || (employeeFormData.departments || []).length > 0)) {
           payload.divisionMapping = [{
-            division: divId,
-            departments: depts
-          }];
+            division: employeeFormData.division,
+            departments: [employeeFormData.department || employeeFormData.departments![0]]
+          }] as any;
         }
       }
 
@@ -415,19 +463,41 @@ export default function UsersPage() {
 
       // Handle scoping
       payload.dataScope = formData.dataScope;
+
+      // Always include divisionMapping if available
+      if (formData.divisionMapping && formData.divisionMapping.length > 0) {
+        payload.divisionMapping = (formData.divisionMapping || []).map(m => ({
+          division: typeof m.division === 'string' ? m.division : m.division?._id,
+          departments: (m.departments || []).map((d: any) => typeof d === 'string' ? d : d?._id)
+        }));
+      }
+
       if (formData.dataScope === 'department') {
         (payload as any).department = formData.department || null;
       } else if (formData.dataScope === 'division') {
         payload.allowedDivisions = formData.allowedDivisions;
-        payload.divisionMapping = formData.divisionMapping;
 
-        // Manager specific: Map selected departments to divisionMapping
+        // Manager specific override
         if (formData.role === 'manager' && payload.allowedDivisions && payload.allowedDivisions.length === 1) {
           const divId = typeof payload.allowedDivisions[0] === 'string' ? payload.allowedDivisions[0] : payload.allowedDivisions[0]._id;
           const depts = (formData.departments || []).map((d: any) => typeof d === 'string' ? d : d._id);
           payload.divisionMapping = [{
             division: divId,
             departments: depts
+          }];
+        }
+      }
+
+      // HOD specific override for update
+      if (formData.role === 'hod') {
+        payload.dataScope = 'department';
+        (payload as any).department = formData.department || null;
+        (payload as any).division = formData.division || null;
+
+        if (formData.division && formData.department) {
+          payload.divisionMapping = [{
+            division: formData.division,
+            departments: [formData.department]
           }];
         }
       }
@@ -563,21 +633,47 @@ export default function UsersPage() {
     }));
 
     // For HOD/Manager, prioritize the managed division and departments from division mapping
-    const mapping = normalizedMapping.length > 0 ? normalizedMapping[0] : null;
+    let mapping = normalizedMapping.length > 0 ? normalizedMapping[0] : null;
+    let finalMapping = normalizedMapping;
+
+    // HOD fallback: if user has department but no divisionMapping, derive division from department (legacy)
+    const deptId = (user as any).department?._id || (typeof (user as any).department === 'string' ? (user as any).department : '') || (mapping?.departments || [])[0];
+    if (user.role === 'hod' && deptId && (!mapping || !mapping.division)) {
+      let divId = '';
+      const dept = departments.find((d: Department) => d._id === deptId);
+      const firstDiv = dept?.divisions?.[0];
+      if (firstDiv) {
+        divId = typeof firstDiv === 'string' ? firstDiv : (firstDiv as any)?._id || '';
+      }
+      // Fallback: find division that contains this department (Division.departments)
+      if (!divId && divisions.length > 0) {
+        const divWithDept = divisions.find((d: Division) =>
+          (d.departments || []).some((dep: any) => (typeof dep === 'string' ? dep : dep?._id) === deptId)
+        );
+        if (divWithDept) divId = (divWithDept as any)._id;
+      }
+      if (divId) {
+        mapping = { division: divId, departments: [deptId] };
+        finalMapping = [mapping];
+      }
+    }
+
+    const totalDeptsFromMapping = (finalMapping || []).reduce((sum: number, m: any) => sum + (m.departments || []).length, 0);
+    const isMultiple = (finalMapping || []).length > 1 || totalDeptsFromMapping > 1;
 
     setFormData({
       email: user.email,
       name: user.name,
       role: user.role,
-      departmentType: user.departmentType || (user.departments && user.departments.length > 1 ? 'multiple' : 'single'),
-      department: user.role === 'hod' && mapping && mapping.departments?.length > 0 ? mapping.departments[0] : (user.department?._id || ''),
-      departments: user.role === 'manager' && mapping ? mapping.departments : (user.departments?.map((d) => d._id) || []),
+      departmentType: user.departmentType || (isMultiple ? 'multiple' : 'single'),
+      department: user.role === 'hod' && mapping && mapping.departments?.length > 0 ? mapping.departments[0] : (deptId || (user as any).department?._id || ''),
+      departments: user.role === 'manager' && mapping ? mapping.departments : (finalMapping || []).flatMap((m: any) => m.departments || []),
       password: '',
       autoGeneratePassword: false,
       featureControl: user.featureControl || [],
       dataScope: user.dataScope || 'all',
       allowedDivisions: user.allowedDivisions?.map(d => typeof d === 'string' ? d : d?._id) || [],
-      divisionMapping: normalizedMapping,
+      divisionMapping: finalMapping,
       division: (user.role === 'hod' || user.role === 'manager') && mapping ? mapping.division : '',
     });
     // Prevent useEffect from reloading defaults and overwriting user data
@@ -657,7 +753,7 @@ export default function UsersPage() {
 
     setFunc((prev: any) => {
       let newMapping = [...(prev.divisionMapping || [])];
-      let existingDivisionIdx = newMapping.findIndex(m => {
+      const existingDivisionIdx = newMapping.findIndex(m => {
         const mDivId = typeof m.division === 'string' ? m.division : m.division?._id;
         return mDivId === divisionId;
       });
@@ -1259,23 +1355,40 @@ export default function UsersPage() {
                     </td>
                     <td className="px-6 py-5">
                       <div className="flex flex-wrap gap-1.5">
-                        {user.departments && user.departments.length > 0 ? (
-                          <>
-                            {user.departments.slice(0, 1).map((dept) => (
-                              <span key={dept._id} className="flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-400">
-                                <Building className="h-2.5 w-2.5" />
-                                {dept.name}
-                              </span>
-                            ))}
-                            {user.departments.length > 1 && (
-                              <span className="rounded-md bg-blue-100/50 px-2 py-0.5 text-[10px] font-bold text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
-                                +{user.departments.length - 1} more
-                              </span>
-                            )}
-                          </>
-                        ) : (
-                          <span className="text-[11px] font-medium text-slate-400 italic">No dept assigned</span>
-                        )}
+                        {(() => {
+                          const mapping = user.divisionMapping || [];
+                          const depts = mapping.flatMap((m: any) =>
+                            (m.departments || []).map((d: any) => ({
+                              _id: typeof d === 'string' ? d : d?._id,
+                              name: typeof d === 'object' && d?.name ? d.name : departments.find((dep) => dep._id === (typeof d === 'string' ? d : d?._id))?.name || 'Dept',
+                            }))
+                          ).filter((d: { _id?: string }) => d._id);
+                          const allDivLabels = mapping
+                            .filter((m: any) => !m.departments || m.departments.length === 0)
+                            .map((m: any) => {
+                              const divId = typeof m.division === 'string' ? m.division : m.division?._id;
+                              const divName = divisions.find((d) => d._id === divId)?.name || (typeof m.division === 'object' && m.division?.name) || 'Division';
+                              return { _id: `div-${divId}`, name: `All in ${divName}` };
+                            });
+                          const items = [...depts, ...allDivLabels];
+                          return items.length > 0 ? (
+                            <>
+                              {items.slice(0, 2).map((item: { _id: string; name: string }, idx: number) => (
+                                <span key={`${user._id}-${item._id}-${idx}`} className="flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                                  <Building className="h-2.5 w-2.5" />
+                                  {item.name}
+                                </span>
+                              ))}
+                              {items.length > 2 && (
+                                <span className="rounded-md bg-blue-100/50 px-2 py-0.5 text-[10px] font-bold text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
+                                  +{items.length - 2} more
+                                </span>
+                              )}
+                            </>
+                          ) : (
+                            <span className="text-[11px] font-medium text-slate-400 italic">No dept assigned</span>
+                          );
+                        })()}
                       </div>
                     </td>
                     <td className="px-6 py-5">
@@ -1356,943 +1469,1437 @@ export default function UsersPage() {
         {
           showCreateDialog && (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowCreateDialog(false)} />
-              <div className="relative z-50 flex w-full max-w-lg max-h-[90vh] flex-col overflow-hidden rounded-[2rem] bg-white shadow-2xl dark:bg-slate-900">
-                {/* Header */}
-                <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/50 px-6 py-4 dark:border-slate-800 dark:bg-slate-900/50">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/10 text-blue-600">
-                      <UserPlus className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <h2 className="text-lg font-bold text-slate-900 dark:text-white">Create New User</h2>
-                      <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">Access Provisioning</p>
-                    </div>
-                  </div>
+              <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md" onClick={() => setShowCreateDialog(false)} />
+              <div className="relative z-50 w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden rounded-3xl bg-white shadow-2xl dark:bg-slate-900">
+
+                {/* Modern Gradient Header */}
+                <div className="relative bg-gradient-to-br from-indigo-600 via-purple-600 to-indigo-700 px-8 py-6 text-white overflow-hidden">
+                  <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZGVmcz48cGF0dGVybiBpZD0iZ3JpZCIgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiBwYXR0ZXJuVW5pdHM9InVzZXJTcGFjZU9uVXNlIj48cGF0aCBkPSJNIDQwIDAgTCAwIDAgMCA0MCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLW9wYWNpdHk9IjAuMSIgc3Ryb2tlLXdpZHRoPSIxIi8+PC9wYXR0ZXJuPjwvZGVmcz48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2dyaWQpIi8+PC9zdmc+')] opacity-30"></div>
                   <button
-                    onClick={() => setShowCreateDialog(false)}
-                    className="rounded-xl p-2 text-slate-400 hover:bg-white hover:text-slate-600 dark:hover:bg-slate-800"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowCreateDialog(false);
+                    }}
+                    className="absolute right-6 top-6 z-10 rounded-xl p-2 text-white/80 transition-all hover:bg-white/10 hover:text-white"
                   >
                     <X className="h-5 w-5" />
                   </button>
+                  <div className="relative flex items-center gap-4">
+                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/10 backdrop-blur-sm ring-2 ring-white/20">
+                      <UserPlus className="h-7 w-7" />
+                    </div>
+                    <div>
+                      <h2 className="text-2xl font-bold">Create New User</h2>
+                      <p className="text-sm text-indigo-100 font-medium">Add a new team member to the system</p>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Scrollable Content */}
-                <div className="flex-1 overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800">
-                  <form onSubmit={handleCreateUser} className="space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                      <div className="space-y-1.5">
-                        <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Full Name *</label>
-                        <input
-                          type="text"
-                          value={formData.name}
-                          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                          required
-                          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                          placeholder="e.g. John Doe"
-                        />
-                      </div>
+                <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800">
+                  <form onSubmit={handleCreateUser} className="flex flex-col lg:flex-row h-full">
 
-                      <div className="space-y-1.5">
-                        <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Email Address *</label>
-                        <input
-                          type="email"
-                          value={formData.email}
-                          onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                          required
-                          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                          placeholder="john@example.com"
-                        />
-                      </div>
-                    </div>
+                    {/* LEFT COLUMN - Main Form Fields */}
+                    <div className="flex-1 p-8 space-y-6 lg:border-r lg:border-slate-200 dark:lg:border-slate-800">
+                      {/* Basic Information Card */}
+                      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
+                        <div className="mb-5 flex items-center gap-3">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10">
+                            <UserCircle className="h-5 w-5" />
+                          </div>
+                          <div>
+                            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Basic Information</h3>
+                            <p className="text-xs text-slate-500">User identity and contact details</p>
+                          </div>
+                        </div>
 
-                    <div className="space-y-1.5">
-                      <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500">System Role *</label>
-                      <select
-                        value={formData.role}
-                        onChange={(e) => {
-                          const role = e.target.value;
-                          setFormData({
-                            ...formData,
-                            role,
-                            dataScope: ['hr', 'sub_admin', 'super_admin'].includes(role) ? 'all' : (role === 'hod' ? 'division' : 'department'),
-                            department: '',
-                            departments: [],
-                            divisionMapping: []
-                          });
-                        }}
-                        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                      >
-                        {ROLES.filter(r => r.value !== 'employee').map((role) => (
-                          <option key={role.value} value={role.value}>
-                            {role.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                        <div className="space-y-4">
+                          <div className="space-y-2">
+                            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                              Full Name <span className="text-rose-500">*</span>
+                            </label>
+                            <input
+                              type="text"
+                              value={formData.name}
+                              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                              required
+                              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 placeholder-slate-400 transition-all focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                              placeholder="e.g. John Doe"
+                            />
+                          </div>
 
-                    <div className="rounded-3xl border border-slate-100 bg-slate-50/50 p-6 dark:border-slate-800 dark:bg-slate-900/50">
-                      <ScopingSelector data={formData} setData={setFormData} />
-                    </div>
-
-                    {/* Feature Control */}
-                    <div className="space-y-3">
-                      <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Module Access Control</label>
-                      <div className="max-h-64 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 space-y-4 dark:border-slate-700 dark:bg-slate-950/50">
-                        {MODULE_CATEGORIES.map((category) => (
-                          <div key={category.code}>
-                            <h4 className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase text-slate-400">
-                              {category.name}
-                            </h4>
-                            <div className="grid grid-cols-2 gap-2">
-                              {category.modules.map((module) => (
-                                <label key={module.code} className="flex items-center gap-2 rounded-xl border border-slate-100 bg-slate-50 p-2.5 transition-all hover:border-blue-100 hover:bg-white dark:border-slate-800 dark:bg-slate-900">
-                                  <input
-                                    type="checkbox"
-                                    checked={(formData.featureControl || []).includes(module.code)}
-                                    onChange={(e) => {
-                                      if (e.target.checked) {
-                                        setFormData({ ...formData, featureControl: [...(formData.featureControl || []), module.code] });
-                                      } else {
-                                        setFormData({ ...formData, featureControl: (formData.featureControl || []).filter(m => m !== module.code) });
-                                      }
-                                    }}
-                                    className="h-4 w-4 rounded-md border-slate-300 text-blue-600 focus:ring-blue-500"
-                                  />
-                                  <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
-                                    {module.label}
-                                  </span>
-                                </label>
-                              ))}
+                          <div className="space-y-2">
+                            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                              Email Address <span className="text-rose-500">*</span>
+                            </label>
+                            <div className="relative">
+                              <Mail className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                              <input
+                                type="email"
+                                value={formData.email}
+                                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                                required
+                                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 pl-11 text-sm font-medium text-slate-900 placeholder-slate-400 transition-all focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                placeholder="john@example.com"
+                              />
                             </div>
                           </div>
-                        ))}
+
+                          <div className="space-y-2">
+                            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                              System Role <span className="text-rose-500">*</span>
+                            </label>
+                            <div className="relative">
+                              <Shield className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                              <select
+                                value={formData.role}
+                                onChange={(e) => {
+                                  const role = e.target.value;
+                                  setFormData({
+                                    ...formData,
+                                    role,
+                                    dataScope: ['hr', 'sub_admin', 'super_admin'].includes(role) ? 'all' : (role === 'hod' ? 'division' : 'department'),
+                                    department: '',
+                                    departments: [],
+                                    divisionMapping: []
+                                  });
+                                }}
+                                className="w-full appearance-none rounded-xl border border-slate-200 bg-white px-4 py-3 pl-11 text-sm font-medium text-slate-900 transition-all focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                              >
+                                {ROLES.filter(r => r.value !== 'employee').map((role) => (
+                                  <option key={role.value} value={role.value}>
+                                    {role.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Password Configuration Card */}
+                      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
+                        <div className="mb-5 flex items-center gap-3">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-500/10">
+                            <Lock className="h-5 w-5" />
+                          </div>
+                          <div>
+                            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Password Configuration</h3>
+                            <p className="text-xs text-slate-500">Set initial access credentials</p>
+                          </div>
+                        </div>
+
+                        <div className="space-y-4">
+                          <label className="flex items-center gap-3 cursor-pointer group rounded-xl border border-slate-200 bg-slate-50 p-4 transition-all hover:border-indigo-300 hover:bg-indigo-50/50 dark:border-slate-700 dark:bg-slate-800/50">
+                            <div className={`relative flex h-5 w-5 items-center justify-center rounded-md border-2 transition-all ${formData.autoGeneratePassword ? 'border-indigo-600 bg-indigo-600' : 'border-slate-300 bg-white'}`}>
+                              {formData.autoGeneratePassword && <Check className="h-3.5 w-3.5 text-white" strokeWidth={3} />}
+                              <input
+                                type="checkbox"
+                                className="sr-only"
+                                checked={formData.autoGeneratePassword}
+                                onChange={(e) => setFormData({ ...formData, autoGeneratePassword: e.target.checked })}
+                              />
+                            </div>
+                            <div className="flex-1">
+                              <span className="block text-sm font-semibold text-slate-900 dark:text-white">Auto-generate secure password</span>
+                              <span className="text-xs text-slate-500">System will create and email a temporary password</span>
+                            </div>
+                          </label>
+
+                          {!formData.autoGeneratePassword && (
+                            <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
+                              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                                Password <span className="text-rose-500">*</span>
+                              </label>
+                              <div className="relative">
+                                <Key className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                                <input
+                                  type="password"
+                                  value={formData.password}
+                                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                                  placeholder="Enter a secure password"
+                                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 pl-11 text-sm font-medium text-slate-900 placeholder-slate-400 transition-all focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Access Scoping Card */}
+                      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
+                        <div className="mb-5 flex items-center gap-3">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10">
+                            <Building className="h-5 w-5" />
+                          </div>
+                          <div>
+                            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Access Scoping</h3>
+                            <p className="text-xs text-slate-500">Define organizational access boundaries</p>
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-800/30">
+                          <ScopingSelector data={formData} setData={setFormData} />
+                        </div>
+                      </div>
+
+                      {/* Action Buttons */}
+                      <div className="flex gap-3 pt-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowCreateDialog(false)}
+                          className="flex-1 rounded-xl border-2 border-slate-200 bg-white px-6 py-3.5 text-sm font-bold text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50 active:scale-[0.98] dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          className="flex-1 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-3.5 text-sm font-bold text-white shadow-lg shadow-indigo-500/30 transition-all hover:shadow-xl hover:shadow-indigo-500/40 active:scale-[0.98]"
+                        >
+                          Create User Account
+                        </button>
                       </div>
                     </div>
 
-                    {/* Password Configuration */}
-                    <div className="space-y-4 rounded-2xl border border-blue-50 bg-blue-50/30 p-5 dark:border-blue-900/10 dark:bg-blue-900/5">
-                      <label className="flex items-center gap-3 cursor-pointer group">
-                        <div className={`flex h-5 w-5 items-center justify-center rounded border transition-all ${formData.autoGeneratePassword ? 'border-blue-500 bg-blue-500 text-white' : 'border-slate-300 bg-white'}`}>
-                          {formData.autoGeneratePassword && <Check className="h-3 w-3" />}
-                          <input
-                            type="checkbox"
-                            className="sr-only"
-                            checked={formData.autoGeneratePassword}
-                            onChange={(e) => setFormData({ ...formData, autoGeneratePassword: e.target.checked })}
-                          />
-                        </div>
-                        <span className="text-sm font-bold text-slate-700 dark:text-slate-300">Sync with system password policies</span>
-                      </label>
+                    {/* RIGHT COLUMN - Feature Privileges */}
+                    <div className="flex-1 p-8 space-y-6 bg-slate-50/50 dark:bg-slate-900/30">
+                      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
+                        <div className="mb-5 flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-50 text-violet-600 dark:bg-violet-500/10">
+                              <Layers className="h-5 w-5" />
+                            </div>
+                            <div>
+                              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Feature Privileges</h3>
+                              <p className="text-xs text-slate-500">Grant read/write access to modules</p>
+                            </div>
+                          </div>
 
-                      {!formData.autoGeneratePassword && (
-                        <div className="relative mt-2">
-                          <Key className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                          <input
-                            type="password"
-                            value={formData.password}
-                            onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                            placeholder="Create secure password"
-                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 pl-11 pr-4 text-sm focus:border-blue-500 dark:border-slate-700 dark:bg-slate-800"
-                          />
+                          {/* Bulk Selection Buttons */}
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const allModules = MODULE_CATEGORIES.flatMap(cat => cat.modules.map(m => m.code));
+                                const readPermissions = allModules.map(code => `${code}:read`);
+                                const existingWrite = (formData.featureControl || []).filter(fc => fc.endsWith(':write'));
+                                setFormData({ ...formData, featureControl: [...readPermissions, ...existingWrite] });
+                              }}
+                              className="px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-500/10 dark:text-blue-400 dark:hover:bg-blue-500/20 transition-colors"
+                            >
+                              Read All
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const allModules = MODULE_CATEGORIES.flatMap(cat => cat.modules.map(m => m.code));
+                                const writePermissions = allModules.map(code => `${code}:write`);
+                                const existingRead = (formData.featureControl || []).filter(fc => fc.endsWith(':read'));
+                                setFormData({ ...formData, featureControl: [...existingRead, ...writePermissions] });
+                              }}
+                              className="px-3 py-1.5 text-xs font-medium rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:hover:bg-emerald-500/20 transition-colors"
+                            >
+                              Write All
+                            </button>
+                          </div>
                         </div>
-                      )}
+
+                        <div className="space-y-4">
+                          {MODULE_CATEGORIES.map((category) => (
+                            <div key={category.code} className="rounded-xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-800/30">
+                              <div className="mb-3 flex items-center gap-2">
+                                <span className="text-lg">{category.icon}</span>
+                                <h4 className="text-sm font-bold text-slate-900 dark:text-white">{category.name}</h4>
+                              </div>
+                              <div className="grid grid-cols-1 gap-2">
+                                {category.modules.map((module) => {
+                                  const hasRead = formData.featureControl?.includes(`${module.code}:read`) || false;
+                                  const hasWrite = formData.featureControl?.includes(`${module.code}:write`) || false;
+
+                                  const toggleRead = () => {
+                                    const currentFeatures = formData.featureControl || [];
+                                    const readPerm = `${module.code}:read`;
+                                    const newFeatures = hasRead
+                                      ? currentFeatures.filter(f => f !== readPerm)
+                                      : [...currentFeatures, readPerm];
+                                    setFormData({ ...formData, featureControl: newFeatures });
+                                  };
+
+                                  const toggleWrite = () => {
+                                    const currentFeatures = formData.featureControl || [];
+                                    const writePerm = `${module.code}:write`;
+                                    const newFeatures = hasWrite
+                                      ? currentFeatures.filter(f => f !== writePerm)
+                                      : [...currentFeatures, writePerm];
+                                    setFormData({ ...formData, featureControl: newFeatures });
+                                  };
+
+                                  return (
+                                    <div
+                                      key={module.code}
+                                      className="flex items-center justify-between rounded-lg p-2 transition-colors hover:bg-white dark:hover:bg-slate-700/50"
+                                    >
+                                      <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{module.label}</span>
+                                      <div className="flex gap-2">
+                                        {/* Read Toggle */}
+                                        <button
+                                          type="button"
+                                          onClick={toggleRead}
+                                          className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasRead
+                                            ? 'bg-blue-500 text-white shadow-sm'
+                                            : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                            }`}
+                                        >
+                                          Read
+                                        </button>
+                                        {/* Write Toggle */}
+                                        <button
+                                          type="button"
+                                          onClick={toggleWrite}
+                                          className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasWrite
+                                            ? 'bg-emerald-500 text-white shadow-sm'
+                                            : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                            }`}
+                                        >
+                                          Write
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="flex gap-4 pt-2">
-                      <button
-                        type="button"
-                        onClick={() => setShowCreateDialog(false)}
-                        className="flex-1 rounded-2xl border border-slate-200 py-3.5 text-sm font-bold text-slate-600 transition-all hover:bg-slate-50 dark:border-slate-800 dark:text-slate-400"
-                      >
-                        Discard
-                      </button>
-                      <button
-                        type="submit"
-                        className="flex-1 rounded-2xl bg-blue-600 py-3.5 text-sm font-bold text-white shadow-lg shadow-blue-500/20 transition-all hover:bg-blue-700 active:scale-[0.98]"
-                      >
-                        Create Account
-                      </button>
-                    </div>
                   </form>
                 </div>
               </div>
-            </div >
-          )
-        }
+            </div>
+          )}
 
         {/* Update User Dialog */}
         {showFromEmployeeDialog && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div
-              className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm"
-              onClick={() => {
-                setShowFromEmployeeDialog(false);
-                resetEmployeeForm();
-              }}
-            />
-            <div className="relative z-50 flex w-full max-w-xl max-h-[90vh] flex-col overflow-hidden rounded-[2rem] bg-white shadow-2xl dark:bg-slate-900">
-              {/* Tightened Header */}
-              <div className="relative bg-gradient-to-r from-emerald-600 to-teal-600 px-8 py-6 text-white overflow-hidden">
+            <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md" onClick={() => setShowFromEmployeeDialog(false)} />
+            <div className="relative z-50 w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden rounded-3xl bg-white shadow-2xl dark:bg-slate-900">
+
+              {/* Modern Gradient Header - Emerald Theme */}
+              <div className="relative bg-gradient-to-br from-emerald-600 via-teal-600 to-emerald-700 px-8 py-6 text-white overflow-hidden">
+                <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZGVmcz48cGF0dGVybiBpZD0iZ3JpZCIgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiBwYXR0ZXJuVW5pdHM9InVzZXJTcGFjZU9uVXNlIj48cGF0aCBkPSJNIDQwIDAgTCAwIDAgMCA0MCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLW9wYWNpdHk9IjAuMSIgc3Ryb2tlLXdpZHRoPSIxIi8+PC9wYXR0ZXJuPjwvZGVmcz48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2dyaWQpIi8+PC9zdmc+')] opacity-30"></div>
                 <button
-                  onClick={() => setShowFromEmployeeDialog(false)}
-                  className="absolute right-4 top-4 rounded-xl p-2 text-white/60 hover:bg-white/10 hover:text-white"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowFromEmployeeDialog(false);
+                  }}
+                  className="absolute right-6 top-6 z-10 rounded-xl p-2 text-white/80 transition-all hover:bg-white/10 hover:text-white"
                 >
                   <X className="h-5 w-5" />
                 </button>
-                <div className="flex items-center gap-4">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/10 backdrop-blur-md">
-                    <UserPlus className="h-6 w-6" />
+                <div className="relative flex items-center gap-4">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/10 backdrop-blur-sm ring-2 ring-white/20">
+                    <UserPlus className="h-7 w-7" />
                   </div>
                   <div>
-                    <h2 className="text-xl font-black">Provision Employee</h2>
-                    <p className="text-emerald-50 text-[10px] font-bold uppercase tracking-wider opacity-80">Access Management</p>
+                    <h2 className="text-2xl font-bold">Upgrade Employee</h2>
+                    <p className="text-sm text-emerald-100 font-medium">Grant system access to existing employee</p>
                   </div>
-                </div>
-              </div>
-
-              {/* Fixed Scrollable Area */}
-              <div className="flex-1 overflow-y-auto p-8 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800">
-                <form onSubmit={handleCreateFromEmployee} className="space-y-6">
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Target Employee *</label>
-                    <div className="relative" ref={employeeDropdownRef}>
-                      <div className="relative">
-                        <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                        <input
-                          type="text"
-                          placeholder="Search by name or employee ID..."
-                          value={employeeSearch}
-                          onFocus={() => setShowEmployeeDropdown(true)}
-                          onChange={(e) => {
-                            setEmployeeSearch(e.target.value);
-                            setShowEmployeeDropdown(true);
-                            if (e.target.value === '') {
-                              setEmployeeFormData({ ...employeeFormData, employeeId: '', email: '' });
-                            }
-                          }}
-                          className="w-full rounded-2xl border border-slate-200 bg-white py-3.5 pl-11 pr-12 text-sm focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowEmployeeDropdown(!showEmployeeDropdown)}
-                          className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400"
-                        >
-                          <ChevronRight className={`h-4 w-4 transition-transform ${showEmployeeDropdown ? 'rotate-90' : ''}`} />
-                        </button>
-                      </div>
-
-                      {showEmployeeDropdown && (
-                        <div className="absolute z-10 mt-2 w-full max-h-64 overflow-y-auto rounded-2xl border border-slate-100 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900">
-                          {employeesWithoutAccount.filter(emp =>
-                            !employeeSearch ||
-                            emp.employee_name.toLowerCase().includes(employeeSearch.toLowerCase()) ||
-                            emp.emp_no.toLowerCase().includes(employeeSearch.toLowerCase())
-                          ).length === 0 ? (
-                            <div className="p-8 text-center">
-                              <UserX className="mx-auto h-8 w-8 text-slate-300 mb-2" />
-                              <p className="text-sm font-medium text-slate-500">No matching employees</p>
-                            </div>
-                          ) : (
-                            <div className="p-2 space-y-1">
-                              {employeesWithoutAccount
-                                .filter(emp =>
-                                  !employeeSearch ||
-                                  emp.employee_name.toLowerCase().includes(employeeSearch.toLowerCase()) ||
-                                  emp.emp_no.toLowerCase().includes(employeeSearch.toLowerCase())
-                                )
-                                .map((emp) => (
-                                  <button
-                                    key={emp._id}
-                                    type="button"
-                                    onClick={() => {
-                                      setEmployeeFormData({
-                                        ...employeeFormData,
-                                        employeeId: emp.emp_no,
-                                        email: emp?.email || '',
-                                      });
-                                      setEmployeeSearch(`${emp.emp_no} - ${emp.employee_name}`);
-                                      setShowEmployeeDropdown(false);
-                                    }}
-                                    className={`flex w-full items-center justify-between rounded-xl p-3 text-left transition-colors ${employeeFormData.employeeId === emp.emp_no
-                                      ? 'bg-emerald-50 dark:bg-emerald-900/20'
-                                      : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
-                                      }`}
-                                  >
-                                    <div className="flex items-center gap-3">
-                                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white font-bold text-slate-400 shadow-sm dark:bg-slate-800">
-                                        {emp.employee_name[0]}
-                                      </div>
-                                      <div>
-                                        <div className="text-sm font-bold text-slate-900 dark:text-white">{emp.employee_name}</div>
-                                        <div className="text-[10px] font-medium text-slate-500 uppercase">{emp.emp_no} • {emp.department_id?.name || 'General'}</div>
-                                      </div>
-                                    </div>
-                                    {employeeFormData.employeeId === emp.emp_no && <CheckCircle className="h-4 w-4 text-emerald-500" />}
-                                  </button>
-                                ))}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Login Email</label>
-                      <div className="relative">
-                        <Mail className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                        <input
-                          type="email"
-                          value={employeeFormData.email}
-                          onChange={(e) => setEmployeeFormData({ ...employeeFormData, email: e.target.value })}
-                          className="w-full rounded-2xl border border-slate-200 bg-white py-3.5 pl-11 pr-4 text-sm focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
-                          placeholder="email@example.com"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Assigned Role *</label>
-                      <div className="relative">
-                        <Shield className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                        <select
-                          value={employeeFormData.role}
-                          onChange={(e) => {
-                            const role = e.target.value;
-                            setEmployeeFormData({
-                              ...employeeFormData,
-                              role,
-                              dataScope: ['hr', 'sub_admin'].includes(role) ? 'all' : (role === 'hod' ? 'division' : 'department'),
-                              departments: [],
-                              divisionMapping: []
-                            });
-                          }}
-                          className="w-full appearance-none rounded-2xl border border-slate-200 bg-white py-3 pl-11 pr-4 text-sm focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
-                        >
-                          {ROLES.filter((r) => !['super_admin', 'employee'].includes(r.value)).map((role) => (
-                            <option key={role.value} value={role.value}>{role.label}</option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-slate-100 bg-slate-50/50 p-6 dark:border-slate-800 dark:bg-slate-900/50">
-                    <ScopingSelector data={employeeFormData} setData={(val) => setEmployeeFormData(val)} asEmployee={true} />
-                  </div>
-
-                  <div className="flex items-start gap-4 rounded-2xl bg-amber-50 p-4 border border-amber-100 dark:bg-amber-900/10 dark:border-amber-800">
-                    <Key className="h-5 w-5 text-amber-500 mt-0.5" />
-                    <p className="text-xs leading-relaxed text-amber-800 dark:text-amber-400">
-                      The system will automatically generate a secure temporary password and dispatch it via email if available.
-                    </p>
-                  </div>
-
-                  <div className="flex gap-4 pt-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowFromEmployeeDialog(false);
-                        resetEmployeeForm();
-                      }}
-                      className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-sm font-bold text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
-                    >
-                      Discard
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={!employeeFormData.employeeId}
-                      className="flex-1 rounded-2xl bg-emerald-600 px-4 py-3.5 text-sm font-bold text-white shadow-lg shadow-emerald-500/20 transition-all hover:bg-emerald-700 active:scale-[0.98] disabled:opacity-50 disabled:grayscale"
-                    >
-                      Upgrade Now
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Edit User Dialog */}
-        {showEditDialog && selectedUser && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowEditDialog(false)} />
-            <div className="relative z-50 flex w-full max-w-xl max-h-[90vh] flex-col overflow-hidden rounded-[2rem] bg-white shadow-2xl dark:bg-slate-900">
-              <div className="relative bg-gradient-to-r from-indigo-600 to-blue-600 px-8 py-6 text-white overflow-hidden">
-                <button
-                  onClick={() => setShowEditDialog(false)}
-                  className="absolute right-4 top-4 rounded-xl p-2 text-white/60 hover:bg-white/10 hover:text-white"
-                >
-                  <X className="h-5 w-5" />
-                </button>
-                <div className="flex items-center gap-4">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/10 backdrop-blur-md">
-                    <Edit className="h-6 w-6" />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-bold">Edit Account</h2>
-                    <p className="text-indigo-100 text-[10px] font-bold uppercase tracking-wider opacity-80">Security & Access Configuration</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-8 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800">
-                <form onSubmit={handleUpdateUser} className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Account Email</label>
-                      <div className="relative">
-                        <Mail className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                        <input
-                          type="email"
-                          value={formData.email}
-                          disabled
-                          className="w-full rounded-2xl border border-slate-100 bg-slate-50 py-3.5 pl-11 pr-4 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-800/50"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Display Name *</label>
-                      <div className="relative">
-                        <UserCircle className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                        <input
-                          type="text"
-                          value={formData.name}
-                          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                          required
-                          className="w-full rounded-2xl border border-slate-200 bg-white py-3.5 pl-11 pr-4 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">System Role *</label>
-                    <div className="relative">
-                      <Shield className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                      <select
-                        value={formData.role}
-                        onChange={(e) => {
-                          const role = e.target.value;
-                          setFormData({
-                            ...formData,
-                            role,
-                            dataScope: ['hr', 'sub_admin'].includes(role) ? 'all' : (role === 'hod' ? 'division' : 'department'),
-                            divisionMapping: []
-                          });
-                        }}
-                        disabled={selectedUser.role === 'super_admin'}
-                        className="w-full appearance-none rounded-2xl border border-slate-200 bg-white py-3.5 pl-11 pr-4 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-800 dark:bg-slate-900 dark:text-white disabled:opacity-50"
-                      >
-                        {ROLES.filter((r) => !['super_admin', 'employee'].includes(r.value)).map((role) => (
-                          <option key={role.value} value={role.value}>
-                            {role.label}
-                          </option>
-                        ))}
-                        {selectedUser.role === 'super_admin' && (
-                          <option value="super_admin">Super Admin</option>
-                        )}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-slate-100 bg-slate-50/50 p-6 dark:border-slate-800 dark:bg-slate-900/50">
-                    <ScopingSelector data={formData} setData={setFormData} />
-                  </div>
-
-                  {/* Feature Control */}
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                        Feature Privileges
-                      </label>
-                      <span className="text-[10px] font-medium text-slate-400">Custom override configuration</span>
-                    </div>
-                    <div className="max-h-52 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 scrollbar-thin">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {MODULE_CATEGORIES.map((category) => (
-                          <div key={category.code} className="space-y-2">
-                            <div className="flex items-center gap-1.5 pb-2 border-b border-slate-100 dark:border-slate-800">
-                              <span className="text-sm">{category.icon}</span>
-                              <span className="text-[10px] font-bold uppercase text-slate-400">{category.name}</span>
-                            </div>
-                            <div className="space-y-1">
-                              {category.modules.map((module) => (
-                                <label key={module.code} className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors">
-                                  <input
-                                    type="checkbox"
-                                    checked={(formData.featureControl || []).includes(module.code)}
-                                    onChange={(e) => {
-                                      if (e.target.checked) {
-                                        setFormData({ ...formData, featureControl: [...(formData.featureControl || []), module.code] });
-                                      } else {
-                                        setFormData({ ...formData, featureControl: (formData.featureControl || []).filter(m => m !== module.code) });
-                                      }
-                                    }}
-                                    className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500/20"
-                                  />
-                                  <span className="text-xs text-slate-700 dark:text-slate-300">
-                                    {module.label}
-                                  </span>
-                                </label>
-                              ))}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-4 pt-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowEditDialog(false);
-                        setSelectedUser(null);
-                      }}
-                      className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-sm font-bold text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
-                    >
-                      Discard
-                    </button>
-                    <button
-                      type="submit"
-                      className="flex-1 rounded-2xl bg-indigo-600 px-4 py-3.5 text-sm font-bold text-white shadow-lg shadow-indigo-500/20 transition-all hover:bg-indigo-700 active:scale-[0.98]"
-                    >
-                      Save Changes
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Password Reset Dialog */}
-        {showPasswordDialog && selectedUser && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowPasswordDialog(false)} />
-            <div className="relative z-50 flex w-full max-sm:max-w-full max-w-md max-h-[90vh] flex-col overflow-hidden rounded-[2rem] bg-white shadow-2xl dark:bg-slate-900">
-              <div className="relative bg-gradient-to-r from-amber-500 to-orange-600 px-8 py-6 text-white text-center">
-                <button
-                  onClick={() => setShowPasswordDialog(false)}
-                  className="absolute right-4 top-4 rounded-xl p-2 text-white/60 hover:bg-white/10 hover:text-white"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-white/20 mb-3">
-                  <Key className="h-6 w-6" />
-                </div>
-                <h2 className="text-xl font-bold">Security Reset</h2>
-                <p className="text-amber-100 text-[10px] font-bold uppercase tracking-widest opacity-80">Credential Reconstruction</p>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-8 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800">
-                <div className="space-y-6">
-                  <div className="flex items-center gap-2 p-1.5 bg-slate-100 dark:bg-slate-800/50 rounded-2xl">
-                    <button
-                      onClick={() => setResetPasswordState(prev => ({ ...prev, autoGenerate: true }))}
-                      className={`flex-1 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${resetPasswordState.autoGenerate ? 'bg-white shadow-md text-amber-600 dark:bg-slate-700' : 'text-slate-400'}`}
-                    >
-                      Automated
-                    </button>
-                    <button
-                      onClick={() => setResetPasswordState(prev => ({ ...prev, autoGenerate: false }))}
-                      className={`flex-1 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${!resetPasswordState.autoGenerate ? 'bg-white shadow-md text-amber-600 dark:bg-slate-700' : 'text-slate-400'}`}
-                    >
-                      Manual
-                    </button>
-                  </div>
-
-                  {!resetPasswordState.autoGenerate ? (
-                    <div className="space-y-5 animate-in fade-in slide-in-from-top-4 duration-300">
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">New Password</label>
-                        <div className="relative">
-                          <Lock className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                          <input
-                            type={resetPasswordState.showNew ? "text" : "password"}
-                            value={resetPasswordState.newPassword}
-                            onChange={(e) => setResetPasswordState(prev => ({ ...prev, newPassword: e.target.value }))}
-                            className="w-full rounded-2xl border border-slate-200 bg-white py-3.5 pl-11 pr-12 text-sm focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
-                            placeholder="Min. 8 characters"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setResetPasswordState(prev => ({ ...prev, showNew: !prev.showNew }))}
-                            className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-amber-500 transition-colors"
-                          >
-                            {resetPasswordState.showNew ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                          </button>
-                        </div>
-
-                        {/* Enhanced Strength Meter */}
-                        <div className="space-y-2 pt-2">
-                          <div className="flex justify-between items-center px-1">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase">Security Score</span>
-                            <span className={`text-[10px] font-black uppercase tracking-wider ${getPasswordStrength(resetPasswordState.newPassword).score >= 3 ? "text-emerald-500" :
-                              getPasswordStrength(resetPasswordState.newPassword).score === 2 ? "text-amber-500" : "text-rose-500"
-                              }`}>
-                              {getPasswordStrength(resetPasswordState.newPassword).label}
-                            </span>
-                          </div>
-                          <div className="flex gap-1.5 h-1.5 px-0.5">
-                            {[1, 2, 3, 4].map((step) => (
-                              <div
-                                key={step}
-                                className={`flex-1 rounded-full transition-all duration-700 ${getPasswordStrength(resetPasswordState.newPassword).score >= step
-                                  ? getPasswordStrength(resetPasswordState.newPassword).color
-                                  : 'bg-slate-100 dark:bg-slate-800'
-                                  }`}
-                              />
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">Confirm Password</label>
-                        <div className="relative">
-                          <CheckCircle className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                          <input
-                            type={resetPasswordState.showConfirm ? "text" : "password"}
-                            value={resetPasswordState.confirmPassword}
-                            onChange={(e) => setResetPasswordState(prev => ({ ...prev, confirmPassword: e.target.value }))}
-                            className={`w-full rounded-2xl border py-3.5 pl-11 pr-12 text-sm transition-all focus:ring-4 ${resetPasswordState.confirmPassword
-                              ? (resetPasswordState.confirmPassword === resetPasswordState.newPassword
-                                ? 'border-emerald-500/50 bg-emerald-50/20 focus:ring-emerald-500/10 dark:border-emerald-500/30'
-                                : 'border-rose-500/50 bg-rose-50/20 focus:ring-rose-500/10 dark:border-rose-500/30')
-                              : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 focus:border-amber-500 focus:ring-amber-500/10'
-                              }`}
-                            placeholder="••••••••••••"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setResetPasswordState(prev => ({ ...prev, showConfirm: !prev.showConfirm }))}
-                            className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-amber-500 transition-colors"
-                          >
-                            {resetPasswordState.showConfirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2 rounded-2xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/50">
-                        {[
-                          { label: '8+ chars', met: resetPasswordState.newPassword.length >= 8 },
-                          { label: 'Uppercase', met: /[A-Z]/.test(resetPasswordState.newPassword) },
-                          { label: 'Number', met: /[0-9]/.test(resetPasswordState.newPassword) },
-                          { label: 'Symbol', met: /[^A-Za-z0-9]/.test(resetPasswordState.newPassword) }
-                        ].map((c, i) => (
-                          <div key={i} className={`flex items-center gap-2 text-[10px] font-bold uppercase ${c.met ? 'text-emerald-600' : 'text-slate-400'}`}>
-                            {c.met ? <CheckCircle className="h-3 w-3" /> : <div className="h-3 w-3 rounded-full border-2 border-slate-200" />}
-                            <span>{c.label}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="relative group overflow-hidden rounded-3xl border border-amber-100 bg-gradient-to-br from-amber-50 to-orange-50 p-8 text-center dark:border-amber-900/30 dark:from-amber-900/10 dark:to-orange-900/10 animate-in fade-in duration-300">
-                      <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-amber-200/20 blur-2xl group-hover:bg-amber-300/30 transition-colors" />
-                      <div className="relative z-10">
-                        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow-xl shadow-amber-500/10 dark:bg-slate-800">
-                          <RefreshCw className="h-7 w-7 text-amber-500" />
-                        </div>
-                        <h3 className="text-lg font-bold text-amber-900 dark:text-amber-400">Smart Reset</h3>
-                        <p className="mt-2 text-[11px] leading-relaxed text-amber-700/70 dark:text-amber-500/70">
-                          System will generate a high-entropy 12-character password. Credentials will be securely delivered via encrypted channels.
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="flex gap-4">
-                    <button
-                      onClick={() => {
-                        setShowPasswordDialog(false);
-                        setSelectedUser(null);
-                      }}
-                      className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-xs font-bold uppercase tracking-widest text-slate-500 transition-all hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400"
-                    >
-                      Discard
-                    </button>
-                    <button
-                      onClick={handleResetPassword}
-                      disabled={!resetPasswordState.autoGenerate && (resetPasswordState.newPassword.length < 6 || resetPasswordState.newPassword !== resetPasswordState.confirmPassword)}
-                      className="flex-1 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-600 px-4 py-3.5 text-xs font-bold uppercase tracking-widest text-white shadow-xl shadow-amber-500/30 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-40 disabled:grayscale disabled:pointer-events-none"
-                    >
-                      Process
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-        {/* View User Dialog */}
-        {showViewDialog && selectedViewUser && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div
-              className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm"
-              onClick={() => setShowViewDialog(false)}
-            />
-            <div className="relative z-50 flex w-full max-w-3xl max-h-[90vh] flex-col overflow-hidden rounded-[2.5rem] bg-white shadow-2xl dark:bg-slate-900">
-              {/* Premium Header - Floating Style */}
-              <div className="relative overflow-hidden border-b border-slate-100 px-10 py-8 dark:border-slate-800">
-                <div className="absolute right-0 top-0 h-48 w-48 translate-x-12 -translate-y-12 rounded-full bg-blue-500/10 blur-3xl" />
-                <div className="relative flex flex-col md:flex-row items-center gap-8">
-                  <div className="relative group">
-                    <div className="flex h-28 w-28 items-center justify-center rounded-[2rem] bg-gradient-to-br from-blue-600 to-indigo-600 text-4xl font-black text-white shadow-2xl shadow-blue-500/30 transition-transform group-hover:scale-105">
-                      {selectedViewUser.name?.[0]?.toUpperCase() || '?'}
-                    </div>
-                    <div className={`absolute -bottom-1 -right-1 h-8 w-8 rounded-full border-4 border-white bg-emerald-500 shadow-lg dark:border-slate-900 ${!selectedViewUser.isActive && 'bg-slate-400'}`} />
-                  </div>
-                  <div className="text-center md:text-left flex-1">
-                    <div className="flex items-center justify-center md:justify-start gap-3 flex-wrap">
-                      <h2 className="text-4xl font-black tracking-tighter text-slate-900 dark:text-white">
-                        {selectedViewUser.name}
-                      </h2>
-                      <span className={`inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-[10px] font-black uppercase tracking-widest ${getRoleColor(selectedViewUser.role)} shadow-sm`}>
-                        <Shield className="h-3.5 w-3.5" />
-                        {getRoleLabel(selectedViewUser.role)}
-                      </span>
-                    </div>
-                    <div className="mt-4 flex flex-wrap items-center justify-center md:justify-start gap-4">
-                      <div className="flex items-center gap-2 text-sm font-semibold text-slate-500 dark:text-slate-400">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
-                          <Mail className="h-4 w-4" />
-                        </div>
-                        {selectedViewUser.email}
-                      </div>
-                      <div className="flex items-center gap-2 text-sm font-semibold text-slate-500 dark:text-slate-400">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
-                          <Globe className="h-4 w-4" />
-                        </div>
-                        {selectedViewUser.dataScope === 'all' ? 'Global Access' : 'Restricted Scope'}
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setShowViewDialog(false)}
-                    className="absolute right-0 top-0 rounded-2xl p-3 text-slate-300 transition-all hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
-                  >
-                    <X className="h-7 w-7" />
-                  </button>
                 </div>
               </div>
 
               {/* Scrollable Content */}
-              <div className="flex-1 overflow-y-auto p-10 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800">
-                {/* Primary Configuration */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  <section>
-                    <div className="mb-4 flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
-                        <Layers className="h-5 w-5" />
+              <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800">
+                <form onSubmit={handleCreateFromEmployee} className="flex flex-col lg:flex-row h-full">
+
+                  {/* LEFT COLUMN - Main Form Fields */}
+                  <div className="flex-1 p-8 space-y-6 lg:border-r lg:border-slate-200 dark:lg:border-slate-800">
+                    {/* Employee Selection Card */}
+                    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
+                      <div className="mb-5 flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10">
+                          <UserCircle className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-bold text-slate-900 dark:text-white">Select Employee</h3>
+                          <p className="text-xs text-slate-500">Choose an employee to grant system access</p>
+                        </div>
                       </div>
-                      <h3 className="text-lg font-bold text-slate-900 dark:text-white">Assignments</h3>
+
+                      <div className="space-y-2">
+                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                          Search Employee <span className="text-rose-500">*</span>
+                        </label>
+                        <div className="relative" ref={employeeDropdownRef}>
+                          <div className="relative">
+                            <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                            <input
+                              type="text"
+                              placeholder="Search by name or employee ID..."
+                              value={employeeSearch}
+                              onFocus={() => setShowEmployeeDropdown(true)}
+                              onChange={(e) => {
+                                setEmployeeSearch(e.target.value);
+                                setShowEmployeeDropdown(true);
+                                if (e.target.value === '') {
+                                  setEmployeeFormData({ ...employeeFormData, employeeId: '', email: '' });
+                                }
+                              }}
+                              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 pl-11 pr-10 text-sm font-medium text-slate-900 placeholder-slate-400 transition-all focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowEmployeeDropdown(!showEmployeeDropdown)}
+                              className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 transition-transform"
+                            >
+                              <ChevronRight className={`h-4 w-4 transition-transform ${showEmployeeDropdown ? 'rotate-90' : ''}`} />
+                            </button>
+                          </div>
+
+                          {showEmployeeDropdown && (
+                            <div className="absolute z-10 mt-2 w-full max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-800">
+                              {employeesWithoutAccount.filter(emp =>
+                                !employeeSearch ||
+                                emp.employee_name.toLowerCase().includes(employeeSearch.toLowerCase()) ||
+                                emp.emp_no.toLowerCase().includes(employeeSearch.toLowerCase())
+                              ).length === 0 ? (
+                                <div className="p-6 text-center">
+                                  <UserX className="mx-auto h-8 w-8 text-slate-300 mb-2" />
+                                  <p className="text-sm font-medium text-slate-500">No matching employees found</p>
+                                  <p className="text-xs text-slate-400 mt-1">Try a different search term</p>
+                                </div>
+                              ) : (
+                                <div className="p-2 space-y-1">
+                                  {employeesWithoutAccount
+                                    .filter(emp =>
+                                      !employeeSearch ||
+                                      emp.employee_name.toLowerCase().includes(employeeSearch.toLowerCase()) ||
+                                      emp.emp_no.toLowerCase().includes(employeeSearch.toLowerCase())
+                                    )
+                                    .map((emp) => (
+                                      <button
+                                        key={emp._id}
+                                        type="button"
+                                        onClick={() => {
+                                          setEmployeeFormData({
+                                            ...employeeFormData,
+                                            employeeId: emp.emp_no,
+                                            email: emp?.email || '',
+                                          });
+                                          setEmployeeSearch(`${emp.emp_no} - ${emp.employee_name}`);
+                                          setShowEmployeeDropdown(false);
+                                        }}
+                                        className={`flex w-full items-center justify-between rounded-lg p-3 text-left transition-all ${employeeFormData.employeeId === emp.emp_no
+                                          ? 'bg-emerald-50 ring-2 ring-emerald-500/20 dark:bg-emerald-900/20'
+                                          : 'hover:bg-slate-50 dark:hover:bg-slate-700/50'
+                                          }`}
+                                      >
+                                        <div className="flex items-center gap-3">
+                                          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 font-bold text-sm text-white shadow-sm">
+                                            {emp.employee_name[0]}
+                                          </div>
+                                          <div>
+                                            <div className="text-sm font-bold text-slate-900 dark:text-white">{emp.employee_name}</div>
+                                            <div className="text-xs text-slate-500">{emp.emp_no} • {emp.department_id?.name || 'General'}</div>
+                                          </div>
+                                        </div>
+                                        {employeeFormData.employeeId === emp.emp_no && <CheckCircle className="h-5 w-5 text-emerald-500" />}
+                                      </button>
+                                    ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="space-y-4">
-                      <div className="rounded-2xl border border-slate-100 bg-slate-50/50 p-5 dark:border-slate-800 dark:bg-slate-900/50">
-                        <div className="mb-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">Data Visibility Scope</div>
-                        {selectedViewUser.role === 'super_admin' ? (
-                          <div className="flex items-center gap-3">
-                            <Globe className="h-5 w-5 text-blue-500" />
-                            <p className="text-sm font-bold text-slate-700 dark:text-slate-300">Absolute Global Access</p>
-                          </div>
-                        ) : selectedViewUser.dataScope === 'all' ? (
-                          <div className="flex items-center gap-3">
-                            <Eye className="h-5 w-5 text-indigo-500" />
-                            <p className="text-sm font-bold text-slate-700 dark:text-slate-300">Full Organization Visibility</p>
-                          </div>
-                        ) : selectedViewUser.dataScope === 'own' ? (
-                          <div className="flex items-center gap-3">
-                            <UserCircle className="h-5 w-5 text-amber-500" />
-                            <p className="text-sm font-bold text-slate-700 dark:text-slate-300">Self-Only Protection</p>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-3">
-                            <Building className="h-5 w-5 text-emerald-500" />
-                            <p className="text-sm font-bold text-slate-700 dark:text-slate-300">Specific Business Unit Mapping</p>
-                          </div>
-                        )}
+                    {/* Account Configuration Card */}
+                    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
+                      <div className="mb-5 flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10">
+                          <Shield className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-bold text-slate-900 dark:text-white">Account Configuration</h3>
+                          <p className="text-xs text-slate-500">Set login credentials and permissions</p>
+                        </div>
                       </div>
 
-                      {selectedViewUser.dataScope !== 'all' && selectedViewUser.dataScope !== 'own' && selectedViewUser.role !== 'super_admin' && (
-                        <div className="space-y-3">
-                          {(!selectedViewUser.divisionMapping || selectedViewUser.divisionMapping.length === 0) ? (
-                            <div className="flex items-center justify-center p-6 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800">
-                              <p className="text-xs font-medium text-slate-400 italic text-center">No specific business unit associations found</p>
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                            Login Email
+                          </label>
+                          <div className="relative">
+                            <Mail className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                            <input
+                              type="email"
+                              value={employeeFormData.email}
+                              onChange={(e) => setEmployeeFormData({ ...employeeFormData, email: e.target.value })}
+                              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 pl-11 text-sm font-medium text-slate-900 placeholder-slate-400 transition-all focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                              placeholder="email@example.com"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                            System Role <span className="text-rose-500">*</span>
+                          </label>
+                          <div className="relative">
+                            <Shield className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                            <select
+                              value={employeeFormData.role}
+                              onChange={(e) => {
+                                const role = e.target.value;
+                                setEmployeeFormData({
+                                  ...employeeFormData,
+                                  role,
+                                  dataScope: ['hr', 'sub_admin'].includes(role) ? 'all' : (role === 'hod' ? 'division' : 'department'),
+                                  departments: [],
+                                  divisionMapping: []
+                                });
+                              }}
+                              className="w-full appearance-none rounded-xl border border-slate-200 bg-white px-4 py-3 pl-11 text-sm font-medium text-slate-900 transition-all focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                            >
+                              {ROLES.filter((r) => !['super_admin', 'employee'].includes(r.value)).map((role) => (
+                                <option key={role.value} value={role.value}>{role.label}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Access Scoping Card */}
+                    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
+                      <div className="mb-5 flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-500/10">
+                          <Building className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-bold text-slate-900 dark:text-white">Access Scoping</h3>
+                          <p className="text-xs text-slate-500">Define organizational access boundaries</p>
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-800/30">
+                        <ScopingSelector data={employeeFormData} setData={(val) => setEmployeeFormData(val)} asEmployee={true} />
+                      </div>
+                    </div>
+
+                    {/* Info Banner */}
+                    <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-800/50 dark:bg-amber-900/10">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100 dark:bg-amber-800/30">
+                        <Key className="h-4 w-4 text-amber-600 dark:text-amber-500" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-xs font-semibold text-amber-900 dark:text-amber-300 mb-1">Auto-generated Password</p>
+                        <p className="text-xs leading-relaxed text-amber-700 dark:text-amber-400">
+                          A secure temporary password will be automatically generated and sent to the employee's email address.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowFromEmployeeDialog(false);
+                          resetEmployeeForm();
+                        }}
+                        className="flex-1 rounded-xl border-2 border-slate-200 bg-white px-6 py-3.5 text-sm font-bold text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50 active:scale-[0.98] dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={!employeeFormData.employeeId}
+                        className="flex-1 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-6 py-3.5 text-sm font-bold text-white shadow-lg shadow-emerald-500/30 transition-all hover:shadow-xl hover:shadow-emerald-500/40 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Upgrade Employee
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* RIGHT COLUMN - Feature Privileges */}
+                  <div className="flex-1 p-8 space-y-6 bg-slate-50/50 dark:bg-slate-900/30">
+                    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
+                      <div className="mb-5 flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-50 text-violet-600 dark:bg-violet-500/10">
+                            <Layers className="h-5 w-5" />
+                          </div>
+                          <div>
+                            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Feature Privileges</h3>
+                            <p className="text-xs text-slate-500">Grant read/write access to modules</p>
+                          </div>
+                        </div>
+
+                        {/* Bulk Selection Buttons */}
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const allModules = MODULE_CATEGORIES.flatMap(cat => cat.modules.map(m => m.code));
+                              const readPermissions = allModules.map(code => `${code}:read`);
+                              const existingWrite = (employeeFormData.featureControl || []).filter(fc => fc.endsWith(':write'));
+                              setEmployeeFormData({ ...employeeFormData, featureControl: [...readPermissions, ...existingWrite] });
+                            }}
+                            className="px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-500/10 dark:text-blue-400 dark:hover:bg-blue-500/20 transition-colors"
+                          >
+                            Read All
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const allModules = MODULE_CATEGORIES.flatMap(cat => cat.modules.map(m => m.code));
+                              const writePermissions = allModules.map(code => `${code}:write`);
+                              const existingRead = (employeeFormData.featureControl || []).filter(fc => fc.endsWith(':read'));
+                              setEmployeeFormData({ ...employeeFormData, featureControl: [...existingRead, ...writePermissions] });
+                            }}
+                            className="px-3 py-1.5 text-xs font-medium rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:hover:bg-emerald-500/20 transition-colors"
+                          >
+                            Write All
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        {MODULE_CATEGORIES.map((category) => (
+                          <div key={category.code} className="rounded-xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-800/30">
+                            <div className="mb-3 flex items-center gap-2">
+                              <span className="text-lg">{category.icon}</span>
+                              <h4 className="text-sm font-bold text-slate-900 dark:text-white">{category.name}</h4>
                             </div>
-                          ) : (
-                            <div className="grid gap-3">
-                              {selectedViewUser.divisionMapping.map((mapping: any, idx) => {
-                                const divId = typeof mapping.division === 'string' ? mapping.division : mapping.division?._id;
-                                const divisionName = divisions.find(d => d._id === divId)?.name || 'General Operations';
-                                const deptIds = mapping.departments?.map((d: any) => typeof d === 'string' ? d : d._id) || [];
+                            <div className="grid grid-cols-1 gap-2">
+                              {category.modules.map((module) => {
+                                const hasRead = employeeFormData.featureControl?.includes(`${module.code}:read`) || false;
+                                const hasWrite = employeeFormData.featureControl?.includes(`${module.code}:write`) || false;
+
+                                const toggleRead = () => {
+                                  const currentFeatures = employeeFormData.featureControl || [];
+                                  const readPerm = `${module.code}:read`;
+                                  const newFeatures = hasRead
+                                    ? currentFeatures.filter(f => f !== readPerm)
+                                    : [...currentFeatures, readPerm];
+                                  setEmployeeFormData({ ...employeeFormData, featureControl: newFeatures });
+                                };
+
+                                const toggleWrite = () => {
+                                  const currentFeatures = employeeFormData.featureControl || [];
+                                  const writePerm = `${module.code}:write`;
+                                  const newFeatures = hasWrite
+                                    ? currentFeatures.filter(f => f !== writePerm)
+                                    : [...currentFeatures, writePerm];
+                                  setEmployeeFormData({ ...employeeFormData, featureControl: newFeatures });
+                                };
 
                                 return (
-                                  <div key={idx} className="group relative overflow-hidden rounded-2xl border border-slate-100 bg-white p-4 shadow-sm transition-all hover:shadow-md dark:border-slate-800 dark:bg-slate-900">
-                                    <div className="absolute left-0 top-0 h-full w-1 bg-blue-500" />
-                                    <div className="mb-2 flex items-center justify-between">
-                                      <span className="text-sm font-bold text-slate-900 dark:text-white">{divisionName}</span>
-                                      <span className="text-[10px] font-black uppercase text-blue-500/50">Primary Unit</span>
-                                    </div>
-                                    <div className="flex flex-wrap gap-1.5">
-                                      {deptIds.length === 0 ? (
-                                        <span className="rounded-lg bg-blue-50 px-2 py-1 text-[10px] font-bold text-blue-600 dark:bg-blue-900/20 dark:text-blue-400">
-                                          All Functional Departments
-                                        </span>
-                                      ) : (
-                                        deptIds.map((deptId: string) => {
-                                          const deptName = departments.find(d => d._id === deptId)?.name || 'Unknown Unit';
-                                          return (
-                                            <span key={deptId} className="rounded-lg bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                                              {deptName}
-                                            </span>
-                                          );
-                                        })
-                                      )}
+                                  <div
+                                    key={module.code}
+                                    className="flex items-center justify-between rounded-lg p-2 transition-colors hover:bg-white dark:hover:bg-slate-700/50"
+                                  >
+                                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{module.label}</span>
+                                    <div className="flex gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={toggleRead}
+                                        className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasRead
+                                          ? 'bg-blue-500 text-white shadow-sm'
+                                          : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                          }`}
+                                      >
+                                        Read
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={toggleWrite}
+                                        className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasWrite
+                                          ? 'bg-emerald-500 text-white shadow-sm'
+                                          : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                          }`}
+                                      >
+                                        Write
+                                      </button>
                                     </div>
                                   </div>
                                 );
                               })}
                             </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </section>
-
-                  <section>
-                    <div className="mb-4 flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400">
-                        <Lock className="h-5 w-5" />
+                          </div>
+                        ))}
                       </div>
-                      <h3 className="text-lg font-bold text-slate-900 dark:text-white">Feature Access</h3>
                     </div>
+                  </div>
 
-                    <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-950">
-                      {!selectedViewUser.featureControl || selectedViewUser.featureControl.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center p-8 text-center bg-slate-50/50 dark:bg-slate-900/50 rounded-2xl">
-                          <ShieldAlert className="h-8 w-8 text-slate-300 mb-2" />
-                          <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Inherited Permissions</p>
-                          <p className="mt-1 text-[11px] text-slate-400">Using standard hierarchical role defaults</p>
+                </form>
+              </div>
+            </div>
+          </div>
+        )
+        }
+
+        {/* Edit User Dialog */}
+        {
+          showEditDialog && selectedUser && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md" onClick={() => setShowEditDialog(false)} />
+              <div className="relative z-50 w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden rounded-3xl bg-white shadow-2xl dark:bg-slate-900">
+
+                {/* Modern Gradient Header - Indigo Theme */}
+                <div className="relative bg-gradient-to-br from-indigo-600 via-blue-600 to-indigo-700 px-8 py-6 text-white overflow-hidden">
+                  <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZGVmcz48cGF0dGVybiBpZD0iZ3JpZCIgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiBwYXR0ZXJuVW5pdHM9InVzZXJTcGFjZU9uVXNlIj48cGF0aCBkPSJNIDQwIDAgTCAwIDAgMCA0MCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLW9wYWNpdHk9IjAuMSIgc3Ryb2tlLXdpZHRoPSIxIi8+PC9wYXR0ZXJuPjwvZGVmcz48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2dyaWQpIi8+PC9zdmc+')] opacity-30"></div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowEditDialog(false);
+                    }}
+                    className="absolute right-6 top-6 z-10 rounded-xl p-2 text-white/80 transition-all hover:bg-white/10 hover:text-white"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                  <div className="relative flex items-center gap-4">
+                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/10 backdrop-blur-sm ring-2 ring-white/20">
+                      <Edit className="h-7 w-7" />
+                    </div>
+                    <div>
+                      <h2 className="text-2xl font-bold">Edit User Account</h2>
+                      <p className="text-sm text-indigo-100 font-medium">Update user information and permissions</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Scrollable Content */}
+                <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800">
+                  <form onSubmit={handleUpdateUser} className="flex flex-col lg:flex-row h-full">
+
+                    {/* LEFT COLUMN - Main Form Fields */}
+                    <div className="flex-1 p-8 space-y-6 lg:border-r lg:border-slate-200 dark:lg:border-slate-800">
+                      {/* Account Information Card */}
+                      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
+                        <div className="mb-5 flex items-center gap-3">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10">
+                            <UserCircle className="h-5 w-5" />
+                          </div>
+                          <div>
+                            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Account Information</h3>
+                            <p className="text-xs text-slate-500">User identity and role configuration</p>
+                          </div>
                         </div>
-                      ) : (
-                        <div className="space-y-4">
-                          {MODULE_CATEGORIES.map(category => {
-                            const enabledModules = category.modules.filter(m => selectedViewUser.featureControl?.includes(m.code));
-                            if (enabledModules.length === 0) return null;
 
-                            return (
-                              <div key={category.code} className="space-y-2 pb-3 border-b border-slate-50 last:border-0 dark:border-slate-800/50">
-                                <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                                  <span>{category.icon}</span> {category.name}
-                                </div>
-                                <div className="flex flex-wrap gap-1.5">
-                                  {enabledModules.map(m => (
-                                    <div key={m.code} className="flex items-center gap-1.5 rounded-lg border border-emerald-100 bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-400">
-                                      <Check className="h-3 w-3" />
-                                      {m.label}
-                                    </div>
-                                  ))}
+                        <div className="space-y-4">
+                          <div className="space-y-2">
+                            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                              Email Address
+                            </label>
+                            <div className="relative">
+                              <Mail className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                              <input
+                                type="email"
+                                value={formData.email}
+                                disabled
+                                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 pl-11 text-sm font-medium text-slate-500 dark:border-slate-700 dark:bg-slate-800/50"
+                              />
+                              <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                                <div className="rounded-lg bg-slate-200 px-2 py-1 text-xs font-bold text-slate-600 dark:bg-slate-700 dark:text-slate-400">
+                                  Read-only
                                 </div>
                               </div>
-                            );
-                          })}
+                            </div>
+                            <p className="text-xs text-slate-500">Email address cannot be changed</p>
+                          </div>
+
+                          <div className="space-y-2">
+                            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                              Display Name <span className="text-rose-500">*</span>
+                            </label>
+                            <div className="relative">
+                              <UserCircle className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                              <input
+                                type="text"
+                                value={formData.name}
+                                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                required
+                                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 pl-11 text-sm font-medium text-slate-900 placeholder-slate-400 transition-all focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="space-y-2">
+                            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                              System Role <span className="text-rose-500">*</span>
+                            </label>
+                            <div className="relative">
+                              <Shield className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                              <select
+                                value={formData.role}
+                                onChange={(e) => {
+                                  const role = e.target.value;
+                                  setFormData({
+                                    ...formData,
+                                    role,
+                                    dataScope: ['hr', 'sub_admin', 'super_admin'].includes(role) ? 'all' : (role === 'hod' ? 'division' : 'department'),
+                                    divisionMapping: []
+                                  });
+                                }}
+                                disabled={selectedUser.role === 'super_admin'}
+                                className="w-full appearance-none rounded-xl border border-slate-200 bg-white px-4 py-3 pl-11 text-sm font-medium text-slate-900 transition-all focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                {ROLES.filter((r) => !['super_admin', 'employee'].includes(r.value)).map((role) => (
+                                  <option key={role.value} value={role.value}>
+                                    {role.label}
+                                  </option>
+                                ))}
+                                {selectedUser.role === 'super_admin' && (
+                                  <option value="super_admin">Super Admin</option>
+                                )}
+                              </select>
+                            </div>
+                            {selectedUser.role === 'super_admin' && (
+                              <p className="text-xs text-amber-600 dark:text-amber-500">Super Admin role cannot be changed</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Access Scoping Card */}
+                      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
+                        <div className="mb-5 flex items-center gap-3">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10">
+                            <Building className="h-5 w-5" />
+                          </div>
+                          <div>
+                            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Access Scoping</h3>
+                            <p className="text-xs text-slate-500">Define organizational access boundaries</p>
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-800/30">
+                          <ScopingSelector data={formData} setData={setFormData} />
+                        </div>
+                      </div>
+
+                      {/* Action Buttons */}
+                      <div className="flex gap-3 pt-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowEditDialog(false);
+                            setSelectedUser(null);
+                          }}
+                          className="flex-1 rounded-xl border-2 border-slate-200 bg-white px-6 py-3.5 text-sm font-bold text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50 active:scale-[0.98] dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={loading}
+                          className="flex-1 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 px-6 py-3.5 text-sm font-bold text-white shadow-lg shadow-indigo-500/30 transition-all hover:shadow-xl hover:shadow-indigo-500/40 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {loading ? 'Saving Changes...' : 'Save Changes'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* RIGHT COLUMN - Feature Privileges */}
+                    <div className="flex-1 p-8 space-y-6 bg-slate-50/50 dark:bg-slate-900/30">
+                      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
+                        <div className="mb-5 flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-50 text-violet-600 dark:bg-violet-500/10">
+                              <Layers className="h-5 w-5" />
+                            </div>
+                            <div>
+                              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Feature Privileges</h3>
+                              <p className="text-xs text-slate-500">Grant read/write access to modules</p>
+                            </div>
+                          </div>
+
+                          {/* Bulk Selection Buttons */}
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const allModules = MODULE_CATEGORIES.flatMap(cat => cat.modules.map(m => m.code));
+                                const readPermissions = allModules.map(code => `${code}:read`);
+                                const existingWrite = (formData.featureControl || []).filter(fc => fc.endsWith(':write'));
+                                setFormData({ ...formData, featureControl: [...readPermissions, ...existingWrite] });
+                              }}
+                              className="px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 dark:bg-blue-500/10 dark:text-blue-400 dark:hover:bg-blue-500/20 transition-colors"
+                            >
+                              Read All
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const allModules = MODULE_CATEGORIES.flatMap(cat => cat.modules.map(m => m.code));
+                                const writePermissions = allModules.map(code => `${code}:write`);
+                                const existingRead = (formData.featureControl || []).filter(fc => fc.endsWith(':read'));
+                                setFormData({ ...formData, featureControl: [...existingRead, ...writePermissions] });
+                              }}
+                              className="px-3 py-1.5 text-xs font-medium rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:hover:bg-emerald-500/20 transition-colors"
+                            >
+                              Write All
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="space-y-4">
+                          {MODULE_CATEGORIES.map((category) => (
+                            <div key={category.code} className="rounded-xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-800/30">
+                              <div className="mb-3 flex items-center gap-2">
+                                <span className="text-lg">{category.icon}</span>
+                                <h4 className="text-sm font-bold text-slate-900 dark:text-white">{category.name}</h4>
+                              </div>
+                              <div className="grid grid-cols-1 gap-2">
+                                {category.modules.map((module) => {
+                                  const hasRead = formData.featureControl?.includes(`${module.code}:read`) || false;
+                                  const hasWrite = formData.featureControl?.includes(`${module.code}:write`) || false;
+
+                                  const toggleRead = () => {
+                                    const currentFeatures = formData.featureControl || [];
+                                    const readPerm = `${module.code}:read`;
+                                    const newFeatures = hasRead
+                                      ? currentFeatures.filter(f => f !== readPerm)
+                                      : [...currentFeatures, readPerm];
+                                    setFormData({ ...formData, featureControl: newFeatures });
+                                  };
+
+                                  const toggleWrite = () => {
+                                    const currentFeatures = formData.featureControl || [];
+                                    const writePerm = `${module.code}:write`;
+                                    const newFeatures = hasWrite
+                                      ? currentFeatures.filter(f => f !== writePerm)
+                                      : [...currentFeatures, writePerm];
+                                    setFormData({ ...formData, featureControl: newFeatures });
+                                  };
+
+                                  return (
+                                    <div
+                                      key={module.code}
+                                      className="flex items-center justify-between rounded-lg p-2 transition-colors hover:bg-white dark:hover:bg-slate-700/50"
+                                    >
+                                      <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{module.label}</span>
+                                      <div className="flex gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={toggleRead}
+                                          className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasRead
+                                            ? 'bg-blue-500 text-white shadow-sm'
+                                            : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                            }`}
+                                        >
+                                          Read
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={toggleWrite}
+                                          className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${hasWrite
+                                            ? 'bg-emerald-500 text-white shadow-sm'
+                                            : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                            }`}
+                                        >
+                                          Write
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                  </form>
+                </div>
+              </div>
+            </div>
+          )
+        }
+
+        {/* Password Reset Dialog */}
+        {
+          showPasswordDialog && selectedUser && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowPasswordDialog(false)} />
+              <div className="relative z-50 flex w-full max-sm:max-w-full max-w-md max-h-[90vh] flex-col overflow-hidden rounded-[2rem] bg-white shadow-2xl dark:bg-slate-900">
+                <div className="relative bg-gradient-to-r from-amber-500 to-orange-600 px-8 py-6 text-white text-center">
+                  <button
+                    onClick={() => setShowPasswordDialog(false)}
+                    className="absolute right-4 top-4 rounded-xl p-2 text-white/60 hover:bg-white/10 hover:text-white"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-white/20 mb-3">
+                    <Key className="h-6 w-6" />
+                  </div>
+                  <h2 className="text-xl font-bold">Security Reset</h2>
+                  <p className="text-amber-100 text-[10px] font-bold uppercase tracking-widest opacity-80">Credential Reconstruction</p>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-8 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800">
+                  <div className="space-y-6">
+                    <div className="flex items-center gap-2 p-1.5 bg-slate-100 dark:bg-slate-800/50 rounded-2xl">
+                      <button
+                        onClick={() => setResetPasswordState(prev => ({ ...prev, autoGenerate: true }))}
+                        className={`flex-1 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${resetPasswordState.autoGenerate ? 'bg-white shadow-md text-amber-600 dark:bg-slate-700' : 'text-slate-400'}`}
+                      >
+                        Automated
+                      </button>
+                      <button
+                        onClick={() => setResetPasswordState(prev => ({ ...prev, autoGenerate: false }))}
+                        className={`flex-1 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${!resetPasswordState.autoGenerate ? 'bg-white shadow-md text-amber-600 dark:bg-slate-700' : 'text-slate-400'}`}
+                      >
+                        Manual
+                      </button>
+                    </div>
+
+                    {!resetPasswordState.autoGenerate ? (
+                      <div className="space-y-5 animate-in fade-in slide-in-from-top-4 duration-300">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">New Password</label>
+                          <div className="relative">
+                            <Lock className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                            <input
+                              type={resetPasswordState.showNew ? "text" : "password"}
+                              value={resetPasswordState.newPassword}
+                              onChange={(e) => setResetPasswordState(prev => ({ ...prev, newPassword: e.target.value }))}
+                              className="w-full rounded-2xl border border-slate-200 bg-white py-3.5 pl-11 pr-12 text-sm focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
+                              placeholder="Min. 8 characters"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setResetPasswordState(prev => ({ ...prev, showNew: !prev.showNew }))}
+                              className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-amber-500 transition-colors"
+                            >
+                              {resetPasswordState.showNew ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                            </button>
+                          </div>
+
+                          {/* Enhanced Strength Meter */}
+                          <div className="space-y-2 pt-2">
+                            <div className="flex justify-between items-center px-1">
+                              <span className="text-[10px] font-bold text-slate-400 uppercase">Security Score</span>
+                              <span className={`text-[10px] font-black uppercase tracking-wider ${getPasswordStrength(resetPasswordState.newPassword).score >= 3 ? "text-emerald-500" :
+                                getPasswordStrength(resetPasswordState.newPassword).score === 2 ? "text-amber-500" : "text-rose-500"
+                                }`}>
+                                {getPasswordStrength(resetPasswordState.newPassword).label}
+                              </span>
+                            </div>
+                            <div className="flex gap-1.5 h-1.5 px-0.5">
+                              {[1, 2, 3, 4].map((step) => (
+                                <div
+                                  key={step}
+                                  className={`flex-1 rounded-full transition-all duration-700 ${getPasswordStrength(resetPasswordState.newPassword).score >= step
+                                    ? getPasswordStrength(resetPasswordState.newPassword).color
+                                    : 'bg-slate-100 dark:bg-slate-800'
+                                    }`}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">Confirm Password</label>
+                          <div className="relative">
+                            <CheckCircle className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                            <input
+                              type={resetPasswordState.showConfirm ? "text" : "password"}
+                              value={resetPasswordState.confirmPassword}
+                              onChange={(e) => setResetPasswordState(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                              className={`w-full rounded-2xl border py-3.5 pl-11 pr-12 text-sm transition-all focus:ring-4 ${resetPasswordState.confirmPassword
+                                ? (resetPasswordState.confirmPassword === resetPasswordState.newPassword
+                                  ? 'border-emerald-500/50 bg-emerald-50/20 focus:ring-emerald-500/10 dark:border-emerald-500/30'
+                                  : 'border-rose-500/50 bg-rose-50/20 focus:ring-rose-500/10 dark:border-rose-500/30')
+                                : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 focus:border-amber-500 focus:ring-amber-500/10'
+                                }`}
+                              placeholder="••••••••••••"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setResetPasswordState(prev => ({ ...prev, showConfirm: !prev.showConfirm }))}
+                              className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-amber-500 transition-colors"
+                            >
+                              {resetPasswordState.showConfirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 rounded-2xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/50">
+                          {[
+                            { label: '8+ chars', met: resetPasswordState.newPassword.length >= 8 },
+                            { label: 'Uppercase', met: /[A-Z]/.test(resetPasswordState.newPassword) },
+                            { label: 'Number', met: /[0-9]/.test(resetPasswordState.newPassword) },
+                            { label: 'Symbol', met: /[^A-Za-z0-9]/.test(resetPasswordState.newPassword) }
+                          ].map((c, i) => (
+                            <div key={i} className={`flex items-center gap-2 text-[10px] font-bold uppercase ${c.met ? 'text-emerald-600' : 'text-slate-400'}`}>
+                              {c.met ? <CheckCircle className="h-3 w-3" /> : <div className="h-3 w-3 rounded-full border-2 border-slate-200" />}
+                              <span>{c.label}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="relative group overflow-hidden rounded-3xl border border-amber-100 bg-gradient-to-br from-amber-50 to-orange-50 p-8 text-center dark:border-amber-900/30 dark:from-amber-900/10 dark:to-orange-900/10 animate-in fade-in duration-300">
+                        <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-amber-200/20 blur-2xl group-hover:bg-amber-300/30 transition-colors" />
+                        <div className="relative z-10">
+                          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow-xl shadow-amber-500/10 dark:bg-slate-800">
+                            <RefreshCw className="h-7 w-7 text-amber-500" />
+                          </div>
+                          <h3 className="text-lg font-bold text-amber-900 dark:text-amber-400">Smart Reset</h3>
+                          <p className="mt-2 text-[11px] leading-relaxed text-amber-700/70 dark:text-amber-500/70">
+                            System will generate a high-entropy 12-character password. Credentials will be securely delivered via encrypted channels.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex gap-4">
+                      <button
+                        onClick={() => {
+                          setShowPasswordDialog(false);
+                          setSelectedUser(null);
+                        }}
+                        className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-xs font-bold uppercase tracking-widest text-slate-500 transition-all hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400"
+                      >
+                        Discard
+                      </button>
+                      <button
+                        onClick={handleResetPassword}
+                        disabled={!resetPasswordState.autoGenerate && (resetPasswordState.newPassword.length < 6 || resetPasswordState.newPassword !== resetPasswordState.confirmPassword)}
+                        className="flex-1 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-600 px-4 py-3.5 text-xs font-bold uppercase tracking-widest text-white shadow-xl shadow-amber-500/30 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-40 disabled:grayscale disabled:pointer-events-none"
+                      >
+                        Process
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )
+        }
+        {/* View User Dialog - Redesigned */}
+        {
+          showViewDialog && selectedViewUser && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+              <div
+                className="fixed inset-0 bg-slate-900/40 backdrop-blur-xl transition-opacity animate-in fade-in duration-500"
+                onClick={() => setShowViewDialog(false)}
+              />
+              <div className="relative z-50 flex w-full max-w-5xl max-h-[90vh] flex-col overflow-hidden rounded-[2.5rem] bg-white shadow-[0_32px_128px_-16px_rgba(0,0,0,0.3)] dark:bg-slate-900 border border-white/20 dark:border-slate-800 animate-in fade-in zoom-in duration-500">
+                {/* Close Button */}
+                <button
+                  onClick={() => setShowViewDialog(false)}
+                  className="absolute right-6 top-6 z-[60] flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10 text-slate-400 backdrop-blur-md transition-all hover:bg-white/20 hover:text-white dark:bg-slate-800/50"
+                >
+                  <X className="h-6 w-6" />
+                </button>
+
+                <div className="flex flex-1 overflow-hidden">
+                  {/* Premium Sidebar */}
+                  <div className="hidden w-80 flex-col border-r border-slate-100 bg-slate-50/50 p-8 dark:border-slate-800 dark:bg-slate-900/50 lg:flex">
+                    <div className="relative mb-8 self-center">
+                      <div className="relative group">
+                        <div className="flex h-32 w-32 items-center justify-center rounded-[2.5rem] bg-gradient-to-br from-blue-600 to-indigo-700 text-5xl font-black text-white shadow-2xl shadow-blue-500/20 transition-all duration-500 group-hover:scale-105 group-hover:rotate-3">
+                          {selectedViewUser.name?.[0]?.toUpperCase() || '?'}
+                        </div>
+                        <div className={`absolute -bottom-1 -right-1 h-10 w-10 rounded-full border-4 border-white bg-emerald-500 shadow-xl dark:border-slate-900 ${!selectedViewUser.isActive && 'bg-slate-400'}`}>
+                          <div className={`h-full w-full rounded-full ${selectedViewUser.isActive ? 'animate-pulse bg-emerald-400/50' : ''}`} />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="text-center">
+                      <h2 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">
+                        {selectedViewUser.name}
+                      </h2>
+                      <p className="mt-1 text-xs font-bold uppercase tracking-widest text-slate-400">{selectedViewUser.email}</p>
+                    </div>
+
+                    <div className="mt-8 space-y-4">
+                      <div className="rounded-2xl bg-white p-4 shadow-sm dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
+                        <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Role & Authority</div>
+                        <div className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-[10px] font-black uppercase tracking-widest ${getRoleColor(selectedViewUser.role)} shadow-sm`}>
+                          <Shield className="h-3.5 w-3.5" />
+                          {getRoleLabel(selectedViewUser.role)}
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl bg-white p-4 shadow-sm dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
+                        <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Visibility Scope</div>
+                        <div className="flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-300">
+                          <Globe className="h-4 w-4 text-indigo-500" />
+                          {selectedViewUser.dataScope === 'all' ? 'Global Access' : 'Restricted Scope'}
+                        </div>
+                      </div>
+
+                      {selectedViewUser.lastLogin && (
+                        <div className="rounded-2xl bg-white p-4 shadow-sm dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
+                          <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Last Activity</div>
+                          <div className="flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-300">
+                            <Clock className="h-4 w-4 text-amber-500" />
+                            {new Date(selectedViewUser.lastLogin).toLocaleDateString()}
+                          </div>
                         </div>
                       )}
                     </div>
-                  </section>
-                </div>
 
-                {/* Action Footer */}
-                <div className="flex flex-col md:flex-row gap-4 pt-4">
-                  <button
-                    onClick={() => {
-                      setShowViewDialog(false);
-                      openEditDialog(selectedViewUser);
-                    }}
-                    className="flex-1 flex items-center justify-center gap-2 rounded-2xl bg-slate-900 px-6 py-4 text-sm font-bold text-white transition-all hover:bg-slate-800 active:scale-[0.98] dark:bg-blue-600 dark:hover:bg-blue-700"
-                  >
-                    <Edit className="h-4 w-4" />
-                    Management Edit
-                  </button>
-                  <button
-                    onClick={() => setShowViewDialog(false)}
-                    className="flex-1 rounded-2xl border border-slate-200 bg-white px-6 py-4 text-sm font-bold text-slate-700 transition-all hover:bg-slate-50 active:scale-[0.98] dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
-                  >
-                    Close Profile
-                  </button>
+                    <div className="mt-auto pt-8">
+                      <button
+                        onClick={() => {
+                          setShowViewDialog(false);
+                          openEditDialog(selectedViewUser);
+                        }}
+                        className="w-full flex items-center justify-center gap-3 rounded-2xl bg-slate-900 px-6 py-4 text-xs font-black uppercase tracking-[0.2em] text-white shadow-xl transition-all hover:bg-black hover:scale-[1.02] active:scale-[0.98] dark:bg-blue-600 dark:hover:bg-blue-700"
+                      >
+                        <Edit className="h-4 w-4" />
+                        Modify Profile
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Main Content Area */}
+                  <div className="flex flex-1 flex-col bg-white dark:bg-slate-900">
+                    {/* Navigation Tabs */}
+                    <div className="flex border-b border-slate-100 px-8 pt-8 dark:border-slate-800">
+                      {[
+                        { id: 'overview', label: 'Overview', icon: Layers },
+                        { id: 'permissions', label: 'Feature Access', icon: Lock },
+                      ].map((tab) => (
+                        <button
+                          key={tab.id}
+                          onClick={() => setActiveTab(tab.id as any)}
+                          className={`group relative flex items-center gap-2.5 px-6 pb-4 text-xs font-black uppercase tracking-widest transition-all ${activeTab === tab.id
+                            ? 'text-blue-600 dark:text-blue-400'
+                            : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                            }`}
+                        >
+                          <tab.icon className={`h-4 w-4 transition-transform group-hover:scale-110 ${activeTab === tab.id ? 'text-blue-600 dark:text-blue-400' : ''}`} />
+                          {tab.label}
+                          {activeTab === tab.id && (
+                            <div className="absolute bottom-0 left-0 h-1 w-full rounded-t-full bg-blue-600 dark:bg-blue-400" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Tab Content */}
+                    <div className="flex-1 overflow-y-auto p-8 lg:p-12">
+                      <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                        {activeTab === 'overview' ? (
+                          <div className="space-y-10">
+                            <section>
+                              <div className="mb-6">
+                                <h3 className="text-xl font-black tracking-tight text-slate-900 dark:text-white uppercase">Business Unit Mapping</h3>
+                                <p className="text-xs font-medium text-slate-500">Authorized partitions and organizational hierarchy</p>
+                              </div>
+
+                              {(!selectedViewUser.divisionMapping || selectedViewUser.divisionMapping.length === 0) ? (
+                                <div className="flex flex-col items-center justify-center rounded-[2rem] border-2 border-dashed border-slate-100 bg-slate-50/50 p-12 dark:border-slate-800 dark:bg-slate-950/30">
+                                  <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-white shadow-sm dark:bg-slate-800">
+                                    <ShieldAlert className="h-8 w-8 text-slate-300" />
+                                  </div>
+                                  <p className="text-sm font-bold text-slate-400 italic">No explicit unit mappings identified</p>
+                                  <p className="mt-1 text-[10px] text-slate-400 uppercase tracking-widest">Inherited global restrictions may apply</p>
+                                </div>
+                              ) : (
+                                <div className="grid gap-6">
+                                  {selectedViewUser.divisionMapping.map((mapping: any, idx: number) => {
+                                    const divId = typeof mapping.division === 'string' ? mapping.division : mapping.division?._id;
+                                    const division = divisions.find(d => d._id === divId);
+                                    const divisionName = division?.name || 'General Operations';
+                                    const deptIds = mapping.departments?.map((d: any) => typeof d === 'string' ? d : d._id) || [];
+
+                                    return (
+                                      <div key={idx} className="group relative overflow-hidden rounded-[2rem] border border-slate-100 bg-white p-7 shadow-sm transition-all hover:shadow-xl hover:-translate-y-1 dark:border-slate-800 dark:bg-slate-950">
+                                        <div className="absolute left-0 top-0 h-full w-2 bg-gradient-to-b from-blue-500 to-indigo-600" />
+                                        <div className="mb-5 flex items-center justify-between">
+                                          <div>
+                                            <div className="flex items-center gap-2">
+                                              <Building className="h-4 w-4 text-blue-500" />
+                                              <h4 className="text-lg font-black tracking-tight text-slate-900 dark:text-white uppercase">{divisionName}</h4>
+                                            </div>
+                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1 ml-6 font-mono">DIV_ID: {divId?.slice(-6) || 'N/A'}</p>
+                                          </div>
+                                          <span className="rounded-full bg-blue-50 px-4 py-1.5 text-[10px] font-black uppercase tracking-widest text-blue-600 dark:bg-blue-500/10 dark:text-blue-400">Restricted Access</span>
+                                        </div>
+                                        <div className="flex flex-wrap gap-2.5 ml-6">
+                                          {deptIds.length === 0 ? (
+                                            <span className="rounded-xl bg-blue-50/50 border border-blue-100/50 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-blue-600 dark:bg-blue-900/20 dark:border-blue-500/20 dark:text-blue-400">
+                                              All Functional Departments Included
+                                            </span>
+                                          ) : (
+                                            deptIds.map((deptId: string) => {
+                                              const dept = departments.find(d => d._id === deptId);
+                                              const deptName = dept?.name || 'Unknown Unit';
+                                              return (
+                                                <span key={deptId} className="flex items-center gap-2 rounded-xl bg-slate-50 border border-slate-100 px-3 py-1.5 text-[10px] font-bold text-slate-600 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400">
+                                                  <div className="h-1 w-1 rounded-full bg-blue-400" />
+                                                  {deptName}
+                                                </span>
+                                              );
+                                            })
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </section>
+
+                            <section className="rounded-[2rem] bg-amber-50/30 p-8 border border-amber-100/50 dark:bg-amber-900/5 dark:border-amber-900/10">
+                              <div className="flex items-start gap-4">
+                                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400">
+                                  <ShieldAlert className="h-5 w-5" />
+                                </div>
+                                <div>
+                                  <h4 className="text-sm font-black text-amber-900 dark:text-amber-400 uppercase tracking-widest">Access Policy Note</h4>
+                                  <p className="mt-1 text-xs font-medium leading-relaxed text-amber-700/80 dark:text-amber-500/60">
+                                    This user's data visibility is strictly governed by the assigned business units. Any changes to division or department hierarchy will automatically propagate to this user's visibility scope.
+                                  </p>
+                                </div>
+                              </div>
+                            </section>
+                          </div>
+                        ) : (
+                          <div className="space-y-10">
+                            <div className="mb-6">
+                              <h3 className="text-xl font-black tracking-tight text-slate-900 dark:text-white uppercase">Module Permissions</h3>
+                              <p className="text-xs font-medium text-slate-500">Fine-grained functional access controls per category</p>
+                            </div>
+
+                            {(!selectedViewUser.featureControl || selectedViewUser.featureControl.length === 0) ? (
+                              <div className="flex flex-col items-center justify-center py-16 text-center bg-slate-50/50 dark:bg-slate-950/30 rounded-[2.5rem] border-2 border-dashed border-slate-100 dark:border-slate-800">
+                                <ShieldCheck className="h-16 w-16 text-emerald-500/20 mb-6" />
+                                <p className="text-sm font-black text-slate-500 uppercase tracking-widest">Global Defaults Active</p>
+                                <p className="mt-1 text-xs text-slate-400 font-medium">Using system standard permissions for {getRoleLabel(selectedViewUser.role)}</p>
+                              </div>
+                            ) : (
+                              <div className="grid gap-8">
+                                {MODULE_CATEGORIES.map(category => {
+                                  const modulesWithPerms = category.modules.map(m => ({
+                                    ...m,
+                                    hasRead: selectedViewUser.featureControl?.includes(`${m.code}:read`) || false,
+                                    hasWrite: selectedViewUser.featureControl?.includes(`${m.code}:write`) || false
+                                  })).filter(m => m.hasRead || m.hasWrite);
+
+                                  if (modulesWithPerms.length === 0) return null;
+
+                                  return (
+                                    <div key={category.code} className="overflow-hidden rounded-[2rem] border border-slate-100 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950/50 transition-all hover:border-emerald-500/20">
+                                      <div className="flex items-center gap-3 bg-slate-50/50 px-6 py-4 dark:bg-slate-900/50">
+                                        <span className="text-xl">{category.icon}</span>
+                                        <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-900 dark:text-white">{category.name}</h4>
+                                      </div>
+                                      <div className="p-6">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                          {modulesWithPerms.map(m => (
+                                            <div key={m.code} className="flex items-center justify-between rounded-2xl border border-slate-50 bg-slate-50/30 p-4 dark:border-slate-800/50 dark:bg-slate-900/30">
+                                              <span className="text-[10px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider">{m.label}</span>
+                                              <div className="flex gap-1.5">
+                                                {m.hasRead && (
+                                                  <span className="flex items-center gap-1.5 rounded-lg bg-blue-50 px-2 py-1 text-[9px] font-black text-blue-600 dark:bg-blue-500/10 dark:text-blue-400 border border-blue-100 dark:border-blue-500/20">
+                                                    <Eye className="h-3 w-3" />
+                                                    READ
+                                                  </span>
+                                                )}
+                                                {m.hasWrite && (
+                                                  <span className="flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2 py-1 text-[9px] font-black text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-500/20">
+                                                    <Edit className="h-3 w-3" />
+                                                    WRITE
+                                                  </span>
+                                                )}
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        )}
+          )
+        }
 
         {/* Success Modal */}
-        {showSuccessModal && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md" />
-            <div className="relative z-[110] w-full max-w-md scale-in-center">
-              <div className="overflow-hidden rounded-[2.5rem] bg-white shadow-[0_32px_64px_-16px_rgba(0,0,0,0.3)] dark:bg-slate-900">
-                <div className="bg-gradient-to-br from-emerald-500 to-teal-600 p-10 text-center text-white">
-                  <div className="mx-auto mb-6 flex h-24 w-24 items-center justify-center rounded-[2rem] bg-white p-5 shadow-2xl">
-                    <CheckCircle className="h-16 w-16 text-emerald-500" />
+        {
+          showSuccessModal && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+              <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md" />
+              <div className="relative z-[110] w-full max-w-md scale-in-center">
+                <div className="overflow-hidden rounded-[2.5rem] bg-white shadow-[0_32px_64px_-16px_rgba(0,0,0,0.3)] dark:bg-slate-900">
+                  <div className="bg-gradient-to-br from-emerald-500 to-teal-600 p-10 text-center text-white">
+                    <div className="mx-auto mb-6 flex h-24 w-24 items-center justify-center rounded-[2rem] bg-white p-5 shadow-2xl">
+                      <CheckCircle className="h-16 w-16 text-emerald-500" />
+                    </div>
+                    <h2 className="text-3xl font-black tracking-tight">Access Granted!</h2>
+                    <p className="mt-2 text-emerald-100">The account has been successfully provisioned</p>
                   </div>
-                  <h2 className="text-3xl font-black tracking-tight">Access Granted!</h2>
-                  <p className="mt-2 text-emerald-100">The account has been successfully provisioned</p>
-                </div>
 
-                <div className="p-10">
-                  <div className="space-y-6">
-                    <div className="rounded-3xl border border-slate-100 bg-slate-50 p-6 dark:border-slate-800 dark:bg-slate-950">
-                      <div className="mb-4 flex items-center justify-between">
-                        <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Security Credentials</span>
-                        <ShieldCheck className="h-4 w-4 text-emerald-500" />
-                      </div>
-                      <div className="space-y-4">
-                        <div className="flex justify-between items-center group cursor-pointer" onClick={() => {
-                          navigator.clipboard.writeText(successModalData.username);
-                          // toast success
-                        }}>
-                          <span className="text-[10px] font-black uppercase text-slate-400">Login Identifier</span>
-                          <span className="text-sm font-bold text-slate-700 dark:text-slate-200 group-hover:text-blue-500 transition-colors uppercase">{successModalData.username}</span>
+                  <div className="p-10">
+                    <div className="space-y-6">
+                      <div className="rounded-3xl border border-slate-100 bg-slate-50 p-6 dark:border-slate-800 dark:bg-slate-950">
+                        <div className="mb-4 flex items-center justify-between">
+                          <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Security Credentials</span>
+                          <ShieldCheck className="h-4 w-4 text-emerald-500" />
                         </div>
-                        <div className="h-px bg-slate-200/50 dark:bg-slate-800" />
-                        <div className="flex justify-between items-center group cursor-pointer" onClick={() => {
-                          navigator.clipboard.writeText(successModalData.password);
-                          // toast success
-                        }}>
-                          <span className="text-[10px] font-black uppercase text-slate-400">Temporary Access Key</span>
-                          <code className="rounded-lg bg-emerald-100 px-3 py-1 text-sm font-black text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 group-hover:scale-105 transition-transform">{successModalData.password}</code>
+                        <div className="space-y-4">
+                          <div className="flex justify-between items-center group cursor-pointer" onClick={() => {
+                            navigator.clipboard.writeText(successModalData.username);
+                            // toast success
+                          }}>
+                            <span className="text-[10px] font-black uppercase text-slate-400">Login Identifier</span>
+                            <span className="text-sm font-bold text-slate-700 dark:text-slate-200 group-hover:text-blue-500 transition-colors uppercase">{successModalData.username}</span>
+                          </div>
+                          <div className="h-px bg-slate-200/50 dark:bg-slate-800" />
+                          <div className="flex justify-between items-center group cursor-pointer" onClick={() => {
+                            navigator.clipboard.writeText(successModalData.password);
+                            // toast success
+                          }}>
+                            <span className="text-[10px] font-black uppercase text-slate-400">Temporary Access Key</span>
+                            <code className="rounded-lg bg-emerald-100 px-3 py-1 text-sm font-black text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 group-hover:scale-105 transition-transform">{successModalData.password}</code>
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    <div className="flex items-start gap-3 rounded-2xl bg-blue-50/50 p-4 border border-blue-100/50 dark:bg-blue-900/10 dark:border-blue-800/50">
-                      <Info className="h-5 w-5 text-blue-500 mt-0.5" />
-                      <p className="text-[11px] leading-relaxed text-blue-700/80 dark:text-blue-400/80">
-                        These credentials have been dispatched to the user's primary contact endpoint. Please ensure they update their access key upon first authentication.
-                      </p>
-                    </div>
+                      <div className="flex items-start gap-3 rounded-2xl bg-blue-50/50 p-4 border border-blue-100/50 dark:bg-blue-900/10 dark:border-blue-800/50">
+                        <Info className="h-5 w-5 text-blue-500 mt-0.5" />
+                        <p className="text-[11px] leading-relaxed text-blue-700/80 dark:text-blue-400/80">
+                          These credentials have been dispatched to the user's primary contact endpoint. Please ensure they update their access key upon first authentication.
+                        </p>
+                      </div>
 
-                    <button
-                      onClick={() => setShowSuccessModal(false)}
-                      className="w-full rounded-2xl bg-slate-900 py-4.5 text-sm font-black uppercase tracking-widest text-white shadow-xl shadow-slate-900/20 transition-all hover:bg-black active:scale-[0.98] dark:bg-emerald-600 dark:hover:bg-emerald-700"
-                    >
-                      Close & Dispatch
-                    </button>
+                      <button
+                        onClick={() => setShowSuccessModal(false)}
+                        className="w-full rounded-2xl bg-slate-900 py-4.5 text-sm font-black uppercase tracking-widest text-white shadow-xl shadow-slate-900/20 transition-all hover:bg-black active:scale-[0.98] dark:bg-emerald-600 dark:hover:bg-emerald-700"
+                      >
+                        Close & Dispatch
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
-        )}
-      </div>
-    </div>
+          )
+        }
+      </div >
+    </div >
   );
 }

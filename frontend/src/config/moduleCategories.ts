@@ -23,10 +23,12 @@ export const MODULE_CATEGORIES = [
         icon: '⏰',
         modules: [
             { code: 'LEAVE_OD', label: 'Leave & OD', href: '/leaves' },
+            { code: 'CCL', label: 'CCL (Compensatory)', href: '/ccl' },
             { code: 'OT_PERMISSIONS', label: 'OT & Permissions', href: '/ot-permissions' },
             { code: 'SHIFT_ROSTER', label: 'Shift Roster', href: '/shift-roster' },
             { code: 'CONFUSED_SHIFTS', label: 'Confused Shifts', href: '/confused-shifts' },
             { code: 'SHIFTS', label: 'Shifts', href: '/shifts' },
+            { code: 'HOLIDAY_CALENDAR', label: 'Holiday Calendar', href: '/holidays' },
             { code: 'ATTENDANCE', label: 'Attendance', href: '/attendance' }
         ]
     },
@@ -48,7 +50,7 @@ export const MODULE_CATEGORIES = [
             { code: 'PAY_REGISTER', label: 'Pay Register', href: '/pay-register' },
             { code: 'PAYSLIPS', label: 'Payslips', href: '/payslips' },
             { code: 'ALLOWANCES_DEDUCTIONS', label: 'Allowances & Deductions', href: '/allowances-deductions' },
-            { code: 'LOANS_SALARY_ADVANCE', label: 'Loans & Salary Advance', href: '/loans-salary-advance' }
+            { code: 'LOANS', label: 'Loans & Salary Advance', href: '/loans' }
         ]
     },
     {
@@ -60,21 +62,12 @@ export const MODULE_CATEGORIES = [
         ]
     },
     {
-        code: 'BONUS_MANAGEMENT',
-        name: 'Bonus Management',
-        icon: '🎁',
-        modules: [
-            { code: 'BONUS_POLICIES', label: 'Bonus Policies', href: '/superadmin/bonus/policies' },
-            { code: 'BONUS_CALCULATOR', label: 'Bonus Calculator', href: '/superadmin/bonus/calculator' },
-            { code: 'BONUS_BATCHES', label: 'Bonus Batches', href: '/superadmin/bonus/batches' }
-        ]
-    },
-    {
         code: 'SETTINGS',
         name: 'Settings',
         icon: '⚙️',
         modules: [
-            { code: 'GENERAL_SETTINGS', label: 'General Settings', href: '/settings' }
+            { code: 'GENERAL_SETTINGS', label: 'General Settings', href: '/settings' },
+            { code: 'USERS', label: 'Users', href: '/users' }
         ]
     }
 ];
@@ -88,7 +81,11 @@ export function getModulesForCategory(categoryCode: string) {
 // Helper to check if a module is enabled based on feature control
 export function isModuleEnabled(moduleCode: string, featureControl: string[] | null): boolean {
     if (!featureControl || featureControl.length === 0) return true; // If no feature control or empty, allow all
-    return featureControl.includes(moduleCode);
+
+    // Check for exact match OR :read OR :write permissions
+    return featureControl.includes(moduleCode) ||
+        featureControl.includes(`${moduleCode}:read`) ||
+        featureControl.includes(`${moduleCode}:write`);
 }
 
 // Helper to check if a category has any enabled modules

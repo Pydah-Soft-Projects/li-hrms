@@ -148,10 +148,9 @@ const createOTRequest = async (data, userId) => {
       }
     }
 
-    // Calculate OT In Time (shift end time on the date)
-    const [shiftEndHour, shiftEndMin] = shift.endTime.split(':').map(Number);
-    const otInTime = new Date(date);
-    otInTime.setHours(shiftEndHour, shiftEndMin, 0, 0);
+    // Use centralized helper to get OT In Time (shift end time) in IST context
+    const { createDateWithOffset } = require('../../shifts/services/shiftDetectionService');
+    const otInTime = createDateWithOffset(date, shift.endTime);
 
     // Ensure otOutTime is a Date object
     const otOutTimeDate = otOutTime instanceof Date ? otOutTime : new Date(otOutTime);
@@ -344,8 +343,27 @@ const approveOTRequest = async (otId, userId, userRole) => {
       const myRole = String(userRole || '').toLowerCase().trim();
       const requiredRole = String(currentStep.role || '').toLowerCase().trim();
 
-      // Basic Role Match
-      if (myRole !== requiredRole && myRole !== 'super_admin') {
+      // Basic Role Match & Reporting Manager Check
+      let isAuthorizedRole = myRole === requiredRole || myRole === 'super_admin';
+
+      if (!isAuthorizedRole && requiredRole === 'reporting_manager') {
+        // 1. Check if user is the assigned Reporting Manager
+        const targetEmployee = await Employee.findById(otRequest.employeeId);
+        const managers = targetEmployee?.dynamicFields?.reporting_to;
+
+        if (managers && Array.isArray(managers) && managers.length > 0) {
+          const userIdStr = (fullUser._id || fullUser.userId).toString();
+          isAuthorizedRole = managers.some(m => (m._id || m).toString() === userIdStr);
+        }
+
+        // 2. Fallback to HOD if no managers assigned OR if user is an HOD for the employee
+        if (!isAuthorizedRole && myRole === 'hod') {
+          // checkJurisdiction will handle the departmental scoping
+          isAuthorizedRole = true;
+        }
+      }
+
+      if (!isAuthorizedRole) {
         return { success: false, message: `Unauthorized. Required: ${requiredRole.toUpperCase()}` };
       }
 
@@ -388,8 +406,8 @@ const approveOTRequest = async (otId, userId, userRole) => {
           await attendanceRecord.save();
 
           // Recalculate summary
-          const dateObj = new Date(otRequest.date);
-          await calculateMonthlySummary(otRequest.employeeId, otRequest.employeeNumber, dateObj.getFullYear(), dateObj.getMonth() + 1);
+          const [year, month] = otRequest.date.split('-').map(Number);
+          await calculateMonthlySummary(otRequest.employeeId, otRequest.employeeNumber, year, month);
         }
       } else {
         // --- MOVE TO NEXT STEP ---
@@ -426,10 +444,8 @@ const approveOTRequest = async (otId, userId, userRole) => {
       await attendanceRecord.save();
 
       // Recalculate monthly summary
-      const dateObj = new Date(otRequest.date);
-      const year = dateObj.getFullYear();
-      const monthNumber = dateObj.getMonth() + 1;
-      await calculateMonthlySummary(otRequest.employeeId, otRequest.employeeNumber, year, monthNumber);
+      const [year, month] = otRequest.date.split('-').map(Number);
+      await calculateMonthlySummary(otRequest.employeeId, otRequest.employeeNumber, year, month);
     }
 
     return {
@@ -542,9 +558,10 @@ const rejectOTRequest = async (otId, userId, reason, userRole) => {
  * @param {String} employeeNumber - Employee number
  * @param {String} date - Date (YYYY-MM-DD)
  * @param {String} userId - User ID performing the conversion
+ * @param {String} userName - User name performing the conversion
  * @returns {Object} - Result
  */
-const convertExtraHoursToOT = async (employeeId, employeeNumber, date, userId) => {
+const convertExtraHoursToOT = async (employeeId, employeeNumber, date, userId, userName) => {
   try {
     // Get attendance record
     const attendanceRecord = await AttendanceDaily.findOne({
@@ -610,13 +627,12 @@ const convertExtraHoursToOT = async (employeeId, employeeNumber, date, userId) =
     }
 
     // Calculate OT times
-    const [shiftEndHour, shiftEndMin] = shift.endTime.split(':').map(Number);
-    const otInTime = new Date(date);
-    otInTime.setHours(shiftEndHour, shiftEndMin, 0, 0);
+    const { createDateWithOffset } = require('../../shifts/services/shiftDetectionService');
+    const otInTime = createDateWithOffset(date, shift.endTime);
 
     // OT out time = shift end time + extra hours
     const otOutTime = new Date(otInTime);
-    otOutTime.setHours(otOutTime.getHours() + attendanceRecord.extraHours);
+    otOutTime.setMinutes(otOutTime.getMinutes() + (attendanceRecord.extraHours * 60));
 
     // Use extra hours as OT hours
     const otHours = Math.round(attendanceRecord.extraHours * 100) / 100;
@@ -649,6 +665,7 @@ const convertExtraHoursToOT = async (employeeId, employeeNumber, date, userId) =
     attendanceRecord.editHistory.push({
       action: 'OT_CONVERSION',
       modifiedBy: userId,
+      modifiedByName: userName,
       modifiedAt: new Date(),
       details: `Converted ${otHours.toFixed(2)} hours extra to OT`
     });
@@ -671,10 +688,8 @@ const convertExtraHoursToOT = async (employeeId, employeeNumber, date, userId) =
     await attendanceRecord.save();
 
     // Recalculate monthly summary
-    const dateObj = new Date(date);
-    const year = dateObj.getFullYear();
-    const monthNumber = dateObj.getMonth() + 1;
-    await calculateMonthlySummary(employeeId, employeeNumber.toUpperCase(), year, monthNumber);
+    const [year, month] = date.split('-').map(Number);
+    await calculateMonthlySummary(employeeId, employeeNumber.toUpperCase(), year, month);
 
     return {
       success: true,

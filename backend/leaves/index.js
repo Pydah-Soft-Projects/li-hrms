@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const leaveController = require('./controllers/leaveController');
 const odController = require('./controllers/odController');
+const cclController = require('./controllers/cclController');
 const settingsController = require('./controllers/leaveSettingsController');
 const { protect, authorize } = require('../authentication/middleware/authMiddleware');
 const { applyScopeFilter } = require('../shared/middleware/dataScopeMiddleware');
@@ -16,17 +17,48 @@ router.use(protect);
 // Initialize default settings
 router.post('/settings/initialize', authorize('super_admin'), settingsController.initializeSettings);
 
-// Get settings for leave or OD
+// Get settings for leave, OD, or CCL
 router.get('/settings/:type', settingsController.getSettings);
 
 // Save settings
 router.post('/settings/:type', authorize('super_admin'), settingsController.saveSettings);
 
-// Get types (leave types or OD types)
+// Get types (leave types, OD types, or CCL)
 router.get('/types/:type', settingsController.getTypes);
 
 // Add new type
 router.post('/types/:type', authorize('super_admin'), settingsController.addType);
+
+// ==========================================
+// CCL (COMPENSATORY CASUAL LEAVE) ROUTES
+// ==========================================
+
+// Get users for Assigned By dropdown
+router.get('/ccl/assigned-by-users', cclController.getAssignedByUsers);
+
+// Validate date (holiday/week-off check)
+router.get('/ccl/validate-date', cclController.validateCCLDate);
+
+// Get my CCL requests
+router.get('/ccl/my', cclController.getMyCCLs);
+
+// Get pending CCL approvals
+router.get('/ccl/pending-approvals', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), cclController.getPendingApprovals);
+
+// Get all CCL requests (scoped)
+router.get('/ccl', authorize('employee', 'manager', 'hod', 'hr', 'sub_admin', 'super_admin'), applyScopeFilter, cclController.getCCLs);
+
+// Get single CCL request
+router.get('/ccl/:id', cclController.getCCL);
+
+// Apply for CCL
+router.post('/ccl', cclController.applyCCL);
+
+// Process CCL action (approve/reject)
+router.put('/ccl/:id/action', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), cclController.processCCLAction);
+
+// Cancel CCL
+router.put('/ccl/:id/cancel', cclController.cancelCCL);
 
 // ==========================================
 // OD (ON DUTY) ROUTES - MUST COME BEFORE /:id routes!
@@ -36,14 +68,10 @@ router.post('/types/:type', authorize('super_admin'), settingsController.addType
 router.get('/od/my', odController.getMyODs);
 
 // Get pending OD approvals
-router.get('/od/pending-approvals', authorize('hod', 'hr', 'manager', 'sub_admin', 'super_admin'), odController.getPendingApprovals);
-
-// Get all ODs
-router.get('/od', authorize('hod', 'hr', 'manager', 'sub_admin', 'super_admin'), odController.getODs);
 router.get('/od/pending-approvals', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), odController.getPendingApprovals);
 
-// Get all ODs
-router.get('/od', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), odController.getODs);
+// Get all ODs (scoped by division/department) - employee allowed; applyScopeFilter restricts to own/scope
+router.get('/od', authorize('employee', 'manager', 'hod', 'hr', 'sub_admin', 'super_admin'), applyScopeFilter, odController.getODs);
 
 // Get single OD
 router.get('/od/:id', odController.getOD);
@@ -94,8 +122,8 @@ router.post('/:id/revoke-for-attendance', authorize('manager', 'super_admin', 's
 // Update leave for attendance (multi-day leave adjustments)
 router.post('/:id/update-for-attendance', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), leaveController.updateLeaveForAttendance);
 
-// Get all leaves (with filters)
-router.get('/', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), applyScopeFilter, leaveController.getLeaves);
+// Get all leaves (with filters) - employee allowed; applyScopeFilter restricts to own/scope
+router.get('/', authorize('employee', 'manager', 'hod', 'hr', 'sub_admin', 'super_admin'), applyScopeFilter, leaveController.getLeaves);
 
 // Apply for leave
 router.post('/', leaveController.applyLeave);

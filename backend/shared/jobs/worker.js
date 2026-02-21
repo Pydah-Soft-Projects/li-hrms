@@ -1,5 +1,6 @@
 const { Worker } = require('bullmq');
 const { redisConfig } = require('../../config/redis');
+const { extractISTComponents, createISTDate } = require('../../shared/utils/dateUtils');
 
 // Start the workers
 const startWorkers = () => {
@@ -7,7 +8,7 @@ const startWorkers = () => {
 
     // Payroll Worker
     const payrollWorker = new Worker('payrollQueue', async (job) => {
-        console.log(`[Worker] Processing payroll job: ${job.id} (Name: ${job.name})`);
+        console.log(`[Worker] Processing payroll job: ${job.id} (Name: ${job.name}, action: ${job.data?.action || 'n/a'})`);
 
         const { employeeId, month, userId, batchId, action, departmentId, divisionId } = job.data;
 
@@ -42,15 +43,21 @@ const startWorkers = () => {
                 const Department = require('../../departments/model/Department');
                 const allowanceDeductionResolverService = require('../../payroll/services/allowanceDeductionResolverService');
 
-                const query = {
-                    is_active: true,
-                    second_salary: { $gt: 0 }
-                };
-                if (departmentId && departmentId !== 'all') query.department_id = departmentId;
-                if (divisionId && divisionId !== 'all') query.division_id = divisionId;
-
-                const employees = await Employee.find(query);
-                console.log(`[Worker] Calculating 2nd salary for ${employees.length} employees`);
+                let employees;
+                if (job.data.employeeIds && Array.isArray(job.data.employeeIds) && job.data.employeeIds.length > 0) {
+                    employees = await Employee.find({ _id: { $in: job.data.employeeIds } });
+                    console.log(`[Worker] Calculating 2nd salary for ${employees.length} employees (from controller list)`);
+                } else {
+                    const { getSecondSalaryEmployeeQuery } = require('../../payroll/services/payrollEmployeeQueryHelper');
+                    const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
+                    const { year: curYear, month: curMonth } = extractISTComponents(new Date());
+                    const [year, monthNum] = month ? month.split('-').map(Number) : [curYear, curMonth];
+                    const { startDate, endDate } = month ? await getPayrollDateRange(year, monthNum) : { startDate: null, endDate: null };
+                    const leftDateRange = (startDate && endDate) ? { start: new Date(startDate), end: new Date(endDate) } : undefined;
+                    const query = getSecondSalaryEmployeeQuery({ departmentId, divisionId, leftDateRange });
+                    employees = await Employee.find(query);
+                    console.log(`[Worker] Calculating 2nd salary for ${employees.length} employees (from query)`);
+                }
 
                 // Optimization: Pre-fetch department and settings for context
                 const sharedContext = {
@@ -87,15 +94,23 @@ const startWorkers = () => {
                 const Employee = require('../../employees/model/Employee');
                 const Department = require('../../departments/model/Department');
                 const allowanceDeductionResolverService = require('../../payroll/services/allowanceDeductionResolverService');
-                const SecondSalaryBatchService = require('../../payroll/services/secondSalaryBatchService');
                 const PayrollBatchService = require('../../payroll/services/payrollBatchService');
 
-                const query = { is_active: true };
-                if (departmentId && departmentId !== 'all') query.department_id = departmentId;
-                if (divisionId && divisionId !== 'all') query.division_id = divisionId;
-
-                const employees = await Employee.find(query);
-                console.log(`[Worker] Bulk calculating payroll for ${employees.length} employees`);
+                let employees;
+                if (job.data.employeeIds && Array.isArray(job.data.employeeIds) && job.data.employeeIds.length > 0) {
+                    employees = await Employee.find({ _id: { $in: job.data.employeeIds } });
+                    console.log(`[Worker] Bulk calculating payroll for ${employees.length} employees (from controller list)`);
+                } else {
+                    const { getRegularPayrollEmployeeQuery } = require('../../payroll/services/payrollEmployeeQueryHelper');
+                    const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
+                    const { year: curYear, month: curMonth } = extractISTComponents(new Date());
+                    const [year, monthNum] = month ? month.split('-').map(Number) : [curYear, curMonth];
+                    const { startDate, endDate } = month ? await getPayrollDateRange(year, monthNum) : { startDate: null, endDate: null };
+                    const leftDateRange = (startDate && endDate) ? { start: new Date(startDate), end: new Date(endDate) } : undefined;
+                    const query = getRegularPayrollEmployeeQuery({ departmentId, divisionId, leftDateRange });
+                    employees = await Employee.find(query);
+                    console.log(`[Worker] Bulk calculating payroll for ${employees.length} employees (from query)`);
+                }
 
                 // Optimization: Pre-fetch department and settings for context
                 const sharedContext = {
@@ -190,7 +205,7 @@ const startWorkers = () => {
                     if (application.status !== 'pending') throw new Error(`Application ${id} is already ${application.status}`);
 
                     const finalSalary = approvedSalary !== undefined ? approvedSalary : application.proposedSalary;
-                    const finalDOJ = doj ? new Date(doj) : new Date();
+                    const finalDOJ = doj ? createISTDate(extractISTComponents(doj).dateStr) : createISTDate(extractISTComponents(new Date()).dateStr);
 
                     application.status = 'approved';
                     application.approvedSalary = finalSalary;
@@ -355,6 +370,107 @@ const startWorkers = () => {
         }
     }, { connection: redisConfig });
 
+    // Roster Sync Worker
+    const rosterSyncWorker = new Worker('rosterSyncQueue', async (job) => {
+        const { entries, userId } = job.data;
+        console.log(`[Worker] Processing roster sync job: ${job.id} with ${entries.length} entries`);
+
+        try {
+            const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
+
+            // Get today's date in YYYY-MM-DD (IST)
+            const { dateStr: today } = extractISTComponents(new Date());
+
+            let syncedCount = 0;
+            let removedCount = 0;
+
+            for (const entry of entries) {
+                // Only process future or current dates
+                if (!entry.date || entry.date < today) continue;
+
+                const empNo = String(entry.employeeNumber || '').toUpperCase();
+
+                if (entry.status === 'WO' || entry.status === 'HOL') {
+                    // Update or Create AttendanceDaily via .save() to trigger hooks
+                    let dailyRecord = await AttendanceDaily.findOne({
+                        employeeNumber: empNo,
+                        date: entry.date
+                    });
+
+                    const updateFields = {
+                        status: entry.status === 'WO' ? 'WEEK_OFF' : 'HOLIDAY',
+                        shifts: [], // Clear shifts
+                        totalWorkingHours: 0,
+                        totalOTHours: 0,
+                        notes: entry.status === 'WO' ? 'Week Off' : 'Holiday'
+                    };
+
+                    if (!dailyRecord) {
+                        dailyRecord = new AttendanceDaily({
+                            employeeNumber: empNo,
+                            date: entry.date,
+                            ...updateFields,
+                            source: ['roster-sync']
+                        });
+                    } else {
+                        Object.keys(updateFields).forEach(key => {
+                            dailyRecord[key] = updateFields[key];
+                        });
+                        if (!dailyRecord.source.includes('roster-sync')) {
+                            dailyRecord.source.push('roster-sync');
+                        }
+                    }
+
+                    await dailyRecord.save();
+                    syncedCount++;
+                } else if (entry.shiftId) {
+                    // It's a shift. Check if currently WO/HOL and remove if so
+                    // We only remove if source is roster-sync or status is plainly WO/HOL without punches
+                    const existing = await AttendanceDaily.findOne({
+                        employeeNumber: empNo,
+                        date: entry.date
+                    });
+
+                    if (existing && (existing.status === 'WEEK_OFF' || existing.status === 'HOLIDAY')) {
+                        // Only remove if it doesn't have punches (totalWorkingHours == 0)
+                        if (!existing.totalWorkingHours || existing.totalWorkingHours === 0) {
+                            await AttendanceDaily.deleteOne({ _id: existing._id });
+                            removedCount++;
+                        }
+                    }
+                }
+            }
+
+            console.log(`[Worker] Roster sync complete: ${syncedCount} synced, ${removedCount} removed`);
+
+            // Notify user via socket if available
+            try {
+                const { app, io } = require('../../server'); // Import from server.js
+                const activeIo = io || (app && typeof app.get === 'function' ? app.get('io') : null);
+
+                if (activeIo) {
+                    activeIo.to(`user_${userId}`).emit('toast_notification', {
+                        type: 'success',
+                        message: `Roster sync complete: ${syncedCount} days updated.`,
+                        title: 'Roster Sync Complete'
+                    });
+                }
+            } catch (notifyErr) {
+                console.warn('[Worker] Failed to notify user:', notifyErr.message);
+            }
+
+            return { success: true, synced: syncedCount, removed: removedCount };
+
+        } catch (error) {
+            console.error(`[Worker] Roster sync failed:`, error);
+            throw error;
+        }
+    }, { connection: redisConfig });
+
+    payrollWorker.on('error', (err) => {
+        console.error('[Worker] Payroll worker error (check Redis):', err.message);
+    });
+
     payrollWorker.on('completed', (job) => {
         console.log(`[Worker] Job ${job.id} has completed!`);
     });
@@ -373,6 +489,14 @@ const startWorkers = () => {
 
     applicationWorker.on('failed', (job, err) => {
         console.error(`[Worker] Application Job ${job.id} failed: ${err.message}`);
+    });
+
+    rosterSyncWorker.on('completed', (job) => {
+        console.log(`[Worker] Roster Sync Job ${job.id} completed successfully`);
+    });
+
+    rosterSyncWorker.on('failed', (job, err) => {
+        console.error(`[Worker] Roster Sync Job ${job.id} failed: ${err.message}`);
     });
 
     console.log('✅ BullMQ Workers are ready');

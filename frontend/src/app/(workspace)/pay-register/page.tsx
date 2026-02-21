@@ -1,12 +1,20 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from "next/navigation";
 import Link from 'next/link';
 import { api, apiRequest, Employee, Division } from '@/lib/api';
 import { toast } from 'react-toastify';
 import ArrearsPayrollSection from '@/components/Arrears/ArrearsPayrollSection';
 import Spinner from '@/components/Spinner';
+import * as XLSX from 'xlsx';
+import Swal from 'sweetalert2';
+import {
+  canGeneratePayslips,
+  canViewPayRegister,
+  canManagePayRegister
+} from '@/lib/permissions';
+import { auth } from '@/lib/auth';
 
 
 
@@ -90,6 +98,18 @@ interface Shift {
 
 type TableType = 'present' | 'absent' | 'leaves' | 'od' | 'ot' | 'extraHours' | 'shifts';
 
+interface Department {
+  _id: string;
+  name: string;
+  division_id?: string | { _id: string; name: string };
+  // Add other fields as necessary based on API response
+}
+
+interface LeaveType {
+  code: string;
+  name: string;
+}
+
 export default function PayRegisterPage() {
   const router = useRouter();
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -99,16 +119,26 @@ export default function PayRegisterPage() {
   const [syncing, setSyncing] = useState(false);
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [activeTable, setActiveTable] = useState<TableType>('present');
-  const [departments, setDepartments] = useState<any[]>([]);
-  const [divisions, setDivisions] = useState<Division[]>([]);  // NEW: Division state
-  const [selectedDivision, setSelectedDivision] = useState<string>('');  // NEW: Selected division filter
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [divisions, setDivisions] = useState<Division[]>([]);
+  const [selectedDivision, setSelectedDivision] = useState<string>('');
   const [selectedDepartment, setSelectedDepartment] = useState<string>('');
-  const [leaveTypes, setLeaveTypes] = useState<any[]>([]);
+  const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
   const [calculatingId, setCalculatingId] = useState<string | null>(null);
+  const [selectedArrears, setSelectedArrears] = useState<Array<{ id: string, amount: number, employeeId?: string }>>([]);
+  const [calculatingJobId, setCalculatingJobId] = useState<string | null>(null);
+  // Removed unused calculationProgress state
   const [bulkCalculating, setBulkCalculating] = useState(false);
+  const [payrollStrategy, setPayrollStrategy] = useState<'new' | 'legacy'>('new');
+  const [payrollStartDate, setPayrollStartDate] = useState<string | null>(null);
+  const [payrollEndDate, setPayrollEndDate] = useState<string | null>(null);
   const [exportingExcel, setExportingExcel] = useState(false);
 
-
+  // Download Template & Upload Summary State
+  const [downloadingTemplate, setDownloadingTemplate] = useState(false);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadingSummary, setUploadingSummary] = useState(false);
+  const [uploadResults, setUploadResults] = useState<{ success: number; failed: number; total: number; errors: string[] } | null>(null);
 
   // Permission Request State
   const [showPermissionModal, setShowPermissionModal] = useState(false);
@@ -117,10 +147,48 @@ export default function PayRegisterPage() {
 
   // Department Batch Status State (Map of DeptID -> Batch Info)
   const [departmentBatchStatus, setDepartmentBatchStatus] = useState<Map<string, { status: string, permissionGranted: boolean, batchId: string }>>(new Map());
-  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
-  const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1);
-  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
-  const [selectedArrears, setSelectedArrears] = useState<Array<{ id: string, amount: number, employeeId?: string }>>([]);
+
+  // Polling for calculation progress
+  useEffect(() => {
+    let pollInterval: NodeJS.Timeout;
+
+    if (calculatingJobId) {
+      pollInterval = setInterval(async () => {
+        try {
+          const status = await api.getJobStatus(calculatingJobId);
+          if (status.success) {
+            // calculationProgress removed as it was unused in render
+
+            if (status.data.state === 'completed') {
+              clearInterval(pollInterval);
+              setCalculatingJobId(null);
+              setBulkCalculating(false);
+              toast.success('Payroll calculation finished successfully.');
+              loadPayRegisters();
+            } else if (status.data.state === 'failed') {
+              clearInterval(pollInterval);
+              setCalculatingJobId(null);
+              setBulkCalculating(false);
+              toast.error(status.data.failedReason || 'The background job failed.');
+            }
+          }
+        } catch (err) {
+          console.error('Error polling job status:', err);
+        }
+      }, 1500);
+    }
+
+    return () => {
+      if (pollInterval) clearInterval(pollInterval);
+    };
+  }, [calculatingJobId]);
+
+  // Permission Checks
+  // Casting to any to avoid strict type mismatch between AuthContext User and Permissions User
+  const user = auth.getUser() as any;
+  const hasManagePermission = user ? canManagePayRegister(user) : false;
+  const hasGeneratePermission = user ? canGeneratePayslips(user) : false;
+  const hasViewPermission = user ? canViewPayRegister(user) : false;
 
   const normalizeHalfDay = (
     half?: Partial<DailyRecord['firstHalf']>,
@@ -134,15 +202,18 @@ export default function PayRegisterPage() {
       'holiday',
       'week_off',
     ];
-    const fallbackStatus = allowedStatuses.includes(statusFallback as any)
+
+    // Validate statusFallback
+    const validFallback = allowedStatuses.includes(statusFallback as any)
       ? (statusFallback as DailyRecord['firstHalf']['status'])
       : 'absent';
-    const resolvedStatus = allowedStatuses.includes(half?.status as any)
-      ? (half?.status as DailyRecord['firstHalf']['status'])
-      : fallbackStatus;
+
+    const resolvedStatus = half?.status && allowedStatuses.includes(half.status)
+      ? half.status
+      : validFallback;
 
     return {
-      status: resolvedStatus || fallbackStatus,
+      status: resolvedStatus,
       leaveType: half?.leaveType ?? null,
       leaveNature: half?.leaveNature ?? null,
       isOD: half?.isOD ?? false,
@@ -157,30 +228,46 @@ export default function PayRegisterPage() {
   const [editingRecord, setEditingRecord] = useState<{ employeeId: string; month: string; date: string; record: DailyRecord; employee: Employee } | null>(null);
   const [editData, setEditData] = useState<Partial<DailyRecord>>({});
   const [isHalfDayMode, setIsHalfDayMode] = useState(false);
-  const [payrollStrategy, setPayrollStrategy] = useState<'legacy' | 'new'>('new');
 
   // Pagination State (NEW)
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
+  const [paginationTotal, setPaginationTotal] = useState(0);
+  const [paginationTotalPages, setPaginationTotalPages] = useState(1);
+  const PAGE_SIZE = 50;
   const [loadingMore, setLoadingMore] = useState(false);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth() + 1;
   const monthStr = `${year}-${String(month).padStart(2, '0')}`;
   const daysInMonth = new Date(year, month, 0).getDate();
-  const daysArray = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+
+  // Use the configured range from the backend if available, otherwise compute calendar month
+  const displayDays = (payrollStartDate && payrollEndDate)
+    ? (() => {
+      const start = new Date(payrollStartDate);
+      const end = new Date(payrollEndDate);
+      const dates = [];
+      const curr = new Date(start);
+      let count = 0;
+      while (curr <= end && count < 40) {
+        dates.push(curr.toISOString().split('T')[0]);
+        curr.setDate(curr.getDate() + 1);
+        count++;
+      }
+      return dates;
+    })()
+    : Array.from({ length: daysInMonth }, (_, i) => {
+      const d = new Date(year, month - 1, i + 1);
+      return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+    });
+
+  const daysArray = displayDays;
 
   const isPastMonth = new Date(year, month - 1, 1).getTime() < new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
 
-  useEffect(() => {
-    loadShifts();
-    loadDivisions();  // NEW: Load divisions
-    loadDepartments();
-    loadLeaveTypes();
-  }, []);
-
   // NEW: Load divisions function
-  const loadDivisions = async () => {
+  const loadDivisions = useCallback(async () => {
     try {
       const response = await api.getDivisions();
       if (response.success) {
@@ -189,9 +276,9 @@ export default function PayRegisterPage() {
     } catch (err) {
       console.error('Error loading divisions:', err);
     }
-  };
+  }, []);
 
-  const loadLeaveTypes = async () => {
+  const loadLeaveTypes = useCallback(async () => {
     try {
       const response = await api.getLeaveSettings('leave');
       if (response.success && response.data && response.data.types) {
@@ -200,22 +287,43 @@ export default function PayRegisterPage() {
     } catch (err) {
       console.error('Error loading leave types:', err);
     }
-  };
+  }, []);
+
+  const loadDepartments = useCallback(async () => {
+    try {
+      const response = await api.getDepartments(true);
+      if (response.success && response.data) {
+        setDepartments(response.data);
+      }
+    } catch (err) {
+      console.error('Error loading departments:', err);
+    }
+  }, []);
+
+  const loadShifts = useCallback(async () => {
+    try {
+      const response = await api.getShifts();
+      if (response.success && response.data) {
+        setShifts(response.data.map((s: any) => ({ ...s, payableShifts: s.payableShifts || 0 })));
+      }
+    } catch (err) {
+      console.error('Error loading shifts:', err);
+    }
+  }, []);
 
   useEffect(() => {
-    setPage(1);  // NEW: Reset page when filters change
-    setHasMore(true);  // NEW: Reset hasMore
-    loadPayRegisters(1, false);  // NEW: Load first page
-    checkBatchLocks();
-  }, [year, month, selectedDepartment, selectedDivision]);  // NEW: Added selectedDivision dependency
+    loadShifts();
+    loadDivisions();
+    loadDepartments();
+    loadLeaveTypes();
+  }, [loadShifts, loadDivisions, loadDepartments, loadLeaveTypes]);
 
-  const checkBatchLocks = async () => {
+  const checkBatchLocks = useCallback(async () => {
     try {
-      const divId = selectedDivision && selectedDivision.trim() !== '' ? selectedDivision : undefined;  // NEW: Include divisionId
-      const response = await api.getPayrollBatches({ month: monthStr, divisionId: divId });  // NEW: Pass divisionId
+      const divId = selectedDivision && selectedDivision.trim() !== '' ? selectedDivision : undefined;
+      const response = await api.getPayrollBatches({ month: monthStr, divisionId: divId });
       if (response && response.data) {
         const statusMap = new Map<string, { status: string, permissionGranted: boolean, batchId: string }>();
-        // response.data is array of batches
         const batches = Array.isArray(response.data) ? response.data : [];
         batches.forEach((batch: any) => {
           const deptId = typeof batch.department === 'object' ? batch.department._id : batch.department;
@@ -230,29 +338,7 @@ export default function PayRegisterPage() {
     } catch (err) {
       console.error('Error checking batch locks:', err);
     }
-  };
-
-  const loadDepartments = async () => {
-    try {
-      const response = await api.getDepartments(true);
-      if (response.success && response.data) {
-        setDepartments(response.data);
-      }
-    } catch (err) {
-      console.error('Error loading departments:', err);
-    }
-  };
-
-  const loadShifts = async () => {
-    try {
-      const response = await api.getShifts();
-      if (response.success && response.data) {
-        setShifts(response.data.map((s: any) => ({ ...s, payableShifts: s.payableShifts || 0 })));
-      }
-    } catch (err) {
-      console.error('Error loading shifts:', err);
-    }
-  };
+  }, [selectedDivision, monthStr]);
 
   // NEW: Updated to support pagination
   const loadPayRegisters = async (pageToLoad = 1, append = false) => {
@@ -263,18 +349,19 @@ export default function PayRegisterPage() {
         setLoading(true);
       }
 
-      console.log('[Pay Register] Loading pay registers:', { monthStr, selectedDepartment, selectedDivision, page: pageToLoad });
-
-      // Ensure we pass undefined instead of empty string
+      const monthStr = `${year}-${String(month).padStart(2, '0')}`;
       const targetDeptId = selectedDepartment && selectedDepartment.trim() !== '' ? selectedDepartment : undefined;
       const targetDivId = selectedDivision && selectedDivision.trim() !== '' ? selectedDivision : undefined;
 
-      const limit = 50;
+      const limit = PAGE_SIZE;
       const response = await api.getEmployeesWithPayRegister(monthStr, targetDeptId, targetDivId, undefined, pageToLoad, limit);
 
       if (response.success) {
         const payRegisterList = response.data || [];
-        console.log('[Pay Register] Loaded page', pageToLoad, 'count:', payRegisterList.length);
+
+        const respAny = response as any;
+        if (respAny.startDate) setPayrollStartDate(respAny.startDate);
+        if (respAny.endDate) setPayrollEndDate(respAny.endDate);
 
         if (append) {
           setPayRegisters(prev => [...prev, ...payRegisterList]);
@@ -282,11 +369,11 @@ export default function PayRegisterPage() {
           setPayRegisters(payRegisterList);
         }
 
-        // Update pagination status
         if (response.pagination) {
-          setHasMore(pageToLoad < response.pagination.totalPages);
+          setPaginationTotal((response.pagination as any).total ?? 0);
+          setPaginationTotalPages((response.pagination as any).totalPages ?? 1);
+          setHasMore(pageToLoad < (response.pagination as any).totalPages);
         } else {
-          // Fallback if pagination metadata is missing
           setHasMore(payRegisterList.length === limit);
         }
 
@@ -295,14 +382,23 @@ export default function PayRegisterPage() {
         }
       } else {
         console.error('[Pay Register] API call failed:', response);
-        if (!append) setPayRegisters([]);
+        if (!append) {
+          setPayRegisters([]);
+          setPaginationTotal(0);
+          setPaginationTotalPages(1);
+        }
         if (response.message) {
           toast.error(response.message);
         }
       }
-    } catch (err: any) {
+    } catch (error: unknown) {
+      const err = error as Error;
       console.error('[Pay Register] Error loading pay registers:', err);
-      if (!append) setPayRegisters([]);
+      if (!append) {
+        setPayRegisters([]);
+        setPaginationTotal(0);
+        setPaginationTotalPages(1);
+      }
       toast.error(err.message || 'Failed to load pay registers');
     } finally {
       setLoading(false);
@@ -320,6 +416,21 @@ export default function PayRegisterPage() {
   const handleSyncAll = async () => {
     try {
       setSyncing(true);
+
+      // 1. First trigger a global attendance sync for this payroll cycle's date range
+      // This ensures MongoDB records are updated from MSSQL/Biometric for the spanned dates
+      if (payrollStartDate && payrollEndDate) {
+        toast.info('Syncing logs from biometric source...', { autoClose: 2000 });
+        await apiRequest('/attendance/sync', {
+          method: 'POST',
+          body: JSON.stringify({
+            fromDate: payrollStartDate,
+            toDate: payrollEndDate
+          })
+        });
+      }
+
+      // 2. Now sync individual pay registers from the updated MongoDB records
       const syncPromises = payRegisters.map((pr) => {
         const employeeId = typeof pr.employeeId === 'object' ? pr.employeeId._id : pr.employeeId;
         return api.syncPayRegister(employeeId, monthStr);
@@ -332,6 +443,44 @@ export default function PayRegisterPage() {
       toast.error(err.message || 'Failed to sync pay registers');
     } finally {
       setSyncing(false);
+    }
+  };
+
+  const handleCalculatePayroll = async (employee: Employee) => {
+    try {
+      const employeeId = typeof employee === 'object' ? employee._id : employee;
+      const params = payrollStrategy === 'new' ? '?strategy=new' : '?strategy=legacy';
+      setCalculatingId(employeeId);
+      toast.info('Calculating payroll...', { autoClose: 1200 });
+
+      const monthStr = `${year}-${String(month).padStart(2, '0')}`;
+      const employeeArrears = selectedArrears.filter((arrear) => arrear.employeeId === employeeId);
+
+      const response = await api.calculatePayroll(employeeId, monthStr, params, employeeArrears);
+
+      if (response && response.data && response.data.batchId) {
+        toast.success('Payroll calculated! Redirecting to batch...');
+        setTimeout(() => {
+          router.push(`/workspace/payments/${response.data.batchId}`);
+        }, 1000);
+      } else {
+        toast.success('Payroll calculated');
+        loadPayRegisters();
+      }
+    } catch (err: any) {
+      console.error('Error calculating payroll:', err);
+      if (err.message && (err.message.includes('BATCH_LOCKED') || err.message.includes('Recalculation requires permission'))) {
+        if (err.batchId) {
+          setPendingBatchId(err.batchId);
+          setShowPermissionModal(true);
+        } else {
+          toast.error('This batch is locked. Recalculation requires permission.');
+        }
+      } else {
+        toast.error(err.message || 'Failed to calculate payroll');
+      }
+    } finally {
+      setCalculatingId(null);
     }
   };
 
@@ -416,15 +565,29 @@ export default function PayRegisterPage() {
 
   const getSummaryRows = () =>
     payRegisters.map((pr) => {
-      const totals = pr.totals || {};
+      const totals: any = pr.totals || {};
       const present = totals.totalPresentDays || 0;
       const absent = totals.totalAbsentDays || 0;
       const leave = getLeaveTotal(totals);
       const od = totals.totalODDays || 0;
       const ot = totals.totalOTHours || 0;
-      const extra = totals.totalOTHours || 0; // No separate extra hours field in totals
+      const extra = (totals.totalPayableShifts || 0) - (totals.totalPresentDays || 0);
+      const weeklyOffs = totals.totalWeeklyOffs || 0;
+      const holidays = totals.totalHolidays || 0;
+      const lop = totals.totalLopDays || 0;
+      const paidLeave = totals.totalPaidLeaveDays || 0;
+      const lateCount = totals.lateCount || 0;
+      const holidayAndWeekoffs = (totals.totalWeeklyOffs || 0) + (totals.totalHolidays || 0);
+
+      // User Definition:
+      // Paid Days = Present + Paid Leaves + Holidays + Weekoffs
+      const totalPaidDays = present + paidLeave + holidays + weeklyOffs;
+
       const monthDays = pr.totalDaysInMonth || daysInMonth;
-      const countedDays = present + absent + leave + od;
+
+      // User Definition:
+      // Counted Days = Present + Absent + Holidays + Weekoffs + Total Leaves
+      const countedDays = present + absent + holidays + weeklyOffs + leave;
       const matchesMonth = Math.abs(countedDays - monthDays) < 0.001;
       return {
         pr,
@@ -434,30 +597,20 @@ export default function PayRegisterPage() {
         od,
         ot,
         extra,
+        weeklyOffs,
+        holidays,
+        totalPaidDays,
+        lop,
+        paidLeave,
+        lateCount,
+        holidayAndWeekoffs,
         monthDays,
         countedDays,
         matchesMonth,
       };
     });
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'present':
-        return 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800';
-      case 'absent':
-        return 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800';
-      case 'leave':
-        return 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800';
-      case 'od':
-        return 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800';
-      case 'holiday':
-        return 'bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-800';
-      case 'week_off':
-        return 'bg-gray-50 dark:bg-gray-900/20 border-gray-200 dark:border-gray-800';
-      default:
-        return 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700';
-    }
-  };
+
 
   const getStatusDisplay = (record: DailyRecord | null): string => {
     if (!record) return '-';
@@ -544,71 +697,8 @@ export default function PayRegisterPage() {
     return payRegisters;
   };
 
-  const handleViewPayslip = (employee: Employee) => {
-    // Navigate to payslip or open payslip modal
-    // Use emp_no for search as per PayrollTransactionsPage filter logic
-    const searchParam = employee.emp_no || employee._id;
-    router.push(`/payroll-transactions?search=${searchParam}&month=${monthStr}`);
-  };
 
-  const handleCalculatePayroll = async (employee: Employee) => {
-    try {
-      const employeeId = typeof employee === 'object' ? employee._id : employee;
-      const params = payrollStrategy === 'new' ? '?strategy=new' : '?strategy=legacy';
-      setCalculatingId(employeeId);
-      toast.info('Calculating payroll...', { autoClose: 1200 });
 
-      // Filter arrears for this specific employee
-      // Note: ArrearsPayrollSection component stores arrears with employee info
-      // We need to filter selectedArrears to only include those for this employee
-      const employeeArrears = selectedArrears.filter((arrear) => {
-        // Filter arrears strictly for this employee
-        return arrear.employeeId === employeeId;
-      });
-
-      const response = await api.calculatePayroll(employeeId, monthStr, params, employeeArrears);
-
-      if (response && response.data && response.data.batchId) {
-        toast.success('Payroll calculated! Redirecting to batch...');
-        // Small delay to let the toast be seen
-        setTimeout(() => {
-          router.push(`/superadmin/payments/${response.data.batchId}`);
-        }, 1000);
-      } else {
-        toast.success('Payroll calculated');
-      }
-    } catch (err: any) {
-      console.error('Error calculating payroll:', err);
-
-      // Check for BATCH_LOCKED error
-      // API might return error message in err.message. Check if it contains specific text or if err object has code
-      // Note: frontend api wrapper might throw Error(message), so we might check message content
-      if (err.message && (err.message.includes('BATCH_LOCKED') || err.message.includes('Recalculation requires permission'))) {
-        // Try to extract batchId if possible. Since standard Error doesn't have custom props, 
-        // we might need to rely on the backend response.
-        // Ideally, we'd need to fetch the batch ID for this department/month or Parse it from somewhere.
-        // For now, let's try to parse it from the response if available or fetch it.
-        // Use the error info if attached to the error object (requires custom error handling in api.ts)
-
-        // A more robust way: If api sets properties on the error object
-        if (err.batchId) {
-          setPendingBatchId(err.batchId);
-          setShowPermissionModal(true);
-          return;
-        } else {
-          // Fallback: If we can't find batchId, we show a generic error or try to find it.
-          // But since we just failed to calc, the backend knows the ID.
-          // Let's assume for now api.ts might be updated or we rely on message/manual lookup.
-          // IF we can't get ID, we can't request permission easily.
-          // Let's check api.ts later. For now, show the message.
-        }
-      }
-
-      toast.error(err.message || 'Failed to calculate payroll');
-    } finally {
-      setCalculatingId(null);
-    }
-  };
 
   const handleRequestRecalculation = async () => {
     if (!pendingBatchId) return;
@@ -729,233 +819,239 @@ export default function PayRegisterPage() {
     setSelectedArrears(arrears);
   };
 
-  const processPayroll = async () => {
-    try {
-      if (!selectedEmployee) {
-        toast.error('Please select an employee');
-        return;
-      }
-
-      // Prepare payroll data
-      const payrollData = {
-        employeeId: selectedEmployee._id,
-        month: selectedMonth,
-        year: selectedYear,
-        arrears: selectedArrears,
-        // Add other payroll data as needed
-      };
-
-      // Submit payroll data
-      // Use apiRequest for generic post
-      const response = await apiRequest<any>('/payroll/process', {
-        method: 'POST',
-        body: JSON.stringify(payrollData)
-      });
-
-      // Process arrears settlement after successful payroll
-      if (selectedArrears.length > 0 && response.success) {
-        await settleArrears(response.data.payrollId);
-      }
-
-      if (response.success) {
-        toast.success('Payroll processed successfully');
-      } else {
-        toast.error(response.message || 'Failed to process payroll');
-      }
-    } catch (error: any) {
-      console.error('Error processing payroll:', error);
-      toast.error('Failed to process payroll');
-    }
-  };
-
-  const settleArrears = async (payrollId: string) => {
-    try {
-      // Process each selected arrear
-      for (const arrear of selectedArrears) {
-        await api.updateArrearsSettlement(arrear.id, {
-          amount: arrear.amount,
-          payrollId,
-          month: selectedMonth,
-          year: selectedYear,
-        });
-      }
-      toast.success('Arrears settled successfully');
-    } catch (error) {
-      console.error('Error settling arrears:', error);
-      toast.error('Failed to settle arrears');
-    }
-  };
-
   return (
-    <div className="space-y-6 p-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Pay Register</h1>
-        <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-          Manage monthly pay register for all employees
-        </p>
-      </div>
+    <div className="relative min-h-screen">
+      {/* Background */}
+      <div className="pointer-events-none fixed inset-0 bg-[linear-gradient(to_right,#e2e8f01f_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f01f_1px,transparent_1px)] bg-[size:28px_28px] dark:bg-[linear-gradient(to_right,rgba(148,163,184,0.12)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.12)_1px,transparent_1px)]" />
+      <div className="pointer-events-none fixed inset-0 bg-gradient-to-br from-blue-50/40 via-blue-50/35 to-transparent dark:from-slate-900/60 dark:via-slate-900/65 dark:to-slate-900/80" />
 
-      {/* Filters */}
-      <div className="bg-white dark:bg-slate-800 rounded-lg shadow p-4">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {/* Month Selector */}
-          <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-              Month
-            </label>
-            <input
-              type="month"
-              value={monthStr}
-              onChange={(e) => {
-                const [y, m] = e.target.value.split('-');
-                setCurrentDate(new Date(parseInt(y), parseInt(m) - 1));
-              }}
-              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-700 dark:text-white"
-            />
-          </div>
+      <div className="relative z-10 mx-auto max-w-[1920px] p-6">
+        {/* Header */}
+        <div className="mb-1 flex flex-wrap items-center justify-between gap-4 pb-2">
+          <div className="flex flex-wrap items-center gap-4">
+            {/* Title Section */}
+            <div className="flex items-center gap-3 shrink-0">
+              <div className="flex flex-col">
+                <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white whitespace-nowrap">Pay Register</h1>
+                <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                  Period: {new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} - {new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                </p>
+              </div>
+              <div className="h-6 w-px bg-slate-200 dark:bg-slate-800 hidden md:block" />
+            </div>
 
-          {/* Division Filter (NEW) */}
-          <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-              Division
-            </label>
-            <select
-              value={selectedDivision}
-              onChange={(e) => setSelectedDivision(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-700 dark:text-white"
-            >
-              <option value="">All Divisions</option>
-              {divisions.map((div) => (
-                <option key={div._id} value={div._id}>
-                  {div.name}
-                </option>
-              ))}
-            </select>
-          </div>
+            {/* Filters Group */}
+            <div className="flex flex-nowrap items-center gap-1.5 p-1 bg-slate-100/50 dark:bg-slate-800/40 rounded-xl border border-slate-200/60 dark:border-slate-700/60 backdrop-blur-sm">
+              {/* Division Filter */}
+              <select
+                value={selectedDivision}
+                onChange={(e) => setSelectedDivision(e.target.value)}
+                className="h-8 pl-2 pr-6 text-[11px] font-semibold bg-white dark:bg-slate-800 border-0 rounded-lg focus:ring-2 focus:ring-blue-500/20 text-slate-700 dark:text-slate-300 shadow-sm min-w-[100px] max-w-[140px]"
+              >
+                <option value="">All Divisions</option>
+                {divisions.map((div) => (
+                  <option key={div._id} value={div._id}>{div.name}</option>
+                ))}
+              </select>
 
-          {/* Department Filter */}
-          <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-              Department
-            </label>
-            <select
-              value={selectedDepartment}
-              onChange={(e) => setSelectedDepartment(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-700 dark:text-white"
-            >
-              <option value="">All Departments</option>
-              {departments.map((dept) => (
-                <option key={dept._id} value={dept._id}>
-                  {dept.name}
-                </option>
-              ))}
-            </select>
-          </div>
+              {/* Department Filter */}
+              <select
+                value={selectedDepartment}
+                onChange={(e) => setSelectedDepartment(e.target.value)}
+                className="h-8 pl-2 pr-6 text-[11px] font-semibold bg-white dark:bg-slate-800 border-0 rounded-lg focus:ring-2 focus:ring-blue-500/20 text-slate-700 dark:text-slate-300 shadow-sm min-w-[100px] max-w-[140px]"
+              >
+                <option value="">All Departments</option>
+                {departments
+                  .filter(dept => {
+                    if (!selectedDivision) return true;
+                    // Standardize access to division_id
+                    if (typeof dept === 'object' && 'division_id' in dept) {
+                      const divId = (dept.division_id as any)?._id || dept.division_id;
+                      return divId === selectedDivision;
+                    }
+                    return true;
+                  })
+                  .map((dept) => (
+                    <option key={dept._id} value={dept._id}>
+                      {dept.name}
+                    </option>
+                  ))}
+              </select>
 
-          {/* Actions + Payroll Strategy */}
-          <div className="flex items-end gap-3 flex-wrap">
-            <div className="flex items-center gap-2">
-              <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">Payroll Engine</label>
+              {/* Payroll Engine selector */}
               <select
                 value={payrollStrategy}
                 onChange={(e) => setPayrollStrategy(e.target.value as any)}
-                className="px-2 py-1 text-xs border border-slate-300 dark:border-slate-700 rounded-md dark:bg-slate-800 dark:text-white"
+                className="h-8 pl-2 pr-6 text-[11px] font-semibold bg-blue-50 dark:bg-blue-900/20 border-0 rounded-lg focus:ring-2 focus:ring-blue-500/20 text-blue-700 dark:text-blue-400 shadow-sm"
               >
-                <option value="new">Use Payroll Records Only (new)</option>
-                <option value="legacy">All related data (legacy)</option>
+                <option value="new">Engine: New</option>
+                <option value="legacy">Engine: Legacy</option>
               </select>
             </div>
-            <button
-              onClick={handleSyncAll}
-              disabled={syncing}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {syncing ? 'Syncing All...' : 'Sync All'}
-            </button>
+
+            {/* Month/Year Navigation */}
+            <div className="flex items-center gap-0.5 p-0.5 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+              <button
+                onClick={() => {
+                  const newDate = new Date(currentDate);
+                  newDate.setMonth(currentDate.getMonth() - 1);
+                  setCurrentDate(newDate);
+                }}
+                className="h-8 w-8 flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+              >
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+
+              <input
+                type="month"
+                value={monthStr}
+                onChange={(e) => {
+                  const [y, m] = e.target.value.split('-');
+                  setCurrentDate(new Date(parseInt(y), parseInt(m) - 1));
+                }}
+                className="h-8 bg-transparent border-0 text-[11px] font-bold text-slate-900 dark:text-white focus:ring-0 p-0 cursor-pointer w-[100px] text-center"
+              />
+
+              <button
+                onClick={() => {
+                  const newDate = new Date(currentDate);
+                  newDate.setMonth(currentDate.getMonth() + 1);
+                  setCurrentDate(newDate);
+                }}
+                className="h-8 w-8 flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+              >
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-nowrap items-center gap-3 shrink-0">
+            {hasManagePermission && (
+              <button
+                onClick={handleSyncAll}
+                disabled={syncing}
+                className="h-9 px-4 flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-sm disabled:opacity-50 transition-all"
+              >
+                <svg className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                {syncing ? 'Syncing...' : 'Sync All'}
+              </button>
+            )}
+
+            {hasManagePermission && (
+              <button
+                onClick={() => setShowUploadModal(true)}
+                className="h-9 px-4 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-sm transition-all"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                Upload Summary
+              </button>
+            )}
+
             {(() => {
-              // Strict restriction for Past Months:
-              // If ANY payroll record exists for the listed employees, HIDE the Calculate button.
-              // This forces users to view the existing batch/payslips instead of recalculating.
+              // Strict restriction for Past Months
               if (isPastMonth) {
                 const hasPayrollRecords = payRegisters.some(pr => !!pr.payrollId);
-                if (hasPayrollRecords) {
-                  return null; // Hide button completely
-                }
+                if (hasPayrollRecords) return null;
               }
 
-              // Determine button state based on Selected Department
               if (selectedDepartment) {
                 const batchInfo = departmentBatchStatus.get(selectedDepartment);
                 const status = batchInfo?.status || 'pending';
                 const permissionGranted = batchInfo?.permissionGranted || false;
 
-                if (status === 'freeze' || status === 'complete') {
-                  return null; // Do not display for Frozen/Complete
-                }
+                if (status === 'freeze' || status === 'complete') return null;
 
                 if (status === 'approved' && !permissionGranted) {
                   return (
-                    <button
-                      onClick={() => {
-                        if (batchInfo?.batchId) {
-                          setPendingBatchId(batchInfo.batchId);
-                          setShowPermissionModal(true);
-                        } else {
-                          toast.error("Batch ID not found");
-                        }
-                      }}
-                      className="px-4 py-2 bg-amber-500 text-white rounded-md hover:bg-amber-600 shadow-sm"
-                    >
-                      Request Recalculation Permission
-                    </button>
+                    hasManagePermission && (
+                      <button
+                        onClick={() => {
+                          if (batchInfo?.batchId) {
+                            setPendingBatchId(batchInfo.batchId);
+                            setShowPermissionModal(true);
+                          } else {
+                            toast.error("Batch ID not found");
+                          }
+                        }}
+                        className="h-9 px-4 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold rounded-xl shadow-sm transition-all"
+                      >
+                        Permission Required
+                      </button>
+                    )
                   );
                 }
 
-                // Pending or Approved+Permission -> Show Recalculate
                 return (
-                  <button
-                    onClick={handleCalculatePayrollForAll}
-                    disabled={bulkCalculating || exportingExcel}
-                    className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-                  >
-                    {bulkCalculating ? 'Calculating...' : exportingExcel ? 'Preparing Excel...' : 'Recalculate Payroll'}
-                  </button>
+                  hasManagePermission && (
+                    <button
+                      onClick={handleCalculatePayrollForAll}
+                      disabled={bulkCalculating || exportingExcel}
+                      className="h-9 px-4 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-xl shadow-sm disabled:opacity-50 transition-all"
+                    >
+                      {bulkCalculating ? 'Calculating...' : 'Recalculate Payroll'}
+                    </button>
+                  )
                 );
               }
 
-              // Default (All Departments)
               return (
                 <>
-                  <button
-                    onClick={handleCalculatePayrollForAll}
-                    disabled={bulkCalculating || exportingExcel}
-                    className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-                  >
-                    {bulkCalculating ? 'Calculating...' : exportingExcel ? 'Preparing Excel...' : 'Calculate Payroll (Listed)'}
-                  </button>
+                  {hasManagePermission && (
+                    <button
+                      onClick={handleCalculatePayrollForAll}
+                      disabled={bulkCalculating || exportingExcel}
+                      className="h-9 px-4 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-xl shadow-sm disabled:opacity-50 transition-all"
+                    >
+                      {bulkCalculating ? 'Calculating...' : 'Calculate Payroll'}
+                    </button>
+                  )}
 
-                  {/* Export Excel Button */}
-                  <button
-                    onClick={async () => {
-                      const listedEmployeeIds = payRegisters.map((pr) =>
-                        typeof pr.employeeId === 'object' ? pr.employeeId._id : pr.employeeId
-                      );
-                      await downloadPayrollExcel(listedEmployeeIds);
-                    }}
-                    disabled={exportingExcel || payRegisters.length === 0}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm flex items-center gap-2"
-                    title="Export payroll to Excel for listed employees"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    {exportingExcel ? 'Exporting...' : 'Export Excel'}
-                  </button>
+                  {hasGeneratePermission && (
+                    <button
+                      onClick={async () => {
+                        const listedEmployeeIds = payRegisters.map((pr) =>
+                          typeof pr.employeeId === 'object' ? pr.employeeId._id : pr.employeeId
+                        );
+                        await downloadPayrollExcel(listedEmployeeIds);
+                      }}
+                      disabled={exportingExcel || payRegisters.length === 0}
+                      className="h-9 px-4 flex items-center gap-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold rounded-xl shadow-sm disabled:opacity-50 transition-all"
+                    >
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      {exportingExcel ? 'Exporting...' : 'Export Excel'}
+                    </button>
+                  )}
                 </>
               );
             })()}
           </div>
+
+          {/* Employee count - own row below header (full width), so buttons stay on the right of row 1 */}
+          {!loading && (paginationTotal > 0 || payRegisters.length > 0) && (
+            <div className="w-full mt-1 mb-0 px-1 basis-full">
+              <p className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                {paginationTotal > 0
+                  ? (() => {
+                      const from = (page - 1) * PAGE_SIZE + 1;
+                      const to = Math.min(page * PAGE_SIZE, paginationTotal);
+                      return paginationTotal <= PAGE_SIZE
+                        ? `${paginationTotal} employee${paginationTotal !== 1 ? 's' : ''}`
+                        : `Showing ${from}–${to} of ${paginationTotal} employees`;
+                    })()
+                  : `${payRegisters.length} employee${payRegisters.length !== 1 ? 's' : ''} listed`}
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Permission Request Modal */}
@@ -1008,11 +1104,248 @@ export default function PayRegisterPage() {
             </div>
           </div>
         )}
+
+        {/* Bulk Summary Upload Modal */}
+        {showUploadModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl max-w-xl w-full p-6 border border-slate-200 dark:border-slate-700">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-xl font-bold text-slate-900 dark:text-white">Bulk Summary Upload</h3>
+                <button
+                  onClick={() => {
+                    setShowUploadModal(false);
+                    setUploadResults(null);
+                  }}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                >
+                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {!uploadResults ? (
+                <>
+                  <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800">
+                    <p className="text-sm text-blue-700 dark:text-blue-300 flex items-start gap-2">
+                      <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      Upload an Excel file with monthly totals. The system will match employees by code and distribute counts across working days.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col items-center justify-center border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-10 hover:border-blue-500 transition-colors bg-slate-50 dark:bg-slate-900/50 mb-6">
+                    <input
+                      type="file"
+                      id="summaryExcel"
+                      className="hidden"
+                      accept=".xlsx, .xls"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+
+                        setUploadingSummary(true);
+                        try {
+                          const reader = new FileReader();
+                          reader.onload = async (evt) => {
+                            try {
+                              const bstr = evt.target?.result;
+                              const wb = XLSX.read(bstr, { type: 'binary' });
+                              const wsname = wb.SheetNames[0];
+                              const ws = wb.Sheets[wsname];
+                              const data = XLSX.utils.sheet_to_json(ws);
+
+                              const monthStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
+                              const response = await apiRequest<{ success: number; failed: number; total: number; errors: string[] }>(
+                                `/pay-register/upload-summary/${monthStr}`,
+                                {
+                                  method: 'POST',
+                                  body: JSON.stringify({ data })
+                                }
+                              );
+
+                              if (response.success && response.data) {
+                                setUploadResults(response.data);
+                                Swal.fire({
+                                  icon: 'success',
+                                  title: 'Uploaded',
+                                  text: "Upload processed successfully!",
+                                  timer: 2000,
+                                  showConfirmButton: false,
+                                  toast: true,
+                                  position: 'top-end'
+                                });
+                                loadPayRegisters(); // Refresh table
+                              } else {
+                                Swal.fire({
+                                  icon: 'error',
+                                  title: 'Upload Failed',
+                                  text: response.error || "Failed to process upload",
+                                });
+                              }
+                            } catch (err: any) {
+                              Swal.fire({
+                                icon: 'error',
+                                title: 'Error',
+                                text: err.message || "Error parsing file",
+                              });
+                            } finally {
+                              setUploadingSummary(false);
+                            }
+                          };
+                          reader.readAsBinaryString(file);
+                        } catch (err) {
+                          setUploadingSummary(false);
+                        }
+                      }}
+                    />
+                    <label htmlFor="summaryExcel" className="cursor-pointer flex flex-col items-center gap-3">
+                      <div className="h-12 w-12 flex items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">
+                        {uploadingSummary ? (
+                          <svg className="w-6 h-6 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                        ) : (
+                          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                          </svg>
+                        )}
+                      </div>
+                      <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                        {uploadingSummary ? "Processing file..." : "Click to select Excel file"}
+                      </span>
+                    </label>
+                  </div>
+
+                  <div className="flex justify-between items-center">
+                    <button
+                      onClick={async () => {
+                        setDownloadingTemplate(true);
+                        try {
+                          const monthStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
+                          const targetDeptId = selectedDepartment && selectedDepartment.trim() !== '' ? selectedDepartment : undefined;
+                          const targetDivId = selectedDivision && selectedDivision.trim() !== '' ? selectedDivision : undefined;
+
+                          const response = await api.getEmployeesWithPayRegister(monthStr, targetDeptId, targetDivId, undefined, 1, -1);
+
+                          if (response.success) {
+                            const allEmployees = response.data || [];
+                            const headers = ["Employee Code", "Employee Name", "Department", "Division", "Total Present", "Total Absent", "Paid Leaves", "LOP Count", "Total OD", "Total Extra Days", "Total OT Hours", "Holidays", "Lates"];
+                            const sampleData = allEmployees.map((pr: any) => ({
+                              "Employee Code": typeof pr.employeeId === 'object' ? pr.employeeId.emp_no : pr.emp_no,
+                              "Employee Name": typeof pr.employeeId === 'object' ? pr.employeeId.employee_name : '',
+                              "Department": (typeof pr.employeeId === 'object' && pr.employeeId.department_id) ? (pr.employeeId.department_id as any).name : '',
+                              "Division": (typeof pr.employeeId === 'object' && pr.employeeId.division_id) ? (pr.employeeId.division_id as any).name : '',
+                              "Total Present": 0,
+                              "Total Absent": 0,
+                              "Paid Leaves": 0,
+                              "LOP Count": 0,
+                              "Total OD": 0,
+                              "Total Extra Days": 0,
+                              "Total OT Hours": 0,
+                              "Holidays": 0,
+                              "Lates": 0
+                            }));
+
+                            const ws = XLSX.utils.json_to_sheet(sampleData);
+                            const wb = XLSX.utils.book_new();
+                            XLSX.utils.book_append_sheet(wb, ws, "Attendance Summary");
+                            XLSX.writeFile(wb, `Payroll_Summary_Template_${monthStr}.xlsx`);
+                            Swal.fire({
+                              icon: 'success',
+                              title: 'Template Ready',
+                              text: `Template downloaded with ${allEmployees.length} employees`,
+                              timer: 2000,
+                              showConfirmButton: false,
+                              toast: true,
+                              position: 'top-end'
+                            });
+                          } else {
+                            Swal.fire({
+                              icon: 'error',
+                              title: 'Fetch Failed',
+                              text: response.message || "Failed to fetch employees for template",
+                            });
+                          }
+                        } catch (err: any) {
+                          console.error('Error downloading template:', err);
+                          Swal.fire({
+                            icon: 'error',
+                            title: 'Generation Failed',
+                            text: err.message || 'Error generating template',
+                          });
+                        } finally {
+                          setDownloadingTemplate(false);
+                        }
+                      }}
+                      disabled={downloadingTemplate}
+                      className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+                    >
+                      <svg className={`w-4 h-4 ${downloadingTemplate ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        {downloadingTemplate ? (
+                          <>
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </>
+                        ) : (
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        )}
+                      </svg>
+                      {downloadingTemplate ? "Generating..." : "Download Template"}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="animate-fade-in">
+                  <div className="grid grid-cols-3 gap-4 mb-6">
+                    <div className="bg-slate-50 dark:bg-slate-900 p-4 rounded-lg text-center border border-slate-200 dark:border-slate-700">
+                      <div className="text-2xl font-bold text-slate-800 dark:text-white">{uploadResults.total}</div>
+                      <div className="text-xs text-slate-500 uppercase">Total Rows</div>
+                    </div>
+                    <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg text-center border border-green-100 dark:border-green-800">
+                      <div className="text-2xl font-bold text-green-600">{uploadResults.success}</div>
+                      <div className="text-xs text-green-500 uppercase tracking-wider">Success</div>
+                    </div>
+                    <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg text-center border border-red-100 dark:border-red-800">
+                      <div className="text-2xl font-bold text-red-600">{uploadResults.failed}</div>
+                      <div className="text-xs text-red-500 uppercase tracking-wider">Failed</div>
+                    </div>
+                  </div>
+
+                  {uploadResults.errors.length > 0 && (
+                    <div className="mb-6">
+                      <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Error Details:</h4>
+                      <div className="max-h-40 overflow-y-auto bg-slate-50 dark:bg-slate-900 p-3 rounded-lg border border-slate-200 dark:border-slate-700">
+                        <ul className="space-y-1">
+                          {uploadResults.errors.map((err, i) => (
+                            <li key={i} className="text-xs text-red-500">• {err}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={() => {
+                      setShowUploadModal(false);
+                      setUploadResults(null);
+                    }}
+                    className="w-full py-3 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold transition-all shadow-lg"
+                  >
+                    Done
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Summary Table */}
       {!loading && payRegisters.length > 0 && (
-        <div className="mt-4 mb-8 rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-lg dark:border-slate-700 dark:bg-slate-900/80 overflow-x-auto">
+        <div className="mt-1 mb-8 rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-lg dark:border-slate-700 dark:bg-slate-900/80 overflow-x-auto">
           <div className="p-4">
             <h3 className="text-base font-semibold text-slate-900 dark:text-white mb-3">Monthly Summary</h3>
             <table className="w-full border-collapse text-xs">
@@ -1025,9 +1358,14 @@ export default function PayRegisterPage() {
                     'Total Present',
                     'Total Absent',
                     'Total Leaves',
+                    'Paid Leaves',
+                    'LOP Count',
                     'Total OD',
                     'Total OT Hours',
-                    'Total Extra Hours',
+                    'Total Extra Days',
+                    'Lates',
+                    'Holidays & Weekoffs',
+                    'Paid Days',
                     'Month Days',
                     'Counted Days',
                   ].map((label) => (
@@ -1052,6 +1390,8 @@ export default function PayRegisterPage() {
                         ? row.pr.employeeId.department_id.name
                         : ''
                       : '';
+                  const leftDate = employee && 'leftDate' in employee ? (employee as any).leftDate : null;
+                  const leftDateStr = leftDate ? (typeof leftDate === 'string' ? new Date(leftDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '') : '';
                   return (
                     <tr key={row.pr._id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                       <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-2 text-[11px] font-medium text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white">
@@ -1061,14 +1401,24 @@ export default function PayRegisterPage() {
                             {empNo}
                             {department && ` • ${department}`}
                           </div>
+                          {leftDateStr && (
+                            <div className="text-[9px] text-amber-600 dark:text-amber-400 font-medium mt-0.5" title="Left in this payroll period">
+                              Left {leftDateStr}
+                            </div>
+                          )}
                         </div>
                       </td>
                       <td className="text-center px-2 py-2">{row.present.toFixed(1)}</td>
                       <td className="text-center px-2 py-2">{row.absent.toFixed(1)}</td>
                       <td className="text-center px-2 py-2">{row.leave.toFixed(1)}</td>
+                      <td className="text-center px-2 py-2 font-medium text-green-600 dark:text-green-400">{row.paidLeave.toFixed(1)}</td>
+                      <td className="text-center px-2 py-2 font-medium text-red-600 dark:text-red-400">{row.lop.toFixed(1)}</td>
                       <td className="text-center px-2 py-2">{row.od.toFixed(1)}</td>
                       <td className="text-center px-2 py-2">{row.ot.toFixed(1)}</td>
                       <td className="text-center px-2 py-2">{row.extra.toFixed(1)}</td>
+                      <td className="text-center px-2 py-2 font-bold text-amber-600 dark:text-amber-400">{row.lateCount}</td>
+                      <td className="text-center px-2 py-2">{row.holidayAndWeekoffs.toFixed(1)}</td>
+                      <td className="text-center px-2 py-2 font-bold text-blue-600 dark:text-blue-400">{row.totalPaidDays.toFixed(1)}</td>
                       <td className="text-center px-2 py-2">{row.monthDays}</td>
                       <td
                         className={`text-center px-2 py-2 font-semibold ${row.matchesMonth
@@ -1084,6 +1434,30 @@ export default function PayRegisterPage() {
               </tbody>
             </table>
           </div>
+          {/* Pagination below Summary table */}
+          {paginationTotalPages > 1 && (
+            <div className="flex items-center justify-center gap-2 p-4 border-t border-slate-200 dark:border-slate-700">
+              <button
+                type="button"
+                onClick={() => { setPage(p => Math.max(1, p - 1)); loadPayRegisters(Math.max(1, page - 1), false); }}
+                disabled={page <= 1 || loading}
+                className="h-8 px-3 text-xs font-medium rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Previous
+              </button>
+              <span className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                Page {page} of {paginationTotalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => { setPage(p => Math.min(paginationTotalPages, p + 1)); loadPayRegisters(Math.min(paginationTotalPages, page + 1), false); }}
+                disabled={page >= paginationTotalPages || loading}
+                className="h-8 px-3 text-xs font-medium rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Next
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -1157,9 +1531,9 @@ export default function PayRegisterPage() {
                     {daysArray.map((day) => (
                       <th
                         key={day}
-                        className={`w-[calc((100%-180px-${activeTable === 'leaves' ? '320px' : '80px'})/${daysInMonth})] border-r border-slate-200 px-1 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300`}
+                        className={`w-[calc((100%-180px-${activeTable === 'leaves' ? '320px' : '80px'})/${daysArray.length})] border-r border-slate-200 px-1 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300`}
                       >
-                        {day}
+                        {parseInt(day.split('-')[2])}
                       </th>
                     ))}
                     {/* Dynamic columns based on active tab */}
@@ -1227,6 +1601,8 @@ export default function PayRegisterPage() {
                       const department = typeof pr.employeeId === 'object' && pr.employeeId.department_id
                         ? (typeof pr.employeeId.department_id === 'object' ? pr.employeeId.department_id.name : '')
                         : '';
+                      const leftDateDaily = employee && 'leftDate' in employee ? (employee as any).leftDate : null;
+                      const leftDateStrDaily = leftDateDaily ? (typeof leftDateDaily === 'string' ? new Date(leftDateDaily).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '') : '';
 
                       // Create a map of daily records for quick lookup
                       const dailyRecordsMap = new Map(pr.dailyRecords.map(r => [r.date, r]));
@@ -1253,6 +1629,9 @@ export default function PayRegisterPage() {
                               <div className="flex items-center gap-2">
                                 <div className="font-semibold truncate flex-1 flex items-center gap-1">
                                   {employee_name}
+                                  {leftDateStrDaily && (
+                                    <span className="text-[9px] text-amber-600 dark:text-amber-400 font-medium" title="Left in this payroll period">(Left {leftDateStrDaily})</span>
+                                  )}
                                   {isLocked && (
                                     <span title={`Payroll ${batchStatus}`} className="text-slate-400">
                                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
@@ -1268,20 +1647,25 @@ export default function PayRegisterPage() {
                                         e.stopPropagation();
                                         if (employee) handleCalculatePayroll(employee);
                                       }}
-                                      className="rounded-md px-2 py-1 text-[9px] font-semibold text-white shadow-sm transition-all hover:shadow-md bg-amber-500 hover:bg-amber-600"
+                                      className={`rounded-md px-2 py-1 text-[9px] font-semibold text-white shadow-sm transition-all hover:shadow-md bg-amber-500 hover:bg-amber-600 ${(!hasManagePermission || (calculatingId === employeeId)) ? 'opacity-50 cursor-not-allowed' : ''}`}
                                       title="Calculate Payroll"
+                                      disabled={!hasManagePermission || calculatingId === employeeId}
                                     >
-                                      Calculate
+                                      {calculatingId === employeeId ? '...' : 'Calculate'}
                                     </button>
                                   ) : (
-                                    <Link
-                                      href={`/payroll-transactions?search=${employee?.emp_no || employeeId}&month=${monthStr}`}
-                                      onClick={(e) => e.stopPropagation()}
-                                      className="rounded-md px-2 py-1 text-[9px] font-semibold text-white shadow-sm transition-all hover:shadow-md bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 inline-block"
-                                      title="View Payslip"
-                                    >
-                                      Payslip
-                                    </Link>
+                                    <>
+                                      {hasViewPermission && (
+                                        <Link
+                                          href={`/payroll-transactions?search=${employee?.emp_no || employeeId}&month=${monthStr}`}
+                                          onClick={(e) => e.stopPropagation()}
+                                          className="rounded-md px-2 py-1 text-[9px] font-semibold text-white shadow-sm transition-all hover:shadow-md bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 inline-block"
+                                          title="View Payslip"
+                                        >
+                                          Payslip
+                                        </Link>
+                                      )}
+                                    </>
                                   )}
 
                                   {!isFrozenOrComplete && (
@@ -1296,7 +1680,7 @@ export default function PayRegisterPage() {
                             </div>
                           </td>
                           {daysArray.map((day) => {
-                            const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                            const dateStr = day;
                             const record = dailyRecordsMap.get(dateStr) || null;
                             const shouldShow = shouldShowInTable(record, activeTable);
                             const displayStatus = getStatusDisplay(record);
@@ -1306,7 +1690,7 @@ export default function PayRegisterPage() {
                               <td
                                 key={day}
                                 onClick={() => {
-                                  if (employee && !isLocked) {
+                                  if (employee && !isLocked && hasManagePermission) {
                                     if (record) {
                                       handleDateClick(employee, dateStr, record);
                                     } else {
@@ -1346,7 +1730,7 @@ export default function PayRegisterPage() {
                                   }
                                 }}
                                 className={`border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700
-                                ${employee && !isLocked ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800' : 'cursor-not-allowed opacity-75 bg-slate-50 dark:bg-slate-800/50'} 
+                                ${employee && !isLocked && hasManagePermission ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800' : 'cursor-not-allowed opacity-75 bg-slate-50 dark:bg-slate-800/50'} 
                                 ${bgColor}`}
                               >
                                 {shouldShow && record ? (
@@ -1453,337 +1837,83 @@ export default function PayRegisterPage() {
       </div>
 
       {/* Edit Modal - Tab-specific dialogs */}
-      {showEditModal && editingRecord && (
-        <div className="fixed inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto border border-slate-200 dark:border-slate-700">
-            <div className="p-6">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                  Edit: {editingRecord.date} - {editingRecord.employee.employee_name}
-                </h2>
-                <button
-                  onClick={() => setShowEditModal(false)}
-                  className="text-slate-400 hover:text-slate-600"
-                >
-                  ✕
-                </button>
-              </div>
-
-              <div className="space-y-6">
-                {/* Half-Day Mode Toggle */}
-                <div className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-600">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={isHalfDayMode}
-                      onChange={(e) => {
-                        setIsHalfDayMode(e.target.checked);
-                        if (!e.target.checked) {
-                          // When disabling half-day mode, sync both halves to the same status
-                          const currentStatus = editData.status || editData.firstHalf?.status || 'absent';
-                          setEditData({
-                            ...editData,
-                            status: currentStatus,
-                            firstHalf: normalizeHalfDay(editData.firstHalf, currentStatus as any),
-                            secondHalf: normalizeHalfDay(editData.secondHalf, currentStatus as any),
-                            isSplit: false,
-                          });
-                        } else {
-                          setEditData({
-                            ...editData,
-                            isSplit: true,
-                          });
-                        }
-                      }}
-                      className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Enable Half-Day Mode
-                    </span>
-                  </label>
-                  {isHalfDayMode && (
-                    <span className="text-xs text-slate-500 dark:text-slate-400">
-                      (Edit first and second half separately)
-                    </span>
-                  )}
+      {
+        showEditModal && editingRecord && (
+          <div className="fixed inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto border border-slate-200 dark:border-slate-700">
+              <div className="p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+                    Edit: {editingRecord.date} - {editingRecord.employee.employee_name}
+                  </h2>
+                  <button
+                    onClick={() => setShowEditModal(false)}
+                    className="text-slate-400 hover:text-slate-600"
+                  >
+                    ✕
+                  </button>
                 </div>
 
-                {/* First Half - Only show if half-day mode is enabled */}
-                {isHalfDayMode && (
-                  <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
-                    <h3 className="text-lg font-semibold mb-3 text-slate-900 dark:text-white">First Half</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                          Status
-                        </label>
-                        <select
-                          value={editData.firstHalf?.status || 'absent'}
-                          onChange={(e) => setEditData({
-                            ...editData,
-                            firstHalf: {
-                              ...editData.firstHalf!,
-                              status: e.target.value as any,
-                              leaveType: e.target.value === 'leave' ? (editData.firstHalf?.leaveType || null) : null,
-                              leaveNature: e.target.value === 'leave' ? (editData.firstHalf?.leaveNature || null) : null,
-                              isOD: e.target.value === 'od',
-                            },
-                          })}
-                          className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                        >
-                          <option value="present">Present</option>
-                          <option value="absent">Absent</option>
-                          <option value="leave">Leave</option>
-                          <option value="od">OD</option>
-                          <option value="holiday">Holiday</option>
-                          <option value="week_off">Week Off</option>
-                        </select>
-                      </div>
-                      {editData.firstHalf?.status === 'leave' && (
-                        <>
-                          <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                              Leave Type
-                            </label>
-                            <select
-                              value={editData.firstHalf?.leaveType || ''}
-                              onChange={(e) => setEditData({
-                                ...editData,
-                                firstHalf: {
-                                  ...editData.firstHalf!,
-                                  leaveType: e.target.value,
-                                },
-                              })}
-                              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                            >
-                              <option value="">Select Leave Type</option>
-                              {leaveTypes.map((lt) => (
-                                <option key={lt.code} value={lt.code}>
-                                  {lt.name} ({lt.code})
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                              Leave Nature
-                            </label>
-                            <select
-                              value={editData.firstHalf?.leaveNature || 'paid'}
-                              onChange={(e) => setEditData({
-                                ...editData,
-                                firstHalf: {
-                                  ...editData.firstHalf!,
-                                  leaveNature: e.target.value as any,
-                                },
-                              })}
-                              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                            >
-                              <option value="paid">Paid</option>
-                              <option value="lop">LOP (Loss of Pay)</option>
-                            </select>
-                          </div>
-                        </>
-                      )}
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                          OT Hours
-                        </label>
-                        <input
-                          type="number"
-                          step="0.5"
-                          min="0"
-                          value={editData.firstHalf?.otHours || 0}
-                          onChange={(e) => setEditData({
-                            ...editData,
-                            firstHalf: {
-                              ...editData.firstHalf!,
-                              otHours: parseFloat(e.target.value) || 0,
-                            },
-                          })}
-                          className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                          Shift
-                        </label>
-                        <select
-                          value={editData.shiftId || ''}
-                          onChange={(e) => {
-                            const shift = shifts.find((s) => s._id === e.target.value);
+                <div className="space-y-6">
+                  {/* Half-Day Mode Toggle */}
+                  <div className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg border border-slate-200 dark:border-slate-600">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={isHalfDayMode}
+                        onChange={(e) => {
+                          setIsHalfDayMode(e.target.checked);
+                          if (!e.target.checked) {
+                            // When disabling half-day mode, sync both halves to the same status
+                            const currentStatus = editData.status || editData.firstHalf?.status || 'absent';
                             setEditData({
                               ...editData,
-                              shiftId: e.target.value || null,
-                              shiftName: shift?.name || null,
-                              firstHalf: {
-                                ...editData.firstHalf!,
-                                shiftId: e.target.value || null,
-                              },
-                              secondHalf: {
-                                ...editData.secondHalf!,
-                                shiftId: e.target.value || null,
-                              },
+                              status: currentStatus,
+                              firstHalf: normalizeHalfDay(editData.firstHalf, currentStatus as any),
+                              secondHalf: normalizeHalfDay(editData.secondHalf, currentStatus as any),
+                              isSplit: false,
                             });
-                          }}
-                          className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                        >
-                          <option value="">Select Shift</option>
-                          {shifts.map((shift) => (
-                            <option key={shift._id} value={shift._id}>
-                              {shift.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
+                          } else {
+                            setEditData({
+                              ...editData,
+                              isSplit: true,
+                            });
+                          }
+                        }}
+                        className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                        Enable Half-Day Mode
+                      </span>
+                    </label>
+                    {isHalfDayMode && (
+                      <span className="text-xs text-slate-500 dark:text-slate-400">
+                        (Edit first and second half separately)
+                      </span>
+                    )}
                   </div>
-                )}
 
-                {/* Second Half - Only show if half-day mode is enabled */}
-                {isHalfDayMode && (
-                  <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
-                    <h3 className="text-lg font-semibold mb-3 text-slate-900 dark:text-white">Second Half</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                          Status
-                        </label>
-                        <select
-                          value={editData.secondHalf?.status || 'absent'}
-                          onChange={(e) => setEditData({
-                            ...editData,
-                            secondHalf: {
-                              ...editData.secondHalf!,
-                              status: e.target.value as any,
-                              leaveType: e.target.value === 'leave' ? (editData.secondHalf?.leaveType || null) : null,
-                              leaveNature: e.target.value === 'leave' ? (editData.secondHalf?.leaveNature || null) : null,
-                              isOD: e.target.value === 'od',
-                            },
-                          })}
-                          className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                        >
-                          <option value="present">Present</option>
-                          <option value="absent">Absent</option>
-                          <option value="leave">Leave</option>
-                          <option value="od">OD</option>
-                          <option value="holiday">Holiday</option>
-                          <option value="week_off">Week Off</option>
-                        </select>
-                      </div>
-                      {editData.secondHalf?.status === 'leave' && (
-                        <>
-                          <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                              Leave Type
-                            </label>
-                            <select
-                              value={editData.secondHalf?.leaveType || ''}
-                              onChange={(e) => setEditData({
-                                ...editData,
-                                secondHalf: {
-                                  ...editData.secondHalf!,
-                                  leaveType: e.target.value,
-                                },
-                              })}
-                              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                            >
-                              <option value="">Select Leave Type</option>
-                              {leaveTypes.map((lt) => (
-                                <option key={lt.code} value={lt.code}>
-                                  {lt.name} ({lt.code})
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                              Leave Nature
-                            </label>
-                            <select
-                              value={editData.secondHalf?.leaveNature || 'paid'}
-                              onChange={(e) => setEditData({
-                                ...editData,
-                                secondHalf: {
-                                  ...editData.secondHalf!,
-                                  leaveNature: e.target.value as any,
-                                },
-                              })}
-                              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                            >
-                              <option value="paid">Paid</option>
-                              <option value="lop">LOP (Loss of Pay)</option>
-                            </select>
-                          </div>
-                        </>
-                      )}
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                          OT Hours
-                        </label>
-                        <input
-                          type="number"
-                          step="0.5"
-                          min="0"
-                          value={editData.secondHalf?.otHours || 0}
-                          onChange={(e) => setEditData({
-                            ...editData,
-                            secondHalf: {
-                              ...editData.secondHalf!,
-                              otHours: parseFloat(e.target.value) || 0,
-                            },
-                          })}
-                          className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Full Day Fields - Show when NOT in half-day mode OR for specific tabs */}
-                {!isHalfDayMode && (
-                  <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
-                    <h3 className="text-lg font-semibold mb-3 text-slate-900 dark:text-white">
-                      {activeTable === 'present' ? 'Present Status' :
-                        activeTable === 'absent' ? 'Absent Status' :
-                          activeTable === 'leaves' ? 'Leave Details' :
-                            activeTable === 'od' ? 'OD Details' :
-                              activeTable === 'ot' || activeTable === 'extraHours' ? 'OT Hours' :
-                                'Full Day'}
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {(activeTable === 'present' || activeTable === 'absent' || activeTable === 'leaves' || activeTable === 'od') && (
+                  {/* First Half - Only show if half-day mode is enabled */}
+                  {isHalfDayMode && (
+                    <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
+                      <h3 className="text-lg font-semibold mb-3 text-slate-900 dark:text-white">First Half</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
                             Status
                           </label>
                           <select
-                            value={editData.status || 'absent'}
-                            onChange={(e) => {
-                              const newStatus = e.target.value as any;
-                              setEditData({
-                                ...editData,
-                                status: newStatus,
-                                firstHalf: {
-                                  ...editData.firstHalf!,
-                                  status: newStatus,
-                                  leaveType: newStatus === 'leave' ? (editData.firstHalf?.leaveType || null) : null,
-                                  leaveNature: newStatus === 'leave' ? (editData.firstHalf?.leaveNature || null) : null,
-                                  isOD: newStatus === 'od',
-                                },
-                                secondHalf: {
-                                  ...editData.secondHalf!,
-                                  status: newStatus,
-                                  leaveType: newStatus === 'leave' ? (editData.secondHalf?.leaveType || null) : null,
-                                  leaveNature: newStatus === 'leave' ? (editData.secondHalf?.leaveNature || null) : null,
-                                  isOD: newStatus === 'od',
-                                },
-                                leaveType: newStatus === 'leave' ? (editData.leaveType || null) : null,
-                                leaveNature: newStatus === 'leave' ? (editData.leaveNature || null) : null,
-                                isOD: newStatus === 'od',
-                                isSplit: false,
-                              });
-                            }}
+                            value={editData.firstHalf?.status || 'absent'}
+                            onChange={(e) => setEditData({
+                              ...editData,
+                              firstHalf: {
+                                ...editData.firstHalf!,
+                                status: e.target.value as any,
+                                leaveType: e.target.value === 'leave' ? (editData.firstHalf?.leaveType || null) : null,
+                                leaveNature: e.target.value === 'leave' ? (editData.firstHalf?.leaveNature || null) : null,
+                                isOD: e.target.value === 'od',
+                              },
+                            })}
                             className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
                           >
                             <option value="present">Present</option>
@@ -1794,208 +1924,466 @@ export default function PayRegisterPage() {
                             <option value="week_off">Week Off</option>
                           </select>
                         </div>
-                      )}
-                      {editData.status === 'leave' && (activeTable === 'leaves' || !isHalfDayMode) && (
-                        <>
-                          <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                              Leave Type
-                            </label>
-                            <select
-                              value={editData.leaveType || ''}
-                              onChange={(e) => setEditData({
-                                ...editData,
-                                leaveType: e.target.value,
-                                firstHalf: {
-                                  ...editData.firstHalf!,
-                                  leaveType: e.target.value,
-                                },
-                                secondHalf: {
-                                  ...editData.secondHalf!,
-                                  leaveType: e.target.value,
-                                },
-                              })}
-                              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                            >
-                              <option value="">Select Leave Type</option>
-                              {leaveTypes.map((lt) => (
-                                <option key={lt.code} value={lt.code}>
-                                  {lt.name} ({lt.code})
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                              Leave Nature
-                            </label>
-                            <select
-                              value={editData.leaveNature || 'paid'}
-                              onChange={(e) => setEditData({
-                                ...editData,
-                                leaveNature: e.target.value as any,
-                                firstHalf: {
-                                  ...editData.firstHalf!,
-                                  leaveNature: e.target.value as any,
-                                },
-                                secondHalf: {
-                                  ...editData.secondHalf!,
-                                  leaveNature: e.target.value as any,
-                                },
-                              })}
-                              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                            >
-                              <option value="paid">Paid</option>
-                              <option value="lop">LOP (Loss of Pay)</option>
-                              <option value="without_pay">Without Pay</option>
-                            </select>
-                          </div>
-                        </>
-                      )}
-                      {/* Shift field for full day */}
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                          Shift
-                        </label>
-                        <select
-                          value={editData.shiftId || ''}
-                          onChange={(e) => {
-                            const shift = shifts.find((s) => s._id === e.target.value);
-                            setEditData({
+                        {editData.firstHalf?.status === 'leave' && (
+                          <>
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                Leave Type
+                              </label>
+                              <select
+                                value={editData.firstHalf?.leaveType || ''}
+                                onChange={(e) => setEditData({
+                                  ...editData,
+                                  firstHalf: {
+                                    ...editData.firstHalf!,
+                                    leaveType: e.target.value,
+                                  },
+                                })}
+                                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                              >
+                                <option value="">Select Leave Type</option>
+                                {leaveTypes.map((lt) => (
+                                  <option key={lt.code} value={lt.code}>
+                                    {lt.name} ({lt.code})
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                Leave Nature
+                              </label>
+                              <select
+                                value={editData.firstHalf?.leaveNature || 'paid'}
+                                onChange={(e) => setEditData({
+                                  ...editData,
+                                  firstHalf: {
+                                    ...editData.firstHalf!,
+                                    leaveNature: e.target.value as any,
+                                  },
+                                })}
+                                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                              >
+                                <option value="paid">Paid</option>
+                                <option value="lop">LOP (Loss of Pay)</option>
+                              </select>
+                            </div>
+                          </>
+                        )}
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                            OT Hours
+                          </label>
+                          <input
+                            type="number"
+                            step="0.5"
+                            min="0"
+                            value={editData.firstHalf?.otHours || 0}
+                            onChange={(e) => setEditData({
                               ...editData,
-                              shiftId: e.target.value || null,
-                              shiftName: shift?.name || null,
                               firstHalf: {
                                 ...editData.firstHalf!,
+                                otHours: parseFloat(e.target.value) || 0,
+                              },
+                            })}
+                            className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                            Shift
+                          </label>
+                          <select
+                            value={editData.shiftId || ''}
+                            onChange={(e) => {
+                              const shift = shifts.find((s) => s._id === e.target.value);
+                              setEditData({
+                                ...editData,
                                 shiftId: e.target.value || null,
+                                shiftName: shift?.name || null,
+                                firstHalf: {
+                                  ...editData.firstHalf!,
+                                  shiftId: e.target.value || null,
+                                },
+                                secondHalf: {
+                                  ...editData.secondHalf!,
+                                  shiftId: e.target.value || null,
+                                },
+                              });
+                            }}
+                            className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                          >
+                            <option value="">Select Shift</option>
+                            {shifts.map((shift) => (
+                              <option key={shift._id} value={shift._id}>
+                                {shift.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Second Half - Only show if half-day mode is enabled */}
+                  {isHalfDayMode && (
+                    <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
+                      <h3 className="text-lg font-semibold mb-3 text-slate-900 dark:text-white">Second Half</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                            Status
+                          </label>
+                          <select
+                            value={editData.secondHalf?.status || 'absent'}
+                            onChange={(e) => setEditData({
+                              ...editData,
+                              secondHalf: {
+                                ...editData.secondHalf!,
+                                status: e.target.value as any,
+                                leaveType: e.target.value === 'leave' ? (editData.secondHalf?.leaveType || null) : null,
+                                leaveNature: e.target.value === 'leave' ? (editData.secondHalf?.leaveNature || null) : null,
+                                isOD: e.target.value === 'od',
+                              },
+                            })}
+                            className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                          >
+                            <option value="present">Present</option>
+                            <option value="absent">Absent</option>
+                            <option value="leave">Leave</option>
+                            <option value="od">OD</option>
+                            <option value="holiday">Holiday</option>
+                            <option value="week_off">Week Off</option>
+                          </select>
+                        </div>
+                        {editData.secondHalf?.status === 'leave' && (
+                          <>
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                Leave Type
+                              </label>
+                              <select
+                                value={editData.secondHalf?.leaveType || ''}
+                                onChange={(e) => setEditData({
+                                  ...editData,
+                                  secondHalf: {
+                                    ...editData.secondHalf!,
+                                    leaveType: e.target.value,
+                                  },
+                                })}
+                                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                              >
+                                <option value="">Select Leave Type</option>
+                                {leaveTypes.map((lt) => (
+                                  <option key={lt.code} value={lt.code}>
+                                    {lt.name} ({lt.code})
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                Leave Nature
+                              </label>
+                              <select
+                                value={editData.secondHalf?.leaveNature || 'paid'}
+                                onChange={(e) => setEditData({
+                                  ...editData,
+                                  secondHalf: {
+                                    ...editData.secondHalf!,
+                                    leaveNature: e.target.value as any,
+                                  },
+                                })}
+                                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                              >
+                                <option value="paid">Paid</option>
+                                <option value="lop">LOP (Loss of Pay)</option>
+                              </select>
+                            </div>
+                          </>
+                        )}
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                            OT Hours
+                          </label>
+                          <input
+                            type="number"
+                            step="0.5"
+                            min="0"
+                            value={editData.secondHalf?.otHours || 0}
+                            onChange={(e) => setEditData({
+                              ...editData,
+                              secondHalf: {
+                                ...editData.secondHalf!,
+                                otHours: parseFloat(e.target.value) || 0,
+                              },
+                            })}
+                            className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Full Day Fields - Show when NOT in half-day mode OR for specific tabs */}
+                  {!isHalfDayMode && (
+                    <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
+                      <h3 className="text-lg font-semibold mb-3 text-slate-900 dark:text-white">
+                        {activeTable === 'present' ? 'Present Status' :
+                          activeTable === 'absent' ? 'Absent Status' :
+                            activeTable === 'leaves' ? 'Leave Details' :
+                              activeTable === 'od' ? 'OD Details' :
+                                activeTable === 'ot' || activeTable === 'extraHours' ? 'OT Hours' :
+                                  'Full Day'}
+                      </h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {(activeTable === 'present' || activeTable === 'absent' || activeTable === 'leaves' || activeTable === 'od') && (
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                              Status
+                            </label>
+                            <select
+                              value={editData.status || 'absent'}
+                              onChange={(e) => {
+                                const newStatus = e.target.value as any;
+                                setEditData({
+                                  ...editData,
+                                  status: newStatus,
+                                  firstHalf: {
+                                    ...editData.firstHalf!,
+                                    status: newStatus,
+                                    leaveType: newStatus === 'leave' ? (editData.firstHalf?.leaveType || null) : null,
+                                    leaveNature: newStatus === 'leave' ? (editData.firstHalf?.leaveNature || null) : null,
+                                    isOD: newStatus === 'od',
+                                  },
+                                  secondHalf: {
+                                    ...editData.secondHalf!,
+                                    status: newStatus,
+                                    leaveType: newStatus === 'leave' ? (editData.secondHalf?.leaveType || null) : null,
+                                    leaveNature: newStatus === 'leave' ? (editData.secondHalf?.leaveNature || null) : null,
+                                    isOD: newStatus === 'od',
+                                  },
+                                  leaveType: newStatus === 'leave' ? (editData.leaveType || null) : null,
+                                  leaveNature: newStatus === 'leave' ? (editData.leaveNature || null) : null,
+                                  isOD: newStatus === 'od',
+                                  isSplit: false,
+                                });
+                              }}
+                              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                            >
+                              <option value="present">Present</option>
+                              <option value="absent">Absent</option>
+                              <option value="leave">Leave</option>
+                              <option value="od">OD</option>
+                              <option value="holiday">Holiday</option>
+                              <option value="week_off">Week Off</option>
+                            </select>
+                          </div>
+                        )}
+                        {editData.status === 'leave' && (activeTable === 'leaves' || !isHalfDayMode) && (
+                          <>
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                Leave Type
+                              </label>
+                              <select
+                                value={editData.leaveType || ''}
+                                onChange={(e) => setEditData({
+                                  ...editData,
+                                  leaveType: e.target.value,
+                                  firstHalf: {
+                                    ...editData.firstHalf!,
+                                    leaveType: e.target.value,
+                                  },
+                                  secondHalf: {
+                                    ...editData.secondHalf!,
+                                    leaveType: e.target.value,
+                                  },
+                                })}
+                                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                              >
+                                <option value="">Select Leave Type</option>
+                                {leaveTypes.map((lt) => (
+                                  <option key={lt.code} value={lt.code}>
+                                    {lt.name} ({lt.code})
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                Leave Nature
+                              </label>
+                              <select
+                                value={editData.leaveNature || 'paid'}
+                                onChange={(e) => setEditData({
+                                  ...editData,
+                                  leaveNature: e.target.value as any,
+                                  firstHalf: {
+                                    ...editData.firstHalf!,
+                                    leaveNature: e.target.value as any,
+                                  },
+                                  secondHalf: {
+                                    ...editData.secondHalf!,
+                                    leaveNature: e.target.value as any,
+                                  },
+                                })}
+                                className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                              >
+                                <option value="paid">Paid</option>
+                                <option value="lop">LOP (Loss of Pay)</option>
+                                <option value="without_pay">Without Pay</option>
+                              </select>
+                            </div>
+                          </>
+                        )}
+                        {/* Shift field for full day */}
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                            Shift
+                          </label>
+                          <select
+                            value={editData.shiftId || ''}
+                            onChange={(e) => {
+                              const shift = shifts.find((s) => s._id === e.target.value);
+                              setEditData({
+                                ...editData,
+                                shiftId: e.target.value || null,
+                                shiftName: shift?.name || null,
+                                firstHalf: {
+                                  ...editData.firstHalf!,
+                                  shiftId: e.target.value || null,
+                                },
+                                secondHalf: {
+                                  ...editData.secondHalf!,
+                                  shiftId: e.target.value || null,
+                                },
+                              });
+                            }}
+                            className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                          >
+                            <option value="">Select Shift</option>
+                            {shifts.map((shift) => (
+                              <option key={shift._id} value={shift._id}>
+                                {shift.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Full Day OT Hours - Show for OT/Extra Hours tabs or when not in half-day mode */}
+                  {(activeTable === 'ot' || activeTable === 'extraHours' || !isHalfDayMode) && (
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                        {isHalfDayMode ? 'Total OT Hours (First + Second Half)' : 'Total OT Hours (Full Day)'}
+                      </label>
+                      <input
+                        type="number"
+                        step="0.5"
+                        min="0"
+                        value={editData.otHours || 0}
+                        onChange={(e) => {
+                          const otValue = parseFloat(e.target.value) || 0;
+                          if (isHalfDayMode) {
+                            // Distribute OT hours equally between halves
+                            setEditData({
+                              ...editData,
+                              otHours: otValue,
+                              firstHalf: {
+                                ...editData.firstHalf!,
+                                otHours: otValue / 2,
                               },
                               secondHalf: {
                                 ...editData.secondHalf!,
-                                shiftId: e.target.value || null,
+                                otHours: otValue / 2,
                               },
                             });
-                          }}
-                          className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                        >
-                          <option value="">Select Shift</option>
-                          {shifts.map((shift) => (
-                            <option key={shift._id} value={shift._id}>
-                              {shift.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                          } else {
+                            setEditData({
+                              ...editData,
+                              otHours: otValue,
+                              firstHalf: {
+                                ...editData.firstHalf!,
+                                otHours: otValue,
+                              },
+                              secondHalf: {
+                                ...editData.secondHalf!,
+                                otHours: otValue,
+                              },
+                            });
+                          }
+                        }}
+                        className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
+                      />
                     </div>
-                  </div>
-                )}
+                  )}
 
-                {/* Full Day OT Hours - Show for OT/Extra Hours tabs or when not in half-day mode */}
-                {(activeTable === 'ot' || activeTable === 'extraHours' || !isHalfDayMode) && (
+                  {/* Remarks */}
                   <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      {isHalfDayMode ? 'Total OT Hours (First + Second Half)' : 'Total OT Hours (Full Day)'}
+                      Remarks
                     </label>
-                    <input
-                      type="number"
-                      step="0.5"
-                      min="0"
-                      value={editData.otHours || 0}
-                      onChange={(e) => {
-                        const otValue = parseFloat(e.target.value) || 0;
-                        if (isHalfDayMode) {
-                          // Distribute OT hours equally between halves
-                          setEditData({
-                            ...editData,
-                            otHours: otValue,
-                            firstHalf: {
-                              ...editData.firstHalf!,
-                              otHours: otValue / 2,
-                            },
-                            secondHalf: {
-                              ...editData.secondHalf!,
-                              otHours: otValue / 2,
-                            },
-                          });
-                        } else {
-                          setEditData({
-                            ...editData,
-                            otHours: otValue,
-                            firstHalf: {
-                              ...editData.firstHalf!,
-                              otHours: otValue,
-                            },
-                            secondHalf: {
-                              ...editData.secondHalf!,
-                              otHours: otValue,
-                            },
-                          });
-                        }
-                      }}
+                    <textarea
+                      value={editData.remarks || ''}
+                      onChange={(e) => setEditData({
+                        ...editData,
+                        remarks: e.target.value,
+                      })}
+                      rows={3}
                       className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
                     />
                   </div>
-                )}
-
-                {/* Remarks */}
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    Remarks
-                  </label>
-                  <textarea
-                    value={editData.remarks || ''}
-                    onChange={(e) => setEditData({
-                      ...editData,
-                      remarks: e.target.value,
-                    })}
-                    rows={3}
-                    className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-md dark:bg-slate-700 dark:text-white"
-                  />
                 </div>
-              </div>
 
-              <div className="flex justify-end gap-3 mt-6">
-                <button
-                  onClick={handleSaveDate}
-                  disabled={saving[editingRecord.employeeId]}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {saving[editingRecord.employeeId] ? 'Saving...' : 'Save'}
-                </button>
-                <button
-                  onClick={() => {
-                    setShowEditModal(false);
-                    setEditingRecord(null);
-                    setIsHalfDayMode(false);
-                  }}
-                  className="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-md text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
-                >
-                  Cancel
-                </button>
+                <div className="flex justify-end gap-3 mt-6">
+                  <button
+                    onClick={handleSaveDate}
+                    disabled={saving[editingRecord.employeeId]}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {saving[editingRecord.employeeId] ? 'Saving...' : 'Save'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowEditModal(false);
+                      setEditingRecord(null);
+                      setIsHalfDayMode(false);
+                    }}
+                    className="px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-md text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
-      {/* Load More Button (NEW) */}
-      {hasMore && !loading && payRegisters.length > 0 && (
-        <div className="flex justify-center my-6">
+      {/* Pagination - below Daily table */}
+      {paginationTotalPages > 1 && !loading && payRegisters.length > 0 && (
+        <div className="flex items-center justify-center gap-2 py-4 my-4 border-t border-slate-200 dark:border-slate-700">
           <button
-            onClick={handleLoadMore}
-            disabled={loadingMore}
-            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md hover:shadow-lg"
+            type="button"
+            onClick={() => { setPage(p => Math.max(1, p - 1)); loadPayRegisters(Math.max(1, page - 1), false); }}
+            disabled={page <= 1 || loading}
+            className="h-8 px-3 text-xs font-medium rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loadingMore ? (
-              <span className="flex items-center gap-2">
-                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                </svg>
-                Loading More...
-              </span>
-            ) : (
-              `Load More (Page ${page + 1})`
-            )}
+            Previous
+          </button>
+          <span className="text-xs font-medium text-slate-600 dark:text-slate-400">
+            Page {page} of {paginationTotalPages}
+          </span>
+          <button
+            type="button"
+            onClick={() => { setPage(p => Math.min(paginationTotalPages, p + 1)); loadPayRegisters(Math.min(paginationTotalPages, page + 1), false); }}
+            disabled={page >= paginationTotalPages || loading}
+            className="h-8 px-3 text-xs font-medium rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Next
           </button>
         </div>
       )}
@@ -2006,7 +2394,7 @@ export default function PayRegisterPage() {
         <div className="mb-4">
           <p className="text-sm text-slate-600 dark:text-slate-400">
             The following arrears are approved but not fully settled. All arrears are selected by default.
-            You can deselect or adjust the amount to be included in this month's payroll processing.
+            You can deselect or adjust the amount to be included in this month&apos;s payroll processing.
           </p>
         </div>
         {/* Arrears Selection Section */}
@@ -2017,6 +2405,7 @@ export default function PayRegisterPage() {
           onArrearsSelected={handleArrearsSelected}
         />
       </div>
-    </div>
+    </div >
   );
 }
+

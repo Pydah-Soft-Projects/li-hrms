@@ -203,8 +203,8 @@ export default function ShiftsPage() {
     // Calculate final duration to validate
     const finalDuration = calculateDuration(startTime, endTime);
     if (finalDuration !== null && !validateDuration(finalDuration)) {
-      setError(`Illegal timings: The duration (${finalDuration} hours) is not in the allowed durations list.`);
-      return;
+      // Just set a warning but allow proceeding
+      setIllegalTimingWarning(`Note: The duration (${finalDuration} hours) is not in the standard allowed durations list.`);
     }
 
     try {
@@ -418,14 +418,17 @@ export default function ShiftsPage() {
                     className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                   >
                     <option value="">Select duration</option>
-                    {allowedDurations.length > 0 ? (
-                      allowedDurations.map((dur) => (
-                        <option key={dur} value={dur}>
-                          {dur} hours
-                        </option>
-                      ))
-                    ) : (
-                      <option value="" disabled>No durations available</option>
+                    <option value="">Select duration</option>
+                    {allowedDurations.map((dur) => (
+                      <option key={dur} value={dur}>
+                        {dur} hours
+                      </option>
+                    ))}
+                    {/* Add current duration as an option if it's not in the allowed list */}
+                    {duration && !allowedDurations.some(d => Math.abs(d - Number(duration)) < 0.01) && (
+                      <option key="custom" value={duration}>
+                        {duration} hours (Custom)
+                      </option>
                     )}
                   </select>
                   {allowedDurations.length === 0 && (

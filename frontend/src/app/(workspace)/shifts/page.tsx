@@ -3,6 +3,11 @@
 import { useState, useEffect } from 'react';
 import { api, Shift, Division, Department, Designation } from '@/lib/api';
 import Spinner from '@/components/Spinner';
+import {
+  canViewShifts,
+  canEditShift  // Used as canManageShifts
+} from '@/lib/permissions';
+import { auth } from '@/lib/auth';
 
 export default function ShiftsPage() {
   // User Scope & RBAC
@@ -48,11 +53,15 @@ export default function ShiftsPage() {
   // Permissions
   const [resolvedEmployeeShifts, setResolvedEmployeeShifts] = useState<Shift[]>([]);
 
-  // Roles that can VIEW the comprehensive structured list (Division/Department buckets)
-  const canViewStructuredShifts = ['super_admin', 'sub_admin', 'hr', 'hod', 'manager'].includes(currentUser?.role);
-
-  // Roles that can MANAGE (Create/Edit/Delete) shifts
-  const canManageShifts = ['super_admin', 'sub_admin', 'hr'].includes(currentUser?.role);
+  // Permission checks using read/write pattern
+  // Write permission enables ALL actions (create, edit, delete shifts)
+  // Read permission blocks all actions (view only)
+  // Future: When implementing granular permissions, only permissions.ts needs updating
+  const user = auth.getUser();
+  const hasViewPermission = user ? canViewShifts(user as any) : false;
+  const hasManagePermission = user ? canEditShift(user as any) : false; // Write permission for ALL actions
+  const canViewStructuredShifts = hasViewPermission;
+  const canManageShifts = hasManagePermission;
 
   // Skeleton Component
   const ShiftCardSkeleton = () => (
@@ -212,7 +221,7 @@ export default function ShiftsPage() {
         const user = userRes.data.user;
         setCurrentUser(user);
 
-        const isStructuredViewRole = ['super_admin', 'sub_admin', 'hr', 'hod', 'manager'].includes(user.role);
+        const isStructuredViewRole = canViewShifts(user as any);
 
         if (isStructuredViewRole) {
           await Promise.all([
@@ -361,8 +370,8 @@ export default function ShiftsPage() {
     // Calculate final duration to validate
     const finalDuration = calculateDuration(startTime, endTime);
     if (finalDuration !== null && !validateDuration(finalDuration)) {
-      setError(`Illegal timings: The duration (${finalDuration} hours) is not in the allowed durations list.`);
-      return;
+      // Just set a warning but allow proceeding
+      setIllegalTimingWarning(`Note: The duration (${finalDuration} hours) is not in the standard allowed durations list.`);
     }
 
     try {
@@ -641,14 +650,16 @@ export default function ShiftsPage() {
                     className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                   >
                     <option value="">Select duration</option>
-                    {allowedDurations.length > 0 ? (
-                      allowedDurations.map((dur) => (
-                        <option key={dur} value={dur}>
-                          {dur} hours
-                        </option>
-                      ))
-                    ) : (
-                      <option value="" disabled>No durations available</option>
+                    {allowedDurations.map((dur) => (
+                      <option key={dur} value={dur}>
+                        {dur} hours
+                      </option>
+                    ))}
+                    {/* Add current duration as an option if it's not in the allowed list */}
+                    {duration && !allowedDurations.some(d => Math.abs(d - Number(duration)) < 0.01) && (
+                      <option key="custom" value={duration}>
+                        {duration} hours (Custom)
+                      </option>
                     )}
                   </select>
                   {allowedDurations.length === 0 && (
@@ -903,3 +914,4 @@ export default function ShiftsPage() {
     </div>
   );
 }
+

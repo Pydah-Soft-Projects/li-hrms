@@ -2,6 +2,39 @@
 
 This directory contains utility scripts for the HRMS backend.
 
+## Scope & Division Mapping Scripts
+
+### analyze_scope_and_division_mapping.js
+
+Analyzes how scope filters apply to users and employees. Connects to MongoDB, fetches all users/employees/divisions/departments, builds scope filter per user, and reports which employees each user can see.
+
+```bash
+cd backend
+MONGODB_URI=mongodb://localhost:27017/hrms node scripts/analyze_scope_and_division_mapping.js
+```
+
+**Output:** User scope analysis, employee counts per user, sample employees per user, and users needing division mappings.
+
+### fix_division_mappings_for_hods.js
+
+Populates divisionMapping for HOD users who have empty mappings. Uses each HOD's linked employee (employeeRef) to set `{ division: emp.division_id, departments: [emp.department_id] }`.
+
+```bash
+cd backend
+MONGODB_URI=mongodb://localhost:27017/hrms node scripts/fix_division_mappings_for_hods.js
+```
+
+### migrate_users_to_division_mapping.js
+
+One-time migration: converts legacy `allowedDivisions`, `departments`, `department` → `divisionMapping` and removes old fields from User documents.
+
+```bash
+cd backend
+node scripts/migrate_users_to_division_mapping.js
+```
+
+---
+
 ## Available Scripts
 
 ### 1. generateLiveAttendanceTestData.js

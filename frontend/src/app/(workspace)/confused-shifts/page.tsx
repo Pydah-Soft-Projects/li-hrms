@@ -342,8 +342,8 @@ export default function ConfusedShiftsPage() {
         {/* Messages */}
         {(error || success) && (
           <div className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${success
-              ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400'
-              : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400'
+            ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400'
+            : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400'
             }`}>
             {success || error}
           </div>
@@ -428,8 +428,8 @@ export default function ConfusedShiftsPage() {
                               <div
                                 key={shift._id || idx}
                                 className={`rounded-xl border p-3 ${isPossible
-                                    ? 'border-blue-300 bg-blue-50/50 dark:border-blue-700 dark:bg-blue-900/30'
-                                    : 'border-slate-200 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-900/50'
+                                  ? 'border-blue-300 bg-blue-50/50 dark:border-blue-700 dark:bg-blue-900/30'
+                                  : 'border-slate-200 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-900/50'
                                   }`}
                               >
                                 <div className="flex items-center justify-between">
@@ -608,4 +608,5 @@ export default function ConfusedShiftsPage() {
     </div>
   );
 }
+
 

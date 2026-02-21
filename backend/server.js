@@ -147,6 +147,10 @@ app.use('/api/payroll-batch', payrollBatchRoutes);
 const bonusRoutes = require('./bonus/routes/bonusRoutes.js');
 app.use('/api/bonus', bonusRoutes);
 
+// Holidays routes
+const holidayRoutes = require('./holidays/index.js');
+app.use('/api/holidays', holidayRoutes);
+
 // Dashboard routes
 const dashboardRoutes = require('./dashboard/index.js');
 app.use('/api/dashboard', dashboardRoutes);
@@ -204,6 +208,12 @@ const startServer = async () => {
 
     // Create HTTP server and initialize Socket.io
     const server = http.createServer(app);
+
+    // Set high timeout for bulk data operations (10 minutes)
+    server.timeout = 600 * 1000;
+    server.keepAliveTimeout = 65 * 1000;
+    server.headersTimeout = 66 * 1000;
+
     initSocket(server, allowedOrigins);
 
     // Start server
@@ -231,6 +241,7 @@ const startServer = async () => {
       console.log(`   - Pay Register: /api/pay-register`);
       console.log(`   - Bonus: /api/bonus`);
       console.log(`   - Arrears: /api/arrears`);
+      console.log(`   - Holidays: /api/holidays`);
       console.log(`   - payabale shifts Multi Shift: /api/multi-shift`);
     });
   } catch (error) {
