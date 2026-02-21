@@ -84,6 +84,7 @@ interface Employee {
   dynamicFields?: any;
   employeeAllowances?: any[];
   employeeDeductions?: any[];
+  salaryStatus?: 'pending_approval' | 'approved';
 }
 
 
@@ -105,12 +106,10 @@ interface EmployeeApplication {
   verifiedAt?: string;
   approvedBy?: { _id: string; name: string; email: string };
   approvedAt?: string;
-  approvedBy?: { _id: string; name: string; email: string };
   rejectedBy?: { _id: string; name: string; email: string };
   approvalComments?: string;
   rejectionComments?: string;
   created_at?: string;
-  approvedAt?: string;
   rejectedAt?: string;
   // All other employee fields
   doj?: string;

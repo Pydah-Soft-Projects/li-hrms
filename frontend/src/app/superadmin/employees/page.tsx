@@ -243,7 +243,12 @@ export default function EmployeesPage() {
   const [formSettings, setFormSettings] = useState<FormSettings | null>(null);
   const [applicationFormData, setApplicationFormData] = useState<Partial<EmployeeApplication & { proposedSalary: number }>>({ ...initialFormState, proposedSalary: 0 });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
-  const [approvalData, setApprovalData] = useState({ approvedSalary: 0, doj: '', comments: '' });
+  const [approvalData, setApprovalData] = useState<{
+    approvedSalary: number;
+    second_salary?: number;
+    doj: string;
+    comments: string;
+  }>({ approvedSalary: 0, doj: '', comments: '' });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [notificationChannels, setNotificationChannels] = useState<{ sms: boolean; whatsapp: boolean; email: boolean }>({
