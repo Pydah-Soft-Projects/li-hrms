@@ -171,11 +171,14 @@ const getResetEmailTemplate = (name, username, password) => {
  * Internal helper to send SMS
  */
 async function _sendSms(employee, password, results, isReset = false) {
-  if (!employee.phone_number) return;
+  if (!employee.phone_number) {
+    console.warn(`[NotificationService] Skipping SMS for employee ${employee.emp_no || 'unknown'}: phone_number is missing`);
+    return;
+  }
   try {
     console.log(`[NotificationService] Sending SMS to ${employee.phone_number} for employee ${employee.emp_no}...`);
     const smsMessage = isReset
-      ? `Hello ${employee.employee_name} your password has been reset. Username: ${employee.emp_no} New Password: ${password}. Login: li-hrms.vercel.app/login - Pydah College`
+      ? `Hello ${employee.employee_name} your password has been created. Username: ${employee.emp_no} Password: ${password}. Login: li-hrms.vercel.app/login - Pydah College`
       : `Hello ${employee.employee_name} your account has been created. Username: ${employee.emp_no} Password: ${password}. Login: li-hrms.vercel.app/login - Pydah College`;
 
     await sendSmsThroughBulkSmsApps({
@@ -193,7 +196,10 @@ async function _sendSms(employee, password, results, isReset = false) {
  * Internal helper to send Email
  */
 async function _sendEmail(employee, password, results, isReset = false) {
-  if (!employee.email) return;
+  if (!employee.email) {
+    console.warn(`[NotificationService] Skipping Email for employee ${employee.emp_no || 'unknown'}: email is missing`);
+    return;
+  }
   const htmlContent = isReset
     ? getResetEmailTemplate(employee.employee_name, employee.emp_no, password)
     : getEmailTemplate(employee.employee_name, employee.emp_no, password);

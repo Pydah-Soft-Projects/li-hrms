@@ -58,7 +58,9 @@ router.get('/getrequest.aspx', async (req, res) => {
                 'LogInterval=1',
                 'TransFlag=1111111111',
                 'Realtime=1',
-                'Encrypt=0'
+                'Encrypt=0',
+                'TimeZone=330',
+                'DaylightSavingTime=0'
             ].join('\n');
             return res.send(config);
         }
@@ -152,7 +154,9 @@ router.get('/cdata.aspx', async (req, res) => {
                 'PushProtVer=2.4.1',
                 'ErrorDelay=3',
                 'Delay=10',
-                'TransTimes=00:00;23:59'
+                'TransTimes=00:00;23:59',
+                'TimeZone=330',
+                'DaylightSavingTime=0'
             ].join('\n');
             return res.send(config);
         }
@@ -502,14 +506,14 @@ async function processAdmsPost(req, res, SN, table, clientIp) {
             for (const line of lines) {
                 const cleanLine = line.replace(/^(USER)\s+/, '').trim();
                 const data = admsParser.parseKeyValueLine(cleanLine);
-                if (data && (data.PIN || data.USERID)) {
-                    const userId = data.PIN || data.USERID;
+                if (data && data.PIN) {
+                    const userId = data.PIN;
                     await DeviceUser.findOneAndUpdate(
                         { userId: userId },
                         {
                             $set: {
                                 userId: userId,
-                                name: data.NAME || data.USERNAME || data.USER_NAME || '',
+                                name: data.NAME || '',
                                 password: data.PASSWORD || '',
                                 card: data.CARD || '',
                                 role: parseInt(data.ROLE) || 0,
@@ -594,8 +598,8 @@ async function processAdmsPost(req, res, SN, table, clientIp) {
             const lines = rawBody.split('\n');
             for (const line of lines) {
                 const data = admsParser.parseKeyValueLine(line);
-                if (data && (data.PIN || data.USERID)) {
-                    const userId = data.PIN || data.USERID;
+                if (data && data.PIN) {
+                    const userId = data.PIN;
                     await DeviceUser.findOneAndUpdate(
                         { userId: userId },
                         {

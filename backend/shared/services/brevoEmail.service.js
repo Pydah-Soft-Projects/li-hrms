@@ -1,6 +1,5 @@
-import axios from 'axios';
-import dotenv from 'dotenv';
-dotenv.config();
+const axios = require('axios');
+require('dotenv').config();
 
 const BREVO_API_KEY = process.env.BREVO_API_KEY;
 const BREVO_API_URL = 'https://api.brevo.com/v3/smtp/email';
@@ -13,17 +12,7 @@ if (!BREVO_API_KEY) {
     );
 }
 
-/**
- * Send email using Brevo (formerly Sendinblue)
- * @param {Object} options - Email options
- * @param {string|string[]} options.to - Recipient email(s)
- * @param {string} options.subject - Email subject
- * @param {string} options.htmlContent - HTML content
- * @param {string} [options.textContent] - Plain text content (optional)
- * @param {Object} [options.replyTo] - Reply-to email and name
- * @returns {Promise<Object>} Response from Brevo API
- */
-export const sendEmailViaBrevo = async ({
+const sendEmailViaBrevo = async ({
     to,
     subject,
     htmlContent,
@@ -46,7 +35,6 @@ export const sendEmailViaBrevo = async ({
         throw new Error('Email content (HTML or text) is required');
     }
 
-    // Normalize recipients to array
     const recipients = Array.isArray(to) ? to : [to];
     const toArray = recipients.map((email) => ({ email: email.trim() }));
 
@@ -89,15 +77,7 @@ export const sendEmailViaBrevo = async ({
     }
 };
 
-/**
- * Send transactional email template via Brevo
- * @param {Object} options - Email options
- * @param {string|string[]} options.to - Recipient email(s)
- * @param {number} options.templateId - Brevo template ID
- * @param {Object} [options.params] - Template parameters
- * @returns {Promise<Object>} Response from Brevo API
- */
-export const sendTemplateEmailViaBrevo = async ({ to, templateId, params = {} }) => {
+const sendTemplateEmailViaBrevo = async ({ to, templateId, params = {} }) => {
     if (!BREVO_API_KEY) {
         throw new Error('Brevo API key is not configured');
     }
@@ -139,4 +119,9 @@ export const sendTemplateEmailViaBrevo = async ({ to, templateId, params = {} })
             error.response?.data?.message || error.message || 'Failed to send template email via Brevo'
         );
     }
+};
+
+module.exports = {
+    sendEmailViaBrevo,
+    sendTemplateEmailViaBrevo,
 };

@@ -52,18 +52,17 @@ function findNextOut(outPunches, inTimestamp) {
     return null;
 }
 
+const { extractISTComponents } = require('../../shared/utils/dateUtils');
+
 /**
- * Check if a date string matches a Date object's date
+ * Check if a date string matches a Date object's date (IST Aware)
  * @param {Date} dateObj - Date object
  * @param {String} dateStr - Date string in YYYY-MM-DD format
  * @returns {Boolean}
  */
 function isSameDay(dateObj, dateStr) {
-    const year = dateObj.getFullYear();
-    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-    const day = String(dateObj.getDate()).padStart(2, '0');
-    const formatted = `${year}-${month}-${day}`;
-    return formatted === dateStr;
+    const { dateStr: componentsDateStr } = extractISTComponents(dateObj);
+    return componentsDateStr === dateStr;
 }
 
 /**

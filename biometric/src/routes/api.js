@@ -250,6 +250,53 @@ router.get('/logs/recent', async (req, res) => {
 });
 
 /**
+ * POST /api/devices/sync-time
+ * Force all enabled devices to sync their clocks to current IST time
+ */
+router.post('/devices/sync-time', async (req, res) => {
+    try {
+        const Device = require('../models/Device');
+        const DeviceCommand = require('../models/DeviceCommand');
+        const dayjs = require('dayjs');
+        const utc = require('dayjs/plugin/utc');
+        const timezone = require('dayjs/plugin/timezone');
+        dayjs.extend(utc);
+        dayjs.extend(timezone);
+
+        const devices = await Device.find({ enabled: true });
+
+        // Format current time as YYYY-MM-DD HH:mm:ss in IST
+        const nowIST = dayjs().tz('Asia/Kolkata').format('YYYY-MM-DD HH:mm:ss');
+        const command = `SET_TIME ${nowIST}`;
+
+        const results = [];
+        for (const device of devices) {
+            await DeviceCommand.create({
+                deviceId: device.deviceId,
+                command: command,
+                status: 'PENDING'
+            });
+            results.push({ deviceId: device.deviceId, name: device.name });
+        }
+
+        logger.info(`Time sync command (${command}) queued for ${results.length} devices`);
+
+        res.json({
+            success: true,
+            message: `Time sync command queued for ${results.length} devices`,
+            command: command,
+            devices: results
+        });
+    } catch (error) {
+        logger.error('Error syncing device time:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+/**
  * GET /api/devices/:deviceId/raw
  * Fetch raw logs DIRECTLY from device (no DB storage, no transformation)
  */

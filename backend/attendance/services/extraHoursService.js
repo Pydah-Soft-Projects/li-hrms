@@ -39,7 +39,17 @@ const detectExtraHours = async (employeeNumber, date) => {
     }
 
     // Need both shift and outTime to calculate extra hours
-    // For extra hours calculation, we look at the last shift of the day
+    // Robustness: If the record was processed by the Multi-Shift engine, we skip this legacy service
+    // because the engine already calculates per-shift extra hours which aggregate into the daily total.
+    if (attendanceRecord.shifts && attendanceRecord.shifts.length > 0) {
+      console.log(`[ExtraHours] Skipping legacy detection for ${employeeNumber} on ${date} (Multi-shift/Smart-Pairing engine handled it)`);
+      return {
+        success: true,
+        message: 'Multi-shift engine take precedence',
+        extraHours: attendanceRecord.extraHours,
+      };
+    }
+
     const lastShift = attendanceRecord.shifts && attendanceRecord.shifts.length > 0
       ? attendanceRecord.shifts[attendanceRecord.shifts.length - 1]
       : null;
@@ -186,7 +196,86 @@ const detectExtraHours = async (employeeNumber, date) => {
 };
 
 /**
- * Batch detect extra hours for multiple records
+ * Add or subtract days from YYYY-MM-DD (local date, no timezone shift)
+ * @param {String} dateStr - YYYY-MM-DD
+ * @param {Number} delta - days to add (positive) or subtract (negative)
+ * @returns {String} YYYY-MM-DD
+ */
+function addDays(dateStr, delta) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dObj = new Date(y, m - 1, d);
+  dObj.setDate(dObj.getDate() + delta);
+  return `${dObj.getFullYear()}-${String(dObj.getMonth() + 1).padStart(2, '0')}-${String(dObj.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Run extra hours detection only for the given (employeeNumber, date) pairs.
+ * Optionally includes yesterday and tomorrow for each date (e.g. for overnight shifts).
+ * Use this after sync/upload so only affected employees and dates are processed (faster).
+ * @param {Array<{ employeeNumber: string, date: string }>} entries - e.g. from rawLogs: { employeeNumber, date }
+ * @param {Object} options - { includeAdjacentDays: boolean } - if true, also run for date-1 and date+1 per entry
+ * @returns {Object} - Statistics
+ */
+const detectExtraHoursForEmployeeDates = async (entries, options = {}) => {
+  const { includeAdjacentDays = true } = options;
+  const stats = {
+    success: false,
+    processed: 0,
+    updated: 0,
+    errors: [],
+    message: '',
+  };
+
+  if (!entries || entries.length === 0) {
+    stats.success = true;
+    stats.message = 'No entries to process';
+    return stats;
+  }
+
+  const set = new Set();
+  for (const e of entries) {
+    const emp = (e.employeeNumber || '').toUpperCase();
+    const date = e.date || (e.timestamp ? new Date(e.timestamp).toISOString().slice(0, 10) : null);
+    if (!emp || !date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+    set.add(`${emp}|${date}`);
+    if (includeAdjacentDays) {
+      set.add(`${emp}|${addDays(date, -1)}`);
+      set.add(`${emp}|${addDays(date, 1)}`);
+    }
+  }
+
+  const pairs = [...set].map(key => {
+    const [employeeNumber, date] = key.split('|');
+    return { employeeNumber, date };
+  });
+  stats.processed = pairs.length;
+
+  try {
+    for (const { employeeNumber, date } of pairs) {
+      try {
+        const result = await detectExtraHours(employeeNumber, date);
+        if (result.success && result.updated !== false) {
+          stats.updated++;
+        }
+      } catch (error) {
+        stats.errors.push(`Error processing ${employeeNumber} on ${date}: ${error.message}`);
+        console.error(`[ExtraHours] Error processing ${employeeNumber} on ${date}:`, error);
+      }
+    }
+    stats.success = true;
+    stats.message = `Processed ${stats.processed} records: ${stats.updated} updated with extra hours`;
+  } catch (error) {
+    console.error('Error in detectExtraHoursForEmployeeDates:', error);
+    stats.errors.push(error.message);
+    stats.message = 'Error detecting extra hours for employee dates';
+  }
+
+  return stats;
+};
+
+/**
+ * Batch detect extra hours for multiple records (all employees in date range).
+ * Prefer detectExtraHoursForEmployeeDates when you only have specific employees/dates.
  * @param {String} startDate - Start date (optional)
  * @param {String} endDate - End date (optional)
  * @returns {Object} - Statistics
@@ -242,6 +331,7 @@ const batchDetectExtraHours = async (startDate = null, endDate = null) => {
 
 module.exports = {
   detectExtraHours,
+  detectExtraHoursForEmployeeDates,
   batchDetectExtraHours,
 };
 

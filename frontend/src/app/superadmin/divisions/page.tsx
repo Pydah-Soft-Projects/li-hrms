@@ -112,7 +112,9 @@ export default function DivisionsPage() {
     const [description, setDescription] = useState('');
     const [managerId, setManagerId] = useState('');
     const [selectedDeptIds, setSelectedDeptIds] = useState<string[]>([]);
+    const [linkDeptSearch, setLinkDeptSearch] = useState('');
     const [selectedShifts, setSelectedShifts] = useState<{ shiftId: string; gender: string }[]>([]);
+    const [shiftSearch, setShiftSearch] = useState('');
 
     const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
 
@@ -276,6 +278,7 @@ export default function DivisionsPage() {
             const res = await api.linkDepartmentsToDivision(showLinkDeptDialog._id, { departmentIds: selectedDeptIds, action: 'link' });
             if (res.success) {
                 setShowLinkDeptDialog(null);
+                setLinkDeptSearch('');
                 loadData();
             } else {
                 setError(res.message || 'Failed to link departments');
@@ -323,6 +326,7 @@ export default function DivisionsPage() {
             const res = await api.assignShiftsToDivision(showShiftDialog._id, payload as any);
             if (res.success) {
                 setShowShiftDialog(null);
+                setShiftSearch('');
                 loadData();
             } else {
                 setError(res.message || 'Failed to assign shifts');
@@ -631,12 +635,70 @@ export default function DivisionsPage() {
                 {/* Link Departments Dialog */}
                 {showLinkDeptDialog && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowLinkDeptDialog(null)} />
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => { setShowLinkDeptDialog(null); setLinkDeptSearch(''); }} />
                         <div className="relative z-50 w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950">
-                            <h2 className="text-xl font-semibold mb-6">Link Departments to {showLinkDeptDialog.name}</h2>
+                            <h2 className="text-xl font-semibold mb-4">Link Departments to {showLinkDeptDialog.name}</h2>
                             <form onSubmit={handleLinkDepartments} className="space-y-4">
+                                {/* Search */}
+                                <div className="relative">
+                                    <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                    </svg>
+                                    <input
+                                        type="text"
+                                        placeholder="Search departments by name or code..."
+                                        value={linkDeptSearch}
+                                        onChange={(e) => setLinkDeptSearch(e.target.value)}
+                                        className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-4 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                                    />
+                                </div>
+                                {/* Select All / Deselect All */}
+                                <div className="flex gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const filtered = departments.filter((dept) => {
+                                                const search = linkDeptSearch.toLowerCase();
+                                                if (!search) return true;
+                                                const name = (dept.name || '').toLowerCase();
+                                                const code = (dept.code || '').toLowerCase();
+                                                return name.includes(search) || code.includes(search);
+                                            });
+                                            const filteredIds = filtered.map((d) => d._id);
+                                            setSelectedDeptIds((prev) => [...new Set([...prev, ...filteredIds])]);
+                                        }}
+                                        className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-900/20 dark:text-indigo-400 dark:hover:bg-indigo-900/40"
+                                    >
+                                        Select All
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const filtered = departments.filter((dept) => {
+                                                const search = linkDeptSearch.toLowerCase();
+                                                if (!search) return true;
+                                                const name = (dept.name || '').toLowerCase();
+                                                const code = (dept.code || '').toLowerCase();
+                                                return name.includes(search) || code.includes(search);
+                                            });
+                                            const filteredIds = new Set(filtered.map((d) => d._id));
+                                            setSelectedDeptIds((prev) => prev.filter((id) => !filteredIds.has(id)));
+                                        }}
+                                        className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                                    >
+                                        Deselect All
+                                    </button>
+                                </div>
                                 <div className="max-h-96 overflow-y-auto rounded-2xl border border-slate-100 p-2 dark:border-slate-800">
-                                    {departments.map(dept => (
+                                    {departments
+                                        .filter((dept) => {
+                                            const search = linkDeptSearch.toLowerCase();
+                                            if (!search) return true;
+                                            const name = (dept.name || '').toLowerCase();
+                                            const code = (dept.code || '').toLowerCase();
+                                            return name.includes(search) || code.includes(search);
+                                        })
+                                        .map(dept => (
                                         <label key={dept._id} className="flex items-center gap-3 rounded-xl p-3 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors">
                                             <input
                                                 type="checkbox"
@@ -650,7 +712,7 @@ export default function DivisionsPage() {
                                 </div>
                                 <div className="flex gap-3 pt-4">
                                     <button type="submit" className="flex-1 rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white hover:bg-indigo-700 shadow-lg shadow-indigo-500/30">Save Selection</button>
-                                    <button type="button" onClick={() => setShowLinkDeptDialog(null)} className="flex-1 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">Cancel</button>
+                                    <button type="button" onClick={() => { setShowLinkDeptDialog(null); setLinkDeptSearch(''); }} className="flex-1 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">Cancel</button>
                                 </div>
                             </form>
                         </div>
@@ -660,7 +722,7 @@ export default function DivisionsPage() {
                 {/* Assign Shifts Dialog */}
                 {showShiftDialog && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowShiftDialog(null)} />
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => { setShowShiftDialog(null); setShiftSearch(''); }} />
                         <div className="relative z-50 w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950">
                             <h2 className="text-xl font-semibold mb-4">Assign Shifts - {showShiftDialog.name}</h2>
 
@@ -729,9 +791,30 @@ export default function DivisionsPage() {
                                     </div>
                                 )}
 
+                                <div className="space-y-2">
+                                    <label className="block text-xs font-semibold uppercase text-slate-500">Select Shifts</label>
+                                    <div className="relative">
+                                        <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                        </svg>
+                                        <input
+                                            type="text"
+                                            placeholder="Search shifts by name or time..."
+                                            value={shiftSearch}
+                                            onChange={(e) => setShiftSearch(e.target.value)}
+                                            className="w-full rounded-xl border border-slate-200 py-2 pl-9 pr-4 text-sm focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                                        />
+                                    </div>
+                                </div>
                                 <div className="max-h-60 overflow-y-auto rounded-2xl border border-slate-100 p-2 dark:border-slate-800">
-                                    <label className="mb-2 block px-2 text-xs font-semibold uppercase text-slate-500">Select Shifts</label>
-                                    {shifts.map(shift => {
+                                    {shifts.filter(shift => {
+                                        const search = shiftSearch.toLowerCase();
+                                        if (!search) return true;
+                                        const name = (shift.name || '').toLowerCase();
+                                        const startTime = (shift.startTime || '').toLowerCase();
+                                        const endTime = (shift.endTime || '').toLowerCase();
+                                        return name.includes(search) || startTime.includes(search) || endTime.includes(search);
+                                    }).map(shift => {
                                         const isSelected = selectedShifts.some(s => s.shiftId === shift._id);
                                         const selectedConfig = selectedShifts.find(s => s.shiftId === shift._id);
 
@@ -788,7 +871,7 @@ export default function DivisionsPage() {
                                     <button type="submit" className="flex-1 rounded-2xl bg-amber-600 px-4 py-3 text-sm font-semibold text-white hover:bg-amber-700 shadow-lg shadow-amber-500/30">
                                         Save Assignments
                                     </button>
-                                    <button type="button" onClick={() => setShowShiftDialog(null)} className="flex-1 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">Cancel</button>
+                                    <button type="button" onClick={() => { setShowShiftDialog(null); setShiftSearch(''); }} className="flex-1 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">Cancel</button>
                                 </div>
                             </form>
                         </div>

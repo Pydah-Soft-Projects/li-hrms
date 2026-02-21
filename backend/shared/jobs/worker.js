@@ -277,7 +277,7 @@ const startWorkers = () => {
         const XLSX = require('xlsx');
         const AttendanceRawLog = require('../../attendance/model/AttendanceRawLog');
         const { processAndAggregateLogs } = require('../../attendance/services/attendanceSyncService');
-        const { batchDetectExtraHours } = require('../../attendance/services/extraHoursService');
+        const { detectExtraHoursForEmployeeDates } = require('../../attendance/services/extraHoursService');
         const { io } = require('../../server'); // Import io from server.js
 
         try {
@@ -331,11 +331,13 @@ const startWorkers = () => {
                 // Aggregate
                 const stats = await processAndAggregateLogs(rawLogs, false);
 
-                // Extra Hours
-                const processedDates = [...new Set(rawLogs.map(log => log.date))];
-                if (processedDates.length > 0) {
-                    const sortedDates = processedDates.sort();
-                    await batchDetectExtraHours(sortedDates[0], sortedDates[sortedDates.length - 1]);
+                // Extra hours: only for (employee, date) we just processed (+ yesterday/tomorrow for overnight)
+                const entries = rawLogs.map(log => ({
+                    employeeNumber: log.employeeNumber,
+                    date: log.date || (log.timestamp ? new Date(log.timestamp).toISOString().slice(0, 10) : null),
+                })).filter(e => e.date);
+                if (entries.length > 0) {
+                    await detectExtraHoursForEmployeeDates(entries, { includeAdjacentDays: true });
                 }
 
                 const { app, io } = require('../../server'); // Import from server.js
