@@ -1,6 +1,5 @@
-import nodemailer from 'nodemailer';
-import dotenv from 'dotenv';
-dotenv.config();
+const nodemailer = require('nodemailer');
+require('dotenv').config();
 
 const GMAIL_USER = process.env.GMAIL_USER;
 const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD;
@@ -35,19 +34,7 @@ const getTransporter = () => {
     return transporter;
 };
 
-/**
- * Send email using NodeMailer (Gmail)
- * @param {Object} options - Email options
- * @param {string|string[]} options.to - Recipient email(s)
- * @param {string} options.subject - Email subject
- * @param {string} options.htmlContent - HTML content
- * @param {string} [options.textContent] - Plain text content (optional)
- * @param {Object} [options.replyTo] - Reply-to email and name
- * @param {string} [options.from] - Sender email (defaults to GMAIL_USER)
- * @param {string} [options.fromName] - Sender name (defaults to GMAIL_SENDER_NAME)
- * @returns {Promise<Object>} Response with success status and message ID
- */
-export const sendEmailViaNodeMailer = async ({
+const sendEmailViaNodeMailer = async ({
     to,
     subject,
     htmlContent,
@@ -111,11 +98,7 @@ export const sendEmailViaNodeMailer = async ({
     }
 };
 
-/**
- * Verify Gmail connection
- * @returns {Promise<boolean>} True if connection is valid
- */
-export const verifyGmailConnection = async () => {
+const verifyGmailConnection = async () => {
     try {
         if (!GMAIL_USER || !GMAIL_APP_PASSWORD) {
             return false;
@@ -128,4 +111,9 @@ export const verifyGmailConnection = async () => {
         console.error('[NodeMailerEmail] Connection verification failed:', error.message);
         return false;
     }
+};
+
+module.exports = {
+    sendEmailViaNodeMailer,
+    verifyGmailConnection,
 };

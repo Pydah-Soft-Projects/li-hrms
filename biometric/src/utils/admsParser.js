@@ -46,36 +46,58 @@ const admsParser = {
         if (!line.trim()) return null;
 
         const result = {};
-        // Split by tabs (standard ADMS format). 
-        // We use tabs specifically so names with spaces are not broken apart.
-        const parts = line.split('\t');
+        // Split by tabs or multiple spaces (some devices use one or the other)
+        const parts = line.split(/\t|\s{2,}/);
 
         for (const part of parts) {
-            if (!part.includes('=')) continue;
+            if (!part.includes('=')) {
+                // Handle edge case where single space might be the delimiter for small fields
+                const subParts = part.split(/\s+/);
+                if (subParts.length > 1) {
+                    for (const sub of subParts) {
+                        if (sub.includes('=')) {
+                            const [key, ...valueParts] = sub.split('=');
+                            const normKey = key.trim().toUpperCase();
+                            const value = valueParts.join('=').trim();
+                            admsParser._setNormalizedKey(result, normKey, value);
+                        }
+                    }
+                }
+                continue;
+            }
 
             const [key, ...valueParts] = part.split('=');
             if (key) {
                 const normKey = key.trim().toUpperCase();
                 const value = valueParts.join('=').trim();
-                result[normKey] = value;
-
-                // Normalization: Ensure PIN and USERID are treated the same
-                if (normKey === 'USERID' && !result.PIN) {
-                    result.PIN = value;
-                }
-
-                // Normalization: Ensure various Name keys are mapped to NAME
-                if (['NAME', 'USERNAME', 'USER_NAME'].includes(normKey) && !result._NAME_FINAL) {
-                    result._NAME_FINAL = value;
-                }
+                admsParser._setNormalizedKey(result, normKey, value);
             }
         }
 
-        // Final normalization for the consumer
-        if (result._NAME_FINAL) result.NAME = result._NAME_FINAL;
-
-        // Return null if empty or non-data line
         return Object.keys(result).length > 0 ? result : null;
+    },
+
+    /**
+     * Helper to map varied key names to standard internal names
+     * @private
+     */
+    _setNormalizedKey: (result, normKey, value) => {
+        // Standardize keys
+        if (['PIN', 'USERID', 'UID'].includes(normKey)) {
+            result.PIN = value;
+        } else if (['NAME', 'USERNAME', 'USER_NAME'].includes(normKey)) {
+            result.NAME = value;
+        } else if (['PASSWD', 'PASSWORD', 'PWD'].includes(normKey)) {
+            result.PASSWORD = value;
+        } else if (['PRI', 'PRIVILEGE', 'ROLE'].includes(normKey)) {
+            result.ROLE = value;
+        } else if (['GRP', 'GROUP'].includes(normKey)) {
+            result.GROUP = value;
+        } else if (['CARD', 'CARDNO', 'CARD_NO'].includes(normKey)) {
+            result.CARD = value;
+        } else {
+            result[normKey] = value;
+        }
     },
 
     /**

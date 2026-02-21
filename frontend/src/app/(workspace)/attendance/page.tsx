@@ -4517,7 +4517,7 @@ export default function AttendancePage() {
                       {/* Rupees In Words */}
                       <div className="border border-slate-300 bg-slate-50 px-4 py-2 dark:border-slate-600 dark:bg-slate-800">
                         <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Rupees In Words:</span>
-                        <span className="ml-2 text-sm text-slate-900 dark:text-white">{numberToWords(payslipData.netSalary || 0)}</span>
+                        {/* removed numberToWords display */}
                       </div>
 
                     </div>
@@ -4547,91 +4547,3 @@ export default function AttendancePage() {
   );
 
 }
-
-
-// Helper function to convert number to words
-function numberToWords(num: number): string {
-  const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
-  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
-
-  if (num === 0) return 'Zero Rupees Only';
-
-  const integerPart = Math.floor(num);
-  const decimalPart = Math.round((num - integerPart) * 100);
-
-  const convertHundreds = (n: number): string => {
-    if (n === 0) return '';
-    let result = '';
-    if (n >= 100) {
-      const hundreds = Math.floor(n / 100);
-      if (hundreds > 0 && ones[hundreds]) {
-        result += ones[hundreds] + ' Hundred ';
-      }
-      n %= 100;
-    }
-    if (n >= 20) {
-      const tensPlace = Math.floor(n / 10);
-      if (tensPlace > 0 && tens[tensPlace]) {
-        result += tens[tensPlace] + ' ';
-      }
-      n %= 10;
-    }
-    if (n > 0 && ones[n]) {
-      result += ones[n] + ' ';
-    }
-    return result.trim();
-  };
-
-  let words = '';
-  let remaining = integerPart;
-
-  const crores = Math.floor(remaining / 10000000);
-  if (crores > 0) {
-    const croreWords = convertHundreds(crores);
-    if (croreWords) {
-      words += croreWords + ' Crore ';
-    }
-    remaining %= 10000000;
-  }
-
-  const lakhs = Math.floor(remaining / 100000);
-  if (lakhs > 0) {
-    const lakhWords = convertHundreds(lakhs);
-    if (lakhWords) {
-      words += lakhWords + ' Lakh ';
-    }
-    remaining %= 100000;
-  }
-
-  const thousands = Math.floor(remaining / 1000);
-  if (thousands > 0) {
-    const thousandWords = convertHundreds(thousands);
-    if (thousandWords) {
-      words += thousandWords + ' Thousand ';
-    }
-    remaining %= 1000;
-  }
-
-  if (remaining > 0) {
-    const remainingWords = convertHundreds(remaining);
-    if (remainingWords) {
-      words += remainingWords;
-    }
-  }
-
-  if (decimalPart > 0) {
-    if (words.trim()) {
-      words += ` and ${decimalPart}/100`;
-    } else {
-      words += `${decimalPart}/100`;
-    }
-  }
-
-  words = words.trim();
-  if (!words) {
-    return 'Zero Rupees Only';
-  }
-
-  return words + ' Rupees Only';
-}
-

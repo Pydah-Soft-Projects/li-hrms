@@ -1511,34 +1511,37 @@ exports.getAllowanceDeductionDefaults = async (req, res) => {
 exports.resendEmployeePassword = async (req, res) => {
   try {
     const { empNo } = req.params;
-    const { notificationChannels } = req.body;
 
-    const employee = await Employee.findOne({ emp_no: empNo.toUpperCase() }).select('+plain_password');
+    // Force both channels for resend as per requirement
+    const notificationChannels = { email: true, sms: true };
+
+    console.log(`[EmployeeController] Resending credentials for ${empNo}. Channels forced:`, notificationChannels);
+
+    // Explicitly select fields used by notification service to ensure they aren't missing
+    const employee = await Employee.findOne({ emp_no: empNo.toUpperCase() })
+      .select('+plain_password emp_no employee_name email phone_number');
+
     if (!employee) {
       return res.status(404).json({ success: false, message: 'Employee not found' });
     }
 
-    // Use stored plain password (do NOT reset)
-    // For legacy accounts that have no plain_password stored, fall back to
-    // generating a new one (and save it so future resends work correctly).
+    console.log(`[EmployeeController] Found employee: ${employee.employee_name}, Email: ${employee.email}, Phone: ${employee.phone_number}`);
+
     let passwordToSend = employee.plain_password;
 
     if (!passwordToSend) {
-      // Legacy path: no plain_password stored yet – generate once and save
       const { passwordMode } = req.body;
       passwordToSend = await generatePassword(employee, passwordMode || null);
-      // Save the plain password AND re-hash the main password field
       employee.password = passwordToSend;
       employee.plain_password = passwordToSend;
       await employee.save();
     }
 
-    // Send existing credentials (no password change)
     const notificationResults = await sendCredentials(
       employee,
       passwordToSend,
-      notificationChannels || { email: true, sms: true },
-      false // isReset = false – this is a resend, not a reset
+      notificationChannels,
+      false
     );
 
     res.status(200).json({
@@ -1593,5 +1596,107 @@ exports.bulkExportEmployeePasswords = async (req, res) => {
   } catch (error) {
     console.error('Error in bulk password export:', error);
     res.status(500).json({ success: false, message: 'Error in bulk password export', error: error.message });
+  }
+};
+
+/**
+ * @desc    Bulk resend credentials to filtered employees
+ * @route   POST /api/employees/bulk-resend-credentials
+ * @access  Private (Super Admin)
+ */
+exports.bulkResendCredentials = async (req, res) => {
+  try {
+    const {
+      search,
+      divisionId,
+      departmentId,
+      designationId,
+      includeLeft
+    } = req.body;
+
+    // Reuse filter logic similar to getAllEmployees
+    const filters = { ...req.scopeFilter };
+
+    if (divisionId) filters.division_id = divisionId;
+    if (departmentId) filters.department_id = departmentId;
+    if (designationId) filters.designation_id = designationId;
+
+    if (search) {
+      const searchRegex = new RegExp(search, 'i');
+      filters.$or = [
+        { emp_no: searchRegex },
+        { employee_name: searchRegex },
+        { phone_number: searchRegex },
+        { email: searchRegex }
+      ];
+    }
+
+    if (includeLeft !== 'true') {
+      filters.leftDate = null;
+    }
+
+    // Force both channels
+    const notificationChannels = { email: true, sms: true };
+
+    console.log('[EmployeeController] Bulk resending credentials with filters:', filters);
+
+    // Fetch all matching employees
+    const employees = await Employee.find(filters)
+      .select('+plain_password emp_no employee_name email phone_number');
+
+    if (!employees || employees.length === 0) {
+      return res.status(200).json({
+        success: true,
+        message: 'No employees found matching the filters',
+        count: 0
+      });
+    }
+
+    console.log(`[EmployeeController] Found ${employees.length} employees for bulk resend`);
+
+    const results = {
+      total: employees.length,
+      successCount: 0,
+      failCount: 0,
+      details: []
+    };
+
+    // Process each employee
+    for (const employee of employees) {
+      try {
+        let passwordToSend = employee.plain_password;
+
+        if (!passwordToSend) {
+          // Fallback if plain_password missing
+          passwordToSend = await generatePassword(employee, null);
+          employee.password = passwordToSend;
+          employee.plain_password = passwordToSend;
+          await employee.save();
+        }
+
+        await sendCredentials(
+          employee,
+          passwordToSend,
+          notificationChannels,
+          false
+        );
+
+        results.successCount++;
+      } catch (err) {
+        console.error(`[EmployeeController] Failed to resend for ${employee.emp_no}:`, err.message);
+        results.failCount++;
+        results.details.push({ emp_no: employee.emp_no, error: err.message });
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Bulk resend complete. Sent: ${results.successCount}, Failed: ${results.failCount}`,
+      data: results
+    });
+
+  } catch (error) {
+    console.error('Error in bulk resend credentials:', error);
+    res.status(500).json({ success: false, message: 'Error in bulk resend credentials', error: error.message });
   }
 };

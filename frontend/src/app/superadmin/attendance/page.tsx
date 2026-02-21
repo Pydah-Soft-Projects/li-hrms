@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
 import { format, parseISO } from 'date-fns';
+import { alertSuccess, alertError, alertConfirm, alertLoading } from '@/lib/customSwal';
 
 interface AttendanceRecord {
   date: string;
@@ -1037,9 +1038,12 @@ export default function AttendancePage() {
   };
 
   const handleSyncShifts = async () => {
-    if (!confirm('This will sync shifts for all attendance records that don\'t have shifts assigned. This may take a few minutes. Continue?')) {
-      return;
-    }
+    const result = await alertConfirm(
+      'Sync Shifts?',
+      'This will sync shifts for all attendance records that don\'t have shifts assigned. This may take a few minutes.',
+      'Yes, Sync Now'
+    );
+    if (!result.isConfirmed) return;
 
     try {
       setSyncingShifts(true);
@@ -1047,17 +1051,19 @@ export default function AttendancePage() {
       setSuccess('');
       const response = await api.syncShifts();
       if (response.success) {
-        setSuccess(response.message || `Processed ${response.data?.processed || 0} records: ${response.data?.assigned || 0} assigned, ${response.data?.confused || 0} flagged for review`);
+        alertSuccess('Success', response.message || `Processed ${response.data?.processed || 0} records: ${response.data?.assigned || 0} assigned, ${response.data?.confused || 0} flagged for review`);
         loadMonthlyAttendance();
       } else {
-        setError(response.message || 'Failed to sync shifts');
+        alertError('Failed', response.message || 'Failed to sync shifts');
       }
     } catch (err: any) {
-      setError(err.message || 'An error occurred during shift sync');
+      alertError('Error', err.message || 'An error occurred during shift sync');
     } finally {
       setSyncingShifts(false);
     }
   };
+
+
 
   const handleUpdateOutTime = async () => {
     if (!selectedRecordForOutTime || !outTimeValue) {
@@ -1204,6 +1210,8 @@ export default function AttendancePage() {
   const daysArray = useMemo(() => Array.from({ length: daysInMonth }, (_, i) => i + 1), [daysInMonth]);
 
   // Virtualized row component
+
+
 
 
   console.log('Attendance rendering. Data length:', filteredMonthlyData.length);
@@ -1405,6 +1413,8 @@ export default function AttendancePage() {
                 </svg>
                 Upload
               </button>
+
+
             </div>
           </div>
         </div>
@@ -3008,7 +3018,7 @@ export default function AttendancePage() {
                       {/* Rupees In Words */}
                       <div className="border border-slate-300 bg-slate-50 px-4 py-2 dark:border-slate-600 dark:bg-slate-800">
                         <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Rupees In Words:</span>
-                        <span className="ml-2 text-sm text-slate-900 dark:text-white">{numberToWords(payslipData.netSalary || 0)}</span>
+                        {/* removed numberToWords display */}
                       </div>
                     </div>
 
@@ -3034,90 +3044,4 @@ export default function AttendancePage() {
       </div>
     </div >
   );
-}
-
-// Helper function to convert number to words
-function numberToWords(num: number): string {
-  const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
-  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
-
-  if (num === 0) return 'Zero Rupees Only';
-
-  const integerPart = Math.floor(num);
-  const decimalPart = Math.round((num - integerPart) * 100);
-
-  const convertHundreds = (n: number): string => {
-    if (n === 0) return '';
-    let result = '';
-    if (n >= 100) {
-      const hundreds = Math.floor(n / 100);
-      if (hundreds > 0 && ones[hundreds]) {
-        result += ones[hundreds] + ' Hundred ';
-      }
-      n %= 100;
-    }
-    if (n >= 20) {
-      const tensPlace = Math.floor(n / 10);
-      if (tensPlace > 0 && tens[tensPlace]) {
-        result += tens[tensPlace] + ' ';
-      }
-      n %= 10;
-    }
-    if (n > 0 && ones[n]) {
-      result += ones[n] + ' ';
-    }
-    return result.trim();
-  };
-
-  let words = '';
-  let remaining = integerPart;
-
-  const crores = Math.floor(remaining / 10000000);
-  if (crores > 0) {
-    const croreWords = convertHundreds(crores);
-    if (croreWords) {
-      words += croreWords + ' Crore ';
-    }
-    remaining %= 10000000;
-  }
-
-  const lakhs = Math.floor(remaining / 100000);
-  if (lakhs > 0) {
-    const lakhWords = convertHundreds(lakhs);
-    if (lakhWords) {
-      words += lakhWords + ' Lakh ';
-    }
-    remaining %= 100000;
-  }
-
-  const thousands = Math.floor(remaining / 1000);
-  if (thousands > 0) {
-    const thousandWords = convertHundreds(thousands);
-    if (thousandWords) {
-      words += thousandWords + ' Thousand ';
-    }
-    remaining %= 1000;
-  }
-
-  if (remaining > 0) {
-    const remainingWords = convertHundreds(remaining);
-    if (remainingWords) {
-      words += remainingWords;
-    }
-  }
-
-  if (decimalPart > 0) {
-    if (words.trim()) {
-      words += ` and ${decimalPart}/100`;
-    } else {
-      words += `${decimalPart}/100`;
-    }
-  }
-
-  words = words.trim();
-  if (!words) {
-    return 'Zero Rupees Only';
-  }
-
-  return words + ' Rupees Only';
 }

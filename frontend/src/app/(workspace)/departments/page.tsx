@@ -114,6 +114,12 @@ export default function DepartmentsPage() {
   const [showLinkDesignationDialog, setShowLinkDesignationDialog] = useState(false);
   const [unlinkedDesignations, setUnlinkedDesignations] = useState<any[]>([]);
   const [selectedLinkDesignationId, setSelectedLinkDesignationId] = useState<string>('');
+  const [linkDesignationSearch, setLinkDesignationSearch] = useState('');
+  const [departmentSearch, setDepartmentSearch] = useState('');
+  const [divisionSearch, setDivisionSearch] = useState('');
+  const [existingDesignationSearch, setExistingDesignationSearch] = useState('');
+  const [shiftSearch, setShiftSearch] = useState('');
+  const [loadingDesignations, setLoadingDesignations] = useState(false);
 
   useEffect(() => {
     loadDepartments();
@@ -181,6 +187,7 @@ export default function DepartmentsPage() {
   };
 
   const loadDesignations = async (departmentId: string) => {
+    setLoadingDesignations(true);
     try {
       const response = await api.getDesignations(departmentId);
       if (response.success && response.data) {
@@ -188,6 +195,8 @@ export default function DepartmentsPage() {
       }
     } catch (err) {
       console.error('Error loading designations:', err);
+    } finally {
+      setLoadingDesignations(false);
     }
   };
 
@@ -281,6 +290,7 @@ export default function DepartmentsPage() {
       if (response.success) {
         setShowShiftDialog(null);
         setSelectedShiftIds([]);
+        setShiftSearch('');
         loadDepartments();
       } else {
         setError(response.message || 'Failed to assign shifts');
@@ -357,6 +367,7 @@ export default function DepartmentsPage() {
       if (response.success) {
         setShowLinkDesignationDialog(false);
         setSelectedLinkDesignationId('');
+        setLinkDesignationSearch('');
         loadDesignations(showDesignationDialog); // Refresh list
       } else {
         setError(response.message || 'Failed to link designation');
@@ -388,6 +399,7 @@ export default function DepartmentsPage() {
     setDescription('');
     setHodId('');
     setDivisionId('');
+    setDivisionSearch('');
     setError('');
   };
 
@@ -469,6 +481,7 @@ export default function DepartmentsPage() {
       if (response.success) {
         setShowDesignationShiftDialog(null);
         setSelectedDesignationShiftIds([]);
+        setShiftSearch('');
 
         // Update local state directly with the returned populated designation
         if (response.data) {
@@ -937,6 +950,7 @@ export default function DepartmentsPage() {
               onClick={() => {
                 setShowShiftDialog(null);
                 setSelectedShiftIds([]);
+                setShiftSearch('');
               }}
             />
             <div className="relative z-50 w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl shadow-blue-500/10 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/95">
@@ -951,9 +965,10 @@ export default function DepartmentsPage() {
                 </div>
                 <button
                   onClick={() => {
-                    setShowShiftDialog(null);
-                    setSelectedShiftIds([]);
-                  }}
+                setShowShiftDialog(null);
+                setSelectedShiftIds([]);
+                setShiftSearch('');
+              }}
                   className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 focus:outline-none focus:ring-2 focus:ring-red-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
                 >
                   <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -967,6 +982,18 @@ export default function DepartmentsPage() {
                   <label className="mb-3 block text-sm font-medium text-slate-700 dark:text-slate-300">
                     Select Shifts (Multiple selection allowed)
                   </label>
+                  <div className="relative mb-3">
+                    <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    <input
+                      type="text"
+                      placeholder="Search shifts by name or time..."
+                      value={shiftSearch}
+                      onChange={(e) => setShiftSearch(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-4 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    />
+                  </div>
                   {loadingShifts ? (
                     <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-slate-50/50 py-12 dark:border-slate-700 dark:bg-slate-900/50">
                       <Spinner />
@@ -979,7 +1006,16 @@ export default function DepartmentsPage() {
                     </div>
                   ) : (
                     <div className="max-h-64 space-y-2 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50/30 p-4 dark:border-slate-700 dark:bg-slate-900/30">
-                      {shifts.map((shift) => (
+                      {shifts
+                        .filter((shift) => {
+                          const search = shiftSearch.toLowerCase();
+                          if (!search) return true;
+                          const name = (shift.name || '').toLowerCase();
+                          const startTime = (shift.startTime || '').toLowerCase();
+                          const endTime = (shift.endTime || '').toLowerCase();
+                          return name.includes(search) || startTime.includes(search) || endTime.includes(search);
+                        })
+                        .map((shift) => (
                         <label
                           key={shift._id}
                           className={`group flex cursor-pointer items-center gap-3 rounded-2xl border p-4 transition-all ${selectedShiftIds.includes(shift._id)
@@ -1031,9 +1067,10 @@ export default function DepartmentsPage() {
                   <button
                     type="button"
                     onClick={() => {
-                      setShowShiftDialog(null);
-                      setSelectedShiftIds([]);
-                    }}
+                setShowShiftDialog(null);
+                setSelectedShiftIds([]);
+                setShiftSearch('');
+              }}
                     className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
                   >
                     Cancel
@@ -1353,6 +1390,7 @@ export default function DepartmentsPage() {
               onClick={() => {
                 setShowDesignationShiftDialog(null);
                 setSelectedDesignationShiftIds([]);
+                setShiftSearch('');
               }}
             />
             <div className="relative z-[60] w-full max-w-lg max-h-[85vh] overflow-y-auto rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl shadow-purple-500/10 backdrop-blur-sm dark:border-slate-800 dark:bg-slate-950/95">
@@ -1369,6 +1407,7 @@ export default function DepartmentsPage() {
                   onClick={() => {
                     setShowDesignationShiftDialog(null);
                     setSelectedDesignationShiftIds([]);
+                    setShiftSearch('');
                   }}
                   className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 focus:outline-none focus:ring-2 focus:ring-red-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
                 >
@@ -1383,6 +1422,18 @@ export default function DepartmentsPage() {
                   <label className="mb-3 block text-sm font-medium text-slate-700 dark:text-slate-300">
                     Select Shifts (Optional - overrides department shifts)
                   </label>
+                  <div className="relative mb-3">
+                    <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    <input
+                      type="text"
+                      placeholder="Search shifts by name or time..."
+                      value={shiftSearch}
+                      onChange={(e) => setShiftSearch(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-4 text-sm focus:border-purple-400 focus:outline-none focus:ring-2 focus:ring-purple-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    />
+                  </div>
                   {loadingShifts ? (
                     <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-slate-50/50 py-8 dark:border-slate-700 dark:bg-slate-900/50">
                       <Spinner />
@@ -1395,7 +1446,16 @@ export default function DepartmentsPage() {
                     </div>
                   ) : (
                     <div className="max-h-52 space-y-2 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50/30 p-3 dark:border-slate-700 dark:bg-slate-900/30">
-                      {shifts.map((shift) => (
+                      {shifts
+                        .filter((shift) => {
+                          const search = shiftSearch.toLowerCase();
+                          if (!search) return true;
+                          const name = (shift.name || '').toLowerCase();
+                          const startTime = (shift.startTime || '').toLowerCase();
+                          const endTime = (shift.endTime || '').toLowerCase();
+                          return name.includes(search) || startTime.includes(search) || endTime.includes(search);
+                        })
+                        .map((shift) => (
                         <label
                           key={shift._id}
                           className={`group flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition-all ${selectedDesignationShiftIds.includes(shift._id)
@@ -1459,6 +1519,7 @@ export default function DepartmentsPage() {
                     onClick={() => {
                       setShowDesignationShiftDialog(null);
                       setSelectedDesignationShiftIds([]);
+                      setShiftSearch('');
                     }}
                     className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition-all hover:border-slate-300 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
                   >
@@ -1580,6 +1641,20 @@ export default function DepartmentsPage() {
 
 
         {/* Departments Grid (Card-based) */}
+        <div className="mb-6">
+          <div className="relative max-w-md">
+            <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input
+              type="text"
+              placeholder="Search departments by name, code, or division..."
+              value={departmentSearch}
+              onChange={(e) => setDepartmentSearch(e.target.value)}
+              className="w-full rounded-2xl border border-slate-200 bg-white py-2.5 pl-9 pr-4 text-sm focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+            />
+          </div>
+        </div>
         {
           loading ? (
             <div className="flex flex-col items-center justify-center rounded-3xl border border-slate-200 bg-white/95 py-16 shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
@@ -1596,9 +1671,38 @@ export default function DepartmentsPage() {
               <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">No departments found</p>
               <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Create your first department to get started</p>
             </div>
-          ) : (
+          ) : (() => {
+            const filteredDepts = departments.filter((dept) => {
+              const search = departmentSearch.toLowerCase();
+              if (!search) return true;
+              const name = (dept.name || '').toLowerCase();
+              const code = (dept.code || '').toLowerCase();
+              if (name.includes(search) || code.includes(search)) return true;
+              const divIds = dept.divisions || [];
+              return divIds.some((divId) => {
+                const div = typeof divId === 'string' ? divisions.find((d) => d._id === divId) : divId;
+                if (!div) return false;
+                const divName = (div.name || '').toLowerCase();
+                const divCode = (div.code || '').toLowerCase();
+                return divName.includes(search) || divCode.includes(search);
+              });
+            });
+            if (filteredDepts.length === 0) {
+              return (
+                <div className="rounded-3xl border border-slate-200 bg-white/95 p-12 text-center shadow-lg dark:border-slate-800 dark:bg-slate-950/95">
+                  <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
+                    <svg className="h-8 w-8 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                  </div>
+                  <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">No matching departments</p>
+                  <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Try adjusting your search</p>
+                </div>
+              );
+            }
+            return (
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {departments.map((dept) => (
+              {filteredDepts.map((dept) => (
                 <div
                   key={dept._id}
                   className="group relative overflow-hidden rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg shadow-blue-100/40 transition-all hover:border-blue-300 hover:shadow-xl hover:shadow-blue-200/50 dark:border-slate-800 dark:bg-slate-950/95 dark:shadow-none dark:hover:border-slate-700"
@@ -1709,7 +1813,8 @@ export default function DepartmentsPage() {
                 </div>
               ))}
             </div>
-          )
+            );
+          })()
         }
 
         {/* Bulk Upload Departments Dialog */}
