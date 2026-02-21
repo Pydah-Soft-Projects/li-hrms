@@ -5,6 +5,7 @@ const Division = require('../../departments/model/Division');
 const jwt = require('jsonwebtoken');
 const Setting = require('../../settings/model/Settings');
 const { generatePassword, sendCredentials } = require('../../shared/services/passwordNotificationService');
+const EmployeeApplication = require('../../employee-applications/model/EmployeeApplication');
 
 
 // Generate JWT Token
@@ -719,6 +720,23 @@ exports.deleteUser = async (req, res) => {
         success: false,
         message: 'Cannot delete super admin user',
       });
+    }
+
+    // If this user is linked to an employee, reject any active application for that employee
+    const empNo = user.employeeId;
+    if (empNo) {
+      const application = await EmployeeApplication.findOne({
+        emp_no: empNo,
+        status: { $in: ['pending', 'verified', 'approved'] },
+      });
+      if (application) {
+        application.status = 'rejected';
+        application.rejectedBy = req.user?._id || null;
+        application.rejectedAt = new Date();
+        application.rejectionComments = 'User account deleted by administrator.';
+        await application.save();
+        console.log(`[deleteUser] Rejected application ${application._id} for employee ${empNo} (user deleted)`);
+      }
     }
 
     await user.deleteOne();
