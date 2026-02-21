@@ -14,6 +14,26 @@ import {
   validateEmployeeRow,
   ParsedRow,
 } from '@/lib/bulkUpload';
+import {
+  UserCheck,
+  UserX,
+  Clock as LucideClock,
+  ShieldCheck,
+  CheckCircle,
+  MoreVertical,
+  ChevronRight,
+  ChevronLeft,
+  Plus,
+  Search,
+  Filter,
+  Eye,
+  Edit2,
+  Trash2,
+  Mail,
+  Upload,
+  Settings,
+  Users
+} from 'lucide-react';
 
 
 
@@ -223,7 +243,12 @@ export default function EmployeesPage() {
   const [formSettings, setFormSettings] = useState<FormSettings | null>(null);
   const [applicationFormData, setApplicationFormData] = useState<Partial<EmployeeApplication & { proposedSalary: number }>>({ ...initialFormState, proposedSalary: 0 });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
-  const [approvalData, setApprovalData] = useState({ approvedSalary: 0, doj: '', comments: '' });
+  const [approvalData, setApprovalData] = useState<{
+    approvedSalary: number;
+    second_salary?: number;
+    doj: string;
+    comments: string;
+  }>({ approvedSalary: 0, doj: '', comments: '' });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [notificationChannels, setNotificationChannels] = useState<{ sms: boolean; whatsapp: boolean; email: boolean }>({
@@ -1801,14 +1826,38 @@ export default function EmployeesPage() {
         // Refresh list
         loadApplications();
       } else {
-        // ... error handling
+        // Display validation errors if available
         const errorMsg = response.message || 'Operation failed';
         const errorDetails = (response as any).errors ? Object.values((response as any).errors).join(', ') : '';
         setError(errorDetails ? `${errorMsg}: ${errorDetails}` : errorMsg);
+        console.error('Update error:', response);
       }
     } catch (err) {
-      console.error('Submit error:', err);
       setError('An error occurred');
+      console.error(err);
+    }
+  };
+
+  const handleVerifyApplication = async (application: EmployeeApplication) => {
+    if (!confirm(`Verify application for ${application.employee_name} and create employee record?`)) return;
+
+    try {
+      setLoadingApplications(true);
+      setError('');
+      setSuccess('');
+      const response = await api.verifyEmployeeApplication(application._id);
+
+      if (response.success) {
+        setSuccess('Application verified and employee created! Now awaiting final salary approval.');
+        loadApplications();
+        loadEmployees();
+      } else {
+        setError(response.message || 'Verification failed');
+      }
+    } catch (err: any) {
+      setError(err.message || 'An error occurred');
+    } finally {
+      setLoadingApplications(false);
     }
   };
 
@@ -1829,8 +1878,9 @@ export default function EmployeesPage() {
     }
 
     try {
-      const response = await api.approveEmployeeApplication(selectedApplication._id, {
+      const response = await api.approveEmployeeSalary(selectedApplication._id, {
         approvedSalary: approvalData.approvedSalary,
+        second_salary: (approvalData as any).second_salary || undefined,
         doj: approvalData.doj || undefined,
         comments: approvalData.comments,
         employeeAllowances: buildOverridePayload(approvalComponentDefaults.allowances, approvalOverrideAllowances, approvalOverrideAllowancesBasedOnPresentDays, 'allowance'),
@@ -1898,6 +1948,7 @@ export default function EmployeesPage() {
 
     setApprovalData({
       approvedSalary: application.approvedSalary || application.proposedSalary,
+      second_salary: application.second_salary || undefined,
       doj: dojValue,
       comments: '',
     });
@@ -2295,202 +2346,180 @@ export default function EmployeesPage() {
                 <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Create a new employee application to get started</p>
               </div>
             ) : (
-              <div className="space-y-6">
-                {/* Pending Applications */}
-                {applications.length > 0 && (
-                  <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
-                    <div className="border-b border-slate-200 bg-gradient-to-r from-yellow-50 to-amber-50/50 px-6 py-4 dark:border-slate-700 dark:from-yellow-900/20 dark:to-amber-900/10">
-                      <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Pending Approvals</h3>
+              <div className="space-y-8">
+                {/* Stage 1: Pending Applications */}
+                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
+                  <div className="border-b border-slate-200 bg-gradient-to-r from-yellow-50 to-amber-50/50 px-6 py-4 dark:border-slate-700 dark:from-yellow-900/20 dark:to-amber-900/10 flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider">Stage 1: Pending Verification</h3>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Applications awaiting initial review and employee creation</p>
                     </div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full">
-                        <thead>
-                          <tr className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-green-50/30 dark:border-slate-700 dark:from-slate-900 dark:to-green-900/10">
-                            <th className="px-6 py-4 text-left">
-                              <input
-                                type="checkbox"
-                                checked={selectedApplicationIds.length === pendingApplications.length && pendingApplications.length > 0}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setSelectedApplicationIds(pendingApplications.map(app => app._id));
-                                  } else {
-                                    setSelectedApplicationIds([]);
-                                  }
-                                }}
-                                className="h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500 dark:border-slate-700 dark:bg-slate-800"
-                              />
-                            </th>
-                            <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Emp No</th>
-                            <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Name</th>
-                            <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Division</th>
-                            <RenderFilterHeader
-                              label="Department"
-                              filterKey="department.name"
-                              options={Array.from(new Set(pendingApplications.map(app => app.department?.name).filter(Boolean))) as string[]}
-                              currentFilters={applicationFilters}
-                              setFilters={setApplicationFilters}
-                              isActive={activeFilterColumn === 'department.name'}
-                              onToggle={() => setActiveFilterColumn(activeFilterColumn === 'department.name' ? null : 'department.name')}
-                            />
-                            <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Proposed Salary</th>
-                            <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Created By</th>
-                            <th className="px-6 py-4 text-right text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                          {pendingApplications.length === 0 ? (
-                            <tr>
-                              <td colSpan={8} className="px-6 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
-                                No pending applications found matching your criteria
-                              </td>
-                            </tr>
-                          ) : (
-                            pendingApplications.map((app) => (
-                              <tr key={app._id} className="transition-colors hover:bg-green-50/30 dark:hover:bg-green-900/10">
-                                <td className="px-6 py-4">
-                                  <input
-                                    type="checkbox"
-                                    checked={selectedApplicationIds.includes(app._id)}
-                                    onChange={() => toggleSelectApplication(app._id)}
-                                    className="h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500 dark:border-slate-700 dark:bg-slate-800"
-                                  />
-                                </td>
-                                <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-green-600 dark:text-green-400">
-                                  {app.emp_no}
-                                </td>
-                                <td className="whitespace-nowrap px-6 py-4">
-                                  <div className="text-sm font-medium text-slate-900 dark:text-slate-100">{app.employee_name}</div>
-                                  {app.email && (
-                                    <div className="text-xs text-slate-500 dark:text-slate-400">{app.email}</div>
-                                  )}
-                                </td>
-                                <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
-                                  {typeof app.division_id === 'object' && app.division_id ? (app.division_id as any).name : (app.division?.name || '-')}
-                                </td>
-                                <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
-                                  {typeof app.department_id === 'object' && app.department_id ? (app.department_id as any).name : (app.department?.name || '-')}
-                                </td>
-                                <td className="whitespace-nowrap px-6 py-4 text-sm font-semibold text-slate-900 dark:text-slate-100">
-                                  ₹{app.proposedSalary.toLocaleString()}
-                                </td>
-                                <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
-                                  {app.createdBy?.name || '-'}
-                                </td>
-                                <td className="whitespace-nowrap px-6 py-4 text-right">
-                                  {(userRole === 'super_admin' || userRole === 'sub_admin') && (
-                                    <button
-                                      onClick={() => openApprovalDialog(app)}
-                                      className="rounded-lg px-4 py-2 text-sm font-semibold text-white bg-gradient-to-r from-green-500 to-green-500 hover:from-green-600 hover:to-green-600 transition-all"
-                                    >
-                                      Review
-                                    </button>
-                                  )}
-                                </td>
-                              </tr>
-                            ))
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
+                    <span className="px-2.5 py-1 rounded-full bg-yellow-100 text-yellow-700 text-[10px] font-bold uppercase dark:bg-yellow-900/30 dark:text-yellow-400">
+                      {pendingApplications.length} Pending
+                    </span>
                   </div>
-                )}
-
-                {/* Approved/Rejected Applications */}
-                {applications.length > 0 && (
-                  <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
-                    <div className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-green-50/30 px-6 py-4 dark:border-slate-700 dark:from-slate-900 dark:to-green-900/10">
-                      <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Processed Applications</h3>
-                    </div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full">
-                        <thead>
-                          <tr className="bg-slate-50 dark:bg-slate-900/50">
-                            <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                              Emp No
-                            </th>
-                            <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                              Name
-                            </th>
-                            <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                              Division
-                            </th>
-                            <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                              Department
-                            </th>
-                            <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                              Proposed Salary
-                            </th>
-                            <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                              Approved Salary
-                            </th>
-                            <RenderFilterHeader
-                              label="Status"
-                              filterKey="status"
-                              options={['approved', 'rejected']}
-                              currentFilters={applicationFilters}
-                              setFilters={setApplicationFilters}
-                              isActive={activeFilterColumn === 'status'}
-                              onToggle={() => setActiveFilterColumn(activeFilterColumn === 'status' ? null : 'status')}
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-slate-200 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-900/30">
+                          <th className="px-6 py-4 text-left">
+                            <input
+                              type="checkbox"
+                              checked={selectedApplicationIds.length === pendingApplications.length && pendingApplications.length > 0}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedApplicationIds(pendingApplications.map(app => app._id));
+                                } else {
+                                  setSelectedApplicationIds([]);
+                                }
+                              }}
+                              className="h-4 w-4 rounded border-slate-300 text-green-600"
                             />
-                            <RenderFilterHeader
-                              label="Processed By"
-                              filterKey="processedBy"
-                              options={Array.from(new Set([...approvedApplications, ...rejectedApplications].map(app => app.approvedBy?.name || app.rejectedBy?.name).filter(Boolean))) as string[]}
-                              currentFilters={applicationFilters}
-                              setFilters={setApplicationFilters}
-                              isActive={activeFilterColumn === 'processedBy'}
-                              onToggle={() => setActiveFilterColumn(activeFilterColumn === 'processedBy' ? null : 'processedBy')}
-                            />
+                          </th>
+                          <th className="px-6 py-4 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500">Employee</th>
+                          <th className="px-6 py-4 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500">Department</th>
+                          <th className="px-6 py-4 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500">Proposed Salary</th>
+                          <th className="px-6 py-4 text-right text-[10px] font-bold uppercase tracking-widest text-slate-500">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {pendingApplications.length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className="px-6 py-12 text-center text-sm text-slate-500">No applications pending verification</td>
                           </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                          {paginatedApplications.length === 0 ? (
-                            <tr>
-                              <td colSpan={8} className="px-6 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
-                                No processed applications found matching your criteria
+                        ) : (
+                          pendingApplications.map((app) => (
+                            <tr key={app._id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50">
+                              <td className="px-6 py-4">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedApplicationIds.includes(app._id)}
+                                  onChange={() => toggleSelectApplication(app._id)}
+                                  className="h-4 w-4 rounded border-slate-300 text-green-600"
+                                />
                               </td>
-                            </tr>
-                          ) : (
-                            paginatedApplications.map((app) => (
-                              <tr key={app._id} className="transition-colors hover:bg-green-50/30 dark:hover:bg-green-900/10">
-                                <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-green-600 dark:text-green-400">
-                                  {app.emp_no}
-                                </td>
-                                <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-slate-900 dark:text-slate-100">
-                                  {app.employee_name}
-                                </td>
-                                <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
-                                  {(app.division_id as any)?.name || app.division?.name || '-'}
-                                </td>
-                                <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
+                              <td className="px-6 py-4">
+                                <div className="font-bold text-slate-900 dark:text-slate-100">{app.employee_name}</div>
+                                <div className="text-[10px] text-slate-500">{app.emp_no} • {app.email || 'No email'}</div>
+                              </td>
+                              <td className="px-6 py-4">
+                                <span className="text-xs font-medium text-slate-600 dark:text-slate-400">
                                   {(app.department_id as any)?.name || app.department?.name || '-'}
-                                </td>
-                                <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
-                                  ₹{app.proposedSalary.toLocaleString()}
-                                </td>
-                                <td className="whitespace-nowrap px-6 py-4 text-sm font-semibold text-slate-900 dark:text-slate-100">
-                                  {app.approvedSalary ? `₹${app.approvedSalary.toLocaleString()}` : '-'}
-                                </td>
-                                <td className="whitespace-nowrap px-6 py-4">
-                                  <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${app.status === 'approved'
-                                    ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                                    : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                                    }`}>
-                                    {app.status}
-                                  </span>
-                                </td>
-                                <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
-                                  {app.approvedBy?.name || app.rejectedBy?.name || '-'}
-                                </td>
-                              </tr>
-
-                            ))
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
+                                </span>
+                              </td>
+                              <td className="px-6 py-4">
+                                <span className="text-xs font-bold text-slate-900 dark:text-slate-100">₹{app.proposedSalary.toLocaleString()}</span>
+                              </td>
+                              <td className="px-6 py-4 text-right">
+                                <button
+                                  onClick={() => handleVerifyApplication(app)}
+                                  className="px-4 py-1.5 rounded-lg bg-indigo-600 text-white text-[10px] font-bold uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-600/20"
+                                >
+                                  Verify
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
                   </div>
-                )}
+                </div>
+
+                {/* Stage 2: Verified Applications */}
+                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
+                  <div className="border-b border-slate-200 bg-gradient-to-r from-indigo-50 to-blue-50/50 px-6 py-4 dark:border-slate-700 dark:from-indigo-900/20 dark:to-blue-900/10 flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider">Stage 2: Awaiting Salary Approval</h3>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Employee record created, finalizing salary structure</p>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-bold uppercase dark:bg-indigo-900/30 dark:text-indigo-400">
+                      {applications.filter(app => app.status === 'verified').length} Verified
+                    </span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {applications.filter(app => app.status === 'verified').length === 0 ? (
+                          <tr>
+                            <td className="px-6 py-12 text-center text-sm text-slate-500">No applications awaiting salary approval</td>
+                          </tr>
+                        ) : (
+                          applications.filter(app => app.status === 'verified').map((app) => (
+                            <tr key={app._id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50">
+                              <td className="px-6 py-4">
+                                <div className="font-bold text-slate-900 dark:text-slate-100">{app.employee_name}</div>
+                                <div className="text-[10px] text-slate-500">
+                                  {app.emp_no} • Verified by {app.verifiedBy?.name || 'System'}
+                                  {app.verifiedAt && ` on ${new Date(app.verifiedAt).toLocaleDateString()}`}
+                                </div>
+                              </td>
+                              <td className="px-6 py-4">
+                                <span className="text-xs font-bold text-slate-900 dark:text-slate-100">₹{app.proposedSalary.toLocaleString()}</span>
+                              </td>
+                              <td className="px-6 py-4 text-right">
+                                <button
+                                  onClick={() => openApprovalDialog(app)}
+                                  className="px-4 py-1.5 rounded-lg bg-green-600 text-white text-[10px] font-bold uppercase tracking-widest hover:bg-green-700 transition-all shadow-lg shadow-green-600/20"
+                                >
+                                  Finalize Salary
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Stage 3: Processed Applications */}
+                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
+                  <div className="border-b border-slate-200 bg-slate-50/80 px-6 py-4 dark:border-slate-700 dark:bg-slate-900/50">
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider">Finalized Applications</h3>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="bg-slate-50/30 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                          <th className="px-6 py-3 text-left">Employee</th>
+                          <th className="px-6 py-3 text-left">Status</th>
+                          <th className="px-6 py-3 text-left">Final Salary</th>
+                          <th className="px-6 py-3 text-left">Processed By</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {paginatedApplications.filter(app => app.status === 'approved' || app.status === 'rejected').length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className="px-6 py-8 text-center text-sm text-slate-500">No processed applications</td>
+                          </tr>
+                        ) : (
+                          paginatedApplications.filter(app => app.status === 'approved' || app.status === 'rejected').map((app) => (
+                            <tr key={app._id}>
+                              <td className="px-6 py-4">
+                                <div className="font-bold text-slate-900 dark:text-slate-100">{app.employee_name}</div>
+                                <div className="text-[10px] text-slate-500">{app.emp_no}</div>
+                              </td>
+                              <td className="px-6 py-4">
+                                <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${app.status === 'approved' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                  {app.status}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4">
+                                <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                                  {app.approvedSalary ? `₹${app.approvedSalary.toLocaleString()}` : '-'}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4">
+                                <div className="text-[10px] text-slate-500">{app.approvedBy?.name || app.rejectedBy?.name || '-'}</div>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
             )}
           </>
@@ -2594,9 +2623,10 @@ export default function EmployeesPage() {
                                     }`}>
                                     {isEmployeeActive(employee) ? 'Active' : 'Inactive'}
                                   </span>
-                                  {employee.leftDate && (
-                                    <span className="inline-flex rounded-full px-2.5 py-1 text-xs font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400">
-                                      Left: {new Date(employee.leftDate).toLocaleDateString()}
+                                  {employee.salaryStatus === 'pending_approval' && (
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2.5 py-1 text-[10px] font-bold text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 uppercase tracking-wider">
+                                      <LucideClock className="w-3 h-3" />
+                                      SALARY PENDING
                                     </span>
                                   )}
                                 </div>
@@ -3061,6 +3091,15 @@ export default function EmployeesPage() {
                         <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Created By</p>
                         <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{selectedApplication.createdBy?.name || '-'}</p>
                       </div>
+                      {selectedApplication.verifiedBy && (
+                        <div>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Verified By</p>
+                          <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                            {selectedApplication.verifiedBy.name}
+                            {selectedApplication.verifiedAt && ` on ${new Date(selectedApplication.verifiedAt).toLocaleDateString()}`}
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -3179,23 +3218,39 @@ export default function EmployeesPage() {
                       {/* Approved Salary Input */}
                       <div>
                         <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                          Approved Salary *
+                          Approved Salary (Monthly Gross)
                         </label>
                         <input
                           type="number"
-                          value={approvalData.approvedSalary || ''}
+                          value={approvalData.approvedSalary}
                           onChange={(e) => setApprovalData({ ...approvalData, approvedSalary: Number(e.target.value) })}
-                          required
                           min="0"
                           step="0.01"
-                          className="w-full rounded-xl border-2 border-green-400 bg-white px-4 py-2.5 text-lg font-semibold transition-all focus:border-green-500 focus:outline-none focus:ring-2 focus:ring-green-500/20 dark:border-green-600 dark:bg-slate-900 dark:text-slate-100"
-                          placeholder="Enter approved salary"
+                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                         />
                         {approvalData.approvedSalary !== selectedApplication.proposedSalary && (
                           <p className="mt-2 text-xs text-green-600 dark:text-green-400">
                             ✓ Salary modified from proposed amount
                           </p>
                         )}
+                      </div>
+
+                      <div>
+                        <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                          Second Salary / Additional (Optional)
+                        </label>
+                        <input
+                          type="number"
+                          value={(approvalData as any).second_salary || ''}
+                          onChange={(e) => setApprovalData({ ...approvalData, second_salary: Number(e.target.value) } as any)}
+                          min="0"
+                          step="0.01"
+                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold transition-all focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                          placeholder="Enter second salary if any"
+                        />
+                        <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                          Additional salary component (e.g. fixed allowance not in components)
+                        </p>
                       </div>
 
                       {/* Date of Joining */}
@@ -3411,9 +3466,9 @@ export default function EmployeesPage() {
                   <div className="flex gap-3 pt-2">
                     <button
                       onClick={handleApproveApplication}
-                      className="flex-1 rounded-2xl bg-gradient-to-r from-green-500 to-green-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
+                      className="flex-1 rounded-2xl bg-gradient-to-r from-indigo-500 to-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition-all hover:scale-[1.02] active:scale-95"
                     >
-                      Approve & Create Employee
+                      Approve Salary & Finalize
                     </button>
                     <button
                       onClick={handleRejectApplication}
@@ -4643,5 +4698,3 @@ export default function EmployeesPage() {
     </div >
   );
 }
-
-// 
