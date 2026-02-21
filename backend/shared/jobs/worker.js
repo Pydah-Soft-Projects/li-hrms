@@ -389,21 +389,37 @@ const startWorkers = () => {
                 const empNo = String(entry.employeeNumber || '').toUpperCase();
 
                 if (entry.status === 'WO' || entry.status === 'HOL') {
-                    // Update or Create AttendanceDaily
-                    await AttendanceDaily.findOneAndUpdate(
-                        { employeeNumber: empNo, date: entry.date },
-                        {
-                            $set: {
-                                status: entry.status === 'WO' ? 'WEEK_OFF' : 'HOLIDAY',
-                                shifts: [], // Clear shifts
-                                totalWorkingHours: 0,
-                                totalOTHours: 0,
-                                source: ['roster-sync'],
-                                notes: entry.status === 'WO' ? 'Week Off' : 'Holiday'
-                            }
-                        },
-                        { upsert: true, new: true }
-                    );
+                    // Update or Create AttendanceDaily via .save() to trigger hooks
+                    let dailyRecord = await AttendanceDaily.findOne({
+                        employeeNumber: empNo,
+                        date: entry.date
+                    });
+
+                    const updateFields = {
+                        status: entry.status === 'WO' ? 'WEEK_OFF' : 'HOLIDAY',
+                        shifts: [], // Clear shifts
+                        totalWorkingHours: 0,
+                        totalOTHours: 0,
+                        notes: entry.status === 'WO' ? 'Week Off' : 'Holiday'
+                    };
+
+                    if (!dailyRecord) {
+                        dailyRecord = new AttendanceDaily({
+                            employeeNumber: empNo,
+                            date: entry.date,
+                            ...updateFields,
+                            source: ['roster-sync']
+                        });
+                    } else {
+                        Object.keys(updateFields).forEach(key => {
+                            dailyRecord[key] = updateFields[key];
+                        });
+                        if (!dailyRecord.source.includes('roster-sync')) {
+                            dailyRecord.source.push('roster-sync');
+                        }
+                    }
+
+                    await dailyRecord.save();
                     syncedCount++;
                 } else if (entry.shiftId) {
                     // It's a shift. Check if currently WO/HOL and remove if so

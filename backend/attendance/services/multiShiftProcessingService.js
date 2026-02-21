@@ -445,16 +445,32 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
         // Step 8: Update or create daily record
         console.log(`[Multi-Shift Processing] Updating daily record with ${totals.totalShifts} shift(s)`);
 
-        const dailyRecord = await AttendanceDaily.findOneAndUpdate(
-            { employeeNumber, date },
-            {
-                $set: updateData,
-                $addToSet: { source: 'biometric-realtime' },
-            },
-            { upsert: true, new: true }
-        );
+        let dailyRecord = await AttendanceDaily.findOne({ employeeNumber, date });
 
-        console.log(`[Multi-Shift Processing] ✓ Daily record updated successfully`);
+        if (!dailyRecord) {
+            dailyRecord = new AttendanceDaily({
+                employeeNumber,
+                date,
+                shifts: processedShifts,
+                ...updateData
+            });
+        } else {
+            // Update individual fields
+            Object.keys(updateData).forEach(key => {
+                dailyRecord[key] = updateData[key];
+            });
+        }
+
+        // Standardize source tracking
+        if (!dailyRecord.source) dailyRecord.source = [];
+        if (!dailyRecord.source.includes('biometric-realtime')) {
+            dailyRecord.source.push('biometric-realtime');
+        }
+
+        // Trigger hooks via .save()
+        await dailyRecord.save();
+
+        console.log(`[Multi-Shift Processing] ✓ Daily record updated and hooks triggered successfully`);
 
         return {
             success: true,
