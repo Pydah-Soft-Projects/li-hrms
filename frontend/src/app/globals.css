@@ -18,7 +18,7 @@ body {
 
 :root {
   /* Light Mode */
-  --bg-base: #F9FAFB;
+  --bg-base: #fffcf9;
   --bg-surface: #FFFFFF;
   --border-base: rgba(0, 0, 0, 0.08);
   --text-primary: #111827;
