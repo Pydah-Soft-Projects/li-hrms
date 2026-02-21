@@ -453,40 +453,21 @@ export default function EmployeeFormSettingsPage() {
   const sortedGroups = [...settings.groups].sort((a, b) => a.order - b.order);
 
   return (
-    <div className="min-h-screen bg-slate-200/60 p-4 dark:bg-slate-950 sm:p-6 lg:p-8">
+    <div className="min-h-screen p-4 dark:bg-slate-100 sm:p-6 lg:p-8">
       <div className="mx-auto max-w-7xl">
-        {/* Refined Professional Header */}
-        <div className="relative mb-10 overflow-hidden rounded-[2rem] border border-slate-300 bg-slate-50 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
-          <div className="absolute right-0 top-0 h-48 w-48 -translate-y-12 translate-x-12 rounded-full bg-blue-500/[0.05] blur-3xl" />
-
-          <div className="relative z-10 flex flex-col gap-6 px-8 py-8">
-            <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-              <div className="flex items-center gap-5">
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100/50 text-blue-700 shadow-sm dark:bg-white/10 dark:text-blue-400 border border-blue-200">
-                  <Settings className="h-6 w-6" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h1 className="text-2xl font-bold tracking-tight text-slate-950 dark:text-white">Form Engine</h1>
-                    <span className="rounded-full bg-blue-600/10 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-widest text-blue-700 dark:text-blue-400 border border-blue-200/50">
-                      Settings Hub
-                    </span>
-                  </div>
-                  <p className="text-sm font-medium text-slate-600">Dynamic UI Schema & Field Protocols</p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-4">
-                <button
-                  onClick={() => setShowAddGroup(true)}
-                  className="group relative flex items-center justify-center gap-3 overflow-hidden rounded-xl bg-slate-950 px-6 py-3 text-xs font-bold uppercase tracking-widest text-white transition-all hover:bg-blue-700 active:scale-[0.98] dark:bg-white dark:text-slate-900 shadow-lg"
-                >
-                  <Plus className="h-4 w-4" />
-                  <span>Execute Add Group</span>
-                </button>
-              </div>
-            </div>
+        {/* Clean Header */}
+        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Form Engine</h1>
+            <p className="text-sm text-slate-500 dark:text-slate-400">Dynamic UI Schema & Field Protocols</p>
           </div>
+          <button
+            onClick={() => setShowAddGroup(true)}
+            className="flex w-full sm:w-auto items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition-all hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200 shadow-sm"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Execute Add Group</span>
+          </button>
         </div>
 
         {/* Message */}
@@ -506,11 +487,11 @@ export default function EmployeeFormSettingsPage() {
         {showAddGroup && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/20 backdrop-blur-sm p-4 animate-in fade-in duration-300">
             <div className="w-full max-w-md overflow-hidden rounded-[2.5rem] border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950 animate-in zoom-in-95 duration-300">
-              <div className="relative border-b border-slate-100 bg-slate-50/50 px-8 py-6 dark:border-slate-800 dark:bg-slate-900/50">
+              <div className="relative border-b border-slate-100 bg-slate-50/50 px-6 py-5 sm:px-8 sm:py-6 dark:border-slate-800 dark:bg-slate-900/50">
                 <div className="absolute right-0 top-0 h-24 w-24 -translate-y-8 translate-x-8 rounded-full bg-blue-500/[0.05] blur-2xl" />
                 <div className="relative flex items-center gap-4">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-lg shadow-blue-200 dark:shadow-none">
-                    <PlusCircle className="h-6 w-6" />
+                  <div className="flex shrink-0 h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-lg shadow-blue-200 dark:shadow-none">
+                    <PlusCircle className="h-5 w-5 sm:h-6 sm:w-6" />
                   </div>
                   <div>
                     <h3 className="text-sm font-bold text-slate-950 dark:text-white uppercase tracking-widest">Execute Group Creation</h3>
@@ -519,7 +500,7 @@ export default function EmployeeFormSettingsPage() {
                 </div>
               </div>
 
-              <div className="p-8 space-y-8">
+              <div className="p-6 sm:p-8 space-y-6 sm:space-y-8">
                 <div className="space-y-3">
                   <label className="text-[10px] font-bold uppercase tracking-widest text-slate-600 ml-1">Structural Handle (Label)</label>
                   <input
@@ -530,27 +511,27 @@ export default function EmployeeFormSettingsPage() {
                     placeholder="e.g., Professional Experience"
                   />
                   <div className="flex gap-2 items-start ml-1 mt-2">
-                     <Info className="h-3 w-3 text-slate-400 mt-0.5" />
-                     <p className="text-[10px] font-medium text-slate-500 leading-relaxed uppercase tracking-wider">
-                       Groups categorize related data clusters for orchestration.
-                     </p>
+                    <Info className="h-3 w-3 text-slate-400 mt-0.5" />
+                    <p className="text-[10px] font-medium text-slate-500 leading-relaxed uppercase tracking-wider">
+                      Groups categorize related data clusters for orchestration.
+                    </p>
                   </div>
                 </div>
 
-                <div className="flex gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+                <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
                   <button
                     onClick={() => {
                       setShowAddGroup(false);
                       setNewGroup({ label: '' });
                     }}
-                    className="flex-1 rounded-2xl py-4 text-xs font-bold uppercase tracking-[0.2em] text-slate-600 hover:text-slate-950 transition-colors bg-slate-50 dark:bg-slate-800"
+                    className="flex-1 rounded-2xl py-3 sm:py-4 text-xs font-bold uppercase tracking-[0.2em] text-slate-600 hover:text-slate-950 transition-colors bg-slate-50 dark:bg-slate-800"
                   >
                     Abort
                   </button>
                   <button
                     onClick={handleAddGroup}
                     disabled={saving || !newGroup.label.trim()}
-                    className="flex-[2] rounded-2xl bg-slate-950 py-4 text-xs font-bold uppercase tracking-[0.2em] text-white shadow-xl transition-all hover:bg-blue-700 active:scale-[0.98] disabled:opacity-50 dark:bg-white dark:text-slate-950"
+                    className="flex-[2] rounded-2xl bg-slate-950 py-3 sm:py-4 text-xs font-bold uppercase tracking-[0.2em] text-white shadow-xl transition-all hover:bg-blue-700 active:scale-[0.98] disabled:opacity-50 dark:bg-white dark:text-slate-950"
                   >
                     {saving ? 'Processing...' : 'Commit Container'}
                   </button>
@@ -571,15 +552,15 @@ export default function EmployeeFormSettingsPage() {
 
               {/* Group Header */}
               <div
-                className={`flex cursor-pointer items-center justify-between px-8 py-6 transition-colors ${expandedGroups.has(group.id) ? 'bg-slate-100/50 dark:bg-slate-800/30 border-b border-slate-200 dark:border-slate-800' : 'hover:bg-slate-100/30'}`}
+                className={`flex cursor-pointer flex-col sm:flex-row sm:items-center justify-between gap-4 px-4 py-4 sm:px-8 sm:py-6 transition-colors ${expandedGroups.has(group.id) ? 'bg-slate-100/50 dark:bg-slate-800/30 border-b border-slate-200 dark:border-slate-800' : 'hover:bg-slate-100/30'}`}
                 onClick={() => toggleGroup(group.id)}
               >
-                <div className="flex items-center gap-5">
-                  <div className={`flex h-12 w-12 items-center justify-center rounded-2xl transition-all ${expandedGroups.has(group.id) ? 'bg-slate-950 text-white rotate-90 dark:bg-white dark:text-slate-950' : 'bg-white text-slate-400 border border-slate-200 dark:bg-slate-800 dark:border-slate-700'}`}>
-                    <ChevronRight className="h-5 w-5" />
+                <div className="flex items-center gap-3 sm:gap-5">
+                  <div className={`flex shrink-0 h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-2xl transition-all ${expandedGroups.has(group.id) ? 'bg-slate-950 text-white rotate-90 dark:bg-white dark:text-slate-950' : 'bg-white text-slate-400 border border-slate-200 dark:bg-slate-800 dark:border-slate-700'}`}>
+                    <ChevronRight className="h-4 w-4 sm:h-5 sm:w-5" />
                   </div>
                   <div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                       <h3 className="text-lg font-bold text-slate-950 dark:text-white">
                         {group.label}
                       </h3>
@@ -622,10 +603,10 @@ export default function EmployeeFormSettingsPage() {
                 <div className="border-t border-slate-200 p-4 dark:border-slate-800">
                   {/* Edit Group */}
                   {editingGroup === group.id && (
-                    <div className="mb-8 rounded-3xl border border-blue-200 bg-blue-50/50 p-8 dark:border-blue-800 dark:bg-blue-900/10 shadow-sm relative overflow-hidden">
+                    <div className="mb-8 rounded-3xl border border-blue-200 bg-blue-50/50 p-5 sm:p-8 dark:border-blue-800 dark:bg-blue-900/10 shadow-sm relative overflow-hidden">
                       <div className="absolute right-0 top-0 h-24 w-24 -translate-y-8 translate-x-8 rounded-full bg-blue-500/[0.05] blur-2xl" />
                       <div className="relative flex items-center gap-3 mb-6">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-white shadow-lg">
+                        <div className="flex shrink-0 h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-white shadow-lg">
                           <Edit3 className="h-5 w-5" />
                         </div>
                         <h4 className="text-sm font-bold text-blue-900 dark:text-blue-300 uppercase tracking-widest">Modify Metadata</h4>
@@ -648,7 +629,7 @@ export default function EmployeeFormSettingsPage() {
                           />
                         </div>
 
-                        <div className="flex gap-3">
+                        <div className="flex flex-col sm:flex-row gap-3">
                           <button
                             onClick={() => {
                               handleUpdateGroup(group.id, { label: group.label });
@@ -685,21 +666,21 @@ export default function EmployeeFormSettingsPage() {
                         order: 0,
                       });
                     }}
-                    className="group/add-btn mb-6 flex w-full items-center justify-center gap-4 rounded-3xl border-2 border-dashed border-slate-300 bg-white/50 px-8 py-5 text-sm font-bold text-slate-500 transition-all hover:border-blue-500 hover:bg-blue-50/50 hover:text-blue-600 dark:border-slate-700 dark:bg-slate-800/50 dark:hover:border-blue-400 dark:hover:text-blue-400 shadow-sm"
+                    className="group/add-btn mb-6 flex w-full flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4 rounded-3xl border-2 border-dashed border-slate-300 bg-white/50 px-4 sm:px-8 py-5 text-sm font-bold text-slate-500 transition-all hover:border-blue-500 hover:bg-blue-50/50 hover:text-blue-600 dark:border-slate-700 dark:bg-slate-800/50 dark:hover:border-blue-400 dark:hover:text-blue-400 shadow-sm"
                   >
-                    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 text-slate-400 transition-all group-hover/add-btn:bg-blue-100 group-hover/add-btn:text-blue-600 dark:bg-slate-900 dark:group-hover/add-btn:bg-blue-900/40">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-400 transition-all group-hover/add-btn:bg-blue-100 group-hover/add-btn:text-blue-600 dark:bg-slate-900 dark:group-hover/add-btn:bg-blue-900/40">
                       <PlusCircle className="h-6 w-6" />
                     </div>
-                    <span>Provision Architectural Field for {group.label}</span>
+                    <span className="text-center">Provision Architectural Field for {group.label}</span>
                   </button>
 
                   {/* Add Field Modal */}
                   {showAddField === group.id && (
-                    <div className="mb-8 rounded-3xl border border-emerald-200 bg-emerald-50/30 p-8 dark:border-emerald-800 dark:bg-emerald-900/10 shadow-sm relative overflow-hidden">
+                    <div className="mb-8 rounded-3xl border border-emerald-200 bg-emerald-50/30 p-5 sm:p-8 dark:border-emerald-800 dark:bg-emerald-900/10 shadow-sm relative overflow-hidden">
                       <div className="absolute right-0 top-0 h-24 w-24 -translate-y-8 translate-x-8 rounded-full bg-emerald-500/[0.05] blur-2xl" />
                       <div className="relative flex items-center gap-3 mb-8">
-                        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-600 text-white shadow-lg">
-                          <PlusCircle className="h-6 w-6" />
+                        <div className="flex shrink-0 h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-2xl bg-emerald-600 text-white shadow-lg">
+                          <PlusCircle className="h-5 w-5 sm:h-6 sm:w-6" />
                         </div>
                         <div>
                           <h4 className="text-sm font-bold text-emerald-900 dark:text-emerald-300 uppercase tracking-widest">Architect New Field</h4>
@@ -771,7 +752,7 @@ export default function EmployeeFormSettingsPage() {
 
                         {/* Functional Properties */}
                         <div className="space-y-6">
-                           <div className="space-y-2">
+                          <div className="space-y-2">
                             <label className="text-[10px] font-bold uppercase tracking-widest text-slate-700 flex items-center gap-2">
                               <AlignLeft className="h-3 w-3 text-emerald-600" />
                               Input Placeholder
@@ -914,8 +895,8 @@ export default function EmployeeFormSettingsPage() {
                             {showAddNestedField && (
                               <div className="rounded-2xl border border-emerald-200 bg-white p-6 shadow-xl dark:border-emerald-800 dark:bg-slate-950 animate-in zoom-in-95 duration-200">
                                 <h6 className="text-[10px] font-bold uppercase tracking-widest text-emerald-700 mb-6 flex items-center gap-2">
-                                   <Plus className="h-3 w-3" />
-                                   New Nested Property
+                                  <Plus className="h-3 w-3" />
+                                  New Nested Property
                                 </h6>
                                 <div className="grid grid-cols-1 gap-6">
                                   <div className="space-y-2">
@@ -983,7 +964,7 @@ export default function EmployeeFormSettingsPage() {
                       )}
 
 
-                      <div className="flex gap-4 mt-10 pt-8 border-t border-emerald-200 dark:border-emerald-800">
+                      <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 mt-10 pt-8 border-t border-emerald-200 dark:border-emerald-800">
                         <button
                           onClick={() => {
                             setShowAddField(null);
@@ -999,14 +980,14 @@ export default function EmployeeFormSettingsPage() {
                             setShowAddNestedField(false);
                             setNewNestedField({ label: '', type: 'text', isRequired: false });
                           }}
-                          className="flex-1 rounded-2xl py-4 text-xs font-bold uppercase tracking-[0.2em] text-slate-600 hover:text-slate-950 transition-colors bg-white dark:bg-slate-800"
+                          className="flex-1 rounded-2xl py-3 sm:py-4 text-xs font-bold uppercase tracking-[0.2em] text-slate-600 hover:text-slate-950 transition-colors bg-white dark:bg-slate-800"
                         >
                           Cancel Operations
                         </button>
                         <button
                           onClick={() => handleAddField(group.id)}
                           disabled={saving || !newField.label?.trim()}
-                          className="flex-[2] rounded-2xl bg-emerald-600 py-4 text-xs font-bold uppercase tracking-[0.2em] text-white shadow-xl transition-all hover:bg-emerald-700 active:scale-[0.98] disabled:opacity-50"
+                          className="flex-[2] rounded-2xl bg-emerald-600 py-3 sm:py-4 text-xs font-bold uppercase tracking-[0.2em] text-white shadow-xl transition-all hover:bg-emerald-700 active:scale-[0.98] disabled:opacity-50"
                         >
                           {saving ? 'Processing...' : 'Provision Field'}
                         </button>
@@ -1017,18 +998,18 @@ export default function EmployeeFormSettingsPage() {
                   {/* Fields List */}
                   <div className="mb-8">
                     <div className="mb-6 flex items-center justify-between px-2">
-                        <div className="flex items-center gap-3">
-                          <div className="h-1.5 w-1.5 rounded-full bg-blue-600 shadow-[0_0_8px_rgba(37,99,235,0.6)]" />
-                          <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">
-                            Operational Fields ({group.fields.length})
-                          </h4>
-                        </div>
+                      <div className="flex items-center gap-3">
+                        <div className="h-1.5 w-1.5 rounded-full bg-blue-600 shadow-[0_0_8px_rgba(37,99,235,0.6)]" />
+                        <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">
+                          Operational Fields ({group.fields.length})
+                        </h4>
+                      </div>
                     </div>
                     <div className="space-y-4">
                       {group.fields.length === 0 ? (
                         <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-100/30 p-12 text-center dark:border-slate-800 dark:bg-slate-900/20">
                           <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-[2rem] bg-white text-slate-300 shadow-sm dark:bg-slate-800">
-                             <Layout className="h-8 w-8" />
+                            <Layout className="h-8 w-8" />
                           </div>
                           <p className="mt-4 text-sm font-bold text-slate-950 dark:text-white uppercase tracking-widest">No Fields Defined</p>
                           <p className="mt-2 text-xs font-medium text-slate-500">Initialize structural fields to begin schema definition.</p>
@@ -1039,15 +1020,15 @@ export default function EmployeeFormSettingsPage() {
                           .map((field) => (
                             <div
                               key={field.id}
-                              className="group/field relative flex items-center justify-between rounded-3xl border border-slate-200 bg-white p-5 transition-all hover:border-blue-400 hover:shadow-lg dark:border-slate-800 dark:bg-slate-950 shadow-sm"
+                              className="group/field relative flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 rounded-3xl border border-slate-200 bg-white p-4 sm:p-5 transition-all hover:border-blue-400 hover:shadow-lg dark:border-slate-800 dark:bg-slate-950 shadow-sm"
                             >
-                              <div className="flex items-center gap-6">
-                                <div className={`flex h-14 w-14 items-center justify-center rounded-2xl transition-all duration-300 ${field.isEnabled ? 'bg-slate-100 text-slate-600 group-hover/field:bg-blue-600 group-hover/field:text-white dark:bg-slate-900' : 'bg-slate-50 text-slate-300 dark:bg-slate-900'}`}>
+                              <div className="flex items-center gap-4 sm:gap-6 w-full sm:w-auto">
+                                <div className={`flex shrink-0 h-12 w-12 sm:h-14 sm:w-14 items-center justify-center rounded-2xl transition-all duration-300 ${field.isEnabled ? 'bg-slate-100 text-slate-600 group-hover/field:bg-blue-600 group-hover/field:text-white dark:bg-slate-900' : 'bg-slate-50 text-slate-300 dark:bg-slate-900'}`}>
                                   {getFieldIcon(field.type)}
                                 </div>
-                                <div>
-                                  <div className="flex items-center gap-3">
-                                    <span className="text-sm font-bold text-slate-950 dark:text-white">
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                                    <span className="text-sm font-bold text-slate-950 dark:text-white truncate">
                                       {field.label}
                                     </span>
                                     <div className="flex gap-1.5">
@@ -1068,12 +1049,12 @@ export default function EmployeeFormSettingsPage() {
                                       )}
                                     </div>
                                   </div>
-                                  <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                                  <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-500 truncate">
                                     {getFieldLabel(field.type)}
                                   </p>
                                 </div>
                               </div>
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 self-end sm:self-auto">
                                 <button
                                   onClick={() => {
                                     if (editingField?.groupId === group.id && editingField?.fieldId === field.id) {
@@ -1110,16 +1091,16 @@ export default function EmployeeFormSettingsPage() {
                     if (!fieldToEdit) return null;
 
                     return (
-                      <div className="mt-8 rounded-[2.5rem] border border-blue-200 bg-blue-50/20 p-8 dark:border-blue-800 dark:bg-blue-900/10 shadow-sm relative overflow-hidden animate-in fade-in slide-in-from-top-4">
+                      <div className="mt-8 rounded-[2.5rem] border border-blue-200 bg-blue-50/20 p-5 sm:p-8 dark:border-blue-800 dark:bg-blue-900/10 shadow-sm relative overflow-hidden animate-in fade-in slide-in-from-top-4">
                         <div className="absolute right-0 top-0 h-24 w-24 -translate-y-8 translate-x-8 rounded-full bg-blue-500/[0.05] blur-2xl" />
                         <div className="relative flex items-center justify-between mb-8">
                           <div className="flex items-center gap-4">
-                            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-lg">
-                              <Edit3 className="h-6 w-6" />
+                            <div className="flex shrink-0 h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-lg">
+                              <Edit3 className="h-5 w-5 sm:h-6 sm:w-6" />
                             </div>
                             <div>
-                               <h4 className="text-sm font-bold text-blue-900 dark:text-blue-300 uppercase tracking-widest">Adjust Architectural Context</h4>
-                               <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest mt-0.5">Instance: {fieldToEdit.label}</p>
+                              <h4 className="text-sm font-bold text-blue-900 dark:text-blue-300 uppercase tracking-widest">Adjust Architectural Context</h4>
+                              <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest mt-0.5">Instance: {fieldToEdit.label}</p>
                             </div>
                           </div>
                         </div>
@@ -1159,7 +1140,7 @@ export default function EmployeeFormSettingsPage() {
 
                           {!fieldToEdit.isSystem && (
                             <div className="space-y-6">
-                               <div className="space-y-2">
+                              <div className="space-y-2">
                                 <label className="text-[10px] font-bold uppercase tracking-widest text-slate-600 ml-1">Input Hint (Placeholder)</label>
                                 <input
                                   type="text"
@@ -1337,7 +1318,7 @@ export default function EmployeeFormSettingsPage() {
                           </div>
                         )}
 
-                        <div className="flex gap-4 mt-10 pt-8 border-t border-blue-200 dark:border-blue-800">
+                        <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 mt-10 pt-8 border-t border-blue-200 dark:border-blue-800">
                           <button
                             onClick={() => {
                               const fieldToSave = settings?.groups.find(g => g.id === group.id)?.fields.find(f => f.id === fieldToEdit.id);
@@ -1354,7 +1335,7 @@ export default function EmployeeFormSettingsPage() {
                               }
                             }}
                             disabled={saving}
-                            className="flex-[2] flex items-center justify-center gap-3 rounded-2xl bg-slate-950 py-4 text-xs font-bold uppercase tracking-widest text-white shadow-xl transition-all hover:bg-blue-700 active:scale-[0.98] disabled:opacity-50 dark:bg-white dark:text-slate-950"
+                            className="flex-[2] flex items-center justify-center gap-3 rounded-2xl bg-slate-950 py-3 sm:py-4 text-xs font-bold uppercase tracking-widest text-white shadow-xl transition-all hover:bg-blue-700 active:scale-[0.98] disabled:opacity-50 dark:bg-white dark:text-slate-950"
                           >
                             <Save className="h-4.5 w-4.5" />
                             <span>{saving ? 'Processing...' : 'Commit Modifications'}</span>
@@ -1364,7 +1345,7 @@ export default function EmployeeFormSettingsPage() {
                               setEditingField(null);
                               loadSettings();
                             }}
-                            className="flex-1 rounded-2xl py-4 text-xs font-bold uppercase tracking-[0.2em] text-slate-600 hover:text-slate-950 transition-colors bg-white border border-slate-200 dark:bg-slate-800 dark:border-slate-700"
+                            className="flex-1 rounded-2xl py-3 sm:py-4 text-xs font-bold uppercase tracking-[0.2em] text-slate-600 hover:text-slate-950 transition-colors bg-white border border-slate-200 dark:bg-slate-800 dark:border-slate-700"
                           >
                             Discard
                           </button>
@@ -1380,15 +1361,15 @@ export default function EmployeeFormSettingsPage() {
 
         {/* Qualifications Configuration Section */}
         <div className="mt-20 space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 px-4">
-            <div className="flex items-center gap-5">
-              <div className="flex h-16 w-16 items-center justify-center rounded-[2rem] bg-indigo-600 text-white shadow-xl shadow-indigo-200 dark:shadow-none">
-                <GraduationCap className="h-8 w-8" />
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 px-2 sm:px-4">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-5">
+              <div className="flex shrink-0 h-12 w-12 sm:h-16 sm:w-16 items-center justify-center rounded-2xl sm:rounded-[2rem] bg-indigo-600 text-white shadow-xl shadow-indigo-200 dark:shadow-none">
+                <GraduationCap className="h-6 w-6 sm:h-8 sm:w-8" />
               </div>
               <div>
-                <div className="flex items-center gap-3">
-                  <h3 className="text-xl font-bold text-slate-950 dark:text-white tracking-tight">Academic Protocol Registry</h3>
-                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+                <div className="flex flex-col xl:flex-row xl:items-center gap-2 sm:gap-3">
+                  <h3 className="text-lg sm:text-xl font-bold text-slate-950 dark:text-white tracking-tight">Academic Protocol Registry</h3>
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
                     <label className="flex items-center gap-2 cursor-pointer group/toggle">
                       <div className="relative inline-flex items-center">
                         <input
@@ -1443,7 +1424,7 @@ export default function EmployeeFormSettingsPage() {
                 <p className="text-xs font-medium text-slate-500 mt-0.5 uppercase tracking-widest">Configure qualification schema definitions</p>
               </div>
             </div>
-            
+
             {settings.qualifications?.isEnabled !== false && (
               <button
                 onClick={() => {
@@ -1460,10 +1441,10 @@ export default function EmployeeFormSettingsPage() {
                   });
                   setShowNewQualField(true);
                 }}
-                className="flex items-center justify-center gap-3 rounded-2xl bg-slate-950 px-8 py-4 text-[10px] font-bold uppercase tracking-[0.2em] text-white shadow-xl transition-all hover:bg-slate-800 active:scale-[0.98] dark:bg-white dark:text-slate-950"
+                className="flex w-full md:w-auto mt-4 md:mt-0 items-center justify-center gap-3 rounded-2xl bg-slate-950 px-6 sm:px-8 py-3.5 sm:py-4 text-[10px] font-bold uppercase tracking-[0.2em] text-white shadow-xl transition-all hover:bg-slate-800 active:scale-[0.98] dark:bg-white dark:text-slate-950"
               >
                 <PlusCircle className="h-4 w-4" />
-                <span>Provision Qualification Field</span>
+                <span className="text-center">Provision Qualification Field</span>
               </button>
             )}
           </div>
@@ -1477,44 +1458,44 @@ export default function EmployeeFormSettingsPage() {
                     .map((field) => (
                       <div
                         key={field.id}
-                        className="group/qual relative flex items-center justify-between rounded-3xl border border-slate-200 bg-white p-5 transition-all hover:border-indigo-400 hover:shadow-lg dark:border-slate-800 dark:bg-slate-950 shadow-sm"
+                        className="group/qual relative flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 rounded-3xl border border-slate-200 bg-white p-4 sm:p-5 transition-all hover:border-indigo-400 hover:shadow-lg dark:border-slate-800 dark:bg-slate-950 shadow-sm"
                       >
-                        <div className="flex items-center gap-4">
-                          <div className={`flex h-14 w-14 items-center justify-center rounded-2xl transition-all duration-300 ${field.isEnabled ? 'bg-indigo-50 text-indigo-600 group-hover/qual:bg-indigo-600 group-hover/qual:text-white dark:bg-indigo-900/30' : 'bg-slate-50 text-slate-300 dark:bg-slate-900'}`}>
-                             {getFieldIcon(field.type)}
+                        <div className="flex items-center gap-4 w-full sm:w-auto">
+                          <div className={`flex shrink-0 h-12 w-12 sm:h-14 sm:w-14 items-center justify-center rounded-2xl transition-all duration-300 ${field.isEnabled ? 'bg-indigo-50 text-indigo-600 group-hover/qual:bg-indigo-600 group-hover/qual:text-white dark:bg-indigo-900/30' : 'bg-slate-50 text-slate-300 dark:bg-slate-900'}`}>
+                            {getFieldIcon(field.type)}
                           </div>
-                          <div>
-                            <div className="flex items-center gap-3">
-                              <span className="text-sm font-bold text-slate-950 dark:text-white">{field.label}</span>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                              <span className="text-sm font-bold text-slate-950 dark:text-white truncate">{field.label}</span>
                               <div className="flex gap-1">
                                 {field.isRequired && (
-                                  <span className="rounded-full bg-rose-50 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-widest text-rose-700 border border-rose-100 dark:bg-rose-900/30 dark:text-rose-400 dark:border-rose-800">
+                                  <span className="rounded-full bg-rose-50 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-widest text-rose-700 border border-rose-100 dark:bg-rose-900/30 dark:text-rose-400 dark:border-rose-800 shrink-0">
                                     Strict
                                   </span>
                                 )}
                               </div>
                             </div>
-                            <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                            <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-slate-500 truncate max-w-full">
                               ID: {field.id} • {getFieldLabel(field.type)}
                             </p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-1.5">
-                           <label className="relative inline-flex items-center cursor-pointer group/toggle p-2">
-                              <input
-                                type="checkbox"
-                                checked={field.isEnabled}
-                                onChange={async (e) => {
-                                  await api.updateQualificationsField(field.id, { isEnabled: e.target.checked });
-                                  await loadSettings();
-                                }}
-                                className="sr-only peer"
-                              />
-                              <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-indigo-500/20 rounded-full peer dark:bg-slate-800 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[10px] after:left-[10px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-slate-600 peer-checked:bg-indigo-600"></div>
-                            </label>
+                        <div className="flex items-center gap-1.5 self-end sm:self-auto">
+                          <label className="relative inline-flex items-center cursor-pointer group/toggle p-2">
+                            <input
+                              type="checkbox"
+                              checked={field.isEnabled}
+                              onChange={async (e) => {
+                                await api.updateQualificationsField(field.id, { isEnabled: e.target.checked });
+                                await loadSettings();
+                              }}
+                              className="sr-only peer"
+                            />
+                            <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-indigo-500/20 rounded-full peer dark:bg-slate-800 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[10px] after:left-[10px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-slate-600 peer-checked:bg-indigo-600"></div>
+                          </label>
                           <button
                             onClick={async () => {
-                              if(confirm(`Are you sure you want to decommission the ${field.label} field?`)) {
+                              if (confirm(`Are you sure you want to decommission the ${field.label} field?`)) {
                                 await api.deleteQualificationsField(field.id);
                                 await loadSettings();
                               }
@@ -1529,24 +1510,24 @@ export default function EmployeeFormSettingsPage() {
                 </div>
               ) : (
                 <div className="rounded-[2.5rem] border border-dashed border-slate-300 bg-slate-100/30 p-16 text-center dark:border-slate-800 dark:bg-slate-900/20">
-                    <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[2.5rem] bg-white text-slate-300 shadow-sm dark:bg-slate-800">
-                       <GraduationCap className="h-10 w-10" />
-                    </div>
-                    <p className="mt-6 text-base font-bold text-slate-950 dark:text-white uppercase tracking-widest">No Academic Fields Defined</p>
-                    <p className="mt-2 text-sm font-medium text-slate-500">Initialize qualification protocols to begin education schema definition.</p>
+                  <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[2.5rem] bg-white text-slate-300 shadow-sm dark:bg-slate-800">
+                    <GraduationCap className="h-10 w-10" />
+                  </div>
+                  <p className="mt-6 text-base font-bold text-slate-950 dark:text-white uppercase tracking-widest">No Academic Fields Defined</p>
+                  <p className="mt-2 text-sm font-medium text-slate-500">Initialize qualification protocols to begin education schema definition.</p>
                 </div>
               )}
 
               {/* Add Qualification Field Form (Inline-style) */}
               {showNewQualField && (
-                <div className="rounded-[2.5rem] border border-indigo-200 bg-indigo-50/20 p-8 dark:border-indigo-800 dark:bg-indigo-900/10 shadow-sm relative overflow-hidden animate-in fade-in zoom-in-95 duration-300 mt-8">
+                <div className="rounded-[2.5rem] border border-indigo-200 bg-indigo-50/20 p-5 sm:p-8 dark:border-indigo-800 dark:bg-indigo-900/10 shadow-sm relative overflow-hidden animate-in fade-in zoom-in-95 duration-300 mt-8">
                   <div className="absolute right-0 top-0 h-32 w-32 -translate-y-12 translate-x-12 rounded-full bg-indigo-500/[0.05] blur-3xl" />
-                  <div className="relative flex items-center gap-4 mb-10">
-                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-xl">
-                      <PlusCircle className="h-7 w-7" />
+                  <div className="relative flex items-center gap-3 sm:gap-4 mb-8 sm:mb-10">
+                    <div className="flex shrink-0 h-10 w-10 sm:h-14 sm:w-14 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-xl">
+                      <PlusCircle className="h-5 w-5 sm:h-7 sm:w-7" />
                     </div>
                     <div>
-                      <h4 className="text-base font-bold text-indigo-900 dark:text-indigo-300 uppercase tracking-widest">Architect Academic Identity</h4>
+                      <h4 className="text-sm sm:text-base font-bold text-indigo-900 dark:text-indigo-300 uppercase tracking-widest">Architect Academic Identity</h4>
                       <p className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest mt-0.5">Define New Qualification Attribute</p>
                     </div>
                   </div>
@@ -1591,42 +1572,42 @@ export default function EmployeeFormSettingsPage() {
                         </select>
                       </div>
                       <div className="flex bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm mt-8">
-                         <label className="flex flex-1 items-center justify-between cursor-pointer group/toggle">
-                            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-600 ml-1">Mandatory Validation</span>
-                            <div className="relative inline-flex items-center">
-                              <input
-                                type="checkbox"
-                                checked={newQualField.isRequired}
-                                onChange={(e) => setNewQualField({ ...newQualField, isRequired: e.target.checked })}
-                                className="sr-only peer"
-                              />
-                              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-500/20 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-indigo-600"></div>
-                            </div>
-                          </label>
+                        <label className="flex flex-1 items-center justify-between cursor-pointer group/toggle">
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-600 ml-1">Mandatory Validation</span>
+                          <div className="relative inline-flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={newQualField.isRequired}
+                              onChange={(e) => setNewQualField({ ...newQualField, isRequired: e.target.checked })}
+                              className="sr-only peer"
+                            />
+                            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-500/20 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-indigo-600"></div>
+                          </div>
+                        </label>
                       </div>
                     </div>
                   </div>
 
-                  <div className="flex gap-4 mt-10 pt-10 border-t border-indigo-200 dark:border-indigo-800">
+                  <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 mt-8 sm:mt-10 pt-8 sm:pt-10 border-t border-indigo-200 dark:border-indigo-800">
                     <button
-                        onClick={() => {
-                          setShowNewQualField(false);
-                          setNewQualField({
-                            id: '',
-                            label: '',
-                            type: 'text',
-                            isRequired: false,
-                            isEnabled: true,
-                            placeholder: '',
-                            validation: {},
-                            options: [],
-                            order: 0,
-                          });
-                        }}
-                        className="flex-1 rounded-2xl py-4 text-xs font-bold uppercase tracking-[0.2em] text-slate-600 hover:text-slate-950 transition-colors bg-white dark:bg-slate-800"
-                      >
-                        Abort Registry
-                      </button>
+                      onClick={() => {
+                        setShowNewQualField(false);
+                        setNewQualField({
+                          id: '',
+                          label: '',
+                          type: 'text',
+                          isRequired: false,
+                          isEnabled: true,
+                          placeholder: '',
+                          validation: {},
+                          options: [],
+                          order: 0,
+                        });
+                      }}
+                      className="flex-1 rounded-2xl py-3 sm:py-4 text-xs font-bold uppercase tracking-[0.2em] text-slate-600 hover:text-slate-950 transition-colors bg-white dark:bg-slate-800"
+                    >
+                      Abort Registry
+                    </button>
                     <button
                       onClick={async () => {
                         if (!newQualField.id || !newQualField.label) {
@@ -1648,7 +1629,7 @@ export default function EmployeeFormSettingsPage() {
                         });
                         await loadSettings();
                       }}
-                      className="flex-[2] rounded-2xl bg-indigo-600 py-4 text-xs font-bold uppercase tracking-[0.2em] text-white shadow-xl transition-all hover:bg-indigo-700 active:scale-[0.98]"
+                      className="flex-[2] rounded-2xl bg-indigo-600 py-3 sm:py-4 text-xs font-bold uppercase tracking-[0.2em] text-white shadow-xl transition-all hover:bg-indigo-700 active:scale-[0.98]"
                     >
                       Commit Architectural Context
                     </button>
@@ -1661,59 +1642,59 @@ export default function EmployeeFormSettingsPage() {
 
         {/* Info Box */}
         <div className="mt-12 overflow-hidden rounded-[2.5rem] border border-slate-200 bg-white shadow-xl dark:border-slate-800 dark:bg-slate-950">
-           <div className="flex items-center gap-4 border-b border-slate-100 bg-slate-50/50 px-8 py-5 dark:border-slate-800 dark:bg-slate-900/50">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-white shadow-lg shadow-blue-200 dark:shadow-none">
-                 <Info className="h-5 w-5" />
-              </div>
-              <div>
-                 <h4 className="text-sm font-bold text-slate-950 dark:text-white uppercase tracking-widest">Architectural Repository Intel</h4>
-                 <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest">Protocol Guidelines & Compliance</p>
-              </div>
-           </div>
-           <div className="p-8">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6">
-                <div className="space-y-4">
-                  <div className="flex gap-4 group/info">
-                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600 transition-colors group-hover/info:bg-blue-600 group-hover/info:text-white dark:bg-blue-900/30">
-                       <ShieldCheck className="h-3.5 w-3.5" />
-                    </div>
-                    <div>
-                        <p className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-widest">System Protocol Enforcement</p>
-                        <p className="mt-1 text-xs font-medium text-slate-500 leading-relaxed">Core system attributes are immutably defined to ensure database integrity. Visual labels may be aliased, but structural handles remain constant.</p>
-                    </div>
+          <div className="flex items-center gap-4 border-b border-slate-100 bg-slate-50/50 px-8 py-5 dark:border-slate-800 dark:bg-slate-900/50">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-white shadow-lg shadow-blue-200 dark:shadow-none">
+              <Info className="h-5 w-5" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-slate-950 dark:text-white uppercase tracking-widest">Architectural Repository Intel</h4>
+              <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest">Protocol Guidelines & Compliance</p>
+            </div>
+          </div>
+          <div className="p-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6">
+              <div className="space-y-4">
+                <div className="flex gap-4 group/info">
+                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600 transition-colors group-hover/info:bg-blue-600 group-hover/info:text-white dark:bg-blue-900/30">
+                    <ShieldCheck className="h-3.5 w-3.5" />
                   </div>
-                  <div className="flex gap-4 group/info">
-                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 transition-colors group-hover/info:bg-emerald-600 group-hover/info:text-white dark:bg-emerald-900/30">
-                       <Database className="h-3.5 w-3.5" />
-                    </div>
-                    <div>
-                        <p className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-widest">Dynamic Schema Evolution</p>
-                        <p className="mt-1 text-xs font-medium text-slate-500 leading-relaxed">Custom fields and groups can be provisioned or decommissioned in real-time. Changes are immediately broadcast to application gateways.</p>
-                    </div>
+                  <div>
+                    <p className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-widest">System Protocol Enforcement</p>
+                    <p className="mt-1 text-xs font-medium text-slate-500 leading-relaxed">Core system attributes are immutably defined to ensure database integrity. Visual labels may be aliased, but structural handles remain constant.</p>
                   </div>
                 </div>
-                <div className="space-y-4">
-                  <div className="flex gap-4 group/info">
-                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-purple-50 text-purple-600 transition-colors group-hover/info:bg-purple-600 group-hover/info:text-white dark:bg-purple-900/30">
-                       <Layers className="h-3.5 w-3.5" />
-                    </div>
-                    <div>
-                        <p className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-widest">Nested Logic & Arrays</p>
-                        <p className="mt-1 text-xs font-medium text-slate-500 leading-relaxed">Advanced field typing allows for recursive objects and dynamic arrays, facilitating complex data capture such as academic history or professional timelines.</p>
-                    </div>
+                <div className="flex gap-4 group/info">
+                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 transition-colors group-hover/info:bg-emerald-600 group-hover/info:text-white dark:bg-emerald-900/30">
+                    <Database className="h-3.5 w-3.5" />
                   </div>
-                  <div className="flex gap-4 group/info">
-                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600 transition-colors group-hover/info:bg-amber-600 group-hover/info:text-white dark:bg-amber-900/30">
-                       <Zap className="h-3.5 w-3.5" />
-                    </div>
-                    <div>
-                        <p className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-widest">Instructional Latency</p>
-                        <p className="mt-1 text-xs font-medium text-slate-500 leading-relaxed">All modifications commit instantly to the orchestration layer. Ensure schema validation is verified before final execution in production environments.</p>
-                    </div>
+                  <div>
+                    <p className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-widest">Dynamic Schema Evolution</p>
+                    <p className="mt-1 text-xs font-medium text-slate-500 leading-relaxed">Custom fields and groups can be provisioned or decommissioned in real-time. Changes are immediately broadcast to application gateways.</p>
                   </div>
                 </div>
               </div>
-           </div>
+              <div className="space-y-4">
+                <div className="flex gap-4 group/info">
+                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-purple-50 text-purple-600 transition-colors group-hover/info:bg-purple-600 group-hover/info:text-white dark:bg-purple-900/30">
+                    <Layers className="h-3.5 w-3.5" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-widest">Nested Logic & Arrays</p>
+                    <p className="mt-1 text-xs font-medium text-slate-500 leading-relaxed">Advanced field typing allows for recursive objects and dynamic arrays, facilitating complex data capture such as academic history or professional timelines.</p>
+                  </div>
+                </div>
+                <div className="flex gap-4 group/info">
+                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600 transition-colors group-hover/info:bg-amber-600 group-hover/info:text-white dark:bg-amber-900/30">
+                    <Zap className="h-3.5 w-3.5" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-widest">Instructional Latency</p>
+                    <p className="mt-1 text-xs font-medium text-slate-500 leading-relaxed">All modifications commit instantly to the orchestration layer. Ensure schema validation is verified before final execution in production environments.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
