@@ -95,6 +95,10 @@ export function canViewEmployees(user: User): boolean {
     return hasAnyRole(user, ['sub_admin', 'hr', 'hod', 'manager', 'employee']) && canViewFeature(user, 'EMPLOYEES');
 }
 
+export function canViewApplications(user: User): boolean {
+    return hasAnyRole(user, ['sub_admin', 'hr', 'manager']) && canViewFeature(user, 'EMPLOYEES');
+}
+
 export function canCreateEmployee(user: User): boolean {
     return hasAnyRole(user, ['sub_admin', 'hr', 'manager', 'employee']) && canManageFeature(user, 'EMPLOYEES');
 }

@@ -595,13 +595,15 @@ export interface EmployeeApplication extends Partial<Employee> {
   _id: string;
   proposedSalary: number;
   approvedSalary?: number;
-  status: 'pending' | 'approved' | 'rejected';
+  status: 'pending' | 'verified' | 'approved' | 'rejected';
   createdBy?: { _id: string; name: string; email: string };
+  verifiedBy?: { _id: string; name: string; email: string };
   approvedBy?: { _id: string; name: string; email: string };
   rejectedBy?: { _id: string; name: string; email: string };
   approvalComments?: string;
   rejectionComments?: string;
   created_at?: string;
+  verifiedAt?: string;
   approvedAt?: string;
   rejectedAt?: string;
   employeeAllowances?: (Allowance & { overrideAmount?: number })[];
@@ -1432,6 +1434,19 @@ export const api = {
 
   approveEmployeeApplication: async (id: string, data: { approvedSalary?: number; doj?: string; comments?: string; employeeAllowances?: any[]; employeeDeductions?: any[]; ctcSalary?: number; calculatedSalary?: number }) => {
     return apiRequest<any>(`/employee-applications/${id}/approve`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  verifyEmployeeApplication: async (id: string) => {
+    return apiRequest<any>(`/employee-applications/${id}/verify`, {
+      method: 'PUT',
+    });
+  },
+
+  approveEmployeeSalary: async (id: string, data: { approvedSalary?: number; doj?: string; comments?: string; second_salary?: number; employeeAllowances?: any[]; employeeDeductions?: any[]; ctcSalary?: number; calculatedSalary?: number }) => {
+    return apiRequest<any>(`/employee-applications/${id}/approve-salary`, {
       method: 'PUT',
       body: JSON.stringify(data),
     });
