@@ -1,4 +1,4 @@
-'use client'; // Cache bust: Force recompile 1
+﻿'use client'; // Cache bust: Force recompile 1
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
@@ -1719,8 +1719,10 @@ export default function EmployeesPage() {
       ((app.department_id as any)?.name || app.department?.name || '')?.toLowerCase().includes(applicationSearchTerm.toLowerCase());
 
     const matchesDivision = !selectedDivisionFilter || app.division_id === selectedDivisionFilter || (app.division as any)?._id === selectedDivisionFilter;
+    const matchesDepartment = !selectedDepartmentFilter || app.department_id === selectedDepartmentFilter || (app.department as any)?._id === selectedDepartmentFilter;
+    const matchesDesignation = !selectedDesignationFilter || app.designation_id === selectedDesignationFilter || (app.designation as any)?._id === selectedDesignationFilter;
 
-    return matchesSearch && matchesDivision;
+    return matchesSearch && matchesDivision && matchesDepartment && matchesDesignation;
   });
 
   // Apply column filters
@@ -2147,18 +2149,73 @@ export default function EmployeesPage() {
                 </label>
               </div>
             ) : (
-              /* Search for Applications */
-              <div className="relative flex-1 max-w-md">
-                <input
-                  type="text"
-                  placeholder="Search applications..."
-                  value={applicationSearchTerm}
-                  onChange={(e) => setApplicationSearchTerm(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-white pl-11 pr-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                />
-                <svg className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
+              /* Search and Filters for Applications */
+              <div className="flex flex-wrap items-center gap-3 flex-1">
+                <div className="relative flex-1 max-w-md">
+                  <input
+                    type="text"
+                    placeholder="Search applications..."
+                    value={applicationSearchTerm}
+                    onChange={(e) => setApplicationSearchTerm(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white pl-11 pr-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  />
+                  <svg className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </div>
+
+                <div className="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-1 hidden md:block"></div>
+
+                {/* Division Selection for Applications */}
+                <div className="min-w-[150px]">
+                  <select
+                    value={selectedDivisionFilter}
+                    onChange={(e) => {
+                      setSelectedDivisionFilter(e.target.value);
+                      setSelectedDepartmentFilter('');
+                      setSelectedDesignationFilter('');
+                    }}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  >
+                    <option value="">All Divisions</option>
+                    {divisions.map((d) => (
+                      <option key={d._id} value={d._id}>{d.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Department Selection for Applications */}
+                <div className="min-w-[150px]">
+                  <select
+                    value={selectedDepartmentFilter}
+                    onChange={(e) => {
+                      setSelectedDepartmentFilter(e.target.value);
+                      setSelectedDesignationFilter('');
+                    }}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  >
+                    <option value="">All Departments</option>
+                    {departments
+                      .filter(dept => !selectedDivisionFilter || (dept as any).divisions?.some((d: any) => (typeof d === 'string' ? d === selectedDivisionFilter : (d._id || d) === selectedDivisionFilter)))
+                      .map((d) => (
+                        <option key={d._id} value={d._id}>{d.name}</option>
+                      ))}
+                  </select>
+                </div>
+
+                {/* Designation Selection for Applications */}
+                <div className="min-w-[150px]">
+                  <select
+                    value={selectedDesignationFilter}
+                    onChange={(e) => setSelectedDesignationFilter(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  >
+                    <option value="">All Designations</option>
+                    {designations.map((d) => (
+                      <option key={d._id} value={d._id}>{d.name}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
             )}
 
