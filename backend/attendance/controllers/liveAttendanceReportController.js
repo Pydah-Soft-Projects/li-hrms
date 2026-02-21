@@ -96,16 +96,16 @@ exports.getLiveAttendanceReport = async (req, res) => {
       {
         $project: {
           divisionId: '$_id.division',
-          departmentId: '$_id.department',
+          id: '$_id.department',
           divisionName: { $ifNull: [{ $arrayElemAt: ['$divisionDoc.name', 0] }, 'No Division'] },
-          departmentName: { $ifNull: [{ $arrayElemAt: ['$departmentDoc.name', 0] }, 'No Department'] },
+          name: { $ifNull: [{ $arrayElemAt: ['$departmentDoc.name', 0] }, 'No Department'] },
           totalEmployees: '$total'
         }
       }
     ]);
 
     const departmentStats = divDeptStats.reduce((acc, item) => {
-      const key = `${item.divisionId}_${item.departmentId}`;
+      const key = `${item.divisionId}_${item.id}`;
       acc[key] = {
         ...item,
         working: 0,
@@ -197,7 +197,7 @@ exports.getLiveAttendanceReport = async (req, res) => {
       absent: Math.max(0, dept.totalEmployees - dept.present)
     })).sort((a, b) => {
       const divCmp = (a.divisionName || '').localeCompare(b.divisionName || '');
-      return divCmp !== 0 ? divCmp : (a.departmentName || '').localeCompare(b.departmentName || '');
+      return divCmp !== 0 ? divCmp : (a.name || '').localeCompare(b.name || '');
     });
 
     res.status(200).json({
