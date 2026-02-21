@@ -408,10 +408,7 @@ export default function RosterPage() {
   }, [employees, debouncedSearch]);
 
   return (
-    <div className="relative min-h-screen bg-[#f8fafc] dark:bg-[#020617]">
-      <div className="pointer-events-none fixed inset-0 bg-[linear-gradient(to_right,#e2e8f01f_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f01f_1px,transparent_1px)] bg-[size:28px_28px] dark:bg-[linear-gradient(to_right,rgba(148,163,184,0.08)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.08)_1px,transparent_1px)]" />
-      <div className="pointer-events-none fixed inset-0 bg-gradient-to-br from-blue-50/20 via-indigo-50/20 to-transparent dark:from-slate-900/40 dark:via-slate-900/40 dark:to-slate-900/60" />
-
+    <div className="relative min-h-screen">
       <div className="relative z-10 w-auto -mt-4 sm:-mt-5 lg:-mt-6 -mx-4 sm:-mx-5 lg:-mx-6 pb-6 space-y-0.5">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-200/60 bg-white/80 p-4 shadow-[0_2px_15px_rgba(0,0,0,0.02)] backdrop-blur-md dark:border-slate-800/60 dark:bg-slate-950/80 sm:px-6">
           <div className="flex items-center gap-3">
