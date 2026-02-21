@@ -46,17 +46,17 @@ function StatCard({ title, value, icon, trend, color }: {
   };
 
   return (
-    <div className="relative p-3 md:p-5 rounded-2xl md:rounded-2xl transition-all duration-300 hover:shadow-xl hover:-translate-y-1 group bg-white border border-slate-100 shadow-sm h-40 flex flex-col justify-between">
-      <div className="flex items-start justify-between mb-2 md:mb-4">
-        <div className={`w-10 h-10 md:w-8 md:h-8 rounded-xl md:rounded-xl bg-gradient-to-br ${gradients[color]} flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform duration-300`}>
-          {React.isValidElement(icon) ? React.cloneElement(icon as React.ReactElement<any>, { className: 'w-5 h-5 md:w-6 md:h-6' }) : icon}
-        </div>
+    <div className="relative p-4 rounded-2xl transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 group bg-white border border-slate-100 shadow-sm flex items-center gap-4">
+      <div className={`shrink-0 w-10 h-10 rounded-xl bg-gradient-to-br ${gradients[color]} flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform duration-300`}>
+        {React.isValidElement(icon) ? React.cloneElement(icon as React.ReactElement<any>, { className: 'w-5 h-5' }) : icon}
       </div>
-      <div>
-        <p className="text-slate-500 font-semibold text-[9px] md:text-xs mb-0.5 md:mb-1 uppercase tracking-wider truncate">{title}</p>
-        <h3 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight">{value}</h3>
-        <div className={`mt-1 md:mt-1 inline-flex items-center gap-1 md:gap-2 px-1.5 py-0.5 md:px-3 md:py-1 rounded-full text-[8px] md:text-xs font-bold ${bgColors[color]} text-${color}-700`}>
-          {trend}
+      <div className="min-w-0">
+        <p className="text-slate-400 font-bold text-[10px] uppercase tracking-widest mb-1 truncate">{title}</p>
+        <div className="flex items-center gap-2">
+          <h3 className="text-xl font-black text-slate-900 tracking-tight">{value}</h3>
+          <div className={`hidden sm:inline-flex items-center px-1.5 py-0.5 rounded-full text-[8px] font-bold ${bgColors[color]} text-${color}-700 whitespace-nowrap`}>
+            {trend}
+          </div>
         </div>
       </div>
     </div>
@@ -126,6 +126,7 @@ export default function DepartmentsPage() {
   const [showShiftBreakdownDialog, setShowShiftBreakdownDialog] = useState<Designation | null>(null);
   const [showBulkUploadDept, setShowBulkUploadDept] = useState(false);
   const [showBulkUploadDesig, setShowBulkUploadDesig] = useState(false);
+  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
   const [error, setError] = useState('');
 
   // Department form state
@@ -215,7 +216,7 @@ export default function DepartmentsPage() {
 
   // Division HOD state
   const [divisions, setDivisions] = useState<Division[]>([]);
-  const [divisionHODMap, setDivisionHODMap] = useState<Record<string, string>>({}); // { divisionId: hodId }
+  const [divisionHODMap, setDivisionHODMap] = useState<Record<string, string>>({}); // {divisionId: hodId }
   const [selectedDivisionId, setSelectedDivisionId] = useState<string>('all');
 
   // Designation form state
@@ -749,57 +750,25 @@ export default function DepartmentsPage() {
 
   return (
     <div className="relative min-h-screen">
-      {/* Background Pattern */}
-      <div className="pointer-events-none fixed inset-0 bg-[linear-gradient(to_right,#e2e8f01f_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f01f_1px,transparent_1px)] bg-[size:28px_28px] dark:bg-[linear-gradient(to_right,rgba(148,163,184,0.12)_1px,transparent_1px),linear-gradient(to_bottom,rgba(148,163,184,0.12)_1px,transparent_1px)]" />
-      <div className="pointer-events-none fixed inset-0 bg-gradient-to-br from-blue-50/40 via-indigo-50/35 to-transparent dark:from-slate-900/60 dark:via-slate-900/65 dark:to-slate-900/80" />
-
-      <div className="relative z-10 p-6 sm:p-8 lg:p-10">
-        {/* Header Section - Dashboard Style */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-2 md:gap-6 mb-8">
-          {/* Page Role Card */}
-          <div className="md:col-span-1 bg-white p-3 md:p-6 rounded-xl md:rounded-3xl shadow-sm border border-slate-100 relative overflow-hidden group hover:shadow-md transition-shadow">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-50 to-white rounded-full -mr-10 -mt-10 blur-2xl transition-all duration-500 group-hover:bg-blue-100/60" />
-
-            <div className="relative z-10 flex items-center h-full gap-3 md:gap-5">
-              <div className="w-12 h-12 md:w-16 md:h-16 md:ml-4 rounded-xl md:rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/20 ring-2 md:ring-4 ring-blue-50 shrink-0">
-                <BuildingIcon className="w-6 h-6 md:w-8 md:h-8" />
-              </div>
-              <div className="flex flex-col justify-center">
-                <p className="text-slate-500 font-medium text-[10px] md:text-xs uppercase tracking-wider mb-0.5">Organization</p>
-                <h3 className="text-lg md:text-2xl font-black text-slate-900 tracking-tight capitalize">
-                  Departments
-                </h3>
-                <div className="flex items-center gap-2 mt-1">
-                  <span className="text-xs font-semibold text-slate-400">Functional Units</span>
-                </div>
-              </div>
-            </div>
-          </div>
-          {/* Action Card */}
-          <div className="md:col-span-2 bg-gradient-to-br from-blue-500 to-indigo-600 p-3 md:p-8 rounded-xl md:rounded-3xl shadow-lg shadow-blue-500/20 border border-blue-400/20 relative overflow-hidden group">
-            <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -mr-10 -mt-10 blur-3xl transition-all duration-500 group-hover:bg-white/20" />
-
-            <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between h-full gap-4">
-              <div>
-                <h3 className="text-xl md:text-2xl font-bold text-white mb-1">Manage Workforce Structure</h3>
-                <p className="text-blue-100 text-sm md:text-base opacity-90">Organize your employees into functional departments and assign roles.</p>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setShowBulkUploadDept(true)}
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white/10 px-4 py-3 text-sm font-bold text-white backdrop-blur-sm transition-all hover:bg-white/20 whitespace-nowrap"
-                >
-                  <span>Bulk Import</span>
-                </button>
-                <button
-                  onClick={() => { resetDepartmentForm(); setShowCreateDialog(true); }}
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-6 py-4 text-sm font-bold text-blue-600 shadow-xl transition-all hover:scale-105 active:scale-95 whitespace-nowrap"
-                >
-                  <span className="text-xl">+</span>
-                  <span>Create Department</span>
-                </button>
-              </div>
-            </div>
+      <div className="relative z-10 px-6 py-2 sm:p-8 lg:p-10">
+        {/* Header Section */}
+        <div className="mb-8 flex items-center justify-between gap-4">
+          <h1 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-white">Departments</h1>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowBulkUploadDept(true)}
+              className="px-2.5 py-1.5 text-[10px] sm:px-4 sm:py-2.5 sm:text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300"
+            >
+              Bulk Import
+            </button>
+            <button
+              onClick={() => { resetDepartmentForm(); setShowCreateDialog(true); }}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-2.5 py-1.5 text-[10px] sm:px-4 sm:py-2.5 sm:text-sm font-medium text-white shadow-sm transition-all hover:bg-blue-700 active:scale-95"
+            >
+              <span className="text-base sm:text-lg leading-none">+</span>
+              <span className="hidden sm:inline">Create Department</span>
+              <span className="sm:hidden">Create</span>
+            </button>
           </div>
         </div>
 
@@ -2036,6 +2005,23 @@ export default function DepartmentsPage() {
               Organizational Units
             </h2>
 
+            <div className="flex items-center gap-4">
+              <div className="flex bg-slate-100 p-1 rounded-lg dark:bg-slate-900">
+                <button
+                  onClick={() => setViewMode('cards')}
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${viewMode === 'cards' ? 'bg-white text-blue-600 shadow-sm dark:bg-slate-800' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`}
+                >
+                  Cards
+                </button>
+                <button
+                  onClick={() => setViewMode('table')}
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${viewMode === 'table' ? 'bg-white text-blue-600 shadow-sm dark:bg-slate-800' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`}
+                >
+                  Table
+                </button>
+              </div>
+            </div>
+
             {/* Division Filter */}
             <div className="flex-1 min-w-[200px] max-w-xs">
               <div className="relative group">
@@ -2068,35 +2054,35 @@ export default function DepartmentsPage() {
             <div className="flex gap-2">
               <button
                 onClick={() => setShowBulkUploadDesig(true)}
-                className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300"
+                className="px-2.5 py-1.5 text-[10px] sm:px-4 sm:py-2 sm:text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300"
               >
                 Bulk Import
               </button>
               <button
                 onClick={() => handleOpenDesignationDialog('global')}
-                className="px-4 py-2 text-sm font-medium text-slate-100 bg-blue-600 rounded-xl hover:bg-blue-700 transition-colors"
+                className="px-2.5 py-1.5 text-[10px] sm:px-4 sm:py-2 sm:text-sm font-medium text-slate-100 bg-blue-600 rounded-xl hover:bg-blue-700 transition-colors"
               >
                 + Global Designations
               </button>
             </div>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {loading ? (
-              <div className="col-span-full flex flex-col items-center justify-center py-20">
-                <Spinner />
-                <p className="mt-4 text-sm font-medium text-slate-500">Loading departments...</p>
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-20">
+              <Spinner />
+              <p className="mt-4 text-sm font-medium text-slate-500">Loading departments...</p>
+            </div>
+          ) : departments.length === 0 ? (
+            <div className="py-20 text-center">
+              <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
+                <BuildingIcon className="w-10 h-10" />
               </div>
-            ) : departments.length === 0 ? (
-              <div className="col-span-full py-20 text-center">
-                <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
-                  <BuildingIcon className="w-10 h-10" />
-                </div>
-                <h3 className="text-xl font-bold text-slate-900">No departments yet</h3>
-                <p className="text-slate-500 mt-2">Start by creating your first department.</p>
-              </div>
-            ) : (
-              departments.map((dept) => {
+              <h3 className="text-xl font-bold text-slate-900">No departments yet</h3>
+              <p className="text-slate-500 mt-2">Start by creating your first department.</p>
+            </div>
+          ) : viewMode === 'cards' ? (
+            <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {departments.map((dept) => {
                 const isLinked = selectedDivisionId === 'all' || dept.divisions?.some(divId =>
                   (typeof divId === 'string' ? divId : (divId as any)._id) === selectedDivisionId
                 );
@@ -2170,121 +2156,207 @@ export default function DepartmentsPage() {
                     </div>
                   </div>
                 );
-              })
-            )}
-          </div>
+              })}
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm text-slate-600">
+                <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3 font-semibold rounded-tl-xl text-center">Icon</th>
+                    <th className="px-4 py-3 font-semibold">Department</th>
+                    <th className="px-4 py-3 font-semibold">Code</th>
+                    <th className="px-4 py-3 font-semibold">Divisions</th>
+                    <th className="px-4 py-3 font-semibold text-center">Roles</th>
+                    <th className="px-4 py-3 font-semibold text-right rounded-tr-xl">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {departments.map((dept) => {
+                    const isLinked = selectedDivisionId === 'all' || dept.divisions?.some(divId =>
+                      (typeof divId === 'string' ? divId : (divId as any)._id) === selectedDivisionId
+                    );
+
+                    return (
+                      <tr key={dept._id} className={`hover:bg-slate-50/50 transition-colors ${!isLinked ? 'opacity-60 grayscale-[0.8]' : ''}`}>
+                        <td className="px-4 py-4 whitespace-nowrap text-center">
+                          <div className="w-10 h-10 mx-auto rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center text-sm font-black ring-1 ring-blue-100">
+                            {(dept.code || dept.name.substring(0, 2)).substring(0, 2).toUpperCase()}
+                          </div>
+                        </td>
+                        <td className="px-4 py-4 whitespace-nowrap">
+                          <div className="font-bold text-slate-900">{dept.name}</div>
+                          {dept.description && <div className="text-xs text-slate-400 max-w-[200px] truncate">{dept.description}</div>}
+                        </td>
+                        <td className="px-4 py-4 whitespace-nowrap">
+                          <span className="px-2 py-1 bg-slate-100 text-slate-600 font-medium text-xs rounded-md border border-slate-200">
+                            {dept.code || '-'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-4">
+                          <div className="flex flex-wrap gap-1 max-w-[250px]">
+                            {dept.divisions && dept.divisions.length > 0 ? (
+                              dept.divisions.map((div: any) => (
+                                <span key={div._id} className="text-[10px] font-bold bg-slate-50 text-slate-500 px-1.5 py-0.5 rounded border border-slate-100">
+                                  {div.code || 'DIV'}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="text-xs italic text-slate-400">None</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-4 whitespace-nowrap text-center">
+                          <div className="inline-flex items-center gap-2">
+                            <span className="font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md min-w-[2rem] text-center">
+                              {dept.designations?.length || 0}
+                            </span>
+                            <button
+                              onClick={() => handleOpenDesignationDialog(dept._id)}
+                              className="text-xs font-semibold text-indigo-500 hover:text-indigo-700 underline underline-offset-2"
+                            >
+                              Manage
+                            </button>
+                          </div>
+                        </td>
+                        <td className="px-4 py-4 whitespace-nowrap text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => handleOpenShiftDialog(dept)}
+                              className="px-2.5 py-1 text-xs font-medium text-amber-600 bg-amber-50 rounded-md hover:bg-amber-100 transition-colors"
+                            >
+                              Shifts
+                            </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleOpenEditDialog(dept); }}
+                              className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+                            >
+                              <EditIcon />
+                            </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleDeleteDepartment(dept._id); }}
+                              className="p-1.5 text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                            >
+                              <TrashIcon />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         {/* Bulk Upload Departments Dialog */}
-        {
-          showBulkUploadDept && (
-            <BulkUpload
-              title="Bulk Upload Departments"
-              templateHeaders={DEPARTMENT_TEMPLATE_HEADERS}
-              templateSample={DEPARTMENT_TEMPLATE_SAMPLE}
-              templateFilename="department_template"
-              columns={[
-                { key: 'name', label: 'Department Name', width: '200px' },
-                { key: 'code', label: 'Code', width: '100px' },
-                { key: 'description', label: 'Description', width: '300px' },
-              ]}
-              validateRow={(row) => {
-                const result = validateDepartmentRow(row);
-                return { isValid: result.isValid, errors: result.errors, fieldErrors: result.fieldErrors };
-              }}
-              onSubmit={async (data) => {
-                let successCount = 0;
-                let failCount = 0;
-                const errors: string[] = [];
+        {showBulkUploadDept && (
+          <BulkUpload
+            title="Bulk Upload Departments"
+            templateHeaders={DEPARTMENT_TEMPLATE_HEADERS}
+            templateSample={DEPARTMENT_TEMPLATE_SAMPLE}
+            templateFilename="department_template"
+            columns={[
+              { key: 'name', label: 'Department Name', width: '200px' },
+              { key: 'code', label: 'Code', width: '100px' },
+              { key: 'description', label: 'Description', width: '300px' },
+            ]}
+            validateRow={(row) => {
+              const result = validateDepartmentRow(row);
+              return { isValid: result.isValid, errors: result.errors, fieldErrors: result.fieldErrors };
+            }}
+            onSubmit={async (data) => {
+              let successCount = 0;
+              let failCount = 0;
+              const errors: string[] = [];
 
-                for (const row of data) {
-                  try {
-                    const deptData = {
-                      name: row.name as string,
-                      code: row.code as string || undefined,
-                      description: row.description as string || undefined,
-                    };
+              for (const row of data) {
+                try {
+                  const deptData = {
+                    name: row.name as string,
+                    code: row.code as string || undefined,
+                    description: row.description as string || undefined,
+                  };
 
-                    const response = await api.createDepartment(deptData);
-                    if (response.success) {
-                      successCount++;
-                    } else {
-                      failCount++;
-                      errors.push(`${row.name}: ${response.message}`);
-                    }
-                  } catch (err) {
+                  const response = await api.createDepartment(deptData);
+                  if (response.success) {
+                    successCount++;
+                  } else {
                     failCount++;
-                    errors.push(`${row.name}: Failed to create`);
+                    errors.push(`${row.name}: ${response.message}`);
                   }
+                } catch (err) {
+                  failCount++;
+                  errors.push(`${row.name}: Failed to create`);
                 }
+              }
 
-                loadDepartments();
+              loadDepartments();
 
-                if (failCount === 0) {
-                  return { success: true, message: `Successfully created ${successCount} departments` };
-                } else {
-                  return { success: false, message: `Created ${successCount}, Failed ${failCount}. Errors: ${errors.slice(0, 3).join('; ')}` };
-                }
-              }}
-              onClose={() => setShowBulkUploadDept(false)}
-            />
-          )
-        }
+              if (failCount === 0) {
+                return { success: true, message: `Successfully created ${successCount} departments` };
+              } else {
+                return { success: false, message: `Created ${successCount}, Failed ${failCount}. Errors: ${errors.slice(0, 3).join('; ')}` };
+              }
+            }}
+            onClose={() => setShowBulkUploadDept(false)}
+          />
+        )}
 
         {/* Bulk Upload Designations Dialog */}
-        {
-          showBulkUploadDesig && (
-            <BulkUpload
-              title="Bulk Upload Designations"
-              templateHeaders={DESIGNATION_TEMPLATE_HEADERS}
-              templateSample={DESIGNATION_TEMPLATE_SAMPLE}
-              templateFilename="designation_template"
-              columns={[
-                { key: 'name', label: 'Designation Name', width: '220px' },
-                { key: 'code', label: 'Code', width: '120px' },
-                { key: 'description', label: 'Description', width: '300px' },
-                { key: 'paid_leaves', label: 'Paid Leaves', type: 'number', width: '100px' },
-              ]}
-              validateRow={(row) => {
-                const result = validateDesignationRow(row);
-                return { isValid: result.isValid, errors: result.errors, fieldErrors: result.fieldErrors, mappedRow: result.mappedRow };
-              }}
-              onSubmit={async (data) => {
-                let successCount = 0;
-                let failCount = 0;
-                const errors: string[] = [];
+        {showBulkUploadDesig && (
+          <BulkUpload
+            title="Bulk Upload Designations"
+            templateHeaders={DESIGNATION_TEMPLATE_HEADERS}
+            templateSample={DESIGNATION_TEMPLATE_SAMPLE}
+            templateFilename="designation_template"
+            columns={[
+              { key: 'name', label: 'Designation Name', width: '220px' },
+              { key: 'code', label: 'Code', width: '120px' },
+              { key: 'description', label: 'Description', width: '300px' },
+              { key: 'paid_leaves', label: 'Paid Leaves', type: 'number', width: '100px' },
+            ]}
+            validateRow={(row) => {
+              const result = validateDesignationRow(row);
+              return { isValid: result.isValid, errors: result.errors, fieldErrors: result.fieldErrors, mappedRow: result.mappedRow };
+            }}
+            onSubmit={async (data) => {
+              let successCount = 0;
+              let failCount = 0;
+              const errors: string[] = [];
 
-                for (const row of data) {
-                  try {
-                    const desigData = {
-                      name: row.name as string,
-                      code: row.code as string || undefined,
-                      description: row.description as string || undefined,
-                      paidLeaves: row.paid_leaves ? Number(row.paid_leaves) : 0,
-                    };
+              for (const row of data) {
+                try {
+                  const desigData = {
+                    name: row.name as string,
+                    code: row.code as string || undefined,
+                    description: row.description as string || undefined,
+                    paidLeaves: row.paid_leaves ? Number(row.paid_leaves) : 0,
+                  };
 
-                    const response = await api.createGlobalDesignation(desigData);
-                    if (response.success) {
-                      successCount++;
-                    } else {
-                      failCount++;
-                      errors.push(`${row.name}: ${response.message}`);
-                    }
-                  } catch (err) {
+                  const response = await api.createGlobalDesignation(desigData);
+                  if (response.success) {
+                    successCount++;
+                  } else {
                     failCount++;
-                    errors.push(`${row.name}: Failed to create`);
+                    errors.push(`${row.name}: ${response.message}`);
                   }
+                } catch (err) {
+                  failCount++;
+                  errors.push(`${row.name}: Failed to create`);
                 }
+              }
 
-                if (failCount === 0) {
-                  return { success: true, message: `Successfully created ${successCount} designations` };
-                } else {
-                  return { success: false, message: `Created ${successCount}, Failed ${failCount}. Errors: ${errors.slice(0, 3).join('; ')}` };
-                }
-              }}
-              onClose={() => setShowBulkUploadDesig(false)}
-            />
-          )}
+              if (failCount === 0) {
+                return { success: true, message: `Successfully created ${successCount} designations` };
+              } else {
+                return { success: false, message: `Created ${successCount}, Failed ${failCount}. Errors: ${errors.slice(0, 3).join('; ')}` };
+              }
+            }}
+            onClose={() => setShowBulkUploadDesig(false)}
+          />
+        )}
       </div>
     </div>
   );
