@@ -973,11 +973,32 @@ exports.rejectApplication = async (req, res) => {
       });
     }
 
-    if (application.status !== 'pending') {
+    // Cannot reject an already-rejected application
+    if (application.status === 'rejected') {
       return res.status(400).json({
         success: false,
-        message: `Application is already ${application.status}`,
+        message: 'Application is already rejected',
       });
+    }
+
+    // If the application was already verified or approved, an Employee record exists — delete it
+    const wasEmployeeCreated = ['verified', 'approved'].includes(application.status);
+    if (wasEmployeeCreated) {
+      const employee = await Employee.findOne({ emp_no: application.emp_no });
+      if (employee) {
+        await employee.deleteOne();
+        console.log(`[rejectApplication] Deleted employee record for ${application.emp_no} (application rejected after ${application.status})`);
+
+        // Also remove from MSSQL if connected
+        const { isHRMSConnected, deleteEmployeeMSSQL } = sqlHelper;
+        if (isHRMSConnected && isHRMSConnected() && typeof deleteEmployeeMSSQL === 'function') {
+          try {
+            await deleteEmployeeMSSQL(application.emp_no);
+          } catch (mssqlErr) {
+            console.error(`[rejectApplication] MSSQL delete failed for ${application.emp_no}:`, mssqlErr.message);
+          }
+        }
+      }
     }
 
     // Update application status
@@ -988,9 +1009,17 @@ exports.rejectApplication = async (req, res) => {
 
     await application.save();
 
+    // Log history
+    await EmployeeHistory.create({
+      emp_no: application.emp_no,
+      event: 'application_rejected',
+      performedBy: req.user._id,
+      details: { previousStatus: wasEmployeeCreated ? 'verified/approved' : 'pending', employeeDeleted: wasEmployeeCreated },
+      comments: comments || null,
+    }).catch(err => console.error('History log failed:', err.message));
+
     await application.populate([
       { path: 'createdBy', select: 'name email' },
-      { path: 'rejectedBy', select: 'name email' },
       { path: 'rejectedBy', select: 'name email' },
       { path: 'division_id', select: 'name' },
       { path: 'department_id', select: 'name code' },
@@ -999,7 +1028,9 @@ exports.rejectApplication = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'Employee application rejected',
+      message: wasEmployeeCreated
+        ? 'Application rejected and employee record removed successfully'
+        : 'Employee application rejected',
       data: application,
     });
   } catch (error) {
@@ -1010,6 +1041,7 @@ exports.rejectApplication = async (req, res) => {
     });
   }
 };
+
 
 /**
  * @desc    Bulk reject employee applications (Superadmin)
