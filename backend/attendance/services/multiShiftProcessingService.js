@@ -4,15 +4,16 @@
  */
 
 const AttendanceDaily = require('../model/AttendanceDaily');
-const { detectAndPairShifts } = require('./multiShiftDetectionService');
+const { isSameDay, findNextOut } = require('./multiShiftDetectionService');
 const { processSmartINDetection } = require('./smartINDetectionService');
 const { detectAndAssignShift, getShiftsForEmployee, calculateTimeDifference, calculateLateIn, calculateEarlyOut, timeToMinutes } = require('../../shifts/services/shiftDetectionService');
 const Employee = require('../../employees/model/Employee');
 const OD = require('../../leaves/model/OD');
 
+const { extractISTComponents, createISTDate } = require('../../shared/utils/dateUtils');
+
 const formatDate = (date) => {
-    const d = new Date(date);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    return extractISTComponents(date).dateStr;
 };
 
 /**
@@ -43,10 +44,7 @@ function timeStringToDate(timeStr, refDate, isNextDay = false) {
     if (typeof refDate === 'string' && refDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
         dateStr = refDate;
     } else {
-        const d = new Date(refDate);
-        // Convert to IST to get correct Year-Month-Day
-        const istDate = new Date(d.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-        dateStr = `${istDate.getFullYear()}-${String(istDate.getMonth() + 1).padStart(2, '0')}-${String(istDate.getDate()).padStart(2, '0')}`;
+        dateStr = extractISTComponents(refDate).dateStr;
     }
 
     // Construct timestamp with offset
@@ -80,20 +78,25 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
         const { isSameDay, findNextOut } = require('./multiShiftDetectionService');
         const MAX_SHIFTS = 3;
 
-        // Prepare Raw Logs
-        const allPunches = rawLogs.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        // Prepare Raw Logs for Smart Pairing
+        // Include IN, OUT, and null-type (regular thumb press) punches
+        // Robustness: Filter out logs with missing timestamps before sorting
+        const validLogs = rawLogs.filter(l => l && l.timestamp);
+        const allPunches = validLogs.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
-        // Include ALL punches for the target date as potential INs
-        // Let the pairing logic determine if they are valid starts
-        const targetDateIns = allPunches.filter(p => {
-            const isTargetDate = isSameDay(new Date(p.timestamp), date);
-            // Accept IN or generic punches (type: null)
-            const isPotentialIN = p.type === 'IN' || p.type === null || p.punch_state === 0 || p.punch_state === '0';
-            return isTargetDate && isPotentialIN;
-        });
+        // DEDUPLICATION: Ignore punches within 60 seconds of each other
+        const deduplicatedPunches = [];
+        for (const p of allPunches) {
+            const last = deduplicatedPunches[deduplicatedPunches.length - 1];
+            if (last && (new Date(p.timestamp) - new Date(last.timestamp)) < 60 * 1000) {
+                continue; // Skip double-taps
+            }
+            deduplicatedPunches.push(p);
+        }
 
-        // Similarly, accept OUT or generic punches as potential OUTs
-        const allOuts = allPunches.filter(p => p.type === 'OUT' || p.type === null || p.punch_state === 1 || p.punch_state === '1');
+        const targetDatePunches = deduplicatedPunches.filter(p => isSameDay(new Date(p.timestamp), date));
+        // allOuts search remains same but uses deduplicated list for efficiency
+        const allOutsFull = deduplicatedPunches;
 
         // Step 2: Get employee ID & ODs (Moved up for context)
         const employee = await Employee.findOne({ emp_no: employeeNumber.toUpperCase() }).select('_id department_id division_id');
@@ -144,53 +147,55 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
         let blockUntilTime = null; // The timestamp until which we ignore new IN punches
         let shiftCounter = 0;
 
-        for (let i = 0; i < targetDateIns.length; i++) {
+        for (let i = 0; i < targetDatePunches.length; i++) {
             if (shiftCounter >= MAX_SHIFTS) break;
 
-            const currentIn = targetDateIns[i];
+            const currentIn = targetDatePunches[i];
             const currentInTime = new Date(currentIn.timestamp);
 
-            // 1. Smart Filtering Check
-            if (blockUntilTime && currentInTime < blockUntilTime) {
-                console.log(`[Multi-Shift] Skipping IN at ${currentIn.timestamp} because it overlaps with previous assigned shift (Blocked until ${blockUntilTime})`);
+            if (isNaN(currentInTime.getTime())) {
+                console.warn(`[Smart-Pair] Invalid timestamp for employee ${employeeNumber} at index ${i}: ${currentIn.timestamp}`);
                 continue;
             }
 
-            // 2. Find Pair
+            // 1. Smart Filtering Check
+            if (blockUntilTime && currentInTime <= blockUntilTime) {
+                console.log(`[Smart-Pair] Skipping punch at ${currentIn.timestamp} (Locked until ${blockUntilTime})`);
+                continue;
+            }
+
+            // 2. Initial Pair Detection (Closest next punch)
             const MAX_WINDOW_MS = 24 * 60 * 60 * 1000;
-            const nextOut = allOuts.find(out => {
-                const tDiff = new Date(out.timestamp) - currentInTime;
+            let nextOut = allOutsFull.find(p => {
+                const tDiff = new Date(p.timestamp) - currentInTime;
                 return tDiff > 0 && tDiff <= MAX_WINDOW_MS;
             });
 
             // --- CONTINUOUS SHIFT SPLITTING CHECK ---
             let isContinuousSplit = false;
             let splitShifts = [];
-            const durationMs = nextOut ? (new Date(nextOut.timestamp) - currentInTime) : 0;
+            const durationMsNormal = nextOut ? (new Date(nextOut.timestamp) - currentInTime) : 0;
 
             // Trigger if duration > 14 hours
-            if (nextOut && durationMs > 14 * 60 * 60 * 1000) {
+            if (nextOut && durationMsNormal > 14 * 60 * 60 * 1000) {
                 try {
+                    const { getShiftsForEmployee, calculateTimeDifference, timeToMinutes } = require('../../shifts/services/shiftDetectionService');
                     const candidates = await getShiftsForEmployee(employeeNumber, date);
                     const shiftsList = candidates.shifts || [];
 
                     const findShiftStartingNear = (time, list) => {
                         return list.find(s => {
                             const diff = calculateTimeDifference(time, s.startTime, date);
-                            // 60 min tolerance
-                            return diff <= 60;
+                            return diff <= 60; // 60 min tolerance
                         });
                     };
 
                     const firstShift = findShiftStartingNear(currentInTime, shiftsList);
                     if (firstShift) {
                         const firstEnd = timeStringToDate(firstShift.endTime, date, timeToMinutes(firstShift.endTime) < timeToMinutes(firstShift.startTime));
-
-                        // Look for second shift starting where first ended
                         const secondShift = findShiftStartingNear(firstEnd, shiftsList);
                         if (secondShift) {
-                            console.log(`[Multi-Shift] Continuous Chain: ${firstShift.name} -> ${secondShift.name}`);
-
+                            console.log(`[Smart-Pair] Continuous Chain Detected: ${firstShift.name} -> ${secondShift.name}`);
                             splitShifts.push({ assignedShift: firstShift, inTime: currentIn.timestamp, outTime: firstEnd.toISOString() });
                             splitShifts.push({ assignedShift: secondShift, inTime: firstEnd.toISOString(), outTime: nextOut.timestamp });
                             isContinuousSplit = true;
@@ -209,16 +214,14 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                     const sOut = new Date(split.outTime);
                     const sDuration = sOut - sIn;
 
-                    const pShift = {
+                    const pSplitShift = {
                         shiftNumber: shiftCounter,
                         inTime: split.inTime,
                         outTime: split.outTime,
                         duration: Math.round(sDuration / 60000),
-                        punchHours: Math.round((sDuration / 3600000) * 100) / 100, // Fixed precision
+                        punchHours: Math.round((sDuration / 3600000) * 100) / 100,
                         workingHours: Math.round((sDuration / 3600000) * 100) / 100,
-                        odHours: 0,
-                        extraHours: 0,
-                        otHours: 0,
+                        odHours: 0, extraHours: 0, otHours: 0,
                         status: 'complete',
                         inPunchId: currentIn._id || currentIn.id,
                         outPunchId: nextOut ? (nextOut._id || nextOut.id) : null,
@@ -227,37 +230,18 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                         shiftStartTime: split.assignedShift.startTime,
                         shiftEndTime: split.assignedShift.endTime,
                         expectedHours: split.assignedShift.duration || 8,
-                        isLateIn: false,
-                        isEarlyOut: false
+                        isLateIn: false, isEarlyOut: false
                     };
 
-                    // Calc Late/Early
-                    if (split === splitShifts[0]) {
-                        try {
-                            const late = calculateLateIn(sIn, split.assignedShift.startTime, split.assignedShift.gracePeriod, date);
-                            pShift.lateInMinutes = late || 0;
-                            pShift.isLateIn = pShift.lateInMinutes > 0;
-                        } catch (err) { }
-                    }
-                    if (split === splitShifts[splitShifts.length - 1]) {
-                        try {
-                            const early = calculateEarlyOut(sOut, split.assignedShift.endTime, split.assignedShift.startTime, date);
-                            pShift.earlyOutMinutes = early || 0;
-                            pShift.isEarlyOut = pShift.earlyOutMinutes > 0;
-                        } catch (err) { }
-                    }
-
-                    // Dynamic Payable
-                    pShift.status = 'PRESENT';
-                    pShift.payableShift = split.assignedShift.payableShifts !== undefined ? split.assignedShift.payableShifts : 1;
-
-                    processedShifts.push(pShift);
+                    pSplitShift.status = 'PRESENT';
+                    pSplitShift.payableShift = split.assignedShift.payableShifts !== undefined ? split.assignedShift.payableShifts : 1;
+                    processedShifts.push(pSplitShift);
                 }
                 blockUntilTime = new Date(nextOut.timestamp);
                 continue;
             }
 
-            // 3. Assign Shift (Async) to determing "Block Until"
+            // 3. Shift Assignment & Fallback Refinement
             let shiftAssignment = null;
             let assignedShiftDef = null;
             try {
@@ -268,6 +252,32 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                     nextOut ? nextOut.timestamp : null,
                     generalConfig
                 );
+
+                // If NO shift matched and we have a nextOut, check the 1-hour rule
+                if ((!shiftAssignment || !shiftAssignment.success) && nextOut) {
+                    const tDiff = new Date(nextOut.timestamp) - currentInTime;
+                    if (tDiff < 60 * 60 * 1000) {
+                        // User requirement: If no shift, ignore for 1 hour
+                        console.log(`[Smart-Pair] No shift and punch at ${nextOut.timestamp} is < 1hr. Skipping it as OUT.`);
+
+                        // Re-search for nextOut after 1 hour
+                        nextOut = allOutsFull.find(p => {
+                            const tDiff2 = new Date(p.timestamp) - currentInTime;
+                            return tDiff2 >= 60 * 60 * 1000 && tDiff2 <= MAX_WINDOW_MS;
+                        });
+
+                        // Try assignment again with the better OUT (if found)
+                        if (nextOut) {
+                            shiftAssignment = await detectAndAssignShift(
+                                employeeNumber,
+                                date,
+                                currentIn.timestamp,
+                                nextOut.timestamp,
+                                generalConfig
+                            );
+                        }
+                    }
+                }
 
                 // Fetch Shift Def for Payable Value
                 if (shiftAssignment && shiftAssignment.assignedShift) {
@@ -282,13 +292,22 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
             // 4. Determine Block Time for NEXT iteration
             if (shiftAssignment && shiftAssignment.success && shiftAssignment.shiftEndTime) {
                 const shiftEnd = timeStringToDate(shiftAssignment.shiftEndTime, date, shiftAssignment.shiftEndTime < shiftAssignment.shiftStartTime);
-                blockUntilTime = shiftEnd || new Date(currentInTime.getTime() + 60 * 60 * 1000);
+                // Block until EITHER shift end OR the actual punch out time (whichever is later)
+                // This prevents "Double-usage" of an OUT punch as next IN
+                const outTime = nextOut ? new Date(nextOut.timestamp) : null;
+                blockUntilTime = outTime && outTime > shiftEnd ? outTime : shiftEnd;
             } else {
-                blockUntilTime = new Date(currentInTime.getTime() + 60 * 60 * 1000);
+                // FALLBACK Block: If no shift, block for 1 hour from current In
+                // BUT if we found an OUT, we MUST block until that OUT time to avoid using it as next IN
+                const fallbackBlock = new Date(currentInTime.getTime() + 60 * 60 * 1000);
+                const outTime = nextOut ? new Date(nextOut.timestamp) : null;
+                blockUntilTime = outTime && outTime > fallbackBlock ? outTime : fallbackBlock;
             }
 
             // 5. Construct Processed Shift Object
             shiftCounter++;
+            const durationMs = nextOut ? (new Date(nextOut.timestamp) - currentInTime) : 0;
+
             const pShift = {
                 shiftNumber: shiftCounter,
                 inTime: currentIn.timestamp,
@@ -366,30 +385,50 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                     pShift.workingHours = Math.round((pShift.punchHours + addedOdHours) * 100) / 100;
                 }
 
-                // Calculate Extra Hours & Status With Dynamic Payable
-                const expectedDuration = shiftAssignment.expectedHours || 8;
-                const totalDuration = pShift.workingHours || 0;
+                // Calculate Status based on rules
+                const expectedDuration = (shiftAssignment && shiftAssignment.expectedHours) || 8;
 
-                pShift.expectedHours = expectedDuration; // Enrich shift segment with expectedHours
+                // Calculate Effective Duration for Status Determination
+                const shiftStart = (pShift.shiftStartTime) ? timeStringToDate(pShift.shiftStartTime, date) : null;
+                const shiftEnd = (pShift.shiftEndTime) ? timeStringToDate(pShift.shiftEndTime, date, pShift.shiftEndTime < pShift.shiftStartTime) : null;
 
-                if (shiftAssignment.expectedHours) {
-                    pShift.extraHours = Math.max(0, Math.round((totalDuration - shiftAssignment.expectedHours) * 100) / 100);
+                const punchIn = new Date(pShift.inTime);
+                const punchOut = pShift.outTime ? new Date(pShift.outTime) : null;
+
+                let statusDuration = 0;
+                if (punchIn && punchOut && shiftStart) {
+                    const effectiveIn = new Date(Math.max(punchIn.getTime(), shiftStart.getTime()));
+                    const effectiveOut = punchOut;
+                    statusDuration = Math.max(0, (effectiveOut - effectiveIn) / 3600000);
+                } else if (punchIn && punchOut) {
+                    statusDuration = pShift.workingHours;
                 }
 
-                // Determine Base Payable Value
-                const basePayable = assignedShiftDef && assignedShiftDef.payableShifts !== undefined ? assignedShiftDef.payableShifts : 1;
+                statusDuration += (pShift.odHours || 0);
+                pShift.expectedHours = expectedDuration;
 
-                if (pShift.workingHours >= (expectedDuration * 0.8)) {
+                // Determine Base Payable Value
+                const basePayable = (assignedShiftDef && assignedShiftDef.payableShifts !== undefined) ? assignedShiftDef.payableShifts : 1;
+
+                // Extra Hours Calculation (moved out for fallback usage)
+                const refDuration = (assignedShiftDef && assignedShiftDef.duration) || 8;
+                if (pShift.workingHours > refDuration) {
+                    pShift.extraHours = Math.round((pShift.workingHours - refDuration) * 100) / 100;
+                }
+
+                // Thresholds: > 75% = PRESENT, 40%-75% = HALF_DAY, < 40% = ABSENT
+                if (statusDuration >= (expectedDuration * 0.75)) {
                     pShift.status = 'PRESENT';
                     pShift.payableShift = basePayable;
-                } else if (pShift.workingHours >= (expectedDuration * 0.35)) {
+                } else if (statusDuration >= (expectedDuration * 0.40)) {
                     pShift.status = 'HALF_DAY';
                     pShift.payableShift = basePayable * 0.5;
                 } else {
                     pShift.status = 'ABSENT';
                     pShift.payableShift = 0;
                 }
-                console.log(`[MultiShift] Processing segment ${shiftCounter} for ${employeeNumber}: Working=${pShift.workingHours}, Expected=${expectedDuration}`);
+
+                console.log(`[MultiShift] Processing segment ${shiftCounter} for ${employeeNumber}: statusDuration=${statusDuration.toFixed(2)}, Expected=${expectedDuration}`);
                 console.log(`[MultiShift] Segment ${shiftCounter} Status: ${pShift.status}, Payable: ${pShift.payableShift}`);
             }
 
@@ -399,7 +438,6 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
         // Step 5: Calculate daily totals
         const totals = calculateDailyTotals(processedShifts);
 
-        // Step 6: Determine overall status
         // Step 6: Determine overall status
         const totalPayableShifts = processedShifts.reduce((sum, s) => sum + (s.payableShift || 0), 0);
 
@@ -431,7 +469,6 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
             payableShifts: totalPayableShifts,
 
             // Backward compatibility fields (Metrics)
-            // inTime, outTime, totalHours removed - using aggregate fields
             odHours,
             odDetails,
             status,
@@ -477,11 +514,9 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
         await dailyRecord.save();
 
         console.log(`[Multi-Shift Processing] ✓ Daily record updated and hooks triggered successfully`);
-
         // findOneAndUpdate does not trigger post-save hook — recalculate monthly summary so totalPayableShifts etc. stay correct
         const { recalculateOnAttendanceUpdate } = require('./summaryCalculationService');
         await recalculateOnAttendanceUpdate(employeeNumber, date);
-
         return {
             success: true,
             dailyRecord,
