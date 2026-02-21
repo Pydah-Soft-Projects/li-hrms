@@ -213,6 +213,20 @@ export default function EmployeesPage() {
   const [passwordMode, setPasswordMode] = useState<'random' | 'phone_empno'>('random');
   const [notificationChannels, setNotificationChannels] = useState({ email: true, sms: true });
   const [isResending, setIsResending] = useState<string | null>(null);
+
+  const SENSITIVE_FIELDS = [
+    'gross_salary',
+    'pf_number',
+    'esi_number',
+    'aadhar_number',
+    'bank_account_no',
+    'bank_name',
+    'bank_place',
+    'ifsc_code',
+    'salary_mode',
+    'second_salary',
+    'proposedSalary'
+  ];
   const [selectedApplicationIds, setSelectedApplicationIds] = useState<string[]>([]);
   const [employeeFilters, setEmployeeFilters] = useState<Record<string, string>>({});
   const [applicationFilters, setApplicationFilters] = useState<Record<string, string>>({});
@@ -2950,7 +2964,7 @@ export default function EmployeesPage() {
                           currentFilters={applicationFilters}
                           setFilters={setApplicationFilters}
                         />
-                        <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Proposed Salary</th>
+                        {userRole !== 'hod' && <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Proposed Salary</th>}
                         <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Created By</th>
                         <th className="px-6 py-4 text-right text-[10px] font-black uppercase tracking-widest text-text-secondary">Actions</th>
                       </tr>
@@ -2988,9 +3002,11 @@ export default function EmployeesPage() {
                             <td className="whitespace-nowrap px-6 py-4 text-xs font-bold text-text-secondary">
                               {app.department?.name || (app.department_id as { name?: string })?.name || '-'}
                             </td>
-                            <td className="whitespace-nowrap px-6 py-4 text-sm font-black text-text-primary">
-                              ₹{app.proposedSalary.toLocaleString()}
-                            </td>
+                            {userRole !== 'hod' && (
+                              <td className="whitespace-nowrap px-6 py-4 text-sm font-black text-text-primary">
+                                ₹{app.proposedSalary.toLocaleString()}
+                              </td>
+                            )}
                             <td className="whitespace-nowrap px-6 py-4 text-[10px] font-black text-text-secondary uppercase tracking-widest">
                               {app.createdBy?.name || 'Unknown'}
                             </td>
@@ -3057,10 +3073,12 @@ export default function EmployeesPage() {
                                 <span className="font-bold">{app.department?.name || (app.department_id as { name?: string })?.name}</span>
                               </div>
                             )}
-                            <div className="flex items-center gap-1.5 text-xs text-text-secondary">
-                              <span className="font-medium">Salary:</span>
-                              <span className="font-bold text-text-primary">₹{app.proposedSalary.toLocaleString()}</span>
-                            </div>
+                            {userRole !== 'hod' && (
+                              <div className="flex items-center gap-1.5 text-xs text-text-secondary">
+                                <span className="font-medium">Salary:</span>
+                                <span className="font-bold text-text-primary">₹{app.proposedSalary.toLocaleString()}</span>
+                              </div>
+                            )}
                             <div className="flex items-center gap-1.5 text-xs text-text-secondary">
                               <span className="font-medium">By:</span>
                               <span className="font-bold">{app.createdBy?.name || 'Unknown'}</span>
@@ -3142,184 +3160,189 @@ export default function EmployeesPage() {
                   departments={getScopedDepartments(getEntityId(applicationFormData.division_id) || '')}
                   divisions={scopedDivisions}
                   designations={filteredApplicationDesignations as any}
+                  excludeFields={userRole === 'hod' ? SENSITIVE_FIELDS : []}
                 />
 
                 {/* Allowances & Deductions Overrides */}
-                <div className="space-y-4 rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">Allowances &amp; Deductions</h3>
-                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        Defaults come from Department/Global. Enter an amount to override for this employee.
-                      </p>
+                {userRole !== 'hod' && (
+                  <div className="space-y-4 rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">Allowances &amp; Deductions</h3>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                          Defaults come from Department/Global. Enter an amount to override for this employee.
+                        </p>
+                      </div>
+                      {loadingComponents && (
+                        <div className="text-xs text-slate-500 dark:text-slate-400">Loading components...</div>
+                      )}
                     </div>
-                    {loadingComponents && (
-                      <div className="text-xs text-slate-500 dark:text-slate-400">Loading components...</div>
+
+                    {/* Salary summary */}
+                    {userRole !== 'hod' && (
+                      <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/60 md:grid-cols-4">
+                        <div>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">Proposed / Gross Salary</p>
+                          <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                            ₹{Number((applicationFormData as any).proposedSalary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-green-700 dark:text-green-300">Total Allowances</p>
+                          <p className="text-sm font-semibold text-green-700 dark:text-green-300">
+                            ₹{applicationSalarySummary.totalAllowances.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-red-700 dark:text-red-300">Total Deductions</p>
+                          <p className="text-sm font-semibold text-red-700 dark:text-red-300">
+                            ₹{applicationSalarySummary.totalDeductions.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">Calculated / CTC</p>
+                          <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                            ₹{applicationSalarySummary.netSalary.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                          </p>
+                        </div>
+                      </div>
                     )}
-                  </div>
 
-                  {/* Salary summary */}
-                  <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/60 md:grid-cols-4">
-                    <div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">Proposed / Gross Salary</p>
-                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                        ₹{Number((applicationFormData as any).proposedSalary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-green-700 dark:text-green-300">Total Allowances</p>
-                      <p className="text-sm font-semibold text-green-700 dark:text-green-300">
-                        ₹{applicationSalarySummary.totalAllowances.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-red-700 dark:text-red-300">Total Deductions</p>
-                      <p className="text-sm font-semibold text-red-700 dark:text-red-300">
-                        ₹{applicationSalarySummary.totalDeductions.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">Calculated / CTC</p>
-                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                        ₹{applicationSalarySummary.netSalary.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-4 md:grid-cols-2">
-                    {/* Allowances */}
-                    <div className="rounded-xl border border-green-100 bg-green-50/70 p-3 dark:border-green-900/40 dark:bg-green-900/20">
-                      <div className="mb-2 flex items-center justify-between">
-                        <h4 className="text-sm font-semibold text-green-800 dark:text-green-200">Allowances</h4>
-                        <span className="text-xs text-green-700 dark:text-green-300">
-                          {componentDefaults.allowances.length} items
-                        </span>
-                      </div>
-                      <div className="space-y-2">
-                        {componentDefaults.allowances.length === 0 && (
-                          <p className="text-xs text-green-700/70 dark:text-green-200/70">No allowances available.</p>
-                        )}
-                        {componentDefaults.allowances.map((item) => {
-                          const key = getKey(item);
-                          const current = overrideAllowances[key] ?? item.amount ?? 0;
-                          const isFixed = item.type === 'fixed';
-                          const basedOnPresentDays = overrideAllowancesBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
-                          return (
-                            <div key={key} className="rounded-lg border border-green-100 bg-white/70 px-3 py-2 text-xs dark:border-green-900/50 dark:bg-green-950/40">
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="flex-1">
-                                  <div className="font-semibold text-green-900 dark:text-green-100">{item.name}</div>
-                                  <div className="text-[11px] text-green-700 dark:text-green-300">
-                                    {item.type === 'percentage'
-                                      ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
-                                      : 'Fixed'}
+                    <div className="grid gap-4 md:grid-cols-2">
+                      {/* Allowances */}
+                      <div className="rounded-xl border border-green-100 bg-green-50/70 p-3 dark:border-green-900/40 dark:bg-green-900/20">
+                        <div className="mb-2 flex items-center justify-between">
+                          <h4 className="text-sm font-semibold text-green-800 dark:text-green-200">Allowances</h4>
+                          <span className="text-xs text-green-700 dark:text-green-300">
+                            {componentDefaults.allowances.length} items
+                          </span>
+                        </div>
+                        <div className="space-y-2">
+                          {componentDefaults.allowances.length === 0 && (
+                            <p className="text-xs text-green-700/70 dark:text-green-200/70">No allowances available.</p>
+                          )}
+                          {componentDefaults.allowances.map((item) => {
+                            const key = getKey(item);
+                            const current = overrideAllowances[key] ?? item.amount ?? 0;
+                            const isFixed = item.type === 'fixed';
+                            const basedOnPresentDays = overrideAllowancesBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
+                            return (
+                              <div key={key} className="rounded-lg border border-green-100 bg-white/70 px-3 py-2 text-xs dark:border-green-900/50 dark:bg-green-950/40">
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex-1">
+                                    <div className="font-semibold text-green-900 dark:text-green-100">{item.name}</div>
+                                    <div className="text-[11px] text-green-700 dark:text-green-300">
+                                      {item.type === 'percentage'
+                                        ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
+                                        : 'Fixed'}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-[11px] text-green-700 dark:text-green-300">Override</span>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      value={current === null ? '' : current}
+                                      onChange={(e) => handleOverrideChange('allowance', item, e.target.value)}
+                                      className="w-24 rounded border border-green-200 bg-white px-2 py-1 text-[11px] text-green-900 focus:border-green-400 focus:outline-none dark:border-green-800 dark:bg-green-950 dark:text-green-100"
+                                    />
                                   </div>
                                 </div>
-                                <div className="flex items-center gap-1">
-                                  <span className="text-[11px] text-green-700 dark:text-green-300">Override</span>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    value={current === null ? '' : current}
-                                    onChange={(e) => handleOverrideChange('allowance', item, e.target.value)}
-                                    className="w-24 rounded border border-green-200 bg-white px-2 py-1 text-[11px] text-green-900 focus:border-green-400 focus:outline-none dark:border-green-800 dark:bg-green-950 dark:text-green-100"
-                                  />
-                                </div>
+                                {isFixed && (
+                                  <div className="mt-2 pt-2 border-t border-green-100 dark:border-green-900/50">
+                                    <label className="flex items-start gap-1.5 cursor-pointer">
+                                      <input
+                                        type="checkbox"
+                                        checked={basedOnPresentDays}
+                                        onChange={(e) => {
+                                          setOverrideAllowancesBasedOnPresentDays({
+                                            ...overrideAllowancesBasedOnPresentDays,
+                                            [key]: e.target.checked
+                                          });
+                                        }}
+                                        className="mt-0.5 h-3 w-3 rounded border-green-300 text-green-600 focus:ring-green-500 dark:border-green-700"
+                                      />
+                                      <span className="text-[10px] leading-tight text-green-700 dark:text-green-300">
+                                        Prorate based on present days
+                                      </span>
+                                    </label>
+                                  </div>
+                                )}
                               </div>
-                              {isFixed && (
-                                <div className="mt-2 pt-2 border-t border-green-100 dark:border-green-900/50">
-                                  <label className="flex items-start gap-1.5 cursor-pointer">
-                                    <input
-                                      type="checkbox"
-                                      checked={basedOnPresentDays}
-                                      onChange={(e) => {
-                                        setOverrideAllowancesBasedOnPresentDays({
-                                          ...overrideAllowancesBasedOnPresentDays,
-                                          [key]: e.target.checked
-                                        });
-                                      }}
-                                      className="mt-0.5 h-3 w-3 rounded border-green-300 text-green-600 focus:ring-green-500 dark:border-green-700"
-                                    />
-                                    <span className="text-[10px] leading-tight text-green-700 dark:text-green-300">
-                                      Prorate based on present days
-                                    </span>
-                                  </label>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
 
-                    {/* Deductions */}
-                    <div className="rounded-xl border border-red-100 bg-red-50/70 p-3 dark:border-red-900/40 dark:bg-red-900/20">
-                      <div className="mb-2 flex items-center justify-between">
-                        <h4 className="text-sm font-semibold text-red-800 dark:text-red-200">Deductions</h4>
-                        <span className="text-xs text-red-700 dark:text-red-300">
-                          {componentDefaults.deductions.length} items
-                        </span>
-                      </div>
-                      <div className="space-y-2">
-                        {componentDefaults.deductions.length === 0 && (
-                          <p className="text-xs text-red-700/70 dark:text-red-200/70">No deductions available.</p>
-                        )}
-                        {componentDefaults.deductions.map((item) => {
-                          const key = getKey(item);
-                          const current = overrideDeductions[key] ?? item.amount ?? 0;
-                          const isFixed = item.type === 'fixed';
-                          const basedOnPresentDays = overrideDeductionsBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
-                          return (
-                            <div key={key} className="rounded-lg border border-red-100 bg-white/70 px-3 py-2 text-xs dark:border-red-900/50 dark:bg-red-950/40">
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="flex-1">
-                                  <div className="font-semibold text-red-900 dark:text-red-100">{item.name}</div>
-                                  <div className="text-[11px] text-red-700 dark:text-red-300">
-                                    {item.type === 'percentage'
-                                      ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
-                                      : 'Fixed'}
+                      {/* Deductions */}
+                      <div className="rounded-xl border border-red-100 bg-red-50/70 p-3 dark:border-red-900/40 dark:bg-red-900/20">
+                        <div className="mb-2 flex items-center justify-between">
+                          <h4 className="text-sm font-semibold text-red-800 dark:text-red-200">Deductions</h4>
+                          <span className="text-xs text-red-700 dark:text-red-300">
+                            {componentDefaults.deductions.length} items
+                          </span>
+                        </div>
+                        <div className="space-y-2">
+                          {componentDefaults.deductions.length === 0 && (
+                            <p className="text-xs text-red-700/70 dark:text-red-200/70">No deductions available.</p>
+                          )}
+                          {componentDefaults.deductions.map((item) => {
+                            const key = getKey(item);
+                            const current = overrideDeductions[key] ?? item.amount ?? 0;
+                            const isFixed = item.type === 'fixed';
+                            const basedOnPresentDays = overrideDeductionsBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
+                            return (
+                              <div key={key} className="rounded-lg border border-red-100 bg-white/70 px-3 py-2 text-xs dark:border-red-900/50 dark:bg-red-950/40">
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex-1">
+                                    <div className="font-semibold text-red-900 dark:text-red-100">{item.name}</div>
+                                    <div className="text-[11px] text-red-700 dark:text-red-300">
+                                      {item.type === 'percentage'
+                                        ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
+                                        : 'Fixed'}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-[11px] text-red-700 dark:text-red-300">Override</span>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      value={current === null ? '' : current}
+                                      onChange={(e) => handleOverrideChange('deduction', item, e.target.value)}
+                                      className="w-24 rounded border border-red-200 bg-white px-2 py-1 text-[11px] text-red-900 focus:border-red-400 focus:outline-none dark:border-red-800 dark:bg-green-950 dark:text-green-100"
+                                    />
                                   </div>
                                 </div>
-                                <div className="flex items-center gap-1">
-                                  <span className="text-[11px] text-red-700 dark:text-red-300">Override</span>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    value={current === null ? '' : current}
-                                    onChange={(e) => handleOverrideChange('deduction', item, e.target.value)}
-                                    className="w-24 rounded border border-red-200 bg-white px-2 py-1 text-[11px] text-red-900 focus:border-red-400 focus:outline-none dark:border-red-800 dark:bg-red-950 dark:text-red-100"
-                                  />
-                                </div>
+                                {isFixed && (
+                                  <div className="mt-2 pt-2 border-t border-red-100 dark:border-red-900/50">
+                                    <label className="flex items-start gap-1.5 cursor-pointer">
+                                      <input
+                                        type="checkbox"
+                                        checked={basedOnPresentDays}
+                                        onChange={(e) => {
+                                          setOverrideDeductionsBasedOnPresentDays({
+                                            ...overrideDeductionsBasedOnPresentDays,
+                                            [key]: e.target.checked
+                                          });
+                                        }}
+                                        className="mt-0.5 h-3 w-3 rounded border-red-300 text-red-600 focus:ring-red-500 dark:border-red-700"
+                                      />
+                                      <span className="text-[10px] leading-tight text-red-700 dark:text-red-300">
+                                        Prorate based on present days
+                                      </span>
+                                    </label>
+                                  </div>
+                                )}
                               </div>
-                              {isFixed && (
-                                <div className="mt-2 pt-2 border-t border-red-100 dark:border-red-900/50">
-                                  <label className="flex items-start gap-1.5 cursor-pointer">
-                                    <input
-                                      type="checkbox"
-                                      checked={basedOnPresentDays}
-                                      onChange={(e) => {
-                                        setOverrideDeductionsBasedOnPresentDays({
-                                          ...overrideDeductionsBasedOnPresentDays,
-                                          [key]: e.target.checked
-                                        });
-                                      }}
-                                      className="mt-0.5 h-3 w-3 rounded border-red-300 text-red-600 focus:ring-red-500 dark:border-red-700"
-                                    />
-                                    <span className="text-[10px] leading-tight text-red-700 dark:text-red-300">
-                                      Prorate based on present days
-                                    </span>
-                                  </label>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
+                            );
+                          })}
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
+                )}
 
                 {/* Actions */}
                 <div className="flex gap-3 pt-2">
@@ -3504,252 +3527,258 @@ export default function EmployeesPage() {
                 </div>
 
                 {/* Salary Section - Key Feature */}
-                <div className="rounded-2xl border-2 border-green-200 bg-green-50/50 p-5 dark:border-green-800 dark:bg-green-900/20">
-                  <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-green-700 dark:text-green-400">Salary Approval</h3>
-                  <div className="space-y-4">
-                    {/* Proposed Salary - Strikethrough if modified */}
-                    <div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Proposed Salary (HR)</p>
-                      <p className={`text-lg font-semibold ${approvalData.approvedSalary !== selectedApplication.proposedSalary ? 'line-through text-slate-400' : 'text-slate-900 dark:text-slate-100'}`}>
-                        ₹{selectedApplication.proposedSalary.toLocaleString()}
-                      </p>
-                    </div>
-
-                    {/* Approved Salary Input */}
-                    <div>
-                      <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                        Approved Salary *
-                      </label>
-                      <input
-                        type="number"
-                        value={approvalData.approvedSalary || ''}
-                        onChange={(e) => setApprovalData({ ...approvalData, approvedSalary: Number(e.target.value) })}
-                        required
-                        min="0"
-                        step="0.01"
-                        className="w-full rounded-xl border-2 border-green-400 bg-white px-4 py-2.5 text-lg font-semibold transition-all focus:border-green-500 focus:outline-none focus:ring-2 focus:ring-green-500/20 dark:border-green-600 dark:bg-slate-900 dark:text-slate-100"
-                        placeholder="Enter approved salary"
-                      />
-                      {approvalData.approvedSalary !== selectedApplication.proposedSalary && (
-                        <p className="mt-2 text-xs text-green-600 dark:text-green-400">
-                          ✓ Salary modified from proposed amount
+                {userRole !== 'hod' && (
+                  <div className="rounded-2xl border-2 border-green-200 bg-green-50/50 p-5 dark:border-green-800 dark:bg-green-900/20">
+                    <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-green-700 dark:text-green-400">Salary Approval</h3>
+                    <div className="space-y-4">
+                      {/* Proposed Salary - Strikethrough if modified */}
+                      <div>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Proposed Salary (HR)</p>
+                        <p className={`text-lg font-semibold ${approvalData.approvedSalary !== selectedApplication.proposedSalary ? 'line-through text-slate-400' : 'text-slate-900 dark:text-slate-100'}`}>
+                          ₹{selectedApplication.proposedSalary.toLocaleString()}
                         </p>
+                      </div>
+
+                      {/* Approved Salary Input */}
+                      <div>
+                        <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                          Approved Salary *
+                        </label>
+                        <input
+                          type="number"
+                          value={approvalData.approvedSalary || ''}
+                          onChange={(e) => setApprovalData({ ...approvalData, approvedSalary: Number(e.target.value) })}
+                          required
+                          min="0"
+                          step="0.01"
+                          className="w-full rounded-xl border-2 border-green-400 bg-white px-4 py-2.5 text-lg font-semibold transition-all focus:border-green-500 focus:outline-none focus:ring-2 focus:ring-green-500/20 dark:border-green-600 dark:bg-slate-900 dark:text-slate-100"
+                          placeholder="Enter approved salary"
+                        />
+                        {approvalData.approvedSalary !== selectedApplication.proposedSalary && (
+                          <p className="mt-2 text-xs text-green-600 dark:text-green-400">
+                            ✓ Salary modified from proposed amount
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Second Salary (If applicable) */}
+                      <div>
+                        <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                          Second Salary / Additional (Optional)
+                        </label>
+                        <input
+                          type="number"
+                          value={(approvalData as any).second_salary || ''}
+                          onChange={(e) => setApprovalData({ ...approvalData, second_salary: Number(e.target.value) } as any)}
+                          min="0"
+                          step="0.01"
+                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold transition-all focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                          placeholder="Enter second salary if any"
+                        />
+                        <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                          Additional salary component (e.g. fixed allowance not in components)
+                        </p>
+                      </div>
+
+                      {/* Date of Joining */}
+                      <div>
+                        <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                          Date of Joining *
+                        </label>
+                        <input
+                          type="date"
+                          value={approvalData.doj || ''}
+                          onChange={(e) => setApprovalData({ ...approvalData, doj: e.target.value })}
+                          required
+                          className="w-full rounded-xl border-2 border-green-400 bg-white px-4 py-2.5 text-sm font-semibold transition-all focus:border-green-500 focus:outline-none focus:ring-2 focus:ring-green-500/20 dark:border-green-600 dark:bg-slate-900 dark:text-slate-100"
+                        />
+                        <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                          Specify the employee&apos;s joining date
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Allowances & Deductions with summary in approval */}
+                {userRole !== 'hod' && (
+                  <div className="space-y-4 rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">Allowances &amp; Deductions</h3>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                          Based on department/global defaults. Adjust overrides as needed before approval.
+                        </p>
+                      </div>
+                      {approvalLoadingComponents && (
+                        <div className="text-xs text-slate-500 dark:text-slate-400">Loading components...</div>
                       )}
                     </div>
 
-                    {/* Second Salary (If applicable) */}
-                    <div>
-                      <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                        Second Salary / Additional (Optional)
-                      </label>
-                      <input
-                        type="number"
-                        value={(approvalData as any).second_salary || ''}
-                        onChange={(e) => setApprovalData({ ...approvalData, second_salary: Number(e.target.value) } as any)}
-                        min="0"
-                        step="0.01"
-                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold transition-all focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                        placeholder="Enter second salary if any"
-                      />
-                      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                        Additional salary component (e.g. fixed allowance not in components)
-                      </p>
-                    </div>
-
-                    {/* Date of Joining */}
-                    <div>
-                      <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                        Date of Joining *
-                      </label>
-                      <input
-                        type="date"
-                        value={approvalData.doj || ''}
-                        onChange={(e) => setApprovalData({ ...approvalData, doj: e.target.value })}
-                        required
-                        className="w-full rounded-xl border-2 border-green-400 bg-white px-4 py-2.5 text-sm font-semibold transition-all focus:border-green-500 focus:outline-none focus:ring-2 focus:ring-green-500/20 dark:border-green-600 dark:bg-slate-900 dark:text-slate-100"
-                      />
-                      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                        Specify the employee&apos;s joining date
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Allowances & Deductions with summary in approval */}
-                <div className="space-y-4 rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">Allowances &amp; Deductions</h3>
-                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        Based on department/global defaults. Adjust overrides as needed before approval.
-                      </p>
-                    </div>
-                    {approvalLoadingComponents && (
-                      <div className="text-xs text-slate-500 dark:text-slate-400">Loading components...</div>
+                    {userRole !== 'hod' && (
+                      <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/60 md:grid-cols-4">
+                        <div>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">Approved / Gross Salary</p>
+                          <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                            ₹{Number(approvalData.approvedSalary || selectedApplication.proposedSalary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-green-700 dark:text-green-300">Total Allowances</p>
+                          <p className="text-sm font-semibold text-green-700 dark:text-green-300">
+                            ₹{approvalSalarySummary.totalAllowances.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-red-700 dark:text-red-300">Total Deductions</p>
+                          <p className="text-sm font-semibold text-red-700 dark:text-red-300">
+                            ₹{approvalSalarySummary.totalDeductions.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">Calculated / CTC</p>
+                          <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                            ₹{approvalSalarySummary.netSalary.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                          </p>
+                        </div>
+                      </div>
                     )}
-                  </div>
 
-                  <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/60 md:grid-cols-4">
-                    <div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">Approved / Gross Salary</p>
-                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                        ₹{Number(approvalData.approvedSalary || selectedApplication.proposedSalary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-green-700 dark:text-green-300">Total Allowances</p>
-                      <p className="text-sm font-semibold text-green-700 dark:text-green-300">
-                        ₹{approvalSalarySummary.totalAllowances.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-red-700 dark:text-red-300">Total Deductions</p>
-                      <p className="text-sm font-semibold text-red-700 dark:text-red-300">
-                        ₹{approvalSalarySummary.totalDeductions.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">Calculated / CTC</p>
-                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                        ₹{approvalSalarySummary.netSalary.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-4 md:grid-cols-2">
-                    {/* Allowances */}
-                    <div className="rounded-xl border border-green-100 bg-green-50/70 p-3 dark:border-green-900/40 dark:bg-green-900/20">
-                      <div className="mb-2 flex items-center justify-between">
-                        <h4 className="text-sm font-semibold text-green-800 dark:text-green-200">Allowances</h4>
-                        <span className="text-xs text-green-700 dark:text-green-300">
-                          {approvalComponentDefaults.allowances.length} items
-                        </span>
-                      </div>
-                      <div className="space-y-2">
-                        {approvalComponentDefaults.allowances.length === 0 && (
-                          <p className="text-xs text-green-700/70 dark:text-green-200/70">No allowances available.</p>
-                        )}
-                        {approvalComponentDefaults.allowances.map((item) => {
-                          const key = getKey(item);
-                          const current = approvalOverrideAllowances[key] ?? item.amount ?? 0;
-                          const isFixed = item.type === 'fixed';
-                          const basedOnPresentDays = approvalOverrideAllowancesBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
-                          return (
-                            <div key={key} className="rounded-lg border border-green-100 bg-white/70 px-3 py-2 text-xs dark:border-green-900/50 dark:bg-green-950/40">
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="flex-1">
-                                  <div className="font-semibold text-green-900 dark:text-green-100">{item.name}</div>
-                                  <div className="text-[11px] text-green-700 dark:text-green-300">
-                                    {item.type === 'percentage'
-                                      ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
-                                      : 'Fixed'}
+                    <div className="grid gap-4 md:grid-cols-2">
+                      {/* Allowances */}
+                      <div className="rounded-xl border border-green-100 bg-green-50/70 p-3 dark:border-green-900/40 dark:bg-green-900/20">
+                        <div className="mb-2 flex items-center justify-between">
+                          <h4 className="text-sm font-semibold text-green-800 dark:text-green-200">Allowances</h4>
+                          <span className="text-xs text-green-700 dark:text-green-300">
+                            {approvalComponentDefaults.allowances.length} items
+                          </span>
+                        </div>
+                        <div className="space-y-2">
+                          {approvalComponentDefaults.allowances.length === 0 && (
+                            <p className="text-xs text-green-700/70 dark:text-green-200/70">No allowances available.</p>
+                          )}
+                          {approvalComponentDefaults.allowances.map((item) => {
+                            const key = getKey(item);
+                            const current = approvalOverrideAllowances[key] ?? item.amount ?? 0;
+                            const isFixed = item.type === 'fixed';
+                            const basedOnPresentDays = approvalOverrideAllowancesBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
+                            return (
+                              <div key={key} className="rounded-lg border border-green-100 bg-white/70 px-3 py-2 text-xs dark:border-green-900/50 dark:bg-green-950/40">
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex-1">
+                                    <div className="font-semibold text-green-900 dark:text-green-100">{item.name}</div>
+                                    <div className="text-[11px] text-green-700 dark:text-green-300">
+                                      {item.type === 'percentage'
+                                        ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
+                                        : 'Fixed'}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-[11px] text-green-700 dark:text-green-300">Override</span>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      value={current === null ? '' : current}
+                                      onChange={(e) => handleApprovalOverrideChange('allowance', item, e.target.value)}
+                                      className="w-24 rounded border border-green-200 bg-white px-2 py-1 text-[11px] text-green-900 focus:border-green-400 focus:outline-none dark:border-green-800 dark:bg-green-950 dark:text-green-100"
+                                    />
                                   </div>
                                 </div>
-                                <div className="flex items-center gap-1">
-                                  <span className="text-[11px] text-green-700 dark:text-green-300">Override</span>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    value={current === null ? '' : current}
-                                    onChange={(e) => handleApprovalOverrideChange('allowance', item, e.target.value)}
-                                    className="w-24 rounded border border-green-200 bg-white px-2 py-1 text-[11px] text-green-900 focus:border-green-400 focus:outline-none dark:border-green-800 dark:bg-green-950 dark:text-green-100"
-                                  />
-                                </div>
+                                {isFixed && (
+                                  <div className="mt-2 pt-2 border-t border-green-100 dark:border-green-900/50">
+                                    <label className="flex items-start gap-1.5 cursor-pointer">
+                                      <input
+                                        type="checkbox"
+                                        checked={basedOnPresentDays}
+                                        onChange={(e) => {
+                                          setApprovalOverrideAllowancesBasedOnPresentDays({
+                                            ...approvalOverrideAllowancesBasedOnPresentDays,
+                                            [key]: e.target.checked
+                                          });
+                                        }}
+                                        className="mt-0.5 h-3 w-3 rounded border-green-300 text-green-600 focus:ring-green-500 dark:border-green-700"
+                                      />
+                                      <span className="text-[10px] leading-tight text-green-700 dark:text-green-300">
+                                        Prorate based on present days
+                                      </span>
+                                    </label>
+                                  </div>
+                                )}
                               </div>
-                              {isFixed && (
-                                <div className="mt-2 pt-2 border-t border-green-100 dark:border-green-900/50">
-                                  <label className="flex items-start gap-1.5 cursor-pointer">
-                                    <input
-                                      type="checkbox"
-                                      checked={basedOnPresentDays}
-                                      onChange={(e) => {
-                                        setApprovalOverrideAllowancesBasedOnPresentDays({
-                                          ...approvalOverrideAllowancesBasedOnPresentDays,
-                                          [key]: e.target.checked
-                                        });
-                                      }}
-                                      className="mt-0.5 h-3 w-3 rounded border-green-300 text-green-600 focus:ring-green-500 dark:border-green-700"
-                                    />
-                                    <span className="text-[10px] leading-tight text-green-700 dark:text-green-300">
-                                      Prorate based on present days
-                                    </span>
-                                  </label>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
 
-                    {/* Deductions */}
-                    <div className="rounded-xl border border-red-100 bg-red-50/70 p-3 dark:border-red-900/40 dark:bg-red-900/20">
-                      <div className="mb-2 flex items-center justify-between">
-                        <h4 className="text-sm font-semibold text-red-800 dark:text-red-200">Deductions</h4>
-                        <span className="text-xs text-red-700 dark:text-red-300">
-                          {approvalComponentDefaults.deductions.length} items
-                        </span>
-                      </div>
-                      <div className="space-y-2">
-                        {approvalComponentDefaults.deductions.length === 0 && (
-                          <p className="text-xs text-red-700/70 dark:text-red-200/70">No deductions available.</p>
-                        )}
-                        {approvalComponentDefaults.deductions.map((item) => {
-                          const key = getKey(item);
-                          const current = approvalOverrideDeductions[key] ?? item.amount ?? 0;
-                          const isFixed = item.type === 'fixed';
-                          const basedOnPresentDays = approvalOverrideDeductionsBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
-                          return (
-                            <div key={key} className="rounded-lg border border-red-100 bg-white/70 px-3 py-2 text-xs dark:border-red-900/50 dark:bg-red-950/40">
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="flex-1">
-                                  <div className="font-semibold text-red-900 dark:text-red-100">{item.name}</div>
-                                  <div className="text-[11px] text-red-700 dark:text-red-300">
-                                    {item.type === 'percentage'
-                                      ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
-                                      : 'Fixed'}
+                      {/* Deductions */}
+                      <div className="rounded-xl border border-red-100 bg-red-50/70 p-3 dark:border-red-900/40 dark:bg-red-900/20">
+                        <div className="mb-2 flex items-center justify-between">
+                          <h4 className="text-sm font-semibold text-red-800 dark:text-red-200">Deductions</h4>
+                          <span className="text-xs text-red-700 dark:text-red-300">
+                            {approvalComponentDefaults.deductions.length} items
+                          </span>
+                        </div>
+                        <div className="space-y-2">
+                          {approvalComponentDefaults.deductions.length === 0 && (
+                            <p className="text-xs text-red-700/70 dark:text-red-200/70">No deductions available.</p>
+                          )}
+                          {approvalComponentDefaults.deductions.map((item) => {
+                            const key = getKey(item);
+                            const current = approvalOverrideDeductions[key] ?? item.amount ?? 0;
+                            const isFixed = item.type === 'fixed';
+                            const basedOnPresentDays = approvalOverrideDeductionsBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
+                            return (
+                              <div key={key} className="rounded-lg border border-red-100 bg-white/70 px-3 py-2 text-xs dark:border-red-900/50 dark:bg-green-950/40">
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex-1">
+                                    <div className="font-semibold text-red-900 dark:text-red-100">{item.name}</div>
+                                    <div className="text-[11px] text-red-700 dark:text-red-300">
+                                      {item.type === 'percentage'
+                                        ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
+                                        : 'Fixed'}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-[11px] text-red-700 dark:text-red-300">Override</span>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      value={current === null ? '' : current}
+                                      onChange={(e) => handleApprovalOverrideChange('deduction', item, e.target.value)}
+                                      className="w-24 rounded border border-red-200 bg-white px-2 py-1 text-[11px] text-red-900 focus:border-red-400 focus:outline-none dark:border-red-800 dark:bg-green-950 dark:text-green-100"
+                                    />
                                   </div>
                                 </div>
-                                <div className="flex items-center gap-1">
-                                  <span className="text-[11px] text-red-700 dark:text-red-300">Override</span>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    value={current === null ? '' : current}
-                                    onChange={(e) => handleApprovalOverrideChange('deduction', item, e.target.value)}
-                                    className="w-24 rounded border border-red-200 bg-white px-2 py-1 text-[11px] text-red-900 focus:border-red-400 focus:outline-none dark:border-red-800 dark:bg-red-950 dark:text-red-100"
-                                  />
-                                </div>
+                                {isFixed && (
+                                  <div className="mt-2 pt-2 border-t border-red-100 dark:border-red-900/50">
+                                    <label className="flex items-start gap-1.5 cursor-pointer">
+                                      <input
+                                        type="checkbox"
+                                        checked={basedOnPresentDays}
+                                        onChange={(e) => {
+                                          setApprovalOverrideDeductionsBasedOnPresentDays({
+                                            ...approvalOverrideDeductionsBasedOnPresentDays,
+                                            [key]: e.target.checked
+                                          });
+                                        }}
+                                        className="mt-0.5 h-3 w-3 rounded border-red-300 text-red-600 focus:ring-red-500 dark:border-red-700"
+                                      />
+                                      <span className="text-[10px] leading-tight text-red-700 dark:text-red-300">
+                                        Prorate based on present days
+                                      </span>
+                                    </label>
+                                  </div>
+                                )}
                               </div>
-                              {isFixed && (
-                                <div className="mt-2 pt-2 border-t border-red-100 dark:border-red-900/50">
-                                  <label className="flex items-start gap-1.5 cursor-pointer">
-                                    <input
-                                      type="checkbox"
-                                      checked={basedOnPresentDays}
-                                      onChange={(e) => {
-                                        setApprovalOverrideDeductionsBasedOnPresentDays({
-                                          ...approvalOverrideDeductionsBasedOnPresentDays,
-                                          [key]: e.target.checked
-                                        });
-                                      }}
-                                      className="mt-0.5 h-3 w-3 rounded border-red-300 text-red-600 focus:ring-red-500 dark:border-red-700"
-                                    />
-                                    <span className="text-[10px] leading-tight text-red-700 dark:text-red-300">
-                                      Prorate based on present days
-                                    </span>
-                                  </label>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
+                            );
+                          })}
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
+                )}
 
                 {/* Comments */}
                 <div>
@@ -3833,6 +3862,7 @@ export default function EmployeesPage() {
                   divisions={divisions}
                   designations={filteredDesignations as any}
                   onSettingsLoaded={setFormSettings}
+                  excludeFields={userRole === 'hod' ? SENSITIVE_FIELDS : []}
                 />
 
                 {/* Leave Settings */}
@@ -3879,187 +3909,191 @@ export default function EmployeesPage() {
                 </div>
 
                 {/* Allowances & Deductions Overrides + Salary Summary */}
-                <div className="space-y-4 rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">Allowances &amp; Deductions</h3>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">
-                        Defaults come from Department/Global. Enter an amount to override for this employee.
-                      </p>
+                {userRole !== 'hod' && (
+                  <div className="space-y-4 rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">Allowances &amp; Deductions</h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          Defaults come from Department/Global. Enter an amount to override for this employee.
+                        </p>
+                      </div>
+                      {loadingComponents && (
+                        <div className="text-xs text-slate-500 dark:text-slate-400">Loading components...</div>
+                      )}
                     </div>
-                    {loadingComponents && (
-                      <div className="text-xs text-slate-500 dark:text-slate-400">Loading components...</div>
+
+                    {/* Salary summary */}
+                    {userRole !== 'hod' && (
+                      <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/60 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
+                        <div>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">Gross Salary</p>
+                          <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                            ₹{Number(formData.gross_salary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-green-700 dark:text-green-300">Total Allowances</p>
+                          <p className="text-sm font-semibold text-green-700 dark:text-green-300">
+                            ₹{salarySummary.totalAllowances.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-red-700 dark:text-red-300">Total Deductions</p>
+                          <p className="text-sm font-semibold text-red-700 dark:text-red-300">
+                            ₹{salarySummary.totalDeductions.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">CTC Salary</p>
+                          <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                            ₹{salarySummary.ctcSalary.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">Calculated (Net)</p>
+                          <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                            ₹{salarySummary.netSalary.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                          </p>
+                        </div>
+                      </div>
                     )}
-                  </div>
 
-                  {/* Salary summary */}
-                  <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/60 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
-                    <div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">Gross Salary</p>
-                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                        ₹{Number(formData.gross_salary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-green-700 dark:text-green-300">Total Allowances</p>
-                      <p className="text-sm font-semibold text-green-700 dark:text-green-300">
-                        ₹{salarySummary.totalAllowances.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-red-700 dark:text-red-300">Total Deductions</p>
-                      <p className="text-sm font-semibold text-red-700 dark:text-red-300">
-                        ₹{salarySummary.totalDeductions.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">CTC Salary</p>
-                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                        ₹{salarySummary.ctcSalary.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">Calculated (Net)</p>
-                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                        ₹{salarySummary.netSalary.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-4 md:grid-cols-2">
-                    {/* Allowances */}
-                    <div className="rounded-xl border border-green-100 bg-green-50/70 p-3 dark:border-green-900/40 dark:bg-green-900/20">
-                      <div className="mb-2 flex items-center justify-between">
-                        <h4 className="text-sm font-semibold text-green-800 dark:text-green-200">Allowances</h4>
-                        <span className="text-xs text-green-700 dark:text-green-300">
-                          {componentDefaults.allowances.length} items
-                        </span>
-                      </div>
-                      <div className="space-y-2">
-                        {componentDefaults.allowances.length === 0 && (
-                          <p className="text-xs text-green-700/70 dark:text-green-200/70">No allowances available.</p>
-                        )}
-                        {componentDefaults.allowances.map((item) => {
-                          const key = getKey(item);
-                          const current = overrideAllowances[key] ?? item.amount ?? 0;
-                          const isFixed = item.type === 'fixed';
-                          const basedOnPresentDays = overrideAllowancesBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
-                          return (
-                            <div key={key} className="rounded-lg border border-green-100 bg-white/70 px-3 py-2 text-xs dark:border-green-900/50 dark:bg-green-950/40">
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="flex-1">
-                                  <div className="font-semibold text-green-900 dark:text-green-100">{item.name}</div>
-                                  <div className="text-[11px] text-green-700 dark:text-green-300">
-                                    {item.type === 'percentage'
-                                      ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
-                                      : 'Fixed'}
+                    <div className="grid gap-4 md:grid-cols-2">
+                      {/* Allowances */}
+                      <div className="rounded-xl border border-green-100 bg-green-50/70 p-3 dark:border-green-900/40 dark:bg-green-900/20">
+                        <div className="mb-2 flex items-center justify-between">
+                          <h4 className="text-sm font-semibold text-green-800 dark:text-green-200">Allowances</h4>
+                          <span className="text-xs text-green-700 dark:text-green-300">
+                            {componentDefaults.allowances.length} items
+                          </span>
+                        </div>
+                        <div className="space-y-2">
+                          {componentDefaults.allowances.length === 0 && (
+                            <p className="text-xs text-green-700/70 dark:text-green-200/70">No allowances available.</p>
+                          )}
+                          {componentDefaults.allowances.map((item) => {
+                            const key = getKey(item);
+                            const current = overrideAllowances[key] ?? item.amount ?? 0;
+                            const isFixed = item.type === 'fixed';
+                            const basedOnPresentDays = overrideAllowancesBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
+                            return (
+                              <div key={key} className="rounded-lg border border-green-100 bg-white/70 px-3 py-2 text-xs dark:border-green-900/50 dark:bg-green-950/40">
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex-1">
+                                    <div className="font-semibold text-green-900 dark:text-green-100">{item.name}</div>
+                                    <div className="text-[11px] text-green-700 dark:text-green-300">
+                                      {item.type === 'percentage'
+                                        ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
+                                        : 'Fixed'}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-[11px] text-green-700 dark:text-green-300">Override</span>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      value={current === null ? '' : current}
+                                      onChange={(e) => handleOverrideChange('allowance', item, e.target.value)}
+                                      className="w-24 rounded border border-green-200 bg-white px-2 py-1 text-[11px] text-green-900 focus:border-green-400 focus:outline-none dark:border-green-800 dark:bg-green-950 dark:text-green-100"
+                                    />
                                   </div>
                                 </div>
-                                <div className="flex items-center gap-1">
-                                  <span className="text-[11px] text-green-700 dark:text-green-300">Override</span>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    value={current === null ? '' : current}
-                                    onChange={(e) => handleOverrideChange('allowance', item, e.target.value)}
-                                    className="w-24 rounded border border-green-200 bg-white px-2 py-1 text-[11px] text-green-900 focus:border-green-400 focus:outline-none dark:border-green-800 dark:bg-green-950 dark:text-green-100"
-                                  />
-                                </div>
+                                {isFixed && (
+                                  <div className="mt-2 pt-2 border-t border-green-100 dark:border-green-900/50">
+                                    <label className="flex items-start gap-1.5 cursor-pointer">
+                                      <input
+                                        type="checkbox"
+                                        checked={basedOnPresentDays}
+                                        onChange={(e) => {
+                                          setOverrideAllowancesBasedOnPresentDays({
+                                            ...overrideAllowancesBasedOnPresentDays,
+                                            [key]: e.target.checked
+                                          });
+                                        }}
+                                        className="mt-0.5 h-3 w-3 rounded border-green-300 text-green-600 focus:ring-green-500 dark:border-green-700"
+                                      />
+                                      <span className="text-[10px] leading-tight text-green-700 dark:text-green-300">
+                                        Prorate based on present days
+                                      </span>
+                                    </label>
+                                  </div>
+                                )}
                               </div>
-                              {isFixed && (
-                                <div className="mt-2 pt-2 border-t border-green-100 dark:border-green-900/50">
-                                  <label className="flex items-start gap-1.5 cursor-pointer">
-                                    <input
-                                      type="checkbox"
-                                      checked={basedOnPresentDays}
-                                      onChange={(e) => {
-                                        setOverrideAllowancesBasedOnPresentDays({
-                                          ...overrideAllowancesBasedOnPresentDays,
-                                          [key]: e.target.checked
-                                        });
-                                      }}
-                                      className="mt-0.5 h-3 w-3 rounded border-green-300 text-green-600 focus:ring-green-500 dark:border-green-700"
-                                    />
-                                    <span className="text-[10px] leading-tight text-green-700 dark:text-green-300">
-                                      Prorate based on present days
-                                    </span>
-                                  </label>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
 
-                    {/* Deductions */}
-                    <div className="rounded-xl border border-red-100 bg-red-50/70 p-3 dark:border-red-900/40 dark:bg-red-900/20">
-                      <div className="mb-2 flex items-center justify-between">
-                        <h4 className="text-sm font-semibold text-red-800 dark:text-red-200">Deductions</h4>
-                        <span className="text-xs text-red-700 dark:text-red-300">
-                          {componentDefaults.deductions.length} items
-                        </span>
-                      </div>
-                      <div className="space-y-2">
-                        {componentDefaults.deductions.length === 0 && (
-                          <p className="text-xs text-red-700/70 dark:text-red-200/70">No deductions available.</p>
-                        )}
-                        {componentDefaults.deductions.map((item) => {
-                          const key = getKey(item);
-                          const current = overrideDeductions[key] ?? item.amount ?? 0;
-                          const isFixed = item.type === 'fixed';
-                          const basedOnPresentDays = overrideDeductionsBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
-                          return (
-                            <div key={key} className="rounded-lg border border-red-100 bg-white/70 px-3 py-2 text-xs dark:border-red-900/50 dark:bg-red-950/40">
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="flex-1">
-                                  <div className="font-semibold text-red-900 dark:text-red-100">{item.name}</div>
-                                  <div className="text-[11px] text-red-700 dark:text-red-300">
-                                    {item.type === 'percentage'
-                                      ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
-                                      : 'Fixed'}
+                      {/* Deductions */}
+                      <div className="rounded-xl border border-red-100 bg-red-50/70 p-3 dark:border-red-900/40 dark:bg-red-900/20">
+                        <div className="mb-2 flex items-center justify-between">
+                          <h4 className="text-sm font-semibold text-red-800 dark:text-red-200">Deductions</h4>
+                          <span className="text-xs text-red-700 dark:text-red-300">
+                            {componentDefaults.deductions.length} items
+                          </span>
+                        </div>
+                        <div className="space-y-2">
+                          {componentDefaults.deductions.length === 0 && (
+                            <p className="text-xs text-red-700/70 dark:text-red-200/70">No deductions available.</p>
+                          )}
+                          {componentDefaults.deductions.map((item) => {
+                            const key = getKey(item);
+                            const current = overrideDeductions[key] ?? item.amount ?? 0;
+                            const isFixed = item.type === 'fixed';
+                            const basedOnPresentDays = overrideDeductionsBasedOnPresentDays[key] ?? item.basedOnPresentDays ?? false;
+                            return (
+                              <div key={key} className="rounded-lg border border-red-100 bg-white/70 px-3 py-2 text-xs dark:border-red-900/50 dark:bg-green-950/40">
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex-1">
+                                    <div className="font-semibold text-red-900 dark:text-red-100">{item.name}</div>
+                                    <div className="text-[11px] text-red-700 dark:text-red-300">
+                                      {item.type === 'percentage'
+                                        ? `${item.percentage || 0}% of ${item.base || item.percentageBase || 'basic'}`
+                                        : 'Fixed'}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-[11px] text-red-700 dark:text-red-300">Override</span>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      value={current === null ? '' : current}
+                                      onChange={(e) => handleOverrideChange('deduction', item, e.target.value)}
+                                      className="w-24 rounded border border-red-200 bg-white px-2 py-1 text-[11px] text-red-900 focus:border-red-400 focus:outline-none dark:border-red-800 dark:bg-green-950 dark:text-green-100"
+                                    />
                                   </div>
                                 </div>
-                                <div className="flex items-center gap-1">
-                                  <span className="text-[11px] text-red-700 dark:text-red-300">Override</span>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    value={current === null ? '' : current}
-                                    onChange={(e) => handleOverrideChange('deduction', item, e.target.value)}
-                                    className="w-24 rounded border border-red-200 bg-white px-2 py-1 text-[11px] text-red-900 focus:border-red-400 focus:outline-none dark:border-red-800 dark:bg-red-950 dark:text-red-100"
-                                  />
-                                </div>
+                                {isFixed && (
+                                  <div className="mt-2 pt-2 border-t border-red-100 dark:border-red-900/50">
+                                    <label className="flex items-start gap-1.5 cursor-pointer">
+                                      <input
+                                        type="checkbox"
+                                        checked={basedOnPresentDays}
+                                        onChange={(e) => {
+                                          setOverrideDeductionsBasedOnPresentDays({
+                                            ...overrideDeductionsBasedOnPresentDays,
+                                            [key]: e.target.checked
+                                          });
+                                        }}
+                                        className="mt-0.5 h-3 w-3 rounded border-red-300 text-red-600 focus:ring-red-500 dark:border-red-700"
+                                      />
+                                      <span className="text-[10px] leading-tight text-red-700 dark:text-red-300">
+                                        Prorate based on present days
+                                      </span>
+                                    </label>
+                                  </div>
+                                )}
                               </div>
-                              {isFixed && (
-                                <div className="mt-2 pt-2 border-t border-red-100 dark:border-red-900/50">
-                                  <label className="flex items-start gap-1.5 cursor-pointer">
-                                    <input
-                                      type="checkbox"
-                                      checked={basedOnPresentDays}
-                                      onChange={(e) => {
-                                        setOverrideDeductionsBasedOnPresentDays({
-                                          ...overrideDeductionsBasedOnPresentDays,
-                                          [key]: e.target.checked
-                                        });
-                                      }}
-                                      className="mt-0.5 h-3 w-3 rounded border-red-300 text-red-600 focus:ring-red-500 dark:border-red-700"
-                                    />
-                                    <span className="text-[10px] leading-tight text-red-700 dark:text-red-300">
-                                      Prorate based on present days
-                                    </span>
-                                  </label>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
+                            );
+                          })}
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
+                )}
 
 
                 {/* Actions */}
@@ -4357,18 +4391,22 @@ export default function EmployeesPage() {
                       <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Date of Birth</label>
                       <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.dob ? new Date(viewingEmployee.dob).toLocaleDateString() : '-'}</p>
                     </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Gross Salary</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.gross_salary ? `₹${viewingEmployee.gross_salary.toLocaleString()}` : '-'}</p>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">CTC Salary</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{(viewingEmployee as any).ctcSalary ? `₹${(viewingEmployee as any).ctcSalary.toLocaleString()}` : '-'}</p>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Calculated Salary (Net)</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{(viewingEmployee as any).calculatedSalary ? `₹${(viewingEmployee as any).calculatedSalary.toLocaleString()}` : '-'}</p>
-                    </div>
+                    {userRole !== 'hod' && (
+                      <>
+                        <div>
+                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Gross Salary</label>
+                          <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.gross_salary ? `₹${viewingEmployee.gross_salary.toLocaleString()}` : '-'}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">CTC Salary</label>
+                          <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{(viewingEmployee as any).ctcSalary ? `₹${(viewingEmployee as any).ctcSalary.toLocaleString()}` : '-'}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Calculated Salary (Net)</label>
+                          <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{(viewingEmployee as any).calculatedSalary ? `₹${(viewingEmployee as any).calculatedSalary.toLocaleString()}` : '-'}</p>
+                        </div>
+                      </>
+                    )}
                     <div>
                       <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Paid Leaves</label>
                       <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.paidLeaves ?? '-'}</p>
@@ -4521,125 +4559,131 @@ export default function EmployeesPage() {
                 </div>
 
                 {/* Financial Information */}
-                <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                  <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Financial Information</h3>
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">PF Number</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.pf_number || '-'}</p>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">ESI Number</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.esi_number || '-'}</p>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Aadhar Number</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.aadhar_number || '-'}</p>
+                {userRole !== 'hod' && (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                    <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Financial Information</h3>
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                      <div>
+                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">PF Number</label>
+                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.pf_number || '-'}</p>
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">ESI Number</label>
+                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.esi_number || '-'}</p>
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Aadhar Number</label>
+                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.aadhar_number || '-'}</p>
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
 
                 {/* Bank Details */}
-                <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                  <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Bank Details</h3>
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Account Number</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_account_no || '-'}</p>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Bank Name</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_name || '-'}</p>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Bank Place</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_place || '-'}</p>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">IFSC Code</label>
-                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.ifsc_code || '-'}</p>
+                {userRole !== 'hod' && (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                    <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Bank Details</h3>
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                      <div>
+                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Account Number</label>
+                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_account_no || '-'}</p>
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Bank Name</label>
+                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_name || '-'}</p>
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Bank Place</label>
+                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_place || '-'}</p>
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">IFSC Code</label>
+                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.ifsc_code || '-'}</p>
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
 
-                {/* Allowances & Deductions - Always show both sections */}
-                <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                  <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Allowances & Deductions</h3>
+                {/* Allowances & Deductions - Hide from HOD */}
+                {userRole !== 'hod' && (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                    <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Allowances & Deductions</h3>
 
-                  {/* Allowances */}
-                  {(Array.isArray(viewingEmployee.employeeAllowances) && viewingEmployee.employeeAllowances.length > 0) ? (
-                    <div className="mb-6">
-                      <h4 className="mb-3 text-sm font-semibold text-green-700 dark:text-green-400">Allowances</h4>
-                      <div className="space-y-2">
-                        {viewingEmployee.employeeAllowances.map((allowance: any, idx: number) => (
-                          <div key={idx} className="flex items-center justify-between rounded-lg border border-green-200 bg-green-50/50 p-3 dark:border-green-800 dark:bg-green-900/20">
-                            <div className="flex-1">
-                              <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{allowance.name || '-'}</p>
-                              <p className="text-xs text-slate-500 dark:text-slate-400">
-                                {allowance.type === 'percentage'
-                                  ? `${allowance.percentage}% of ${allowance.percentageBase || 'basic'}`
-                                  : 'Fixed Amount'}
-                                {allowance.isOverride && (
-                                  <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                                    Override
-                                  </span>
-                                )}
+                    {/* Allowances */}
+                    {(Array.isArray(viewingEmployee.employeeAllowances) && viewingEmployee.employeeAllowances.length > 0) ? (
+                      <div className="mb-6">
+                        <h4 className="mb-3 text-sm font-semibold text-green-700 dark:text-green-400">Allowances</h4>
+                        <div className="space-y-2">
+                          {viewingEmployee.employeeAllowances.map((allowance: any, idx: number) => (
+                            <div key={idx} className="flex items-center justify-between rounded-lg border border-green-200 bg-green-50/50 p-3 dark:border-green-800 dark:bg-green-900/20">
+                              <div className="flex-1">
+                                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{allowance.name || '-'}</p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400">
+                                  {allowance.type === 'percentage'
+                                    ? `${allowance.percentage}% of ${allowance.percentageBase || 'basic'}`
+                                    : 'Fixed Amount'}
+                                  {allowance.isOverride && (
+                                    <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                                      Override
+                                    </span>
+                                  )}
+                                </p>
+                              </div>
+                              <p className="text-sm font-semibold text-green-700 dark:text-green-400">
+                                {allowance.amount !== null && allowance.amount !== undefined
+                                  ? `₹${Number(allowance.amount).toLocaleString()}`
+                                  : '-'}
                               </p>
                             </div>
-                            <p className="text-sm font-semibold text-green-700 dark:text-green-400">
-                              {allowance.amount !== null && allowance.amount !== undefined
-                                ? `₹${Number(allowance.amount).toLocaleString()}`
-                                : '-'}
-                            </p>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  ) : (
-                    <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-                      <p className="text-sm text-slate-500 dark:text-slate-400">
-                        No employee-level allowance overrides. Default allowances from Department/Global settings will be used during payroll calculation.
-                      </p>
-                    </div>
-                  )}
+                    ) : (
+                      <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+                        <p className="text-sm text-slate-500 dark:text-slate-400">
+                          No employee-level allowance overrides. Default allowances from Department/Global settings will be used during payroll calculation.
+                        </p>
+                      </div>
+                    )}
 
-                  {/* Deductions */}
-                  {(Array.isArray(viewingEmployee.employeeDeductions) && viewingEmployee.employeeDeductions.length > 0) ? (
-                    <div>
-                      <h4 className="mb-3 text-sm font-semibold text-red-700 dark:text-red-400">Deductions</h4>
-                      <div className="space-y-2">
-                        {viewingEmployee.employeeDeductions.map((deduction: any, idx: number) => (
-                          <div key={idx} className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50/50 p-3 dark:border-red-800 dark:bg-red-900/20">
-                            <div className="flex-1">
-                              <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{deduction.name || '-'}</p>
-                              <p className="text-xs text-slate-500 dark:text-slate-400">
-                                {deduction.type === 'percentage'
-                                  ? `${deduction.percentage}% of ${deduction.percentageBase || 'basic'}`
-                                  : 'Fixed Amount'}
-                                {deduction.isOverride && (
-                                  <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                                    Override
-                                  </span>
-                                )}
+                    {/* Deductions */}
+                    {(Array.isArray(viewingEmployee.employeeDeductions) && viewingEmployee.employeeDeductions.length > 0) ? (
+                      <div>
+                        <h4 className="mb-3 text-sm font-semibold text-red-700 dark:text-red-400">Deductions</h4>
+                        <div className="space-y-2">
+                          {viewingEmployee.employeeDeductions.map((deduction: any, idx: number) => (
+                            <div key={idx} className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50/50 p-3 dark:border-red-800 dark:bg-red-900/20">
+                              <div className="flex-1">
+                                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{deduction.name || '-'}</p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400">
+                                  {deduction.type === 'percentage'
+                                    ? `${deduction.percentage}% of ${deduction.percentageBase || 'basic'}`
+                                    : 'Fixed Amount'}
+                                  {deduction.isOverride && (
+                                    <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                                      Override
+                                    </span>
+                                  )}
+                                </p>
+                              </div>
+                              <p className="text-sm font-semibold text-red-700 dark:text-red-400">
+                                {deduction.amount !== null && deduction.amount !== undefined
+                                  ? `₹${Number(deduction.amount).toLocaleString()}`
+                                  : '-'}
                               </p>
                             </div>
-                            <p className="text-sm font-semibold text-red-700 dark:text-red-400">
-                              {deduction.amount !== null && deduction.amount !== undefined
-                                ? `₹${Number(deduction.amount).toLocaleString()}`
-                                : '-'}
-                            </p>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  ) : (
-                    <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-                      <p className="text-sm text-slate-500 dark:text-slate-400">
-                        No employee-level deduction overrides. Default deductions from Department/Global settings will be used during payroll calculation.
-                      </p>
-                    </div>
-                  )}
-                </div>
+                    ) : (
+                      <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+                        <p className="text-sm text-slate-500 dark:text-slate-400">
+                          No employee-level deduction overrides. Default deductions from Department/Global settings will be used during payroll calculation.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Left Date Information */}
                 {viewingEmployee.leftDate && (
@@ -4707,7 +4751,7 @@ export default function EmployeesPage() {
                         Total for without_pay/LOP leaves (for balance tracking)
                       </p>
                     </div>
-                    {((viewingEmployee as any).ctcSalary !== undefined && (viewingEmployee as any).ctcSalary !== null) && (
+                    {userRole !== 'hod' && ((viewingEmployee as any).ctcSalary !== undefined && (viewingEmployee as any).ctcSalary !== null) && (
                       <div>
                         <label className="text-xs font-medium text-slate-500 dark:text-slate-400">CTC Salary</label>
                         <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
@@ -4715,7 +4759,7 @@ export default function EmployeesPage() {
                         </p>
                       </div>
                     )}
-                    {((viewingEmployee as any).calculatedSalary !== undefined && (viewingEmployee as any).calculatedSalary !== null) && (
+                    {userRole !== 'hod' && ((viewingEmployee as any).calculatedSalary !== undefined && (viewingEmployee as any).calculatedSalary !== null) && (
                       <div>
                         <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Calculated Salary (Net)</label>
                         <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
@@ -4948,10 +4992,12 @@ export default function EmployeesPage() {
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Designation</label>
                     <p className="mt-1 text-sm font-bold text-slate-900 dark:text-slate-100 uppercase">{(viewingApplication.designation_id as any)?.name || viewingApplication.designation?.name || '-'}</p>
                   </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Proposed Salary</label>
-                    <p className="mt-1 text-sm font-black text-indigo-600 dark:text-indigo-400">₹{viewingApplication.proposedSalary?.toLocaleString() || '-'}</p>
-                  </div>
+                  {userRole !== 'hod' && (
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Proposed Salary</label>
+                      <p className="mt-1 text-sm font-black text-indigo-600 dark:text-indigo-400">₹{viewingApplication.proposedSalary?.toLocaleString() || '-'}</p>
+                    </div>
+                  )}
                   <div>
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Experience</label>
                     <p className="mt-1 text-sm font-bold text-slate-900 dark:text-slate-100">{(viewingApplication as any).experience || 0} Years</p>
@@ -4982,10 +5028,12 @@ export default function EmployeesPage() {
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Date of Birth</label>
                     <p className="mt-1 text-sm font-bold text-slate-900 dark:text-slate-100">{(viewingApplication as any).dob ? new Date((viewingApplication as any).dob).toLocaleDateString() : '-'}</p>
                   </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Aadhar Number</label>
-                    <p className="mt-1 text-sm font-bold text-slate-900 dark:text-slate-100 uppercase">{(viewingApplication as any).aadhar_number || '-'}</p>
-                  </div>
+                  {userRole !== 'hod' && (
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Aadhar Number</label>
+                      <p className="mt-1 text-sm font-bold text-slate-900 dark:text-slate-100 uppercase">{(viewingApplication as any).aadhar_number || '-'}</p>
+                    </div>
+                  )}
                 </div>
               </div>
 
