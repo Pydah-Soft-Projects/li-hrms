@@ -360,7 +360,19 @@ export default function MobileBottomNav() {
                 )}
               </div>
             )}
-            {!needsMoreButton && rightModules.length < 2 && <div className="w-12" />}
+
+            {/* In-bar Logout Button (When modules <= 4) */}
+            {!needsMoreButton && allEnabledModules.length <= 4 && (
+              <button
+                onClick={handleLogout}
+                className="flex flex-col items-center justify-center w-12 h-full gap-1 transition-colors text-red-500 dark:text-red-400"
+              >
+                <LogOut strokeWidth={2} className="w-6 h-6" />
+                <span className="text-[9px] font-medium">End</span>
+              </button>
+            )}
+
+            {!needsMoreButton && ((allEnabledModules.length <= 4 && rightModules.length < 1) || (allEnabledModules.length > 4 && rightModules.length < 2)) && <div className="w-12" />}
           </div>
         </div>
       </div>
