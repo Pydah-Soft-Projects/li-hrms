@@ -376,15 +376,11 @@ const startWorkers = () => {
         try {
             const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
 
-            // Get today's date in YYYY-MM-DD (IST)
-            const { dateStr: today } = extractISTComponents(new Date());
-
             let syncedCount = 0;
             let removedCount = 0;
 
             for (const entry of entries) {
-                // Only process future or current dates
-                if (!entry.date || entry.date < today) continue;
+                if (!entry.date) continue;
 
                 const empNo = String(entry.employeeNumber || '').toUpperCase();
 

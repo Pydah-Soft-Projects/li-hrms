@@ -21,6 +21,8 @@ const { generatePassword, sendCredentials } = require('../../shared/services/pas
 const s3UploadService = require('../../shared/services/s3UploadService');
 const { resolveQualificationLabels } = require('../services/fieldMappingService');
 const { applicationQueue } = require('../../shared/jobs/queueManager');
+const Settings = require('../../settings/model/Settings');
+const { getNextEmpNo, getNextEmpNos } = require('../../employees/services/empNoService');
 
 /**
  * Internal helper for creating a single application
@@ -105,11 +107,15 @@ const createApplicationInternal = async (rawData, settings, creatorId) => {
   const employeeAllowances = normalizeOverrides(applicationData.employeeAllowances);
   const employeeDeductions = normalizeOverrides(applicationData.employeeDeductions);
 
+  // Profile photo URL (from S3 upload at application time)
+  const profilePhoto = applicationData.profilePhoto && String(applicationData.profilePhoto).trim() ? String(applicationData.profilePhoto).trim() : null;
+
   // Create application
   const application = await EmployeeApplication.create({
     ...permanentFields,
     dynamicFields: dynamicFields,
     emp_no: empNo,
+    profilePhoto,
     employeeAllowances,
     employeeDeductions,
     createdBy: creatorId,
@@ -136,6 +142,20 @@ exports.createApplication = async (req, res) => {
   console.log('[CreateApplication] Received request');
   try {
     let applicationData = { ...req.body };
+
+    // Respect auto_generate_employee_number: assign next number if setting is ON and emp_no is blank (never use "(Auto)" as real emp_no)
+    const autoGenSetting = await Settings.findOne({ key: 'auto_generate_employee_number' });
+    const autoGenerateEmployeeNumber = autoGenSetting?.value === true || autoGenSetting?.value === 'true';
+    const empNoStr = String(applicationData.emp_no || '').trim();
+    const empNoBlank = !empNoStr || empNoStr.toUpperCase() === '(AUTO)';
+    if (autoGenerateEmployeeNumber && empNoBlank) {
+      applicationData.emp_no = await getNextEmpNo();
+    } else if (!autoGenerateEmployeeNumber && empNoBlank) {
+      return res.status(400).json({
+        success: false,
+        message: 'Employee number is required when auto-generate is off',
+      });
+    }
 
     // Handle Qualifications Files (only for single creation)
     if (req.files && applicationData.qualifications) {
@@ -199,13 +219,35 @@ exports.createApplication = async (req, res) => {
 exports.bulkCreateApplications = async (req, res) => {
   console.log('[BulkCreateApplications] Received request');
   try {
-    const applications = req.body;
+    let applications = req.body;
 
     if (!Array.isArray(applications) || applications.length === 0) {
       return res.status(400).json({
         success: false,
         message: 'Invalid payload: Expected a non-empty array of applications',
       });
+    }
+
+    const autoGenSetting = await Settings.findOne({ key: 'auto_generate_employee_number' });
+    const autoGenerateEmployeeNumber = autoGenSetting?.value === true || autoGenSetting?.value === 'true';
+
+    // When auto-generate is ON, assign next emp_nos to rows that have no emp_no (or placeholder "(Auto)")
+    const isEmpNoBlank = (v) => {
+      const s = String(v || '').trim();
+      return !s || s.toUpperCase() === '(AUTO)';
+    };
+    if (autoGenerateEmployeeNumber) {
+      const rowsWithoutEmpNo = applications
+        .map((app, index) => ({ app, index }))
+        .filter(({ app }) => isEmpNoBlank(app.emp_no));
+      const count = rowsWithoutEmpNo.length;
+      if (count > 0) {
+        const nextNos = await getNextEmpNos(count);
+        nextNos.forEach((no, i) => {
+          const { index } = rowsWithoutEmpNo[i];
+          applications[index] = { ...applications[index], emp_no: no };
+        });
+      }
     }
 
     const settings = await EmployeeApplicationFormSettings.getActiveSettings();
@@ -250,9 +292,15 @@ exports.bulkCreateApplications = async (req, res) => {
 
     // 2. Process and Validate in memory
     for (const appData of applications) {
-      const empNo = String(appData.emp_no || '').toUpperCase();
+      const empNoRaw = String(appData.emp_no || '').trim();
+      const empNo = empNoRaw.toUpperCase() === '(AUTO)' ? '' : empNoRaw.toUpperCase();
 
       try {
+        // When auto-generate is OFF, emp_no is required (and must not be the placeholder "(Auto)")
+        if (!autoGenerateEmployeeNumber && !empNo) {
+          throw new Error('Employee number is required when auto-generate is off');
+        }
+
         // Validation
         if (settings) {
           const validation = await validateFormData(appData, settings);
@@ -279,10 +327,18 @@ exports.bulkCreateApplications = async (req, res) => {
           }
         }
 
+        // Never persist "(Auto)" or blank: use assigned number from appData (set above when auto-generate is on)
+        const empNoToInsert = (empNo && String(empNo).toUpperCase() !== '(AUTO)')
+          ? empNo
+          : String(appData.emp_no || '').trim();
+        if (empNoToInsert.toUpperCase() === '(AUTO)') {
+          throw new Error('Employee number cannot be "(Auto)"');
+        }
+
         itemsToInsert.push({
           ...permanentFields,
           dynamicFields,
-          emp_no: empNo,
+          emp_no: empNoToInsert,
           employeeAllowances: normalizeOverrides(appData.employeeAllowances),
           employeeDeductions: normalizeOverrides(appData.employeeDeductions),
           createdBy: creatorId,
@@ -290,7 +346,7 @@ exports.bulkCreateApplications = async (req, res) => {
         });
 
         // Add to "seen" set to catch duplicates within the same file
-        pendingAppSet.add(empNo);
+        pendingAppSet.add(empNoToInsert);
 
       } catch (err) {
         results.failCount++;
@@ -434,10 +490,16 @@ exports.updateApplication = async (req, res) => {
     // Helper for allowances
     const normalizeOverrides = (list) => Array.isArray(list) ? list : [];
 
+    // Profile photo: update if provided (URL from S3 upload)
+    const profilePhoto = applicationData.profilePhoto !== undefined
+      ? (applicationData.profilePhoto && String(applicationData.profilePhoto).trim() ? String(applicationData.profilePhoto).trim() : null)
+      : existingApplication.profilePhoto;
+
     // Update document
     Object.assign(existingApplication, {
       ...permanentFields,
       dynamicFields,
+      profilePhoto,
       employeeAllowances: normalizeOverrides(applicationData.employeeAllowances),
       employeeDeductions: normalizeOverrides(applicationData.employeeDeductions),
       // Don't update emp_no if it's unique/fixed? Usually allowed to fix typos.

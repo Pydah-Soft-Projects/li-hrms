@@ -150,6 +150,58 @@ router.put('/certificate', protect, upload.single('file'), async (req, res) => {
  * @route   POST /api/upload/evidence
  * @access  Private
  */
+/**
+ * @desc    Upload employee profile photo
+ * @route   POST /api/upload/profile
+ * @access  Private
+ */
+const profileUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        const allowed = ['image/jpeg', 'image/png', 'image/jpg'];
+        if (allowed.includes(file.mimetype)) {
+            cb(null, true);
+        } else {
+            cb(new Error('Invalid file type. Only JPG and PNG images are allowed for profile photo.'));
+        }
+    }
+});
+router.post('/profile', protect, profileUpload.single('file'), async (req, res) => {
+    try {
+        if (!isS3Configured()) {
+            return res.status(500).json({
+                success: false,
+                message: 'S3 storage is not configured.'
+            });
+        }
+        if (!req.file) {
+            return res.status(400).json({
+                success: false,
+                message: 'No file uploaded'
+            });
+        }
+        const fileUrl = await uploadToS3(
+            req.file.buffer,
+            req.file.originalname,
+            req.file.mimetype,
+            'profiles'
+        );
+        res.json({
+            success: true,
+            url: fileUrl,
+            filename: req.file.originalname
+        });
+    } catch (error) {
+        console.error('Profile upload error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to upload profile photo',
+            error: error.message
+        });
+    }
+});
+
 router.post('/evidence', protect, upload.single('file'), async (req, res) => {
     try {
         if (!isS3Configured()) {

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Copy } from 'lucide-react';
 import { api } from '@/lib/api';
 import { toast } from 'react-hot-toast';
 
@@ -11,6 +11,8 @@ type RosterCell = { shiftId?: string | null; status?: 'WO' | 'HOL' };
 type RosterState = Map<string, Record<string, RosterCell>>;
 
 const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+const ROSTER_PAGE_SIZE = 50;
 
 type DepartmentOption = { _id: string; name: string };
 
@@ -61,10 +63,16 @@ function RosterPage() {
   const [selectedDept, setSelectedDept] = useState<string>('');
   const [selectedShiftForAssign, setSelectedShiftForAssign] = useState<string>('');
   const [roster, setRoster] = useState<RosterState>(new Map());
+  const [dirtyKeys, setDirtyKeys] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savingProgress, setSavingProgress] = useState<number | null>(null);
+  const [autoFillLoading, setAutoFillLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'roster' | 'assigned'>('roster');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(ROSTER_PAGE_SIZE);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalEmployees, setTotalEmployees] = useState(0);
 
   // Payroll Cycle Config
   const [cycleStartDay, setCycleStartDay] = useState<number>(1);
@@ -121,7 +129,7 @@ function RosterPage() {
     try {
       setLoading(true);
 
-      const filters: any = {};
+      const filters: any = { page, limit };
       if (selectedDept) filters.department_id = selectedDept;
       if (selectedDivision) filters.division_id = selectedDivision;
 
@@ -132,7 +140,7 @@ function RosterPage() {
         }),
         api.getEmployees(filters).catch((err) => {
           console.error('Failed to load employees:', err);
-          return { data: [] };
+          return { data: [], pagination: { total: 0, totalPages: 0 } };
         }),
         api.getRoster(month, {
           departmentId: selectedDept || undefined,
@@ -159,6 +167,9 @@ function RosterPage() {
 
       const empList = Array.isArray(empRes?.data) ? empRes.data : (Array.isArray(empRes) ? empRes : []);
       setEmployees(empList);
+      const pagination = (empRes as any)?.pagination;
+      setTotalPages(pagination?.totalPages ?? 1);
+      setTotalEmployees(pagination?.total ?? empList.length);
 
       // Build division options
       const divList = Array.isArray(divRes?.data) ? divRes.data : (Array.isArray(divRes) ? divRes : []);
@@ -193,6 +204,7 @@ function RosterPage() {
       });
 
       setRoster(map);
+      setDirtyKeys(new Set());
     } catch (err: any) {
       console.error('Error loading roster data:', err);
       toast.error(err.message || 'Failed to load roster');
@@ -206,9 +218,10 @@ function RosterPage() {
     }
   };
 
+  useEffect(() => { setPage(1); }, [month, selectedDept, selectedDivision]);
   useEffect(() => {
     loadData();
-  }, [month, selectedDept, selectedDivision, cycleDates]);
+  }, [month, selectedDept, selectedDivision, cycleDates, page, limit]);
 
   const updateCell = (empNo: string, date: string, value: RosterCell) => {
     setRoster((prev) => {
@@ -218,6 +231,7 @@ function RosterPage() {
       map.set(empNo, row);
       return map;
     });
+    setDirtyKeys((prev) => new Set(prev).add(`${empNo}|${date}`));
   };
 
   const applyAllEmployees = (shiftId: string | null, status?: 'WO') => {
@@ -236,6 +250,11 @@ function RosterPage() {
       });
       return map;
     });
+    setDirtyKeys((prev) => {
+      const next = new Set(prev);
+      employees.forEach((emp) => days.forEach((d) => next.add(`${emp.emp_no}|${d}`)));
+      return next;
+    });
   };
 
   const applyEmployeeAllDays = (empNo: string, shiftId: string | null, status?: 'WO') => {
@@ -248,6 +267,11 @@ function RosterPage() {
       map.set(empNo, row);
       return map;
     });
+    setDirtyKeys((prev) => {
+      const next = new Set(prev);
+      days.forEach((d) => next.add(`${empNo}|${d}`));
+      return next;
+    });
   };
 
   const saveRoster = async () => {
@@ -255,46 +279,31 @@ function RosterPage() {
       setSaving(true);
       setSavingProgress(10);
       const entries: any[] = [];
-      roster.forEach((row, empNo) => {
-        Object.entries(row).forEach(([date, cell]) => {
-          // Skip empty cells
+      if (dirtyKeys.size > 0) {
+        dirtyKeys.forEach((key) => {
+          const [empNo, date] = key.split('|');
+          const row = roster.get(empNo);
+          if (!row) return;
+          const cell = row[date];
           if (!cell) return;
-
-          // Skip if neither shiftId nor status is set
           if (!cell.shiftId && cell.status !== 'WO' && cell.status !== 'HOL') return;
-
-          const entry: any = {
-            employeeNumber: empNo,
-            date,
-          };
-
-          // Handle non-working status
+          const entry: any = { employeeNumber: empNo, date };
           if (cell.status === 'WO' || cell.status === 'HOL') {
             entry.shiftId = null;
             entry.status = cell.status;
           } else {
-            // Regular shift - must have shiftId
-            if (!cell.shiftId) {
-              console.warn(`Skipping entry without shiftId for ${empNo} on ${date}`);
-              return;
-            }
+            if (!cell.shiftId) return;
             entry.shiftId = cell.shiftId;
-            // Don't include status for regular shifts
           }
-
           entries.push(entry);
         });
-      });
-
-      console.log(`[Frontend] Prepared ${entries.length} entries to save:`, entries.slice(0, 5));
-
+      }
       if (entries.length === 0) {
-        toast.error('No entries to save');
+        toast.success(dirtyKeys.size === 0 ? 'No changes to save' : 'No valid entries to save');
         setSaving(false);
         setSavingProgress(null);
         return;
       }
-
       setSavingProgress(30);
       const resp = await api.saveRoster({
         month,
@@ -304,10 +313,9 @@ function RosterPage() {
         endDate: cycleDates?.endDate
       });
       setSavingProgress(90);
-
       if (resp?.success) {
-        toast.success(`Roster saved successfully! (${entries.length} entries)`);
-        // Reload data to reflect saved changes
+        setDirtyKeys(new Set());
+        toast.success(`Roster saved: ${entries.length} entries updated`);
         await loadData();
       } else {
         const errorMsg = resp?.message || resp?.error || 'Failed to save roster';
@@ -335,6 +343,7 @@ function RosterPage() {
       toast.error('No employees available');
       return;
     }
+    const activeDates = days.filter((d) => activeDays.includes(weekdays[new Date(d).getDay()]));
     setRoster((prev) => {
       const map = new Map(prev);
       employees.forEach((emp) => {
@@ -349,8 +358,40 @@ function RosterPage() {
       });
       return map;
     });
+    setDirtyKeys((prev) => {
+      const next = new Set(prev);
+      employees.forEach((emp) => activeDates.forEach((d) => next.add(`${emp.emp_no}|${d}`)));
+      return next;
+    });
     setShowWeekOff(false);
     toast.success('Weekly offs applied');
+  };
+
+  const handleAutoFillNextCycle = async () => {
+    const [y, m] = month.split('-').map(Number);
+    const nextMonth = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
+    const nextLabel = new Date(nextMonth + '-01').toLocaleString('default', { month: 'long', year: 'numeric' });
+    if (!confirm(`This will fill the next pay cycle (${nextLabel}) from the previous cycle by weekday. Holidays in the target period will be set to HOL. Continue?`)) return;
+    setAutoFillLoading(true);
+    try {
+      const res = await api.autoFillNextCycleRoster({
+        targetMonth: nextMonth,
+        departmentId: selectedDept || undefined,
+        divisionId: selectedDivision || undefined,
+      });
+      const data = (res as any)?.data;
+      if ((res as any)?.success && data) {
+        toast.success(`${data.filled} entries filled; ${data.holidaysRespected} days as holiday.`);
+        setMonth(nextMonth);
+        setPage(1);
+      } else {
+        toast.error((res as any)?.message || 'Auto-fill failed');
+      }
+    } catch (err: any) {
+      toast.error(err?.message || 'Auto-fill failed');
+    } finally {
+      setAutoFillLoading(false);
+    }
   };
 
   const handleAssignAll = () => {
@@ -603,6 +644,47 @@ function RosterPage() {
               </div>
             </div>
           )}
+          {/* Pagination: only render many rows per page to avoid browser freeze */}
+          <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 bg-slate-50/80 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-slate-600 dark:text-slate-400">
+                Showing <strong>{employees.length}</strong> of <strong>{totalEmployees}</strong> employees
+              </span>
+              <label className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
+                Per page:
+                <select
+                  value={limit}
+                  onChange={(e) => { setLimit(Number(e.target.value)); setPage(1); }}
+                  className="rounded border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1 text-xs"
+                >
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+              </label>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1 || loading}
+                className="p-1.5 rounded border border-slate-200 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 disabled:pointer-events-none"
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                Page {page} of {totalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages || loading}
+                className="p-1.5 rounded border border-slate-200 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 disabled:pointer-events-none"
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm border-collapse">
               <thead className="bg-slate-50/80 dark:bg-slate-800/80 sticky top-0 z-20 backdrop-blur-sm shadow-sm">
@@ -818,17 +900,27 @@ function RosterPage() {
         )
       }
 
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="text-xs text-slate-500 dark:text-slate-400">
-          Employees: {employees.length} | Days: {days.length}
+          Employees: {totalEmployees} total (showing {employees.length} on this page) | Days: {days.length}
         </div>
-        <button
-          onClick={saveRoster}
-          disabled={saving}
-          className="px-4 py-2 rounded-lg bg-green-600 text-white text-sm font-semibold disabled:opacity-60"
-        >
-          {saving ? 'Saving...' : 'Save roster'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleAutoFillNextCycle}
+            disabled={autoFillLoading}
+            className="px-4 py-2 rounded-lg bg-amber-600 text-white text-sm font-semibold disabled:opacity-60 flex items-center gap-1.5"
+            title="Fill next pay cycle from previous (by weekday); holidays respected"
+          >
+            <Copy size={14} />{autoFillLoading ? 'Filling...' : 'Auto-fill next cycle'}
+          </button>
+          <button
+            onClick={saveRoster}
+            disabled={saving}
+            className="px-4 py-2 rounded-lg bg-green-600 text-white text-sm font-semibold disabled:opacity-60"
+          >
+            {saving ? 'Saving...' : 'Save roster'}
+          </button>
+        </div>
       </div>
       {
         saving && (

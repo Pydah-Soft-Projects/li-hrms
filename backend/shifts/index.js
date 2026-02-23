@@ -47,6 +47,7 @@ router.delete('/pre-schedule/:id', authorize('manager', 'super_admin', 'sub_admi
 // Roster (monthly) routes
 router.get('/roster', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), preScheduledShiftController.getRoster);
 router.post('/roster', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), preScheduledShiftController.saveRoster);
+router.post('/roster/auto-fill-next-cycle', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), preScheduledShiftController.autoFillNextCycle);
 
 // Parameterized shift routes (must be last)
 router.get('/:id', shiftController.getShift);

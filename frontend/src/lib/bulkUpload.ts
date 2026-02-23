@@ -417,24 +417,35 @@ export const matchUserByName = (
   return match?._id || null;
 };
 
+export interface ValidateEmployeeRowOptions {
+  /** When true, emp_no is optional and empty values are shown as (Auto) in preview */
+  autoGenerateEmpNo?: boolean;
+}
+
 /**
  * Validate employee row
  */
 export const validateEmployeeRow = (
   row: ParsedRow,
   divisions: { _id: string; name: string }[] = [],
-  departments: { _id: string; name: string }[],
-  designations: { _id: string; name: string; department: string; code?: string }[],
-  users: { _id: string; name: string; email?: string }[] = []
+  departments: { _id: string; name: string }[] = [],
+  designations: { _id: string; name: string; department: string; code?: string }[] = [],
+  users: { _id: string; name: string; email?: string }[] = [],
+  options: ValidateEmployeeRowOptions = {}
 ): { isValid: boolean; errors: string[]; mappedRow: ParsedRow; fieldErrors: { [key: string]: string } } => {
   const errors: string[] = [];
   const fieldErrors: { [key: string]: string } = {};
   const mappedRow: ParsedRow = { ...row };
+  const { autoGenerateEmpNo = false } = options;
 
-  // Required fields
-  if (!row.emp_no) {
+  // Required fields: emp_no only when auto-generate is OFF
+  const empNoBlank = row.emp_no == null || String(row.emp_no || '').trim() === '';
+  if (!autoGenerateEmpNo && empNoBlank) {
     errors.push('Employee No is required');
     fieldErrors.emp_no = 'Required';
+  } else if (autoGenerateEmpNo) {
+    // When "ignore from file" is ON, show (Auto) for all rows so payload sends empty and backend assigns
+    mappedRow.emp_no = '(Auto)';
   }
   if (!row.employee_name) {
     errors.push('Employee Name is required');
