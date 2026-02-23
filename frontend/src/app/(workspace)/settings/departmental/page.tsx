@@ -22,6 +22,8 @@ interface DepartmentSettings {
     paidLeavesCount: number | null;
     dailyLimit: number | null;
     monthlyLimit: number | null;
+    casualLeavePerYear: number | null;
+    maxCasualLeavesPerMonth: number | null;
   };
   loans: {
     interestRate: number | null;
@@ -116,6 +118,8 @@ export default function DepartmentalSettingsPage() {
       paidLeavesCount: null,
       dailyLimit: null,
       monthlyLimit: null,
+      casualLeavePerYear: null,
+      maxCasualLeavesPerMonth: null,
     },
     loans: {
       interestRate: null,
@@ -218,6 +222,8 @@ export default function DepartmentalSettingsPage() {
             paidLeavesCount: s.leaves?.paidLeavesCount ?? null,
             dailyLimit: s.leaves?.dailyLimit ?? null,
             monthlyLimit: s.leaves?.monthlyLimit ?? null,
+            casualLeavePerYear: s.leaves?.casualLeavePerYear ?? null,
+            maxCasualLeavesPerMonth: s.leaves?.maxCasualLeavesPerMonth ?? null,
           },
           loans: {
             interestRate: s.loans?.interestRate ?? null,
@@ -295,6 +301,8 @@ export default function DepartmentalSettingsPage() {
         paidLeavesCount: null,
         dailyLimit: null,
         monthlyLimit: null,
+        casualLeavePerYear: null,
+        maxCasualLeavesPerMonth: null,
       },
       loans: {
         interestRate: null,
@@ -533,6 +541,34 @@ export default function DepartmentalSettingsPage() {
                   placeholder="0 = unlimited"
                   className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
                 />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                  Casual Leave Per Year
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  value={formData.leaves.casualLeavePerYear ?? ''}
+                  onChange={(e) => handleInputChange('leaves', 'casualLeavePerYear', e.target.value ? parseInt(e.target.value) : null)}
+                  placeholder="e.g., 12, 15"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                />
+                <p className="mt-1 text-[10px] text-slate-400 dark:text-slate-500">Annual CL entitlement</p>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                  Max CL Per Month
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  value={formData.leaves.maxCasualLeavesPerMonth ?? ''}
+                  onChange={(e) => handleInputChange('leaves', 'maxCasualLeavesPerMonth', e.target.value ? parseInt(e.target.value) : null)}
+                  placeholder="e.g., 1, 2"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                />
+                <p className="mt-1 text-[10px] text-slate-400 dark:text-slate-500">Max CL usage limit per month</p>
               </div>
             </div>
           </div>
