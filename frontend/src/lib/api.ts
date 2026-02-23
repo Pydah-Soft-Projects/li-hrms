@@ -568,6 +568,7 @@ export interface Employee {
   department?: any;
   division?: any;
   designation?: any;
+  profilePhoto?: string;
 }
 
 export interface Allowance {
@@ -809,7 +810,7 @@ export const api = {
   },
 
   // Update user profile
-  updateProfile: async (data: { name?: string; phone?: string }) => {
+  updateProfile: async (data: { name?: string; phone?: string; profilePhoto?: string }) => {
     return apiRequest<any>('/users/profile', {
       method: 'PUT',
       body: JSON.stringify(data),
@@ -1890,6 +1891,12 @@ export const api = {
     method: 'POST',
     body: JSON.stringify(data),
   }),
+
+  autoFillNextCycleRoster: (params?: { targetMonth?: string; departmentId?: string; divisionId?: string }) =>
+    apiRequest<{ filled: number; holidaysRespected: number; previousRange: { startDate: string; endDate: string }; nextRange: { startDate: string; endDate: string } }>('/shifts/roster/auto-fill-next-cycle', {
+      method: 'POST',
+      body: JSON.stringify(params || {}),
+    }),
 
   // ==========================================
   // LEAVE SPLIT APIs
@@ -3174,6 +3181,15 @@ export const api = {
     const formData = new FormData();
     formData.append('file', file);
     return apiRequest<{ url: string; key: string; filename: string }>('/upload/evidence', {
+      method: 'POST',
+      body: formData,
+    });
+  },
+
+  uploadProfile: async (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return apiRequest<{ url: string; filename: string }>('/upload/profile', {
       method: 'POST',
       body: formData,
     });

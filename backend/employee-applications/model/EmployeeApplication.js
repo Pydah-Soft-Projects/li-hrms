@@ -173,6 +173,12 @@ const employeeApplicationSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
       default: {},
     },
+    // Profile photo URL (uploaded to S3 profiles folder at application time)
+    profilePhoto: {
+      type: String,
+      trim: true,
+      default: null,
+    },
 
     // Employee-level Allowance & Deduction Overrides (only store items the applicant edited)
     employeeAllowances: {

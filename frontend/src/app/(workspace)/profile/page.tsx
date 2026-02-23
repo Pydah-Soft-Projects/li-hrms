@@ -20,6 +20,7 @@ interface UserProfile {
   is_active?: boolean;
   createdAt: string;
   lastLogin?: string;
+  profilePhoto?: string | null;
 }
 
 interface EmployeeProfile {
@@ -268,43 +269,74 @@ export default function ProfilePage() {
           {/* Left Column: Profile Card */}
           <div className="lg:col-span-4 space-y-6">
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden sticky top-8">
-              {/* Cover Gradient */}
-              <div className="h-32 bg-gradient-to-br from-indigo-600 via-blue-600 to-emerald-500 relative">
-                {/* Status Dot */}
-                <div className="absolute top-4 right-4 flex items-center gap-2 bg-black/20 backdrop-blur-md px-3 py-1 rounded-full text-white text-xs font-medium">
-                  <span className={`w-2 h-2 rounded-full ${user.isActive || user.is_active !== false ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]' : 'bg-red-500'}`} />
-                  {user.isActive || user.is_active !== false ? 'Active' : 'Inactive'}
+              {/* Cover Gradient - blue to teal/green */}
+              <div className="h-32 bg-gradient-to-r from-blue-600 via-blue-500 to-teal-500 relative">
+                {/* Active badge - top right, light background, green dot */}
+                <div className="absolute top-4 right-4 flex items-center gap-2 bg-slate-100/95 backdrop-blur-sm px-3 py-1.5 rounded-full border border-slate-200/80">
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${user.isActive || user.is_active !== false ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                  <span className="text-xs font-medium text-slate-700">
+                    {user.isActive || user.is_active !== false ? 'Active' : 'Inactive'}
+                  </span>
                 </div>
               </div>
 
-              {/* Avatar & Basic Info */}
+              {/* Avatar & Basic Info - photo overlaps header with white border */}
               <div className="px-6 pb-6 text-center -mt-16 relative">
-                <div className="w-32 h-32 mx-auto rounded-full bg-white p-1.5 shadow-xl">
-                  <div className="w-full h-full rounded-full bg-slate-100 flex items-center justify-center text-4xl font-bold text-slate-400 border border-slate-200">
-                    {user.name?.[0]?.toUpperCase() || 'U'}
-                  </div>
+                <div className="w-32 h-32 mx-auto rounded-full bg-white border-4 border-white shadow-xl relative group ring-2 ring-slate-200/50">
+                  {user.profilePhoto ? (
+                    <img src={user.profilePhoto} alt={user.name} className="w-full h-full rounded-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full rounded-full bg-slate-100 flex items-center justify-center text-4xl font-bold text-slate-400">
+                      {user.name?.[0]?.toUpperCase() || 'U'}
+                    </div>
+                  )}
+                  <label className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                    <span className="text-white text-xs font-medium px-2 text-center">Change photo</span>
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/jpg"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        try {
+                          const res = await api.uploadProfile(file) as { success?: boolean; url?: string };
+                          if (res?.success && res?.url) {
+                            await api.updateProfile({ profilePhoto: res.url });
+                            setUser(prev => prev ? { ...prev, profilePhoto: res.url } : null);
+                            setToast({ type: 'success', message: 'Profile photo updated' });
+                          }
+                        } catch (err) {
+                          setToast({ type: 'error', message: 'Failed to upload photo' });
+                        }
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
                 </div>
 
                 <div className="mt-4">
-                  <h2 className="text-xl font-bold text-slate-900">{user.name}</h2>
+                  <h2 className="text-xl font-bold text-slate-900 uppercase tracking-tight">{user.name}</h2>
                   <p className="text-slate-500 text-sm mt-1">{user.email}</p>
                 </div>
 
+                {/* Role & Department - pill tags, light grey bg and border */}
                 <div className="mt-4 flex flex-wrap justify-center gap-2">
-                  <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider border ${getRoleBadgeColor(user.role)}`}>
+                  <span className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium uppercase tracking-wider bg-slate-100 text-slate-700 border border-slate-200">
                     {getRoleLabel(user.role)}
                   </span>
                   {user.department && (
-                    <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200">
+                    <span className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium uppercase tracking-wider bg-slate-100 text-slate-700 border border-slate-200">
                       {user.department.name}
                     </span>
                   )}
                 </div>
 
+                {/* Joined & Last Login - labels uppercase light grey, values dark */}
                 <div className="mt-6 pt-6 border-t border-slate-100 grid grid-cols-2 gap-4 text-left">
                   <div>
                     <p className="text-xs text-slate-500 uppercase tracking-widest font-semibold mb-1">Joined</p>
-                    <p className="text-sm font-medium text-slate-800">{formatDate(user.createdAt, false)}</p>
+                    <p className="text-sm font-medium text-slate-800">{user.createdAt ? formatDate(user.createdAt, false) : '—'}</p>
                   </div>
                   <div>
                     <p className="text-xs text-slate-500 uppercase tracking-widest font-semibold mb-1">Last Login</p>
