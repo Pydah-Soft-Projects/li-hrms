@@ -2788,10 +2788,11 @@ export default function LeavesPage() {
                 )}
 
                 {/* Date Selection Logic */}
-                {((applyType === 'leave' && formData.isHalfDay) || applyType === 'od') ? (
-                  /* Single Date Input for Half Day / Specific Hours / Any OD */
+                {((applyType === 'leave' && formData.isHalfDay) ||
+                  (applyType === 'od' && (formData.odType_extended === 'half_day' || formData.odType_extended === 'hours'))) ? (
+                  /* Single Date Input for Half Day / Specific Hours */
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">{applyType === 'od' ? 'Date *' : 'Date *'}</label>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">Date *</label>
                     <input
                       type="date"
                       min={new Date().toISOString().split('T')[0]}

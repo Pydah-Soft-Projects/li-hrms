@@ -21,8 +21,6 @@ async function getResolvedLeaveSettings(departmentId, divisionId = null) {
       paidLeavesCount: deptSettings?.leaves?.paidLeavesCount ?? null,
       dailyLimit: deptSettings?.leaves?.dailyLimit ?? null,
       monthlyLimit: deptSettings?.leaves?.monthlyLimit ?? null,
-      casualLeavePerYear: deptSettings?.leaves?.casualLeavePerYear ?? null,
-      maxCasualLeavesPerMonth: deptSettings?.leaves?.maxCasualLeavesPerMonth ?? null,
     };
 
     // If department settings are null, use global defaults
@@ -261,8 +259,6 @@ exports.updateDepartmentSettings = async (req, res) => {
       if (leaves.paidLeavesCount !== undefined) settings.leaves.paidLeavesCount = leaves.paidLeavesCount;
       if (leaves.dailyLimit !== undefined) settings.leaves.dailyLimit = leaves.dailyLimit;
       if (leaves.monthlyLimit !== undefined) settings.leaves.monthlyLimit = leaves.monthlyLimit;
-      if (leaves.casualLeavePerYear !== undefined) settings.leaves.casualLeavePerYear = leaves.casualLeavePerYear;
-      if (leaves.maxCasualLeavesPerMonth !== undefined) settings.leaves.maxCasualLeavesPerMonth = leaves.maxCasualLeavesPerMonth;
       settings.markModified('leaves');
     }
 

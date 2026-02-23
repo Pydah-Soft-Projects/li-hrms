@@ -4,7 +4,6 @@ const leaveController = require('./controllers/leaveController');
 const odController = require('./controllers/odController');
 const cclController = require('./controllers/cclController');
 const settingsController = require('./controllers/leaveSettingsController');
-const leaveRegisterController = require('./controllers/leaveRegisterController');
 const { protect, authorize } = require('../authentication/middleware/authMiddleware');
 const { applyScopeFilter } = require('../shared/middleware/dataScopeMiddleware');
 
@@ -97,11 +96,6 @@ router.put('/od/:id/outcome', odController.updateODOutcome);
 
 // Delete OD
 router.delete('/od/:id', authorize('sub_admin', 'super_admin'), odController.deleteOD);
-
-// = :=========================================
-// LEAVE REGISTER ROUTES
-// ==========================================
-router.get('/register', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), applyScopeFilter, leaveRegisterController.getRegister);
 
 // ==========================================
 // LEAVE ROUTES
