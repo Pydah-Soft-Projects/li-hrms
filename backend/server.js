@@ -197,6 +197,14 @@ const startServer = async () => {
     const { startSyncJob } = require('./attendance/services/attendanceSyncJob');
     await startSyncJob();
 
+    // Monthly leave accrual cron (00:10 IST on 1st of every month – CL/EL + CCL expiry)
+    try {
+      const { startMonthlyAccrualCron } = require('./leaves/jobs/monthlyAccrualCron');
+      startMonthlyAccrualCron();
+    } catch (cronErr) {
+      console.warn('⚠️  Monthly accrual cron failed to start:', cronErr.message);
+    }
+
     // Start BullMQ Workers for background job processing
     try {
       const { startWorkers } = require('./shared/jobs/worker');
