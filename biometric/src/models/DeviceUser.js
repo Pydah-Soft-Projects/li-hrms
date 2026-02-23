@@ -11,6 +11,14 @@ const DeviceUserSchema = new mongoose.Schema({
         type: String,
         default: ''
     },
+    department: {
+        type: String,
+        default: ''
+    },
+    division: {
+        type: String,
+        default: ''
+    },
     card: {
         type: String,
         default: ''

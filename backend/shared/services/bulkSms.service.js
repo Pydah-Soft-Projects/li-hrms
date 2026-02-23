@@ -1,4 +1,4 @@
-import axios from 'axios';
+const axios = require('axios');
 
 const BULK_SMS_API_KEY = process.env.BULK_SMS_API_KEY || '7c9c967a-4ce9-4748-9dc7-d2aaef847275';
 const BULK_SMS_SENDER_ID = process.env.BULK_SMS_SENDER_ID || 'PYDAHK';
@@ -72,7 +72,7 @@ const extractMessageIds = (responseText) => {
     return Array.from(ids);
 };
 
-export const sendSmsThroughBulkSmsApps = async ({
+const sendSmsThroughBulkSmsApps = async ({
     numbers,
     message,
     isUnicode = false,
@@ -139,4 +139,8 @@ export const sendSmsThroughBulkSmsApps = async ({
         transport: 'GET',
         numbers: sanitizedNumbers,
     };
+};
+
+module.exports = {
+    sendSmsThroughBulkSmsApps,
 };

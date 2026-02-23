@@ -117,7 +117,7 @@ const processAndAggregateLogs = async (rawLogs, previousDayLinking = false, skip
           $lte: formatDate(maxDateObj),
         },
         timestamp: { $gte: new Date('2020-01-01') }, // Ignore ancient logs (1899/1900)
-        type: { $in: ['IN', 'OUT'] }, // CRITICAL: Only process IN/OUT logs, exclude null-type (BREAK/OT)
+        type: { $in: ['IN', 'OUT', null] }, // CRITICAL: Include null-type (Thumb only) for Smart Pairing
       }).sort({ timestamp: 1 }); // Sort chronologically
 
       logsByEmployee[empNo] = allLogs.map(log => ({

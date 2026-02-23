@@ -12,11 +12,13 @@ const apiRoutes = require('./routes/api');
 const deviceRoutes = require('./routes/devices');
 const admsRoutes = require('./routes/adms');
 const userSyncRoutes = require('./routes/userSync');
+const exportRoutes = require('./routes/export');
 const AdmsRawLog = require('./models/AdmsRawLog'); // Import for discovery logging
+const { connectHRMS } = require('./config/hrmsConnection');
 
 // Initialize Express app
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 4001;
 
 // Middleware
 app.use(cors());
@@ -52,6 +54,7 @@ app.set('deviceService', deviceService);
 
 // Routes
 app.use('/api', apiRoutes);
+app.use('/api', exportRoutes); // HRMS filters + attendance export (GET /api/hrms/filters, GET /api/export/attendance)
 app.use('/api/devices', deviceRoutes);
 app.use('/api/user-sync', userSyncRoutes); // Added: Use userSyncRoutes
 app.use('/api/adms', admsRoutes);
@@ -125,8 +128,11 @@ app.all('*', async (req, res) => {
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/biometric_logs';
 
 mongoose.connect(MONGODB_URI)
-    .then(() => {
+    .then(async () => {
         logger.info('Connected to MongoDB');
+
+        // Connect to HRMS MongoDB for export (employee name, department, division)
+        await connectHRMS().catch(() => { });
 
         // Start the server
         app.listen(PORT, () => {
