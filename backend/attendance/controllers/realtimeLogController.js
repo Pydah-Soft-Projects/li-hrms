@@ -5,7 +5,7 @@
 
 const AttendanceRawLog = require('../model/AttendanceRawLog');
 const Employee = require('../../employees/model/Employee');
-const { processAndAggregateLogs, formatDate } = require('../services/attendanceSyncService');
+const { processAndAggregateLogs, formatDate, filterRedundantLogs } = require('../services/attendanceSyncService');
 const { processMultiShiftAttendance } = require('../services/multiShiftProcessingService');
 const Settings = require('../../settings/model/Settings');
 
@@ -108,11 +108,24 @@ exports.receiveRealTimeLogs = async (req, res) => {
             }
         }
 
+        // NEW: Apply 30-minute redundancy filtering to real-time logs
+        const rawLogsForRedundancyCheck = rawLogsToSave.map(op => op.insertOne.document);
+        const filteredLogs = await filterRedundantLogs(rawLogsForRedundancyCheck, 30);
+        
+        console.log(`[RealTime] Redundancy Filter: ${rawLogsForRedundancyCheck.length} -> ${filteredLogs.length} logs`);
+        
+        // Convert back to bulk write format
+        const filteredBulkOps = filteredLogs.map(log => ({
+            insertOne: {
+                document: log
+            }
+        }));
+
         // 3. Bulk Persist (High Performance)
-        if (rawLogsToSave.length > 0) {
+        if (filteredBulkOps.length > 0) {
             // ordered: false = continue even if duplicates fail
             // We expect strict duplicates (same user/time) to fail due to db index, which is GOOD.
-            await AttendanceRawLog.bulkWrite(rawLogsToSave, { ordered: false }).catch(err => {
+            await AttendanceRawLog.bulkWrite(filteredBulkOps, { ordered: false }).catch(err => {
                 // Ignore duplicate key errors (code 11000)
                 if (err.code !== 11000 && !err.writeErrors?.every(e => e.code === 11000)) {
                     console.error('RealTime Sync BulkWrite partial error:', err.message);
@@ -182,8 +195,10 @@ exports.receiveRealTimeLogs = async (req, res) => {
 
         return res.status(200).json({
             success: true,
-            processed: rawLogsToSave.length,
-            message: 'Sync successful'
+            processed: filteredBulkOps.length,
+            original: rawLogsForRedundancyCheck.length,
+            filtered: rawLogsForRedundancyCheck.length - filteredBulkOps.length,
+            message: 'Sync successful with redundancy filtering'
         });
 
     } catch (error) {
