@@ -86,6 +86,7 @@ interface Employee {
   employeeAllowances?: any[];
   employeeDeductions?: any[];
   salaryStatus?: 'pending_approval' | 'approved';
+  profilePhoto?: string;
 }
 
 
