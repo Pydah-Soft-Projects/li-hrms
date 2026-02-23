@@ -76,7 +76,7 @@ exports.receiveRealTimeLogs = async (req, res) => {
             // BREAK-IN, BREAK-OUT, OVERTIME-IN, and OVERTIME-OUT are intentionally left as null
             // They will be stored in rawData for break/OT tracking but won't trigger attendance processing
 
-            if (VALID_LOG_TYPES.includes(typeUpper)) {
+            if (typeUpper === null || VALID_LOG_TYPES.includes(typeUpper)) {
                 // Parse timestamp safe
                 // Parse timestamp safe - treat as UTC
                 const timestampStr = typeof log.timestamp === 'string' && !log.timestamp.endsWith('Z')
@@ -101,10 +101,10 @@ exports.receiveRealTimeLogs = async (req, res) => {
                     }
                 });
 
-                if (normalizedType) {
-                    uniqueEmployees.add(empId);
-                    uniqueDates.add(formatDate(timestamp));
-                }
+                // Add to processing set for ANY valid log type (Thumb Press)
+                // This ensures "Thumb Only" punches (normalizedType: null) still trigger calculation
+                uniqueEmployees.add(empId);
+                uniqueDates.add(formatDate(timestamp));
             }
         }
 
