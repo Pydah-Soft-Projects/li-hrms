@@ -1,25 +1,25 @@
 /**
  * Annual CL Reset Service
- * Handles annual casual leave balance reset with carry forward addition
+ * Handles annual casual leave balance rollover and carry forward expiration
  */
 
 const Employee = require('../../employees/model/Employee');
 const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
-const Leave = require('../model/Leave');
+const leaveRegisterService = require('./leaveRegisterService');
 const { extractISTComponents, createISTDate } = require('../../shared/utils/dateUtils');
+const dateCycleService = require('./dateCycleService');
 
 /**
- * Perform annual CL reset for all employees
+ * Perform annual CL rollover for all active employees
  * @param {Number} targetYear - Target year for reset (optional, defaults to current financial year)
  * @returns {Object} Reset operation results
  */
 async function performAnnualCLReset(targetYear = null) {
     try {
-        console.log('[AnnualCLReset] Starting annual CL reset process...');
-        
-        // Get policy settings
+        console.log('[AnnualCLReset] Starting Annual CL Rollover process...');
+
         const settings = await LeavePolicySettings.getSettings();
-        
+
         if (!settings.annualCLReset.enabled) {
             return {
                 success: false,
@@ -29,174 +29,111 @@ async function performAnnualCLReset(targetYear = null) {
             };
         }
 
-        // Determine reset date (financial year start)
         const resetDate = getResetDate(targetYear, settings);
-        const resetYear = resetDate.getFullYear();
-        const resetMonth = resetDate.getMonth() + 1;
-        
-        console.log(`[AnnualCLReset] Reset date: ${resetDate.toISOString()}`);
-        console.log(`[AnnualCLReset] Reset balance to: ${settings.annualCLReset.resetToBalance}`);
+        console.log(`[AnnualCLReset] Rollover execution date: ${resetDate.toISOString()}`);
 
-        // Get all active employees
         const employees = await Employee.find({ is_active: true })
-            .select('_id emp_no employee_name department_id division_id paidLeaves compensatoryOffs doj')
+            .select('_id emp_no employee_name department_id division_id doj is_active paidLeaves')
             .populate('department_id', 'name')
-            .populate('division_id', 'name')
-            .lean();
+            .populate('division_id', 'name');
 
         const results = {
             success: true,
-            resetYear,
             resetDate,
-            resetToBalance: settings.annualCLReset.resetToBalance,
-            addCarryForward: settings.annualCLReset.addCarryForward,
             processed: 0,
-            success: 0,
+            successCount: 0,
             errors: [],
             details: []
         };
 
-        // Process each employee
         for (const employee of employees) {
             try {
-                const resetResult = await resetEmployeeCL(employee, settings, resetDate, resetYear);
-                
+                const resetResult = await resetEmployeeCL(employee, settings, resetDate);
+
                 if (resetResult.success) {
-                    results.success++;
+                    results.successCount++;
                     results.details.push({
                         employeeId: employee._id,
                         empNo: employee.emp_no,
-                        employeeName: employee.employee_name,
                         previousBalance: resetResult.previousBalance,
-                        carryForwardAdded: resetResult.carryForwardAdded,
-                        newBalance: resetResult.newBalance,
-                        department: employee.department_id?.name,
-                        division: employee.division_id?.name
+                        expiredAmount: resetResult.expiredAmount,
+                        carryForwarded: resetResult.carryForwarded
                     });
                 } else {
-                    results.errors.push({
-                        employeeId: employee._id,
-                        empNo: employee.emp_no,
-                        error: resetResult.error
-                    });
+                    results.errors.push({ empNo: employee.emp_no, error: resetResult.error });
                 }
-                
+
                 results.processed++;
-                
             } catch (error) {
-                results.errors.push({
-                    employeeId: employee._id,
-                    empNo: employee.emp_no,
-                    error: error.message
-                });
+                results.errors.push({ empNo: employee.emp_no, error: error.message });
             }
         }
 
-        console.log(`[AnnualCLReset] Complete: ${results.success}/${results.processed} employees processed`);
-        
         return {
             ...results,
-            message: `Annual CL reset completed: ${results.success} successful, ${results.errors.length} errors`
+            message: `Annual CL Rollover completed: ${results.successCount} successful, ${results.errors.length} errors`
         };
 
     } catch (error) {
         console.error('[AnnualCLReset] Critical error:', error);
-        return {
-            success: false,
-            error: error.message,
-            message: 'Annual CL reset failed'
-        };
+        return { success: false, error: error.message, message: 'Annual CL Rollover failed' };
     }
 }
 
 /**
- * Reset CL balance for a single employee
+ * Handle carry forward and expiration for a single employee
  */
-async function resetEmployeeCL(employee, settings, resetDate, resetYear) {
+async function resetEmployeeCL(employee, settings, resetDate) {
     try {
-        const currentCL = employee.paidLeaves || 0;
-        
-        // Calculate carry forward amount (simplified - in production, track actual CF)
-        let carryForwardAmount = 0;
-        if (settings.annualCLReset.addCarryForward && settings.carryForward.casualLeave.enabled) {
-            // For now, use a simple calculation - in production, implement proper CF tracking
-            const unusedCL = Math.max(0, currentCL - getUsedCLInYear(employee._id, resetYear - 1));
-            carryForwardAmount = Math.min(unusedCL, settings.carryForward.casualLeave.maxMonths || 12);
+        // 1. Get exact current balance from ledger
+        const currentBalance = await leaveRegisterService.getCurrentBalance(employee._id, 'CL');
+
+        let carryForwardAllowed = 0;
+        let expiredAmount = 0;
+
+        // 2. Calculate Carry Forward bounds
+        if (settings.carryForward.casualLeave.enabled) {
+            // maxMonths is historically used as maxDays limit for CF in this schema
+            const maxCF = settings.carryForward.casualLeave.maxMonths || 12;
+            carryForwardAllowed = Math.min(currentBalance, maxCF);
         }
 
-        // Calculate new balance
-        const newBalance = settings.annualCLReset.resetToBalance + carryForwardAmount;
+        expiredAmount = Math.max(0, currentBalance - carryForwardAllowed);
 
-        // Update employee record
-        await Employee.findByIdAndUpdate(employee._id, {
-            paidLeaves: newBalance
-        });
-
-        // Log the reset operation (you might create an AnnualCLResetLog model)
-        await logCLResetOperation(employee._id, {
-            resetDate,
-            resetYear,
-            previousBalance: currentCL,
-            carryForwardAdded: carryForwardAmount,
-            newBalance,
-            resetToBalance: settings.annualCLReset.resetToBalance,
-            settings: settings.annualCLReset
-        });
+        // 3. Post EXPIRY transaction if balance exceeds CF limits
+        if (expiredAmount > 0) {
+            await leaveRegisterService.addTransaction({
+                employeeId: employee._id,
+                empNo: employee.emp_no,
+                employeeName: employee.employee_name,
+                designation: 'N/A', // Omitted for brevity
+                department: employee.department_id?.name || 'N/A',
+                divisionId: employee.division_id?._id,
+                departmentId: employee.department_id?._id,
+                dateOfJoining: employee.doj,
+                employmentStatus: employee.is_active ? 'active' : 'inactive',
+                leaveType: 'CL',
+                transactionType: 'EXPIRY',
+                startDate: resetDate,
+                endDate: resetDate,
+                days: expiredAmount,
+                reason: `Annual Financial Year Reset: Unused CL exceeds Carry Forward limits. Expired ${expiredAmount} days.`,
+                status: 'APPROVED',
+                autoGenerated: true,
+                autoGeneratedType: 'EXPIRY'
+            });
+        }
 
         return {
             success: true,
-            previousBalance: currentCL,
-            carryForwardAdded: carryForwardAmount,
-            newBalance
+            previousBalance: currentBalance,
+            carryForwarded: carryForwardAllowed,
+            expiredAmount: expiredAmount
         };
 
     } catch (error) {
-        console.error(`[AnnualCLReset] Error for employee ${employee._id}:`, error);
-        return {
-            success: false,
-            error: error.message
-        };
+        return { success: false, error: error.message };
     }
-}
-
-/**
- * Get used CL in previous year (simplified version)
- */
-async function getUsedCLInYear(employeeId, year) {
-    try {
-        const financialYear = getFinancialYear(createISTDate(`${year}-04-01`));
-        const fyStart = createISTDate(`${financialYear.split('-')[0]}-04-01`);
-        const fyEnd = createISTDate(`${financialYear.split('-')[1]}-03-31`);
-        
-        const usedLeaves = await Leave.find({
-            employeeId,
-            leaveType: 'CL',
-            status: 'approved',
-            isActive: true,
-            fromDate: { $gte: fyStart },
-            toDate: { $lte: fyEnd }
-        }).select('numberOfDays').lean();
-
-        return usedLeaves.reduce((total, leave) => total + (leave.numberOfDays || 0), 0);
-
-    } catch (error) {
-        console.error('Error calculating used CL:', error);
-        return 0;
-    }
-}
-
-/**
- * Get financial year string
- */
-function getFinancialYear(date) {
-    const year = date.getFullYear();
-    const month = date.getMonth() + 1;
-    
-    // Default to April-March financial year
-    const fyStart = month >= 4 ? year : year - 1;
-    const fyEnd = month >= 4 ? year + 1 : year;
-    
-    return `${fyStart}-${fyEnd}`;
 }
 
 /**
@@ -206,36 +143,13 @@ function getResetDate(targetYear, settings) {
     if (targetYear) {
         return createISTDate(`${targetYear}-${String(settings.annualCLReset.resetMonth).padStart(2, '0')}-${String(settings.annualCLReset.resetDay).padStart(2, '0')}`);
     }
-    
+
     // Default to current financial year start
     const now = new Date();
-    const currentYear = now.getMonth() + 1 >= settings.annualCLReset.resetMonth ? 
+    const currentYear = now.getMonth() + 1 >= settings.annualCLReset.resetMonth ?
         now.getFullYear() : now.getFullYear() - 1;
-    
-    return createISTDate(`${currentYear}-${String(settings.annualCLReset.resetMonth).padStart(2, '0')}-${String(settings.annualCLReset.resetDay).padStart(2, '0')}`);
-}
 
-/**
- * Log CL reset operation (simplified - consider creating a separate model)
- */
-async function logCLResetOperation(employeeId, resetData) {
-    try {
-        // In production, create an AnnualCLResetLog model to track all reset operations
-        console.log(`[CLResetLog] Employee ${employeeId}:`, {
-            previousBalance: resetData.previousBalance,
-            carryForwardAdded: resetData.carryForwardAdded,
-            newBalance: resetData.newBalance,
-            resetDate: resetData.resetDate,
-            resetYear: resetData.resetYear
-        });
-        
-        // For now, just log to console - implement proper logging model
-        return true;
-        
-    } catch (error) {
-        console.error('Error logging CL reset:', error);
-        return false;
-    }
+    return createISTDate(`${currentYear}-${String(settings.annualCLReset.resetMonth).padStart(2, '0')}-${String(settings.annualCLReset.resetDay).padStart(2, '0')}`);
 }
 
 /**
@@ -247,7 +161,7 @@ async function getCLResetStatus(employeeIds = null) {
         if (employeeIds && employeeIds.length > 0) {
             query._id = { $in: employeeIds };
         }
-        
+
         const employees = await Employee.find(query)
             .select('_id emp_no employee_name paidLeaves department_id division_id')
             .populate('department_id', 'name')
@@ -255,7 +169,7 @@ async function getCLResetStatus(employeeIds = null) {
             .lean();
 
         const settings = await LeavePolicySettings.getSettings();
-        
+
         const results = employees.map(emp => ({
             employeeId: emp._id,
             empNo: emp.emp_no,
@@ -264,9 +178,9 @@ async function getCLResetStatus(employeeIds = null) {
             division: emp.division_id?.name,
             currentCL: emp.paidLeaves || 0,
             nextResetDate: getNextResetDate(settings),
-            resetEnabled: settings.annualCLReset.enabled,
-            resetToBalance: settings.annualCLReset.resetToBalance,
-            addCarryForward: settings.annualCLReset.addCarryForward
+            rolloverEnabled: settings.annualCLReset.enabled,
+            carryForwardEnabled: settings.carryForward.casualLeave.enabled,
+            carryForwardMax: settings.carryForward.casualLeave.maxMonths || 12
         }));
 
         return {
@@ -276,8 +190,8 @@ async function getCLResetStatus(employeeIds = null) {
                 enabled: settings.annualCLReset.enabled,
                 resetMonth: settings.annualCLReset.resetMonth,
                 resetDay: settings.annualCLReset.resetDay,
-                resetToBalance: settings.annualCLReset.resetToBalance,
-                addCarryForward: settings.annualCLReset.addCarryForward
+                carryForwardEnabled: settings.carryForward.casualLeave.enabled,
+                carryForwardMax: settings.carryForward.casualLeave.maxMonths || 12
             }
         };
 
@@ -295,9 +209,9 @@ async function getCLResetStatus(employeeIds = null) {
  */
 function getNextResetDate(settings) {
     const now = new Date();
-    const currentYear = now.getMonth() + 1 >= settings.annualCLReset.resetMonth ? 
+    const currentYear = now.getMonth() + 1 >= settings.annualCLReset.resetMonth ?
         now.getFullYear() : now.getFullYear() - 1;
-    
+
     return createISTDate(`${currentYear}-${String(settings.annualCLReset.resetMonth).padStart(2, '0')}-${String(settings.annualCLReset.resetDay).padStart(2, '0')}`);
 }
 

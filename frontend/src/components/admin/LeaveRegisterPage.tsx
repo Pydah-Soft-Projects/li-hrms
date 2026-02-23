@@ -68,7 +68,7 @@ export default function LeaveRegisterPage() {
     const [adjustmentData, setAdjustmentData] = useState({
         employeeId: '',
         clBalance: 0,
-        days: '',
+        days: '', // positive = add days, negative = subtract
         reason: ''
     });
     const [showEmployeeDetailModal, setShowEmployeeDetailModal] = useState(false);
@@ -89,22 +89,25 @@ export default function LeaveRegisterPage() {
             });
             
             if (data.success) {
-                const formattedEmployees = data.data.map((emp: any) => {
-                    // Extract employee ID properly - handle both string and object cases
-                    const employeeId = emp.employeeId?._id || emp.employeeId?.id || emp.employeeId;
-                    
+                // Backend returns groupByEmployeeMonthly: { employee, casualLeave, earnedLeave, compensatoryOff, totalPaidBalance }
+                const formattedEmployees = (data.data || []).map((emp: any) => {
+                    const employee = emp.employee || {};
+                    const employeeId = employee.id || emp.employeeId?._id || emp.employeeId?.id || emp.employeeId;
+                    const casualLeave = emp.casualLeave || {};
+                    const earnedLeave = emp.earnedLeave || {};
+                    const presentMonth = (casualLeave.accruedThisMonth || 0) + (earnedLeave.accruedThisMonth || 0);
                     return {
-                        employeeId: employeeId,
-                        empNo: emp.empNo,
-                        employeeName: emp.employeeName,
-                        designation: emp.designation,
-                        department: emp.department,
-                        divisionName: emp.divisionName || 'N/A',
-                        clBalance: emp.leaveTypes?.CL?.closingBalance || 0,
-                        elBalance: emp.leaveTypes?.EL?.closingBalance || 0,
-                        compensatoryOffBalance: emp.leaveTypes?.CCL?.closingBalance || 0,
-                        presentMonthAllowedLeaves: calculatePresentMonthLeaves(emp.leaveTypes),
-                        cumulativeLeaves: calculateCumulativeLeaves(emp.leaveTypes)
+                        employeeId,
+                        empNo: employee.empNo ?? emp.empNo,
+                        employeeName: employee.name ?? emp.employeeName,
+                        designation: employee.designation ?? emp.designation,
+                        department: employee.department ?? emp.department,
+                        divisionName: employee.division ?? emp.divisionName ?? 'N/A',
+                        clBalance: casualLeave.balance ?? 0,
+                        elBalance: earnedLeave.balance ?? 0,
+                        compensatoryOffBalance: (emp.compensatoryOff?.balance) ?? 0,
+                        presentMonthAllowedLeaves: presentMonth,
+                        cumulativeLeaves: emp.totalPaidBalance ?? 0
                     };
                 });
                 setEmployees(formattedEmployees);
@@ -117,32 +120,6 @@ export default function LeaveRegisterPage() {
         } finally {
             setLoading(false);
         }
-    };
-
-    const calculatePresentMonthLeaves = (leaveTypes: any) => {
-        let total = 0;
-        Object.values(leaveTypes).forEach((type: any) => {
-            const currentMonth = new Date().getMonth() + 1;
-            const currentYear = new Date().getFullYear();
-            
-            type.transactions.forEach((transaction: any) => {
-                const transactionDate = new Date(transaction.startDate);
-                if (transactionDate.getMonth() + 1 === currentMonth && 
-                    transactionDate.getFullYear() === currentYear &&
-                    transaction.transactionType === 'CREDIT') {
-                    total += transaction.days;
-                }
-            });
-        });
-        return total;
-    };
-
-    const calculateCumulativeLeaves = (leaveTypes: any) => {
-        let total = 0;
-        Object.values(leaveTypes).forEach((type: any) => {
-            total += type.closingBalance;
-        });
-        return total;
     };
 
     const fetchEmployeeDetail = async (employeeId: string) => {
@@ -164,22 +141,24 @@ export default function LeaveRegisterPage() {
         setAdjustmentData({
             employeeId: employee.employeeId,
             clBalance: employee.clBalance,
+            days: '',
             reason: ''
         });
         setShowAdjustModal(true);
     };
 
     const handleAdjustment = async () => {
-        if (!adjustmentData.days || !adjustmentData.reason) {
-            toast.error('Please fill in all fields');
+        const daysNum = parseFloat(adjustmentData.days);
+        if (adjustmentData.days === '' || isNaN(daysNum) || !adjustmentData.reason.trim()) {
+            toast.error('Please enter days (positive to add, negative to subtract) and reason');
             return;
         }
 
         try {
             const result = await api.adjustCLBalance({
                 employeeId: adjustmentData.employeeId,
-                days: parseFloat(adjustmentData.days),
-                reason: adjustmentData.reason
+                days: daysNum,
+                reason: adjustmentData.reason.trim()
             });
 
             if (result.success) {
@@ -546,11 +525,24 @@ export default function LeaveRegisterPage() {
                                     Current CL Balance
                                 </label>
                                 <input
-                                    type="number"
+                                    type="text"
                                     value={adjustmentData.clBalance}
-                                    onChange={(e) => setAdjustmentData({...adjustmentData, clBalance: parseInt(e.target.value)})}
+                                    readOnly
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    Days to adjust
+                                </label>
+                                <input
+                                    type="number"
+                                    step="0.5"
+                                    value={adjustmentData.days}
+                                    onChange={(e) => setAdjustmentData({ ...adjustmentData, days: e.target.value })}
                                     className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                                    placeholder="Enter new CL balance"
+                                    placeholder="e.g. 2 to add, -1 to subtract"
                                 />
                             </div>
                             

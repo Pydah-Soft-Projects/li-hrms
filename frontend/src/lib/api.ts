@@ -2324,14 +2324,17 @@ export const api = {
   // LEAVE REGISTER
   // ==========================================
 
-  // Get leave register data
-  getLeaveRegister: async (filters?: { divisionId?: string; departmentId?: string; searchTerm?: string; month?: number; year?: number }) => {
+  // Get leave register data (employeeId or empNo for single-employee balance, e.g. CL for apply form; balanceAsOf=true for balance as of that month)
+  getLeaveRegister: async (filters?: { divisionId?: string; departmentId?: string; searchTerm?: string; month?: number; year?: number; employeeId?: string; empNo?: string; balanceAsOf?: boolean }) => {
     const params = new URLSearchParams();
     if (filters?.divisionId) params.append('divisionId', filters.divisionId);
     if (filters?.departmentId) params.append('departmentId', filters.departmentId);
     if (filters?.searchTerm) params.append('searchTerm', filters.searchTerm);
     if (filters?.month) params.append('month', String(filters.month));
     if (filters?.year) params.append('year', String(filters.year));
+    if (filters?.employeeId) params.append('employeeId', filters.employeeId);
+    if (filters?.empNo) params.append('empNo', filters.empNo);
+    if (filters?.balanceAsOf) params.append('balanceAsOf', 'true');
     const query = params.toString() ? `?${params.toString()}` : '';
     return apiRequest<any>(`/leaves/register${query}`, { method: 'GET' });
   },
@@ -2346,11 +2349,33 @@ export const api = {
     return apiRequest<any>(`/leaves/register/employee/${employeeId}/ledger/${leaveType}`, { method: 'GET' });
   },
 
-  // Adjust CL balance
-  adjustCLBalance: async (data: { employeeId: string; days: number; reason: string }) => {
-    return apiRequest<any>('/leaves/register/adjust-cl', {
+  // Adjust leave balance (any type: CREDIT, DEBIT, or ADJUSTMENT)
+  adjustLeaveBalance: async (data: {
+    employeeId: string;
+    leaveType: string;
+    amount: number;
+    transactionType: 'CREDIT' | 'DEBIT' | 'ADJUSTMENT';
+    reason: string;
+  }) => {
+    return apiRequest<any>('/leaves/register/adjust', {
       method: 'POST',
       body: JSON.stringify(data),
+    });
+  },
+
+  // Adjust CL balance by days (positive = add, negative = subtract)
+  adjustCLBalance: async (data: { employeeId: string; days: number; reason: string }) => {
+    const amount = Math.abs(data.days);
+    const transactionType = data.days >= 0 ? 'CREDIT' : 'DEBIT';
+    return apiRequest<any>('/leaves/register/adjust', {
+      method: 'POST',
+      body: JSON.stringify({
+        employeeId: data.employeeId,
+        leaveType: 'CL',
+        amount,
+        transactionType,
+        reason: data.reason,
+      }),
     });
   },
 

@@ -31,6 +31,11 @@ const leavePolicySettingsSchema = new mongoose.Schema({
 
     // Earned Leave (EL) Configuration
     earnedLeave: {
+        enabled: {
+            type: Boolean,
+            default: true,
+            description: 'Enable earned leave (EL) earning; when false, no EL is accrued'
+        },
         // Earning Rules
         earningType: {
             type: String,
@@ -78,31 +83,15 @@ const leavePolicySettingsSchema = new mongoose.Schema({
                 type: Boolean,
                 default: true,
                 description: 'Count holidays/weekly offs as present for EL calculation'
-            }
+            },
+            // Attendance Ranges (Cumulative Logic) – same path the frontend uses
+            attendanceRanges: [{
+                minDays: { type: Number, required: true },
+                maxDays: { type: Number, required: true },
+                elEarned: { type: Number, required: true },
+                description: { type: String, default: '' }
+            }]
         },
-
-        // Attendance Ranges (Cumulative Logic)
-        attendanceRanges: [{
-            minDays: {
-                type: Number,
-                required: true,
-                description: 'Minimum days in this range'
-            },
-            maxDays: {
-                type: Number,
-                required: true,
-                description: 'Maximum days in this range'
-            },
-            elEarned: {
-                type: Number,
-                required: true,
-                description: 'EL earned in this range (cumulative)'
-            },
-            description: {
-                type: String,
-                description: 'Description of this attendance range'
-            }
-        }],
 
         // Fixed Earning
         fixedRules: {
