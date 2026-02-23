@@ -91,6 +91,7 @@ const initialFormState: Partial<Employee> = {
   is_active: true,
   employeeAllowances: [],
   employeeDeductions: [],
+  profilePhoto: '',
 };
 
 interface TemplateColumn {
@@ -262,6 +263,11 @@ export default function EmployeesPage() {
 
   const [applicationSearchTerm, setApplicationSearchTerm] = useState('');
   const [showBulkUpload, setShowBulkUpload] = useState(false);
+  const [autoGenerateEmployeeNumber, setAutoGenerateEmployeeNumber] = useState(false);
+  /** Toggle in bulk preview: when true, ignore emp numbers from file (auto-generate). Defaults from settings when dialog opens. */
+  const [bulkPreviewAutoGenerateEmpNo, setBulkPreviewAutoGenerateEmpNo] = useState(false);
+  const [addFormAutoGenerateEmpNo, setAddFormAutoGenerateEmpNo] = useState(false);
+  const [applicationFormAutoGenerateEmpNo, setApplicationFormAutoGenerateEmpNo] = useState(false);
   const [userRole, setUserRole] = useState<string>('');
   const [showLeftDateModal, setShowLeftDateModal] = useState(false);
   const [selectedEmployeeForLeftDate, setSelectedEmployeeForLeftDate] = useState<Employee | null>(null);
@@ -783,6 +789,37 @@ export default function EmployeesPage() {
     setFilteredApplicationDesignations(designations);
   }, [designations]);
 
+  // Load employee settings when bulk upload dialog opens; sync toggle default for preview
+  useEffect(() => {
+    if (!showBulkUpload) return;
+    api.getEmployeeSettings()
+      .then((res) => {
+        const on = res?.data?.auto_generate_employee_number === true;
+        setAutoGenerateEmployeeNumber(on);
+        setBulkPreviewAutoGenerateEmpNo(on);
+      })
+      .catch(() => {
+        setAutoGenerateEmployeeNumber(false);
+        setBulkPreviewAutoGenerateEmpNo(false);
+      });
+  }, [showBulkUpload]);
+
+  // Load auto-generate setting when add employee dialog opens (create mode only)
+  useEffect(() => {
+    if (!showDialog || editingEmployee) return;
+    api.getEmployeeSettings()
+      .then((res) => setAddFormAutoGenerateEmpNo(!!res?.data?.auto_generate_employee_number))
+      .catch(() => setAddFormAutoGenerateEmpNo(false));
+  }, [showDialog, editingEmployee]);
+
+  // Load auto-generate setting when New Employee Application dialog opens
+  useEffect(() => {
+    if (!showApplicationDialog) return;
+    api.getEmployeeSettings()
+      .then((res) => setApplicationFormAutoGenerateEmpNo(!!res?.data?.auto_generate_employee_number))
+      .catch(() => setApplicationFormAutoGenerateEmpNo(false));
+  }, [showApplicationDialog]);
+
   const loadFormSettings = async () => {
     try {
       const response = await api.getFormSettings();
@@ -1189,8 +1226,13 @@ export default function EmployeesPage() {
     setError('');
     setSuccess('');
 
-    if (!formData.emp_no || !formData.employee_name) {
+    const requireEmpNo = !editingEmployee && !addFormAutoGenerateEmpNo;
+    if (requireEmpNo && !formData.emp_no) {
       setError('Employee No and Name are required');
+      return;
+    }
+    if (!formData.employee_name) {
+      setError('Employee name is required');
       return;
     }
 
@@ -2644,10 +2686,25 @@ export default function EmployeesPage() {
                                 {employee.emp_no}
                               </td>
                               <td className="whitespace-nowrap px-6 py-4">
-                                <div className="text-sm font-medium text-slate-900 dark:text-slate-100">{employee.employee_name}</div>
-                                {employee.email && (
-                                  <div className="text-xs text-slate-500 dark:text-slate-400">{employee.email}</div>
-                                )}
+                                <div className="flex items-center gap-3">
+                                  {(employee as any).profilePhoto ? (
+                                    <img
+                                      src={(employee as any).profilePhoto}
+                                      alt=""
+                                      className="h-9 w-9 shrink-0 rounded-lg border border-slate-200 object-cover dark:border-slate-700"
+                                    />
+                                  ) : (
+                                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-100 text-sm font-medium text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
+                                      {(employee.employee_name || '?').charAt(0).toUpperCase()}
+                                    </div>
+                                  )}
+                                  <div>
+                                    <div className="text-sm font-medium text-slate-900 dark:text-slate-100">{employee.employee_name}</div>
+                                    {employee.email && (
+                                      <div className="text-xs text-slate-500 dark:text-slate-400">{employee.email}</div>
+                                    )}
+                                  </div>
+                                </div>
                               </td>
                               <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
                                 {employee.division?.name || '-'}
@@ -2829,13 +2886,65 @@ export default function EmployeesPage() {
                   </div>
                 )}
 
+                {applicationFormAutoGenerateEmpNo && (
+                  <div className="mb-4 flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-200">
+                    <svg className="h-5 w-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Employee number will be auto-generated when you submit.
+                  </div>
+                )}
+
                 <form onSubmit={handleCreateApplication} className="space-y-6">
+                  {/* Profile photo (optional) - uploads to S3 profiles folder */}
+                  <div className="rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
+                    <h3 className="mb-3 text-base font-semibold text-slate-900 dark:text-slate-100">Profile Photo (optional)</h3>
+                    <div className="flex flex-wrap items-start gap-4">
+                      {(applicationFormData as any).profilePhoto && (
+                        <div className="relative">
+                          <img
+                            src={(applicationFormData as any).profilePhoto}
+                            alt="Profile"
+                            className="h-24 w-24 rounded-xl border border-slate-200 object-cover dark:border-slate-700"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setApplicationFormData(prev => ({ ...prev, profilePhoto: '' }))}
+                            className="absolute -right-2 -top-2 rounded-full bg-red-500 p-1 text-white shadow hover:bg-red-600"
+                          >
+                            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                          </button>
+                        </div>
+                      )}
+                      <div>
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/jpg"
+                          className="block w-full max-w-xs text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-4 file:py-2 file:text-slate-700 dark:text-slate-300 dark:file:bg-slate-800 dark:file:text-slate-200"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            try {
+                              const res = await api.uploadProfile(file) as { success?: boolean; url?: string };
+                              if (res?.success && res?.url) setApplicationFormData(prev => ({ ...prev, profilePhoto: res.url }));
+                            } catch (err) {
+                              setError('Failed to upload profile photo. Try again.');
+                            }
+                            e.target.value = '';
+                          }}
+                        />
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">JPG or PNG, max 5MB. Stored in S3 profiles folder.</p>
+                      </div>
+                    </div>
+                  </div>
+
                   <DynamicEmployeeForm
                     formData={applicationFormData as any}
                     onChange={setApplicationFormData}
                     departments={departments}
                     divisions={divisions}
                     designations={filteredApplicationDesignations as any}
+                    excludeFields={applicationFormAutoGenerateEmpNo ? ['emp_no'] : []}
                   />
 
                   {/* Leave Settings (Optional) */}
@@ -3575,7 +3684,59 @@ export default function EmployeesPage() {
                   </div>
                 )}
 
+                {!editingEmployee && addFormAutoGenerateEmpNo && (
+                  <div className="mb-4 flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-200">
+                    <svg className="h-5 w-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Employee number will be auto-generated when you submit.
+                  </div>
+                )}
+
                 <form onSubmit={handleSubmit} className="space-y-6">
+                  {/* Profile photo (optional) - uploads to S3 profiles folder; when editing, add or update photo */}
+                  <div className="rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
+                    <h3 className="mb-3 text-base font-semibold text-slate-900 dark:text-slate-100">Profile Photo (optional)</h3>
+                    <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">{editingEmployee ? 'Update or add a profile photo for this employee.' : 'Upload a profile photo. JPG or PNG, max 5MB.'}</p>
+                    <div className="flex flex-wrap items-start gap-4">
+                      {(formData as any).profilePhoto && (
+                        <div className="relative">
+                          <img
+                            src={(formData as any).profilePhoto}
+                            alt="Profile"
+                            className="h-24 w-24 rounded-xl border border-slate-200 object-cover dark:border-slate-700"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setFormData(prev => ({ ...prev, profilePhoto: '' }))}
+                            className="absolute -right-2 -top-2 rounded-full bg-red-500 p-1 text-white shadow hover:bg-red-600"
+                          >
+                            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                          </button>
+                        </div>
+                      )}
+                      <div>
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/jpg"
+                          className="block w-full max-w-xs text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-4 file:py-2 file:text-slate-700 dark:text-slate-300 dark:file:bg-slate-800 dark:file:text-slate-200"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            try {
+                              const res = await api.uploadProfile(file) as { success?: boolean; url?: string };
+                              if (res?.success && res?.url) setFormData(prev => ({ ...prev, profilePhoto: res.url }));
+                            } catch (err) {
+                              setError('Failed to upload profile photo. Try again.');
+                            }
+                            e.target.value = '';
+                          }}
+                        />
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">JPG or PNG, max 5MB. Stored in S3 profiles folder.</p>
+                      </div>
+                    </div>
+                  </div>
+
                   <DynamicEmployeeForm
                     formData={formData}
                     onChange={(newData) => {
@@ -3586,7 +3747,7 @@ export default function EmployeesPage() {
                     departments={departments}
                     designations={designations as any}
                     onSettingsLoaded={setFormSettings}
-                    excludeFields={[]}
+                    excludeFields={!editingEmployee && addFormAutoGenerateEmpNo ? ['emp_no'] : []}
                   />
 
                   {/* Leave Settings (Optional) */}
@@ -3846,7 +4007,15 @@ export default function EmployeesPage() {
               templateHeaders={dynamicTemplate.headers}
               templateSample={dynamicTemplate.sample}
               templateFilename="employee_template"
+              infoMessage={undefined}
+              showAutoGenerateEmpNoToggle={true}
+              autoGenerateEmpNo={bulkPreviewAutoGenerateEmpNo}
+              onAutoGenerateEmpNoChange={setBulkPreviewAutoGenerateEmpNo}
               columns={dynamicTemplate.columns.map(col => {
+                // When "ignore from file" is ON, make employee number readonly and show it will be auto-assigned
+                if (col.key === 'emp_no' && bulkPreviewAutoGenerateEmpNo) {
+                  return { ...col, editable: false };
+                }
                 if (col.key === 'division_name') {
                   return {
                     ...col,
@@ -3859,19 +4028,24 @@ export default function EmployeesPage() {
                     ...col,
                     type: 'select',
                     options: (row: ParsedRow) => {
-                      const rowDivName = row.division_name as string;
+                      const rowDivName = String(row.division_name || '').trim();
                       if (!rowDivName) return [];
 
-                      const div = divisions.find(d => d.name.toLowerCase() === rowDivName.toLowerCase());
+                      const div = divisions.find(d => d.name.toLowerCase().trim() === rowDivName.toLowerCase());
                       if (!div) return [];
 
-                      // Correctly filter based on populated divisions (array of objects) or IDs (array of strings)
-                      return departments.filter(dept => (dept as any).divisions?.some((d: any) =>
-                        (typeof d === 'string' ? d : d._id) === div._id
-                      )).map(dept => ({
-                        label: dept.name,
-                        value: dept.name
-                      }));
+                      // Prefer division.departments (populated by API) so dropdown shows departments correctly
+                      const divDepts = (div as any).departments;
+                      if (divDepts && Array.isArray(divDepts) && divDepts.length > 0) {
+                        return divDepts.map((d: any) => ({
+                          value: typeof d === 'object' && d?.name ? d.name : (departments.find(dept => dept._id === (typeof d === 'string' ? d : d._id))?.name || String(d)),
+                          label: typeof d === 'object' && d?.name ? d.name : (departments.find(dept => dept._id === (typeof d === 'string' ? d : d._id))?.name || String(d))
+                        }));
+                      }
+                      // Fallback: filter departments by department.divisions containing this division
+                      return departments
+                        .filter(dept => (dept as any).divisions?.some((d: any) => String(typeof d === 'string' ? d : d._id) === String(div._id)))
+                        .map(dept => ({ value: dept.name, label: dept.name }));
                     }
                   };
                 }
@@ -3905,16 +4079,20 @@ export default function EmployeesPage() {
               })}
               validateRow={(row, index, allData) => {
                 const mappedUsers = employees.map(e => ({ _id: e._id, name: e.employee_name }));
-                const result = validateEmployeeRow(row, divisions, departments, designations as any, mappedUsers);
+                const result = validateEmployeeRow(row, divisions, departments, designations as any, mappedUsers, { autoGenerateEmpNo: bulkPreviewAutoGenerateEmpNo });
                 const errors = [...result.errors];
                 const fieldErrors = { ...result.fieldErrors };
 
-                // Check for duplicates within the file
+                // Check for duplicates within the file (skip for auto-assigned rows when ignore-from-file is ON)
                 const empNo = String(row.emp_no || '').trim().toUpperCase();
-                if (empNo) {
-                  const isDuplicateInFile = allData.some((r, i) =>
-                    i !== index && String(r.emp_no || '').trim().toUpperCase() === empNo
-                  );
+                const isAutoRow = bulkPreviewAutoGenerateEmpNo && (empNo === '' || empNo === '(AUTO)');
+                if (empNo && !isAutoRow) {
+                  const isDuplicateInFile = allData.some((r, i) => {
+                    const other = String(r.emp_no || '').trim().toUpperCase();
+                    if (i === index) return false;
+                    if (bulkPreviewAutoGenerateEmpNo && (other === '' || other === '(AUTO)')) return false;
+                    return other === empNo;
+                  });
                   if (isDuplicateInFile) {
                     errors.push('Duplicate Employee No within this file');
                     fieldErrors.emp_no = 'File Duplicate';
@@ -3981,6 +4159,11 @@ export default function EmployeesPage() {
                       designation_id: desigId || undefined,
                       proposedSalary: row.proposedSalary || row.gross_salary || 0
                     };
+                    // Never send the display placeholder "(Auto)" as emp_no. Send empty so backend assigns.
+                    const empNoRaw = String(employeeData.emp_no || '').trim();
+                    if (empNoRaw.toUpperCase() === '(AUTO)' || bulkPreviewAutoGenerateEmpNo) {
+                      employeeData.emp_no = '';
+                    }
 
                     // Handle dynamic fields based on form settings
                     const coreFields = ['emp_no', 'employee_name', 'proposedSalary', 'gross_salary', 'second_salary', 'division_id', 'department_id', 'designation_id', 'division_name', 'department_name', 'designation_name', 'doj', 'dob', 'gender', 'marital_status', 'blood_group', 'qualifications', 'experience', 'address', 'location', 'aadhar_number', 'phone_number', 'alt_phone_number', 'email', 'pf_number', 'esi_number', 'bank_account_no', 'bank_name', 'bank_place', 'ifsc_code', 'salary_mode'];
@@ -4059,13 +4242,26 @@ export default function EmployeesPage() {
               <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowViewDialog(false)} />
               <div className="relative z-50 max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950/95">
                 <div className="mb-6 flex items-center justify-between">
-                  <div>
-                    <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-                      {viewingEmployee.employee_name}
-                    </h2>
-                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                      Employee No: {viewingEmployee.emp_no}
-                    </p>
+                  <div className="flex items-center gap-4">
+                    {(viewingEmployee as any).profilePhoto ? (
+                      <img
+                        src={(viewingEmployee as any).profilePhoto}
+                        alt={viewingEmployee.employee_name || 'Profile'}
+                        className="h-16 w-16 rounded-xl border border-slate-200 object-cover dark:border-slate-700"
+                      />
+                    ) : (
+                      <div className="flex h-16 w-16 items-center justify-center rounded-xl border border-slate-200 bg-slate-100 text-xl font-semibold text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
+                        {(viewingEmployee.employee_name || '?').charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <div>
+                      <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+                        {viewingEmployee.employee_name}
+                      </h2>
+                      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                        Employee No: {viewingEmployee.emp_no}
+                      </p>
+                    </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <button

@@ -444,6 +444,11 @@ export const matchUserByName = (
   return match?._id || null;
 };
 
+export interface ValidateEmployeeRowOptions {
+  /** When true, emp_no is optional and empty values are shown as (Auto) in preview */
+  autoGenerateEmpNo?: boolean;
+}
+
 /**
  * Header mapping configuration to support common Excel variations
  */
@@ -507,36 +512,24 @@ const HEADER_MAP: { [key: string]: string } = {
 export const validateEmployeeRow = (
   row: ParsedRow,
   divisions: { _id: string; name: string }[] = [],
-  departments: { _id: string; name: string }[],
-  designations: { _id: string; name: string; department: string; code?: string }[],
-  users: { _id: string; name: string; email?: string }[] = []
+  departments: { _id: string; name: string }[] = [],
+  designations: { _id: string; name: string; department: string; code?: string }[] = [],
+  users: { _id: string; name: string; email?: string }[] = [],
+  options: ValidateEmployeeRowOptions = {}
 ): { isValid: boolean; errors: string[]; mappedRow: ParsedRow; fieldErrors: { [key: string]: string } } => {
   const errors: string[] = [];
   const fieldErrors: { [key: string]: string } = {};
+  const mappedRow: ParsedRow = { ...row };
+  const { autoGenerateEmpNo = false } = options;
 
-  // Normalize row keys using HEADER_MAP
-  const normalizedRow: ParsedRow = {};
-  Object.entries(row).forEach(([key, value]) => {
-    if (key.startsWith('_')) {
-      normalizedRow[key] = value;
-      return;
-    }
-    const cleanKey = key.toLowerCase().trim();
-    const mappedKey = HEADER_MAP[cleanKey] || cleanKey;
-    normalizedRow[mappedKey] = value;
-  });
-
-  const mappedRow: ParsedRow = { ...normalizedRow };
-
-  // Required fields normalization
-  if (normalizedRow.emp_no !== undefined && normalizedRow.emp_no !== null) {
-    mappedRow.emp_no = String(normalizedRow.emp_no).trim();
-  }
-
-  // Required validation
-  if (!mappedRow.emp_no) {
+  // Required fields: emp_no only when auto-generate is OFF
+  const empNoBlank = row.emp_no == null || String(row.emp_no || '').trim() === '';
+  if (!autoGenerateEmpNo && empNoBlank) {
     errors.push('Employee No is required');
     fieldErrors.emp_no = 'Required';
+  } else if (autoGenerateEmpNo) {
+    // When "ignore from file" is ON, show (Auto) for all rows so payload sends empty and backend assigns
+    mappedRow.emp_no = '(Auto)';
   }
   if (!normalizedRow.employee_name) {
     errors.push('Employee Name is required');

@@ -835,32 +835,56 @@ exports.getUserStats = async (req, res) => {
 // @desc    Update user's own profile
 // @route   PUT /api/users/profile
 // @access  Private
+// When profilePhoto is provided: if user has employeeRef, store on Employee; else store on User.
 exports.updateProfile = async (req, res) => {
   try {
     const userId = req.user.userId;
-    const { name, phone } = req.body;
+    const { name, phone, profilePhoto } = req.body;
 
     const updateData = {};
     if (name) updateData.name = name;
     if (phone !== undefined) updateData.phone = phone;
 
-    const user = await User.findByIdAndUpdate(
-      userId,
-      updateData,
-      { new: true, runValidators: true }
-    ).select('-password');
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found',
+    const userDoc = await User.findById(userId).select('-password');
+    if (userDoc) {
+      if (profilePhoto !== undefined) {
+        const photoUrl = profilePhoto && String(profilePhoto).trim() ? String(profilePhoto).trim() : null;
+        if (userDoc.employeeRef) {
+          await Employee.findByIdAndUpdate(userDoc.employeeRef, { profilePhoto: photoUrl });
+        } else {
+          updateData.profilePhoto = photoUrl;
+        }
+      }
+      const user = await User.findByIdAndUpdate(
+        userId,
+        updateData,
+        { new: true, runValidators: true }
+      ).select('-password');
+      return res.status(200).json({
+        success: true,
+        message: 'Profile updated successfully',
+        data: user,
       });
     }
 
-    res.status(200).json({
-      success: true,
-      message: 'Profile updated successfully',
-      data: user,
+    const employeeDoc = await Employee.findById(userId).select('-password');
+    if (employeeDoc) {
+      if (name) await Employee.findByIdAndUpdate(userId, { employee_name: name });
+      if (profilePhoto !== undefined) {
+        const photoUrl = profilePhoto && String(profilePhoto).trim() ? String(profilePhoto).trim() : null;
+        await Employee.findByIdAndUpdate(userId, { profilePhoto: photoUrl });
+      }
+      const employee = await Employee.findById(userId).select('-password');
+      return res.status(200).json({
+        success: true,
+        message: 'Profile updated successfully',
+        data: { ...employee.toObject(), name: employee.employee_name },
+      });
+    }
+
+    return res.status(404).json({
+      success: false,
+      message: 'User not found',
     });
   } catch (error) {
     console.error('Error updating profile:', error);

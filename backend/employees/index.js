@@ -12,6 +12,12 @@ router.use(protect);
 // Get employee settings
 router.get('/settings', employeeController.getSettings);
 
+// Update employee settings (dataSource, deleteTarget, auto_generate_employee_number)
+router.put('/settings', authorize('manager', 'super_admin', 'sub_admin'), employeeController.updateSettings);
+
+// Get next employee number (for UI when auto-generate is ON)
+router.get('/next-emp-no', employeeController.getNextEmpNo);
+
 // Get resolved allowance/deduction defaults for a department/gross salary (optional employee overrides via empNo)
 router.get('/components/defaults', employeeController.getAllowanceDeductionDefaults);
 

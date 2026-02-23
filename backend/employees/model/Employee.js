@@ -214,6 +214,12 @@ const employeeSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
       default: {},
     },
+    // Profile photo URL (uploaded to S3 profiles folder)
+    profilePhoto: {
+      type: String,
+      trim: true,
+      default: null,
+    },
     is_active: {
       type: Boolean,
       default: true,
