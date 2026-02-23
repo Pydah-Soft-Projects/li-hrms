@@ -2320,6 +2320,40 @@ export const api = {
     return apiRequest<any>('/leaves/settings/initialize', { method: 'POST' });
   },
 
+  // ==========================================
+  // LEAVE REGISTER
+  // ==========================================
+
+  // Get leave register data
+  getLeaveRegister: async (filters?: { divisionId?: string; departmentId?: string; searchTerm?: string; month?: number; year?: number }) => {
+    const params = new URLSearchParams();
+    if (filters?.divisionId) params.append('divisionId', filters.divisionId);
+    if (filters?.departmentId) params.append('departmentId', filters.departmentId);
+    if (filters?.searchTerm) params.append('searchTerm', filters.searchTerm);
+    if (filters?.month) params.append('month', String(filters.month));
+    if (filters?.year) params.append('year', String(filters.year));
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return apiRequest<any>(`/leaves/register${query}`, { method: 'GET' });
+  },
+
+  // Get employee leave register data
+  getEmployeeRegister: async (employeeId: string) => {
+    return apiRequest<any>(`/leaves/register/employee/${employeeId}`, { method: 'GET' });
+  },
+
+  // Get employee ledger for specific leave type
+  getEmployeeLedger: async (employeeId: string, leaveType: string) => {
+    return apiRequest<any>(`/leaves/register/employee/${employeeId}/ledger/${leaveType}`, { method: 'GET' });
+  },
+
+  // Adjust CL balance
+  adjustCLBalance: async (data: { employeeId: string; days: number; reason: string }) => {
+    return apiRequest<any>('/leaves/register/adjust-cl', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
   // Attendance
   // Monthly Summary
   getMonthlySummary: async (employeeId?: string, month?: string, year?: number, monthNumber?: number) => {
@@ -3445,5 +3479,74 @@ export const api = {
 
   getJobStatus: async (jobId: string, queue: string = 'payroll') => {
     return apiRequest<any>(`/jobs/status/${jobId}?queue=${queue}`, { method: 'GET' });
+  },
+
+  // ==========================================
+  // LEAVE POLICY SETTINGS
+  // ==========================================
+
+  getLeavePolicySettings: async () => {
+    return apiRequest<any>('/settings/leave-policy', { method: 'GET' });
+  },
+
+  updateLeavePolicySettings: async (data: any) => {
+    return apiRequest<any>('/settings/leave-policy', { 
+      method: 'PUT', 
+      body: JSON.stringify(data),
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+  },
+
+  resetLeavePolicySettings: async () => {
+    return apiRequest<any>('/settings/leave-policy/reset', { 
+      method: 'POST' 
+    });
+  },
+
+  previewELCalculation: async (data: { employeeId: string; month: number; year: number }) => {
+    return apiRequest<any>('/settings/leave-policy/preview', { 
+      method: 'POST', 
+      body: data 
+    });
+  },
+
+  // ==========================================
+  // ANNUAL CL RESET API
+  // ==========================================
+
+  performAnnualCLReset: async (data: { targetYear?: number; confirmReset?: boolean }) => {
+    return apiRequest<any>('/leaves/annual-reset', { 
+      method: 'POST', 
+      body: data 
+    });
+  },
+
+  getCLResetStatus: async (filters?: { employeeIds?: string; departmentId?: string; divisionId?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.employeeIds) params.append('employeeIds', filters.employeeIds);
+    if (filters?.departmentId) params.append('departmentId', filters.departmentId);
+    if (filters?.divisionId) params.append('divisionId', filters.divisionId);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    
+    return apiRequest<any>(`/leaves/annual-reset/status${query}`, { method: 'GET' });
+  },
+
+  getNextCLResetDate: async () => {
+    return apiRequest<any>('/leaves/annual-reset/next-date', { method: 'GET' });
+  },
+
+  previewAnnualReset: async (data: { sampleSize?: number }) => {
+    return apiRequest<any>('/leaves/annual-reset/preview', { 
+      method: 'POST', 
+      body: data 
+    });
+  },
+
+  initLeavePolicySettings: async () => {
+    return apiRequest<any>('/settings/leave-policy/init', { 
+      method: 'POST' 
+    });
   },
 };

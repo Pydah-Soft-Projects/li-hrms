@@ -59,6 +59,7 @@ const navItems: NavItem[] = [
   { href: '/superadmin/shift-roster', label: 'Shift Roster', icon: CalendarDays, category: 'Time & Attendance', moduleCode: 'SHIFT_ROSTER' },
   { href: '/superadmin/holidays', label: 'Holiday Calendar', icon: CalendarDays, category: 'Time & Attendance', moduleCode: 'HOLIDAY_CALENDAR' },
   { href: '/superadmin/leaves', label: 'Leave & OD', icon: Plane, category: 'Time & Attendance', moduleCode: 'LEAVE_OD' },
+  { href: '/superadmin/leave-register', label: 'Leave Register', icon: Sheet, category: 'Time & Attendance', moduleCode: 'LEAVE_REGISTER' },
   { href: '/superadmin/ccl', label: 'CCL (Compensatory)', icon: Plane, category: 'Time & Attendance', moduleCode: 'CCL' },
   { href: '/superadmin/shifts', label: 'Shifts', icon: Watch, category: 'Time & Attendance', moduleCode: 'SHIFTS' },
   { href: '/superadmin/divisions', label: 'Divisions', icon: Building2, category: 'Organization', moduleCode: 'DIVISIONS' },

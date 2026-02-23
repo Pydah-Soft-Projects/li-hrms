@@ -16,7 +16,11 @@ const axios = require('axios');
 // ─── Config ───────────────────────────────────────────────────────────────────
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:5000';
 const SYNC_ENDPOINT = `${BACKEND_URL}/api/internal/attendance/sync`;
-const SYSTEM_KEY = 'hrms-microservice-secret-key-999';
+const SYSTEM_KEY = process.env.HRMS_MICROSERVICE_SECRET_KEY || "hrms-secret-key-2026-abc123xyz789";
+if (!SYSTEM_KEY) {
+    console.error('ERROR: HRMS_MICROSERVICE_SECRET_KEY not configured in biometric service');
+    process.exit(1);
+}
 const BATCH_SIZE = 200; // Optimal batch size with delays
 const RETRY_ATTEMPTS = 3;
 const DELAY_BETWEEN_BATCHES = 1000; // 1s delay to prevent backend overload
