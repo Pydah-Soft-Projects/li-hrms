@@ -1758,11 +1758,10 @@ export default function LeavesPage() {
                 </div>
               )}
               {/* Date Selection Logic */}
-              {((applyType === 'leave' && formData.isHalfDay) ||
-                (applyType === 'od' && (formData.odType_extended === 'half_day' || formData.odType_extended === 'hours'))) ? (
-                /* Single Date Input for Half Day / Specific Hours */
+              {((applyType === 'leave' && formData.isHalfDay) || applyType === 'od') ? (
+                /* Single Date Input for Half Day / Specific Hours / Any OD */
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Date *</label>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">{applyType === 'od' ? 'Date *' : 'Date *'}</label>
                   <input
                     type="date"
                     min={new Date().toISOString().split('T')[0]}
@@ -2905,14 +2904,14 @@ export default function LeavesPage() {
                 {/* Dates */}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">From Date *</label>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Date *</label>
                     <input
                       type="date"
                       value={editFormData.fromDate}
                       onChange={(e) => {
                         const newFromDate = e.target.value;
-                        // Auto-set end date = start date for half-day and hour-based OD
-                        const newToDate = (detailType === 'od' && (editFormData.odType_extended === 'half_day' || editFormData.odType_extended === 'hours'))
+                        // For OD, always set end date = start date
+                        const newToDate = (detailType === 'od')
                           ? newFromDate
                           : editFormData.toDate;
                         setEditFormData({ ...editFormData, fromDate: newFromDate, toDate: newToDate });
@@ -2923,7 +2922,7 @@ export default function LeavesPage() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      To Date *
+                      {detailType === 'od' ? 'To Date' : 'To Date *'}
                       {/* Today button for hour-based OD */}
                       {detailType === 'od' && editFormData.odType_extended === 'hours' && (
                         <button
@@ -2942,21 +2941,21 @@ export default function LeavesPage() {
                       type="date"
                       value={editFormData.toDate}
                       onChange={(e) => {
-                        // For half-day and hour-based OD, prevent changing end date separately
-                        if (detailType === 'od' && (editFormData.odType_extended === 'half_day' || editFormData.odType_extended === 'hours')) {
+                        // For OD, prevent changing end date separately
+                        if (detailType === 'od') {
                           // Auto-set to start date
                           setEditFormData({ ...editFormData, toDate: editFormData.fromDate });
                         } else {
                           setEditFormData({ ...editFormData, toDate: e.target.value });
                         }
                       }}
-                      required
-                      disabled={detailType === 'od' && (editFormData.odType_extended === 'half_day' || editFormData.odType_extended === 'hours')}
+                      required={detailType === 'leave'}
+                      disabled={detailType === 'od'}
                       className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white disabled:bg-slate-100 dark:disabled:bg-slate-700 disabled:cursor-not-allowed"
                     />
-                    {detailType === 'od' && (editFormData.odType_extended === 'half_day' || editFormData.odType_extended === 'hours') && (
+                    {detailType === 'od' && (
                       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        End date is automatically set to start date for {editFormData.odType_extended === 'half_day' ? 'half-day' : 'hour-based'} OD
+                        End date is automatically set to start date for OD applications
                       </p>
                     )}
                   </div>
