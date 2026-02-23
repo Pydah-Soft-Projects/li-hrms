@@ -141,6 +141,12 @@ router.get('/annual-reset/next-date', authorize('employee', 'manager', 'hod', 'h
 router.post('/annual-reset/preview', authorize('hr', 'sub_admin', 'super_admin'), annualCLResetController.previewReset);
 
 // ==========================================
+// ACCRUAL ROUTES (run monthly CL/EL accrual; no cron – call manually or from external scheduler)
+// ==========================================
+const accrualController = require('./controllers/accrualController');
+router.post('/accrual/run-monthly', authorize('hr', 'sub_admin', 'super_admin'), accrualController.runMonthlyAccruals);
+
+// ==========================================
 // LEAVE ROUTES
 // ==========================================
 
