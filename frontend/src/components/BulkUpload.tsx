@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { parseFile, downloadTemplate, ParsedRow } from '@/lib/bulkUpload';
 
 interface BulkUploadProps {
@@ -8,6 +8,12 @@ interface BulkUploadProps {
   templateHeaders: string[];
   templateSample: ParsedRow[];
   templateFilename: string;
+  /** Optional info message shown at top of content (e.g. "Employee numbers will be auto-generated") */
+  infoMessage?: string;
+  /** When true, show a toggle in the preview step: "Ignore employee numbers from file (auto-generate)" */
+  showAutoGenerateEmpNoToggle?: boolean;
+  autoGenerateEmpNo?: boolean;
+  onAutoGenerateEmpNoChange?: (value: boolean) => void;
   columns: {
     key: string;
     label: string;
@@ -26,6 +32,10 @@ export default function BulkUpload({
   templateHeaders,
   templateSample,
   templateFilename,
+  infoMessage,
+  showAutoGenerateEmpNoToggle = false,
+  autoGenerateEmpNo = false,
+  onAutoGenerateEmpNoChange,
   columns,
   validateRow,
   onSubmit,
@@ -39,6 +49,28 @@ export default function BulkUpload({
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [currentErrorIndex, setCurrentErrorIndex] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const dataRef = useRef<ParsedRow[]>([]);
+  dataRef.current = data;
+
+  // Re-validate all rows when "ignore employee numbers" toggle changes (preview step)
+  useEffect(() => {
+    if (!showAutoGenerateEmpNoToggle || step !== 'preview' || !validateRow) return;
+    const currentData = dataRef.current;
+    if (currentData.length === 0) return;
+    const newErrors: { [key: number]: { rowErrors: string[]; fieldErrors: { [key: string]: string } } } = {};
+    const processedData = currentData.map((row, index) => {
+      const validation = validateRow(row, index, currentData);
+      if (!validation.isValid) {
+        newErrors[index] = {
+          rowErrors: validation.errors,
+          fieldErrors: validation.fieldErrors || {}
+        };
+      }
+      return validation.mappedRow ? validation.mappedRow : row;
+    });
+    setErrors(newErrors);
+    setData(processedData);
+  }, [step, showAutoGenerateEmpNoToggle, autoGenerateEmpNo]);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -254,6 +286,14 @@ export default function BulkUpload({
 
         {/* Content */}
         <div className="overflow-y-auto p-6" style={{ maxHeight: 'calc(95vh - 180px)' }}>
+          {infoMessage && (
+            <div className="mb-4 flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-200">
+              <svg className="h-5 w-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              {infoMessage}
+            </div>
+          )}
           {message && (
             <div
               className={`mb-4 rounded-xl border px-4 py-3 text-sm ${message.type === 'success'
@@ -340,6 +380,30 @@ export default function BulkUpload({
 
           {step === 'preview' && (
             <div className="space-y-4">
+              {/* Employee number: use from file vs auto-generate */}
+              {showAutoGenerateEmpNoToggle && onAutoGenerateEmpNoChange && (
+                <div className="flex flex-wrap items-center gap-4 rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-3 dark:border-slate-700 dark:bg-slate-900/50">
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Employee numbers:</span>
+                  <label className="flex cursor-pointer items-center gap-2">
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={autoGenerateEmpNo}
+                      onClick={() => onAutoGenerateEmpNoChange(!autoGenerateEmpNo)}
+                      className={`${autoGenerateEmpNo ? 'bg-indigo-600' : 'bg-slate-300 dark:bg-slate-600'} relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-0 transition-colors duration-200 focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2`}
+                    >
+                      <span className={`${autoGenerateEmpNo ? 'translate-x-5' : 'translate-x-1'} pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200`} />
+                    </button>
+                    <span className="text-sm text-slate-600 dark:text-slate-400">
+                      {autoGenerateEmpNo ? 'Ignore from file (auto-generate)' : 'Use from file'}
+                    </span>
+                  </label>
+                  <span className="text-xs text-slate-500 dark:text-slate-400">
+                    {autoGenerateEmpNo ? 'Employee numbers in the file will be ignored; system will assign new numbers.' : 'Employee number column in the file is required for each row.'}
+                  </span>
+                </div>
+              )}
+
               {/* Stats */}
               <div className="flex flex-wrap gap-4">
                 <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 dark:border-slate-700 dark:bg-slate-900">

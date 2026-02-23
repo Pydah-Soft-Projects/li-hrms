@@ -32,6 +32,7 @@ const {
 } = require('../config/sqlHelper');
 const { generatePassword, sendCredentials } = require('../../shared/services/passwordNotificationService');
 const s3UploadService = require('../../shared/services/s3UploadService');
+const { getNextEmpNo } = require('../services/empNoService');
 
 // ============== Helper Functions ==============
 
@@ -108,16 +109,23 @@ const processQualifications = async (req, settings) => {
  */
 const getEmployeeSettings = async () => {
   try {
-    const dataSourceSetting = await Settings.findOne({ key: 'employee_data_source' });
-    const deleteTargetSetting = await Settings.findOne({ key: 'employee_delete_target' });
+    const [dataSourceSetting, deleteTargetSetting, autoGenSetting] = await Promise.all([
+      Settings.findOne({ key: 'employee_data_source' }),
+      Settings.findOne({ key: 'employee_delete_target' }),
+      Settings.findOne({ key: 'auto_generate_employee_number' }),
+    ]);
+
+    const autoGenerateEmployeeNumber = autoGenSetting?.value === true
+      || autoGenSetting?.value === 'true';
 
     return {
       dataSource: dataSourceSetting?.value || 'mongodb', // 'mongodb' | 'mssql' | 'both'
       deleteTarget: deleteTargetSetting?.value || 'both', // 'mongodb' | 'mssql' | 'both'
+      auto_generate_employee_number: autoGenerateEmployeeNumber,
     };
   } catch (error) {
     console.error('Error getting employee settings:', error);
-    return { dataSource: 'mongodb', deleteTarget: 'both' };
+    return { dataSource: 'mongodb', deleteTarget: 'both', auto_generate_employee_number: false };
   }
 };
 
@@ -585,11 +593,16 @@ exports.createEmployee = async (req, res) => {
   try {
     const { passwordMode, notificationChannels, ...employeeData } = req.body;
 
-    // Validate required fields
-    if (!employeeData.emp_no) {
+    const settings = await getEmployeeSettings();
+    const autoGenerate = settings.auto_generate_employee_number === true;
+    const empNoBlank = employeeData.emp_no == null || String(employeeData.emp_no || '').trim() === '';
+
+    if (autoGenerate && empNoBlank) {
+      employeeData.emp_no = await getNextEmpNo();
+    } else if (!autoGenerate && empNoBlank) {
       return res.status(400).json({
         success: false,
-        message: 'Employee number (emp_no) is required',
+        message: 'Employee number (emp_no) is required when auto-generate is off',
       });
     }
 
@@ -1341,6 +1354,67 @@ exports.getSettings = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error getting employee settings',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * @desc    Update employee settings (dataSource, deleteTarget, auto_generate_employee_number)
+ * @route   PUT /api/employees/settings
+ * @access  Private (Super Admin, Sub Admin, Manager)
+ */
+exports.updateSettings = async (req, res) => {
+  try {
+    const { dataSource, deleteTarget, auto_generate_employee_number } = req.body;
+
+    const updates = [
+      dataSource != null && { key: 'employee_data_source', value: dataSource },
+      deleteTarget != null && { key: 'employee_delete_target', value: deleteTarget },
+      auto_generate_employee_number != null && { key: 'auto_generate_employee_number', value: !!auto_generate_employee_number },
+    ].filter(Boolean);
+
+    for (const { key, value } of updates) {
+      await Settings.findOneAndUpdate(
+        { key },
+        { key, value, category: 'employee' },
+        { new: true, upsert: true }
+      );
+    }
+
+    const settings = await getEmployeeSettings();
+    res.status(200).json({
+      success: true,
+      message: 'Employee settings updated',
+      data: settings,
+    });
+  } catch (error) {
+    console.error('Error updating employee settings:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error updating employee settings',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * @desc    Get next employee number (for UI when auto-generate is ON)
+ * @route   GET /api/employees/next-emp-no
+ * @access  Private
+ */
+exports.getNextEmpNo = async (req, res) => {
+  try {
+    const nextEmpNo = await getNextEmpNo();
+    res.status(200).json({
+      success: true,
+      data: { nextEmpNo },
+    });
+  } catch (error) {
+    console.error('Error getting next employee number:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error getting next employee number',
       error: error.message,
     });
   }

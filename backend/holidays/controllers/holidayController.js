@@ -27,18 +27,18 @@ async function syncHolidayToRoster(holiday) {
             if (!group) return;
 
             const mappingConditions = group.divisionMapping.map(m => ({
-                division: m.division,
-                ...(m.departments.length > 0 ? { department: { $in: m.departments } } : {})
+                division_id: m.division,
+                ...(m.departments && m.departments.length > 0 ? { department_id: { $in: m.departments } } : {})
             }));
             empFilter.$or = mappingConditions;
         } else if (applicableTo === 'SPECIFIC_GROUPS') {
             const groups = await HolidayGroup.find({ _id: { $in: targetGroupIds } });
             const allMappings = [];
             for (const g of groups) {
-                g.divisionMapping.forEach(m => {
+                (g.divisionMapping || []).forEach(m => {
                     allMappings.push({
-                        division: m.division,
-                        ...(m.departments.length > 0 ? { department: { $in: m.departments } } : {})
+                        division_id: m.division,
+                        ...(m.departments && m.departments.length > 0 ? { department_id: { $in: m.departments } } : {})
                     });
                 });
             }

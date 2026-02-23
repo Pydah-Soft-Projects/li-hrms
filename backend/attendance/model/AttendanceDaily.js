@@ -161,7 +161,7 @@ const attendanceDailySchema = new mongoose.Schema(
     }],
     source: {
       type: [String],
-      enum: ['mssql', 'excel', 'manual', 'biometric-realtime'],
+      enum: ['mssql', 'excel', 'manual', 'biometric-realtime', 'roster-sync'],
       default: [],
     },
     lastSyncedAt: {
