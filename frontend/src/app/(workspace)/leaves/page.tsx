@@ -363,6 +363,16 @@ const buildDateRange = (fromDate: string, toDate: string, isHalfDay?: boolean, h
   return dates;
 };
 
+// Compute requested leave days from fromDate, toDate, isHalfDay (same logic as backend)
+const getRequestedDays = (fromDate: string, toDate: string, isHalfDay: boolean): number => {
+  if (!fromDate || !toDate) return 0;
+  if (isHalfDay) return 0.5;
+  const from = parseDateOnly(fromDate);
+  const to = parseDateOnly(toDate);
+  const diffTime = Math.abs(to.getTime() - from.getTime());
+  return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+};
+
 export default function LeavesPage() {
   const { getModuleConfig, hasPermission, activeWorkspace } = useWorkspace();
   const [activeTab, setActiveTab] = useState<'leaves' | 'od' | 'pending'>('leaves');
@@ -423,6 +433,10 @@ export default function LeavesPage() {
   const [searchTerm, setSearchTerm] = useState(''); // Global search for lists
   const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
+
+  // CL balance for selected month (when leave type is CL) – used to cap selectable days
+  const [clBalanceForMonth, setClBalanceForMonth] = useState<number | null>(null);
+  const [clBalanceLoading, setClBalanceLoading] = useState(false);
 
   // Form state
   const [formData, setFormData] = useState<{
@@ -1054,6 +1068,26 @@ export default function LeavesPage() {
           setLoading(false);
           return;
         }
+        // CL: validate only on frontend — require balance to be loaded, then cap by balance
+        const isCL = formData.leaveType === 'CL' || formData.leaveType?.toUpperCase() === 'CL';
+        if (isCL) {
+          if (clBalanceForMonth === null && !clBalanceLoading) {
+            toast.error('CL balance could not be loaded. Please select employee and from date again, or try again.');
+            setLoading(false);
+            return;
+          }
+          if (clBalanceForMonth === null) {
+            toast.error('Please wait for CL balance to load.');
+            setLoading(false);
+            return;
+          }
+          const requestedDays = getRequestedDays(formData.fromDate, formData.toDate, formData.isHalfDay);
+          if (requestedDays > clBalanceForMonth) {
+            toast.error(`Casual Leave balance for this month is ${clBalanceForMonth} day(s). You selected ${requestedDays} day(s). Please reduce the date range.`);
+            setLoading(false);
+            return;
+          }
+        }
       } else {
         if (!formData.odType || !formData.fromDate || !formData.toDate || !formData.purpose || !formData.placeVisited) {
           toast.error('Please fill all required fields');
@@ -1300,6 +1334,68 @@ export default function LeavesPage() {
 
     checkApprovedRecords();
   }, [selectedEmployee, formData.fromDate, formData.toDate]);
+
+  // Fetch CL balance for selected month when leave type is CL (Casual Leave)
+  const isCLSelected = applyType === 'leave' && (formData.leaveType === 'CL' || formData.leaveType?.toUpperCase() === 'CL');
+  const targetEmployeeForBalance = selectedEmployee || (employees.length > 0 ? employees[0] : null) ||
+    (currentUser?.role === 'employee' ? { _id: (currentUser as any).id, emp_no: (currentUser as any).emp_no || (currentUser as any).employeeId } : null);
+  const targetEmployeeId = targetEmployeeForBalance?._id;
+  const targetEmpNo = targetEmployeeForBalance?.emp_no;
+  const hasValidEmployeeId = targetEmployeeId && String(targetEmployeeId).length === 24 && !String(targetEmployeeId).startsWith('current');
+  const hasValidEmpNo = targetEmpNo && String(targetEmpNo).trim() !== '' && String(targetEmpNo) !== 'UNKNOWN';
+  const canFetchCLBalance = hasValidEmployeeId || hasValidEmpNo;
+
+  useEffect(() => {
+    if (!isCLSelected || !formData.fromDate || !canFetchCLBalance) {
+      setClBalanceForMonth(null);
+      return;
+    }
+    const from = parseDateOnly(formData.fromDate);
+    const month = from.getMonth() + 1;
+    const year = from.getFullYear();
+
+    let cancelled = false;
+    setClBalanceLoading(true);
+    setClBalanceForMonth(null);
+
+    const registerParams = hasValidEmployeeId
+      ? { employeeId: String(targetEmployeeId), month, year, balanceAsOf: true }
+      : { empNo: String(targetEmpNo), month, year, balanceAsOf: true };
+    api.getLeaveRegister(registerParams)
+      .then((res: any) => {
+        if (cancelled) return;
+        const data = res?.data;
+        if (Array.isArray(data) && data.length > 0 && data[0].casualLeave) {
+          const cl = data[0].casualLeave;
+          const balance = Number(cl.balance);
+          // Policy: 1 CL per month from first 12, plus any extra balance; cap by allowedRemaining
+          const allowed = cl.allowedRemaining != null ? Number(cl.allowedRemaining) : balance;
+          const cap = Number.isFinite(allowed) ? Math.max(0, allowed) : (Number.isFinite(balance) ? balance : 0);
+          setClBalanceForMonth(cap);
+        } else {
+          setClBalanceForMonth(0);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setClBalanceForMonth(null);
+      })
+      .finally(() => {
+        if (!cancelled) setClBalanceLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [isCLSelected, formData.fromDate, canFetchCLBalance, targetEmployeeId, targetEmpNo, hasValidEmployeeId]);
+
+  // When CL balance is known, clamp toDate so requested days do not exceed balance
+  useEffect(() => {
+    if (!isCLSelected || formData.isHalfDay || clBalanceForMonth == null || !formData.fromDate || !formData.toDate) return;
+    const requested = getRequestedDays(formData.fromDate, formData.toDate, false);
+    if (requested <= clBalanceForMonth) return;
+    const d = new Date(formData.fromDate);
+    d.setDate(d.getDate() + Math.max(0, Math.floor(clBalanceForMonth) - 1));
+    const maxTo = d.toISOString().split('T')[0];
+    setFormData(prev => (prev.toDate <= maxTo ? prev : { ...prev, toDate: maxTo }));
+  }, [isCLSelected, formData.isHalfDay, formData.fromDate, formData.toDate, clBalanceForMonth]);
 
   const buildInitialSplits = (leave: LeaveApplication) => {
     if (!leave) return [];
@@ -2748,6 +2844,31 @@ export default function LeavesPage() {
                   )}
                 </div>
 
+                {/* CL balance for month – show when Casual Leave selected, cap selectable days */}
+                {isCLSelected && (
+                  <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-3">
+                    {!formData.fromDate || !canFetchCLBalance ? (
+                      <p className="text-sm text-slate-500 dark:text-slate-400">
+                        {currentUser?.role === 'employee' ? 'Select from date to see CL balance for that month.' : 'Select employee and from date to see CL balance for that month.'}
+                      </p>
+                    ) : clBalanceLoading ? (
+                      <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Loading CL balance...
+                      </div>
+                    ) : clBalanceForMonth !== null ? (
+                      <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
+                        <span className="text-green-600 dark:text-green-400">CL balance for this month: {clBalanceForMonth} day{clBalanceForMonth !== 1 ? 's' : ''}.</span>
+                        {' '}You can apply for up to <strong>{clBalanceForMonth}</strong> day{clBalanceForMonth !== 1 ? 's' : ''} only.
+                      </p>
+                    ) : (
+                      <p className="text-sm text-amber-600 dark:text-amber-400">
+                        Could not load CL balance. You must have a valid balance to apply for CL; try again or select employee/from date again.
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 {/* OD Type Extended Selector */}
                 {applyType === 'od' && (
                   <div>
@@ -2803,30 +2924,54 @@ export default function LeavesPage() {
                   </div>
                 ) : (
                   /* Two Date Inputs for Full Day */
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">From Date *</label>
-                      <input
-                        type="date"
-                        min={new Date().toISOString().split('T')[0]}
-                        value={formData.fromDate}
-                        onChange={(e) => setFormData({ ...formData, fromDate: e.target.value })}
-                        required
-                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">To Date *</label>
-                      <input
-                        type="date"
-                        min={new Date().toISOString().split('T')[0]}
-                        value={formData.toDate}
-                        onChange={(e) => setFormData({ ...formData, toDate: e.target.value })}
-                        required
-                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                      />
-                    </div>
-                  </div>
+                  (() => {
+                    const fromMin = new Date().toISOString().split('T')[0];
+                    const isCLFullDay = isCLSelected && !formData.isHalfDay && formData.fromDate && clBalanceForMonth !== null && clBalanceForMonth >= 0;
+                    const maxToDateISO = isCLFullDay && formData.fromDate
+                      ? (() => {
+                          const d = new Date(formData.fromDate);
+                          d.setDate(d.getDate() + Math.max(0, Math.floor(clBalanceForMonth!) - 1));
+                          return d.toISOString().split('T')[0];
+                        })()
+                      : undefined;
+                    return (
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">From Date *</label>
+                          <input
+                            type="date"
+                            min={fromMin}
+                            value={formData.fromDate}
+                            onChange={(e) => setFormData({ ...formData, fromDate: e.target.value })}
+                            required
+                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">To Date *</label>
+                          <input
+                            type="date"
+                            min={formData.fromDate || fromMin}
+                            max={maxToDateISO}
+                            value={formData.toDate}
+                            onChange={(e) => {
+                              let toDate = e.target.value;
+                              if (maxToDateISO && toDate > maxToDateISO) {
+                                toDate = maxToDateISO;
+                                toast.info(`CL balance allows up to ${clBalanceForMonth} days; To date capped.`);
+                              }
+                              setFormData({ ...formData, toDate });
+                            }}
+                            required
+                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                          />
+                          {isCLFullDay && maxToDateISO && formData.toDate > maxToDateISO && (
+                            <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">Max {clBalanceForMonth} days for CL this month.</p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()
                 )}
 
                 {/* Hour-Based OD - Time Pickers */}

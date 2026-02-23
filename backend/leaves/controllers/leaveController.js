@@ -576,9 +576,8 @@ exports.applyLeave = async (req, res) => {
         }
       }
 
-      // STRICT ENFORCEMENT for Casual Leave (CL) as per requirements
-      if (leaveType === 'CL') {
-        // 1. Check Max CL Per Month limit
+      // STRICT ENFORCEMENT for Casual Leave (CL) - max per month (when settings exist)
+      if (leaveType === 'CL' && resolvedLeaveSettings) {
         if (resolvedLeaveSettings.maxCasualLeavesPerMonth !== null && resolvedLeaveSettings.maxCasualLeavesPerMonth > 0) {
           if (numberOfDays > resolvedLeaveSettings.maxCasualLeavesPerMonth) {
             return res.status(400).json({
@@ -587,29 +586,10 @@ exports.applyLeave = async (req, res) => {
             });
           }
         }
-
-        // 2. Check Accrued Balance (Cumulative + CCL - Used)
-        const targetMonthStr = from.toISOString().substring(0, 7);
-        try {
-          const registerData = await leaveRegisterService.getLeaveRegister({ employeeId: employee._id }, targetMonthStr);
-          if (registerData && registerData[0]) {
-            const clBalance = registerData[0].casualLeave.balance;
-            if (numberOfDays > clBalance) {
-              return res.status(400).json({
-                success: false,
-                error: `Insufficient Casual Leave balance for this month. Available: ${clBalance} day(s) (including carry forward and CCL).`
-              });
-            }
-          }
-        } catch (err) {
-          console.error('[ApplyLeave] Error validating CL balance:', err);
-          return res.status(500).json({
-            success: false,
-            error: 'Unable to validate leave balance. Please try again later.'
-          });
-        }
       }
     }
+
+    // CL balance is validated on the frontend only; backend does not enforce balance check here.
 
     // Validate against OD conflicts (with half-day support) - Only check APPROVED records for creation
     const { validateLeaveRequest } = require('../../shared/services/conflictValidationService');
@@ -1338,6 +1318,15 @@ exports.processLeaveAction = async (req, res) => {
     leave.markModified('approvals');
 
     await leave.save();
+
+    // When leave is finally approved, record a DEBIT in the leave register
+    if (action === 'approve' && leave.status === 'approved') {
+      try {
+        await leaveRegisterService.addLeaveDebit(leave);
+      } catch (err) {
+        console.error('Leave register debit failed (leave already approved):', err);
+      }
+    }
 
     await leave.populate([
       { path: 'employeeId', select: 'first_name last_name emp_no' },

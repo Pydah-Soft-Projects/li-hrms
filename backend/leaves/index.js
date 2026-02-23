@@ -101,10 +101,10 @@ router.delete('/od/:id', authorize('sub_admin', 'super_admin'), odController.del
 // ==========================================
 // LEAVE REGISTER ROUTES
 // ==========================================
-router.get('/register', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), applyScopeFilter, leaveRegisterController.getRegister);
+router.get('/register', authorize('employee', 'manager', 'hod', 'hr', 'sub_admin', 'super_admin'), applyScopeFilter, leaveRegisterController.getRegister);
 router.get('/register/employee/:employeeId', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), leaveRegisterController.getEmployeeRegister);
 router.get('/register/employee/:employeeId/ledger/:leaveType', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), leaveRegisterController.getEmployeeLedger);
-router.post('/register/adjust-cl', authorize('hr', 'sub_admin', 'super_admin'), leaveRegisterController.adjustCLBalance);
+router.post('/register/adjust', authorize('hr', 'sub_admin', 'super_admin'), leaveRegisterController.adjustLeaveBalance);
 
 // ==========================================
 // EARNED LEAVE ROUTES

@@ -59,6 +59,24 @@ const departmentSettingsSchema = new mongoose.Schema(
         default: null,
         min: 0,
       },
+      // EL Earning Type Override
+      elEarningType: {
+        type: String,
+        enum: ['attendance_based', 'fixed', null],
+        default: null,
+      },
+      // EL Max Carry Forward Override
+      elMaxCarryForward: {
+        type: Number,
+        default: null,
+        min: 0,
+      },
+      // CCL Expiry Months Override
+      cclExpiryMonths: {
+        type: Number,
+        default: null,
+        min: 0,
+      },
     },
 
     // Loans Settings

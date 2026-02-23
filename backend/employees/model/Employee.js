@@ -146,6 +146,26 @@ const employeeSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+    casualLeaves: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    sickLeaves: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    maternityLeaves: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    onDutyLeaves: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     // Yearly allotted leaves (combined total for all leave types with nature "without_pay" or "lop")
     // Used for tracking and carry forward
     allottedLeaves: {
