@@ -2407,13 +2407,12 @@ export default function AttendancePage() {
 
 
 
-  const formatHours = (decimalHours: number | null | undefined): string => {
-    if (decimalHours === null || decimalHours === undefined || isNaN(decimalHours)) return '-';
-    const isNegative = decimalHours < 0;
-    const absoluteHours = Math.abs(decimalHours);
-    const hours = Math.floor(absoluteHours);
-    const minutes = Math.round((absoluteHours - hours) * 60);
-    return `${isNegative ? '-' : ''}${hours}:${minutes.toString().padStart(2, '0')}`;
+  const formatHours = (hours: number | null) => {
+
+    if (hours === null || hours === undefined) return '-';
+
+    return `${hours.toFixed(2)}h`;
+
   };
 
 
@@ -3049,8 +3048,8 @@ export default function AttendancePage() {
                                       )}
                                       {tableType === 'ot' && (
                                         <div className="text-[8px] font-medium leading-tight">
-                                          <div className="text-orange-600">{formatHours(record?.otHours)}</div>
-                                          <div className="text-purple-600">{formatHours(record?.extraHours)}</div>
+                                          <div className="text-orange-600">{record?.otHours ? record.otHours.toFixed(1) : '-'}</div>
+                                          <div className="text-purple-600">{record?.extraHours ? record.extraHours.toFixed(1) : '-'}</div>
                                         </div>
                                       )}
                                       {(record?.source?.includes('manual') || record?.isEdited) && (
@@ -3074,10 +3073,10 @@ export default function AttendancePage() {
                                   {daysPresent}
                                 </td>
                                 <td onClick={() => handleViewTypeSummary(item, 'ot')} className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 dark:text-orange-300 cursor-pointer hover:bg-orange-100">
-                                  {formatHours(Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.otHours || 0), 0))}
+                                  {Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.otHours || 0), 0).toFixed(1)}
                                 </td>
                                 <td onClick={() => handleViewTypeSummary(item, 'extra')} className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center text-[11px] font-bold text-purple-700 dark:border-slate-700 dark:bg-purple-900/20 dark:text-purple-300 cursor-pointer hover:bg-purple-100">
-                                  {formatHours(Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.extraHours || 0), 0))}
+                                  {Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.extraHours || 0), 0).toFixed(1)}
                                 </td>
                                 <td onClick={() => handleViewTypeSummary(item, 'permission')} className="border-r border-slate-200 bg-cyan-50 px-2 py-2 text-center text-[11px] font-bold text-cyan-700 dark:border-slate-700 dark:bg-cyan-900/20 dark:text-cyan-300 cursor-pointer hover:bg-cyan-100">
                                   {Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.permissionCount || 0), 0)}
@@ -3109,10 +3108,10 @@ export default function AttendancePage() {
                             {tableType === 'ot' && (
                               <>
                                 <td onClick={() => handleViewTypeSummary(item, 'ot')} className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 cursor-pointer hover:bg-orange-100">
-                                  {formatHours(Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.otHours || 0), 0))}
+                                  {Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.otHours || 0), 0).toFixed(1)}
                                 </td>
                                 <td onClick={() => handleViewTypeSummary(item, 'extra')} className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center text-[11px] font-bold text-purple-700 cursor-pointer hover:bg-purple-100">
-                                  {formatHours(Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.extraHours || 0), 0))}
+                                  {Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.extraHours || 0), 0).toFixed(1)}
                                 </td>
                               </>
                             )}
@@ -3590,7 +3589,7 @@ export default function AttendancePage() {
                       <div>
                         <label className="text-xs font-medium text-slate-600 dark:text-slate-400">OT Hours</label>
                         <div className="mt-1 text-sm font-semibold text-orange-600 dark:text-orange-400">
-                          {formatHours(attendanceDetail.otHours)}
+                          {attendanceDetail.otHours.toFixed(2)} hrs
                         </div>
                       </div>
                     )}
@@ -3599,7 +3598,7 @@ export default function AttendancePage() {
                         <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Extra Hours</label>
                         <div className="mt-1 flex items-center justify-between">
                           <div className="text-sm font-semibold text-purple-600 dark:text-purple-400">
-                            {formatHours(attendanceDetail.extraHours)}
+                            {attendanceDetail.extraHours.toFixed(2)} hrs
                           </div>
                           {!hasExistingOT && attendanceDetail.shiftId && (
                             <button
@@ -3624,7 +3623,7 @@ export default function AttendancePage() {
                       <div>
                         <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Permission Hours</label>
                         <div className="mt-1 text-sm font-semibold text-cyan-600 dark:text-cyan-400">
-                          {formatHours(attendanceDetail.permissionHours)} ({attendanceDetail.permissionCount || 0} permissions)
+                          {attendanceDetail.permissionHours.toFixed(2)} hrs ({attendanceDetail.permissionCount || 0} permissions)
                         </div>
 
                       </div>
@@ -4240,8 +4239,8 @@ export default function AttendancePage() {
                                 </>
                               ) : typeSummaryData.type === 'ot' || typeSummaryData.type === 'extra' ? (
                                 <>
-                                  <td className="px-4 py-3 text-orange-600 font-bold">{formatHours(record?.otHours)}</td>
-                                  <td className="px-4 py-3 text-purple-600 font-bold">{formatHours(record?.extraHours)}</td>
+                                  <td className="px-4 py-3 text-orange-600 font-bold">{record?.otHours?.toFixed(1) || '0.0'}</td>
+                                  <td className="px-4 py-3 text-purple-600 font-bold">{record?.extraHours?.toFixed(1) || '0.0'}</td>
                                 </>
                               ) : typeSummaryData.type === 'leaves' ? (
                                 <>
@@ -4518,7 +4517,7 @@ export default function AttendancePage() {
                       {/* Rupees In Words */}
                       <div className="border border-slate-300 bg-slate-50 px-4 py-2 dark:border-slate-600 dark:bg-slate-800">
                         <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Rupees In Words:</span>
-                        <span className="ml-2 text-sm text-slate-900 dark:text-white">{numberToWords(payslipData.netSalary || 0)}</span>
+                        {/* removed numberToWords display */}
                       </div>
 
                     </div>
@@ -4548,91 +4547,3 @@ export default function AttendancePage() {
   );
 
 }
-
-
-// Helper function to convert number to words
-function numberToWords(num: number): string {
-  const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
-  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
-
-  if (num === 0) return 'Zero Rupees Only';
-
-  const integerPart = Math.floor(num);
-  const decimalPart = Math.round((num - integerPart) * 100);
-
-  const convertHundreds = (n: number): string => {
-    if (n === 0) return '';
-    let result = '';
-    if (n >= 100) {
-      const hundreds = Math.floor(n / 100);
-      if (hundreds > 0 && ones[hundreds]) {
-        result += ones[hundreds] + ' Hundred ';
-      }
-      n %= 100;
-    }
-    if (n >= 20) {
-      const tensPlace = Math.floor(n / 10);
-      if (tensPlace > 0 && tens[tensPlace]) {
-        result += tens[tensPlace] + ' ';
-      }
-      n %= 10;
-    }
-    if (n > 0 && ones[n]) {
-      result += ones[n] + ' ';
-    }
-    return result.trim();
-  };
-
-  let words = '';
-  let remaining = integerPart;
-
-  const crores = Math.floor(remaining / 10000000);
-  if (crores > 0) {
-    const croreWords = convertHundreds(crores);
-    if (croreWords) {
-      words += croreWords + ' Crore ';
-    }
-    remaining %= 10000000;
-  }
-
-  const lakhs = Math.floor(remaining / 100000);
-  if (lakhs > 0) {
-    const lakhWords = convertHundreds(lakhs);
-    if (lakhWords) {
-      words += lakhWords + ' Lakh ';
-    }
-    remaining %= 100000;
-  }
-
-  const thousands = Math.floor(remaining / 1000);
-  if (thousands > 0) {
-    const thousandWords = convertHundreds(thousands);
-    if (thousandWords) {
-      words += thousandWords + ' Thousand ';
-    }
-    remaining %= 1000;
-  }
-
-  if (remaining > 0) {
-    const remainingWords = convertHundreds(remaining);
-    if (remainingWords) {
-      words += remainingWords;
-    }
-  }
-
-  if (decimalPart > 0) {
-    if (words.trim()) {
-      words += ` and ${decimalPart}/100`;
-    } else {
-      words += `${decimalPart}/100`;
-    }
-  }
-
-  words = words.trim();
-  if (!words) {
-    return 'Zero Rupees Only';
-  }
-
-  return words + ' Rupees Only';
-}
-

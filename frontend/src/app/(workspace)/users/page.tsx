@@ -230,6 +230,7 @@ export default function UsersPage() {
     password: '',
     message: ''
   });
+  const [managerDeptSearch, setManagerDeptSearch] = useState('');
 
   // Load data
   const loadData = useCallback(async () => {
@@ -778,6 +779,7 @@ export default function UsersPage() {
       divisionMapping: [],
       division: '',
     });
+    setManagerDeptSearch('');
     previousRoleRef.current = '';
   };
 

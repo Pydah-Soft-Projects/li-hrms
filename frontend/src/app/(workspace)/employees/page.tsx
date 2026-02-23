@@ -1069,7 +1069,6 @@ export default function EmployeesPage() {
         const apps = (response.data || []).map((app: any) => ({
           ...app,
           status: app.status || 'pending',
-          division: app.division || (typeof app.division_id === 'object' ? app.division_id : undefined),
           department: app.department || (typeof app.department_id === 'object' ? app.department_id : undefined),
           designation: app.designation || (typeof app.designation_id === 'object' ? app.designation_id : undefined)
         }));
@@ -2409,15 +2408,15 @@ export default function EmployeesPage() {
               <Search className="absolute left-3 md:left-4 top-1/2 -translate-y-1/2 w-3.5 h-3.5 md:w-4 md:h-4 text-text-secondary transition-colors group-focus-within:text-indigo-500" />
               <input
                 type="text"
-                placeholder={`Search by name, emp no, or ${activeTab === 'employees' ? 'department' : 'status'}...`}
-                value={activeTab === 'employees' ? searchTerm : applicationSearchTerm}
-                onChange={(e) => activeTab === 'employees' ? setSearchTerm(e.target.value) : setApplicationSearchTerm(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && (activeTab === 'employees' ? loadEmployees(1, false) : loadApplications())}
+                placeholder="Search by name, emp no, or department..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && loadEmployees(1, false)}
                 className="relative w-full h-10 md:h-12 pl-10 md:pl-12 pr-10 md:pr-4 rounded-xl md:rounded-2xl border border-border-base bg-bg-base/60 text-xs md:text-sm font-semibold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-text-primary placeholder:text-text-secondary/40 shadow-sm"
               />
               {/* Mobile Embedded Search Button */}
               <button
-                onClick={() => activeTab === 'employees' ? loadEmployees(1, false) : loadApplications()}
+                onClick={() => loadEmployees(1, false)}
                 className="md:hidden absolute right-1.5 top-1/2 -translate-y-1/2 p-2 rounded-lg bg-indigo-500 text-white shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"
               >
                 <Search className="w-4 h-4" />
@@ -2426,7 +2425,7 @@ export default function EmployeesPage() {
 
             {/* Desktop Search Button */}
             <button
-              onClick={() => activeTab === 'employees' ? loadEmployees(1, false) : loadApplications()}
+              onClick={() => loadEmployees(1, false)}
               className="hidden md:flex h-10 md:h-12 px-6 md:px-8 rounded-xl md:rounded-2xl bg-gradient-to-br from-indigo-500 to-indigo-600 text-white text-[10px] font-black uppercase tracking-[0.2em] shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/40 hover:scale-[1.02] active:scale-95 transition-all items-center justify-center gap-2 whitespace-nowrap flex-shrink-0"
             >
               <Search className="w-3 h-3 md:w-3.5 h-3.5" />
