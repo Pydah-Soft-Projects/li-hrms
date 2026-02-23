@@ -36,6 +36,7 @@ const processAndAggregateLogs = async (rawLogs, previousDayLinking = false, skip
   const stats = {
     rawLogsInserted: 0,
     rawLogsSkipped: 0,
+    redundantLogsFiltered: 0,
     dailyRecordsCreated: 0,
     dailyRecordsUpdated: 0,
     errors: [],
@@ -83,16 +84,23 @@ const processAndAggregateLogs = async (rawLogs, previousDayLinking = false, skip
     }
 
 
+    // NEW: Filter redundant logs within 30-minute window
+    const REDUNDANCY_WINDOW_MINUTES = 30;
+    const filteredLogs = await filterRedundantLogs(rawLogs, REDUNDANCY_WINDOW_MINUTES);
+    stats.redundantLogsFiltered = rawLogs.length - filteredLogs.length;
+    
+    console.log(`[SyncService] Redundancy Filter: ${rawLogs.length} -> ${filteredLogs.length} logs (${stats.redundantLogsFiltered} filtered)`);
+
     // NEW APPROACH: Group logs by employee, then process chronologically
     const logsByEmployee = {};
 
     // Fetch all logs for employees involved (to get complete picture across days)
-    const employeeNumbers = [...new Set(rawLogs.map(log => log.employeeNumber.toUpperCase()))];
+    const employeeNumbers = [...new Set(filteredLogs.map(log => log.employeeNumber.toUpperCase()))];
 
     for (const empNo of employeeNumbers) {
       // Get all logs for this employee from database (chronologically sorted)
-      // We need a date range - use the dates from rawLogs
-      const dates = [...new Set(rawLogs.filter(l => l.employeeNumber.toUpperCase() === empNo).map(l => formatDate(l.timestamp)))];
+      // We need a date range - use dates from filtered logs
+      const dates = [...new Set(filteredLogs.filter(l => l.employeeNumber.toUpperCase() === empNo).map(l => formatDate(l.timestamp)))];
       const minDate = dates.sort()[0];
       const maxDate = dates.sort()[dates.length - 1];
 
@@ -109,7 +117,7 @@ const processAndAggregateLogs = async (rawLogs, previousDayLinking = false, skip
           $lte: formatDate(maxDateObj),
         },
         timestamp: { $gte: new Date('2020-01-01') }, // Ignore ancient logs (1899/1900)
-        type: { $in: ['IN', 'OUT'] }, // CRITICAL: Only process IN/OUT logs, exclude null-type (BREAK/OT)
+        type: { $in: ['IN', 'OUT', null] }, // CRITICAL: Include null-type (Thumb only) for Smart Pairing
       }).sort({ timestamp: 1 }); // Sort chronologically
 
       logsByEmployee[empNo] = allLogs.map(log => ({
@@ -186,6 +194,7 @@ const syncAttendanceFromMSSQL = async (fromDate = null, toDate = null) => {
     rawLogsFetched: 0,
     rawLogsInserted: 0,
     rawLogsSkipped: 0,
+    redundantLogsFiltered: 0,
     dailyRecordsCreated: 0,
     dailyRecordsUpdated: 0,
     errors: [],
@@ -234,6 +243,7 @@ const syncAttendanceFromMSSQL = async (fromDate = null, toDate = null) => {
 
     stats.rawLogsInserted = processStats.rawLogsInserted;
     stats.rawLogsSkipped = processStats.rawLogsSkipped;
+    stats.redundantLogsFiltered = processStats.redundantLogsFiltered;
     stats.dailyRecordsCreated = processStats.dailyRecordsCreated;
     stats.dailyRecordsUpdated = processStats.dailyRecordsUpdated;
     stats.errors = processStats.errors;
@@ -253,7 +263,7 @@ const syncAttendanceFromMSSQL = async (fromDate = null, toDate = null) => {
     );
 
     stats.success = true;
-    stats.message = `Successfully synced ${stats.rawLogsInserted} logs, created ${stats.dailyRecordsCreated} daily records, updated ${stats.dailyRecordsUpdated} records`;
+    stats.message = `Successfully synced ${stats.rawLogsInserted} logs, filtered ${stats.redundantLogsFiltered} redundant logs, created ${stats.dailyRecordsCreated} daily records, updated ${stats.dailyRecordsUpdated} records`;
 
     // NEW: Run Absenteeism Check (Auto-deactivation)
     try {
@@ -300,9 +310,50 @@ const syncAttendanceFromMSSQL = async (fromDate = null, toDate = null) => {
   return stats;
 };
 
+/**
+ * Filter redundant logs within specified time window
+ * @param {Array} logs - Array of raw log objects
+ * @param {number} windowMinutes - Time window in minutes (default: 30)
+ * @returns {Promise<Array>} - Filtered logs array
+ */
+const filterRedundantLogs = async (logs, windowMinutes = 30) => {
+  const filteredLogs = [];
+  const windowMs = windowMinutes * 60 * 1000;
+
+  // Sort logs chronologically for processing
+  const sortedLogs = logs.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+  for (const log of sortedLogs) {
+    const logTimestamp = new Date(log.timestamp);
+    const logType = log.type || 'IN';
+    
+    // Check if this log is redundant with any previously accepted log
+    const isRedundant = filteredLogs.some(existingLog => {
+      const existingTimestamp = new Date(existingLog.timestamp);
+      const existingType = existingLog.type || 'IN';
+      
+      // Same employee, same type, within time window
+      return (
+        existingLog.employeeNumber === log.employeeNumber &&
+        existingType === logType &&
+        Math.abs(existingTimestamp.getTime() - logTimestamp.getTime()) <= windowMs
+      );
+    });
+
+    if (!isRedundant) {
+      filteredLogs.push(log);
+    } else {
+      console.log(`🚫 Filtered redundant log: Employee ${log.employeeNumber}, Time ${logTimestamp.toISOString()}, Type ${logType} (within ${windowMinutes}min window)`);
+    }
+  }
+
+  return filteredLogs;
+};
+
 module.exports = {
   syncAttendanceFromMSSQL,
   processAndAggregateLogs,
   formatDate,
+  filterRedundantLogs
 };
 

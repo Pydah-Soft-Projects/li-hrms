@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { api, Employee, Department, Division, Designation, EmployeeApplication, Allowance, Deduction } from '@/lib/api';
+import { alertSuccess, alertError, alertConfirm, alertLoading } from '@/lib/customSwal';
 import { auth } from '@/lib/auth';
 import BulkUpload from '@/components/BulkUpload';
 import DynamicEmployeeForm from '@/components/DynamicEmployeeForm';
@@ -1099,6 +1100,39 @@ export default function EmployeesPage() {
     }
   };
 
+  const handleBulkResendCredentials = async () => {
+    const result = await alertConfirm(
+      'Bulk Resend Credentials?',
+      `This will resend login credentials to all employees matching the current filters (${totalCount} found). This operation may take some time.`,
+      'Yes, Resend All'
+    );
+
+    if (result.isConfirmed) {
+      alertLoading('Resending Credentials', 'Processing bulk requests, please wait...');
+      try {
+        const response = await api.bulkResendCredentials({
+          search: searchQuery,
+          divisionId: selectedDivisionFilter,
+          departmentId: selectedDepartmentFilter,
+          designationId: selectedDesignationFilter,
+          includeLeft: includeLeftEmployees ? 'true' : 'false'
+        });
+
+        if (response.success) {
+          alertSuccess(
+            'Success',
+            `Bulk resend operation complete. Sent: ${response.data.successCount}, Failed: ${response.data.failCount}`
+          );
+        } else {
+          alertError('Failed', response.message || 'Error occurred during bulk resend');
+        }
+      } catch (err: any) {
+        console.error('Error in bulk resend:', err);
+        alertError('Error', err.message || 'An unexpected error occurred');
+      }
+    }
+  };
+
   const handleSearch = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setSearchQuery(searchTerm);
@@ -1761,10 +1795,8 @@ export default function EmployeesPage() {
       ((app.department_id as any)?.name || app.department?.name || '')?.toLowerCase().includes(applicationSearchTerm.toLowerCase());
 
     const matchesDivision = !selectedDivisionFilter || app.division_id === selectedDivisionFilter || (app.division as any)?._id === selectedDivisionFilter;
-    const matchesDepartment = !selectedDepartmentFilter || app.department_id === selectedDepartmentFilter || (app.department as any)?._id === selectedDepartmentFilter;
-    const matchesDesignation = !selectedDesignationFilter || app.designation_id === selectedDesignationFilter || (app.designation as any)?._id === selectedDesignationFilter;
 
-    return matchesSearch && matchesDivision && matchesDepartment && matchesDesignation;
+    return matchesSearch && matchesDivision;
   });
 
   // Apply column filters
@@ -2191,73 +2223,18 @@ export default function EmployeesPage() {
                 </label>
               </div>
             ) : (
-              /* Search and Filters for Applications */
-              <div className="flex flex-wrap items-center gap-3 flex-1">
-                <div className="relative flex-1 max-w-md">
-                  <input
-                    type="text"
-                    placeholder="Search applications..."
-                    value={applicationSearchTerm}
-                    onChange={(e) => setApplicationSearchTerm(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white pl-11 pr-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                  />
-                  <svg className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
-                </div>
-
-                <div className="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-1 hidden md:block"></div>
-
-                {/* Division Selection for Applications */}
-                <div className="min-w-[150px]">
-                  <select
-                    value={selectedDivisionFilter}
-                    onChange={(e) => {
-                      setSelectedDivisionFilter(e.target.value);
-                      setSelectedDepartmentFilter('');
-                      setSelectedDesignationFilter('');
-                    }}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                  >
-                    <option value="">All Divisions</option>
-                    {divisions.map((d) => (
-                      <option key={d._id} value={d._id}>{d.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Department Selection for Applications */}
-                <div className="min-w-[150px]">
-                  <select
-                    value={selectedDepartmentFilter}
-                    onChange={(e) => {
-                      setSelectedDepartmentFilter(e.target.value);
-                      setSelectedDesignationFilter('');
-                    }}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                  >
-                    <option value="">All Departments</option>
-                    {departments
-                      .filter(dept => !selectedDivisionFilter || (dept as any).divisions?.some((d: any) => (typeof d === 'string' ? d === selectedDivisionFilter : (d._id || d) === selectedDivisionFilter)))
-                      .map((d) => (
-                        <option key={d._id} value={d._id}>{d.name}</option>
-                      ))}
-                  </select>
-                </div>
-
-                {/* Designation Selection for Applications */}
-                <div className="min-w-[150px]">
-                  <select
-                    value={selectedDesignationFilter}
-                    onChange={(e) => setSelectedDesignationFilter(e.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                  >
-                    <option value="">All Designations</option>
-                    {designations.map((d) => (
-                      <option key={d._id} value={d._id}>{d.name}</option>
-                    ))}
-                  </select>
-                </div>
+              /* Search for Applications */
+              <div className="relative flex-1 max-w-md">
+                <input
+                  type="text"
+                  placeholder="Search applications..."
+                  value={applicationSearchTerm}
+                  onChange={(e) => setApplicationSearchTerm(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-white pl-11 pr-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                />
+                <svg className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
               </div>
             )}
 
@@ -2307,6 +2284,18 @@ export default function EmployeesPage() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                   </svg>
                   <span>Import</span>
+                </button>
+              )}
+
+              {(activeTab === 'employees' || activeTab === 'applications') && (
+                <button
+                  onClick={handleBulkResendCredentials}
+                  className="flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition-all hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200 shadow-sm shadow-slate-900/10"
+                >
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                  </svg>
+                  <span>Resend All</span>
                 </button>
               )}
 
@@ -2788,16 +2777,24 @@ export default function EmployeesPage() {
                                     <button
                                       onClick={async (e) => {
                                         e.stopPropagation();
-                                        if (!confirm(`Resend credentials to ${employee.employee_name}? Their current credentials will be sent without resetting the password.`)) return;
+                                        const result = await alertConfirm(
+                                          'Resend Credentials?',
+                                          `Resend credentials to ${employee.employee_name}? Their current credentials will be sent without resetting the password.`
+                                        );
+                                        if (!result.isConfirmed) return;
+
                                         setIsResending(employee.emp_no);
                                         try {
                                           const res = await api.resendEmployeeCredentials(employee.emp_no, {
                                             notificationChannels: notificationChannels
                                           });
-                                          if (res.success) setSuccess('Credentials sent successfully!');
-                                          else setError(res.message || 'Failed to send');
-                                        } catch (err) {
-                                          setError('Failed to resend');
+                                          if (res.success) {
+                                            alertSuccess('Sent!', 'Credentials sent successfully!');
+                                          } else {
+                                            alertError('Failed', res.message || 'Failed to send');
+                                          }
+                                        } catch (err: any) {
+                                          alertError('Error', err.message || 'Failed to resend');
                                         } finally {
                                           setIsResending(null);
                                         }

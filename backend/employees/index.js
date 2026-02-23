@@ -36,6 +36,9 @@ router.post('/', authorize('manager', 'super_admin', 'sub_admin', 'hr'), upload.
 // Resend credentials (Super Admin)
 router.post('/:empNo/resend-credentials', authorize('super_admin'), employeeController.resendEmployeePassword);
 
+// Bulk resend credentials (Super Admin)
+router.post('/bulk-resend-credentials', authorize('super_admin'), employeeController.bulkResendCredentials);
+
 // Bulk export passwords (Super Admin)
 router.post('/bulk-export-passwords', authorize('super_admin'), employeeController.bulkExportEmployeePasswords);
 

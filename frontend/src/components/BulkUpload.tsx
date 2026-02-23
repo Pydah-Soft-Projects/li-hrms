@@ -423,7 +423,11 @@ export default function BulkUpload({
               </div>
 
               {/* Data Table */}
-              <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+              <div
+                ref={scrollRef}
+                onMouseDown={onMouseDown}
+                className={`overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 scrollbar-thin scrollbar-thumb-slate-300 dark:scrollbar-thumb-slate-700 hover:scrollbar-thumb-slate-400 dark:hover:scrollbar-thumb-slate-600 transition-all ${isDragging ? 'cursor-grabbing select-none' : 'cursor-grab'}`}
+              >
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900">

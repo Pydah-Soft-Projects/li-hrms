@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
 import { format, parseISO } from 'date-fns';
+import { alertSuccess, alertError, alertConfirm, alertLoading } from '@/lib/customSwal';
 
 interface AttendanceRecord {
   date: string;
@@ -1037,9 +1038,12 @@ export default function AttendancePage() {
   };
 
   const handleSyncShifts = async () => {
-    if (!confirm('This will sync shifts for all attendance records that don\'t have shifts assigned. This may take a few minutes. Continue?')) {
-      return;
-    }
+    const result = await alertConfirm(
+      'Sync Shifts?',
+      'This will sync shifts for all attendance records that don\'t have shifts assigned. This may take a few minutes.',
+      'Yes, Sync Now'
+    );
+    if (!result.isConfirmed) return;
 
     try {
       setSyncingShifts(true);
@@ -1047,17 +1051,19 @@ export default function AttendancePage() {
       setSuccess('');
       const response = await api.syncShifts();
       if (response.success) {
-        setSuccess(response.message || `Processed ${response.data?.processed || 0} records: ${response.data?.assigned || 0} assigned, ${response.data?.confused || 0} flagged for review`);
+        alertSuccess('Success', response.message || `Processed ${response.data?.processed || 0} records: ${response.data?.assigned || 0} assigned, ${response.data?.confused || 0} flagged for review`);
         loadMonthlyAttendance();
       } else {
-        setError(response.message || 'Failed to sync shifts');
+        alertError('Failed', response.message || 'Failed to sync shifts');
       }
     } catch (err: any) {
-      setError(err.message || 'An error occurred during shift sync');
+      alertError('Error', err.message || 'An error occurred during shift sync');
     } finally {
       setSyncingShifts(false);
     }
   };
+
+
 
   const handleUpdateOutTime = async () => {
     if (!selectedRecordForOutTime || !outTimeValue) {
@@ -1195,19 +1201,17 @@ export default function AttendancePage() {
 
 
 
-  const formatHours = (decimalHours: number | null | undefined): string => {
-    if (decimalHours === null || decimalHours === undefined || isNaN(decimalHours)) return '-';
-    const isNegative = decimalHours < 0;
-    const absoluteHours = Math.abs(decimalHours);
-    const hours = Math.floor(absoluteHours);
-    const minutes = Math.round((absoluteHours - hours) * 60);
-    return `${isNegative ? '-' : ''}${hours}:${minutes.toString().padStart(2, '0')}`;
+  const formatHours = (hours: number | null) => {
+    if (hours === null || hours === undefined) return '-';
+    return `${hours.toFixed(2)}h`;
   };
 
   const daysInMonth = getDaysInMonth();
   const daysArray = useMemo(() => Array.from({ length: daysInMonth }, (_, i) => i + 1), [daysInMonth]);
 
   // Virtualized row component
+
+
 
 
   console.log('Attendance rendering. Data length:', filteredMonthlyData.length);
@@ -1409,6 +1413,8 @@ export default function AttendancePage() {
                 </svg>
                 Upload
               </button>
+
+
             </div>
           </div>
         </div>
@@ -1759,8 +1765,8 @@ export default function AttendancePage() {
                                   )}
                                   {tableType === 'ot' && (
                                     <div className="text-[8px] font-medium leading-tight">
-                                      <div className="text-orange-600">{formatHours(record?.otHours)}</div>
-                                      <div className="text-purple-600">{formatHours(record?.extraHours)}</div>
+                                      <div className="text-orange-600">{record?.otHours ? record.otHours.toFixed(1) : '-'}</div>
+                                      <div className="text-purple-600">{record?.extraHours ? record.extraHours.toFixed(1) : '-'}</div>
                                     </div>
                                   )}
                                   {record?.source?.includes('manual') && (
@@ -1780,10 +1786,10 @@ export default function AttendancePage() {
                             {daysPresent}
                           </td>
                           <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 dark:text-orange-300 w-[60px] min-w-[60px]">
-                            {formatHours(dailyValues.reduce((sum, record: any) => sum + (record?.otHours || 0), 0))}
+                            {dailyValues.reduce((sum, record: any) => sum + (record?.otHours || 0), 0).toFixed(1)}
                           </td>
                           <td className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center text-[11px] font-bold text-purple-700 dark:border-slate-700 dark:bg-purple-900/20 dark:text-purple-300 w-[60px] min-w-[60px]">
-                            {formatHours(dailyValues.reduce((sum, record: any) => sum + (record?.extraHours || 0), 0))}
+                            {dailyValues.reduce((sum, record: any) => sum + (record?.extraHours || 0), 0).toFixed(1)}
                           </td>
                           <td className="border-r border-slate-200 bg-cyan-50 px-2 py-2 text-center text-[11px] font-bold text-cyan-700 dark:border-slate-700 dark:bg-cyan-900/20 dark:text-cyan-300 w-[80px] min-w-[80px]">
                             {dailyValues.reduce((sum, record: any) => sum + (record?.permissionCount || 0), 0)}
@@ -2014,20 +2020,20 @@ export default function AttendancePage() {
                     <div>
                       <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Total Hours</label>
                       <div className="mt-1 text-sm font-bold text-slate-900 dark:text-white">
-                        {formatHours(attendanceDetail.totalWorkingHours || attendanceDetail.totalHours || 0)} hrs
+                        {attendanceDetail.totalWorkingHours ? attendanceDetail.totalWorkingHours.toFixed(2) : (attendanceDetail.totalHours ? attendanceDetail.totalHours.toFixed(2) : '0')} hrs
                       </div>
                     </div>
                     <div>
                       <label className="text-xs font-medium text-slate-500 dark:text-slate-400">OT Hours</label>
                       <div className="mt-1 text-sm font-bold text-orange-600 dark:text-orange-400">
-                        {formatHours(attendanceDetail.totalOTHours || attendanceDetail.otHours || 0)} hrs
+                        {attendanceDetail.totalOTHours ? attendanceDetail.totalOTHours.toFixed(2) : (attendanceDetail.otHours ? attendanceDetail.otHours.toFixed(2) : '0')} hrs
                       </div>
                     </div>
                     {(attendanceDetail.extraHours && attendanceDetail.extraHours > 0) ? (
                       <div>
                         <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Extra Hours</label>
                         <div className="mt-1 text-sm font-bold text-purple-600 dark:text-purple-400">
-                          {formatHours(attendanceDetail.extraHours)} hrs
+                          {attendanceDetail.extraHours.toFixed(2)} hrs
                         </div>
                       </div>
                     ) : (
@@ -2035,7 +2041,7 @@ export default function AttendancePage() {
                         <div>
                           <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Expected</label>
                           <div className="mt-1 text-sm font-bold text-slate-700 dark:text-slate-300">
-                            {formatHours(attendanceDetail.expectedHours)} hrs
+                            {attendanceDetail.expectedHours || '-'} hrs
                           </div>
                         </div>
                       )
@@ -2083,7 +2089,7 @@ export default function AttendancePage() {
                               <div className="font-bold text-sm text-slate-800 dark:text-white">{shiftName}</div>
                             </div>
                             <div className="text-[11px] font-bold text-slate-500 bg-slate-50 dark:bg-slate-800/50 px-2 py-0.5 rounded-full">
-                              {formatHours(shift.workingHours)} hrs
+                              {shift.workingHours ? `${shift.workingHours.toFixed(2)} hrs` : '0.00 hrs'}
                             </div>
                           </div>
 
@@ -2284,7 +2290,7 @@ export default function AttendancePage() {
                   <div className="p-3 rounded-xl bg-green-50/50 dark:bg-green-900/10 border border-green-100 dark:border-green-800/50 mt-2">
                     <label className="text-[10px] font-black uppercase tracking-widest text-green-600/70">Overtime Hours</label>
                     <div className="mt-1 text-sm font-bold text-green-800 dark:text-green-400">
-                      {formatHours(attendanceDetail.otHours)} hrs approved
+                      {attendanceDetail.otHours.toFixed(2)} hrs approved
                     </div>
                   </div>
                 )}
@@ -2293,7 +2299,7 @@ export default function AttendancePage() {
                   <div className="p-3 rounded-xl bg-cyan-50/50 dark:bg-cyan-900/10 border border-cyan-100 dark:border-cyan-800/50 mt-2">
                     <label className="text-[10px] font-black uppercase tracking-widest text-cyan-600/70">Permission Hours</label>
                     <div className="mt-1 text-sm font-bold text-cyan-800 dark:text-cyan-400">
-                      {formatHours(attendanceDetail.permissionHours)} hrs ({attendanceDetail.permissionCount || 0} applications)
+                      {attendanceDetail.permissionHours.toFixed(2)} hrs ({attendanceDetail.permissionCount || 0} applications)
                     </div>
                   </div>
                 )}
@@ -3012,7 +3018,7 @@ export default function AttendancePage() {
                       {/* Rupees In Words */}
                       <div className="border border-slate-300 bg-slate-50 px-4 py-2 dark:border-slate-600 dark:bg-slate-800">
                         <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Rupees In Words:</span>
-                        <span className="ml-2 text-sm text-slate-900 dark:text-white">{numberToWords(payslipData.netSalary || 0)}</span>
+                        {/* removed numberToWords display */}
                       </div>
                     </div>
 
@@ -3038,90 +3044,4 @@ export default function AttendancePage() {
       </div>
     </div >
   );
-}
-
-// Helper function to convert number to words
-function numberToWords(num: number): string {
-  const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
-  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
-
-  if (num === 0) return 'Zero Rupees Only';
-
-  const integerPart = Math.floor(num);
-  const decimalPart = Math.round((num - integerPart) * 100);
-
-  const convertHundreds = (n: number): string => {
-    if (n === 0) return '';
-    let result = '';
-    if (n >= 100) {
-      const hundreds = Math.floor(n / 100);
-      if (hundreds > 0 && ones[hundreds]) {
-        result += ones[hundreds] + ' Hundred ';
-      }
-      n %= 100;
-    }
-    if (n >= 20) {
-      const tensPlace = Math.floor(n / 10);
-      if (tensPlace > 0 && tens[tensPlace]) {
-        result += tens[tensPlace] + ' ';
-      }
-      n %= 10;
-    }
-    if (n > 0 && ones[n]) {
-      result += ones[n] + ' ';
-    }
-    return result.trim();
-  };
-
-  let words = '';
-  let remaining = integerPart;
-
-  const crores = Math.floor(remaining / 10000000);
-  if (crores > 0) {
-    const croreWords = convertHundreds(crores);
-    if (croreWords) {
-      words += croreWords + ' Crore ';
-    }
-    remaining %= 10000000;
-  }
-
-  const lakhs = Math.floor(remaining / 100000);
-  if (lakhs > 0) {
-    const lakhWords = convertHundreds(lakhs);
-    if (lakhWords) {
-      words += lakhWords + ' Lakh ';
-    }
-    remaining %= 100000;
-  }
-
-  const thousands = Math.floor(remaining / 1000);
-  if (thousands > 0) {
-    const thousandWords = convertHundreds(thousands);
-    if (thousandWords) {
-      words += thousandWords + ' Thousand ';
-    }
-    remaining %= 1000;
-  }
-
-  if (remaining > 0) {
-    const remainingWords = convertHundreds(remaining);
-    if (remainingWords) {
-      words += remainingWords;
-    }
-  }
-
-  if (decimalPart > 0) {
-    if (words.trim()) {
-      words += ` and ${decimalPart}/100`;
-    } else {
-      words += `${decimalPart}/100`;
-    }
-  }
-
-  words = words.trim();
-  if (!words) {
-    return 'Zero Rupees Only';
-  }
-
-  return words + ' Rupees Only';
 }

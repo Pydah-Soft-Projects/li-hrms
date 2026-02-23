@@ -7,7 +7,7 @@ const AttendanceRawLog = require('../model/AttendanceRawLog');
 const AttendanceDaily = require('../model/AttendanceDaily');
 const { processAndAggregateLogs } = require('../services/attendanceSyncService');
 const { detectAndAssignShift } = require('../../shifts/services/shiftDetectionService');
-const { batchDetectExtraHours } = require('../services/extraHoursService');
+const { detectExtraHoursForEmployeeDates } = require('../services/extraHoursService');
 const XLSX = require('xlsx');
 const dayjs = require('dayjs');
 const customParseFormat = require('dayjs/plugin/customParseFormat');
@@ -167,24 +167,18 @@ exports.uploadExcel = async (req, res) => {
     // 4. Process and aggregate
     const stats = await processAndAggregateLogs(finalProcessedLogs, false);
 
-    // IMPORTANT: After processing logs, detect extra hours for all affected records
+    // IMPORTANT: After processing logs, detect extra hours only for (employee, date) we processed (+ adjacent days for overnight)
     try {
-      console.log('[ExcelUpload] Detecting extra hours for all processed records...');
+      console.log('[ExcelUpload] Detecting extra hours for processed employee/dates...');
 
-      // Get unique dates from the processed logs
-      const processedDates = [...new Set(finalProcessedLogs.map(log => {
+      const entries = finalProcessedLogs.map(log => {
         const d = new Date(log.timestamp);
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      }))];
+        const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        return { employeeNumber: log.employeeNumber, date };
+      }).filter(e => e.date);
 
-      if (processedDates.length > 0) {
-        const { batchDetectExtraHours } = require('../services/extraHoursService');
-        const sortedDates = processedDates.sort();
-        const minDate = sortedDates[0];
-        const maxDate = sortedDates[sortedDates.length - 1];
-
-        // Batch detect extra hours
-        const extraHoursStats = await batchDetectExtraHours(minDate, maxDate);
+      if (entries.length > 0) {
+        const extraHoursStats = await detectExtraHoursForEmployeeDates(entries, { includeAdjacentDays: true });
         stats.extraHoursDetected = extraHoursStats.updated;
         stats.extraHoursProcessed = extraHoursStats.processed;
       }

@@ -218,7 +218,7 @@ const startServer = async () => {
 
     // Start server
     server.listen(PORT, () => {
-      console.log(`🚀 HRMS Backend Server is running on port ${PORT}`);
+      console.log(`🚀 HRMS Backend- before main merge multi shift git is running now  Server is running on port ${PORT}`);
       console.log(`📍 Server URL: http://localhost:${PORT}`);
       console.log(`📋 API Root: http://localhost:${PORT}/`);
       console.log(`💚 Health Check: http://localhost:${PORT}/health`);
@@ -242,6 +242,7 @@ const startServer = async () => {
       console.log(`   - Bonus: /api/bonus`);
       console.log(`   - Arrears: /api/arrears`);
       console.log(`   - Holidays: /api/holidays`);
+      console.log(`   - payabale shifts Multi Shift: /api/multi-shift`);
     });
   } catch (error) {
     console.error('❌ Failed to start server:', error.message);
