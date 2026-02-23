@@ -1791,6 +1791,17 @@ export const api = {
   // LEAVE MANAGEMENT
   // ==========================================
 
+  // Get leave register
+  getLeaveRegister: async (filters?: { divisionId?: string; departmentId?: string; searchTerm?: string; month?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.divisionId) params.append('divisionId', filters.divisionId);
+    if (filters?.departmentId) params.append('departmentId', filters.departmentId);
+    if (filters?.searchTerm) params.append('searchTerm', filters.searchTerm);
+    if (filters?.month) params.append('month', filters.month);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return apiRequest<any>(`/leaves/register${query}`, { method: 'GET' });
+  },
+
   // Get my leaves
   getMyLeaves: async (filters?: { status?: string; fromDate?: string; toDate?: string }) => {
     const params = new URLSearchParams();

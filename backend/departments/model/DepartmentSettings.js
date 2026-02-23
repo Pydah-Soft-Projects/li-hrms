@@ -47,6 +47,18 @@ const departmentSettingsSchema = new mongoose.Schema(
         default: null,
         min: 0,
       },
+      // Total casual leaves allotted per year
+      casualLeavePerYear: {
+        type: Number,
+        default: null,
+        min: 0,
+      },
+      // Maximum casual leaves allowed to be used per month
+      maxCasualLeavesPerMonth: {
+        type: Number,
+        default: null,
+        min: 0,
+      },
     },
 
     // Loans Settings

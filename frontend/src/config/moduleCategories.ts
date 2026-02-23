@@ -26,6 +26,7 @@ export const MODULE_CATEGORIES = [
             { code: 'CCL', label: 'CCL (Compensatory)', href: '/ccl' },
             { code: 'OT_PERMISSIONS', label: 'OT & Permissions', href: '/ot-permissions' },
             { code: 'SHIFT_ROSTER', label: 'Shift Roster', href: '/shift-roster' },
+            { code: 'LEAVE_REGISTER', label: 'Leave Register', href: '/leaves/register' },
             { code: 'CONFUSED_SHIFTS', label: 'Confused Shifts', href: '/confused-shifts' },
             { code: 'SHIFTS', label: 'Shifts', href: '/shifts' },
             { code: 'HOLIDAY_CALENDAR', label: 'Holiday Calendar', href: '/holidays' },

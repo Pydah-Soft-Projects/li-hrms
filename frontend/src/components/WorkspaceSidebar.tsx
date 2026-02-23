@@ -37,7 +37,8 @@ import {
     Calculator,
     ArrowRightLeft,
     ScrollText,
-    BadgeDollarSign
+    BadgeDollarSign,
+    FileText
 } from 'lucide-react';
 
 // Module code to icon mapping
@@ -70,6 +71,7 @@ const moduleIcons: Record<string, any> = {
     PAYROLL: BadgeDollarSign,
     LOANS_SALARY_ADVANCE: HandCoins,
     HOLIDAY_CALENDAR: CalendarHeart,
+    LEAVE_REGISTER: FileText,
 };
 
 export default function WorkspaceSidebar() {
