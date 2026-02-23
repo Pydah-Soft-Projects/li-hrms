@@ -1201,13 +1201,9 @@ export default function AttendancePage() {
 
 
 
-  const formatHours = (decimalHours: number | null | undefined): string => {
-    if (decimalHours === null || decimalHours === undefined || isNaN(decimalHours)) return '-';
-    const isNegative = decimalHours < 0;
-    const absoluteHours = Math.abs(decimalHours);
-    const hours = Math.floor(absoluteHours);
-    const minutes = Math.round((absoluteHours - hours) * 60);
-    return `${isNegative ? '-' : ''}${hours}:${minutes.toString().padStart(2, '0')}`;
+  const formatHours = (hours: number | null) => {
+    if (hours === null || hours === undefined) return '-';
+    return `${hours.toFixed(2)}h`;
   };
 
   const daysInMonth = getDaysInMonth();
@@ -1769,8 +1765,8 @@ export default function AttendancePage() {
                                   )}
                                   {tableType === 'ot' && (
                                     <div className="text-[8px] font-medium leading-tight">
-                                      <div className="text-orange-600">{formatHours(record?.otHours)}</div>
-                                      <div className="text-purple-600">{formatHours(record?.extraHours)}</div>
+                                      <div className="text-orange-600">{record?.otHours ? record.otHours.toFixed(1) : '-'}</div>
+                                      <div className="text-purple-600">{record?.extraHours ? record.extraHours.toFixed(1) : '-'}</div>
                                     </div>
                                   )}
                                   {record?.source?.includes('manual') && (
@@ -1790,10 +1786,10 @@ export default function AttendancePage() {
                             {daysPresent}
                           </td>
                           <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 dark:text-orange-300 w-[60px] min-w-[60px]">
-                            {formatHours(dailyValues.reduce((sum, record: any) => sum + (record?.otHours || 0), 0))}
+                            {dailyValues.reduce((sum, record: any) => sum + (record?.otHours || 0), 0).toFixed(1)}
                           </td>
                           <td className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center text-[11px] font-bold text-purple-700 dark:border-slate-700 dark:bg-purple-900/20 dark:text-purple-300 w-[60px] min-w-[60px]">
-                            {formatHours(dailyValues.reduce((sum, record: any) => sum + (record?.extraHours || 0), 0))}
+                            {dailyValues.reduce((sum, record: any) => sum + (record?.extraHours || 0), 0).toFixed(1)}
                           </td>
                           <td className="border-r border-slate-200 bg-cyan-50 px-2 py-2 text-center text-[11px] font-bold text-cyan-700 dark:border-slate-700 dark:bg-cyan-900/20 dark:text-cyan-300 w-[80px] min-w-[80px]">
                             {dailyValues.reduce((sum, record: any) => sum + (record?.permissionCount || 0), 0)}
@@ -2024,20 +2020,20 @@ export default function AttendancePage() {
                     <div>
                       <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Total Hours</label>
                       <div className="mt-1 text-sm font-bold text-slate-900 dark:text-white">
-                        {formatHours(attendanceDetail.totalWorkingHours || attendanceDetail.totalHours || 0)} hrs
+                        {attendanceDetail.totalWorkingHours ? attendanceDetail.totalWorkingHours.toFixed(2) : (attendanceDetail.totalHours ? attendanceDetail.totalHours.toFixed(2) : '0')} hrs
                       </div>
                     </div>
                     <div>
                       <label className="text-xs font-medium text-slate-500 dark:text-slate-400">OT Hours</label>
                       <div className="mt-1 text-sm font-bold text-orange-600 dark:text-orange-400">
-                        {formatHours(attendanceDetail.totalOTHours || attendanceDetail.otHours || 0)} hrs
+                        {attendanceDetail.totalOTHours ? attendanceDetail.totalOTHours.toFixed(2) : (attendanceDetail.otHours ? attendanceDetail.otHours.toFixed(2) : '0')} hrs
                       </div>
                     </div>
                     {(attendanceDetail.extraHours && attendanceDetail.extraHours > 0) ? (
                       <div>
                         <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Extra Hours</label>
                         <div className="mt-1 text-sm font-bold text-purple-600 dark:text-purple-400">
-                          {formatHours(attendanceDetail.extraHours)} hrs
+                          {attendanceDetail.extraHours.toFixed(2)} hrs
                         </div>
                       </div>
                     ) : (
@@ -2045,7 +2041,7 @@ export default function AttendancePage() {
                         <div>
                           <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Expected</label>
                           <div className="mt-1 text-sm font-bold text-slate-700 dark:text-slate-300">
-                            {formatHours(attendanceDetail.expectedHours)} hrs
+                            {attendanceDetail.expectedHours || '-'} hrs
                           </div>
                         </div>
                       )
@@ -2093,7 +2089,7 @@ export default function AttendancePage() {
                               <div className="font-bold text-sm text-slate-800 dark:text-white">{shiftName}</div>
                             </div>
                             <div className="text-[11px] font-bold text-slate-500 bg-slate-50 dark:bg-slate-800/50 px-2 py-0.5 rounded-full">
-                              {formatHours(shift.workingHours)} hrs
+                              {shift.workingHours ? `${shift.workingHours.toFixed(2)} hrs` : '0.00 hrs'}
                             </div>
                           </div>
 
@@ -2294,7 +2290,7 @@ export default function AttendancePage() {
                   <div className="p-3 rounded-xl bg-green-50/50 dark:bg-green-900/10 border border-green-100 dark:border-green-800/50 mt-2">
                     <label className="text-[10px] font-black uppercase tracking-widest text-green-600/70">Overtime Hours</label>
                     <div className="mt-1 text-sm font-bold text-green-800 dark:text-green-400">
-                      {formatHours(attendanceDetail.otHours)} hrs approved
+                      {attendanceDetail.otHours.toFixed(2)} hrs approved
                     </div>
                   </div>
                 )}
@@ -2303,7 +2299,7 @@ export default function AttendancePage() {
                   <div className="p-3 rounded-xl bg-cyan-50/50 dark:bg-cyan-900/10 border border-cyan-100 dark:border-cyan-800/50 mt-2">
                     <label className="text-[10px] font-black uppercase tracking-widest text-cyan-600/70">Permission Hours</label>
                     <div className="mt-1 text-sm font-bold text-cyan-800 dark:text-cyan-400">
-                      {formatHours(attendanceDetail.permissionHours)} hrs ({attendanceDetail.permissionCount || 0} applications)
+                      {attendanceDetail.permissionHours.toFixed(2)} hrs ({attendanceDetail.permissionCount || 0} applications)
                     </div>
                   </div>
                 )}

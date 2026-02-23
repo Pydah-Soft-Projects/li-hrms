@@ -10,7 +10,6 @@ const {
   updateLeaveForAttendance,
   getLeaveConflicts
 } = require('../services/leaveConflictService');
-const leaveRegisterService = require('../services/leaveRegisterService');
 const {
   buildWorkflowVisibilityFilter,
   getEmployeeIdsInScope,
@@ -573,37 +572,6 @@ exports.applyLeave = async (req, res) => {
 
         if (newTotal > resolvedLeaveSettings.monthlyLimit) {
           limitWarnings.push(`Total leave days for this month(${newTotal} days) would exceed the recommended monthly limit of ${resolvedLeaveSettings.monthlyLimit} days.Current month total: ${totalDaysThisMonth} days`);
-        }
-      }
-
-      // STRICT ENFORCEMENT for Casual Leave (CL) as per requirements
-      if (leaveType === 'CL') {
-        // 1. Check Max CL Per Month limit
-        if (resolvedLeaveSettings.maxCasualLeavesPerMonth !== null && resolvedLeaveSettings.maxCasualLeavesPerMonth > 0) {
-          if (numberOfDays > resolvedLeaveSettings.maxCasualLeavesPerMonth) {
-            return res.status(400).json({
-              success: false,
-              error: `Casual Leave usage is restricted to ${resolvedLeaveSettings.maxCasualLeavesPerMonth} day(s) per month for your department.`
-            });
-          }
-        }
-
-        // 2. Check Accrued Balance (Cumulative + CCL - Used)
-        const targetMonthStr = from.toISOString().substring(0, 7);
-        try {
-          const registerData = await leaveRegisterService.getLeaveRegister({ employeeId: employee._id }, targetMonthStr);
-          if (registerData && registerData[0]) {
-            const clBalance = registerData[0].casualLeave.balance;
-            if (numberOfDays > clBalance) {
-              return res.status(400).json({
-                success: false,
-                error: `Insufficient Casual Leave balance for this month. Available: ${clBalance} day(s) (including carry forward and CCL).`
-              });
-            }
-          }
-        } catch (err) {
-          console.error('[ApplyLeave] Error validating CL balance:', err);
-          // Fallback - if service fails, proceed but log it? Better to protect.
         }
       }
     }
