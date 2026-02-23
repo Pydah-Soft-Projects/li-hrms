@@ -603,7 +603,10 @@ exports.applyLeave = async (req, res) => {
           }
         } catch (err) {
           console.error('[ApplyLeave] Error validating CL balance:', err);
-          // Fallback - if service fails, proceed but log it? Better to protect.
+          return res.status(500).json({
+            success: false,
+            error: 'Unable to validate leave balance. Please try again later.'
+          });
         }
       }
     }

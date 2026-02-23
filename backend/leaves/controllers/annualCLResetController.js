@@ -1,0 +1,224 @@
+/**
+ * Annual CL Reset Controller
+ * Manages annual casual leave balance reset operations
+ */
+
+const { performAnnualCLReset, getCLResetStatus, getNextResetDate } = require('../services/annualCLResetService');
+const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
+
+/**
+ * @desc    Perform annual CL reset for all employees
+ * @route   POST /api/leaves/annual-reset
+ * @access  Private (HR, Admin only)
+ */
+exports.performAnnualReset = async (req, res) => {
+    try {
+        const { targetYear, confirmReset } = req.body;
+        
+        // Get current settings to show what will be reset
+        const settings = await LeavePolicySettings.getSettings();
+        
+        if (!settings.annualCLReset.enabled) {
+            return res.status(400).json({
+                success: false,
+                message: 'Annual CL reset is disabled in settings'
+            });
+        }
+
+        // Require confirmation for production safety
+        if (!confirmReset) {
+            return res.status(400).json({
+                success: false,
+                message: 'Please confirm the reset operation by setting confirmReset=true',
+                preview: {
+                    resetToBalance: settings.annualCLReset.resetToBalance,
+                    addCarryForward: settings.annualCLReset.addCarryForward,
+                    resetDate: getNextResetDate(settings),
+                    affectedEmployees: 'All active employees'
+                }
+            });
+        }
+
+        const result = await performAnnualCLReset(targetYear);
+        
+        res.status(200).json({
+            success: result.success,
+            message: result.message,
+            data: result
+        });
+
+    } catch (error) {
+        console.error('Error performing annual CL reset:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error performing annual CL reset',
+            error: error.message
+        });
+    }
+};
+
+/**
+ * @desc    Get CL reset status for employees
+ * @route   GET /api/leaves/annual-reset/status
+ * @access  Private (HR, Admin)
+ */
+exports.getResetStatus = async (req, res) => {
+    try {
+        const { employeeIds, departmentId, divisionId } = req.query;
+        
+        let filters = {};
+        if (employeeIds) {
+            filters.employeeIds = employeeIds.split(',').map(id => id.trim());
+        }
+        if (departmentId) {
+            filters.departmentId = departmentId;
+        }
+        if (divisionId) {
+            filters.divisionId = divisionId;
+        }
+
+        const result = await getCLResetStatus(filters.employeeIds);
+        
+        // Apply department/division filters if specified
+        let filteredData = result.data;
+        if (filters.departmentId) {
+            filteredData = filteredData.filter(emp => emp.department === filters.departmentId);
+        }
+        if (filters.divisionId) {
+            filteredData = filteredData.filter(emp => emp.division === filters.divisionId);
+        }
+
+        res.status(200).json({
+            success: true,
+            data: filteredData,
+            settings: result.settings,
+            total: filteredData.length,
+            message: `Found reset status for ${filteredData.length} employees`
+        });
+
+    } catch (error) {
+        console.error('Error getting CL reset status:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error getting CL reset status',
+            error: error.message
+        });
+    }
+};
+
+/**
+ * @desc    Get next CL reset date
+ * @route   GET /api/leaves/annual-reset/next-date
+ * @access  Private (All authenticated users)
+ */
+exports.getNextResetDate = async (req, res) => {
+    try {
+        const settings = await LeavePolicySettings.getSettings();
+        
+        if (!settings.annualCLReset.enabled) {
+            return res.status(200).json({
+                success: true,
+                enabled: false,
+                message: 'Annual CL reset is disabled'
+            });
+        }
+
+        const nextResetDate = getNextResetDate(settings);
+        
+        res.status(200).json({
+            success: true,
+            enabled: true,
+            data: {
+                nextResetDate,
+                resetToBalance: settings.annualCLReset.resetToBalance,
+                addCarryForward: settings.annualCLReset.addCarryForward,
+                resetMonth: settings.annualCLReset.resetMonth,
+                resetDay: settings.annualCLReset.resetDay,
+                daysUntilReset: Math.ceil((nextResetDate - new Date()) / (1000 * 60 * 60 * 24))
+            }
+        });
+
+    } catch (error) {
+        console.error('Error getting next reset date:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error getting next reset date',
+            error: error.message
+        });
+    }
+};
+
+/**
+ * @desc    Preview annual CL reset
+ * @route   POST /api/leaves/annual-reset/preview
+ * @access  Private (HR, Admin)
+ */
+exports.previewReset = async (req, res) => {
+    try {
+        const { sampleSize = 10 } = req.body; // Preview for sample employees
+        
+        const settings = await LeavePolicySettings.getSettings();
+        
+        if (!settings.annualCLReset.enabled) {
+            return res.status(400).json({
+                success: false,
+                message: 'Annual CL reset is disabled in settings'
+            });
+        }
+
+        // Get sample employees for preview
+        const Employee = require('../../employees/model/Employee');
+        const sampleEmployees = await Employee.find({ is_active: true })
+            .limit(sampleSize)
+            .select('_id emp_no employee_name paidLeaves department_id division_id')
+            .populate('department_id', 'name')
+            .populate('division_id', 'name')
+            .lean();
+
+        const previewResults = [];
+        const resetDate = getNextResetDate(settings);
+
+        for (const employee of sampleEmployees) {
+            const currentCL = employee.paidLeaves || 0;
+            let carryForwardAmount = 0;
+            
+            if (settings.annualCLReset.addCarryForward && settings.carryForward.casualLeave.enabled) {
+                const unusedCL = Math.max(0, currentCL - 5); // Simplified calculation
+                carryForwardAmount = Math.min(unusedCL, settings.carryForward.casualLeave.maxMonths || 12);
+            }
+
+            const newBalance = settings.annualCLReset.resetToBalance + carryForwardAmount;
+
+            previewResults.push({
+                employeeId: employee._id,
+                empNo: employee.emp_no,
+                employeeName: employee.employee_name,
+                department: employee.department_id?.name,
+                division: employee.division_id?.name,
+                currentBalance: currentCL,
+                estimatedCarryForward: carryForwardAmount,
+                newBalance: newBalance
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: `Annual CL reset preview for ${previewResults.length} employees`,
+            data: {
+                resetDate,
+                resetToBalance: settings.annualCLReset.resetToBalance,
+                addCarryForward: settings.annualCLReset.addCarryForward,
+                sampleResults: previewResults,
+                totalEmployees: sampleSize
+            }
+        });
+
+    } catch (error) {
+        console.error('Error previewing annual CL reset:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error previewing annual CL reset',
+            error: error.message
+        });
+    }
+};

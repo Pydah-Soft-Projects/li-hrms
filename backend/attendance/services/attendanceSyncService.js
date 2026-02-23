@@ -86,7 +86,7 @@ const processAndAggregateLogs = async (rawLogs, previousDayLinking = false, skip
 
     // NEW: Filter redundant logs within 30-minute window
     const REDUNDANCY_WINDOW_MINUTES = 30;
-    const filteredLogs = await filterRedundantLogs(rawLogs, REDUNDANCY_WINDOW_MINUTES);
+    const filteredLogs = filterRedundantLogs(rawLogs, REDUNDANCY_WINDOW_MINUTES);
     stats.redundantLogsFiltered = rawLogs.length - filteredLogs.length;
     
     console.log(`[SyncService] Redundancy Filter: ${rawLogs.length} -> ${filteredLogs.length} logs (${stats.redundantLogsFiltered} filtered)`);
@@ -106,8 +106,8 @@ const processAndAggregateLogs = async (rawLogs, previousDayLinking = false, skip
 
       // Extend range by 1 day on each side to catch overnight shifts
       const minDateObj = new Date(minDate);
+      const maxDateObj = new Date(maxDate); // Ensure separate instance
       minDateObj.setDate(minDateObj.getDate() - 1);
-      const maxDateObj = new Date(maxDate);
       maxDateObj.setDate(maxDateObj.getDate() + 1);
 
       const allLogs = await AttendanceRawLog.find({
@@ -314,9 +314,9 @@ const syncAttendanceFromMSSQL = async (fromDate = null, toDate = null) => {
  * Filter redundant logs within specified time window
  * @param {Array} logs - Array of raw log objects
  * @param {number} windowMinutes - Time window in minutes (default: 30)
- * @returns {Promise<Array>} - Filtered logs array
+ * @returns {Array} - Filtered logs array
  */
-const filterRedundantLogs = async (logs, windowMinutes = 30) => {
+const filterRedundantLogs = (logs, windowMinutes = 30) => {
   const filteredLogs = [];
   const windowMs = windowMinutes * 60 * 1000;
 

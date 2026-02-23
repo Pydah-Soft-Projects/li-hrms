@@ -98,10 +98,47 @@ router.put('/od/:id/outcome', odController.updateODOutcome);
 // Delete OD
 router.delete('/od/:id', authorize('sub_admin', 'super_admin'), odController.deleteOD);
 
-// = :=========================================
+// ==========================================
 // LEAVE REGISTER ROUTES
 // ==========================================
 router.get('/register', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), applyScopeFilter, leaveRegisterController.getRegister);
+router.get('/register/employee/:employeeId', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), leaveRegisterController.getEmployeeRegister);
+router.get('/register/employee/:employeeId/ledger/:leaveType', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), leaveRegisterController.getEmployeeLedger);
+router.post('/register/adjust-cl', authorize('hr', 'sub_admin', 'super_admin'), leaveRegisterController.adjustCLBalance);
+
+// ==========================================
+// EARNED LEAVE ROUTES
+// ==========================================
+const earnedLeaveController = require('./controllers/earnedLeaveController');
+
+// Calculate EL for employee
+router.post('/earned/calculate', authorize('employee', 'manager', 'hod', 'hr', 'sub_admin', 'super_admin'), earnedLeaveController.calculateEL);
+
+// Get EL balance
+router.get('/earned/balance/:employeeId', authorize('employee', 'manager', 'hod', 'hr', 'sub_admin', 'super_admin'), earnedLeaveController.getELBalance);
+
+// Update EL for all employees (Admin/HR only)
+router.post('/earned/update-all', authorize('hr', 'sub_admin', 'super_admin'), earnedLeaveController.updateAllEL);
+
+// Get EL history
+router.get('/earned/history/:employeeId', authorize('hr', 'sub_admin', 'super_admin'), earnedLeaveController.getELHistory);
+
+// ==========================================
+// ANNUAL CL RESET ROUTES
+// ==========================================
+const annualCLResetController = require('./controllers/annualCLResetController');
+
+// Perform annual CL reset (HR/Admin only)
+router.post('/annual-reset', authorize('hr', 'sub_admin', 'super_admin'), annualCLResetController.performAnnualReset);
+
+// Get CL reset status
+router.get('/annual-reset/status', authorize('hr', 'sub_admin', 'super_admin'), annualCLResetController.getResetStatus);
+
+// Get next CL reset date
+router.get('/annual-reset/next-date', authorize('employee', 'manager', 'hod', 'hr', 'sub_admin', 'super_admin'), annualCLResetController.getNextResetDate);
+
+// Preview annual CL reset
+router.post('/annual-reset/preview', authorize('hr', 'sub_admin', 'super_admin'), annualCLResetController.previewReset);
 
 // ==========================================
 // LEAVE ROUTES
