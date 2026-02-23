@@ -568,6 +568,7 @@ export interface Employee {
   department?: any;
   division?: any;
   designation?: any;
+  profilePhoto?: string;
 }
 
 export interface Allowance {
@@ -1884,7 +1885,7 @@ export const api = {
   }),
 
   autoFillNextCycleRoster: (params?: { targetMonth?: string; departmentId?: string; divisionId?: string }) =>
-    apiRequest<{ success: boolean; message: string; data: { filled: number; holidaysRespected: number; previousRange: { startDate: string; endDate: string }; nextRange: { startDate: string; endDate: string } } }>('/shifts/roster/auto-fill-next-cycle', {
+    apiRequest<{ filled: number; holidaysRespected: number; previousRange: { startDate: string; endDate: string }; nextRange: { startDate: string; endDate: string } }>('/shifts/roster/auto-fill-next-cycle', {
       method: 'POST',
       body: JSON.stringify(params || {}),
     }),
