@@ -955,11 +955,23 @@ export default function EmployeesPage() {
   const loadEmployees = async (pageNum: number = 1, append: boolean = false) => {
     try {
       if (!append) setLoading(true);
+      // Derive division_id, department_id, designation_id from selectedDivision and header filters (by name)
+      const divisionId = selectedDivision
+        || (employeeFilters['division.name'] ? divisions.find((d) => d.name === employeeFilters['division.name'])?._id : undefined);
+      const departmentId = employeeFilters['department.name']
+        ? departments.find((d) => d.name === employeeFilters['department.name'])?._id
+        : undefined;
+      const designationId = employeeFilters['designation.name']
+        ? designations.find((d) => d.name === employeeFilters['designation.name'])?._id
+        : undefined;
       const response = await api.getEmployees({
         ...(includeLeftEmployees ? { includeLeft: true } : {}),
         page: pageNum,
         limit: 50,
-        search: searchTerm,
+        search: searchTerm || undefined,
+        ...(divisionId ? { division_id: divisionId } : {}),
+        ...(departmentId ? { department_id: departmentId } : {}),
+        ...(designationId ? { designation_id: designationId } : {}),
       });
       if (response.success) {
         // Ensure paidLeaves is always included and is a number
@@ -1064,7 +1076,21 @@ export default function EmployeesPage() {
   const loadApplications = async () => {
     try {
       setLoadingApplications(true);
-      const response = await api.getEmployeeApplications();
+      const divisionId = selectedDivision ||
+        (employeeFilters['division.name'] ? divisions.find((d) => d.name === employeeFilters['division.name'])?._id : undefined);
+      const departmentId = employeeFilters['department.name']
+        ? departments.find((d) => d.name === employeeFilters['department.name'])?._id
+        : undefined;
+      const designationId = employeeFilters['designation.name']
+        ? designations.find((d) => d.name === employeeFilters['designation.name'])?._id
+        : undefined;
+      const search = (applicationSearchTerm || searchTerm || '').trim() || undefined;
+      const response = await api.getEmployeeApplications({
+        ...(divisionId ? { division_id: divisionId } : {}),
+        ...(departmentId ? { department_id: departmentId } : {}),
+        ...(designationId ? { designation_id: designationId } : {}),
+        ...(search ? { search } : {}),
+      });
       if (response.success) {
         const apps = (response.data || []).map((app: any) => ({
           ...app,
@@ -1685,40 +1711,52 @@ export default function EmployeesPage() {
   };
 
   const filteredEmployees = employees.filter(emp => {
-    // Filter by search term
-    // Server-side search logic handles this now, so we return true to avoid double-filtering
-    // (which could hide results if client logic differs from server logic)
-    const matchesSearch = true;
-
-    // Filter by left employees (if includeLeftEmployees is false, exclude those with leftDate)
-    const matchesLeftFilter = includeLeftEmployees || !emp.leftDate;
+    // Search, division, department, designation are now applied server-side via getEmployees params
 
     // Filter by selected division
     const matchesDivision = !selectedDivision ||
       ((emp as any).division?._id === selectedDivision || emp.division_id === selectedDivision);
 
     // Filter by active status
+    const matchesLeftFilter = includeLeftEmployees || !emp.leftDate;
     const matchesActive = includeLeftEmployees || emp.is_active !== false;
 
-
-    // Filter by header filters
+    // Apply only non-scope header filters (e.g. status); division/department/designation are server-side
+    const scopeFilterKeys = ['division.name', 'department.name', 'designation.name'];
     const matchesHeaderFilters = Object.entries(employeeFilters).every(([key, value]) => {
-      if (!value) return true;
+      if (!value || scopeFilterKeys.includes(key)) return true;
       const [mainKey, subKey] = key.split('.');
       const actualValue = subKey ? (emp as any)[mainKey]?.[subKey] : (emp as any)[mainKey];
       return String(actualValue || '') === value;
     });
 
-    return matchesSearch && matchesLeftFilter && matchesDivision && matchesActive && matchesHeaderFilters;
+    return matchesLeftFilter && matchesActive && matchesHeaderFilters;
   });
 
 
 
   const filteredApplications = applications.filter(app => {
-    const matchesSearch = !applicationSearchTerm ||
-      app.employee_name?.toLowerCase().includes(applicationSearchTerm.toLowerCase()) ||
-      app.emp_no?.toLowerCase().includes(applicationSearchTerm.toLowerCase()) ||
-      ((app.department_id as any)?.name || app.department?.name || '')?.toLowerCase().includes(applicationSearchTerm.toLowerCase());
+    const search = (applicationSearchTerm || searchTerm || '').trim();
+    const matchesSearch = !search ||
+      app.employee_name?.toLowerCase().includes(search.toLowerCase()) ||
+      (app.emp_no ?? '')?.toString().toLowerCase().includes(search.toLowerCase()) ||
+      ((app.department_id as any)?.name || app.department?.name || '')?.toLowerCase().includes(search.toLowerCase()) ||
+      ((app.designation_id as any)?.name || app.designation?.name || '')?.toLowerCase().includes(search.toLowerCase());
+
+    const divFilter = selectedDivision || applicationFilters['division.name'];
+    const appDivName = (app as any).division?.name || (app.division_id as any)?.name || '';
+    const appDivId = (app as any).division?._id || (typeof app.division_id === 'string' ? app.division_id : (app.division_id as any)?._id);
+    const matchesDivision = !divFilter ||
+      appDivId === selectedDivision ||
+      appDivName === applicationFilters['division.name'];
+
+    const deptFilter = employeeFilters['department.name'] || applicationFilters['department.name'];
+    const appDeptName = app.department?.name || (app.department_id as any)?.name || '';
+    const matchesDepartment = !deptFilter || appDeptName === deptFilter;
+
+    const desigFilter = employeeFilters['designation.name'] || applicationFilters['designation.name'];
+    const appDesigName = app.designation?.name || (app.designation_id as any)?.name || '';
+    const matchesDesignation = !desigFilter || appDesigName === desigFilter;
 
     const matchesHeaderFilters = Object.entries(applicationFilters).every(([key, value]) => {
       if (!value) return true;
@@ -1727,10 +1765,7 @@ export default function EmployeesPage() {
       return String(actualValue || '') === value;
     });
 
-    // Filter for Stage 1 (pending) only for Workspace view
-    const matchesStage1 = app.status === 'pending';
-
-    return matchesSearch && matchesHeaderFilters && matchesStage1;
+    return matchesSearch && matchesDivision && matchesDepartment && matchesDesignation && matchesHeaderFilters;
   });
 
 
@@ -2980,16 +3015,19 @@ export default function EmployeesPage() {
                 <LucideClock className="h-10 w-10" />
               </div>
               <h3 className="text-xl font-black text-text-primary tracking-tight">No applications found</h3>
-              <p className="mt-2 text-sm text-text-secondary font-medium max-w-xs mx-auto">There are no employee applications to display at this time.</p>
+              <p className="mt-2 text-sm text-text-secondary font-medium max-w-xs mx-auto">No applications match the current filters or search. Try adjusting division, department, designation, or search.</p>
               <button
                 onClick={() => {
+                  setSearchTerm('');
                   setApplicationSearchTerm('');
                   setApplicationFilters({});
+                  setEmployeeFilters({});
+                  setSelectedDivision('');
                   loadApplications();
                 }}
                 className="mt-6 px-6 py-2.5 rounded-xl bg-bg-base border border-border-base text-xs font-black uppercase tracking-widest text-text-primary hover:bg-bg-surface transition-colors"
               >
-                Refresh Applications
+                Reset filters & refresh
               </button>
             </div>
           ) : (
