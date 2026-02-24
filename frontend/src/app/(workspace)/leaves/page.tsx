@@ -1611,7 +1611,13 @@ export default function LeavesPage() {
     if (nextRole) {
       if (userRole === nextRole) return true;
       if (nextRole === 'final_authority' && userRole === 'hr') return true;
-      if (nextRole === 'reporting_manager' && ['manager', 'hod'].includes(userRole)) return true;
+      // Reporting manager step: allow if user is in workflow.reportingManagerIds (e.g. HR who is RM for this employee)
+      if (nextRole === 'reporting_manager') {
+        if (['manager', 'hod'].includes(userRole)) return true;
+        const reportingManagerIds = (item as any).workflow?.reportingManagerIds as string[] | undefined;
+        const userId = String((currentUser as any).id ?? (currentUser as any)._id ?? '').trim();
+        if (reportingManagerIds?.length && userId && reportingManagerIds.some((id: string) => String(id).trim() === userId)) return true;
+      }
       return false;
     }
 

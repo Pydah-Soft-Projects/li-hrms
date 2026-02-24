@@ -8,19 +8,31 @@ const PermissionDeductionSettingsSchema = new mongoose.Schema(
   {
     // Deduction Rules
     deductionRules: {
-      // Count threshold (e.g., 4 permissions)
+      // Free allowed permissions per month (first N are not counted for deduction)
+      freeAllowedPerMonth: {
+        type: Number,
+        default: null,
+        min: 0,
+      },
+      // Count threshold (e.g., every 3 permissions above free = 1 unit deduction)
       countThreshold: {
         type: Number,
         default: null,
         min: 1,
       },
-      // Deduction type: half_day, full_day, custom_amount
+      // Deduction type: half_day, full_day, custom_days, custom_amount
       deductionType: {
         type: String,
-        enum: ['half_day', 'full_day', 'custom_amount', null],
+        enum: ['half_day', 'full_day', 'custom_days', 'custom_amount', null],
         default: null,
       },
-      // Custom deduction amount (only if deductionType is 'custom_amount')
+      // Custom number of days per unit (only if deductionType is 'custom_days', e.g. 1.5, 2, 3.25)
+      deductionDays: {
+        type: Number,
+        default: null,
+        min: 0,
+      },
+      // Custom deduction amount in ₹ (only if deductionType is 'custom_amount')
       deductionAmount: {
         type: Number,
         default: null,
@@ -51,7 +63,7 @@ const PermissionDeductionSettingsSchema = new mongoose.Schema(
         stepName: String,
         approverRole: {
           type: String,
-          enum: ['hod', 'hr', 'manager', 'super_admin', 'reporting_manager']
+          enum: ['hod', 'hr', 'manager', 'super_admin', 'reporting_manager', 'admin']
         },
         availableActions: [String],
         approvedStatus: String,
@@ -62,7 +74,7 @@ const PermissionDeductionSettingsSchema = new mongoose.Schema(
       finalAuthority: {
         role: {
           type: String,
-          enum: ['hod', 'hr', 'manager', 'super_admin', 'reporting_manager']
+          enum: ['hod', 'hr', 'manager', 'super_admin', 'reporting_manager', 'admin']
         },
         anyHRCanApprove: {
           type: Boolean,

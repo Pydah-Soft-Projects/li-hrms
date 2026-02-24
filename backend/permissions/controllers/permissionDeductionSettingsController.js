@@ -16,8 +16,10 @@ exports.getSettings = async (req, res) => {
     if (!settings) {
       settings = {
         deductionRules: {
+          freeAllowedPerMonth: null,
           countThreshold: null,
           deductionType: null,
+          deductionDays: null,
           deductionAmount: null,
           minimumDuration: null,
           calculationMode: null,
@@ -63,11 +65,17 @@ exports.saveSettings = async (req, res) => {
 
     // Update deduction rules
     if (deductionRules) {
+      if (deductionRules.freeAllowedPerMonth !== undefined) {
+        settings.deductionRules.freeAllowedPerMonth = deductionRules.freeAllowedPerMonth;
+      }
       if (deductionRules.countThreshold !== undefined) {
         settings.deductionRules.countThreshold = deductionRules.countThreshold;
       }
       if (deductionRules.deductionType !== undefined) {
         settings.deductionRules.deductionType = deductionRules.deductionType;
+      }
+      if (deductionRules.deductionDays !== undefined) {
+        settings.deductionRules.deductionDays = deductionRules.deductionDays;
       }
       if (deductionRules.deductionAmount !== undefined) {
         settings.deductionRules.deductionAmount = deductionRules.deductionAmount;
