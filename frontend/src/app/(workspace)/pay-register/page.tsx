@@ -827,7 +827,7 @@ export default function PayRegisterPage() {
 
       <div className="relative z-10 mx-auto max-w-[1920px] p-6">
         {/* Header */}
-        <div className="mb-1 flex flex-wrap items-center justify-between gap-4 pb-2">
+        <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2">
           <div className="flex flex-wrap items-center gap-4">
             {/* Title Section */}
             <div className="flex items-center gap-3 shrink-0">
@@ -841,12 +841,12 @@ export default function PayRegisterPage() {
             </div>
 
             {/* Filters Group */}
-            <div className="flex flex-nowrap items-center gap-1.5 p-1 bg-slate-100/50 dark:bg-slate-800/40 rounded-xl border border-slate-200/60 dark:border-slate-700/60 backdrop-blur-sm">
+            <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100/50 dark:bg-slate-800/40 rounded-xl border border-slate-200/60 dark:border-slate-700/60 backdrop-blur-sm w-full sm:w-auto">
               {/* Division Filter */}
               <select
                 value={selectedDivision}
                 onChange={(e) => setSelectedDivision(e.target.value)}
-                className="h-8 pl-2 pr-6 text-[11px] font-semibold bg-white dark:bg-slate-800 border-0 rounded-lg focus:ring-2 focus:ring-blue-500/20 text-slate-700 dark:text-slate-300 shadow-sm min-w-[100px] max-w-[140px]"
+                className="h-8 flex-1 sm:flex-none pl-2 pr-6 text-[10px] sm:text-[11px] font-semibold bg-white dark:bg-slate-800 border-0 rounded-lg focus:ring-2 focus:ring-blue-500/20 text-slate-700 dark:text-slate-300 shadow-sm min-w-[90px]"
               >
                 <option value="">All Divisions</option>
                 {divisions.map((div) => (
@@ -858,7 +858,7 @@ export default function PayRegisterPage() {
               <select
                 value={selectedDepartment}
                 onChange={(e) => setSelectedDepartment(e.target.value)}
-                className="h-8 pl-2 pr-6 text-[11px] font-semibold bg-white dark:bg-slate-800 border-0 rounded-lg focus:ring-2 focus:ring-blue-500/20 text-slate-700 dark:text-slate-300 shadow-sm min-w-[100px] max-w-[140px]"
+                className="h-8 flex-1 sm:flex-none pl-2 pr-6 text-[10px] sm:text-[11px] font-semibold bg-white dark:bg-slate-800 border-0 rounded-lg focus:ring-2 focus:ring-blue-500/20 text-slate-700 dark:text-slate-300 shadow-sm min-w-[90px]"
               >
                 <option value="">All Departments</option>
                 {departments
@@ -882,7 +882,7 @@ export default function PayRegisterPage() {
               <select
                 value={payrollStrategy}
                 onChange={(e) => setPayrollStrategy(e.target.value as any)}
-                className="h-8 pl-2 pr-6 text-[11px] font-semibold bg-blue-50 dark:bg-blue-900/20 border-0 rounded-lg focus:ring-2 focus:ring-blue-500/20 text-blue-700 dark:text-blue-400 shadow-sm"
+                className="h-8 flex-1 sm:flex-none pl-2 pr-6 text-[10px] sm:text-[11px] font-semibold bg-blue-50 dark:bg-blue-900/20 border-0 rounded-lg focus:ring-2 focus:ring-blue-500/20 text-blue-700 dark:text-blue-400 shadow-sm"
               >
                 <option value="new">Engine: New</option>
                 <option value="legacy">Engine: Legacy</option>
@@ -928,30 +928,29 @@ export default function PayRegisterPage() {
               </button>
             </div>
           </div>
-
-          <div className="flex flex-nowrap items-center gap-3 shrink-0">
+          <div className="flex flex-nowrap items-center gap-1 sm:gap-3 shrink-0 w-full sm:w-auto overflow-hidden">
             {hasManagePermission && (
               <button
                 onClick={handleSyncAll}
                 disabled={syncing}
-                className="h-9 px-4 flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-sm disabled:opacity-50 transition-all"
+                className="h-8 sm:h-9 flex-1 sm:flex-initial px-2 sm:px-4 flex items-center justify-center gap-1 sm:gap-2 bg-blue-600 hover:bg-blue-700 text-white text-[10px] sm:text-xs font-bold rounded-lg sm:rounded-xl shadow-sm disabled:opacity-50 transition-all whitespace-nowrap"
               >
-                <svg className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className={`h-3.5 w-3.5 sm:h-4 sm:w-4 ${syncing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
-                {syncing ? 'Syncing...' : 'Sync All'}
+                {syncing ? 'Syncing...' : 'Sync'}
               </button>
             )}
 
             {hasManagePermission && (
               <button
                 onClick={() => setShowUploadModal(true)}
-                className="h-9 px-4 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-sm transition-all"
+                className="h-8 sm:h-9 flex-1 sm:flex-initial px-2 sm:px-4 flex items-center justify-center gap-1 sm:gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] sm:text-xs font-bold rounded-lg sm:rounded-xl shadow-sm transition-all whitespace-nowrap"
               >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="h-3.5 w-3.5 sm:h-4 sm:w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                 </svg>
-                Upload Summary
+                Upload
               </button>
             )}
 
@@ -994,9 +993,9 @@ export default function PayRegisterPage() {
                     <button
                       onClick={handleCalculatePayrollForAll}
                       disabled={bulkCalculating || exportingExcel}
-                      className="h-9 px-4 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-xl shadow-sm disabled:opacity-50 transition-all"
+                      className="h-8 sm:h-9 flex-1 sm:flex-initial px-2 sm:px-4 flex items-center justify-center bg-green-600 hover:bg-green-700 text-white text-[10px] sm:text-xs font-bold rounded-lg sm:rounded-xl shadow-sm disabled:opacity-50 transition-all whitespace-nowrap"
                     >
-                      {bulkCalculating ? 'Calculating...' : 'Recalculate Payroll'}
+                      {bulkCalculating ? '...' : 'Recalculate'}
                     </button>
                   )
                 );
@@ -1008,9 +1007,9 @@ export default function PayRegisterPage() {
                     <button
                       onClick={handleCalculatePayrollForAll}
                       disabled={bulkCalculating || exportingExcel}
-                      className="h-9 px-4 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-xl shadow-sm disabled:opacity-50 transition-all"
+                      className="h-8 sm:h-9 flex-1 sm:flex-initial px-2 sm:px-4 flex items-center justify-center bg-green-600 hover:bg-green-700 text-white text-[10px] sm:text-xs font-bold rounded-lg sm:rounded-xl shadow-sm disabled:opacity-50 transition-all whitespace-nowrap"
                     >
-                      {bulkCalculating ? 'Calculating...' : 'Calculate Payroll'}
+                      {bulkCalculating ? '...' : 'Calculate'}
                     </button>
                   )}
 
@@ -1023,12 +1022,12 @@ export default function PayRegisterPage() {
                         await downloadPayrollExcel(listedEmployeeIds);
                       }}
                       disabled={exportingExcel || payRegisters.length === 0}
-                      className="h-9 px-4 flex items-center gap-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold rounded-xl shadow-sm disabled:opacity-50 transition-all"
+                      className="h-8 sm:h-9 flex-1 sm:flex-initial px-2 sm:px-4 flex items-center justify-center gap-1 sm:gap-2 bg-slate-800 hover:bg-slate-900 text-white text-[10px] sm:text-xs font-bold rounded-lg sm:rounded-xl shadow-sm disabled:opacity-50 transition-all whitespace-nowrap"
                     >
-                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg className="h-3.5 w-3.5 sm:h-4 sm:w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                       </svg>
-                      {exportingExcel ? 'Exporting...' : 'Export Excel'}
+                      {exportingExcel ? '...' : 'Export'}
                     </button>
                   )}
                 </>
@@ -1042,12 +1041,12 @@ export default function PayRegisterPage() {
               <p className="text-xs font-medium text-slate-600 dark:text-slate-400">
                 {paginationTotal > 0
                   ? (() => {
-                      const from = (page - 1) * PAGE_SIZE + 1;
-                      const to = Math.min(page * PAGE_SIZE, paginationTotal);
-                      return paginationTotal <= PAGE_SIZE
-                        ? `${paginationTotal} employee${paginationTotal !== 1 ? 's' : ''}`
-                        : `Showing ${from}–${to} of ${paginationTotal} employees`;
-                    })()
+                    const from = (page - 1) * PAGE_SIZE + 1;
+                    const to = Math.min(page * PAGE_SIZE, paginationTotal);
+                    return paginationTotal <= PAGE_SIZE
+                      ? `${paginationTotal} employee${paginationTotal !== 1 ? 's' : ''}`
+                      : `Showing ${from}–${to} of ${paginationTotal} employees`;
+                  })()
                   : `${payRegisters.length} employee${payRegisters.length !== 1 ? 's' : ''} listed`}
               </p>
             </div>
@@ -1462,9 +1461,9 @@ export default function PayRegisterPage() {
       )}
 
       {/* Table Tabs */}
-      <div className="bg-white dark:bg-slate-800 rounded-lg shadow mb-8">
+      <div className="bg-white dark:bg-slate-800 rounded-lg shadow mb-8 overflow-hidden">
         <div className="border-b border-slate-200 dark:border-slate-700">
-          <nav className="flex -mb-px">
+          <nav className="flex w-full">
             {[
               { id: 'present' as TableType, label: 'Present', color: 'green' },
               { id: 'absent' as TableType, label: 'Absent', color: 'red' },
@@ -1499,13 +1498,13 @@ export default function PayRegisterPage() {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTable(tab.id)}
-                  className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${activeTable === tab.id
-                    ? `border-${tab.color}-500 text-${tab.color}-600 dark:text-${tab.color}-400`
+                  className={`flex-1 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-1 sm:px-6 py-2.5 sm:py-3 text-[10px] sm:text-sm font-medium border-b-2 transition-colors ${activeTable === tab.id
+                    ? `border-${tab.color}-500 text-${tab.color}-600 dark:text-${tab.color}-400 bg-${tab.color}-50/30 dark:bg-${tab.color}-900/10`
                     : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300 dark:text-slate-400 dark:hover:text-slate-300'
                     }`}
                 >
-                  {tab.label}
-                  <span className="ml-2 px-2 py-0.5 text-xs bg-slate-100 dark:bg-slate-700 rounded-full">
+                  <span className="whitespace-nowrap">{tab.label}</span>
+                  <span className="px-1.5 py-0.5 text-[9px] sm:text-xs bg-slate-100 dark:bg-slate-700 rounded-full">
                     {count}
                   </span>
                 </button>

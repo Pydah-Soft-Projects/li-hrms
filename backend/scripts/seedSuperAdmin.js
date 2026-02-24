@@ -7,19 +7,19 @@ const seedSuperAdmin = async () => {
     // Connect to MongoDB
     await connectMongoDB();
 
-    // Check if super admin already exists
-    const existingAdmin = await User.findOne({ role: 'super_admin' });
+    // // Check if super admin already exists
+    // const existingAdmin = await User.findOne({ role: 'super_admin' });
 
-    if (existingAdmin) {
-      console.log('⚠️  Super Admin already exists');
-      console.log(`   Email: ${existingAdmin.email}`);
-      await closeMongoDB();
-      process.exit(0);
-    }
+    // if (existingAdmin) {
+    //   console.log('⚠️  Super Admin already exists');
+    //   console.log(`   Email: ${existingAdmin.email}`);
+    //   await closeMongoDB();
+    //   process.exit(0);
+    // }
 
     // Create super admin
     const superAdmin = await User.create({
-      email: process.env.SUPER_ADMIN_EMAIL || 'admin@hrms.com',
+      email: process.env.SUPER_ADMIN_EMAIL || 'admin1@hrms.com',
       password: process.env.SUPER_ADMIN_PASSWORD || 'Admin@123',
       name: 'Super Admin',
       role: 'super_admin',

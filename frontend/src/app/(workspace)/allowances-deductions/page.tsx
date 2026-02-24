@@ -602,14 +602,14 @@ export default function AllowancesDeductionsPage() {
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 pb-10">
       {/* Sticky Header */}
-      <div className="sticky top-4 z-40 px-4 mb-8">
-        <div className="max-w-[1920px] mx-auto bg-white/70 dark:bg-slate-900/70 backdrop-blur-2xl rounded-[2.5rem] border border-white/20 dark:border-slate-800 shadow-2xl shadow-slate-200/50 dark:shadow-none min-h-[4.5rem] flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-6 sm:px-8 py-4 sm:py-0">
+      <div className="sticky top-0 sm:top-4 z-40 px-0 sm:px-4 mb-4 sm:mb-8">
+        <div className="w-full bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl rounded-none sm:rounded-[2.5rem] border-b sm:border border-slate-200/60 dark:border-slate-800 shadow-lg sm:shadow-2xl shadow-slate-200/50 dark:shadow-none min-h-[4.5rem] flex flex-row items-center justify-between gap-2 px-4 sm:px-8 py-3 sm:py-2">
           <div className="flex items-center gap-4">
             <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center text-white shadow-lg shadow-emerald-500/20">
               <Wallet className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="text-xl font-black bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 uppercase tracking-tight">
+              <h1 className="text-lg sm:text-xl font-black bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 uppercase tracking-tight">
                 Allowances & Deductions
               </h1>
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">
@@ -624,7 +624,7 @@ export default function AllowancesDeductionsPage() {
             {hasManagePermission && (
               <button
                 onClick={handleCreate}
-                className="group h-10 sm:h-11 px-4 sm:px-6 rounded-xl sm:rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-[9px] sm:text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-slate-900/10 dark:shadow-white/10 shrink-0"
+                className="group h-8 sm:h-9 px-3 sm:px-4 rounded-lg sm:rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-[9px] sm:text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-slate-900/10 dark:shadow-white/10 shrink-0"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">Create Component</span>
@@ -635,11 +635,11 @@ export default function AllowancesDeductionsPage() {
         </div>
       </div>
 
-      <div className="max-w-[1920px] mx-auto px-6">
+      <div className="w-full px-4 sm:px-6">
 
         {/* Tab Navigation */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-          <div className="inline-flex items-center p-1 rounded-xl bg-slate-100/50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 backdrop-blur-sm shadow-inner overflow-x-auto scrollbar-hide">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-6 px-1">
+          <div className="flex w-full md:w-auto items-center p-1 rounded-xl bg-slate-100/50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 backdrop-blur-sm shadow-inner">
             {[
               { id: 'all', label: 'All', icon: Layers, count: items.length, activeColor: 'slate' },
               { id: 'allowances', label: 'Allowances', icon: ArrowUp, count: items.filter(i => i.category === 'allowance').length, activeColor: 'green' },
@@ -648,7 +648,7 @@ export default function AllowancesDeductionsPage() {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`group relative flex items-center gap-2 px-4 sm:px-6 py-2 rounded-lg text-xs font-bold transition-all duration-300 whitespace-nowrap ${activeTab === tab.id
+                className={`group relative flex-1 md:flex-initial flex items-center justify-center gap-1.5 px-1.5 sm:px-6 py-2 rounded-lg text-[10px] sm:text-xs font-bold transition-all duration-300 whitespace-nowrap ${activeTab === tab.id
                   ? `bg-white dark:bg-slate-700 text-${tab.activeColor === 'slate' ? 'slate-900' : tab.activeColor + '-600'} dark:text-${tab.activeColor === 'slate' ? 'white' : tab.activeColor + '-400'} shadow-sm ring-1 ring-slate-200/50 dark:ring-0`
                   : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
                   }`}
@@ -923,7 +923,7 @@ export default function AllowancesDeductionsPage() {
                 <div
                   key={item._id}
                   onClick={() => hasManagePermission && handleEdit(item)}
-                  className={`group relative overflow-hidden rounded-2xl border border-slate-200/60 bg-white p-5 shadow-sm transition-all dark:border-slate-800 dark:bg-slate-900
+                  className={`group relative overflow-hidden rounded-2xl border border-slate-200/60 bg-white p-4 sm:p-5 shadow-sm transition-all dark:border-slate-800 dark:bg-slate-900
                   ${hasManagePermission ? 'cursor-pointer hover:shadow-md hover:border-blue-200/60 dark:hover:border-blue-900/50' : 'cursor-default'}`}
                 >
                   {/* Status Strip */}

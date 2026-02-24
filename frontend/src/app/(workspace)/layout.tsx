@@ -21,7 +21,7 @@ function WorkspaceLayoutContent({ children }: { children: React.ReactNode }) {
       <div className="hidden sm:block">
         <WorkspaceSidebar />
       </div>
-      <MainContent>{children}</MainContent>
+      <MainContent showLogout={false} className="pb-24 sm:pb-0">{children}</MainContent>
       {/* Mobile Bottom Navigation */}
       <div className="sm:hidden">
         <MobileBottomNav />
