@@ -65,12 +65,16 @@ exports.registerUser = async (req, res) => {
       });
     }
 
-    // Validate role-specific requirements
-    if (role === 'hod' && (!department || !division)) {
-      return res.status(400).json({
-        success: false,
-        message: 'HOD must be assigned to a department AND a division (via divisionMapping or division+department)',
-      });
+    // Validate role-specific requirements: HOD must have at least one division and one department (via divisionMapping or division+department)
+    if (role === 'hod') {
+      const hasMapping = divisionMapping && Array.isArray(divisionMapping) && divisionMapping.length > 0;
+      const hasDeptsInMapping = hasMapping && divisionMapping.some(m => (m.departments || []).length > 0);
+      if (!hasDeptsInMapping && !(division && department)) {
+        return res.status(400).json({
+          success: false,
+          message: 'HOD must be assigned to at least one division and one department (via divisionMapping or division+department)',
+        });
+      }
     }
 
     const userRoles = roles && roles.length > 0 ? roles : [role];
@@ -104,20 +108,23 @@ exports.registerUser = async (req, res) => {
     // Create user
     const user = await User.create(userData);
 
-    // Valid HOD Sync: Update Department with HOD ID for specific Division
-    if (role === 'hod' && department && req.body.division) {
-      const dept = await Department.findById(department);
-      if (dept) {
-        // Remove existing HOD for this division if any
-        const existingIndex = dept.divisionHODs.findIndex(dh => dh.division.toString() === req.body.division);
-        if (existingIndex > -1) {
-          dept.divisionHODs.splice(existingIndex, 1);
+    // HOD Sync: Update every department in divisionMapping with this user as HOD for the respective division
+    if (role === 'hod' && finalDivisionMapping.length > 0) {
+      for (const mapping of finalDivisionMapping) {
+        const divId = mapping.division?._id || mapping.division;
+        const deptIds = mapping.departments || [];
+        if (!divId) continue;
+        const divStr = divId.toString();
+        for (const deptId of deptIds) {
+          const id = deptId?._id || deptId;
+          const dept = await Department.findById(id);
+          if (dept) {
+            const idx = dept.divisionHODs.findIndex(dh => (dh.division?.toString() || dh.division) === divStr);
+            if (idx > -1) dept.divisionHODs[idx].hod = user._id;
+            else dept.divisionHODs.push({ division: divId, hod: user._id });
+            await dept.save();
+          }
         }
-        dept.divisionHODs.push({
-          division: req.body.division,
-          hod: user._id
-        });
-        await dept.save();
       }
     }
 
@@ -308,14 +315,22 @@ exports.createUserFromEmployee = async (req, res) => {
     });
 
     const deptIdsFromMapping = finalDivisionMapping.flatMap(m => m.departments || []);
-    if (role === 'hod' && deptIdsFromMapping.length > 0) {
-      const divId = finalDivisionMapping[0]?.division?._id || finalDivisionMapping[0]?.division;
-      const dept = await Department.findById(deptIdsFromMapping[0]);
-      if (dept) {
-        const idx = dept.divisionHODs.findIndex(dh => (dh.division?.toString() || dh.division) === (divId?.toString() || divId));
-        if (idx > -1) dept.divisionHODs[idx].hod = user._id;
-        else dept.divisionHODs.push({ division: divId, hod: user._id });
-        await dept.save();
+    if (role === 'hod' && finalDivisionMapping.length > 0) {
+      for (const mapping of finalDivisionMapping) {
+        const divId = mapping.division?._id || mapping.division;
+        const deptIds = mapping.departments || [];
+        if (!divId) continue;
+        const divStr = divId.toString();
+        for (const deptId of deptIds) {
+          const id = deptId?._id || deptId;
+          const dept = await Department.findById(id);
+          if (dept) {
+            const idx = dept.divisionHODs.findIndex(dh => (dh.division?.toString() || dh.division) === divStr);
+            if (idx > -1) dept.divisionHODs[idx].hod = user._id;
+            else dept.divisionHODs.push({ division: divId, hod: user._id });
+            await dept.save();
+          }
+        }
       }
     }
     if (role === 'hr' && deptIdsFromMapping.length > 0) {
@@ -544,6 +559,11 @@ exports.updateUser = async (req, res) => {
         { _id: { $in: removedDeptIds }, hr: user._id },
         { $unset: { hr: "" } }
       );
+      // Remove this user from divisionHODs in departments no longer in mapping
+      await Department.updateMany(
+        { _id: { $in: removedDeptIds } },
+        { $pull: { divisionHODs: { hod: user._id } } }
+      );
     }
 
     const managerDivId = user.divisionMapping?.[0]?.division?._id || user.divisionMapping?.[0]?.division;
@@ -554,16 +574,22 @@ exports.updateUser = async (req, res) => {
       await Division.updateMany({ manager: user._id }, { $unset: { manager: "" } });
     }
 
+    // HOD: sync all (division, department) in divisionMapping to each department's divisionHODs
     if (user.role === 'hod' && user.divisionMapping?.length > 0) {
-      const divId = user.divisionMapping[0].division?._id || user.divisionMapping[0].division;
-      const deptId = (user.divisionMapping[0].departments || [])[0]?._id || (user.divisionMapping[0].departments || [])[0];
-      if (divId && deptId) {
-        const dept = await Department.findById(deptId);
-        if (dept) {
-          const idx = dept.divisionHODs.findIndex(dh => (dh.division?.toString() || dh.division) === (divId?.toString() || divId));
-          if (idx > -1) dept.divisionHODs[idx].hod = user._id;
-          else dept.divisionHODs.push({ division: divId, hod: user._id });
-          await dept.save();
+      for (const mapping of user.divisionMapping) {
+        const divId = mapping.division?._id || mapping.division;
+        const deptIds = mapping.departments || [];
+        if (!divId) continue;
+        const divStr = divId.toString();
+        for (const deptId of deptIds) {
+          const id = deptId?._id || deptId;
+          const dept = await Department.findById(id);
+          if (dept) {
+            const idx = dept.divisionHODs.findIndex(dh => (dh.division?.toString() || dh.division) === divStr);
+            if (idx > -1) dept.divisionHODs[idx].hod = user._id;
+            else dept.divisionHODs.push({ division: divId, hod: user._id });
+            await dept.save();
+          }
         }
       }
     }

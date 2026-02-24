@@ -200,7 +200,7 @@ exports.getDepartmentEmployees = async (req, res) => {
 // @access  Private (Super Admin, Sub Admin, HR)
 exports.createDepartment = async (req, res) => {
   try {
-    const { name, code, description, divisionHODs } = req.body;
+    const { name, code, description, divisionHODs, hod, divisions } = req.body;
 
     if (!name) {
       return res.status(400).json({
@@ -214,8 +214,6 @@ exports.createDepartment = async (req, res) => {
     if (divisionHODs && Array.isArray(divisionHODs)) {
       for (const dh of divisionHODs) {
         if (dh.division && dh.hod) {
-          // Check if division exists (optional but good practice)
-          // Check if user exists
           const userExists = await User.findById(dh.hod);
           if (!userExists) {
             return res.status(400).json({
@@ -223,24 +221,25 @@ exports.createDepartment = async (req, res) => {
               message: `HOD User not found for division assignment`,
             });
           }
-
-          // STRICT RULE: Check if this user is already an HOD for ANY department/division
-          const existingAssignment = await Department.findOne({
-            'divisionHODs.hod': dh.hod
-          });
-
-          if (existingAssignment) {
-            return res.status(400).json({
-              success: false,
-              message: `User ${userExists.name} is already an HOD for Department: ${existingAssignment.name}. A user can only be HOD for one department/division.`,
-            });
-          }
-
           validDivisionHODs.push({
             division: dh.division,
             hod: dh.hod
           });
         }
+      }
+    }
+    // Fallback: frontend sends hod + divisions (single or array)
+    if (validDivisionHODs.length === 0 && hod) {
+      const divIds = Array.isArray(divisions) ? divisions : (divisions ? [divisions] : []);
+      if (divIds.length > 0) {
+        const hodUser = await User.findById(hod);
+        if (!hodUser) {
+          return res.status(400).json({
+            success: false,
+            message: 'HOD User not found for division assignment',
+          });
+        }
+        validDivisionHODs = divIds.map(divId => ({ division: divId, hod }));
       }
     }
 
@@ -250,6 +249,7 @@ exports.createDepartment = async (req, res) => {
       description: description || undefined,
       hod: null, // Global HOD is deprecated
       divisionHODs: validDivisionHODs,
+      divisions: divisions && (Array.isArray(divisions) ? divisions : [divisions]).filter(Boolean),
       createdBy: req.user?.userId,
     });
 
@@ -364,31 +364,7 @@ exports.updateDepartment = async (req, res) => {
               return res.status(400).json({ success: false, message: 'Invalid HOD User ID' });
             }
 
-            // STRICT RULE: Check if this user is already an HOD for ANY OTHER department/division
-            // Query for existing assignments of this HOD
-            const existingAssignments = await Department.find({
-              'divisionHODs.hod': dh.hod
-            });
-
-            for (const existingDept of existingAssignments) {
-              // If it's a different department, BLOCK.
-              if (existingDept._id.toString() !== department._id.toString()) {
-                return res.status(400).json({
-                  success: false,
-                  message: `User ${userExists.name} is already HOD for ${existingDept.name}. Cannot assign to multiple departments.`,
-                });
-              }
-            }
-
-            // Check for duplicates in the incoming payload (Internal consistency)
-            const duplicateInPayload = newDivisionHODs.filter(d => d.hod === dh.hod).length > 1;
-            if (duplicateInPayload) {
-              return res.status(400).json({
-                success: false,
-                message: `User ${userExists.name} cannot be assigned to multiple divisions in the same request.`,
-              });
-            }
-
+            // Allow same HOD for multiple divisions (in this department or across departments)
             validDivisionHODs.push({ division: dh.division, hod: dh.hod });
           }
         }

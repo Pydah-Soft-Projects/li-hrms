@@ -1176,10 +1176,10 @@ export const api = {
     return apiRequest<any>(`/departments/${deptId}/settings/resolved${query}`, { method: 'GET' });
   },
 
-  assignHOD: async (id: string, hodId: string) => {
+  assignHOD: async (id: string, hodId: string, divisionId: string) => {
     return apiRequest<Department>(`/departments/${id}/assign-hod`, {
       method: 'PUT',
-      body: JSON.stringify({ hodId }),
+      body: JSON.stringify({ hodId, divisionId }),
     });
   },
 
