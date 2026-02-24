@@ -93,8 +93,10 @@ async function getResolvedPermissionSettings(departmentId, divisionId = null) {
       deductFromSalary: deptSettings?.permissions?.deductFromSalary ?? department?.permissionPolicy?.deductFromSalary ?? false,
       deductionAmount: deptSettings?.permissions?.deductionAmount ?? department?.permissionPolicy?.deductionAmount ?? 0,
       deductionRules: {
+        freeAllowedPerMonth: deptSettings?.permissions?.deductionRules?.freeAllowedPerMonth ?? globalSettings?.deductionRules?.freeAllowedPerMonth ?? null,
         countThreshold: deptSettings?.permissions?.deductionRules?.countThreshold ?? globalSettings?.deductionRules?.countThreshold ?? null,
         deductionType: deptSettings?.permissions?.deductionRules?.deductionType ?? globalSettings?.deductionRules?.deductionType ?? null,
+        deductionDays: deptSettings?.permissions?.deductionRules?.deductionDays ?? globalSettings?.deductionRules?.deductionDays ?? null,
         deductionAmount: deptSettings?.permissions?.deductionRules?.deductionAmount ?? globalSettings?.deductionRules?.deductionAmount ?? null,
         minimumDuration: deptSettings?.permissions?.deductionRules?.minimumDuration ?? globalSettings?.deductionRules?.minimumDuration ?? null,
         calculationMode: deptSettings?.permissions?.deductionRules?.calculationMode ?? globalSettings?.deductionRules?.calculationMode ?? null,
@@ -153,8 +155,10 @@ async function getResolvedAttendanceSettings(departmentId, divisionId = null) {
     // Merge: Department settings override global
     const resolved = {
       deductionRules: {
+        freeAllowedPerMonth: deptSettings?.attendance?.deductionRules?.freeAllowedPerMonth ?? globalSettings?.deductionRules?.freeAllowedPerMonth ?? null,
         combinedCountThreshold: deptSettings?.attendance?.deductionRules?.combinedCountThreshold ?? globalSettings?.deductionRules?.combinedCountThreshold ?? null,
         deductionType: deptSettings?.attendance?.deductionRules?.deductionType ?? globalSettings?.deductionRules?.deductionType ?? null,
+        deductionDays: deptSettings?.attendance?.deductionRules?.deductionDays ?? globalSettings?.deductionRules?.deductionDays ?? null,
         deductionAmount: deptSettings?.attendance?.deductionRules?.deductionAmount ?? globalSettings?.deductionRules?.deductionAmount ?? null,
         minimumDuration: deptSettings?.attendance?.deductionRules?.minimumDuration ?? globalSettings?.deductionRules?.minimumDuration ?? null,
         calculationMode: deptSettings?.attendance?.deductionRules?.calculationMode ?? globalSettings?.deductionRules?.calculationMode ?? null,
@@ -289,11 +293,17 @@ exports.updateDepartmentSettings = async (req, res) => {
 
       // Update permission deduction rules
       if (permissions.deductionRules) {
+        if (permissions.deductionRules.freeAllowedPerMonth !== undefined) {
+          settings.permissions.deductionRules.freeAllowedPerMonth = permissions.deductionRules.freeAllowedPerMonth;
+        }
         if (permissions.deductionRules.countThreshold !== undefined) {
           settings.permissions.deductionRules.countThreshold = permissions.deductionRules.countThreshold;
         }
         if (permissions.deductionRules.deductionType !== undefined) {
           settings.permissions.deductionRules.deductionType = permissions.deductionRules.deductionType;
+        }
+        if (permissions.deductionRules.deductionDays !== undefined) {
+          settings.permissions.deductionRules.deductionDays = permissions.deductionRules.deductionDays;
         }
         if (permissions.deductionRules.deductionAmount !== undefined) {
           settings.permissions.deductionRules.deductionAmount = permissions.deductionRules.deductionAmount;
@@ -320,11 +330,17 @@ exports.updateDepartmentSettings = async (req, res) => {
     if (attendance) {
       // Update attendance deduction rules
       if (attendance.deductionRules) {
+        if (attendance.deductionRules.freeAllowedPerMonth !== undefined) {
+          settings.attendance.deductionRules.freeAllowedPerMonth = attendance.deductionRules.freeAllowedPerMonth;
+        }
         if (attendance.deductionRules.combinedCountThreshold !== undefined) {
           settings.attendance.deductionRules.combinedCountThreshold = attendance.deductionRules.combinedCountThreshold;
         }
         if (attendance.deductionRules.deductionType !== undefined) {
           settings.attendance.deductionRules.deductionType = attendance.deductionRules.deductionType;
+        }
+        if (attendance.deductionRules.deductionDays !== undefined) {
+          settings.attendance.deductionRules.deductionDays = attendance.deductionRules.deductionDays;
         }
         if (attendance.deductionRules.deductionAmount !== undefined) {
           settings.attendance.deductionRules.deductionAmount = attendance.deductionRules.deductionAmount;

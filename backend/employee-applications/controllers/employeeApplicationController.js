@@ -523,18 +523,38 @@ exports.updateApplication = async (req, res) => {
 /**
  * @desc    Get all employee applications
  * @route   GET /api/employee-applications
+ * @query   status, division_id, department_id, designation_id, search
  * @access  Private (HR, Sub Admin, Super Admin)
+ * @scope   Respects user dataScope and divisionMapping (same as get employees)
  */
 exports.getApplications = async (req, res) => {
   try {
-    const { status } = req.query;
+    const { status, division_id, department_id, designation_id, search } = req.query;
+    const scopeFilter = req.scopeFilter || {};
 
-    const filter = {};
+    // Start with scope filter (division mapping / data scope) so workspace users see only their scope
+    const filter = Object.keys(scopeFilter).length > 0 ? { ...scopeFilter } : {};
     if (status) {
       filter.status = status;
     }
+    if (division_id) {
+      filter.division_id = division_id;
+    }
+    if (department_id) {
+      filter.department_id = department_id;
+    }
+    if (designation_id) {
+      filter.designation_id = designation_id;
+    }
+    if (search && String(search).trim()) {
+      const term = String(search).trim();
+      const regex = new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      const searchCondition = { $or: [{ employee_name: regex }, { emp_no: regex }] };
+      filter.$and = filter.$and || [];
+      filter.$and.push(searchCondition);
+    }
 
-    // HR can only see their own applications, Superadmin can see all
+    // HR can only see their own applications (and within their scope when scope filter is applied)
     if (req.user.role === 'hr') {
       filter.createdBy = req.user._id;
     }

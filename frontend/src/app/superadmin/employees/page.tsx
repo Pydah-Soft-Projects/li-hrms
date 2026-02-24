@@ -724,7 +724,7 @@ export default function EmployeesPage() {
     if (activeTab === 'applications') {
       loadApplications();
     }
-  }, [activeTab]);
+  }, [activeTab, selectedDivisionFilter, selectedDepartmentFilter, selectedDesignationFilter]);
 
   const loadDivisions = async () => {
     try {
@@ -1162,7 +1162,13 @@ export default function EmployeesPage() {
   const loadApplications = async () => {
     try {
       setLoadingApplications(true);
-      const response = await api.getEmployeeApplications();
+      const search = (applicationSearchTerm || searchTerm || '').trim() || undefined;
+      const response = await api.getEmployeeApplications({
+        ...(selectedDivisionFilter ? { division_id: selectedDivisionFilter } : {}),
+        ...(selectedDepartmentFilter ? { department_id: selectedDepartmentFilter } : {}),
+        ...(selectedDesignationFilter ? { designation_id: selectedDesignationFilter } : {}),
+        ...(search ? { search } : {}),
+      });
       if (response.success) {
         // Normalize applications data for consistent filtering
         const apps = (response.data || []).map((app: any) => ({
@@ -1789,14 +1795,31 @@ export default function EmployeesPage() {
 
 
   const filteredApplicationsBase = applications.filter(app => {
-    const matchesSearch =
-      app.employee_name?.toLowerCase().includes(applicationSearchTerm.toLowerCase()) ||
-      app.emp_no?.toLowerCase().includes(applicationSearchTerm.toLowerCase()) ||
-      ((app.department_id as any)?.name || app.department?.name || '')?.toLowerCase().includes(applicationSearchTerm.toLowerCase());
+    const search = (applicationSearchTerm || searchTerm || '').trim();
+    const matchesSearch = !search ||
+      app.employee_name?.toLowerCase().includes(search.toLowerCase()) ||
+      (app.emp_no ?? '')?.toString().toLowerCase().includes(search.toLowerCase()) ||
+      ((app.department_id as any)?.name || app.department?.name || '')?.toLowerCase().includes(search.toLowerCase()) ||
+      ((app.designation_id as any)?.name || app.designation?.name || '')?.toLowerCase().includes(search.toLowerCase());
 
-    const matchesDivision = !selectedDivisionFilter || app.division_id === selectedDivisionFilter || (app.division as any)?._id === selectedDivisionFilter;
+    const appDivId = (app.division as any)?._id ?? (typeof app.division_id === 'string' ? app.division_id : (app.division_id as any)?._id);
+    const appDivName = (app.division as any)?.name || (app.division_id as any)?.name || '';
+    const divFilter = selectedDivisionFilter || applicationFilters['division.name'];
+    const matchesDivision = !divFilter ||
+      appDivId === selectedDivisionFilter ||
+      appDivName === applicationFilters['division.name'];
 
-    return matchesSearch && matchesDivision;
+    const appDeptId = typeof app.department_id === 'string' ? app.department_id : (app.department_id as any)?._id;
+    const appDeptName = app.department?.name || (app.department_id as any)?.name || '';
+    const deptFilter = selectedDepartmentFilter || applicationFilters['department.name'];
+    const matchesDepartment = !deptFilter || appDeptId === selectedDepartmentFilter || appDeptName === applicationFilters['department.name'];
+
+    const appDesigId = typeof app.designation_id === 'string' ? app.designation_id : (app.designation_id as any)?._id;
+    const appDesigName = app.designation?.name || (app.designation_id as any)?.name || '';
+    const desigFilter = selectedDesignationFilter || applicationFilters['designation.name'];
+    const matchesDesignation = !desigFilter || appDesigId === selectedDesignationFilter || appDesigName === applicationFilters['designation.name'];
+
+    return matchesSearch && matchesDivision && matchesDepartment && matchesDesignation;
   });
 
   // Apply column filters
@@ -2223,18 +2246,66 @@ export default function EmployeesPage() {
                 </label>
               </div>
             ) : (
-              /* Search for Applications */
-              <div className="relative flex-1 max-w-md">
-                <input
-                  type="text"
-                  placeholder="Search applications..."
-                  value={applicationSearchTerm}
-                  onChange={(e) => setApplicationSearchTerm(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-white pl-11 pr-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                />
-                <svg className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
+              /* Search and filters for Applications (same scope as Employees) */
+              <div className="flex flex-wrap items-center gap-3 flex-1">
+                <div className="relative min-w-[200px] max-w-md flex-1">
+                  <input
+                    type="text"
+                    placeholder="Search applications by name, emp no, dept..."
+                    value={applicationSearchTerm}
+                    onChange={(e) => setApplicationSearchTerm(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white pl-11 pr-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  />
+                  <svg className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </div>
+                <div className="h-8 w-px bg-slate-200 dark:bg-slate-700"></div>
+                <div className="min-w-[140px]">
+                  <select
+                    value={selectedDivisionFilter}
+                    onChange={(e) => {
+                      setSelectedDivisionFilter(e.target.value);
+                      setSelectedDepartmentFilter('');
+                      setSelectedDesignationFilter('');
+                    }}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  >
+                    <option value="">All Divisions</option>
+                    {divisions.map((d) => (
+                      <option key={d._id} value={d._id}>{d.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="min-w-[140px]">
+                  <select
+                    value={selectedDepartmentFilter}
+                    onChange={(e) => {
+                      setSelectedDepartmentFilter(e.target.value);
+                      setSelectedDesignationFilter('');
+                    }}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  >
+                    <option value="">All Departments</option>
+                    {departments
+                      .filter(dept => !selectedDivisionFilter || (dept as any).divisions?.some((d: any) => (typeof d === 'string' ? d === selectedDivisionFilter : (d._id || d) === selectedDivisionFilter)))
+                      .map((d) => (
+                        <option key={d._id} value={d._id}>{d.name}</option>
+                      ))}
+                  </select>
+                </div>
+                <div className="min-w-[140px]">
+                  <select
+                    value={selectedDesignationFilter}
+                    onChange={(e) => setSelectedDesignationFilter(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  >
+                    <option value="">All Designations</option>
+                    {designations.map((d) => (
+                      <option key={d._id} value={d._id}>{d.name}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
             )}
 
@@ -2432,6 +2503,25 @@ export default function EmployeesPage() {
                 </div>
                 <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">No applications found</p>
                 <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Create a new employee application to get started</p>
+              </div>
+            ) : filteredApplications.length === 0 ? (
+              <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm p-12 text-center shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
+                <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">No applications match the current filters</p>
+                <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Try adjusting division, department, designation or search.</p>
+                <button
+                  onClick={() => {
+                    setSearchTerm('');
+                    setApplicationSearchTerm('');
+                    setSelectedDivisionFilter('');
+                    setSelectedDepartmentFilter('');
+                    setSelectedDesignationFilter('');
+                    setApplicationFilters({});
+                    loadApplications();
+                  }}
+                  className="mt-6 px-6 py-2.5 rounded-xl bg-slate-100 border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700 transition-colors"
+                >
+                  Reset filters & refresh
+                </button>
               </div>
             ) : (
               <div className="space-y-8">

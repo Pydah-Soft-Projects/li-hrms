@@ -5,6 +5,7 @@
 const express = require('express');
 const router = express.Router();
 const { protect, authorize } = require('../authentication/middleware/authMiddleware');
+const { applyScopeFilter } = require('../shared/middleware/dataScopeMiddleware');
 const {
   createApplication,
   getApplications,
@@ -86,8 +87,8 @@ router.post('/bulk', authorize('super_admin', 'sub_admin', 'hr'), bulkCreateAppl
 // Update application (HR/Admin) - handle file uploads
 router.put('/:id', upload.any(), require('./controllers/employeeApplicationController').updateApplication);
 
-// Get all applications
-router.get('/', getApplications);
+// Get all applications (with data scope / division mapping)
+router.get('/', applyScopeFilter, getApplications);
 
 // Get single application
 router.get('/:id', getApplication);
