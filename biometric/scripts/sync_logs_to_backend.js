@@ -47,12 +47,18 @@ async function main() {
     console.log(`✅ Connected to: ${mongoURI}\n`);
 
     // ── STEP 2: Resend logs to backend (Filtered by date) ────────────────────
-    const END_DATE = new Date('2026-01-30T23:59:59.999Z');
-    const query = { timestamp: { $lte: END_DATE } };
+    // Jan 20 00:00 — till date (today end of day)
+    const START_DATE = new Date('2026-01-20T00:00:00.000Z');
+    const endOfToday = new Date();
+    endOfToday.setHours(23, 59, 59, 999);
+
+    const query = {
+        timestamp: { $gte: START_DATE, $lte: endOfToday },
+    };
 
     console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log('STEP: Resend AttendanceLog records to backend');
-    console.log(`   Filter   : Up to ${END_DATE.toISOString()}`);
+    console.log(`   Filter   : Jan 20, 2026 — till date (${endOfToday.toISOString().slice(0, 10)})`);
     console.log(`   Endpoint : ${SYNC_ENDPOINT}`);
     console.log(`   Batch    : ${BATCH_SIZE} logs per request`);
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
