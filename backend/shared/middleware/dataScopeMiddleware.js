@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const User = require('../../users/model/User');
 const Employee = require('../../employees/model/Employee');
 
@@ -5,6 +6,13 @@ const Employee = require('../../employees/model/Employee');
  * Data Scope Middleware
  * Applies role-based data filtering to queries
  */
+
+/** Normalize id to ObjectId for reliable MongoDB match (Department.divisions, _id are ObjectId) */
+function toObjectId(id) {
+    if (id == null) return id;
+    if (mongoose.Types.ObjectId.isValid(id)) return new mongoose.Types.ObjectId(id.toString());
+    return id;
+}
 
 /**
  * Get default scope based on user role
@@ -363,8 +371,8 @@ function buildMetadataScopeFilter(user, modelName, selectedDivisionId = null) {
     if (isAdmin || scope === 'all') {
         const filter = {};
         if (selectedDivisionId) {
-            if (modelName === 'Division') filter._id = selectedDivisionId;
-            else if (modelName === 'Department') filter.divisions = selectedDivisionId;
+            if (modelName === 'Division') filter._id = toObjectId(selectedDivisionId);
+            else if (modelName === 'Department') filter.divisions = toObjectId(selectedDivisionId);
             else if (modelName === 'User') filter['divisionMapping.division'] = selectedDivisionId;
         }
         return filter;
@@ -396,16 +404,16 @@ function buildMetadataScopeFilter(user, modelName, selectedDivisionId = null) {
             return filter;
 
         case 'Department':
-            // Per-Division Scoping Logic
+            // Per-Division Scoping Logic (use ObjectId so Department.divisions array matches reliably)
             if (selectedDivisionId) {
                 const mapping = user.divisionMapping.find(m => (m.division?._id || m.division).toString() === selectedDivisionId.toString());
                 if (!mapping) return { _id: null };
 
                 const specificDepts = (mapping.departments || []).map(d => (d?._id || d).toString());
                 if (specificDepts.length > 0) {
-                    filter._id = { $in: specificDepts };
+                    filter._id = { $in: specificDepts.map(toObjectId) };
                 } else {
-                    filter.divisions = selectedDivisionId;
+                    filter.divisions = toObjectId(selectedDivisionId);
                 }
             } else {
                 // Granular Intersection Logic: Or condition across all allowed mappings
@@ -414,9 +422,9 @@ function buildMetadataScopeFilter(user, modelName, selectedDivisionId = null) {
                     const depts = (m.departments || []).map(d => (d?._id || d).toString());
 
                     if (depts.length > 0) {
-                        return { divisions: divId, _id: { $in: depts } };
+                        return { divisions: toObjectId(divId), _id: { $in: depts.map(toObjectId) } };
                     } else {
-                        return { divisions: divId };
+                        return { divisions: toObjectId(divId) };
                     }
                 });
 

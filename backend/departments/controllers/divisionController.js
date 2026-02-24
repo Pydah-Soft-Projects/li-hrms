@@ -2,11 +2,15 @@ const Division = require('../model/Division');
 const Department = require('../model/Department');
 const Designation = require('../model/Designation');
 const Shift = require('../../shifts/model/Shift');
+const User = require('../../users/model/User');
 
 /**
  * @desc    Get all divisions
  * @route   GET /api/divisions
  * @access  Private
+ * For workspace users with divisionMapping: returns only divisions they are mapped to,
+ * and each division's departments array is restricted to only the departments in their mapping (not the full division link).
+ * For super_admin/sub_admin: returns all divisions with full linked departments.
  */
 exports.getDivisions = async (req, res, next) => {
     try {
@@ -38,9 +42,35 @@ exports.getDivisions = async (req, res, next) => {
             query.isActive = isActive === 'true';
         }
 
-        const divisions = await Division.find(query)
+        let divisions = await Division.find(query)
             .populate('departments', 'name code')
-            .populate('manager', 'name email');
+            .populate('manager', 'name email')
+            .lean();
+
+        const user = req.scopedUser || req.user;
+        const isAdmin = user && (user.role === 'super_admin' || user.role === 'sub_admin');
+        const hasMapping = user && user.divisionMapping && Array.isArray(user.divisionMapping) && user.divisionMapping.length > 0;
+
+        // For workspace users with divisionMapping: return only their mapped departments per division (not the full division link)
+        if (!isAdmin && hasMapping && user._id) {
+            const populatedUser = await User.findById(user._id)
+                .populate('divisionMapping.division', 'name code')
+                .populate('divisionMapping.departments', 'name code')
+                .lean();
+            if (populatedUser && populatedUser.divisionMapping) {
+                divisions = divisions.map((div) => {
+                    const divId = (div._id && div._id.toString()) || div._id;
+                    const mapping = populatedUser.divisionMapping.find((m) => {
+                        const mDivId = (m.division && (m.division._id || m.division).toString()) || (m.division && m.division.toString());
+                        return mDivId === divId;
+                    });
+                    if (!mapping) return { ...div, departments: [] };
+                    const depts = mapping.departments || [];
+                    const normalized = Array.isArray(depts) ? depts.map((d) => (d && typeof d === 'object' ? { _id: d._id, name: d.name, code: d.code } : d)) : [];
+                    return { ...div, departments: normalized };
+                });
+            }
+        }
 
         res.status(200).json({
             success: true,
@@ -188,6 +218,11 @@ exports.updateDivision = async (req, res, next) => {
             );
         }
 
+        if (addedDepts.length > 0 || removedDepts.length > 0) {
+            const cacheService = require('../../shared/services/cacheService');
+            await cacheService.delByPattern('departments:*');
+        }
+
         res.status(200).json({
             success: true,
             data: division,
@@ -297,6 +332,9 @@ exports.linkDepartments = async (req, res, next) => {
                 { $pull: { divisions: divisionId } }
             );
         }
+
+        const cacheService = require('../../shared/services/cacheService');
+        await cacheService.delByPattern('departments:*');
 
         res.status(200).json({
             success: true,
