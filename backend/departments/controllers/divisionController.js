@@ -188,6 +188,11 @@ exports.updateDivision = async (req, res, next) => {
             );
         }
 
+        if (addedDepts.length > 0 || removedDepts.length > 0) {
+            const cacheService = require('../../shared/services/cacheService');
+            await cacheService.delByPattern('departments:*');
+        }
+
         res.status(200).json({
             success: true,
             data: division,
@@ -297,6 +302,9 @@ exports.linkDepartments = async (req, res, next) => {
                 { $pull: { divisions: divisionId } }
             );
         }
+
+        const cacheService = require('../../shared/services/cacheService');
+        await cacheService.delByPattern('departments:*');
 
         res.status(200).json({
             success: true,
