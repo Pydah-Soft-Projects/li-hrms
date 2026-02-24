@@ -1154,12 +1154,13 @@ export default function EmployeesPage() {
     }
   };
 
-  // Department options for filter: when a division is selected, use that division's linked departments (from getDivisions); otherwise all departments
+  // Department options: when a division is selected, use that division's departments (from getDivisions — for workspace this is divisionMapping-only; for superadmin full link)
   const departmentOptions = useMemo(() => {
     if (selectedDivisionFilter) {
-      const div = divisions.find((d) => d._id === selectedDivisionFilter);
+      const divId = String(selectedDivisionFilter);
+      const div = divisions.find((d) => String(d._id) === divId);
       const depts = (div?.departments ?? []) as (string | Department)[];
-      return depts.map((d) => (typeof d === 'string' ? { _id: d, name: d } : d));
+      return depts.map((d) => (typeof d === 'string' ? { _id: d, name: d } : { _id: (d as any)._id, name: (d as any).name, code: (d as any).code }));
     }
     return departments;
   }, [selectedDivisionFilter, divisions, departments]);
