@@ -329,17 +329,55 @@ exports.applyLeave = async (req, res) => {
       employeeId, // Legacy - for backward compatibility
     } = req.body;
 
-    // Validate Date (Must be today or future)
+    // Validate dates against leave policy settings
+    const leaveSettings = await LeaveSettings.getActiveSettings('leave');
+    const leavePolicy = leaveSettings?.settings || {
+      allowBackdated: false,
+      maxBackdatedDays: 7,
+      allowFutureDated: true,
+      maxAdvanceDays: 90,
+    };
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const checkFromDate = new Date(fromDate);
     checkFromDate.setHours(0, 0, 0, 0);
 
-    if (checkFromDate < today) {
-      return res.status(400).json({
-        success: false,
-        error: 'Applications are restricted to current or future dates only.'
-      });
+    // Super admin bypasses date restrictions
+    const isSuperAdmin = req.user?.role === 'super_admin';
+
+    if (!isSuperAdmin) {
+      if (checkFromDate < today) {
+        // Past date – check if backdating is allowed
+        if (!leavePolicy.allowBackdated) {
+          return res.status(400).json({
+            success: false,
+            error: 'Backdated leave applications are not allowed.',
+          });
+        }
+        const diffDays = Math.floor((today - checkFromDate) / (1000 * 60 * 60 * 24));
+        if (diffDays > leavePolicy.maxBackdatedDays) {
+          return res.status(400).json({
+            success: false,
+            error: `Leave can only be backdated up to ${leavePolicy.maxBackdatedDays} day(s). The selected date is ${diffDays} day(s) ago.`,
+          });
+        }
+      } else if (checkFromDate > today) {
+        // Future date – check if future-dated applications are allowed
+        if (!leavePolicy.allowFutureDated) {
+          return res.status(400).json({
+            success: false,
+            error: 'Future-dated leave applications are not allowed.',
+          });
+        }
+        const diffDays = Math.floor((checkFromDate - today) / (1000 * 60 * 60 * 24));
+        if (diffDays > leavePolicy.maxAdvanceDays) {
+          return res.status(400).json({
+            success: false,
+            error: `Leave can only be applied up to ${leavePolicy.maxAdvanceDays} day(s) in advance. The selected date is ${diffDays} day(s) away.`,
+          });
+        }
+      }
     }
 
     // Get employee - either from request body (HR applying for someone) or from user
