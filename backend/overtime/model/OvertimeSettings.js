@@ -39,7 +39,7 @@ const OvertimeSettingsSchema = new mongoose.Schema(
                 stepName: String,
                 approverRole: {
                     type: String,
-                    enum: ['hod', 'hr', 'manager', 'super_admin', 'reporting_manager']
+                    enum: ['hod', 'hr', 'manager', 'super_admin', 'reporting_manager', 'admin']
                 },
                 availableActions: [String],
                 approvedStatus: String,
@@ -50,7 +50,7 @@ const OvertimeSettingsSchema = new mongoose.Schema(
             finalAuthority: {
                 role: {
                     type: String,
-                    enum: ['hod', 'hr', 'manager', 'super_admin', 'reporting_manager']
+                    enum: ['hod', 'hr', 'manager', 'super_admin', 'reporting_manager', 'admin']
                 },
                 anyHRCanApprove: {
                     type: Boolean,

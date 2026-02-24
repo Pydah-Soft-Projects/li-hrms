@@ -8,19 +8,31 @@ const AttendanceDeductionSettingsSchema = new mongoose.Schema(
   {
     // Deduction Rules
     deductionRules: {
-      // Combined count threshold (late-ins + early-outs)
+      // Free allowed late-ins + early-outs per month (first N are not counted for deduction)
+      freeAllowedPerMonth: {
+        type: Number,
+        default: null,
+        min: 0,
+      },
+      // Combined count threshold (every N late-ins + early-outs above free = 1 unit deduction)
       combinedCountThreshold: {
         type: Number,
         default: null,
         min: 1,
       },
-      // Deduction type: half_day, full_day, custom_amount
+      // Deduction type: half_day, full_day, custom_days, custom_amount
       deductionType: {
         type: String,
-        enum: ['half_day', 'full_day', 'custom_amount', null],
+        enum: ['half_day', 'full_day', 'custom_days', 'custom_amount', null],
         default: null,
       },
-      // Custom deduction amount (only if deductionType is 'custom_amount')
+      // Custom number of days per unit (only if deductionType is 'custom_days', e.g. 1.5, 2, 3.25)
+      deductionDays: {
+        type: Number,
+        default: null,
+        min: 0,
+      },
+      // Custom deduction amount in ₹ (only if deductionType is 'custom_amount')
       deductionAmount: {
         type: Number,
         default: null,

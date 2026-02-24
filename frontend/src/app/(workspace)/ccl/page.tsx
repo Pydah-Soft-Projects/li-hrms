@@ -347,9 +347,19 @@ export default function CCLPage() {
   const canPerformAction = (ccl: CCLRequest) => {
     const u = user as any;
     if (!u?.role) return false;
-    const next = ccl.workflow?.nextApproverRole;
+    const next = (ccl.workflow?.nextApproverRole || '').toLowerCase().trim();
     if (!next) return false;
-    return next === u.role || (next === 'final_authority' && u.role === 'hr');
+    const userRole = String(u.role || '').toLowerCase().trim();
+    if (next === userRole) return true;
+    if (next === 'final_authority' && userRole === 'hr') return true;
+    // Reporting manager step: allow if user is in workflow.reportingManagerIds (e.g. HR who is RM for this employee)
+    if (next === 'reporting_manager') {
+      if (['manager', 'hod'].includes(userRole)) return true;
+      const reportingManagerIds = (ccl as any).workflow?.reportingManagerIds as string[] | undefined;
+      const userId = String(u.id ?? u._id ?? '').trim();
+      if (reportingManagerIds?.length && userId && reportingManagerIds.some((id: string) => String(id).trim() === userId)) return true;
+    }
+    return false;
   };
 
   const openActionModal = (id: string, action: 'approve' | 'reject') => {
