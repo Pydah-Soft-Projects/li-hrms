@@ -1,6 +1,6 @@
 'use client'; // Cache bust: Force recompile 1
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { api, Employee, Department, Division, Designation, EmployeeApplication, Allowance, Deduction } from '@/lib/api';
 import { alertSuccess, alertError, alertConfirm, alertLoading } from '@/lib/customSwal';
@@ -1154,6 +1154,17 @@ export default function EmployeesPage() {
     }
   };
 
+  // Department options: when a division is selected, use that division's departments (from getDivisions — for workspace this is divisionMapping-only; for superadmin full link)
+  const departmentOptions = useMemo(() => {
+    if (selectedDivisionFilter) {
+      const divId = String(selectedDivisionFilter);
+      const div = divisions.find((d) => String(d._id) === divId);
+      const depts = (div?.departments ?? []) as (string | Department)[];
+      return depts.map((d) => (typeof d === 'string' ? { _id: d, name: d } : { _id: (d as any)._id, name: (d as any).name, code: (d as any).code }));
+    }
+    return departments;
+  }, [selectedDivisionFilter, divisions, departments]);
+
   // Trigger search and filter
   useEffect(() => {
     loadEmployees(1);
@@ -2212,11 +2223,9 @@ export default function EmployeesPage() {
                     className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                   >
                     <option value="">All Departments</option>
-                    {departments
-                      .filter(dept => !selectedDivisionFilter || (dept as any).divisions?.some((d: any) => (typeof d === 'string' ? d === selectedDivisionFilter : (d._id || d) === selectedDivisionFilter)))
-                      .map((d) => (
-                        <option key={d._id} value={d._id}>{d.name}</option>
-                      ))}
+                    {departmentOptions.map((d) => (
+                      <option key={d._id} value={d._id}>{d.name}</option>
+                    ))}
                   </select>
                 </div>
 
@@ -2287,11 +2296,9 @@ export default function EmployeesPage() {
                     className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                   >
                     <option value="">All Departments</option>
-                    {departments
-                      .filter(dept => !selectedDivisionFilter || (dept as any).divisions?.some((d: any) => (typeof d === 'string' ? d === selectedDivisionFilter : (d._id || d) === selectedDivisionFilter)))
-                      .map((d) => (
-                        <option key={d._id} value={d._id}>{d.name}</option>
-                      ))}
+                    {departmentOptions.map((d) => (
+                      <option key={d._id} value={d._id}>{d.name}</option>
+                    ))}
                   </select>
                 </div>
                 <div className="min-w-[140px]">
