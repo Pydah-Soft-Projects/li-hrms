@@ -53,16 +53,17 @@ function mapScopeFilterForDepartment(scopeFilter) {
 // @desc    Get all departments
 // @route   GET /api/departments
 // @access  Private
+// Cache key MUST include userId: result set is scope-filtered per user (divisionMapping).
+// Without user in key, User B can get User A's limited list from cache (permission leak).
 exports.getAllDepartments = async (req, res) => {
   try {
     const { isActive, division } = req.query;
     const cacheService = require('../../shared/services/cacheService');
-    const cacheKey = `departments:all:${isActive || 'any'}:${division || 'all'}`;
+    const userId = (req.user && (req.user._id || req.user.userId)) ? String(req.user._id || req.user.userId) : 'anon';
+    const cacheKey = `departments:user_${userId}:${isActive || 'any'}:${division || 'all'}`;
 
-
-    // Try to get from cache
     const cachedDepts = await cacheService.get(cacheKey);
-    if (cachedDepts) {
+    if (cachedDepts && Array.isArray(cachedDepts)) {
       console.log(`[Cache] Serving departments from cache: ${cacheKey}`);
       return res.status(200).json({
         success: true,
@@ -102,15 +103,16 @@ exports.getAllDepartments = async (req, res) => {
       })
       .populate('designations', 'name code isActive')
       .populate('createdBy', 'name email')
-      .sort({ name: 1 });
+      .sort({ name: 1 })
+      .lean();
 
-    // Store in cache for 10 minutes
-    await cacheService.set(cacheKey, departments, 600);
+    const data = Array.isArray(departments) ? departments : [];
+    await cacheService.set(cacheKey, data, 600);
 
     res.status(200).json({
       success: true,
-      count: departments.length,
-      data: departments,
+      count: data.length,
+      data,
     });
   } catch (error) {
     console.error('Error fetching departments:', error);
