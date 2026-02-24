@@ -118,6 +118,12 @@ const getWorkflowSettings = async () => {
   // Return default workflow if no settings found
   if (!settings) {
     return {
+      settings: {
+        allowBackdated: false,
+        maxBackdatedDays: 0,
+        allowFutureDated: true,
+        maxAdvanceDays: 365,
+      },
       workflow: {
         isEnabled: true,
         steps: [
@@ -305,17 +311,52 @@ exports.applyOD = async (req, res) => {
       geoLocation, // ADDED
     } = req.body;
 
-    // Validate Date (Must be today or future)
+    // Get settings
+    const workflowSettings = await getWorkflowSettings();
+    const settings = workflowSettings.settings || {};
+
+    // Validate Date
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const checkFromDate = new Date(fromDate);
     checkFromDate.setHours(0, 0, 0, 0);
 
-    if (checkFromDate < today) {
-      return res.status(400).json({
-        success: false,
-        error: 'OD applications are restricted to current or future dates only.'
-      });
+    const diffTime = checkFromDate - today;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    // 1. Backdate validation
+    if (diffDays < 0) {
+      if (!settings.allowBackdated) {
+        return res.status(400).json({
+          success: false,
+          error: 'Backdated OD applications are not allowed.'
+        });
+      }
+
+      const backdateDays = Math.abs(diffDays);
+      if (settings.maxBackdatedDays !== null && settings.maxBackdatedDays !== undefined && backdateDays > settings.maxBackdatedDays) {
+        return res.status(400).json({
+          success: false,
+          error: `OD application can only be backdated up to ${settings.maxBackdatedDays} days.`
+        });
+      }
+    }
+    // 2. Future date validation
+    else if (diffDays > 0) {
+      if (!settings.allowFutureDated) {
+        return res.status(400).json({
+          success: false,
+          error: 'Future dated OD applications are not allowed.'
+        });
+      }
+
+      const advanceDays = diffDays;
+      if (settings.maxAdvanceDays !== null && settings.maxAdvanceDays !== undefined && advanceDays > settings.maxAdvanceDays) {
+        return res.status(400).json({
+          success: false,
+          error: `OD application can only be applied up to ${settings.maxAdvanceDays} days in advance.`
+        });
+      }
     }
 
     // Get employee
@@ -585,9 +626,6 @@ exports.applyOD = async (req, res) => {
 
     // Store warnings to include in success response
     const warnings = validation.warnings || [];
-
-    // Get workflow settings
-    const workflowSettings = await getWorkflowSettings();
 
     // Initialize Workflow (Dynamic)
     const approvalSteps = [];

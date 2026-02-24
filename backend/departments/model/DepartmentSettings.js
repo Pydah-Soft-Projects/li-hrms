@@ -192,17 +192,29 @@ const departmentSettingsSchema = new mongoose.Schema(
       },
       // Permission Deduction Rules
       deductionRules: {
-        // Count threshold (e.g., 4 permissions)
+        // Free allowed permissions per month (first N not counted for deduction)
+        freeAllowedPerMonth: {
+          type: Number,
+          default: null,
+          min: 0,
+        },
+        // Count threshold (e.g., every 3 above free = 1 unit)
         countThreshold: {
           type: Number,
           default: null,
           min: 1,
         },
-        // Deduction type: half_day, full_day, custom_amount
+        // Deduction type: half_day, full_day, custom_days, custom_amount
         deductionType: {
           type: String,
-          enum: ['half_day', 'full_day', 'custom_amount', null],
+          enum: ['half_day', 'full_day', 'custom_days', 'custom_amount', null],
           default: null,
+        },
+        // Custom days per unit (only if deductionType is 'custom_days')
+        deductionDays: {
+          type: Number,
+          default: null,
+          min: 0,
         },
         // Custom deduction amount (only if deductionType is 'custom_amount')
         deductionAmount: {
@@ -244,17 +256,29 @@ const departmentSettingsSchema = new mongoose.Schema(
     // Attendance Deduction Rules (Combined Late-in + Early-out)
     attendance: {
       deductionRules: {
-        // Combined count threshold (late-ins + early-outs)
+        // Free allowed late-ins + early-outs per month (first N not counted)
+        freeAllowedPerMonth: {
+          type: Number,
+          default: null,
+          min: 0,
+        },
+        // Combined count threshold (every N above free = 1 unit)
         combinedCountThreshold: {
           type: Number,
           default: null,
           min: 1,
         },
-        // Deduction type: half_day, full_day, custom_amount
+        // Deduction type: half_day, full_day, custom_days, custom_amount
         deductionType: {
           type: String,
-          enum: ['half_day', 'full_day', 'custom_amount', null],
+          enum: ['half_day', 'full_day', 'custom_days', 'custom_amount', null],
           default: null,
+        },
+        // Custom days per unit (only if deductionType is 'custom_days')
+        deductionDays: {
+          type: Number,
+          default: null,
+          min: 0,
         },
         // Custom deduction amount (only if deductionType is 'custom_amount')
         deductionAmount: {

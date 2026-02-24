@@ -48,9 +48,36 @@ export default function BulkUpload({
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [currentErrorIndex, setCurrentErrorIndex] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dataRef = useRef<ParsedRow[]>([]);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const dragStartRef = useRef<{ x: number; scrollLeft: number } | null>(null);
   dataRef.current = data;
+
+  const onMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    setIsDragging(true);
+    dragStartRef.current = { x: e.clientX, scrollLeft: scrollRef.current?.scrollLeft ?? 0 };
+  };
+
+  useEffect(() => {
+    if (!isDragging) return;
+    const onMouseMove = (e: MouseEvent) => {
+      if (!dragStartRef.current || !scrollRef.current) return;
+      scrollRef.current.scrollLeft = dragStartRef.current.scrollLeft + dragStartRef.current.x - e.clientX;
+    };
+    const onMouseUp = () => {
+      setIsDragging(false);
+      dragStartRef.current = null;
+    };
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+    return () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+  }, [isDragging]);
 
   // Re-validate all rows when "ignore employee numbers" toggle changes (preview step)
   useEffect(() => {

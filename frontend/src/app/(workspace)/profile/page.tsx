@@ -261,7 +261,7 @@ export default function ProfilePage() {
         {/* Header */}
         <div>
           <h1 className="text-3xl font-bold text-slate-900">My Profile</h1>
-          <p className="text-slate-500 mt-1">View and manage your account and employment details</p>
+          {/* <p className="text-slate-500 mt-1">View and manage your account and employment details</p> */}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -270,7 +270,7 @@ export default function ProfilePage() {
           <div className="lg:col-span-4 space-y-6">
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden sticky top-8">
               {/* Cover Gradient - blue to teal/green */}
-              <div className="h-32 bg-gradient-to-r from-blue-600 via-blue-500 to-teal-500 relative">
+              <div className="h-24 bg-gradient-to-r from-blue-600 via-blue-500 to-teal-500 relative">
                 {/* Active badge - top right, light background, green dot */}
                 <div className="absolute top-4 right-4 flex items-center gap-2 bg-slate-100/95 backdrop-blur-sm px-3 py-1.5 rounded-full border border-slate-200/80">
                   <span className={`w-2 h-2 rounded-full shrink-0 ${user.isActive || user.is_active !== false ? 'bg-emerald-500' : 'bg-red-500'}`} />
@@ -281,8 +281,8 @@ export default function ProfilePage() {
               </div>
 
               {/* Avatar & Basic Info - photo overlaps header with white border */}
-              <div className="px-6 pb-6 text-center -mt-16 relative">
-                <div className="w-32 h-32 mx-auto rounded-full bg-white border-4 border-white shadow-xl relative group ring-2 ring-slate-200/50">
+              <div className="px-6 pb-6 text-center -mt-12 relative">
+                <div className="w-24 h-24 mx-auto rounded-full bg-white border-4 border-white shadow-xl relative group ring-2 ring-slate-200/50">
                   {user.profilePhoto ? (
                     <img src={user.profilePhoto} alt={user.name} className="w-full h-full rounded-full object-cover" />
                   ) : (
@@ -333,14 +333,14 @@ export default function ProfilePage() {
                 </div>
 
                 {/* Joined & Last Login - labels uppercase light grey, values dark */}
-                <div className="mt-6 pt-6 border-t border-slate-100 grid grid-cols-2 gap-4 text-left">
-                  <div>
-                    <p className="text-xs text-slate-500 uppercase tracking-widest font-semibold mb-1">Joined</p>
-                    <p className="text-sm font-medium text-slate-800">{user.createdAt ? formatDate(user.createdAt, false) : '—'}</p>
+                <div className="mt-4 pt-4 border-t border-slate-100 space-y-2 text-left">
+                  <div className="flex justify-between items-center">
+                    <p className="text-[10px] text-slate-400 uppercase tracking-widest font-semibold">Joined</p>
+                    <p className="text-xs font-medium text-slate-800">{user.createdAt ? formatDate(user.createdAt, false) : '—'}</p>
                   </div>
-                  <div>
-                    <p className="text-xs text-slate-500 uppercase tracking-widest font-semibold mb-1">Last Login</p>
-                    <p className="text-sm font-medium text-slate-800">{user.lastLogin ? formatDate(user.lastLogin, true) : 'Never'}</p>
+                  <div className="flex justify-between items-center">
+                    <p className="text-[10px] text-slate-400 uppercase tracking-widest font-semibold">Last Login</p>
+                    <p className="text-xs font-medium text-slate-800">{user.lastLogin ? formatDate(user.lastLogin, true) : 'Never'}</p>
                   </div>
                 </div>
               </div>

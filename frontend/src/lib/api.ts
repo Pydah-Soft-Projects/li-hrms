@@ -1433,8 +1433,20 @@ export const api = {
     });
   },
 
-  getEmployeeApplications: async (status?: string) => {
-    const query = status ? `?status=${status}` : '';
+  getEmployeeApplications: async (params?: {
+    status?: string;
+    division_id?: string;
+    department_id?: string;
+    designation_id?: string;
+    search?: string;
+  }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.status) searchParams.set('status', params.status);
+    if (params?.division_id) searchParams.set('division_id', params.division_id);
+    if (params?.department_id) searchParams.set('department_id', params.department_id);
+    if (params?.designation_id) searchParams.set('designation_id', params.designation_id);
+    if (params?.search?.trim()) searchParams.set('search', params.search.trim());
+    const query = searchParams.toString() ? `?${searchParams.toString()}` : '';
     return apiRequest<any[]>(`/employee-applications${query}`, { method: 'GET' });
   },
 

@@ -13,8 +13,10 @@ const PermissionsSettings = () => {
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
     const [rules, setRules] = useState({
+        freeAllowedPerMonth: null as number | null,
         countThreshold: null as number | null,
-        deductionType: null as 'half_day' | 'full_day' | 'custom_amount' | null,
+        deductionType: null as 'half_day' | 'full_day' | 'custom_days' | 'custom_amount' | null,
+        deductionDays: null as number | null,
         deductionAmount: null as number | null,
         minimumDuration: null as number | null,
         calculationMode: null as 'proportional' | 'floor' | null,
@@ -104,13 +106,27 @@ const PermissionsSettings = () => {
                     </div>
 
                     <div className="p-4 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 flex-1">
+                        <div className="space-y-2">
+                            <label className="text-[10px] text-gray-400 font-black uppercase tracking-widest pl-1">Free Allowed (Monthly)</label>
+                            <input
+                                type="number"
+                                min={0}
+                                value={rules.freeAllowedPerMonth ?? ''}
+                                onChange={(e) => setRules({ ...rules, freeAllowedPerMonth: e.target.value !== '' ? Number(e.target.value) : null })}
+                                className="w-full bg-gray-50 dark:bg-black/20 border border-gray-100 dark:border-gray-800 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-emerald-500/20 outline-none font-bold"
+                                placeholder="e.g. 3"
+                            />
+                            <p className="text-[10px] text-gray-500">First N permissions per month are free; only count above this is used for deduction.</p>
+                        </div>
+
                         <div className="grid grid-cols-2 gap-6">
                             <div className="space-y-2">
-                                <label className="text-[10px] text-gray-400 font-black uppercase tracking-widest pl-1">Threshold (Count)</label>
+                                <label className="text-[10px] text-gray-400 font-black uppercase tracking-widest pl-1">Every N (Above Free) = 1 Unit</label>
                                 <input
                                     type="number"
-                                    value={rules.countThreshold || ''}
-                                    onChange={(e) => setRules({ ...rules, countThreshold: parseInt(e.target.value) })}
+                                    min={1}
+                                    value={rules.countThreshold ?? ''}
+                                    onChange={(e) => setRules({ ...rules, countThreshold: e.target.value !== '' ? parseInt(e.target.value, 10) : null })}
                                     className="w-full bg-gray-50 dark:bg-black/20 border border-gray-100 dark:border-gray-800 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-emerald-500/20 outline-none font-bold"
                                     placeholder="e.g. 3"
                                 />
@@ -119,8 +135,8 @@ const PermissionsSettings = () => {
                                 <label className="text-[10px] text-gray-400 font-black uppercase tracking-widest pl-1">Min. Duration (Hrs)</label>
                                 <input
                                     type="number"
-                                    value={rules.minimumDuration || ''}
-                                    onChange={(e) => setRules({ ...rules, minimumDuration: parseFloat(e.target.value) })}
+                                    value={rules.minimumDuration ?? ''}
+                                    onChange={(e) => setRules({ ...rules, minimumDuration: e.target.value !== '' ? parseFloat(e.target.value) : null })}
                                     className="w-full bg-gray-50 dark:bg-black/20 border border-gray-100 dark:border-gray-800 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-emerald-500/20 outline-none font-bold"
                                     placeholder="e.g. 0.5"
                                 />
@@ -128,21 +144,71 @@ const PermissionsSettings = () => {
                         </div>
 
                         <div className="space-y-2">
-                            <label className="text-[10px] text-gray-400 font-black uppercase tracking-widest pl-1">Deduction Mode</label>
+                            <label className="text-[10px] text-gray-400 font-black uppercase tracking-widest pl-1">Calculation Mode</label>
                             <div className="grid grid-cols-2 gap-2">
-                                {['half_day', 'full_day'].map((type) => (
+                                {[
+                                    { id: 'floor', label: 'Floor (full units only)' },
+                                    { id: 'proportional', label: 'Proportional (partial allowed)' },
+                                ].map((mode) => (
                                     <button
-                                        key={type}
-                                        onClick={() => setRules({ ...rules, deductionType: type as 'half_day' | 'full_day' })}
-                                        className={`px-4 py-3 rounded-xl text-xs font-black uppercase transition-all border ${rules.deductionType === type
+                                        key={mode.id}
+                                        onClick={() => setRules({ ...rules, calculationMode: mode.id as 'floor' | 'proportional' })}
+                                        className={`px-4 py-3 rounded-xl text-[10px] font-black uppercase transition-all border ${rules.calculationMode === mode.id ? 'bg-emerald-600 border-emerald-600 text-white' : 'bg-white dark:bg-black/20 border-gray-100 dark:border-gray-800 text-gray-400 hover:border-emerald-500/30'}`}
+                                    >
+                                        {mode.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="text-[10px] text-gray-400 font-black uppercase tracking-widest pl-1">Deduction Mode</label>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                {[
+                                    { id: 'half_day', label: '0.5 Day' },
+                                    { id: 'full_day', label: '1 Day' },
+                                    { id: 'custom_days', label: 'Custom days' },
+                                    { id: 'custom_amount', label: 'Fixed ₹' },
+                                ].map((type) => (
+                                    <button
+                                        key={type.id}
+                                        onClick={() => setRules({ ...rules, deductionType: type.id as 'half_day' | 'full_day' | 'custom_days' | 'custom_amount' })}
+                                        className={`px-4 py-3 rounded-xl text-xs font-black uppercase transition-all border ${rules.deductionType === type.id
                                             ? 'bg-emerald-600 border-emerald-600 text-white shadow-lg shadow-emerald-500/20'
                                             : 'bg-white dark:bg-black/20 border-gray-100 dark:border-gray-800 text-gray-400 hover:border-emerald-500/30'
                                             }`}
                                     >
-                                        {type.replace('_', ' ')}
+                                        {type.label}
                                     </button>
                                 ))}
                             </div>
+                            {rules.deductionType === 'custom_days' && (
+                                <div className="mt-2">
+                                    <label className="block text-[10px] text-gray-400 font-black uppercase tracking-widest pl-1 mb-1">Deduction days per unit (e.g. 1.5, 2, 3.25)</label>
+                                    <input
+                                        type="number"
+                                        step={0.25}
+                                        min={0}
+                                        value={rules.deductionDays ?? ''}
+                                        onChange={(e) => setRules({ ...rules, deductionDays: e.target.value !== '' ? Number(e.target.value) : null })}
+                                        className="w-full max-w-[120px] bg-gray-50 dark:bg-black/20 border border-gray-100 dark:border-gray-800 rounded-xl px-4 py-2 text-sm font-bold"
+                                        placeholder="e.g. 1.5"
+                                    />
+                                </div>
+                            )}
+                            {rules.deductionType === 'custom_amount' && (
+                                <div className="mt-2">
+                                    <label className="block text-[10px] text-gray-400 font-black uppercase tracking-widest pl-1 mb-1">Amount (₹) per unit</label>
+                                    <input
+                                        type="number"
+                                        min={0}
+                                        value={rules.deductionAmount ?? ''}
+                                        onChange={(e) => setRules({ ...rules, deductionAmount: e.target.value !== '' ? Number(e.target.value) : null })}
+                                        className="w-full max-w-[120px] bg-gray-50 dark:bg-black/20 border border-gray-100 dark:border-gray-800 rounded-xl px-4 py-2 text-sm font-bold"
+                                        placeholder="e.g. 500"
+                                    />
+                                </div>
+                            )}
                         </div>
 
                         <button
