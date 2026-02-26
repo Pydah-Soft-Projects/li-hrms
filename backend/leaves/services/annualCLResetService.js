@@ -1,13 +1,44 @@
 /**
  * Annual CL Reset Service
- * Handles annual casual leave balance rollover and carry forward expiration
+ * Handles annual casual leave balance reset at configured date (pay cycle / leave policy).
+ * Resets CL to configured entitlement (default or experience-based) plus optional carry forward.
  */
 
 const Employee = require('../../employees/model/Employee');
 const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
 const leaveRegisterService = require('./leaveRegisterService');
-const { extractISTComponents, createISTDate } = require('../../shared/utils/dateUtils');
 const dateCycleService = require('./dateCycleService');
+const { createISTDate, getTodayISTDateString } = require('../../shared/utils/dateUtils');
+
+/**
+ * Full years of experience from DOJ to asOfDate (inclusive of asOfDate).
+ */
+function yearsOfExperience(doj, asOfDate) {
+    if (!doj) return 0;
+    const start = new Date(doj);
+    const end = new Date(asOfDate);
+    if (end < start) return 0;
+    const years = (end.getFullYear() - start.getFullYear()) +
+        ((end.getMonth() - start.getMonth()) * 12 + (end.getDate() - start.getDate())) / 365.25;
+    return Math.floor(years);
+}
+
+/**
+ * Get casual leave entitlement for reset: from experience tiers if configured, else default.
+ */
+function getCasualLeaveEntitlement(settings, doj, resetDate) {
+    const defaultCL = settings.annualCLReset.resetToBalance ?? 12;
+    const tiers = settings.annualCLReset.casualLeaveByExperience;
+    if (!Array.isArray(tiers) || tiers.length === 0) return defaultCL;
+    const years = yearsOfExperience(doj, resetDate);
+    const sorted = [...tiers].sort((a, b) => (a.minYears || 0) - (b.minYears || 0));
+    for (const t of sorted) {
+        const min = t.minYears ?? 0;
+        const max = t.maxYears ?? 999;
+        if (years >= min && years < max) return t.casualLeave ?? defaultCL;
+    }
+    return defaultCL;
+}
 
 /**
  * Perform annual CL rollover for all active employees
@@ -29,11 +60,11 @@ async function performAnnualCLReset(targetYear = null) {
             };
         }
 
-        const resetDate = getResetDate(targetYear, settings);
+        const resetDate = await getResetDate(targetYear, settings);
         console.log(`[AnnualCLReset] Rollover execution date: ${resetDate.toISOString()}`);
 
         const employees = await Employee.find({ is_active: true })
-            .select('_id emp_no employee_name department_id division_id doj is_active paidLeaves')
+            .select('_id emp_no employee_name department_id division_id doj is_active')
             .populate('department_id', 'name')
             .populate('division_id', 'name');
 
@@ -57,7 +88,9 @@ async function performAnnualCLReset(targetYear = null) {
                         empNo: employee.emp_no,
                         previousBalance: resetResult.previousBalance,
                         expiredAmount: resetResult.expiredAmount,
-                        carryForwarded: resetResult.carryForwarded
+                        carryForwarded: resetResult.carryForwarded,
+                        entitlement: resetResult.entitlement,
+                        newBalance: resetResult.newBalance
                     });
                 } else {
                     results.errors.push({ empNo: employee.emp_no, error: resetResult.error });
@@ -81,7 +114,7 @@ async function performAnnualCLReset(targetYear = null) {
 }
 
 /**
- * Handle carry forward and expiration for a single employee
+ * Handle carry forward, expiration, and reset to entitlement for a single employee
  */
 async function resetEmployeeCL(employee, settings, resetDate) {
     try {
@@ -91,22 +124,21 @@ async function resetEmployeeCL(employee, settings, resetDate) {
         let carryForwardAllowed = 0;
         let expiredAmount = 0;
 
-        // 2. Calculate Carry Forward bounds
-        if (settings.carryForward.casualLeave.enabled) {
-            // maxMonths is historically used as maxDays limit for CF in this schema
+        // 2. Carry forward bounds (only if addCarryForward and carry forward enabled)
+        const addCarryForward = settings.annualCLReset.addCarryForward !== false;
+        if (addCarryForward && settings.carryForward.casualLeave.enabled) {
             const maxCF = settings.carryForward.casualLeave.maxMonths || 12;
             carryForwardAllowed = Math.min(currentBalance, maxCF);
         }
-
         expiredAmount = Math.max(0, currentBalance - carryForwardAllowed);
 
-        // 3. Post EXPIRY transaction if balance exceeds CF limits
+        // 3. Post EXPIRY if balance exceeds carry forward limit
         if (expiredAmount > 0) {
             await leaveRegisterService.addTransaction({
                 employeeId: employee._id,
                 empNo: employee.emp_no,
                 employeeName: employee.employee_name,
-                designation: 'N/A', // Omitted for brevity
+                designation: 'N/A',
                 department: employee.department_id?.name || 'N/A',
                 divisionId: employee.division_id?._id,
                 departmentId: employee.department_id?._id,
@@ -117,34 +149,79 @@ async function resetEmployeeCL(employee, settings, resetDate) {
                 startDate: resetDate,
                 endDate: resetDate,
                 days: expiredAmount,
-                reason: `Annual Financial Year Reset: Unused CL exceeds Carry Forward limits. Expired ${expiredAmount} days.`,
+                reason: `Annual Reset: Unused CL above carry-forward limit. Expired ${expiredAmount} day(s).`,
                 status: 'APPROVED',
                 autoGenerated: true,
                 autoGeneratedType: 'EXPIRY'
             });
         }
 
+        // 4. Entitlement from settings (default or experience-based)
+        const entitlement = getCasualLeaveEntitlement(settings, employee.doj, resetDate);
+        const newBalance = entitlement + carryForwardAllowed;
+
+        // 5. Post ADJUSTMENT to set CL to new year entitlement + carry forward
+        await leaveRegisterService.addTransaction({
+            employeeId: employee._id,
+            empNo: employee.emp_no,
+            employeeName: employee.employee_name,
+            designation: 'N/A',
+            department: employee.department_id?.name || 'N/A',
+            divisionId: employee.division_id?._id,
+            departmentId: employee.department_id?._id,
+            dateOfJoining: employee.doj,
+            employmentStatus: employee.is_active ? 'active' : 'inactive',
+            leaveType: 'CL',
+            transactionType: 'ADJUSTMENT',
+            startDate: resetDate,
+            endDate: resetDate,
+            days: newBalance,
+            reason: `Annual CL Reset: entitlement ${entitlement} (by experience)${carryForwardAllowed > 0 ? ` + carry forward ${carryForwardAllowed}` : ''} = ${newBalance}`,
+            status: 'APPROVED',
+            autoGenerated: true,
+            autoGeneratedType: 'ANNUAL_RESET'
+        });
+
         return {
             success: true,
             previousBalance: currentBalance,
             carryForwarded: carryForwardAllowed,
-            expiredAmount: expiredAmount
+            expiredAmount,
+            entitlement,
+            newBalance
         };
-
     } catch (error) {
         return { success: false, error: error.message };
     }
 }
 
 /**
- * Get reset date based on settings
+ * Get reset date based on settings. All returned dates are IST midnight (createISTDate)
+ * so stored transaction dates are correct regardless of server timezone.
+ * When usePayrollCycleForReset is true: reset = start of first payroll period of the year.
+ * E.g. calendar year + payroll 26th–25th => first period is 26 Dec (prev) to 25 Jan => reset on 26 Dec.
  */
-function getResetDate(targetYear, settings) {
+async function getResetDate(targetYear, settings) {
+    const usePayroll = settings.annualCLReset?.usePayrollCycleForReset === true;
+
+    if (usePayroll) {
+        const payroll = await dateCycleService.getPayrollCycleSettings();
+        const startDay = Math.min(31, Math.max(1, payroll.startDay || 1));
+        let year = targetYear;
+        if (year == null) {
+            const now = new Date();
+            year = now.getFullYear();
+        }
+        // First payroll period of calendar year Y starts on: Dec (Y-1), startDay (IST).
+        const resetDate = createISTDate(`${year - 1}-12-${String(startDay).padStart(2, '0')}`);
+        return resetDate;
+    }
+
+    // Fixed reset month/day from leave policy (IST)
     if (targetYear) {
         return createISTDate(`${targetYear}-${String(settings.annualCLReset.resetMonth).padStart(2, '0')}-${String(settings.annualCLReset.resetDay).padStart(2, '0')}`);
     }
 
-    // Default to current financial year start
     const now = new Date();
     const currentYear = now.getMonth() + 1 >= settings.annualCLReset.resetMonth ?
         now.getFullYear() : now.getFullYear() - 1;
@@ -163,21 +240,22 @@ async function getCLResetStatus(employeeIds = null) {
         }
 
         const employees = await Employee.find(query)
-            .select('_id emp_no employee_name paidLeaves department_id division_id')
+            .select('_id emp_no employee_name casualLeaves department_id division_id')
             .populate('department_id', 'name')
             .populate('division_id', 'name')
             .lean();
 
         const settings = await LeavePolicySettings.getSettings();
 
+        const nextDate = await getNextResetDate(settings);
         const results = employees.map(emp => ({
             employeeId: emp._id,
             empNo: emp.emp_no,
             employeeName: emp.employee_name,
             department: emp.department_id?.name,
             division: emp.division_id?.name,
-            currentCL: emp.paidLeaves || 0,
-            nextResetDate: getNextResetDate(settings),
+            currentCL: typeof emp.casualLeaves === 'number' ? emp.casualLeaves : 0,
+            nextResetDate: nextDate,
             rolloverEnabled: settings.annualCLReset.enabled,
             carryForwardEnabled: settings.carryForward.casualLeave.enabled,
             carryForwardMax: settings.carryForward.casualLeave.maxMonths || 12
@@ -188,6 +266,7 @@ async function getCLResetStatus(employeeIds = null) {
             data: results,
             settings: {
                 enabled: settings.annualCLReset.enabled,
+                usePayrollCycleForReset: settings.annualCLReset.usePayrollCycleForReset,
                 resetMonth: settings.annualCLReset.resetMonth,
                 resetDay: settings.annualCLReset.resetDay,
                 carryForwardEnabled: settings.carryForward.casualLeave.enabled,
@@ -205,9 +284,20 @@ async function getCLResetStatus(employeeIds = null) {
 }
 
 /**
- * Get next reset date
+ * Get next reset date (IST). Used by cron to compare with today (IST) so safe on UTC server.
+ * When payroll-aligned: next reset = next occurrence of Dec + payroll start day (IST).
  */
-function getNextResetDate(settings) {
+async function getNextResetDate(settings) {
+    if (settings.annualCLReset?.usePayrollCycleForReset === true) {
+        const payroll = await dateCycleService.getPayrollCycleSettings();
+        const startDay = Math.min(31, Math.max(1, payroll.startDay || 1));
+        const now = new Date();
+        const currentYear = now.getFullYear();
+        const resetThisYear = createISTDate(`${currentYear}-12-${String(startDay).padStart(2, '0')}`);
+        if (now < resetThisYear) return resetThisYear;
+        return createISTDate(`${currentYear + 1}-12-${String(startDay).padStart(2, '0')}`);
+    }
+
     const now = new Date();
     const currentYear = now.getMonth() + 1 >= settings.annualCLReset.resetMonth ?
         now.getFullYear() : now.getFullYear() - 1;
@@ -215,8 +305,118 @@ function getNextResetDate(settings) {
     return createISTDate(`${currentYear}-${String(settings.annualCLReset.resetMonth).padStart(2, '0')}-${String(settings.annualCLReset.resetDay).padStart(2, '0')}`);
 }
 
+/**
+ * Initial CL sync from policy (manual action, not annual reset).
+ * Sets each employee's CL balance to policy entitlement (+ optional carry forward from current)
+ * and creates one ADJUSTMENT transaction per employee. Use after configuring leave policy
+ * or to align all balances with current settings.
+ * @returns {Object} { success, processed, successCount, errors, details }
+ */
+async function performInitialCLSync() {
+    try {
+        console.log('[InitialCLSync] Starting initial CL balance sync from policy...');
+
+        const settings = await LeavePolicySettings.getSettings();
+        const effectiveDate = createISTDate(getTodayISTDateString()); // IST midnight today
+
+        const employees = await Employee.find({ is_active: true })
+            .select('_id emp_no employee_name department_id division_id doj is_active')
+            .populate('department_id', 'name')
+            .populate('division_id', 'name');
+
+        const results = {
+            success: true,
+            processed: 0,
+            successCount: 0,
+            errors: [],
+            details: []
+        };
+
+        for (const employee of employees) {
+            try {
+                const syncResult = await syncEmployeeCLFromPolicy(employee, settings, effectiveDate);
+                if (syncResult.success) {
+                    results.successCount++;
+                    results.details.push({
+                        employeeId: employee._id,
+                        empNo: employee.emp_no,
+                        previousBalance: syncResult.previousBalance,
+                        entitlement: syncResult.entitlement,
+                        carryForwarded: syncResult.carryForwarded,
+                        newBalance: syncResult.newBalance
+                    });
+                } else {
+                    results.errors.push({ empNo: employee.emp_no, error: syncResult.error });
+                }
+                results.processed++;
+            } catch (error) {
+                results.errors.push({ empNo: employee.emp_no, error: error.message });
+                results.processed++;
+            }
+        }
+
+        return {
+            ...results,
+            message: `Initial CL sync completed: ${results.successCount} employees updated, ${results.errors.length} errors`
+        };
+    } catch (error) {
+        console.error('[InitialCLSync] Critical error:', error);
+        return { success: false, error: error.message, message: 'Initial CL sync failed' };
+    }
+}
+
+/**
+ * Set one employee's CL to policy entitlement + optional carry forward (no EXPIRY).
+ */
+async function syncEmployeeCLFromPolicy(employee, settings, effectiveDate) {
+    try {
+        const currentBalance = await leaveRegisterService.getCurrentBalance(employee._id, 'CL');
+        let carryForwardAllowed = 0;
+        const addCarryForward = settings.annualCLReset?.addCarryForward !== false;
+        if (addCarryForward && settings.carryForward?.casualLeave?.enabled) {
+            const maxCF = settings.carryForward.casualLeave.maxMonths || 12;
+            carryForwardAllowed = Math.min(currentBalance, maxCF);
+        }
+        const entitlement = getCasualLeaveEntitlement(settings, employee.doj, effectiveDate);
+        const newBalance = entitlement + carryForwardAllowed;
+
+        await leaveRegisterService.addTransaction({
+            employeeId: employee._id,
+            empNo: employee.emp_no,
+            employeeName: employee.employee_name,
+            designation: 'N/A',
+            department: employee.department_id?.name || 'N/A',
+            divisionId: employee.division_id?._id,
+            departmentId: employee.department_id?._id,
+            dateOfJoining: employee.doj,
+            employmentStatus: employee.is_active ? 'active' : 'inactive',
+            leaveType: 'CL',
+            transactionType: 'ADJUSTMENT',
+            startDate: effectiveDate,
+            endDate: effectiveDate,
+            days: newBalance,
+            reason: `Initial CL sync from policy: entitlement ${entitlement}${carryForwardAllowed > 0 ? ` + carry forward ${carryForwardAllowed}` : ''} = ${newBalance}`,
+            status: 'APPROVED',
+            autoGenerated: true,
+            autoGeneratedType: 'INITIAL_BALANCE'
+        });
+
+        return {
+            success: true,
+            previousBalance: currentBalance,
+            entitlement,
+            carryForwarded: carryForwardAllowed,
+            newBalance
+        };
+    } catch (error) {
+        return { success: false, error: error.message };
+    }
+}
+
 module.exports = {
     performAnnualCLReset,
+    performInitialCLSync,
     getCLResetStatus,
-    getNextResetDate
+    getNextResetDate,
+    getResetDate
 };

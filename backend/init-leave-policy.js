@@ -65,7 +65,9 @@ mongoose.connect('mongodb://localhost:27017/hrms').then(async () => {
       annualCLReset: {
         enabled: true,
         resetToBalance: 12,
+        casualLeaveByExperience: [],
         addCarryForward: true,
+        usePayrollCycleForReset: false,
         resetMonth: 4,
         resetDay: 1
       },

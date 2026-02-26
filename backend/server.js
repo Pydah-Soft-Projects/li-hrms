@@ -205,6 +205,14 @@ const startServer = async () => {
       console.warn('⚠️  Monthly accrual cron failed to start:', cronErr.message);
     }
 
+    // Annual CL reset cron (00:15 IST daily – runs reset when today matches configured date, e.g. 26 Dec or 1 Apr)
+    try {
+      const { startAnnualCLResetCron } = require('./leaves/jobs/annualCLResetCron');
+      startAnnualCLResetCron();
+    } catch (cronErr) {
+      console.warn('⚠️  Annual CL reset cron failed to start:', cronErr.message);
+    }
+
     // Start BullMQ Workers for background job processing
     try {
       const { startWorkers } = require('./shared/jobs/worker');

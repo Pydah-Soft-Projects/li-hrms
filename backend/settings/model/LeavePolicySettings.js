@@ -43,7 +43,19 @@ const leavePolicySettingsSchema = new mongoose.Schema({
             default: 'attendance_based',
             description: 'How EL is earned - based on attendance, fixed amount'
         },
-        
+        // Whether EL should be included in monthly allowed leave limit (CL + CCL + optional EL)
+        includeInMonthlyLimit: {
+            type: Boolean,
+            default: true,
+            description: 'Include earned leave (EL) in monthly allowed limit (CL + CCL + EL when true)'
+        },
+        // Whether EL days availed count as paid days in payroll (salary for EL days)
+        useAsPaidInPayroll: {
+            type: Boolean,
+            default: true,
+            description: 'When true, EL days availed count as paid days in payroll; when false, EL is leave-only (no salary for those days)'
+        },
+
         // Attendance-Based Earning
         attendanceRules: {
             minDaysForFirstEL: {
@@ -299,31 +311,45 @@ const leavePolicySettingsSchema = new mongoose.Schema({
             default: true,
             description: 'Enable annual CL balance reset at financial year start'
         },
+        // Default CL entitlement for all (used when experience-based tiers are not used or no tier matches)
         resetToBalance: {
             type: Number,
             default: 12,
             min: 0,
             max: 365,
-            description: 'CL balance to reset to at financial year start'
+            description: 'Default CL entitlement at reset (used for all if experience tiers empty or no match)'
         },
+        // Experience-based CL: optional tiers by years of service (from DOJ to reset date). First matching tier wins.
+        casualLeaveByExperience: [{
+            minYears: { type: Number, required: true, min: 0 },
+            maxYears: { type: Number, required: true, min: 0 },
+            casualLeave: { type: Number, required: true, min: 0 },
+            description: { type: String, default: '' }
+        }],
         addCarryForward: {
             type: Boolean,
             default: true,
             description: 'Add unused CL carry forward to reset balance'
+        },
+        // When true: reset date = start of first payroll period of the year (e.g. 26 Dec when payroll is 26th–25th). Uses payroll cycle start day.
+        usePayrollCycleForReset: {
+            type: Boolean,
+            default: false,
+            description: 'Use payroll cycle start day for reset; reset = Dec (prev year) + payroll start day (e.g. 26 Dec for 26–25 cycle)'
         },
         resetMonth: {
             type: Number,
             default: 4, // April
             min: 1,
             max: 12,
-            description: 'Month when CL reset occurs (1=Jan, 4=Apr)'
+            description: 'Month when CL reset occurs (1=Jan, 4=Apr); ignored if usePayrollCycleForReset is true'
         },
         resetDay: {
             type: Number,
             default: 1,
             min: 1,
             max: 31,
-            description: 'Day when CL reset occurs'
+            description: 'Day when CL reset occurs; ignored if usePayrollCycleForReset is true'
         }
     }
 }, {
