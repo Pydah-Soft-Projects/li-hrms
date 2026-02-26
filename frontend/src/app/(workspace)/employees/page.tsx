@@ -219,6 +219,7 @@ export default function EmployeesPage() {
   const [showLeftDateModal, setShowLeftDateModal] = useState(false);
   const [selectedEmployeeForLeftDate, setSelectedEmployeeForLeftDate] = useState<Employee | null>(null);
   const [leftDateForm, setLeftDateForm] = useState({ leftDate: '', leftReason: '' });
+  const [resignationNoticePeriodDays, setResignationNoticePeriodDays] = useState(0);
   const [includeLeftEmployees, setIncludeLeftEmployees] = useState(false);
   const [passwordMode, setPasswordMode] = useState<'random' | 'phone_empno'>('random');
   const [notificationChannels, setNotificationChannels] = useState({ email: true, sms: true });
@@ -636,6 +637,14 @@ export default function EmployeesPage() {
   useEffect(() => {
     setFilteredDesignations(designations);
   }, [designations]);
+
+  useEffect(() => {
+    if (showLeftDateModal && selectedEmployeeForLeftDate) {
+      api.getResignationSettings()
+        .then((res) => { if (res?.success && res?.data?.noticePeriodDays != null) setResignationNoticePeriodDays(Number(res.data.noticePeriodDays) || 0); })
+        .catch(() => setResignationNoticePeriodDays(0));
+    }
+  }, [showLeftDateModal, selectedEmployeeForLeftDate]);
 
   // Load allowance/deduction defaults when department and gross salary are set
   useEffect(() => {
@@ -1433,15 +1442,11 @@ export default function EmployeesPage() {
             return { ...qual };
           }
 
-          // Ensure legacy fields (Degree/Year) are mapped if they exist and weren't caught by settings (e.g. if settings changed label)
-          if (!normalized.degree && (qual.Degree || qual.degree)) normalized.degree = qual.Degree || qual.degree;
-          if (!normalized.qualified_year && (qual.year || qual.Year || qual.qualified_year)) normalized.qualified_year = qual.year || qual.Year || qual.qualified_year;
-
           return normalized;
         });
       } else if (typeof employee.qualifications === 'string') {
-        // Old format - convert to array if needed
-        qualificationsValue = employee.qualifications.split(',').map(s => ({ degree: s.trim() }));
+        // Old format - convert to array with examination only
+        qualificationsValue = employee.qualifications.split(',').map(s => ({ examination: s.trim() }));
       }
     }
     // Also check in dynamicFields only if qualificationsValue is empty (to avoid overwriting valid data)
@@ -1452,12 +1457,7 @@ export default function EmployeesPage() {
 
           Object.keys(qual).forEach(key => {
             const lowerKey = key.toLowerCase();
-
-            if (lowerKey === 'degree') {
-              normalized.degree = qual[key];
-            } else if (lowerKey === 'year' || key === 'qualified_year') {
-              normalized.qualified_year = qual[key];
-            } else if (key === 'certificateUrl' || key === 'certificateFile') {
+            if (key === 'certificateUrl' || key === 'certificateFile' || key === 'isPreFilled') {
               normalized[key] = qual[key];
             } else {
               normalized[lowerKey] = qual[key];
@@ -1651,20 +1651,39 @@ export default function EmployeesPage() {
     try {
       setError('');
       setSuccess('');
-      const response = await api.setEmployeeLeftDate(
-        selectedEmployeeForLeftDate.emp_no,
-        leftDateForm.leftDate,
-        leftDateForm.leftReason || undefined
-      );
+      const resSettings = await api.getResignationSettings();
+      const workflowEnabled = resSettings?.success && resSettings?.data?.workflow?.isEnabled !== false;
 
-      if (response.success) {
-        setSuccess('Employee left date set successfully!');
-        setShowLeftDateModal(false);
-        setSelectedEmployeeForLeftDate(null);
-        setLeftDateForm({ leftDate: '', leftReason: '' });
-        loadEmployees();
+      if (workflowEnabled) {
+        const response = await api.createResignationRequest({
+          emp_no: selectedEmployeeForLeftDate.emp_no,
+          leftDate: leftDateForm.leftDate,
+          remarks: leftDateForm.leftReason || undefined,
+        });
+        if (response.success) {
+          setSuccess('Resignation request submitted. It will be processed through the approval flow.');
+          setShowLeftDateModal(false);
+          setSelectedEmployeeForLeftDate(null);
+          setLeftDateForm({ leftDate: '', leftReason: '' });
+          loadEmployees();
+        } else {
+          setError(response.message || 'Failed to submit resignation request');
+        }
       } else {
-        setError(response.message || 'Failed to set left date');
+        const response = await api.setEmployeeLeftDate(
+          selectedEmployeeForLeftDate.emp_no,
+          leftDateForm.leftDate,
+          leftDateForm.leftReason || undefined
+        );
+        if (response.success) {
+          setSuccess('Employee left date set successfully!');
+          setShowLeftDateModal(false);
+          setSelectedEmployeeForLeftDate(null);
+          setLeftDateForm({ leftDate: '', leftReason: '' });
+          loadEmployees();
+        } else {
+          setError(response.message || 'Failed to set left date');
+        }
       }
     } catch (err: any) {
       setError(err.message || 'An error occurred');
@@ -5101,10 +5120,10 @@ export default function EmployeesPage() {
               <div className="mb-6 flex items-center justify-between">
                 <div>
                   <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
-                    Set Employee Left Date
+                    Resignation
                   </h2>
                   <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    {selectedEmployeeForLeftDate.employee_name} ({selectedEmployeeForLeftDate.emp_no})
+                    {selectedEmployeeForLeftDate.employee_name} ({selectedEmployeeForLeftDate.emp_no}) — Enter last working date and remarks. If resignation workflow is enabled in settings, the request will go through approval.
                   </p>
                 </div>
                 <button
@@ -5136,30 +5155,39 @@ export default function EmployeesPage() {
               <form onSubmit={handleSubmitLeftDate} className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    Left Date <span className="text-red-500">*</span>
+                    Last working date <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="date"
                     required
                     value={leftDateForm.leftDate}
                     onChange={(e) => setLeftDateForm({ ...leftDateForm, leftDate: e.target.value })}
-                    max={new Date().toISOString().split('T')[0]}
+                    min={(() => {
+                      const d = new Date();
+                      d.setDate(d.getDate() + resignationNoticePeriodDays);
+                      return d.toISOString().split('T')[0];
+                    })()}
                     className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                   />
                   <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    The employee will be included in pay register for this month, but excluded from future months.
+                    This date will be recorded as the employee&apos;s last day in office. They will be included in pay register until this month, then excluded from future months.
                   </p>
+                  {resignationNoticePeriodDays > 0 && (
+                    <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                      Notice period: {resignationNoticePeriodDays} day(s). Last working date must be at least {resignationNoticePeriodDays} days from today.
+                    </p>
+                  )}
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    Reason for Leaving (Optional)
+                    Remarks for resignation (Optional)
                   </label>
                   <textarea
                     value={leftDateForm.leftReason}
                     onChange={(e) => setLeftDateForm({ ...leftDateForm, leftReason: e.target.value })}
                     rows={3}
-                    placeholder="Enter reason for leaving..."
+                    placeholder="Enter remarks for resignation..."
                     className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                   />
                 </div>
@@ -5180,7 +5208,7 @@ export default function EmployeesPage() {
                     type="submit"
                     className="rounded-xl bg-gradient-to-r from-red-500 to-orange-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-red-500/30 transition-all hover:from-red-600 hover:to-orange-600"
                   >
-                    Set Left Date
+                    Submit Resignation
                   </button>
                 </div>
               </form>

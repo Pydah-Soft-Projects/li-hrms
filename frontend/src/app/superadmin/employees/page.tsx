@@ -241,6 +241,7 @@ export default function EmployeesPage() {
   const [editingApplicationID, setEditingApplicationID] = useState<string | null>(null);
   const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null);
   const [showViewDialog, setShowViewDialog] = useState(false);
+  const [certificatePreviewUrl, setCertificatePreviewUrl] = useState<string | null>(null);
   const [formData, setFormData] = useState<Partial<Employee>>(initialFormState);
   const [formSettings, setFormSettings] = useState<FormSettings | null>(null);
   const [applicationFormData, setApplicationFormData] = useState<Partial<EmployeeApplication & { proposedSalary: number }>>({ ...initialFormState, proposedSalary: 0 });
@@ -273,6 +274,7 @@ export default function EmployeesPage() {
   const [showLeftDateModal, setShowLeftDateModal] = useState(false);
   const [selectedEmployeeForLeftDate, setSelectedEmployeeForLeftDate] = useState<Employee | null>(null);
   const [leftDateForm, setLeftDateForm] = useState({ leftDate: '', leftReason: '' });
+  const [resignationNoticePeriodDays, setResignationNoticePeriodDays] = useState(0);
   const [includeLeftEmployees, setIncludeLeftEmployees] = useState(false);
   const [passwordMode, setPasswordMode] = useState<'random' | 'phone_empno'>('random');
   const [isResending, setIsResending] = useState<string | null>(null);
@@ -726,6 +728,14 @@ export default function EmployeesPage() {
       loadApplications();
     }
   }, [activeTab, selectedDivisionFilter, selectedDepartmentFilter, selectedDesignationFilter]);
+
+  useEffect(() => {
+    if (showLeftDateModal && selectedEmployeeForLeftDate) {
+      api.getResignationSettings()
+        .then((res) => { if (res?.success && res?.data?.noticePeriodDays != null) setResignationNoticePeriodDays(Number(res.data.noticePeriodDays) || 0); })
+        .catch(() => setResignationNoticePeriodDays(0));
+    }
+  }, [showLeftDateModal, selectedEmployeeForLeftDate]);
 
   useEffect(() => {
     api.getSetting('allow_employee_bulk_process')
@@ -1336,11 +1346,18 @@ export default function EmployeesPage() {
       // DEBUG: Inspect payload
       console.log('DEBUG: Final Payload Entries (Standard):', Array.from((payload as any).entries ? (payload as any).entries() : []));
 
-      // Handle Qualifications - Map Field IDs to Labels
-      const qualities = Array.isArray(formData.qualifications) ? formData.qualifications : [];
+      // Handle Qualifications - Merge pre-filled rows (from settings) + applicant rows; map Field IDs to Labels
+      const defaultRows = Array.isArray(formSettings?.qualifications?.defaultRows) ? formSettings.qualifications.defaultRows : [];
+      const applicantQuals = Array.isArray(formData.qualifications) ? formData.qualifications : [];
+      const isNewEmployee = !editingEmployee;
+      const qualities = isNewEmployee
+        ? [
+            ...defaultRows.map((r: any) => ({ ...r, isPreFilled: true })),
+            ...applicantQuals.map((q: any) => ({ ...q, isPreFilled: false })),
+          ]
+        : (Array.isArray(formData.qualifications) ? formData.qualifications : []);
       console.log('Skills/Qualities before processing:', qualities);
 
-      // Create a mapping from Field ID -> Label using formSettings
       const fieldIdToLabelMap: Record<string, string> = {};
       if (formSettings?.qualifications?.fields) {
         formSettings.qualifications.fields.forEach((f: any) => {
@@ -1349,23 +1366,19 @@ export default function EmployeesPage() {
       }
 
       const cleanQualifications = qualities.map((q: any, index: number) => {
-        const { certificateFile, ...rest } = q;
+        const { certificateFile, isPreFilled, ...rest } = q;
         console.log(`Processing qual ${index}, has certificate file?`, !!certificateFile);
         if (certificateFile) console.log('File details:', certificateFile.name, certificateFile.type, certificateFile.size);
 
-        // Transform keys from Field ID to Label (e.g. key "degree" -> "Degree")
         const transformedQ: any = {};
         Object.entries(rest).forEach(([key, val]) => {
-          // If key matches a known field ID, use its label; otherwise keep key
           const label = fieldIdToLabelMap[key] || key;
           transformedQ[label] = val;
         });
+        if (isPreFilled !== undefined) transformedQ.isPreFilled = isPreFilled;
 
         if (certificateFile instanceof File) {
-          console.log(`Appending file for qual ${index}`);
           payload.append(`qualification_cert_${index}`, certificateFile);
-        } else {
-          console.log(`Certificate file for qual ${index} is not a File instance:`, certificateFile);
         }
         return transformedQ;
       });
@@ -1414,19 +1427,15 @@ export default function EmployeesPage() {
       if (appData.qualifications && Array.isArray(appData.qualifications) && appQualFields) {
         appData.qualifications = appData.qualifications.map((q: any) => {
           const newQ: any = {};
-          // Preserve certificate meta
           if (q.certificateUrl) newQ.certificateUrl = q.certificateUrl;
+          if (q.isPreFilled !== undefined) newQ.isPreFilled = q.isPreFilled;
 
-          // Map fields
           Object.entries(q).forEach(([key, val]) => {
-            if (key === 'certificateUrl') return;
-
-            // Find field definition where label matches key
+            if (key === 'certificateUrl' || key === 'isPreFilled') return;
             const fieldDef = appQualFields.find((f: any) => f.label === key);
             if (fieldDef) {
               newQ[fieldDef.id] = val;
             } else {
-              // Keep original if no match (fallback)
               newQ[key] = val;
             }
           });
@@ -1451,9 +1460,10 @@ export default function EmployeesPage() {
       empData.qualifications = empData.qualifications.map((q: any) => {
         const newQ: any = {};
         if (q.certificateUrl) newQ.certificateUrl = q.certificateUrl;
+        if (q.isPreFilled !== undefined) newQ.isPreFilled = q.isPreFilled;
 
         Object.entries(q).forEach(([key, val]) => {
-          if (key === 'certificateUrl') return;
+          if (key === 'certificateUrl' || key === 'isPreFilled') return;
           const fieldDef = qualFields.find((f: any) => f.label === key);
           if (fieldDef) {
             newQ[fieldDef.id] = val;
@@ -1522,13 +1532,15 @@ export default function EmployeesPage() {
           });
         }
 
-        // Always preserve certificate fields and normalize casing
+        // Always preserve certificate fields, isPreFilled, and normalize casing
         Object.keys(qual).forEach(key => {
           const lowerKey = key.toLowerCase();
           if (lowerKey === 'certificateurl') {
             normalized.certificateUrl = qual[key];
           } else if (lowerKey === 'certificatefile') {
             normalized.certificateFile = qual[key];
+          } else if (lowerKey === 'isprefilled' || key === 'isPreFilled') {
+            normalized.isPreFilled = qual[key];
           }
         });
 
@@ -1537,15 +1549,11 @@ export default function EmployeesPage() {
           return { ...qual };
         }
 
-        // Ensure legacy fields (Degree/Year) are mapped
-        if (!normalized.degree && (qual.Degree || qual.degree)) normalized.degree = qual.Degree || qual.degree;
-        if (!normalized.qualified_year && (qual.year || qual.Year || qual.qualified_year)) normalized.qualified_year = qual.year || qual.Year || qual.qualified_year;
-
         return normalized;
       });
     } else if (typeof employee.qualifications === 'string') {
-      // Old format - convert to array if needed
-      qualificationsValue = employee.qualifications.split(',').map(s => ({ degree: s.trim() }));
+      // Old format - convert to array with examination only
+      qualificationsValue = employee.qualifications.split(',').map(s => ({ examination: s.trim() }));
     }
 
     // Also check in dynamicFields only if qualificationsValue is empty (to avoid overwriting valid data)
@@ -1556,12 +1564,7 @@ export default function EmployeesPage() {
 
           Object.keys(qual).forEach(key => {
             const lowerKey = key.toLowerCase();
-
-            if (lowerKey === 'degree') {
-              normalized.degree = qual[key];
-            } else if (lowerKey === 'year' || key === 'qualified_year') {
-              normalized.qualified_year = qual[key];
-            } else if (key === 'certificateUrl' || key === 'certificateFile') {
+            if (key === 'certificateUrl' || key === 'certificateFile' || key === 'isPreFilled') {
               normalized[key] = qual[key];
             } else {
               normalized[lowerKey] = qual[key];
@@ -1739,21 +1742,40 @@ export default function EmployeesPage() {
     try {
       setError('');
       setSuccess('');
-      const response = await api.setEmployeeLeftDate(
-        selectedEmployeeForLeftDate.emp_no,
-        leftDateForm.leftDate,
-        leftDateForm.leftReason || undefined
-      );
+      const resSettings = await api.getResignationSettings();
+      const workflowEnabled = resSettings?.success && resSettings?.data?.workflow?.isEnabled !== false;
 
-      if (response.success) {
-        const syncMessage = response.syncError ? ' (MSSQL sync failed, but local update succeeded)' : '';
-        setSuccess(`Employee left date set successfully!${syncMessage}`);
-        setShowLeftDateModal(false);
-        setSelectedEmployeeForLeftDate(null);
-        setLeftDateForm({ leftDate: '', leftReason: '' });
-        loadEmployees();
+      if (workflowEnabled) {
+        const response = await api.createResignationRequest({
+          emp_no: selectedEmployeeForLeftDate.emp_no,
+          leftDate: leftDateForm.leftDate,
+          remarks: leftDateForm.leftReason || undefined,
+        });
+        if (response.success) {
+          setSuccess('Resignation request submitted. It will be processed through the approval flow.');
+          setShowLeftDateModal(false);
+          setSelectedEmployeeForLeftDate(null);
+          setLeftDateForm({ leftDate: '', leftReason: '' });
+          loadEmployees();
+        } else {
+          setError(response.message || 'Failed to submit resignation request');
+        }
       } else {
-        setError(response.message || 'Failed to set left date');
+        const response = await api.setEmployeeLeftDate(
+          selectedEmployeeForLeftDate.emp_no,
+          leftDateForm.leftDate,
+          leftDateForm.leftReason || undefined
+        );
+        if (response.success) {
+          const syncMessage = response.syncError ? ' (MSSQL sync failed, but local update succeeded)' : '';
+          setSuccess(`Employee left date set successfully!${syncMessage}`);
+          setShowLeftDateModal(false);
+          setSelectedEmployeeForLeftDate(null);
+          setLeftDateForm({ leftDate: '', leftReason: '' });
+          loadEmployees();
+        } else {
+          setError(response.message || 'Failed to set left date');
+        }
       }
     } catch (err: any) {
       setError(err.message || 'An error occurred');
@@ -3852,6 +3874,7 @@ export default function EmployeesPage() {
                     designations={designations as any}
                     onSettingsLoaded={setFormSettings}
                     excludeFields={!editingEmployee && addFormAutoGenerateEmpNo ? ['emp_no'] : []}
+                    isEditingExistingEmployee={!!editingEmployee}
                   />
 
                   {/* Leave Settings (Optional) */}
@@ -4343,7 +4366,7 @@ export default function EmployeesPage() {
         {
           showViewDialog && viewingEmployee && (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowViewDialog(false)} />
+              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => { setShowViewDialog(false); setCertificatePreviewUrl(null); }} />
               <div className="relative z-50 max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950/95">
                 <div className="mb-6 flex items-center justify-between">
                   <div className="flex items-center gap-4">
@@ -4371,6 +4394,7 @@ export default function EmployeesPage() {
                     <button
                       onClick={() => {
                         setShowViewDialog(false);
+                        setCertificatePreviewUrl(null);
                         handleEdit(viewingEmployee);
                       }}
                       className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 transition hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-400"
@@ -4378,7 +4402,7 @@ export default function EmployeesPage() {
                       Edit
                     </button>
                     <button
-                      onClick={() => setShowViewDialog(false)}
+                      onClick={() => { setShowViewDialog(false); setCertificatePreviewUrl(null); }}
                       className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:bg-slate-900"
                     >
                       <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -4493,98 +4517,83 @@ export default function EmployeesPage() {
                     <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Professional Information</h3>
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                       <div className="sm:col-span-2 lg:col-span-3">
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2 block">Qualifications</label>
-                        <div className="space-y-3">
+                        <div className="mb-2 flex items-center justify-between">
+                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Qualifications</label>
                           {(() => {
                             const quals = viewingEmployee.qualifications;
-                            if (!quals || (Array.isArray(quals) && quals.length === 0)) {
-                              return <p className="text-sm font-medium text-slate-900 dark:text-slate-100">-</p>;
-                            }
-
-                            // Handle array of objects (new format)
-                            if (Array.isArray(quals)) {
-                              return (
-                                <div className="grid gap-6 sm:grid-cols-2">
-                                  {quals.map((qual: any, idx: number) => {
-                                    const certificateUrl = qual.certificateUrl;
-                                    const isPDF = certificateUrl?.toLowerCase().endsWith('.pdf');
-                                    // Filter out internal keys like certificateUrl for list display
-                                    const displayEntries = Object.entries(qual).filter(([k, v]) =>
-                                      k !== 'certificateUrl' && v !== null && v !== undefined && v !== ''
-                                    );
-
-                                    return (
-                                      <div key={idx} className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white transition-all hover:border-blue-300 hover:shadow-lg dark:border-slate-700 dark:bg-slate-900 dark:hover:border-blue-700 flex flex-col h-full">
-                                        {/* Card Image Area */}
-                                        <div className="aspect-[3/2] w-full overflow-hidden bg-slate-100 dark:bg-slate-800 relative group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80 transition-colors">
-                                          {certificateUrl ? (
-                                            isPDF ? (
-                                              <div className="absolute inset-0 flex items-center justify-center">
-                                                <svg className="h-20 w-20 text-red-500 opacity-80 group-hover:scale-110 transition-transform duration-300" fill="currentColor" viewBox="0 0 24 24">
-                                                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9v-2h2v2zm0-4H9V7h2v5z" />
-                                                </svg>
-                                                <span className="absolute bottom-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">PDF Document</span>
-                                              </div>
-                                            ) : (
-                                              <img
-                                                src={certificateUrl}
-                                                alt="Certificate Preview"
-                                                className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                                              />
-                                            )
-                                          ) : (
-                                            <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-300 dark:text-slate-600">
-                                              <svg className="h-16 w-16 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                              </svg>
-                                              <span className="text-xs font-medium">No Certificate</span>
-                                            </div>
-                                          )}
-
-                                          {/* Overlay Action */}
-                                          {certificateUrl && (
-                                            <a
-                                              href={certificateUrl}
-                                              target="_blank"
-                                              rel="noopener noreferrer"
-                                              className="absolute inset-0 z-10 flex items-center justify-center bg-black/0 opacity-0 transition-all duration-300 group-hover:bg-black/10 group-hover:opacity-100"
-                                            >
-                                              <div className="rounded-full bg-white/90 px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm backdrop-blur-sm hover:bg-white hover:scale-105 transition-all">
-                                                View Full {isPDF ? 'Document' : 'Image'}
-                                              </div>
-                                            </a>
-                                          )}
-                                        </div>
-
-                                        {/* Card Content Area */}
-                                        <div className="flex flex-1 flex-col p-5">
-                                          <div className="space-y-3">
-                                            {displayEntries.length > 0 ? displayEntries.map(([key, value]) => {
-                                              const fieldLabel = formSettings?.qualifications?.fields?.find((f: any) => f.id === key)?.label || key.replace(/_/g, ' ');
-                                              return (
-                                                <div key={key} className="flex flex-col border-b border-slate-100 pb-2 last:border-0 last:pb-0 dark:border-slate-800">
-                                                  <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 dark:text-slate-500 mb-0.5">
-                                                    {fieldLabel}
-                                                  </span>
-                                                  <span className="text-sm font-medium text-slate-900 dark:text-slate-100 line-clamp-1" title={String(value)}>
-                                                    {String(value)}
-                                                  </span>
-                                                </div>
-                                              );
-                                            }) : <span className="text-sm italic text-slate-400">No Qualification Details</span>}
-                                          </div>
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              );
-                            }
-
-                            // Fallback for string
-                            return <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{String(quals)}</p>;
+                            if (!quals || !Array.isArray(quals) || quals.length === 0) return null;
+                            const total = quals.length;
+                            const certLabel = formSettings?.qualifications?.fields?.find((f: any) => f.id === 'certificate_submitted')?.label;
+                            const count = quals.filter((q: any) => {
+                              const v = q.certificate_submitted ?? (certLabel ? q[certLabel] : null);
+                              return v === true || v === 'Yes' || (typeof v === 'string' && v.toLowerCase() === 'yes');
+                            }).length;
+                            const status = total === 0 ? '—' : count === total ? 'Certified' : `Partial (${count}/${total})`;
+                            return (
+                              <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${count === total ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' : 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'}`}>
+                                {status}
+                              </span>
+                            );
                           })()}
                         </div>
+                        {(() => {
+                          const quals = viewingEmployee.qualifications;
+                          if (!quals || (Array.isArray(quals) && quals.length === 0)) {
+                            return <p className="text-sm font-medium text-slate-900 dark:text-slate-100">-</p>;
+                          }
+                          if (Array.isArray(quals)) {
+                            const qualFields = (formSettings?.qualifications?.fields || []).filter((f: any) => f.isEnabled !== false).sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
+                            return (
+                              <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+                                <table className="w-full min-w-[700px] text-left text-sm">
+                                  <thead>
+                                    <tr className="border-b border-slate-200 bg-slate-100/80 dark:border-slate-700 dark:bg-slate-800/80">
+                                      {qualFields.map((f: any) => (
+                                        <th key={f.id} className="whitespace-nowrap px-3 py-2 font-semibold text-slate-700 dark:text-slate-300">
+                                          {f.label}
+                                        </th>
+                                      ))}
+                                      <th className="w-20 px-3 py-2 font-semibold text-slate-700 dark:text-slate-300">View</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {quals.map((qual: any, idx: number) => {
+                                      const certificateUrl = qual.certificateUrl;
+                                      const isPDF = certificateUrl?.toLowerCase().endsWith('.pdf');
+                                      return (
+                                        <tr key={idx} className="border-b border-slate-100 dark:border-slate-700/50">
+                                          {qualFields.map((f: any) => {
+                                            const val = qual[f.id] ?? qual[f.label];
+                                            const display = val != null && val !== '' ? (f.type === 'boolean' ? (val ? 'Yes' : 'No') : String(val)) : '—';
+                                            return (
+                                              <td key={f.id} className="px-3 py-2 text-slate-700 dark:text-slate-300">
+                                                {display}
+                                              </td>
+                                            );
+                                          })}
+                                          <td className="px-3 py-2">
+                                            {certificateUrl ? (
+                                              <button
+                                                type="button"
+                                                onClick={() => setCertificatePreviewUrl(certificateUrl)}
+                                                className="rounded bg-slate-200 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-300 dark:bg-slate-600 dark:text-slate-200 dark:hover:bg-slate-500"
+                                              >
+                                                View
+                                              </button>
+                                            ) : (
+                                              <span className="text-slate-400 dark:text-slate-500">—</span>
+                                            )}
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            );
+                          }
+                          return <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{String(quals)}</p>;
+                        })()}
                       </div>
                       <div>
                         <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Experience (Years)</label>
@@ -4746,6 +4755,7 @@ export default function EmployeesPage() {
                         <button
                           onClick={() => {
                             setShowViewDialog(false);
+                            setCertificatePreviewUrl(null);
                             handleRemoveLeftDate(viewingEmployee);
                           }}
                           className="rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
@@ -4854,6 +4864,29 @@ export default function EmployeesPage() {
 
                 </div>
               </div>
+              {/* Certificate image/document popup */}
+              {certificatePreviewUrl && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" onClick={() => setCertificatePreviewUrl(null)}>
+                  <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+                  <div className="relative z-10 max-h-[90vh] max-w-[90vw] rounded-2xl bg-white shadow-2xl dark:bg-slate-900" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center justify-end gap-2 border-b border-slate-200 p-2 dark:border-slate-700">
+                      <a href={certificatePreviewUrl} target="_blank" rel="noopener noreferrer" className="rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">
+                        Open in new tab
+                      </a>
+                      <button type="button" onClick={() => setCertificatePreviewUrl(null)} className="rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">
+                        Close
+                      </button>
+                    </div>
+                    <div className="p-2">
+                      {certificatePreviewUrl.toLowerCase().endsWith('.pdf') ? (
+                        <iframe src={certificatePreviewUrl} title="Certificate" className="h-[80vh] w-[85vw] max-w-4xl rounded-lg border-0" />
+                      ) : (
+                        <img src={certificatePreviewUrl} alt="Certificate" className="max-h-[80vh] max-w-full rounded-lg object-contain" />
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )
         }
@@ -4867,10 +4900,10 @@ export default function EmployeesPage() {
                 <div className="mb-6 flex items-center justify-between">
                   <div>
                     <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
-                      Set Employee Left Date
+                      Resignation
                     </h2>
                     <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                      {selectedEmployeeForLeftDate.employee_name} ({selectedEmployeeForLeftDate.emp_no})
+                      {selectedEmployeeForLeftDate.employee_name} ({selectedEmployeeForLeftDate.emp_no}) — Enter last working date and remarks. If resignation workflow is enabled in settings, the request will go through approval.
                     </p>
                   </div>
                   <button
@@ -4902,30 +4935,39 @@ export default function EmployeesPage() {
                 <form onSubmit={handleSubmitLeftDate} className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      Left Date <span className="text-red-500">*</span>
+                      Last working date <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="date"
                       required
                       value={leftDateForm.leftDate}
                       onChange={(e) => setLeftDateForm({ ...leftDateForm, leftDate: e.target.value })}
-                      max={new Date().toISOString().split('T')[0]}
+                      min={(() => {
+                        const d = new Date();
+                        d.setDate(d.getDate() + resignationNoticePeriodDays);
+                        return d.toISOString().split('T')[0];
+                      })()}
                       className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     />
                     <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                      The employee will be included in pay register for this month, but excluded from future months.
+                      This date will be recorded as the employee&apos;s last day in office. They will be included in pay register until this month, then excluded from future months.
                     </p>
+                    {resignationNoticePeriodDays > 0 && (
+                      <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                        Notice period: {resignationNoticePeriodDays} day(s). Last working date must be at least {resignationNoticePeriodDays} days from today.
+                      </p>
+                    )}
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      Reason for Leaving (Optional)
+                      Remarks for resignation (Optional)
                     </label>
                     <textarea
                       value={leftDateForm.leftReason}
                       onChange={(e) => setLeftDateForm({ ...leftDateForm, leftReason: e.target.value })}
                       rows={3}
-                      placeholder="Enter reason for leaving..."
+                      placeholder="Enter remarks for resignation..."
                       className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     />
                   </div>
@@ -4946,7 +4988,7 @@ export default function EmployeesPage() {
                       type="submit"
                       className="rounded-xl bg-gradient-to-r from-red-500 to-orange-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-red-500/30 transition-all hover:from-red-600 hover:to-orange-600"
                     >
-                      Set Left Date
+                      Submit Resignation
                     </button>
                   </div>
                 </form>
