@@ -1386,7 +1386,7 @@ export default function AttendancePage() {
               </button>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 hidden">
               <button
                 onClick={handleSyncShifts}
                 disabled={syncingShifts}
@@ -2094,42 +2094,11 @@ export default function AttendancePage() {
                           </div>
 
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                            {/* Shift Selection */}
+                            {/* Shift Selection - read-only */}
                             <div className="flex flex-col gap-1.5">
                               <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Configured Shift</label>
                               <div className="flex items-center gap-3">
-                                {!isEditingThisShift ? (
-                                  <>
-                                    <div className="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate" title={shiftName}>{shiftName}</div>
-                                    <button
-                                      onClick={() => {
-                                        setEditingShift(true);
-                                        setSelectedShiftRecordId(shift._id);
-                                        setSelectedShiftId(shiftIdVal);
-                                      }}
-                                      className="rounded-lg bg-blue-50 px-2.5 py-1 text-[10px] font-bold text-blue-600 hover:bg-blue-100 transition-colors dark:bg-blue-900/20 dark:text-blue-400"
-                                    >
-                                      Change
-                                    </button>
-                                  </>
-                                ) : (
-                                  <div className="flex flex-col gap-2 w-full">
-                                    <select
-                                      value={selectedShiftId || ''}
-                                      onChange={(e) => setSelectedShiftId(e.target.value)}
-                                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                                    >
-                                      <option value="">Select Shift</option>
-                                      {availableShifts.map((s) => (
-                                        <option key={s._id} value={s._id}>{s.name} ({s.startTime}-{s.endTime})</option>
-                                      ))}
-                                    </select>
-                                    <div className="flex gap-2">
-                                      <button onClick={handleAssignShift} className="flex-1 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-green-700">Save</button>
-                                      <button onClick={() => { setEditingShift(false); setSelectedShiftRecordId(null); }} className="flex-1 rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-300 dark:bg-slate-700 dark:text-white dark:hover:bg-slate-600">Cancel</button>
-                                    </div>
-                                  </div>
-                                )}
+                                <div className="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate" title={shiftName}>{shiftName}</div>
                               </div>
                             </div>
 
@@ -2141,41 +2110,7 @@ export default function AttendancePage() {
                               </div>
                               <div className="flex flex-col gap-1">
                                 <label className="text-[10px] font-black uppercase tracking-widest text-rose-600/70">Check-Out</label>
-                                {!isEditingThisOutTime ? (
-                                  <div className="flex items-center gap-2">
-                                    <div className="text-sm font-black text-slate-800 dark:text-white">{formatTime(shift.outTime, true, selectedDate || '')}</div>
-                                    <button
-                                      onClick={() => {
-                                        setEditingOutTime(true);
-                                        setSelectedShiftRecordId(shift._id);
-                                        if (shift.outTime) {
-                                          const d = new Date(shift.outTime);
-                                          setOutTimeInput(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
-                                        } else {
-                                          setOutTimeInput('');
-                                        }
-                                      }}
-                                      className="rounded-lg bg-slate-100 p-1 text-slate-400 hover:bg-blue-50 hover:text-blue-600 transition-all dark:bg-slate-800"
-                                    >
-                                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                                      </svg>
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <div className="flex flex-col gap-2">
-                                    <input
-                                      type="time"
-                                      value={outTimeInput}
-                                      onChange={(e) => setOutTimeInput(e.target.value)}
-                                      className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800"
-                                    />
-                                    <div className="flex gap-1.5">
-                                      <button onClick={handleSaveOutTime} className="flex-1 rounded-md bg-green-600 px-2 py-1 text-[10px] font-bold text-white shadow-sm">Save</button>
-                                      <button onClick={() => { setEditingOutTime(false); setSelectedShiftRecordId(null); }} className="flex-1 rounded-md bg-slate-200 px-2 py-1 text-[10px] font-bold text-slate-700 dark:bg-slate-700 dark:text-white">Cancel</button>
-                                    </div>
-                                  </div>
-                                )}
+                                <div className="text-sm font-black text-slate-800 dark:text-white">{formatTime(shift.outTime, true, selectedDate || '')}</div>
                               </div>
                             </div>
                           </div>
@@ -2214,30 +2149,6 @@ export default function AttendancePage() {
                       </div>
                       <h5 className="mt-4 text-sm font-bold text-slate-900 dark:text-white">No attendance records today</h5>
                       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Employee was marked as absent for this date.</p>
-                      <div className="mt-6 flex justify-center gap-3">
-                        {!editingInTime ? (
-                          <button
-                            onClick={() => {
-                              setEditingInTime(true);
-                              setInTimeInput('09:00'); // Default suggestion
-                            }}
-                            className="rounded-xl bg-blue-600 px-6 py-2.5 text-xs font-bold text-white shadow-lg shadow-blue-500/25 transition-all hover:bg-blue-700 active:scale-95"
-                          >
-                            Mark as Present
-                          </button>
-                        ) : (
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="time"
-                              value={inTimeInput}
-                              onChange={(e) => setInTimeInput(e.target.value)}
-                              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm ring-1 ring-slate-200"
-                            />
-                            <button onClick={handleSaveInTime} className="rounded-lg bg-green-600 px-4 py-1.5 text-xs font-bold text-white shadow-sm">Save</button>
-                            <button onClick={() => setEditingInTime(false)} className="rounded-lg bg-slate-500 px-4 py-1.5 text-xs font-bold text-white shadow-sm">Cancel</button>
-                          </div>
-                        )}
-                      </div>
                     </div>
                   ) : null
                 )}

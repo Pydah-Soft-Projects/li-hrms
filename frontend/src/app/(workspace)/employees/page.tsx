@@ -207,6 +207,7 @@ export default function EmployeesPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [applicationSearchTerm, setApplicationSearchTerm] = useState('');
   const [showBulkUpload, setShowBulkUpload] = useState(false);
+  const [allowEmployeeBulkProcess, setAllowEmployeeBulkProcess] = useState(false);
   const [autoGenerateEmployeeNumber, setAutoGenerateEmployeeNumber] = useState(false);
   /** Toggle in bulk preview: when true, ignore emp numbers from file (auto-generate). Defaults from settings when dialog opens. */
   const [bulkPreviewAutoGenerateEmpNo, setBulkPreviewAutoGenerateEmpNo] = useState(false);
@@ -680,6 +681,12 @@ export default function EmployeesPage() {
   useEffect(() => {
     setFilteredApplicationDesignations(designations);
   }, [designations]);
+
+  useEffect(() => {
+    api.getSetting('allow_employee_bulk_process')
+      .then((res) => { if (res?.success && res?.data != null) setAllowEmployeeBulkProcess(!!res.data.value); })
+      .catch(() => setAllowEmployeeBulkProcess(false));
+  }, []);
 
   // Load employee settings when bulk upload dialog opens; sync toggle default for preview
   useEffect(() => {
@@ -2395,7 +2402,7 @@ export default function EmployeesPage() {
             )}
 
             {/* Import Button */}
-            {hasManagePermission && (
+            {hasManagePermission && allowEmployeeBulkProcess && (
               <button
                 onClick={() => setShowBulkUpload(true)}
                 className="flex items-center gap-2 rounded-xl md:rounded-2xl border border-border-base bg-bg-surface/50 px-2 py-1.5 md:px-4 md:py-2.5 text-xs md:text-sm font-bold text-text-secondary transition-all hover:bg-bg-surface hover:text-indigo-500 backdrop-blur-md shadow-sm"
@@ -4341,7 +4348,7 @@ export default function EmployeesPage() {
 
       {/* Bulk Upload Dialog */}
       {
-        showBulkUpload && (
+        allowEmployeeBulkProcess && showBulkUpload && (
           <BulkUpload
             title="Bulk Upload Employees"
             templateHeaders={dynamicTemplate.headers}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { api } from '@/lib/api';
 import { CertificateUpload } from '@/components/CertificateUpload';
 import Spinner from '@/components/Spinner';
@@ -100,7 +100,25 @@ export default function DynamicEmployeeForm({
 }: DynamicEmployeeFormProps) {
   const [settings, setSettings] = useState<FormSettings | null>(null);
   const [loading, setLoading] = useState(true);
-  const [users, setUsers] = useState<Array<{ _id: string; name: string; email: string }>>([]);
+  const [users, setUsers] = useState<Array<{ _id: string; name: string; email: string; role?: string; divisionMapping?: Array<{ division?: { _id: string } | string }> }>>([]);
+
+  // Reporting-to dropdown: filter by selected division using each user's divisionMapping; super_admin and sub_admin shown for all divisions
+  const divisionId = typeof formData?.division_id === 'object' ? (formData?.division_id as any)?._id : formData?.division_id;
+  const reportingToUsers = useMemo(() => {
+    if (!users.length) return [];
+    const divId = divisionId ? String(divisionId).trim() : null;
+    if (!divId) return users;
+    return users.filter((u: any) => {
+      const role = (u.role || '').toLowerCase().replace(/\s/g, '_');
+      if (role === 'super_admin' || role === 'sub_admin') return true;
+      const mapping = u.divisionMapping || [];
+      return mapping.some((m: any) => {
+        const d = m?.division;
+        const mDivId = d != null ? (typeof d === 'object' ? d._id : d) : null;
+        return mDivId != null && String(mDivId).trim() === divId;
+      });
+    });
+  }, [users, divisionId]);
 
   useEffect(() => {
     loadSettings();
@@ -109,9 +127,9 @@ export default function DynamicEmployeeForm({
 
   const loadUsers = async () => {
     try {
-      const response = await api.getUsers({ isActive: true });
+      const response = await api.getUsers({ isActive: true, limit: 1000 });
       if (response.success && response.data) {
-        setUsers(response.data);
+        setUsers(Array.isArray(response.data) ? response.data : []);
       }
     } catch (error) {
       console.error('Error loading users:', error);
@@ -779,9 +797,81 @@ export default function DynamicEmployeeForm({
           </div>
         );
 
-      case 'userselect':
+      case 'userselect': {
         const selectedUserIds = Array.isArray(value) ? value : value ? [value] : [];
         const maxUsers = (field.validation as any)?.maxItems || 2;
+        const isReportingTo = field.id === 'reporting_to' || field.id === 'reporting_to_';
+        const usersForSelect = isReportingTo ? reportingToUsers : users;
+        const canAddMore = selectedUserIds.length < maxUsers;
+        const selectedUsers = selectedUserIds
+          .map((id) => users.find((u) => u._id === id))
+          .filter(Boolean) as typeof users;
+
+        if (isReportingTo) {
+          return (
+            <div key={fieldKey} className="sm:col-span-2">
+              <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                {displayLabel} {field.isRequired && '*'}
+                {maxUsers > 1 && (
+                  <span className="ml-2 text-xs font-normal text-slate-500 dark:text-slate-400">
+                    (Select up to {maxUsers})
+                  </span>
+                )}
+              </label>
+              <select
+                value=""
+                onChange={(e) => {
+                  const id = e.target.value;
+                  if (!id || selectedUserIds.includes(id) || selectedUserIds.length >= maxUsers) return;
+                  handleFieldChange(field.id, [...selectedUserIds, id]);
+                  e.target.value = '';
+                }}
+                disabled={isViewMode || !canAddMore}
+                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+              >
+                <option value="">{divisionId ? 'Select from division…' : 'Select reporting manager…'}</option>
+                {usersForSelect
+                  .filter((u) => !selectedUserIds.includes(u._id))
+                  .map((user) => (
+                    <option key={user._id} value={user._id}>
+                      {user.name} ({user.email})
+                    </option>
+                  ))}
+              </select>
+              {selectedUsers.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {selectedUsers.map((user) => (
+                    <span
+                      key={user._id}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-green-200 bg-green-50 px-3 py-1.5 text-sm font-medium text-green-800 dark:border-green-800 dark:bg-green-900/20 dark:text-green-300"
+                    >
+                      {user.name}
+                      {!isViewMode && (
+                        <button
+                          type="button"
+                          onClick={() => handleFieldChange(field.id, selectedUserIds.filter((id) => id !== user._id))}
+                          className="rounded p-0.5 hover:bg-green-200 dark:hover:bg-green-800"
+                          aria-label={`Remove ${user.name}`}
+                        >
+                          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      )}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {divisionId && usersForSelect.length === 0 && (
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  No users in this division. Select a division above or choose super admin / sub admin if available.
+                </p>
+              )}
+              {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
+            </div>
+          );
+        }
+
         return (
           <div key={fieldKey} className="sm:col-span-2">
             <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
@@ -793,7 +883,7 @@ export default function DynamicEmployeeForm({
               )}
             </label>
             <div className="space-y-2">
-              {users.map((user) => {
+              {usersForSelect.map((user) => {
                 const isSelected = selectedUserIds.includes(user._id);
                 const canSelect = isSelected || selectedUserIds.length < maxUsers;
                 return (
@@ -848,6 +938,7 @@ export default function DynamicEmployeeForm({
             {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
           </div>
         );
+      }
 
       default:
         return null;

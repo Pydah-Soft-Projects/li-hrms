@@ -40,7 +40,8 @@ exports.getSetting = async (req, res) => {
       const defaults = {
         'include_missing_employee_components': true,
         'enable_absent_deduction': false,
-        'lop_days_per_absent': 1
+        'lop_days_per_absent': 1,
+        'allow_employee_bulk_process': false
       };
 
       if (defaults[req.params.key] !== undefined) {
@@ -136,6 +137,15 @@ exports.upsertSetting = async (req, res) => {
       }
     }
 
+    if (key === 'allow_employee_bulk_process') {
+      if (typeof value !== 'boolean') {
+        return res.status(400).json({
+          success: false,
+          message: 'allow_employee_bulk_process must be a boolean',
+        });
+      }
+    }
+
     const setting = await Settings.findOneAndUpdate(
       { key },
       {
@@ -146,7 +156,9 @@ exports.upsertSetting = async (req, res) => {
           category ||
           (['include_missing_employee_components', 'enable_absent_deduction', 'lop_days_per_absent'].includes(key)
             ? 'payroll'
-            : 'general'),
+            : ['allow_employee_bulk_process'].includes(key)
+              ? 'employee'
+              : 'general'),
       },
       {
         new: true,
