@@ -263,6 +263,7 @@ export default function EmployeesPage() {
 
   const [applicationSearchTerm, setApplicationSearchTerm] = useState('');
   const [showBulkUpload, setShowBulkUpload] = useState(false);
+  const [allowEmployeeBulkProcess, setAllowEmployeeBulkProcess] = useState(false);
   const [autoGenerateEmployeeNumber, setAutoGenerateEmployeeNumber] = useState(false);
   /** Toggle in bulk preview: when true, ignore emp numbers from file (auto-generate). Defaults from settings when dialog opens. */
   const [bulkPreviewAutoGenerateEmpNo, setBulkPreviewAutoGenerateEmpNo] = useState(false);
@@ -725,6 +726,12 @@ export default function EmployeesPage() {
       loadApplications();
     }
   }, [activeTab, selectedDivisionFilter, selectedDepartmentFilter, selectedDesignationFilter]);
+
+  useEffect(() => {
+    api.getSetting('allow_employee_bulk_process')
+      .then((res) => { if (res?.success && res?.data != null) setAllowEmployeeBulkProcess(!!res.data.value); })
+      .catch(() => setAllowEmployeeBulkProcess(false));
+  }, []);
 
   const loadDivisions = async () => {
     try {
@@ -2330,7 +2337,7 @@ export default function EmployeesPage() {
               <div className="h-8 w-px bg-slate-200 dark:bg-slate-700"></div>
 
               {/* Employee Update Button */}
-              {activeTab === 'employees' && (
+              {activeTab === 'employees' && allowEmployeeBulkProcess && (
                 <button
                   onClick={() => setShowEmployeeUpdateModal(true)}
                   className="flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-medium text-blue-700 transition-all hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
@@ -2342,7 +2349,7 @@ export default function EmployeesPage() {
                 </button>
               )}
 
-              {(activeTab === 'employees' || activeTab === 'applications') && (
+              {(activeTab === 'employees' || activeTab === 'applications') && allowEmployeeBulkProcess && (
                 <button
                   onClick={() => setShowBulkAllowancesDeductions(true)}
                   className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-2"
@@ -2353,7 +2360,7 @@ export default function EmployeesPage() {
                   Bulk A&D Update
                 </button>
               )}
-              {(activeTab === 'employees' || activeTab === 'applications') && (
+              {(activeTab === 'employees' || activeTab === 'applications') && allowEmployeeBulkProcess && (
                 <button
                   onClick={() => setShowBulkUpload(true)}
                   className="flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-2.5 text-sm font-medium text-green-700 transition-all hover:bg-green-100 dark:border-green-800 dark:bg-green-900/30 dark:text-green-400"
@@ -4098,7 +4105,7 @@ export default function EmployeesPage() {
 
         {/* Bulk Upload Dialog */}
         {
-          showBulkUpload && (
+          allowEmployeeBulkProcess && showBulkUpload && (
             <BulkUpload
               title="Bulk Upload Employees"
               templateHeaders={dynamicTemplate.headers}
@@ -4949,7 +4956,7 @@ export default function EmployeesPage() {
         }
       </div>
 
-      {showEmployeeUpdateModal && (
+      {allowEmployeeBulkProcess && showEmployeeUpdateModal && (
         <EmployeeUpdateModal
           onClose={() => setShowEmployeeUpdateModal(false)}
           onSuccess={() => {
@@ -4959,7 +4966,7 @@ export default function EmployeesPage() {
         />
       )}
 
-      {showBulkAllowancesDeductions && (
+      {allowEmployeeBulkProcess && showBulkAllowancesDeductions && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
           <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl dark:bg-slate-800">
             <h3 className="mb-4 text-xl font-bold text-slate-800 dark:text-white">Bulk Allowances & Deductions Update</h3>
