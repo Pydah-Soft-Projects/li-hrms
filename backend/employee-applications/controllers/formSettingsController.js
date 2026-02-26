@@ -469,14 +469,7 @@ exports.addField = async (req, res) => {
       });
     }
 
-    // Cannot add fields to system groups (only system fields allowed)
-    if (group.isSystem) {
-      return res.status(400).json({
-        success: false,
-        message: 'Cannot add custom fields to system groups',
-      });
-    }
-
+    // Allow adding fields to all groups (including system groups); new fields are isSystem: false
     // Check if field already exists
     if (group.fields.some((f) => f.id === fieldData.id)) {
       return res.status(400).json({
@@ -782,7 +775,7 @@ exports.addQualificationsField = async (req, res) => {
 exports.updateQualificationsField = async (req, res) => {
   try {
     const { fieldId } = req.params;
-    const { label, isRequired, isEnabled, placeholder, validation, options, order } = req.body;
+    const { label, type, isRequired, isEnabled, placeholder, validation, options, order } = req.body;
 
     const settings = await EmployeeApplicationFormSettings.getActiveSettings();
     if (!settings) {
@@ -809,6 +802,7 @@ exports.updateQualificationsField = async (req, res) => {
 
     // Update allowed fields
     if (label !== undefined) field.label = label;
+    if (type !== undefined) field.type = type;
     if (isRequired !== undefined) field.isRequired = isRequired;
     if (isEnabled !== undefined) field.isEnabled = isEnabled;
     if (placeholder !== undefined) field.placeholder = placeholder;
