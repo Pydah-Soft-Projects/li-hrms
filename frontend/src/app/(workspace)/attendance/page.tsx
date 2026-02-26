@@ -2707,7 +2707,7 @@ export default function AttendancePage() {
 
 
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 hidden">
               {hasManagePermission && (
                 <button
                   onClick={handleSyncShifts}
@@ -3346,75 +3346,20 @@ export default function AttendancePage() {
                     <div>
                       <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Shift</label>
                       <div className="mt-1 flex items-center gap-2">
-                        {!editingShift ? (
-                          <>
-                            <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                              {attendanceDetail.shifts && attendanceDetail.shifts.length > 0
-                                ? attendanceDetail.shifts.map((s: any, index: number) => {
-                                  const sName = s.shiftId && typeof s.shiftId === 'object' ? (s.shiftId as any).name : '-';
-                                  return (
-                                    <span key={index} className="block">
-                                      {sName} {attendanceDetail.shifts!.length > 1 ? `(#${index + 1})` : ''}
-                                    </span>
-                                  );
-                                })
-                                : (attendanceDetail.shiftId && typeof attendanceDetail.shiftId === 'object'
-                                  ? attendanceDetail.shiftId.name
-                                  : '-')}
-                            </div>
-                            {hasManagePermission && (
-                              <button
-                                onClick={() => {
-                                  setEditingShift(true);
-                                  // Default to first shift or root shift
-                                  if (attendanceDetail.shifts && attendanceDetail.shifts.length > 0) {
-                                    const firstShift = attendanceDetail.shifts[0];
-                                    if (firstShift.shiftId && typeof firstShift.shiftId === 'object') {
-                                      setSelectedShiftId((firstShift.shiftId as any)._id);
-                                    }
-                                    setSelectedShiftRecordId(firstShift._id);
-                                  } else if (attendanceDetail.shiftId && typeof attendanceDetail.shiftId === 'object') {
-                                    setSelectedShiftId(attendanceDetail.shiftId._id);
-                                  }
-                                }}
-                                className="rounded-lg bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-all hover:bg-blue-600 mt-1"
-                              >
-                                {attendanceDetail.shifts && attendanceDetail.shifts.length > 0 ? 'Edit Shift' : (attendanceDetail.shiftId ? 'Change' : 'Assign')}
-                              </button>
-                            )}
-                          </>
-                        ) : (
-                          <div className="flex-1 flex items-center gap-2">
-                            <select
-                              value={selectedShiftId}
-                              onChange={(e) => setSelectedShiftId(e.target.value)}
-                              className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-                            >
-                              <option value="">Select Shift</option>
-                              {availableShifts.map((shift) => (
-                                <option key={shift._id} value={shift._id}>
-                                  {shift.name} ({shift.startTime} - {shift.endTime})
-                                </option>
-                              ))}
-                            </select>
-                            <button
-                              onClick={handleAssignShift}
-                              disabled={savingShift || !selectedShiftId}
-                              className={`rounded-lg bg-green-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50 ${!hasManagePermission ? 'hidden' : ''}`}
-                            >
-                              {savingShift ? 'Saving...' : 'Save'}
-                            </button>
-                            <button
-                              onClick={() => {
-                                setEditingShift(false);
-                                setSelectedShiftId('');
-                              }}
-                              className="rounded-lg bg-slate-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-slate-600"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        )}
+                        <div className="text-sm font-semibold text-slate-900 dark:text-white">
+                          {attendanceDetail.shifts && attendanceDetail.shifts.length > 0
+                            ? attendanceDetail.shifts.map((s: any, index: number) => {
+                              const sName = s.shiftId && typeof s.shiftId === 'object' ? (s.shiftId as any).name : '-';
+                              return (
+                                <span key={index} className="block">
+                                  {sName} {attendanceDetail.shifts!.length > 1 ? `(#${index + 1})` : ''}
+                                </span>
+                              );
+                            })
+                            : (attendanceDetail.shiftId && typeof attendanceDetail.shiftId === 'object'
+                              ? attendanceDetail.shiftId.name
+                              : '-')}
+                        </div>
                       </div>
 
                     </div>
@@ -3431,72 +3376,17 @@ export default function AttendancePage() {
                     <div>
                       <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Out Time</label>
                       <div className="mt-1 flex flex-col gap-1">
-                        {!editingOutTime ? (
-                          <>
-                            <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                              {attendanceDetail.shifts && attendanceDetail.shifts.length > 0
-                                ? attendanceDetail.shifts.map((s: any, i: number) => (
-                                  <div key={i} className="flex items-center gap-2">
-                                    <span>{s.outTime ? formatTime(s.outTime) : '-'}</span>
-                                    {i === attendanceDetail.shifts!.length - 1 && (
-                                      <button
-                                        onClick={() => {
-                                          setEditingOutTime(true);
-                                          setSelectedShiftRecordId(s._id);
-                                          const date = new Date(s.outTime);
-                                          setOutTimeInput(`${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`);
-                                        }}
-                                        className="rounded-md bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400"
-                                      >
-                                        {s.outTime ? 'Edit' : 'Add'}
-                                      </button>
-                                    )}
-                                  </div>
-                                ))
-                                : (
-                                  <div className="flex items-center gap-2">
-                                    <span>{attendanceDetail.outTime ? formatTime(attendanceDetail.outTime) : '-'}</span>
-                                    <button
-                                      onClick={() => {
-                                        setEditingOutTime(true);
-                                        const date = new Date(attendanceDetail.outTime);
-                                        setOutTimeInput(`${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`);
-                                      }}
-                                      className="rounded-md bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400"
-                                    >
-                                      {attendanceDetail.outTime ? 'Edit' : 'Add'}
-                                    </button>
-                                  </div>
-                                )}
-                            </div>
-                          </>
-                        ) : (
-                          <div className="flex-1 flex items-center gap-2">
-                            <input
-                              type="time"
-                              value={outTimeInput}
-                              onChange={(e) => setOutTimeInput(e.target.value)}
-                              className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-                            />
-                            <button
-                              onClick={handleSaveOutTime}
-                              disabled={savingOutTime || !outTimeInput}
-                              className="rounded-lg bg-green-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-green-600 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              {savingOutTime ? 'Saving...' : 'Save'}
-                            </button>
-                            <button
-                              onClick={() => {
-                                setEditingOutTime(false);
-                                setOutTimeInput('');
-                              }}
-                              className="rounded-lg bg-slate-500 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-slate-600"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        )}
-
+                        <div className="text-sm font-semibold text-slate-900 dark:text-white">
+                          {attendanceDetail.shifts && attendanceDetail.shifts.length > 0
+                            ? attendanceDetail.shifts.map((s: any, i: number) => (
+                              <div key={i}>
+                                <span>{s.outTime ? formatTime(s.outTime) : '-'}</span>
+                              </div>
+                            ))
+                            : (
+                              <span>{attendanceDetail.outTime ? formatTime(attendanceDetail.outTime) : '-'}</span>
+                            )}
+                        </div>
                       </div>
 
                     </div>
