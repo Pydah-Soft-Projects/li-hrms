@@ -42,7 +42,7 @@ exports.getDashboardStats = async (req, res) => {
 
     // 1. Super Admin / Sub Admin - Global Stats
     if (['super_admin', 'sub_admin'].includes(role)) {
-      const totalEmployees = await Employee.countDocuments({ is_active: true });
+      const totalEmployees = await Employee.countDocuments(Employee.getCurrentlyActiveFilter());
       const pendingLeaves = await Leave.countDocuments({ status: 'pending' });
       const approvedLeaves = await Leave.countDocuments({ status: 'approved' });
 
@@ -65,8 +65,9 @@ exports.getDashboardStats = async (req, res) => {
     else if (['hr', 'manager'].includes(role)) {
       const scopedEmployeeIds = await getEmployeeIdsInScope(user);
 
+      const activeFilter = Employee.getCurrentlyActiveFilter();
       const totalEmployees = await Employee.countDocuments(
-        scopedEmployeeIds.length > 0 ? { _id: { $in: scopedEmployeeIds }, is_active: true } : { _id: null }
+        scopedEmployeeIds.length > 0 ? { _id: { $in: scopedEmployeeIds }, ...activeFilter } : { _id: null }
       );
 
       const leaveScopeFilter = scopedEmployeeIds.length > 0 ? { employeeId: { $in: scopedEmployeeIds } } : { _id: null };
@@ -105,7 +106,8 @@ exports.getDashboardStats = async (req, res) => {
         return res.status(400).json({ success: false, message: 'HOD has no scope assigned in divisionMapping' });
       }
 
-      const teamSize = await Employee.countDocuments({ _id: { $in: scopedEmployeeIds }, is_active: true });
+      const activeFilter = Employee.getCurrentlyActiveFilter();
+      const teamSize = await Employee.countDocuments({ _id: { $in: scopedEmployeeIds }, ...activeFilter });
 
       const teamPresent = scopedEmpNos.length > 0
         ? await AttendanceDaily.countDocuments({
@@ -247,7 +249,7 @@ exports.getSuperAdminAnalytics = async (req, res) => {
       allODs
     ] = await Promise.all([
       Employee.countDocuments(),
-      Employee.countDocuments({ is_active: true }),
+      Employee.countDocuments(Employee.getCurrentlyActiveFilter()),
       Department.countDocuments(),
       User.countDocuments(),
 

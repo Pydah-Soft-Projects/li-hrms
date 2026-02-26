@@ -22,7 +22,15 @@ function buildWorkflowVisibilityFilter(user) {
 // @access  Private (HR, manager, super_admin, etc. - who can set left date)
 exports.createResignationRequest = async (req, res) => {
   try {
-    const { emp_no, leftDate, remarks } = req.body;
+    let { emp_no, leftDate, remarks } = req.body;
+    const userRole = (req.user?.role || '').toLowerCase();
+    const isEmployeeSelf = userRole === 'employee';
+    if (isEmployeeSelf) {
+      emp_no = req.user?.employeeId || req.user?.emp_no;
+      if (!emp_no) {
+        return res.status(400).json({ success: false, message: 'Your employee record could not be identified. Please contact HR.' });
+      }
+    }
     if (!emp_no || !leftDate) {
       return res.status(400).json({ success: false, message: 'Employee number and left date are required' });
     }
@@ -30,16 +38,20 @@ exports.createResignationRequest = async (req, res) => {
     if (isNaN(leftDateObj.getTime())) {
       return res.status(400).json({ success: false, message: 'Invalid left date' });
     }
+    if (isEmployeeSelf && (req.body.emp_no && String(req.body.emp_no).toUpperCase() !== String(emp_no).toUpperCase())) {
+      return res.status(403).json({ success: false, message: 'You can only submit a resignation for yourself.' });
+    }
 
     const settings = await ResignationSettings.getActiveSettings();
-    const noticePeriodDays = Number(settings?.noticePeriodDays) || 0;
+    const noticePeriodDays = Math.max(0, Number(settings?.noticePeriodDays) || 0);
     if (noticePeriodDays > 0) {
+      // Compare calendar days only (parse YYYY-MM-DD at noon UTC to avoid timezone shift)
+      const leftDateStr = String(leftDate).slice(0, 10);
+      const leftDay = new Date(leftDateStr + 'T12:00:00.000Z');
       const minDate = new Date();
-      minDate.setDate(minDate.getDate() + noticePeriodDays);
-      minDate.setHours(0, 0, 0, 0);
-      const leftDay = new Date(leftDateObj);
-      leftDay.setHours(0, 0, 0, 0);
-      if (leftDay < minDate) {
+      minDate.setUTCHours(12, 0, 0, 0);
+      minDate.setUTCDate(minDate.getUTCDate() + noticePeriodDays);
+      if (leftDay.getTime() < minDate.getTime()) {
         return res.status(400).json({
           success: false,
           message: `Notice period is ${noticePeriodDays} day(s). Last working date must be at least ${noticePeriodDays} days from today.`,
@@ -61,38 +73,40 @@ exports.createResignationRequest = async (req, res) => {
     const reportingManagers = employee.dynamicFields?.reporting_to || employee.dynamicFields?.reporting_to_ || [];
     const hasReportingManager = Array.isArray(reportingManagers) && reportingManagers.length > 0;
 
+    // Build approval chain same as Leave/OD: Reporting Manager or HOD first, then steps from settings (skip duplicate HOD)
     const approvalSteps = [];
+    if (hasReportingManager) {
+      approvalSteps.push({
+        stepOrder: 1,
+        role: 'reporting_manager',
+        label: 'Reporting Manager Approval',
+        status: 'pending',
+        isCurrent: true,
+      });
+    } else {
+      approvalSteps.push({
+        stepOrder: 1,
+        role: 'hod',
+        label: 'HOD Approval',
+        status: 'pending',
+        isCurrent: true,
+      });
+    }
     if (workflowEnabled && settings?.workflow?.steps?.length) {
-      if (hasReportingManager) {
-        approvalSteps.push({
-          stepOrder: 1,
-          role: 'reporting_manager',
-          label: 'Reporting Manager Approval',
-          status: 'pending',
-          isCurrent: true,
-        });
-      }
       settings.workflow.steps.forEach((step) => {
-        if (step.approverRole !== 'reporting_manager') {
+        const role = (step.approverRole || '').toLowerCase();
+        if (role !== 'hod' && role !== 'reporting_manager') {
           approvalSteps.push({
             stepOrder: approvalSteps.length + 1,
             role: step.approverRole,
-            label: step.stepName || `${step.approverRole} Approval`,
+            label: step.stepName || `${(step.approverRole || '').toUpperCase()} Approval`,
             status: 'pending',
-            isCurrent: !hasReportingManager && approvalSteps.length === 0,
+            isCurrent: false,
           });
         }
       });
-      if (approvalSteps.length === 0) {
-        approvalSteps.push({
-          stepOrder: 1,
-          role: 'hr',
-          label: 'HR Approval',
-          status: 'pending',
-          isCurrent: true,
-        });
-      }
-    } else {
+    }
+    if (approvalSteps.length === 0) {
       approvalSteps.push({
         stepOrder: 1,
         role: 'hr',
@@ -214,10 +228,13 @@ exports.approveResignationRequest = async (req, res) => {
     const step = chain[activeIndex];
     const userRole = (req.user.role || '').toLowerCase();
     const isReportingManager = resignation.workflow?.reportingManagerIds?.includes(req.user._id.toString());
+    const isSuperOrSubAdmin = ['super_admin', 'sub_admin'].includes(userRole);
     const canAct =
+      isSuperOrSubAdmin ||
       step.role === userRole ||
       (step.role === 'reporting_manager' && isReportingManager) ||
-      (resignation.workflow.finalAuthority === userRole && ['super_admin', 'sub_admin', 'hr'].includes(userRole));
+      (step.role === 'final_authority' && userRole === 'hr') ||
+      (resignation.workflow.finalAuthority === userRole && ['hr'].includes(userRole));
     if (!canAct) {
       return res.status(403).json({
         success: false,
@@ -270,13 +287,14 @@ exports.approveResignationRequest = async (req, res) => {
       if (emp) {
         emp.leftDate = resignation.leftDate;
         emp.leftReason = resignation.remarks || null;
-        emp.is_active = false;
+        // Do not set is_active = false here: account stays active until last working date (leftDate).
+        // Auth and listings treat employee as inactive only when leftDate is in the past.
         await emp.save();
       }
 
       return res.status(200).json({
         success: true,
-        message: 'Resignation approved. Employee left date has been set.',
+        message: 'Resignation approved. Employee left date has been set. Account remains active until last working date.',
         data: resignation,
       });
     }
@@ -309,13 +327,17 @@ exports.getResignationRequests = async (req, res) => {
   try {
     const { emp_no } = req.query;
     const filter = {};
+    const userRole = (req.user.role || '').toLowerCase();
     if (emp_no) filter.emp_no = String(emp_no).toUpperCase();
-    else {
-      const userRole = (req.user.role || '').toLowerCase();
-      if (userRole !== 'super_admin' && userRole !== 'sub_admin') {
-        const employeeIds = await getEmployeeIdsInScope(req.user);
-        if (employeeIds.length) filter.employeeId = { $in: employeeIds };
-      }
+    else if (userRole === 'employee') {
+      const myEmployeeId = req.user.employeeRef
+        || (req.user.employeeId && (await Employee.findOne({ emp_no: String(req.user.employeeId).toUpperCase() }).select('_id').lean())?._id)
+        || req.user._id;
+      if (myEmployeeId) filter.employeeId = myEmployeeId;
+      else filter.employeeId = { $in: [] };
+    } else if (userRole !== 'super_admin' && userRole !== 'sub_admin') {
+      const employeeIds = await getEmployeeIdsInScope(req.user);
+      if (employeeIds.length) filter.employeeId = { $in: employeeIds };
     }
     const list = await ResignationRequest.find(filter)
       .populate('employeeId', 'employee_name emp_no department_id division_id')

@@ -6,8 +6,9 @@ const ResignationSettings = require('../model/ResignationSettings');
 exports.getSettings = async (req, res) => {
   try {
     let settings = await ResignationSettings.getActiveSettings();
+    let data;
     if (!settings) {
-      settings = {
+      data = {
         noticePeriodDays: 0,
         workflow: {
           isEnabled: true,
@@ -17,15 +18,22 @@ exports.getSettings = async (req, res) => {
         isActive: true,
         isDefault: true,
       };
-    }
-    if (!settings.workflow) {
-      settings.workflow = {
-        isEnabled: true,
-        steps: [],
-        finalAuthority: { role: 'hr', anyHRCanApprove: true },
+    } else {
+      const plain = settings.toObject ? settings.toObject() : { ...settings };
+      data = {
+        noticePeriodDays: Number(plain.noticePeriodDays) >= 0 ? Number(plain.noticePeriodDays) : 0,
+        workflow: plain.workflow || {
+          isEnabled: true,
+          steps: [],
+          finalAuthority: { role: 'hr', anyHRCanApprove: true },
+        },
+        isActive: plain.isActive !== false,
       };
+      if (!data.workflow.finalAuthority) {
+        data.workflow.finalAuthority = { role: 'hr', anyHRCanApprove: true };
+      }
     }
-    res.status(200).json({ success: true, data: settings });
+    res.status(200).json({ success: true, data });
   } catch (error) {
     console.error('Error fetching resignation settings:', error);
     res.status(500).json({
@@ -41,11 +49,11 @@ exports.getSettings = async (req, res) => {
 exports.saveSettings = async (req, res) => {
   try {
     const { noticePeriodDays, workflow } = req.body;
-    let settings = await ResignationSettings.findOne({});
+    let settings = await ResignationSettings.getActiveSettings();
     if (!settings) {
-      settings = new ResignationSettings({});
+      settings = await ResignationSettings.findOne({}) || new ResignationSettings({});
     }
-    if (noticePeriodDays !== undefined) settings.noticePeriodDays = Number(noticePeriodDays) || 0;
+    if (noticePeriodDays !== undefined) settings.noticePeriodDays = Math.max(0, Number(noticePeriodDays) || 0);
     if (workflow) {
       settings.workflow = settings.workflow || {};
       if (workflow.isEnabled !== undefined) settings.workflow.isEnabled = !!workflow.isEnabled;

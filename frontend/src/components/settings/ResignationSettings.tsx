@@ -29,8 +29,9 @@ const ResignationSettings = () => {
       const res = await api.getResignationSettings();
       if (res.success && res.data) {
         const d = res.data;
+        const noticeDays = Math.max(0, Number(d.noticePeriodDays ?? d.value?.noticePeriodDays ?? 0) || 0);
         setSettings({
-          noticePeriodDays: d.noticePeriodDays ?? 0,
+          noticePeriodDays: noticeDays,
           workflow: {
             isEnabled: d.workflow?.isEnabled !== false,
             steps: (d.workflow?.steps || []).map((s: any) => ({
