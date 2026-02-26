@@ -1572,6 +1572,7 @@ export const api = {
   },
   updateQualificationsField: async (fieldId: string, data: {
     label?: string;
+    type?: string;
     isRequired?: boolean;
     isEnabled?: boolean;
     placeholder?: string;
