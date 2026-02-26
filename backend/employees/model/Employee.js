@@ -141,6 +141,7 @@ const employeeSchema = new mongoose.Schema(
       uppercase: true,
       default: null,
     },
+    // Earned Leave (EL) balance – synced from leave register
     paidLeaves: {
       type: Number,
       default: 0,

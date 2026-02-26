@@ -5,9 +5,12 @@ const User = require('../../users/model/User');
 const Settings = require('../../settings/model/Settings');
 const Loan = require('../../loans/model/Loan');
 const payrollCalculationService = require('../services/payrollCalculationService');
+const payrollCalculationFromOutputColumnsService = require('../services/payrollCalculationFromOutputColumnsService');
 const XLSX = require('xlsx');
 const PayRegisterSummary = require('../../pay-register/model/PayRegisterSummary');
 const MonthlyAttendanceSummary = require('../../attendance/model/MonthlyAttendanceSummary');
+const PayrollConfiguration = require('../model/PayrollConfiguration');
+const outputColumnService = require('../services/outputColumnService');
 /**
  * Payroll Controller
  * Handles payroll calculation, retrieval, and processing
@@ -109,7 +112,8 @@ async function buildPayslipData(employeeId, month) {
   const earnedSalary =
     presentDays !== null ? perDay * presentDays : payrollRecord.earnings.payableAmount;
   const paidLeaveSalary = paidLeaveDays !== null ? perDay * paidLeaveDays : 0;
-  const odSalary = odDays !== null ? perDay * odDays : 0;
+  // Present days already include OD days; do not add OD again (no separate odSalary in gross).
+  const odSalary = 0;
   const incentive = incentiveDays !== null ? perDay * incentiveDays : payrollRecord.earnings.incentive;
 
   const totalAllowances = payrollRecord.earnings.totalAllowances || 0;
@@ -168,6 +172,7 @@ async function buildPayslipData(employeeId, month) {
       otPay,
       allowances: payrollRecord.earnings.allowances,
       totalAllowances,
+      allowancesCumulative: payrollRecord.earnings.allowancesCumulative ?? totalAllowances,
       grossSalary,
     },
     deductions: {
@@ -177,6 +182,10 @@ async function buildPayslipData(employeeId, month) {
       leaveDeduction: payrollRecord.deductions.leaveDeduction,
       otherDeductions: payrollRecord.deductions.otherDeductions,
       totalOtherDeductions: payrollRecord.deductions.totalOtherDeductions,
+      statutoryDeductions: payrollRecord.deductions.statutoryDeductions || [],
+      totalStatutoryEmployee: payrollRecord.deductions.totalStatutoryEmployee,
+      statutoryCumulative: payrollRecord.deductions.statutoryCumulative,
+      deductionsCumulative: payrollRecord.deductions.deductionsCumulative ?? payrollRecord.deductions.totalDeductions,
       totalDeductions: payrollRecord.deductions.totalDeductions,
     },
     loanAdvance: {
@@ -189,11 +198,12 @@ async function buildPayslipData(employeeId, month) {
     },
     netSalary: payrollRecord.netSalary,
     totalPayableShifts: payrollRecord.totalPayableShifts,
-    paidDays: payrollRecord.attendance?.paidDays || (presentDays + (payRegisterSummary?.totals?.totalWeeklyOffs || 0) + (payRegisterSummary?.totals?.totalHolidays || 0) + (odDays || 0) + (paidLeaveDays || 0)),
+    // Present days already include OD; do not add OD again in paid days.
+    paidDays: payrollRecord.attendance?.paidDays || (presentDays + (payRegisterSummary?.totals?.totalWeeklyOffs || 0) + (payRegisterSummary?.totals?.totalHolidays || 0) + (paidLeaveDays || 0)),
     // Late/attendance deducting days (days deducted due to late-in/early-out rules)
     attendanceDeductionDays: (payrollRecord.deductions?.attendanceDeductionBreakdown?.daysDeducted ?? 0),
     // Final paid days = paid days minus attendance deduction days (clear picture for user)
-    finalPaidDays: Math.max(0, (payrollRecord.attendance?.paidDays ?? (presentDays + (payRegisterSummary?.totals?.totalWeeklyOffs || 0) + (payRegisterSummary?.totals?.totalHolidays || 0) + (odDays || 0) + (paidLeaveDays || 0))) - (payrollRecord.deductions?.attendanceDeductionBreakdown?.daysDeducted ?? 0)),
+    finalPaidDays: Math.max(0, (payrollRecord.attendance?.paidDays ?? (presentDays + (payRegisterSummary?.totals?.totalWeeklyOffs || 0) + (payRegisterSummary?.totals?.totalHolidays || 0) + (paidLeaveDays || 0))) - (payrollRecord.deductions?.attendanceDeductionBreakdown?.daysDeducted ?? 0)),
     roundOff: payrollRecord.roundOff || 0,
     status: payrollRecord.status,
   };
@@ -427,17 +437,34 @@ exports.calculatePayroll = async (req, res) => {
       });
     }
 
-    // Strategy: default = new engine. legacy = new engine but using all related data (attendance summary cross-check).
-    const useLegacy = req.query.strategy === 'legacy';
-    const calcFn = payrollCalculationService.calculatePayrollNew;
+    // Strategy: dynamic = outputColumns-driven; legacy = payregister+legacy; default = new (payregister).
+    const strategy = req.query.strategy || 'new';
+    const useDynamic = strategy === 'dynamic';
+    const useLegacy = strategy === 'legacy';
 
-    // Extract arrears from request body (if provided)
-    const arrears = req.body.arrears || [];
-
-    const result = await calcFn(employeeId, month, req.user._id, {
-      source: useLegacy ? 'all' : 'payregister',
-      arrearsSettlements: arrears, // Pass arrears to calculation service
-    });
+    let result;
+    if (useDynamic) {
+      const config = await PayrollConfiguration.get();
+      const outputColumns = Array.isArray(config?.outputColumns) ? config.outputColumns : [];
+      if (outputColumns.length > 0) {
+        result = await payrollCalculationFromOutputColumnsService.calculatePayrollFromOutputColumns(
+          employeeId,
+          month,
+          req.user._id,
+          { source: 'payregister', arrearsSettlements: req.body.arrears || [] }
+        );
+        result = { payrollRecord: result.payrollRecord, batchId: result.batchId, payslip: result.payslip };
+      } else {
+        const options = { source: 'payregister', arrearsSettlements: req.body.arrears || [] };
+        result = await payrollCalculationService.calculatePayrollNew(employeeId, month, req.user._id, options);
+      }
+    } else {
+      const options = {
+        source: useLegacy ? 'all' : 'payregister',
+        arrearsSettlements: req.body.arrears || [],
+      };
+      result = await payrollCalculationService.calculatePayrollNew(employeeId, month, req.user._id, options);
+    }
 
     // If export is requested, return Excel immediately
     if (req.query.export === 'excel') {
@@ -604,17 +631,18 @@ exports.exportPayrollExcel = async (req, res) => {
         const earnedSalary =
           presentDays !== null ? perDay * presentDays : (payrollRecord.earnings?.payableAmount || 0);
         const paidLeaveSalary = paidLeaveDays !== null ? perDay * paidLeaveDays : 0;
-        const odSalary = odDays !== null ? perDay * odDays : 0;
+        // Present days already include OD; do not add OD again (no separate odSalary in gross).
+        const odSalary = 0;
         const incentive = incentiveDays !== null ? perDay * incentiveDays : (payrollRecord.earnings?.incentive || 0);
 
         const totalAllowances = payrollRecord.earnings?.totalAllowances || 0;
         const otPay = payrollRecord.earnings?.otPay || 0;
 
+        // Present days already include OD; do not add OD again in paid days.
         const paidDays = payrollRecord.attendance?.paidDays || (
           (presentDays || 0) +
           (payRegisterSummary?.totals?.totalWeeklyOffs || 0) +
           (payRegisterSummary?.totals?.totalHolidays || 0) +
-          (odDays || 0) +
           (paidLeaveDays || 0)
         );
         const attendanceDeductionDays = (payrollRecord.deductions?.attendanceDeductionBreakdown?.daysDeducted ?? 0);
@@ -655,6 +683,7 @@ exports.exportPayrollExcel = async (req, res) => {
             otDays: payrollRecord.attendance?.otDays || 0,
             earnedSalary: payrollRecord.attendance?.earnedSalary || earnedSalary,
             lopDays: payRegisterSummary?.totals?.totalLopDays || 0,
+            elUsedInPayroll: payrollRecord.elUsedInPayroll ?? 0,
           },
           earnings: {
             ...payrollRecord.earnings,
@@ -664,7 +693,7 @@ exports.exportPayrollExcel = async (req, res) => {
             incentive,
             otPay,
             totalAllowances,
-            grossSalary: (earnedSalary + paidLeaveSalary + odSalary + incentive + otPay + totalAllowances)
+            grossSalary: (earnedSalary + paidLeaveSalary + odSalary + incentive + otPay + totalAllowances) // odSalary is 0 (present includes OD)
           },
           deductions: payrollRecord.deductions || {},
           loanAdvance: payrollRecord.loanAdvance || {},
@@ -713,10 +742,18 @@ exports.exportPayrollExcel = async (req, res) => {
     console.log(`Allowances: ${Array.from(allAllowanceNames).join(', ')}`);
     console.log(`Deductions: ${Array.from(allDeductionNames).join(', ')}\n`);
 
-    // Step 3: Build rows with normalized columns (all employees have same columns)
-    const rows = payslips.map((payslip, index) =>
-      buildPayslipExcelRowsNormalized(payslip, allAllowanceNames, allDeductionNames, index + 1)
-    );
+    // Step 3: Build rows – use configured output columns if set, else default normalized columns
+    let rows;
+    const config = await PayrollConfiguration.get();
+    if (config && config.enabled && Array.isArray(config.outputColumns) && config.outputColumns.length > 0) {
+      rows = payslips.map((payslip, index) =>
+        outputColumnService.buildRowFromOutputColumns(payslip, config.outputColumns, index + 1)
+      );
+    } else {
+      rows = payslips.map((payslip, index) =>
+        buildPayslipExcelRowsNormalized(payslip, allAllowanceNames, allDeductionNames, index + 1)
+      );
+    }
 
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.json_to_sheet(rows);
@@ -735,6 +772,129 @@ exports.exportPayrollExcel = async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message || 'Error exporting payroll',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * @desc    Get paysheet data (headers + rows) for table display – uses same output columns as Excel export.
+ *          Field values and formula inputs come from: DB (PayrollRecord) → controller builds payslip
+ *          from records + PayRegisterSummary/attendance → outputColumnService builds each row from
+ *          payslip + config (fields from payslip, formulas from context derived from payslip).
+ * @route   GET /api/payroll/paysheet
+ * @query   month (YYYY-MM), departmentId?, divisionId?, status?, search?, employeeIds?
+ * @access  Private
+ */
+exports.getPaysheetData = async (req, res) => {
+  try {
+    const { month, departmentId, divisionId, status, search, employeeIds } = req.query;
+
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Month (YYYY-MM) is required',
+      });
+    }
+
+    let targetEmployeeIds = [];
+    if (employeeIds) {
+      targetEmployeeIds = String(employeeIds)
+        .split(',')
+        .map((id) => id.trim())
+        .filter(Boolean);
+    } else {
+      const employeeQuery = { ...req.scopeFilter };
+      if (departmentId) employeeQuery.department_id = departmentId;
+      if (divisionId) employeeQuery.division_id = divisionId;
+      if (status === 'active') employeeQuery.is_active = true;
+      else if (status === 'inactive') employeeQuery.is_active = false;
+      if (search) {
+        employeeQuery.$or = [
+          { employee_name: { $regex: search, $options: 'i' } },
+          { emp_no: { $regex: search, $options: 'i' } },
+        ];
+      }
+      const emps = await Employee.find(employeeQuery).select('_id');
+      targetEmployeeIds = emps.map((e) => e._id.toString());
+    }
+
+    if (targetEmployeeIds.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: { headers: [], rows: [] },
+        message: 'No employees in scope. Apply filters or select employees.',
+      });
+    }
+
+    const userId = req.user?._id?.toString() || req.user?.id;
+    const config = await PayrollConfiguration.get();
+    const outputColumns = Array.isArray(config?.outputColumns) ? config.outputColumns : [];
+    const sortedColumns = [...outputColumns].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+    let rows = [];
+    let headers = [];
+
+    if (sortedColumns.length > 0) {
+      for (let index = 0; index < targetEmployeeIds.length; index++) {
+        const empId = targetEmployeeIds[index];
+        try {
+          const result = await payrollCalculationFromOutputColumnsService.calculatePayrollFromOutputColumns(
+            empId,
+            month,
+            userId,
+            { source: 'payregister', arrearsSettlements: [] }
+          );
+          if (result?.row) {
+            const rowData = { 'S.No': index + 1, ...result.row };
+            rows.push(rowData);
+          }
+        } catch (err) {
+          console.error(`Error calculating payroll for paysheet (employee ${empId}):`, err.message);
+        }
+      }
+      headers = ['S.No', ...sortedColumns.map((c) => c.header || 'Column')];
+    } else {
+      const payslips = [];
+      for (const empId of targetEmployeeIds) {
+        try {
+          const result = await payrollCalculationService.calculatePayrollNew(
+            empId, month, userId, { source: 'payregister', arrearsSettlements: [] }
+          );
+          if (result?.payslip) payslips.push(result.payslip);
+        } catch (err) {
+          console.error(`Error calculating payroll for paysheet (employee ${empId}):`, err.message);
+        }
+      }
+      if (payslips.length > 0) {
+        const allAllowanceNames = new Set();
+        const allDeductionNames = new Set();
+        payslips.forEach((p) => {
+          (p.earnings?.allowances || []).forEach((a) => { if (a.name) allAllowanceNames.add(a.name); });
+          (p.deductions?.otherDeductions || []).forEach((d) => { if (d.name) allDeductionNames.add(d.name); });
+        });
+        rows = payslips.map((p, i) => buildPayslipExcelRowsNormalized(p, allAllowanceNames, allDeductionNames, i + 1));
+        headers = rows.length > 0 ? Object.keys(rows[0]) : [];
+      }
+    }
+
+    if (rows.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: { headers: [], rows: [] },
+        message: 'No payslip data available after calculation.',
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: { headers, rows },
+    });
+  } catch (error) {
+    console.error('Error getting paysheet data:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error loading paysheet',
       error: error.message,
     });
   }

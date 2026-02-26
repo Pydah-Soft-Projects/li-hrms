@@ -129,7 +129,7 @@ export default function PayRegisterPage() {
   const [calculatingJobId, setCalculatingJobId] = useState<string | null>(null);
   // Removed unused calculationProgress state
   const [bulkCalculating, setBulkCalculating] = useState(false);
-  const [payrollStrategy, setPayrollStrategy] = useState<'new' | 'legacy'>('new');
+  const [payrollStrategy, setPayrollStrategy] = useState<'new' | 'legacy' | 'dynamic'>('new');
   const [payrollStartDate, setPayrollStartDate] = useState<string | null>(null);
   const [payrollEndDate, setPayrollEndDate] = useState<string | null>(null);
   const [exportingExcel, setExportingExcel] = useState(false);
@@ -449,7 +449,7 @@ export default function PayRegisterPage() {
   const handleCalculatePayroll = async (employee: Employee) => {
     try {
       const employeeId = typeof employee === 'object' ? employee._id : employee;
-      const params = payrollStrategy === 'new' ? '?strategy=new' : '?strategy=legacy';
+      const params = payrollStrategy === 'legacy' ? '?strategy=legacy' : payrollStrategy === 'dynamic' ? '?strategy=dynamic' : '?strategy=new';
       setCalculatingId(employeeId);
       toast.info('Calculating payroll...', { autoClose: 1200 });
 
@@ -886,6 +886,7 @@ export default function PayRegisterPage() {
               >
                 <option value="new">Engine: New</option>
                 <option value="legacy">Engine: Legacy</option>
+                <option value="dynamic">Engine: Dynamic</option>
               </select>
             </div>
 

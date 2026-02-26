@@ -1,4 +1,5 @@
 const leaveRegisterService = require('../services/leaveRegisterService');
+const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
 
 /**
  * @desc    Get Leave Register data
@@ -43,10 +44,31 @@ exports.getRegister = async (req, res) => {
 
         const registerData = await leaveRegisterService.getLeaveRegister(filters, month, year);
 
+        // Compute monthly allowed limit per employee: CL + CCL + optional EL
+        let dataWithLimit = registerData;
+        try {
+            const settings = await LeavePolicySettings.getSettings();
+            const includeEL =
+                !settings.earnedLeave || settings.earnedLeave.includeInMonthlyLimit !== false;
+
+            dataWithLimit = registerData.map((entry) => {
+                const clBal = Number(entry.casualLeave?.balance) || 0;
+                const elBal = Number(entry.earnedLeave?.balance) || 0;
+                const cclBal = Number(entry.compensatoryOff?.balance) || 0;
+                const monthlyAllowedLimit = clBal + cclBal + (includeEL ? elBal : 0);
+                return {
+                    ...entry,
+                    monthlyAllowedLimit,
+                };
+            });
+        } catch (e) {
+            console.error('Error computing monthly allowed limit for leave register:', e);
+        }
+
         res.status(200).json({
             success: true,
-            count: registerData.length,
-            data: registerData,
+            count: dataWithLimit.length,
+            data: dataWithLimit,
         });
     } catch (error) {
         console.error('Error fetching leave register:', error);

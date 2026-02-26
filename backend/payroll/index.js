@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const payrollController = require('./controllers/payrollController');
+const payrollConfigurationController = require('./controllers/payrollConfigurationController');
+const statutoryDeductionController = require('./controllers/statutoryDeductionController');
 const { protect, authorize } = require('../authentication/middleware/authMiddleware');
 const { applyScopeFilter } = require('../shared/middleware/dataScopeMiddleware');
 
@@ -34,8 +36,19 @@ router.get('/transactions/analytics', payrollController.getPayrollTransactionsWi
 // Get attendance data for a range of months
 router.get('/attendance-range', payrollController.getAttendanceDataRange);
 
+// Payroll configuration (order of steps + output columns)
+router.get('/config', payrollConfigurationController.getPayrollConfig);
+router.put('/config', authorize('manager', 'super_admin', 'sub_admin', 'hr'), payrollConfigurationController.upsertPayrollConfig);
+
+// Statutory deductions config (ESI, PF, Profession Tax)
+router.get('/statutory-config', statutoryDeductionController.getStatutoryConfig);
+router.put('/statutory-config', authorize('manager', 'super_admin', 'sub_admin', 'hr'), statutoryDeductionController.upsertStatutoryConfig);
+
 // Export payroll payslips as Excel (with scope filtering)
 router.get('/export', applyScopeFilter, payrollController.exportPayrollExcel);
+
+// Get paysheet data (headers + rows) for table – uses config output columns (with scope filtering)
+router.get('/paysheet', applyScopeFilter, payrollController.getPaysheetData);
 
 // Approve payroll (Super Admin, Sub Admin, HR)
 router.put('/:payrollRecordId/approve', authorize('manager', 'super_admin', 'sub_admin', 'hr'), payrollController.approvePayroll);

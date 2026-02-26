@@ -8,6 +8,7 @@ const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
 const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
 const DepartmentSettings = require('../../departments/model/DepartmentSettings');
 const leaveRegisterService = require('./leaveRegisterService');
+const LeaveRegister = require('../model/LeaveRegister');
 const { extractISTComponents, createISTDate } = require('../../shared/utils/dateUtils');
 const dateCycleService = require('./dateCycleService');
 
@@ -123,12 +124,17 @@ async function getAttendanceData(employeeId, month, year, settings, employee, cy
 
     let attendanceDays = 0;
     let presentDays = 0;
+    let payableShifts = 0;
     let weeklyOffs = 0;
     let holidays = 0;
     let workedDays = 0;
 
     for (const record of attendanceRecords) {
-        const status = record.status?.toLowerCase();
+        const status = (record.status || '').toLowerCase();
+
+        if (record.payableShifts !== undefined && record.payableShifts !== null) {
+            payableShifts += Number(record.payableShifts) || 0;
+        }
 
         // Count as present based on settings
         if (status === 'present' || status === 'half_day') {
@@ -146,17 +152,21 @@ async function getAttendanceData(employeeId, month, year, settings, employee, cy
             }
         }
 
-        // Count worked days (present + half day)
         if (status === 'present' || status === 'half_day') {
             workedDays++;
         }
     }
 
+    const totalDays = Math.round((cycleEnd.getTime() - cycleStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    const effectiveDays = Math.min(totalDays, Math.max(presentDays, payableShifts));
+
     return {
         month,
         year,
-        totalDays: Math.round((cycleEnd.getTime() - cycleStart.getTime()) / (1000 * 60 * 60 * 24)) + 1,
+        totalDays,
         presentDays,
+        payableShifts,
+        effectiveDays,
         weeklyOffs,
         holidays,
         workedDays,
@@ -174,16 +184,17 @@ function calculateAttendanceBasedEL(attendanceData, settings) {
     const breakdown = [];
 
     // Use attendance ranges if configured (cumulative logic)
+    // effectiveDays = min(monthDays, max(presentDays, payableShifts)) for range matching
     if (rules.attendanceRanges && rules.attendanceRanges.length > 0) {
-        const attendanceDays = attendanceData.attendanceDays;
+        const effectiveDays = attendanceData.effectiveDays !== undefined
+            ? attendanceData.effectiveDays
+            : attendanceData.attendanceDays;
         const rangeBreakdown = [];
 
-        // Sort ranges by minDays
         const sortedRanges = rules.attendanceRanges.sort((a, b) => a.minDays - b.minDays);
 
-        // Cumulative calculation - each range adds EL if attendance meets that threshold
         for (const range of sortedRanges) {
-            if (attendanceDays >= range.minDays && attendanceDays <= range.maxDays) {
+            if (effectiveDays >= range.minDays && effectiveDays <= range.maxDays) {
                 elEarned += range.elEarned;
                 rangeBreakdown.push({
                     range: `${range.minDays}-${range.maxDays} days`,
@@ -194,16 +205,17 @@ function calculateAttendanceBasedEL(attendanceData, settings) {
             }
         }
 
-        // Apply monthly maximum
         elEarned = Math.min(elEarned, rules.maxELPerMonth);
 
         breakdown.push({
             type: 'attendance_ranges_cumulative',
-            attendanceDays,
+            effectiveDays,
+            attendanceDays: attendanceData.attendanceDays,
+            payableShifts: attendanceData.payableShifts,
             totalEL: elEarned,
             maxELForMonth: rules.maxELPerMonth,
             ranges: rangeBreakdown,
-            calculation: 'Cumulative: Each range adds EL if attendance meets threshold'
+            calculation: 'effectiveDays = min(monthDays, max(presentDays, payableShifts)); range match on effectiveDays'
         });
 
     } else {
@@ -231,6 +243,7 @@ function calculateAttendanceBasedEL(attendanceData, settings) {
 
     return {
         attendanceDays: attendanceData.attendanceDays,
+        effectiveDays: attendanceData.effectiveDays,
         elEarned,
         maxELForMonth: rules.maxELPerMonth,
         breakdown
@@ -292,7 +305,18 @@ async function updateEarnedLeaveForAllEmployees(month = null, year = null) {
                 const calculation = await calculateEarnedLeave(employee._id, month, year);
 
                 if (calculation.eligible && calculation.elEarned > 0) {
-                    // Add to leave register instead of updating employee model directly
+                    const existing = await LeaveRegister.findOne({
+                        employeeId: employee._id,
+                        leaveType: 'EL',
+                        transactionType: 'CREDIT',
+                        month: Number(month),
+                        year: Number(year),
+                        autoGeneratedType: 'EARNED_LEAVE'
+                    });
+                    if (existing) {
+                        results.processed++;
+                        continue;
+                    }
                     await leaveRegisterService.addEarnedLeaveCredit(
                         employee._id,
                         calculation.elEarned,

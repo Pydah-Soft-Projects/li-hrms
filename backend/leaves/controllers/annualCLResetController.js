@@ -3,7 +3,7 @@
  * Manages annual casual leave balance reset operations
  */
 
-const { performAnnualCLReset, getCLResetStatus, getNextResetDate } = require('../services/annualCLResetService');
+const { performAnnualCLReset, performInitialCLSync, getCLResetStatus, getNextResetDate } = require('../services/annualCLResetService');
 const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
 
 /**
@@ -27,13 +27,14 @@ exports.performAnnualReset = async (req, res) => {
 
         // Require confirmation for production safety
         if (!confirmReset) {
+            const resetDate = await getNextResetDate(settings);
             return res.status(400).json({
                 success: false,
                 message: 'Please confirm the reset operation by setting confirmReset=true',
                 preview: {
                     resetToBalance: settings.annualCLReset.resetToBalance,
                     addCarryForward: settings.annualCLReset.addCarryForward,
-                    resetDate: getNextResetDate(settings),
+                    resetDate,
                     affectedEmployees: 'All active employees'
                 }
             });
@@ -52,6 +53,40 @@ exports.performAnnualReset = async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Error performing annual CL reset',
+            error: error.message
+        });
+    }
+};
+
+/**
+ * @desc    Apply initial CL balance from policy to all employees (manual sync, not annual reset)
+ * @route   POST /api/leaves/initial-cl-sync
+ * @access  Private (HR, Admin only)
+ */
+exports.performInitialCLSync = async (req, res) => {
+    try {
+        const { confirm } = req.body;
+        const settings = await LeavePolicySettings.getSettings();
+
+        if (!confirm) {
+            return res.status(400).json({
+                success: false,
+                message: 'Confirm by sending { "confirm": true } to apply initial CL balance from policy to all employees',
+                note: 'Uses default entitlement / experience tiers and optional carry forward. Creates one ADJUSTMENT transaction per employee.'
+            });
+        }
+
+        const result = await performInitialCLSync();
+        res.status(200).json({
+            success: result.success,
+            message: result.message,
+            data: result
+        });
+    } catch (error) {
+        console.error('Error performing initial CL sync:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Initial CL sync failed',
             error: error.message
         });
     }
@@ -123,13 +158,14 @@ exports.getNextResetDate = async (req, res) => {
             });
         }
 
-        const nextResetDate = getNextResetDate(settings);
+        const nextResetDate = await getNextResetDate(settings);
         
         res.status(200).json({
             success: true,
             enabled: true,
             data: {
                 nextResetDate,
+                usePayrollCycleForReset: settings.annualCLReset.usePayrollCycleForReset,
                 resetToBalance: settings.annualCLReset.resetToBalance,
                 addCarryForward: settings.annualCLReset.addCarryForward,
                 resetMonth: settings.annualCLReset.resetMonth,
@@ -176,7 +212,7 @@ exports.previewReset = async (req, res) => {
             .lean();
 
         const previewResults = [];
-        const resetDate = getNextResetDate(settings);
+        const resetDate = await getNextResetDate(settings);
 
         for (const employee of sampleEmployees) {
             const currentCL = employee.paidLeaves || 0;

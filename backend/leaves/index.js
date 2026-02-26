@@ -140,6 +140,9 @@ router.get('/annual-reset/next-date', authorize('employee', 'manager', 'hod', 'h
 // Preview annual CL reset
 router.post('/annual-reset/preview', authorize('hr', 'sub_admin', 'super_admin'), annualCLResetController.previewReset);
 
+// Apply initial CL balance from policy to all employees (manual; not annual reset)
+router.post('/initial-cl-sync', authorize('hr', 'sub_admin', 'super_admin'), annualCLResetController.performInitialCLSync);
+
 // ==========================================
 // ACCRUAL ROUTES (run monthly CL/EL accrual; no cron – call manually or from external scheduler)
 // ==========================================
