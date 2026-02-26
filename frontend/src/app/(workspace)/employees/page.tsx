@@ -138,6 +138,9 @@ interface EmployeeApplication {
   employeeDeductions?: any[];
 }
 
+/** Format date as YYYY-MM-DD in local time (avoids UTC shift for resignation last working date) */
+const toLocalDateString = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
 const initialFormState: Partial<Employee> = {
   emp_no: '',
   employee_name: '',
@@ -216,6 +219,8 @@ export default function EmployeesPage() {
   const [userRole, setUserRole] = useState<string>('');
   const [canViewApplications, setCanViewApplications] = useState(false);
   const [hasVerifyPermission, setHasVerifyPermission] = useState(false);
+  /** Role-based feature control when user has none (so permissions respect Settings > Feature Control) */
+  const [resolvedFeatureControl, setResolvedFeatureControl] = useState<string[] | null>(null);
   const [showLeftDateModal, setShowLeftDateModal] = useState(false);
   const [selectedEmployeeForLeftDate, setSelectedEmployeeForLeftDate] = useState<Employee | null>(null);
   const [leftDateForm, setLeftDateForm] = useState({ leftDate: '', leftReason: '' });
@@ -567,11 +572,22 @@ export default function EmployeesPage() {
     const user = auth.getUser();
     if (user) {
       setUserRole(user.role);
-      const hasAppView = hasViewApplicationsPermission(user as any);
-      setCanViewApplications(hasAppView);
-      // Verify permission is strictly independent — must have EMPLOYEES:verify explicitly granted
-      setHasVerifyPermission(canVerifyFeature(user as any, 'EMPLOYEES'));
       setCurrentUser(user);
+      const hasExplicitControl = user.featureControl && Array.isArray(user.featureControl) && user.featureControl.length > 0;
+      if (!hasExplicitControl) {
+        const settingKey = `feature_control_${user.role === 'hod' ? 'hod' : user.role === 'hr' ? 'hr' : user.role === 'manager' ? 'manager' : 'employee'}`;
+        api.getSetting(settingKey)
+          .then((res) => {
+            if (res?.success && res?.data?.value?.activeModules) {
+              setResolvedFeatureControl(Array.isArray(res.data.value.activeModules) ? res.data.value.activeModules : []);
+            } else {
+              setResolvedFeatureControl([]);
+            }
+          })
+          .catch(() => setResolvedFeatureControl([]));
+      } else {
+        setResolvedFeatureControl(null);
+      }
     }
     loadEmployees(1, false); // Load first page
     loadDivisions();
@@ -581,6 +597,20 @@ export default function EmployeesPage() {
       loadApplications();
     }
   }, []);
+
+  const userForPermissions = useMemo(() => {
+    const u = currentUser || auth.getUser();
+    if (!u) return null;
+    const hasExplicit = u.featureControl && Array.isArray(u.featureControl) && u.featureControl.length > 0;
+    const fc = hasExplicit ? u.featureControl : (resolvedFeatureControl ?? []);
+    return { ...u, featureControl: fc };
+  }, [currentUser, resolvedFeatureControl]);
+
+  useEffect(() => {
+    if (!userForPermissions) return;
+    setCanViewApplications(hasViewApplicationsPermission(userForPermissions as any));
+    setHasVerifyPermission(canVerifyFeature(userForPermissions as any, 'EMPLOYEES'));
+  }, [userForPermissions]);
 
   // Reset pagination when filters change
   useEffect(() => {
@@ -641,7 +671,16 @@ export default function EmployeesPage() {
   useEffect(() => {
     if (showLeftDateModal && selectedEmployeeForLeftDate) {
       api.getResignationSettings()
-        .then((res) => { if (res?.success && res?.data?.noticePeriodDays != null) setResignationNoticePeriodDays(Number(res.data.noticePeriodDays) || 0); })
+        .then((res) => {
+          const raw = res?.data?.noticePeriodDays ?? res?.data?.value?.noticePeriodDays;
+          const days = Math.max(0, Number(raw) || 0);
+          setResignationNoticePeriodDays(days);
+          const d = new Date();
+          d.setDate(d.getDate() + days);
+          const minDateStr = toLocalDateString(d);
+          const existingLeft = selectedEmployeeForLeftDate.leftDate ? toLocalDateString(new Date(selectedEmployeeForLeftDate.leftDate)) : null;
+          setLeftDateForm((prev) => ({ ...prev, leftDate: existingLeft || minDateStr }));
+        })
         .catch(() => setResignationNoticePeriodDays(0));
     }
   }, [showLeftDateModal, selectedEmployeeForLeftDate]);
@@ -1632,8 +1671,12 @@ export default function EmployeesPage() {
 
   const handleSetLeftDate = (employee: Employee) => {
     setSelectedEmployeeForLeftDate(employee);
+    const defaultLastWorking = (() => {
+      const d = new Date();
+      return d.toISOString().split('T')[0];
+    })();
     setLeftDateForm({
-      leftDate: employee.leftDate ? new Date(employee.leftDate).toISOString().split('T')[0] : '',
+      leftDate: employee.leftDate ? new Date(employee.leftDate).toISOString().split('T')[0] : defaultLastWorking,
       leftReason: employee.leftReason || '',
     });
     setShowLeftDateModal(true);
@@ -2223,13 +2266,10 @@ export default function EmployeesPage() {
     return eligibleDepts;
   }
 
-  // Permission checks using read/write pattern
-  // Write permission enables ALL actions (create, edit, delete, approve, reject)
-  // Read permission blocks all actions (view only)
-  // Future: When implementing granular create/edit/delete, only permissions.ts needs updating
+  // Permission checks using read/write pattern (respects Feature Control from Settings when user has no explicit list)
   const user = auth.getUser();
-  const hasViewPermission = user ? canViewEmployees(user as any) : false;
-  const hasManagePermission = user ? canEditEmployee(user as any) : false; // Write permission for ALL actions
+  const hasViewPermission = userForPermissions ? canViewEmployees(userForPermissions as any) : false;
+  const hasManagePermission = userForPermissions ? canEditEmployee(userForPermissions as any) : false; // Write permission for ALL actions
 
   const RenderFilterHeader = ({
     label,
@@ -5160,14 +5200,14 @@ export default function EmployeesPage() {
                   <input
                     type="date"
                     required
+                    readOnly
                     value={leftDateForm.leftDate}
-                    onChange={(e) => setLeftDateForm({ ...leftDateForm, leftDate: e.target.value })}
                     min={(() => {
                       const d = new Date();
                       d.setDate(d.getDate() + resignationNoticePeriodDays);
                       return d.toISOString().split('T')[0];
                     })()}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-300 cursor-not-allowed"
                   />
                   <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                     This date will be recorded as the employee&apos;s last day in office. They will be included in pay register until this month, then excluded from future months.

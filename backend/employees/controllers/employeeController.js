@@ -401,9 +401,12 @@ exports.getAllEmployees = async (req, res) => {
       ];
     }
 
-    // By default, exclude employees who have left (unless includeLeft=true)
+    // By default, show only currently active: no leftDate or leftDate on/after today (resigned but still in notice period)
     if (includeLeft !== 'true') {
-      filters.leftDate = null;
+      const startOfToday = new Date();
+      startOfToday.setUTCHours(0, 0, 0, 0);
+      filters.$and = filters.$and || [];
+      filters.$and.push({ $or: [ { leftDate: null }, { leftDate: { $gte: startOfToday } } ] });
     }
 
     console.log('[Employee Controller] Scope filters:', filters);

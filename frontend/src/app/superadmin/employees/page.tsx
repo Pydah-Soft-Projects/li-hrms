@@ -216,6 +216,9 @@ const RenderFilterHeader = ({
   );
 };
 
+/** Format date as YYYY-MM-DD in local time (avoids UTC shift for resignation last working date) */
+const toLocalDateString = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
 const isEmployeeActive = (employee: any) => {
   const status = employee.is_active;
   return status === true || status === 1 || (status !== false && status !== 0 && status !== '0');
@@ -732,7 +735,16 @@ export default function EmployeesPage() {
   useEffect(() => {
     if (showLeftDateModal && selectedEmployeeForLeftDate) {
       api.getResignationSettings()
-        .then((res) => { if (res?.success && res?.data?.noticePeriodDays != null) setResignationNoticePeriodDays(Number(res.data.noticePeriodDays) || 0); })
+        .then((res) => {
+          const raw = res?.data?.noticePeriodDays ?? res?.data?.value?.noticePeriodDays;
+          const days = Math.max(0, Number(raw) || 0);
+          setResignationNoticePeriodDays(days);
+          const d = new Date();
+          d.setDate(d.getDate() + days);
+          const minDateStr = toLocalDateString(d);
+          const existingLeft = selectedEmployeeForLeftDate.leftDate ? toLocalDateString(new Date(selectedEmployeeForLeftDate.leftDate)) : null;
+          setLeftDateForm((prev) => ({ ...prev, leftDate: existingLeft || minDateStr }));
+        })
         .catch(() => setResignationNoticePeriodDays(0));
     }
   }, [showLeftDateModal, selectedEmployeeForLeftDate]);
@@ -1723,8 +1735,12 @@ export default function EmployeesPage() {
 
   const handleSetLeftDate = (employee: Employee) => {
     setSelectedEmployeeForLeftDate(employee);
+    const defaultLastWorking = (() => {
+      const d = new Date();
+      return d.toISOString().split('T')[0];
+    })();
     setLeftDateForm({
-      leftDate: employee.leftDate ? new Date(employee.leftDate).toISOString().split('T')[0] : '',
+      leftDate: employee.leftDate ? new Date(employee.leftDate).toISOString().split('T')[0] : defaultLastWorking,
       leftReason: employee.leftReason || '',
     });
     setShowLeftDateModal(true);
@@ -4940,14 +4956,14 @@ export default function EmployeesPage() {
                     <input
                       type="date"
                       required
+                      readOnly
                       value={leftDateForm.leftDate}
-                      onChange={(e) => setLeftDateForm({ ...leftDateForm, leftDate: e.target.value })}
                       min={(() => {
                         const d = new Date();
                         d.setDate(d.getDate() + resignationNoticePeriodDays);
                         return d.toISOString().split('T')[0];
                       })()}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-300 cursor-not-allowed"
                     />
                     <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                       This date will be recorded as the employee&apos;s last day in office. They will be included in pay register until this month, then excluded from future months.
