@@ -49,50 +49,77 @@ const payrollConfigurationSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now },
 }, { timestamps: true });
 
-payrollConfigurationSchema.statics.get = async function () {
-  let doc = await this.findOne({});
-  if (!doc) {
-    doc = await this.create({ enabled: false, steps: [], outputColumns: [] });
+/**
+ * Build a normalized configuration payload (steps + outputColumns) with validated numeric ranges.
+ */
+function normalizeConfigPayload(payload = {}) {
+  const update = {};
+  if (payload.enabled !== undefined) update.enabled = !!payload.enabled;
+  if (Array.isArray(payload.steps)) {
+    update.steps = payload.steps.map((s, i) => {
+      const order = typeof s.order === 'number' ? s.order : i;
+      const components = Array.isArray(s.components)
+        ? s.components.map((c, j) => {
+            const amount = typeof c.amount === 'number' && Number.isFinite(c.amount) ? c.amount : 0;
+            const percentage = typeof c.percentage === 'number' && Number.isFinite(c.percentage) ? c.percentage : 0;
+            const safePct = Math.max(0, Math.min(100, percentage));
+            return {
+              id: c.id || `comp_${j}`,
+              masterId: c.masterId ? (mongoose.Types.ObjectId.isValid(c.masterId) ? new mongoose.Types.ObjectId(c.masterId) : null) : null,
+              name: c.name != null ? String(c.name) : '',
+              type: ['fixed', 'percentage', 'formula'].includes(c.type) ? c.type : 'fixed',
+              amount,
+              percentage: safePct,
+              base: c.base === 'gross' ? 'gross' : 'basic',
+              formula: c.formula != null ? String(c.formula) : (c.formula || ''),
+              order: typeof c.order === 'number' ? c.order : j,
+            };
+          })
+        : [];
+      return {
+        id: s.id || `step_${i}`,
+        type: s.type,
+        label: s.label != null ? String(s.label) : '',
+        order,
+        enabled: s.enabled !== false,
+        formula: s.formula != null ? String(s.formula) : (s.formula || ''),
+        components,
+        config: s.config,
+      };
+    });
   }
+  if (Array.isArray(payload.outputColumns)) {
+    update.outputColumns = payload.outputColumns.map((c, i) => {
+      const header = (c.header != null && String(c.header).trim()) ? String(c.header).trim() : `Column ${i + 1}`;
+      const order = typeof c.order === 'number' ? c.order : i;
+      const source = c.source === 'formula' ? 'formula' : 'field';
+      const field = source === 'formula' ? '' : (c.field || '');
+      const formula = source === 'formula' ? (c.formula != null ? String(c.formula) : (c.formula || '')) : '';
+      return { header, source, field, formula, order };
+    });
+  }
+  update.updatedAt = new Date();
+  return update;
+}
+
+payrollConfigurationSchema.statics.get = async function () {
+  const defaults = { enabled: false, steps: [], outputColumns: [], updatedAt: new Date() };
+  const doc = await this.findOneAndUpdate(
+    {},
+    { $setOnInsert: defaults },
+    { new: true, upsert: true }
+  );
   return doc;
 };
 
 payrollConfigurationSchema.statics.upsert = async function (payload) {
-  let doc = await this.findOne({});
-  if (!doc) {
-    doc = new this({ enabled: false, steps: [], outputColumns: [] });
-  }
-  if (payload.enabled !== undefined) doc.enabled = payload.enabled;
-  if (Array.isArray(payload.steps)) {
-    doc.steps = payload.steps.map((s, i) => {
-      const order = s.order ?? i;
-      const components = Array.isArray(s.components)
-        ? s.components.map((c, j) => ({
-            id: c.id || `comp_${j}`,
-            masterId: c.masterId ? (mongoose.Types.ObjectId.isValid(c.masterId) ? new mongoose.Types.ObjectId(c.masterId) : null) : null,
-            name: c.name != null ? String(c.name) : '',
-            type: ['fixed', 'percentage', 'formula'].includes(c.type) ? c.type : 'fixed',
-            amount: typeof c.amount === 'number' ? c.amount : 0,
-            percentage: typeof c.percentage === 'number' ? c.percentage : 0,
-            base: c.base === 'gross' ? 'gross' : 'basic',
-            formula: c.formula != null ? String(c.formula) : '',
-            order: typeof c.order === 'number' ? c.order : j,
-          }))
-        : [];
-      return { ...s, order, components, formula: s.formula != null ? String(s.formula) : (s.formula || '') };
-    });
-  }
-  if (Array.isArray(payload.outputColumns)) {
-    doc.outputColumns = payload.outputColumns.map((c, i) => {
-      const header = (c.header != null && String(c.header).trim()) ? String(c.header).trim() : `Column ${i + 1}`;
-      const order = c.order ?? i;
-      const source = c.source === 'formula' ? 'formula' : 'field';
-      const field = source === 'formula' ? '' : (c.field || '');
-      return { ...c, header, order, source, field };
-    });
-  }
-  doc.updatedAt = new Date();
-  await doc.save();
+  const update = normalizeConfigPayload(payload);
+  const defaults = { enabled: false, steps: [], outputColumns: [], updatedAt: new Date() };
+  const doc = await this.findOneAndUpdate(
+    {},
+    { $setOnInsert: defaults, $set: update },
+    { new: true, upsert: true }
+  );
   return doc;
 };
 

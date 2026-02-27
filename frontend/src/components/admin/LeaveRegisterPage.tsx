@@ -81,6 +81,7 @@ export default function LeaveRegisterPage() {
     const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
     const [periodStart, setPeriodStart] = useState<string | null>(null);
     const [periodEnd, setPeriodEnd] = useState<string | null>(null);
+    const [elEnabled, setElEnabled] = useState<boolean | null>(null);
 
     // Navigate between payroll months (pay cycles) similar to Pay Register / Shift Roster
     const handlePrevPeriod = () => {
@@ -131,6 +132,25 @@ export default function LeaveRegisterPage() {
     useEffect(() => {
         fetchLeaveRegister();
     }, [selectedMonth, selectedYear]);
+
+    // Load leave policy to know if Earned Leave is enabled; controls visibility of EL calculation button
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await api.getLeaveSettings('leave');
+                if (!cancelled && res?.success && res.data?.settings?.earnedLeave) {
+                    const enabled = res.data.settings.earnedLeave.enabled;
+                    setElEnabled(enabled !== false);
+                }
+            } catch {
+                if (!cancelled) setElEnabled(null);
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
 
     const fetchLeaveRegister = async () => {
         try {
@@ -261,6 +281,25 @@ export default function LeaveRegisterPage() {
         }
     };
 
+    const handleCalculateELForPeriod = async () => {
+        try {
+            const result = await api.updateAllEL({
+                month: selectedMonth,
+                year: selectedYear
+            });
+            if (result.success) {
+                toast.success(result.message || 'Earned leave calculated for current payroll period');
+                // Refresh register so EL credits and balances are visible
+                fetchLeaveRegister();
+            } else {
+                toast.error(result.message || 'Failed to calculate earned leave');
+            }
+        } catch (error) {
+            console.error('Error triggering EL calculation:', error);
+            toast.error('Error triggering earned leave calculation');
+        }
+    };
+
     const exportToExcel = () => {
         // TODO: Implement Excel export
         toast.success('Export feature coming soon!');
@@ -303,13 +342,23 @@ export default function LeaveRegisterPage() {
                         </p>
                     )}
                 </div>
-                <button
-                    onClick={exportToExcel}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium"
-                >
-                    <Download className="w-4 h-4" />
-                    Export
-                </button>
+                <div className="flex items-center gap-3">
+                    {elEnabled && (
+                        <button
+                            onClick={handleCalculateELForPeriod}
+                            className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors text-sm font-medium"
+                        >
+                            <span>Calculate EL for this payroll</span>
+                        </button>
+                    )}
+                    <button
+                        onClick={exportToExcel}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium"
+                    >
+                        <Download className="w-4 h-4" />
+                        Export
+                    </button>
+                </div>
             </div>
 
             {/* Filters */}
