@@ -145,10 +145,11 @@ export default function LeavePolicySettingsPage() {
     };
 
     const previewELCalculation = async () => {
-        if (!user?._id) return;
+        const employeeId = user?.employeeId ?? user?.id;
+        if (!employeeId) return;
         try {
             const res = await api.previewELCalculation({
-                employeeId: user._id,
+                employeeId,
                 month: new Date().getMonth() + 1,
                 year: new Date().getFullYear()
             });
