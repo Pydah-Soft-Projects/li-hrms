@@ -16,7 +16,7 @@ function formatCell(value: unknown): string {
 export default function PaysheetPage() {
   const [loading, setLoading] = useState(false);
   const [headers, setHeaders] = useState<string[]>([]);
-  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
+  const [rows, setRows] = useState<((string | number)[] | Record<string, unknown>)[]>([]);
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [selectedMonth, setSelectedMonth] = useState('');
@@ -188,7 +188,7 @@ export default function PaysheetPage() {
                           key={cIdx}
                           className="px-4 py-2.5 text-slate-700 dark:text-slate-300 whitespace-nowrap"
                         >
-                          {formatCell(row[header])}
+                          {formatCell(Array.isArray(row) ? row[cIdx] : (row as Record<string, unknown>)[header] ?? '')}
                         </td>
                       ))}
                     </tr>

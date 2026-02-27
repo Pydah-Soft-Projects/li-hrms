@@ -906,6 +906,7 @@ export default function PayRegisterPage() {
         month: monthStr,
         departmentId: targetDeptId,
         divisionId: targetDivId,
+        strategy: payrollStrategy,
         employeeIds,
       });
       const url = window.URL.createObjectURL(blob);
