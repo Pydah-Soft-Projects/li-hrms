@@ -94,7 +94,7 @@ export default function LeavePolicySettingsPage() {
     const [saving, setSaving] = useState(false);
     const [settings, setSettings] = useState<LeavePolicySettings | null>(null);
     const [previewData, setPreviewData] = useState<any>(null);
-    const [activeTab, setActiveTab] = useState<'basic' | 'earning' | 'carryforward' | 'encashment' | 'compliance'>('basic');
+    const [activeTab, setActiveTab] = useState<'basic' | 'earning' | 'carryforward' | 'annualreset' | 'encashment' | 'compliance'>('basic');
 
     useEffect(() => {
         loadSettings();
@@ -244,7 +244,7 @@ export default function LeavePolicySettingsPage() {
                     ].map(tab => (
                         <button
                             key={tab.id}
-                            onClick={() => setActiveTab(tab.id as any)}
+                            onClick={() => setActiveTab(tab.id)}
                             className={`flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors ${
                                 activeTab === tab.id
                                     ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50 dark:bg-blue-900/20'
