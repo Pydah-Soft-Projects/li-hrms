@@ -1468,6 +1468,14 @@ export const api = {
     });
   },
 
+  // Reset credentials
+  resetEmployeeCredentials: async (empNo: string, data?: { passwordMode?: string; customPassword?: string }) => {
+    return apiRequest<any>(`/employees/${empNo}/reset-credentials`, {
+      method: 'POST',
+      body: JSON.stringify(data || {}),
+    });
+  },
+
   // Bulk resend credentials
   bulkResendCredentials: async (filters: { search?: string; divisionId?: string; departmentId?: string; designationId?: string; includeLeft?: string }) => {
     return apiRequest<any>('/employees/bulk-resend-credentials', {
@@ -2446,7 +2454,7 @@ export const api = {
   // ==========================================
 
   // Get leave register data (employeeId or empNo for single-employee balance, e.g. CL for apply form; balanceAsOf=true for balance as of that month)
-  getLeaveRegister: async (filters?: { divisionId?: string; departmentId?: string; searchTerm?: string; month?: number; year?: number; employeeId?: string; empNo?: string; balanceAsOf?: boolean }) => {
+  getLeaveRegister: async (filters?: { divisionId?: string; departmentId?: string; searchTerm?: string; month?: number; year?: number; employeeId?: string; empNo?: string; balanceAsOf?: boolean; baseDate?: string }) => {
     const params = new URLSearchParams();
     if (filters?.divisionId) params.append('divisionId', filters.divisionId);
     if (filters?.departmentId) params.append('departmentId', filters.departmentId);
@@ -2456,6 +2464,7 @@ export const api = {
     if (filters?.employeeId) params.append('employeeId', filters.employeeId);
     if (filters?.empNo) params.append('empNo', filters.empNo);
     if (filters?.balanceAsOf) params.append('balanceAsOf', 'true');
+    if (filters?.baseDate) params.append('baseDate', filters.baseDate);
     const query = params.toString() ? `?${params.toString()}` : '';
     return apiRequest<any>(`/leaves/register${query}`, { method: 'GET' });
   },
@@ -2481,6 +2490,18 @@ export const api = {
     return apiRequest<any>('/leaves/register/adjust', {
       method: 'POST',
       body: JSON.stringify(data),
+    });
+  },
+
+  // ==========================================
+  // EARNED LEAVE (EL)
+  // ==========================================
+
+  // Trigger bulk EL update for all employees for a given payroll month/year
+  updateAllEL: async (payload: { month?: number; year?: number }) => {
+    return apiRequest<any>('/leaves/earned/update-all', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
   },
 
@@ -3065,7 +3086,8 @@ export const api = {
     divisionId?: string;
     status?: string;
     search?: string;
-    employeeIds?: string[]
+    employeeIds?: string[];
+    strategy?: 'new' | 'legacy' | 'dynamic';
   }) => {
     const query = new URLSearchParams();
     query.append('month', params.month);
@@ -3075,6 +3097,9 @@ export const api = {
     if (params.search) query.append('search', params.search);
     if (params.employeeIds && params.employeeIds.length > 0) {
       query.append('employeeIds', params.employeeIds.join(','));
+    }
+    if (params.strategy) {
+      query.append('strategy', params.strategy);
     }
 
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
@@ -3127,7 +3152,7 @@ export const api = {
     if (params.search) queryParams.append('search', params.search);
     if (params.employeeIds?.length) queryParams.append('employeeIds', params.employeeIds.join(','));
     const query = queryParams.toString();
-    return apiRequest<{ success: boolean; data: { headers: string[]; rows: Record<string, unknown>[] }; message?: string }>(
+    return apiRequest<{ headers: string[]; rows: Record<string, unknown>[] }>(
       `/payroll/paysheet${query ? `?${query}` : ''}`,
       { method: 'GET' }
     );
@@ -3146,10 +3171,10 @@ export const api = {
   },
 
   getStatutoryConfig: async () => {
-    return apiRequest<{ success: boolean; data: StatutoryDeductionConfig }>('/payroll/statutory-config', { method: 'GET' });
+    return apiRequest<StatutoryDeductionConfig>('/payroll/statutory-config', { method: 'GET' });
   },
   putStatutoryConfig: async (body: { esi?: Partial<StatutoryESI>; pf?: Partial<StatutoryPF>; professionTax?: Partial<StatutoryProfessionTax> }) => {
-    return apiRequest<{ success: boolean; data: StatutoryDeductionConfig }>('/payroll/statutory-config', { method: 'PUT', body: JSON.stringify(body) });
+    return apiRequest<StatutoryDeductionConfig>('/payroll/statutory-config', { method: 'PUT', body: JSON.stringify(body) });
   },
 
   getPayRegisterSummary: async (params?: { month?: string; filter_department?: string; filter_status?: string }) => {
@@ -3693,7 +3718,7 @@ export const api = {
   previewELCalculation: async (data: { employeeId: string; month: number; year: number }) => {
     return apiRequest<any>('/settings/leave-policy/preview', { 
       method: 'POST', 
-      body: data 
+      body: JSON.stringify(data)
     });
   },
 
@@ -3704,7 +3729,7 @@ export const api = {
   performAnnualCLReset: async (data: { targetYear?: number; confirmReset?: boolean }) => {
     return apiRequest<any>('/leaves/annual-reset', { 
       method: 'POST', 
-      body: data 
+      body: JSON.stringify(data)
     });
   },
 
@@ -3725,7 +3750,7 @@ export const api = {
   previewAnnualReset: async (data: { sampleSize?: number }) => {
     return apiRequest<any>('/leaves/annual-reset/preview', { 
       method: 'POST', 
-      body: data 
+      body: JSON.stringify(data)
     });
   },
 

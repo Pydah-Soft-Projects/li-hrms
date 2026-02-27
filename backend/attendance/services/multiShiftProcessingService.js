@@ -84,11 +84,12 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
         const validLogs = rawLogs.filter(l => l && l.timestamp);
         const allPunches = validLogs.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
-        // DEDUPLICATION: Ignore punches within 60 seconds of each other
+        // DEDUPLICATION: Ignore punches within 5 minutes of each other (double-tap / accidental repeat)
+        const DEDUP_WINDOW_MS = 5 * 60 * 1000;
         const deduplicatedPunches = [];
         for (const p of allPunches) {
             const last = deduplicatedPunches[deduplicatedPunches.length - 1];
-            if (last && (new Date(p.timestamp) - new Date(last.timestamp)) < 60 * 1000) {
+            if (last && (new Date(p.timestamp) - new Date(last.timestamp)) < DEDUP_WINDOW_MS) {
                 continue; // Skip double-taps
             }
             deduplicatedPunches.push(p);

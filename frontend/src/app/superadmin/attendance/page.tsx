@@ -108,6 +108,9 @@ interface MonthlyAttendanceData {
     totalPresentDays: number;
     totalDaysInMonth: number;
     totalPayableShifts: number;
+    // Late/Early metrics (combined)
+    lateOrEarlyCount?: number;
+    totalLateOrEarlyMinutes?: number;
     lastCalculatedAt: string;
     createdAt: string;
     updatedAt: string;
@@ -1496,6 +1499,9 @@ export default function AttendancePage() {
                     <th className="border-r border-slate-200 bg-cyan-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-cyan-700 dark:border-slate-700 dark:bg-cyan-900/20 w-[80px] min-w-[80px]">
                       Perms
                     </th>
+                  <th className="border-r border-slate-200 bg-rose-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-rose-700 dark:border-slate-700 dark:bg-rose-900/20 w-[70px] min-w-[70px]">
+                    Lates+
+                  </th>
                     <th className="bg-green-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-green-700 dark:border-slate-700 dark:bg-green-900/20 w-[70px] min-w-[70px]">
                       Payable
                     </th>
@@ -1793,6 +1799,9 @@ export default function AttendancePage() {
                           </td>
                           <td className="border-r border-slate-200 bg-cyan-50 px-2 py-2 text-center text-[11px] font-bold text-cyan-700 dark:border-slate-700 dark:bg-cyan-900/20 dark:text-cyan-300 w-[80px] min-w-[80px]">
                             {dailyValues.reduce((sum, record: any) => sum + (record?.permissionCount || 0), 0)}
+                          </td>
+                          <td className="border-r border-slate-200 bg-rose-50 px-2 py-2 text-center text-[11px] font-bold text-rose-700 dark:border-slate-700 dark:bg-rose-900/20 dark:text-rose-300 w-[70px] min-w-[70px]">
+                            {item.summary?.lateOrEarlyCount ?? 0}
                           </td>
                           <td className="bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:border-slate-700 dark:bg-green-900/20 dark:text-green-300 w-[70px] min-w-[70px]">
                             {payableShifts.toFixed(2)}

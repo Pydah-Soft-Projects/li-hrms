@@ -756,6 +756,7 @@ export default function PayRegisterPage() {
         month: monthStr,
         departmentId:
           selectedDepartment && selectedDepartment.trim() !== '' ? selectedDepartment : undefined,
+        strategy: payrollStrategy,
         employeeIds,
       });
       const url = window.URL.createObjectURL(blob);

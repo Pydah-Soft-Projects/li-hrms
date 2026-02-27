@@ -16,12 +16,13 @@ exports.upsertPayrollConfig = async (req, res) => {
     const normalizedOutputColumns = Array.isArray(outputColumns)
       ? outputColumns.map((c, i) => {
           const header = (c.header != null && String(c.header).trim()) ? String(c.header).trim() : `Column ${i + 1}`;
-          const source = c.source === 'formula' ? 'formula' : 'field';
+          const formulaStr = (c.formula != null && String(c.formula).trim()) ? String(c.formula).trim() : '';
+          const source = (c.source === 'formula' || formulaStr.length > 0) ? 'formula' : 'field';
           return {
             header,
             source,
             field: source === 'formula' ? '' : (c.field || ''),
-            formula: source === 'formula' ? (c.formula || '') : (c.formula || ''),
+            formula: source === 'formula' ? formulaStr : '',
             order: typeof c.order === 'number' ? c.order : i,
           };
         })
