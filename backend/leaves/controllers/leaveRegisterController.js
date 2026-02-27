@@ -44,18 +44,19 @@ exports.getRegister = async (req, res) => {
         }
 
         // Determine effective month/year:
-        // - If explicit month/year provided, use them as-is (for admin views)
-        // - Otherwise, if baseDate provided, resolve its payroll-cycle month/year via dateCycleService
-        //   so that employee self-service CL limits respect the configured pay cycle.
+        // - If baseDate is provided, resolve its payroll-cycle month/year via dateCycleService
+        //   and REUSE that same period for the response start/end dates.
+        // - Otherwise, fall back to explicit month/year for admin views.
         let effectiveMonth = month;
         let effectiveYear = year;
-        if ((!effectiveMonth || !effectiveYear) && baseDate) {
+        let basePeriodInfo = null;
+        if (baseDate) {
             try {
                 const base = new Date(baseDate);
                 if (!isNaN(base.getTime())) {
-                    const periodInfo = await dateCycleService.getPeriodInfo(base);
-                    effectiveMonth = String(periodInfo.payrollCycle.month);
-                    effectiveYear = String(periodInfo.payrollCycle.year);
+                    basePeriodInfo = await dateCycleService.getPeriodInfo(base);
+                    effectiveMonth = String(basePeriodInfo.payrollCycle.month);
+                    effectiveYear = String(basePeriodInfo.payrollCycle.year);
                 }
             } catch (err) {
                 console.error('Error resolving payroll month/year from baseDate in getRegister:', err);
@@ -90,10 +91,34 @@ exports.getRegister = async (req, res) => {
             console.error('Error computing monthly allowed limit for leave register:', e);
         }
 
+        // Derive payroll-cycle period so frontend can display the exact period
+        // (e.g. "26 Jan - 25 Feb") similar to Pay Register.
+        let startDate = null;
+        let endDate = null;
+        try {
+            if (basePeriodInfo) {
+                // When baseDate was provided, we already have the exact cycle for that date
+                startDate = basePeriodInfo.payrollCycle.startDate;
+                endDate = basePeriodInfo.payrollCycle.endDate;
+            } else {
+                const today = new Date();
+                const baseYearNum = effectiveYear ? Number(effectiveYear) : today.getFullYear();
+                const baseMonthNum = effectiveMonth ? Number(effectiveMonth) : (today.getMonth() + 1);
+                const midOfMonth = new Date(baseYearNum, baseMonthNum - 1, 15);
+                const periodInfo = await dateCycleService.getPeriodInfo(midOfMonth);
+                startDate = periodInfo.payrollCycle.startDate;
+                endDate = periodInfo.payrollCycle.endDate;
+            }
+        } catch (err) {
+            console.error('Error resolving payroll period for leave register response:', err);
+        }
+
         res.status(200).json({
             success: true,
             count: dataWithLimit.length,
             data: dataWithLimit,
+            startDate,
+            endDate,
         });
     } catch (error) {
         console.error('Error fetching leave register:', error);
