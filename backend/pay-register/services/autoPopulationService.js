@@ -5,6 +5,7 @@ const OD = require('../../leaves/model/OD');
 const OT = require('../../overtime/model/OT');
 const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
 const LeaveSettings = require('../../leaves/model/LeaveSettings');
+const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
 const Shift = require('../../shifts/model/Shift');
 const { getPayrollDateRange, getAllDatesInRange } = require('../../shared/utils/dateUtils');
 
@@ -14,12 +15,19 @@ const { getPayrollDateRange, getAllDatesInRange } = require('../../shared/utils/
  */
 
 /**
- * Get leave nature from leave type
- * @param {String} leaveType - Leave type code
- * @returns {String} Leave nature ('paid', 'lop', 'without_pay')
+ * Get leave nature from leave type.
+ * For EL: when "Use EL as paid in payroll" is ON, return 'lop' (availed EL does not add to pay register; pay comes from balance in payroll). When OFF, use the nature defined in Leave Types (paid/lop).
  */
 async function getLeaveNature(leaveType) {
   try {
+    if (leaveType && String(leaveType).toUpperCase() === 'EL') {
+      const policy = await LeavePolicySettings.getSettings();
+      if (policy.earnedLeave && policy.earnedLeave.useAsPaidInPayroll === true) {
+        return 'lop';
+      }
+      // When OFF: use nature defined at leave type (fall through to Leave Settings)
+    }
+
     const leaveSettings = await LeaveSettings.findOne({ type: 'leave', isActive: true });
     if (!leaveSettings || !leaveSettings.types) {
       return 'paid'; // Default
@@ -387,6 +395,21 @@ async function populatePayRegisterFromSources(employeeId, emp_no, year, monthNum
     const leaveType = isSplit ? null : (firstHalf.leaveType || null);
     const isOD = isSplit ? false : (firstHalf.isOD || false);
 
+    // Late/early-out: use only the first segment (first shift) when employee has multiple shifts
+    const firstShift = Array.isArray(attendance?.shifts) && attendance.shifts.length > 0 ? attendance.shifts[0] : null;
+    const isLate = firstShift
+      ? Boolean(firstShift.isLateIn || (typeof firstShift.lateInMinutes === 'number' && firstShift.lateInMinutes > 0))
+      : Boolean(attendance?.isLateIn || (typeof attendance?.totalLateInMinutes === 'number' && attendance.totalLateInMinutes > 0));
+    const isEarlyOut = firstShift
+      ? Boolean(firstShift.isEarlyOut || (typeof firstShift.earlyOutMinutes === 'number' && firstShift.earlyOutMinutes > 0))
+      : Boolean(attendance?.isEarlyOut || (typeof attendance?.totalEarlyOutMinutes === 'number' && attendance.totalEarlyOutMinutes > 0));
+    const lateInMinutes = firstShift
+      ? (typeof firstShift.lateInMinutes === 'number' ? firstShift.lateInMinutes : 0)
+      : (typeof attendance?.totalLateInMinutes === 'number' ? attendance.totalLateInMinutes : 0);
+    const earlyOutMinutes = firstShift
+      ? (typeof firstShift.earlyOutMinutes === 'number' ? firstShift.earlyOutMinutes : 0)
+      : (typeof attendance?.totalEarlyOutMinutes === 'number' ? attendance.totalEarlyOutMinutes : 0);
+
     const dailyRecord = {
       date,
       firstHalf: {
@@ -418,8 +441,10 @@ async function populatePayRegisterFromSources(employeeId, emp_no, year, monthNum
       leaveSplitIds: leave?.leaveSplitIds || [],
       odIds: od?.odIds || [],
       otIds: ot?.otIds || [],
-      isLate: attendance?.isLateIn || false,
-      isEarlyOut: attendance?.isEarlyOut || false,
+      isLate,
+      isEarlyOut,
+      lateInMinutes,
+      earlyOutMinutes,
       remarks: null,
     };
 

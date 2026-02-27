@@ -2,6 +2,7 @@ const PayrollBatch = require('../model/PayrollBatch');
 const PayrollRecord = require('../model/PayrollRecord');
 const Employee = require('../../employees/model/Employee');
 const Department = require('../../departments/model/Department');
+const leaveRegisterService = require('../../leaves/services/leaveRegisterService');
 
 /**
  * PayrollBatch Service
@@ -180,6 +181,27 @@ class PayrollBatchService {
             }
 
             await batch.save();
+
+            // When batch is completed: debit EL used in payroll from leave register and zero employee paidLeaves
+            if (newStatus === 'complete') {
+                const records = await PayrollRecord.find({
+                    payrollBatchId: batch._id,
+                    elUsedInPayroll: { $gt: 0 }
+                }).select('employeeId month elUsedInPayroll').lean();
+                for (const rec of records) {
+                    try {
+                        await leaveRegisterService.addELUsedInPayroll(
+                            rec.employeeId,
+                            rec.elUsedInPayroll,
+                            rec.month,
+                            batch._id
+                        );
+                    } catch (err) {
+                        console.error(`[PayrollBatch] EL used in payroll debit failed for employee ${rec.employeeId}:`, err.message);
+                    }
+                }
+            }
+
             return batch;
         } catch (error) {
             throw error;

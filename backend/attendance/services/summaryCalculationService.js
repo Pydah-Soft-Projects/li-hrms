@@ -4,6 +4,7 @@ const OD = require('../../leaves/model/OD');
 const MonthlyAttendanceSummary = require('../model/MonthlyAttendanceSummary');
 const Shift = require('../../shifts/model/Shift');
 const { createISTDate, extractISTComponents } = require('../../shared/utils/dateUtils');
+const dateCycleService = require('../../leaves/services/dateCycleService');
 
 /**
  * Calculate and update monthly attendance summary for an employee
@@ -18,16 +19,20 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber) {
     // Get or create summary
     const summary = await MonthlyAttendanceSummary.getOrCreate(employeeId, emp_no, year, monthNumber);
 
-    const startDateStr = `${year}-${String(monthNumber).padStart(2, '0')}-01`;
-    const startDate = createISTDate(startDateStr);
+    // Resolve the actual period window using payroll cycle (pay-cycle aware month),
+    // based on a mid-month anchor date for the provided (year, monthNumber)
+    const anchorDateStr = `${year}-${String(monthNumber).padStart(2, '0')}-15`;
+    const anchorDate = createISTDate(anchorDateStr);
+    const periodInfo = await dateCycleService.getPeriodInfo(anchorDate);
+    const payrollStart = periodInfo.payrollCycle.startDate;
+    const payrollEnd = periodInfo.payrollCycle.endDate;
 
-    // Get last day of month via IST
-    const nextMonthYear = monthNumber === 12 ? year + 1 : year;
-    const nextMonthNum = monthNumber === 12 ? 1 : monthNumber + 1;
-    const nextMonthFirstDay = createISTDate(`${nextMonthYear}-${String(nextMonthNum).padStart(2, '0')}-01`);
-    const endDate = new Date(nextMonthFirstDay.getTime() - 1000);
-    const { day: lastDay } = extractISTComponents(endDate);
-    const endDateStr = `${year}-${String(monthNumber).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+    const startComponents = extractISTComponents(payrollStart);
+    const endComponents = extractISTComponents(payrollEnd);
+    const startDateStr = startComponents.dateStr;
+    const endDateStr = endComponents.dateStr;
+    const startDate = createISTDate(startDateStr);
+    const endDate = createISTDate(endDateStr);
 
     // 1. Get all attendance records for this month (Using .lean() and projections)
     const attendanceRecords = await AttendanceDaily.find({
@@ -37,7 +42,7 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber) {
         $lte: endDateStr,
       },
     })
-      .select('status shifts totalWorkingHours extraHours totalEarlyOutMinutes payableShifts')
+      .select('status shifts totalWorkingHours extraHours totalLateInMinutes totalEarlyOutMinutes payableShifts')
       .populate('shifts.shiftId', 'payableShifts name')
       .lean();
 
@@ -89,8 +94,9 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber) {
       while (currentDate <= leaveEnd) {
         const { year: currentYear, month: currentMonth } = extractISTComponents(currentDate);
 
-        // Check if this date is within the target month
-        if (currentYear === year && currentMonth === monthNumber) {
+        // Check if this date is within the target payroll period
+        if (currentYear === startComponents.year && currentMonth === startComponents.month &&
+          currentDate >= payrollStart && currentDate <= payrollEnd) {
           totalLeaveDays += leave.isHalfDay ? 0.5 : 1;
         }
 
@@ -130,8 +136,9 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber) {
       while (currentDate <= odEnd) {
         const { year: currentYear, month: currentMonth } = extractISTComponents(currentDate);
 
-        // Check if this date is within the target month
-        if (currentYear === year && currentMonth === monthNumber) {
+        // Check if this date is within the target payroll period
+        if (currentYear === startComponents.year && currentMonth === startComponents.month &&
+          currentDate >= payrollStart && currentDate <= payrollEnd) {
           totalODDays += od.isHalfDay ? 0.5 : 1;
         }
 
@@ -187,7 +194,42 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber) {
     summary.totalPermissionHours = Math.round(totalPermissionHours * 100) / 100; // Round to 2 decimals
     summary.totalPermissionCount = totalPermissionCount;
 
-    // 10. Calculate early-out deductions (NEW)
+    // 10. Calculate late-in and combined late/early metrics (first shift only)
+    let totalLateInMinutes = 0;
+    let lateInCount = 0;
+    let totalLateOrEarlyMinutes = 0;
+    let lateOrEarlyCount = 0;
+
+    for (const record of attendanceRecords) {
+      const firstShift = Array.isArray(record.shifts) && record.shifts.length > 0
+        ? record.shifts[0]
+        : null;
+
+      const lateMinutes = firstShift
+        ? (firstShift.lateInMinutes || 0)
+        : (record.totalLateInMinutes || 0);
+      const earlyMinutes = firstShift
+        ? (firstShift.earlyOutMinutes || 0)
+        : (record.totalEarlyOutMinutes || 0);
+
+      if (lateMinutes > 0) {
+        totalLateInMinutes += lateMinutes;
+        lateInCount += 1;
+      }
+
+      const combinedMinutes = (lateMinutes || 0) + (earlyMinutes || 0);
+      if (combinedMinutes > 0) {
+        totalLateOrEarlyMinutes += combinedMinutes;
+        lateOrEarlyCount += 1;
+      }
+    }
+
+    summary.totalLateInMinutes = Math.round(totalLateInMinutes * 100) / 100;
+    summary.lateInCount = lateInCount;
+    summary.totalLateOrEarlyMinutes = Math.round(totalLateOrEarlyMinutes * 100) / 100;
+    summary.lateOrEarlyCount = lateOrEarlyCount;
+
+    // 11. Calculate early-out deductions (NEW)
     const { calculateMonthlyEarlyOutDeductions } = require('./earlyOutDeductionService');
     const earlyOutDeductions = await calculateMonthlyEarlyOutDeductions(emp_no, year, monthNumber);
     summary.totalEarlyOutMinutes = earlyOutDeductions.totalEarlyOutMinutes;
@@ -201,10 +243,10 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber) {
     };
     summary.earlyOutCount = earlyOutDeductions.earlyOutCount;
 
-    // 11. Update last calculated timestamp
+    // 12. Update last calculated timestamp
     summary.lastCalculatedAt = new Date();
 
-    // 12. Save summary
+    // 13. Save summary
     await summary.save();
 
     return summary;
@@ -263,7 +305,10 @@ async function recalculateOnAttendanceUpdate(emp_no, date) {
       return;
     }
 
-    const { year, month: monthNumber } = extractISTComponents(date);
+    // Use payroll cycle for this specific attendance date (pay-cycle aware month)
+    const baseDate = typeof date === 'string' ? createISTDate(date) : date;
+    const periodInfo = await dateCycleService.getPeriodInfo(baseDate);
+    const { year, month: monthNumber } = periodInfo.payrollCycle;
 
     await calculateMonthlySummary(employee._id, emp_no, year, monthNumber);
   } catch (error) {
@@ -289,20 +334,23 @@ async function recalculateOnLeaveApproval(leave) {
       return;
     }
 
-    // Calculate all months affected by this leave using IST components
-    const { year: startYear, month: startMonth } = extractISTComponents(leave.fromDate);
-    const { year: endYear, month: endMonthNum } = extractISTComponents(leave.toDate);
+    // Calculate all payroll cycles affected by this leave using payroll-aware periods
+    const { payrollCycle: startCycle } = await dateCycleService.getPeriodInfo(leave.fromDate);
+    const { payrollCycle: endCycle } = await dateCycleService.getPeriodInfo(leave.toDate);
 
-    let currentDate = createISTDate(`${startYear}-${String(startMonth).padStart(2, '0')}-01`);
-    const endBoundary = createISTDate(`${endYear}-${String(endMonthNum).padStart(2, '0')}-01`);
+    let currentYear = startCycle.year;
+    let currentMonth = startCycle.month;
 
-    while (currentDate <= endBoundary) {
-      const { year, month: monthNumber } = extractISTComponents(currentDate);
+    while (currentYear < endCycle.year || (currentYear === endCycle.year && currentMonth <= endCycle.month)) {
+      await calculateMonthlySummary(employee._id, employee.emp_no, currentYear, currentMonth);
 
-      await calculateMonthlySummary(employee._id, employee.emp_no, year, monthNumber);
-
-      // Move to next month
-      currentDate.setMonth(currentDate.getMonth() + 1);
+      // Move to next payroll month
+      if (currentMonth === 12) {
+        currentMonth = 1;
+        currentYear += 1;
+      } else {
+        currentMonth += 1;
+      }
     }
   } catch (error) {
     console.error(`Error recalculating summary on leave approval for leave ${leave._id}:`, error);
@@ -327,20 +375,23 @@ async function recalculateOnODApproval(od) {
       return;
     }
 
-    // Calculate all months affected by this OD using IST components
-    const { year: startYear, month: startMonth } = extractISTComponents(od.fromDate);
-    const { year: endYear, month: endMonthNum } = extractISTComponents(od.toDate);
+    // Calculate all payroll cycles affected by this OD using payroll-aware periods
+    const { payrollCycle: startCycle } = await dateCycleService.getPeriodInfo(od.fromDate);
+    const { payrollCycle: endCycle } = await dateCycleService.getPeriodInfo(od.toDate);
 
-    let currentDate = createISTDate(`${startYear}-${String(startMonth).padStart(2, '0')}-01`);
-    const endBoundary = createISTDate(`${endYear}-${String(endMonthNum).padStart(2, '0')}-01`);
+    let currentYear = startCycle.year;
+    let currentMonth = startCycle.month;
 
-    while (currentDate <= endBoundary) {
-      const { year, month: monthNumber } = extractISTComponents(currentDate);
+    while (currentYear < endCycle.year || (currentYear === endCycle.year && currentMonth <= endCycle.month)) {
+      await calculateMonthlySummary(employee._id, employee.emp_no, currentYear, currentMonth);
 
-      await calculateMonthlySummary(employee._id, employee.emp_no, year, monthNumber);
-
-      // Move to next month
-      currentDate.setMonth(currentDate.getMonth() + 1);
+      // Move to next payroll month
+      if (currentMonth === 12) {
+        currentMonth = 1;
+        currentYear += 1;
+      } else {
+        currentMonth += 1;
+      }
     }
   } catch (error) {
     console.error(`Error recalculating summary on OD approval for OD ${od._id}:`, error);

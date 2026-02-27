@@ -129,9 +129,11 @@ export default function PayRegisterPage() {
   const [calculatingJobId, setCalculatingJobId] = useState<string | null>(null);
   // Removed unused calculationProgress state
   const [bulkCalculating, setBulkCalculating] = useState(false);
-  const [payrollStrategy, setPayrollStrategy] = useState<'new' | 'legacy'>('new');
+  const [payrollStrategy, setPayrollStrategy] = useState<'new' | 'legacy' | 'dynamic'>('new');
   const [payrollStartDate, setPayrollStartDate] = useState<string | null>(null);
   const [payrollEndDate, setPayrollEndDate] = useState<string | null>(null);
+  const [cycleStartDay, setCycleStartDay] = useState<number | null>(null);
+  const [alignedToCycle, setAlignedToCycle] = useState(false);
   const [exportingExcel, setExportingExcel] = useState(false);
 
   // Download Template & Upload Summary State
@@ -265,6 +267,36 @@ export default function PayRegisterPage() {
   const daysArray = displayDays;
 
   const isPastMonth = new Date(year, month - 1, 1).getTime() < new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
+
+  // Load payroll cycle start day, then align initial currentDate to the payroll month containing today
+  useEffect(() => {
+    api.getSetting('payroll_cycle_start_day')
+      .then((res) => {
+        if (res.success && res.data) {
+          setCycleStartDay(Number(res.data.value) || 1);
+        } else {
+          setCycleStartDay(1);
+        }
+      })
+      .catch(() => setCycleStartDay(1));
+  }, []);
+
+  useEffect(() => {
+    if (alignedToCycle || cycleStartDay == null) return;
+    const today = new Date();
+    let effYear = today.getFullYear();
+    let effMonth = today.getMonth() + 1;
+    if (cycleStartDay > 1 && today.getDate() >= cycleStartDay) {
+      if (effMonth === 12) {
+        effMonth = 1;
+        effYear += 1;
+      } else {
+        effMonth += 1;
+      }
+    }
+    setCurrentDate(new Date(effYear, effMonth - 1, 1));
+    setAlignedToCycle(true);
+  }, [cycleStartDay, alignedToCycle]);
 
   // NEW: Load divisions function
   const loadDivisions = useCallback(async () => {
@@ -449,7 +481,7 @@ export default function PayRegisterPage() {
   const handleCalculatePayroll = async (employee: Employee) => {
     try {
       const employeeId = typeof employee === 'object' ? employee._id : employee;
-      const params = payrollStrategy === 'new' ? '?strategy=new' : '?strategy=legacy';
+      const params = payrollStrategy === 'legacy' ? '?strategy=legacy' : payrollStrategy === 'dynamic' ? '?strategy=dynamic' : '?strategy=new';
       setCalculatingId(employeeId);
       toast.info('Calculating payroll...', { autoClose: 1200 });
 
@@ -724,6 +756,7 @@ export default function PayRegisterPage() {
         month: monthStr,
         departmentId:
           selectedDepartment && selectedDepartment.trim() !== '' ? selectedDepartment : undefined,
+        strategy: payrollStrategy,
         employeeIds,
       });
       const url = window.URL.createObjectURL(blob);
@@ -886,6 +919,7 @@ export default function PayRegisterPage() {
               >
                 <option value="new">Engine: New</option>
                 <option value="legacy">Engine: Legacy</option>
+                <option value="dynamic">Engine: Dynamic</option>
               </select>
             </div>
 

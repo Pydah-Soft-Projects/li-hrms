@@ -152,6 +152,16 @@ const cclRequestSchema = new mongoose.Schema(
       default: true,
     },
 
+    // Tracking for Leave Register/Ledger
+    isUsed: {
+      type: Boolean,
+      default: false,
+    },
+    isExpired: {
+      type: Boolean,
+      default: false,
+    },
+
     remarks: {
       type: String,
       trim: true,
