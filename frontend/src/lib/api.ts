@@ -3144,7 +3144,7 @@ export const api = {
     if (params.search) queryParams.append('search', params.search);
     if (params.employeeIds?.length) queryParams.append('employeeIds', params.employeeIds.join(','));
     const query = queryParams.toString();
-    return apiRequest<{ success: boolean; data: { headers: string[]; rows: Record<string, unknown>[] }; message?: string }>(
+    return apiRequest<{ headers: string[]; rows: Record<string, unknown>[] }>(
       `/payroll/paysheet${query ? `?${query}` : ''}`,
       { method: 'GET' }
     );
