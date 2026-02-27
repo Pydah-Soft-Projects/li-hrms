@@ -433,9 +433,11 @@ async function calculatePayrollFromOutputColumns(employeeId, month, userId, opti
   for (const col of sorted) {
     const header = col.header || 'Column';
     let val;
-    if (col.source === 'formula') {
-      // Formula column: use formula only; ignore field (ensures robustness even if field is set by mistake).
-      val = (col.formula && outputColumnService.safeEvalFormula(col.formula, context)) ?? 0;
+    const hasFormula = typeof col.formula === 'string' && col.formula.trim().length > 0;
+    if (hasFormula) {
+      // Formula column: use formula only; ignore field (even if set) so legacy
+      // configs that entered formulas but left source as "Field" still work.
+      val = outputColumnService.safeEvalFormula(col.formula, context) ?? 0;
     } else {
       // Field column: resolve value from employee/attendance/earnings/deductions/etc. via col.field.
       val = await resolveFieldValue(
@@ -446,8 +448,8 @@ async function calculatePayrollFromOutputColumns(employeeId, month, userId, opti
     row[header] = val;
     const numForContext = typeof val === 'number' && !Number.isNaN(val) ? val : (Number(val) || 0);
     for (const k of getContextKeysAndAliases(header)) context[k] = numForContext;
-    // Only field columns write to record; formula columns do not use field.
-    if (col.source === 'field' && col.field) setValueByPath(record, col.field, val);
+    // Only non-formula columns write to record; formula columns do not use field.
+    if (!hasFormula && col.field) setValueByPath(record, col.field, val);
   }
 
   // Ensure net and roundOff
