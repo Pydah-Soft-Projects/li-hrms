@@ -54,7 +54,9 @@ interface FormSettings {
   }>;
   qualifications?: {
     isEnabled: boolean;
+    enableCertificateUpload?: boolean;
     fields: Array<{ id: string; label: string }>;
+    defaultRows?: Record<string, unknown>[];
   };
 }
 
