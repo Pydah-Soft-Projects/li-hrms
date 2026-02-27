@@ -81,6 +81,12 @@ interface LeavePolicySettings {
             elApplicableAfter: boolean;
         };
     };
+    annualCLReset?: {
+        enabled: boolean;
+        resetToBalance: number;
+        addCarryForward: boolean;
+        resetMonth: number;
+    };
     autoUpdate: {
         enabled: boolean;
         updateFrequency: 'daily' | 'weekly' | 'monthly';
@@ -491,7 +497,7 @@ export default function LeavePolicySettingsPage() {
                                 <label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
                                     <input
                                         type="checkbox"
-                                        checked={settings.annualCLReset.enabled}
+                                        checked={settings.annualCLReset?.enabled ?? false}
                                         onChange={(e) => updateSettings('annualCLReset.enabled', '', e.target.checked)}
                                         className="mr-2"
                                     />
@@ -508,7 +514,7 @@ export default function LeavePolicySettingsPage() {
                                     type="number"
                                     min="0"
                                     max="365"
-                                    value={settings.annualCLReset.resetToBalance}
+                                    value={settings.annualCLReset?.resetToBalance ?? 12}
                                     onChange={(e) => updateSettings('annualCLReset.resetToBalance', '', parseInt(e.target.value))}
                                     className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-sm"
                                 />
@@ -519,7 +525,7 @@ export default function LeavePolicySettingsPage() {
                                 <label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
                                     <input
                                         type="checkbox"
-                                        checked={settings.annualCLReset.addCarryForward}
+                                        checked={settings.annualCLReset?.addCarryForward ?? false}
                                         onChange={(e) => updateSettings('annualCLReset.addCarryForward', '', e.target.checked)}
                                         className="mr-2"
                                     />
@@ -533,7 +539,7 @@ export default function LeavePolicySettingsPage() {
                                     Reset Month
                                 </label>
                                 <select
-                                    value={settings.annualCLReset.resetMonth}
+                                    value={settings.annualCLReset?.resetMonth ?? 1}
                                     onChange={(e) => updateSettings('annualCLReset.resetMonth', '', parseInt(e.target.value))}
                                     className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-sm"
                                 >
