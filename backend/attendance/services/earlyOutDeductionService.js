@@ -157,7 +157,8 @@ async function calculateMonthlyEarlyOutDeductions(employeeNumber, year, monthNum
     const endDate = new Date(year, monthNumber, 0);
     const endDateStr = `${year}-${String(monthNumber).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`;
 
-    // Get all attendance records for the month with early-outs
+    // Get all attendance records for the month that have any recorded early-out minutes
+    // (we'll later constrain to first shift only when calculating)
     const attendanceRecords = await AttendanceDaily.find({
       employeeNumber: employeeNumber.toUpperCase(),
       date: { $gte: startDate, $lte: endDateStr },
@@ -184,8 +185,14 @@ async function calculateMonthlyEarlyOutDeductions(employeeNumber, year, monthNum
 
     // Calculate deductions for each day
     for (const record of attendanceRecords) {
-      // Use totalEarlyOutMinutes from root
-      const earlyOut = record.totalEarlyOutMinutes || 0;
+      // Use only the first shift's early-out minutes when there are multiple shifts
+      const firstShift = Array.isArray(record.shifts) && record.shifts.length > 0
+        ? record.shifts[0]
+        : null;
+
+      const earlyOut = firstShift
+        ? (firstShift.earlyOutMinutes || 0)
+        : (record.totalEarlyOutMinutes || 0);
 
       if (earlyOut > 0) {
         totalEarlyOutMinutes += earlyOut;
@@ -206,12 +213,25 @@ async function calculateMonthlyEarlyOutDeductions(employeeNumber, year, monthNum
       }
     }
 
+    // earlyOutCount should reflect only days where an early-out was actually counted
+    const earlyOutCount = totalEarlyOutMinutes > 0
+      ? attendanceRecords.reduce((count, record) => {
+          const firstShift = Array.isArray(record.shifts) && record.shifts.length > 0
+            ? record.shifts[0]
+            : null;
+          const earlyOut = firstShift
+            ? (firstShift.earlyOutMinutes || 0)
+            : (record.totalEarlyOutMinutes || 0);
+          return earlyOut > 0 ? count + 1 : count;
+        }, 0)
+      : 0;
+
     return {
       totalEarlyOutMinutes: Math.round(totalEarlyOutMinutes * 100) / 100,
       totalDeductionDays: Math.round(totalDeductionDays * 100) / 100,
       totalDeductionAmount: Math.round(totalDeductionAmount * 100) / 100,
       deductionBreakdown,
-      earlyOutCount: attendanceRecords.length,
+      earlyOutCount,
     };
   } catch (error) {
     console.error('Error calculating monthly early-out deductions:', error);

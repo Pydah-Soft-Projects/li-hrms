@@ -98,12 +98,13 @@ function normalizeConfigPayload(payload = {}) {
       return { header, source, field, formula, order };
     });
   }
-  update.updatedAt = new Date();
   return update;
 }
 
 payrollConfigurationSchema.statics.get = async function () {
-  const defaults = { enabled: false, steps: [], outputColumns: [], updatedAt: new Date() };
+  // Do not include 'enabled' here to avoid conflicts with $set on enabled.
+  // Schema default (false) will be applied on insert.
+  const defaults = { steps: [], outputColumns: [] };
   const doc = await this.findOneAndUpdate(
     {},
     { $setOnInsert: defaults },
@@ -114,10 +115,31 @@ payrollConfigurationSchema.statics.get = async function () {
 
 payrollConfigurationSchema.statics.upsert = async function (payload) {
   const update = normalizeConfigPayload(payload);
-  const defaults = { enabled: false, steps: [], outputColumns: [], updatedAt: new Date() };
+  const hasUpdates = update && Object.keys(update).length > 0;
+
+  // Build insert-only defaults for fields that are NOT present in the update,
+  // so we never send the same path in both $setOnInsert and $set.
+  const insertDefaults = {};
+  if (!update.steps) insertDefaults.steps = [];
+  if (!update.outputColumns) insertDefaults.outputColumns = [];
+
+  const updateOps = {};
+  if (Object.keys(insertDefaults).length > 0) {
+    updateOps.$setOnInsert = insertDefaults;
+  }
+
+  if (hasUpdates) {
+    updateOps.$set = update;
+  }
+
+  // If there are no updates and no defaults, simply ensure a document exists by upserting an empty object.
+  if (!hasUpdates && Object.keys(insertDefaults).length === 0) {
+    return this.findOneAndUpdate({}, {}, { new: true, upsert: true });
+  }
+
   const doc = await this.findOneAndUpdate(
     {},
-    { $setOnInsert: defaults, $set: update },
+    updateOps,
     { new: true, upsert: true }
   );
   return doc;

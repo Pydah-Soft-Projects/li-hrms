@@ -252,6 +252,18 @@ const payRegisterSummarySchema = new mongoose.Schema(
           default: false,
         },
 
+        // Aggregate late/early minutes for the day (from AttendanceDaily)
+        lateInMinutes: {
+          type: Number,
+          default: 0,
+          min: 0,
+        },
+        earlyOutMinutes: {
+          type: Number,
+          default: 0,
+          min: 0,
+        },
+
         // Manual Edit Flag
         isManuallyEdited: {
           type: Boolean,
