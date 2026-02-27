@@ -56,12 +56,16 @@ annualCLReset: {
 ### 2. **Intelligent Carry Forward Calculation**
 ```javascript
 // Carry Forward Logic
-const currentCL = employee.paidLeaves || 0;
-const usedCL = await getUsedCLInPreviousYear(employeeId);
-const unusedCL = Math.max(0, currentCL - usedCL);
+// annualAllotment represents the CL allotted for the year (not including prior carry forwards)
+const annualAllotment = settings.annualCLReset.resetToBalance;
+const usedCLThisYear = await getUsedCLInPreviousYear(employeeId); // CL used during the financial year only
 
-// Apply departmental limits
-const carryForwardAmount = Math.min(unusedCL, maxCarryForwardMonths);
+// Compute unused portion of the annual allotment only
+const annualUnused = Math.max(0, annualAllotment - usedCLThisYear);
+
+// Apply departmental limits (configured as a cap expressed in days or converted from months)
+const maxCarryForwardDays = getMaxCarryForwardDays(settings); // e.g., from settings.carryForward.casualLeave.maxMonths
+const carryForwardAmount = Math.min(annualUnused, maxCarryForwardDays);
 
 // Final new balance
 const newBalance = resetToBalance + carryForwardAmount;
@@ -104,11 +108,11 @@ POST /api/leaves/annual-reset/preview
 // Reset Operation Response
 {
     "success": true,
-    "message": "Annual CL reset completed: 150 successful, 2 errors",
+    "message": "Annual CL reset completed: 150 employees processed successfully, 2 errors",
     "resetYear": "2024-2025",
     "resetDate": "2024-04-01T00:00:00.000Z",
     "processed": 152,
-    "success": 150,
+    "successCount": 150,
     "errors": [],
     "details": [
         {
@@ -138,11 +142,14 @@ POST /api/leaves/annual-reset/preview
 
 ### 1. **Pre-Reset Validation**
 ```
-1. Check if annual reset is enabled
-2. Verify reset date has arrived
-3. Get current employee CL balances
-4. Calculate carry forward amounts
-5. Validate departmental settings
+1. Check if annual reset is enabled.
+2. Verify timezone configuration for accurate date comparison (e.g., use IST/UTC consistently).
+3. Verify reset date has arrived in the canonical timezone.
+4. Ensure idempotency by checking if a reset has already been performed for this financial year
+   (consult a ResetAudit record keyed by financial year).
+5. Get current employee CL balances.
+6. Calculate carry forward amounts.
+7. Validate departmental settings.
 ```
 
 ### 2. **Reset Execution**
@@ -211,6 +218,60 @@ POST /api/leaves/annual-reset/preview
 - **Validation**: Pre-reset validation of all parameters
 - **Error Handling**: Graceful failure with detailed reporting
 
+#### Rollback Procedure
+
+To guarantee recoverability, every reset run must be fully auditable and reversible:
+
+1. **Stop Automated Processes**
+   - Disable the annual reset cron job or any scheduled task that invokes `performAnnualCLReset`
+     to prevent new runs during investigation.
+
+2. **Retrieve Backup / Audit Snapshot**
+   - Locate the pre-reset snapshot in the `ResetAudit` store (or equivalent audit collection).
+   - Each reset should persist a record such as:
+     ```json
+     {
+       "resetId": "reset-2024-04-01",
+       "financialYear": "2024-2025",
+       "takenAt": "2024-04-01T00:00:00.000Z",
+       "balancesBefore": [ /* per-employee CL balances */ ]
+     }
+     ```
+
+3. **Execute Rollback**
+   - Call the rollback API endpoint:
+     ```http
+     POST /api/leaves/annual-reset/rollback
+     Content-Type: application/json
+
+     {
+       "resetId": "reset-2024-04-01",
+       "confirmRollback": true
+     }
+     ```
+   - The rollback handler should:
+     - Validate that `resetId` exists and is in a rollback-eligible state.
+     - Restore employee CL balances from the `balancesBefore` snapshot.
+     - Mark the corresponding `ResetAudit` record as rolled back.
+
+4. **Verify Restoration**
+   - Run a comparison job/report that:
+     - Recomputes current employee CL balances from the leave register.
+     - Compares them against the backup snapshot for the specified `resetId`.
+   - Any mismatches should be logged and highlighted for manual investigation.
+
+5. **Investigate Root Cause**
+   - Use application logs and `ResetAudit` metadata (start/end timestamps, operator, parameters,
+     error summaries) to determine the failure cause.
+   - Fix configuration or code issues before re-running the reset.
+
+6. **Re-execute the Reset**
+   - Once the issue is resolved, create a fresh reset run:
+     - Ensure a new `resetId` and audit snapshot are created.
+     - Confirm that the idempotency checks (based on financial year and `ResetAudit` status)
+       allow the new run.
+   - Re-enable the cron job after manual verification.
+
 ## 📊 Configuration Examples
 
 ### **Standard Configuration**
@@ -268,11 +329,36 @@ POST /api/leaves/annual-reset/preview
 ### **Unit Testing**
 ```javascript
 describe('Annual CL Reset', () => {
-    test('should reset CL to 12 with carry forward', async () => {
-        const result = await performAnnualCLReset(2024);
-        expect(result.resetToBalance).toBe(12);
-        expect(result.addCarryForward).toBe(true);
+  test('should reset CL with correct carry forward and persistence', async () => {
+    const targetYear = 2024;
+
+    // Arrange: seed a sample employee with prior balance and usage
+    const employee = await createTestEmployee({ emp_no: 'E001' });
+    await seedLeaveRegisterForYear(employee._id, {
+      annualAllotment: 12,
+      usedCLThisYear: 4 // 8 days unused from annual allotment
     });
+
+    // Act
+    const result = await performAnnualCLReset(targetYear);
+
+    // Assert top-level result structure
+    expect(result.resetToBalance).toBe(12);
+    expect(result.addCarryForward).toBe(true);
+    expect(result.employeesUpdated).toContainEqual(
+      expect.objectContaining({ employeeId: employee._id.toString() })
+    );
+
+    const detail = result.details.find(d => d.employeeId === employee._id.toString());
+    expect(detail).toBeDefined();
+    expect(detail.priorBalance).toBeGreaterThanOrEqual(0);
+    expect(detail.carryForwardAmount).toBe(8); // 12 - 4
+    expect(detail.newBalance).toBe(detail.carryForwardAmount + result.resetToBalance);
+
+    // Verify persistence
+    const updatedBalance = await leaveRegisterService.getCurrentBalance(employee._id, 'CL');
+    expect(updatedBalance).toBe(detail.newBalance);
+  });
 });
 ```
 
@@ -319,12 +405,50 @@ describe('Annual CL Reset', () => {
 ```javascript
 // Annual reset cron job (runs on financial year start)
 const annualResetJob = {
-    schedule: '0 0 1 4 *', // 1st April, midnight
-    timezone: 'Asia/Kolkata',
-    handler: () => performAnnualCLReset(),
-    enabled: true
+  schedule: '0 0 1 4 *', // 1st April, midnight
+  timezone: 'Asia/Kolkata',
+  handler: () => performAnnualCLReset(),
+  enabled: true,
+
+  // Retry strategy for transient failures
+  retryStrategy: {
+    attempts: 3,
+    intervalMs: 5 * 60 * 1000, // 5 minutes between attempts (exponential backoff optional)
+  },
+
+  // Failure callback for alerting and diagnostics
+  onFailure: (error, context) => {
+    logger.error('Annual CL reset job failed', { error, context });
+    notifyHRTeam({
+      type: 'ANNUAL_CL_RESET_FAILURE',
+      message: 'Annual CL reset job failed after retries',
+      error,
+      context,
+    });
+  },
 };
 ```
+
+### **Manual Trigger Endpoint**
+
+In addition to the scheduled job, expose a manual trigger so HR can re-run the reset (idempotently)
+if the cron was missed:
+
+```http
+POST /api/leaves/annual-reset/manual
+Content-Type: application/json
+
+{
+  "targetYear": 2024,
+  "confirmReset": true
+}
+```
+
+The manual endpoint should:
+
+- Reuse the same `performAnnualCLReset` implementation as the cron job.
+- Enforce the same idempotency and ResetAudit checks (no double-crediting for a year).
+- Require appropriate authorization (e.g., HR/Admin only).
 
 ### **Automated Notifications**
 ```javascript

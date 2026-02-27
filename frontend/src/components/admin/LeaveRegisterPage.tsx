@@ -15,6 +15,7 @@ interface Employee {
     clBalance: number;
     elBalance: number;
     compensatoryOffBalance: number;
+    monthlyCLLimit: number;
     presentMonthAllowedLeaves: number;
     cumulativeLeaves: number;
 }
@@ -91,15 +92,18 @@ export default function LeaveRegisterPage() {
             });
             
             if (data.success) {
-                // Backend returns groupByEmployeeMonthly: { employee, casualLeave, earnedLeave, compensatoryOff, totalPaidBalance, monthlyAllowedLimit }
+                // Backend returns groupByEmployeeMonthly: { employee, casualLeave, earnedLeave, compensatoryOff, totalPaidBalance, monthlyCLLimit, monthlyAllowedLimit }
                 const formattedEmployees = (data.data || []).map((emp: any) => {
                     const employee = emp.employee || {};
                     const employeeId = employee.id || emp.employeeId?._id || emp.employeeId?.id || emp.employeeId;
                     const casualLeave = emp.casualLeave || {};
                     const earnedLeave = emp.earnedLeave || {};
+                    const backendMonthlyCLLimit = typeof emp.monthlyCLLimit === 'number'
+                        ? emp.monthlyCLLimit
+                        : 0;
                     const backendMonthlyLimit = typeof emp.monthlyAllowedLimit === 'number'
                         ? emp.monthlyAllowedLimit
-                        : (casualLeave.balance || 0) + (earnedLeave.balance || 0) + ((emp.compensatoryOff && emp.compensatoryOff.balance) || 0);
+                        : backendMonthlyCLLimit + ((emp.compensatoryOff && emp.compensatoryOff.balance) || 0);
                     return {
                         employeeId,
                         empNo: employee.empNo ?? emp.empNo,
@@ -110,7 +114,8 @@ export default function LeaveRegisterPage() {
                         clBalance: casualLeave.balance ?? 0,
                         elBalance: earnedLeave.balance ?? 0,
                         compensatoryOffBalance: (emp.compensatoryOff?.balance) ?? 0,
-                        // Use backend-calculated monthly allowed limit (CL + CCL + optional EL)
+                        monthlyCLLimit: backendMonthlyCLLimit,
+                        // Use backend-calculated monthly allowed limit (CL limit + CCL)
                         presentMonthAllowedLeaves: backendMonthlyLimit,
                         cumulativeLeaves: emp.totalPaidBalance ?? 0
                     };
@@ -304,6 +309,9 @@ export default function LeaveRegisterPage() {
                                     Comp Off
                                 </th>
                                 <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                    CL Month Limit
+                                </th>
+                                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                                     Month limit
                                 </th>
                                 <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -346,6 +354,9 @@ export default function LeaveRegisterPage() {
                                         }`}>
                                             {employee.compensatoryOffBalance}
                                         </span>
+                                    </td>
+                                    <td className="px-4 py-3 text-center text-sm text-gray-900 dark:text-gray-100 font-medium">
+                                        {employee.monthlyCLLimit}
                                     </td>
                                     <td className="px-4 py-3 text-center text-sm text-gray-900 dark:text-gray-100 font-medium">
                                         {employee.presentMonthAllowedLeaves}

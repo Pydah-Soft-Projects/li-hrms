@@ -439,8 +439,10 @@ export default function LeavesPage() {
   const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
 
-  // CL balance for selected month (when leave type is CL) – used to cap selectable days
+  // CL balances for selected month/year (when leave type is CL)
   const [clBalanceForMonth, setClBalanceForMonth] = useState<number | null>(null);
+  const [clAnnualBalance, setClAnnualBalance] = useState<number | null>(null);
+  const [cclBalance, setCclBalance] = useState<number | null>(null);
   const [clBalanceLoading, setClBalanceLoading] = useState(false);
 
   // Form state
@@ -1377,17 +1379,16 @@ export default function LeavesPage() {
       setClBalanceForMonth(null);
       return;
     }
-    const from = parseDateOnly(formData.fromDate);
-    const month = from.getMonth() + 1;
-    const year = from.getFullYear();
 
     let cancelled = false;
     setClBalanceLoading(true);
     setClBalanceForMonth(null);
 
+    // For CL, always resolve monthly limit based on the selected start date's payroll cycle,
+    // not the simple calendar month. Backend will map baseDate -> payroll month/year.
     const registerParams = hasValidEmployeeId
-      ? { employeeId: String(targetEmployeeId), month, year, balanceAsOf: true }
-      : { empNo: String(targetEmpNo), month, year, balanceAsOf: true };
+      ? { employeeId: String(targetEmployeeId), baseDate: formData.fromDate, balanceAsOf: true }
+      : { empNo: String(targetEmpNo), baseDate: formData.fromDate, balanceAsOf: true };
     api.getLeaveRegister(registerParams)
       .then((res: any) => {
         if (cancelled) return;
@@ -1395,12 +1396,17 @@ export default function LeavesPage() {
         if (Array.isArray(data) && data.length > 0 && data[0].casualLeave) {
           const cl = data[0].casualLeave;
           const balance = Number(cl.balance);
-          // Policy: 1 CL per month from first 12, plus any extra balance; cap by allowedRemaining
-          const allowed = cl.allowedRemaining != null ? Number(cl.allowedRemaining) : balance;
-          const cap = Number.isFinite(allowed) ? Math.max(0, allowed) : (Number.isFinite(balance) ? balance : 0);
-          setClBalanceForMonth(cap);
+          const allowedRaw = cl.allowedRemaining != null ? Number(cl.allowedRemaining) : balance;
+          const clCap = Number.isFinite(allowedRaw) ? Math.max(0, allowedRaw) : (Number.isFinite(balance) ? balance : 0);
+          setClBalanceForMonth(clCap);
+          setClAnnualBalance(Number.isFinite(balance) ? Math.max(0, balance) : null);
+          const cclRaw = data[0].compensatoryOff?.balance;
+          const cclVal = Number(cclRaw);
+          setCclBalance(Number.isFinite(cclVal) ? Math.max(0, cclVal) : 0);
         } else {
           setClBalanceForMonth(0);
+          setClAnnualBalance(null);
+          setCclBalance(null);
         }
       })
       .catch(() => {
@@ -2877,23 +2883,48 @@ export default function LeavesPage() {
                   )}
                 </div>
 
-                {/* CL balance for month – show when Casual Leave selected, cap selectable days */}
+                {/* CL summary for month/year – show when Casual Leave selected */}
                 {isCLSelected && (
-                  <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-3">
+                  <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-3 space-y-1.5">
                     {!formData.fromDate || !canFetchCLBalance ? (
                       <p className="text-sm text-slate-500 dark:text-slate-400">
-                        {currentUser?.role === 'employee' ? 'Select from date to see CL balance for that month.' : 'Select employee and from date to see CL balance for that month.'}
+                        {currentUser?.role === 'employee'
+                          ? 'Select from date to see your CL balance and monthly limit for that month.'
+                          : 'Select employee and from date to see CL balance and monthly limit for that month.'}
                       </p>
                     ) : clBalanceLoading ? (
                       <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
                         <Loader2 className="w-4 h-4 animate-spin" />
-                        Loading CL balance...
+                        Loading CL balance and monthly limit...
                       </div>
                     ) : clBalanceForMonth !== null ? (
-                      <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
-                        <span className="text-green-600 dark:text-green-400">CL balance for this month: {clBalanceForMonth} day{clBalanceForMonth !== 1 ? 's' : ''}.</span>
-                        {' '}You can apply for up to <strong>{clBalanceForMonth}</strong> day{clBalanceForMonth !== 1 ? 's' : ''} only.
-                      </p>
+                      <>
+                        <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
+                          {clAnnualBalance !== null && (
+                            <>
+                              <span className="text-slate-600 dark:text-slate-300">
+                                Yearly CL balance (remaining):{' '}
+                              </span>
+                              <span className="font-semibold">
+                                {clAnnualBalance} day{clAnnualBalance !== 1 ? 's' : ''}.
+                              </span>
+                            </>
+                          )}
+                        </p>
+                        <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
+                          <span className="text-green-600 dark:text-green-400">
+                            CL limit for this month: {clBalanceForMonth} day{clBalanceForMonth !== 1 ? 's' : ''}.
+                          </span>{' '}
+                          You can apply for up to <strong>{clBalanceForMonth}</strong> CL day{clBalanceForMonth !== 1 ? 's' : ''} in this month.
+                        </p>
+                        <p className="text-sm text-slate-700 dark:text-slate-300">
+                          Compensatory off balance:{' '}
+                          <span className="font-semibold">
+                            {cclBalance ?? 0} day{(cclBalance ?? 0) !== 1 ? 's' : ''}.
+                          </span>{' '}
+                          When you choose CCL type, you can use up to your CCL balance in addition to your CL limit.
+                        </p>
+                      </>
                     ) : (
                       <p className="text-sm text-amber-600 dark:text-amber-400">
                         Could not load CL balance. You must have a valid balance to apply for CL; try again or select employee/from date again.
