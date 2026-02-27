@@ -197,14 +197,14 @@ exports.receiveRealTimeLogs = async (req, res) => {
                             $lte: formatDate(maxDate),
                         },
                         timestamp: { $gte: new Date('2020-01-01') },
-                        type: { $in: ['IN', 'OUT'] }, // Only IN/OUT logs
+                        type: { $in: ['IN', 'OUT', null] }, // Include null (thumb-only) for alternating IN/OUT pairing
                     }).sort({ timestamp: 1 }).lean();
 
-                    // Convert to simple format
+                    // Convert to simple format; null-type gets punch_state from position in pairing (handled in multiShiftProcessingService)
                     const logs = allLogs.map(log => ({
                         timestamp: new Date(log.timestamp),
                         type: log.type,
-                        punch_state: log.type === 'IN' ? 0 : 1,
+                        punch_state: log.type === 'IN' ? 0 : log.type === 'OUT' ? 1 : null,
                         _id: log._id,
                     }));
 

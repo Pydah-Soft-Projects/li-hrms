@@ -407,7 +407,7 @@ exports.getAllEmployees = async (req, res) => {
       const startOfToday = new Date();
       startOfToday.setUTCHours(0, 0, 0, 0);
       filters.$and = filters.$and || [];
-      filters.$and.push({ $or: [ { leftDate: null }, { leftDate: { $gte: startOfToday } } ] });
+      filters.$and.push({ $or: [{ leftDate: null }, { leftDate: { $gte: startOfToday } }] });
     }
 
     console.log('[Employee Controller] Scope filters:', filters);
@@ -1805,6 +1805,71 @@ exports.resendEmployeePassword = async (req, res) => {
   } catch (error) {
     console.error('Error resending credentials:', error);
     res.status(500).json({ success: false, message: 'Error resending credentials', error: error.message });
+  }
+};
+
+/**
+ * @desc    Reset employee credentials (generate new and send via config matrix)
+ * @route   POST /api/employees/:empNo/reset-credentials
+ * @access  Private (Super Admin)
+ */
+exports.resetEmployeeCredentials = async (req, res) => {
+  try {
+    const { empNo } = req.params;
+
+    const employee = await Employee.findOne({ emp_no: empNo.toUpperCase() })
+      .select('+plain_password emp_no employee_name email phone_number');
+
+    if (!employee) {
+      return res.status(404).json({ success: false, message: 'Employee not found' });
+    }
+
+    console.log(`[EmployeeController] Resetting credentials for ${empNo}. Using config matrix delivery strategy.`);
+
+    const { passwordMode, customPassword } = req.body;
+
+    let passwordToSend;
+    if (customPassword && customPassword.trim().length > 0) {
+      passwordToSend = customPassword.trim();
+    } else {
+      passwordToSend = await generatePassword(employee, passwordMode || null);
+    }
+    employee.password = passwordToSend;
+    employee.plain_password = passwordToSend;
+    await employee.save();
+
+    const notificationResults = await sendCredentials(
+      employee,
+      passwordToSend,
+      null,
+      true
+    );
+
+    // Employee history: credentials reset
+    try {
+      await EmployeeHistory.create({
+        emp_no: employee.emp_no,
+        event: 'password_reset',
+        performedBy: req.user._id,
+        performedByName: req.user.name,
+        performedByRole: req.user.role,
+        details: {
+          mode: 'manual_reset',
+        },
+        comments: 'Login credentials reset and sent to employee',
+      });
+    } catch (err) {
+      console.error('Failed to log credentials reset history:', err.message);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Credentials reset and sent successfully',
+      notificationResults
+    });
+  } catch (error) {
+    console.error('Error resetting credentials:', error);
+    res.status(500).json({ success: false, message: 'Error resetting credentials', error: error.message });
   }
 };
 
