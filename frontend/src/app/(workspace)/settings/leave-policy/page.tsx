@@ -121,7 +121,8 @@ export default function LeavePolicySettingsPage() {
             alert('Leave policy settings saved successfully!');
         } catch (error) {
             console.error('Error saving settings:', error);
-            alert('Error saving settings: ' + error.message);
+            const message = error instanceof Error ? error.message : String(error);
+            alert('Error saving settings: ' + message);
         } finally {
             setSaving(false);
         }
@@ -144,6 +145,7 @@ export default function LeavePolicySettingsPage() {
     };
 
     const previewELCalculation = async () => {
+        if (!user?._id) return;
         try {
             const res = await api.previewELCalculation({
                 employeeId: user._id,
@@ -153,7 +155,8 @@ export default function LeavePolicySettingsPage() {
             setPreviewData(res.data);
         } catch (error) {
             console.error('Error in preview:', error);
-            alert('Error in EL calculation preview: ' + error.message);
+            const msg = error instanceof Error ? error.message : String(error);
+            alert('Error in EL calculation preview: ' + msg);
         }
     };
 
@@ -165,7 +168,8 @@ export default function LeavePolicySettingsPage() {
                 alert('Settings reset to defaults successfully!');
             } catch (error) {
                 console.error('Error resetting settings:', error);
-                alert('Error resetting settings: ' + error.message);
+                const msg = error instanceof Error ? error.message : String(error);
+                alert('Error resetting settings: ' + msg);
             }
         }
     };
