@@ -96,12 +96,32 @@ export default function RosterPage() {
   const [cycleStartDay, setCycleStartDay] = useState<number>(1);
   const [cycleDates, setCycleDates] = useState<{ startDate: string; endDate: string; label: string } | null>(null);
 
+  const [alignedToCycle, setAlignedToCycle] = useState(false);
+
   // Fetch payroll cycle setting on mount
   useEffect(() => {
     api.getSetting('payroll_cycle_start_day').then((res) => {
       if (res.success && res.data) setCycleStartDay(Number(res.data.value) || 1);
     }).catch(() => { });
   }, []);
+
+  // After we know the cycle start day, adjust initial month so that the pay cycle contains today
+  useEffect(() => {
+    if (alignedToCycle || !cycleStartDay) return;
+    const today = new Date();
+    let y = today.getFullYear();
+    let m = today.getMonth() + 1;
+    if (cycleStartDay > 1 && today.getDate() >= cycleStartDay) {
+      if (m === 12) {
+        m = 1;
+        y += 1;
+      } else {
+        m += 1;
+      }
+    }
+    setMonth(formatMonthInput(new Date(y, m - 1, 1)));
+    setAlignedToCycle(true);
+  }, [cycleStartDay, alignedToCycle]);
 
   // Recalculate cycle dates when month or cycleStartDay changes
   useEffect(() => {
