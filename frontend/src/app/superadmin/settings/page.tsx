@@ -27,6 +27,8 @@ import {
 import ShiftSettings from '@/components/settings/ShiftSettings';
 import EmployeeSettings from '@/components/settings/EmployeeSettings';
 import LeaveSettings from '@/components/settings/LeaveSettings';
+import LeavePolicySettings from '@/components/settings/LeavePolicySettings';
+import LeaveRegisterPage from '@/components/admin/LeaveRegisterPage';
 import LoanSettings from '@/components/settings/LoanSettings';
 import PayrollSettings from '@/components/settings/PayrollSettings';
 import AttendanceSettings from '@/components/settings/AttendanceSettings';
@@ -42,6 +44,8 @@ type TabType =
   | 'general'
   | 'employee'
   | 'leave'
+  | 'leave_policy'
+  | 'leave_register'
   | 'od'
   | 'ccl'
   | 'resignation'
@@ -67,7 +71,8 @@ const SettingsPage = () => {
     { id: 'feature_control', label: 'Feature Control', icon: LayoutGrid, color: 'text-orange-500', group: 'Application' },
 
     { id: 'employee', label: 'Employee Setup', icon: Users, color: 'text-indigo-500', group: 'Human Resources' },
-    { id: 'leave', label: 'Leave Policy', icon: Calendar, color: 'text-emerald-500', group: 'Human Resources' },
+    { id: 'leave', label: 'Leave Settings', icon: Calendar, color: 'text-emerald-500', group: 'Human Resources' },
+    { id: 'leave_policy', label: 'Leave Policy', icon: Briefcase, color: 'text-teal-500', group: 'Human Resources' },
     { id: 'od', label: 'On-Duty (OD)', icon: Briefcase, color: 'text-teal-500', group: 'Human Resources' },
     { id: 'ccl', label: 'Comp. Casual Leave (CCL)', icon: Zap, color: 'text-amber-500', group: 'Human Resources' },
     { id: 'resignation', label: 'Resignation Policy', icon: LogOut, color: 'text-orange-500', group: 'Human Resources' },
@@ -99,6 +104,7 @@ const SettingsPage = () => {
       case 'general': return <GeneralSettings />;
       case 'employee': return <EmployeeSettings />;
       case 'leave': return <LeaveSettings type="leave" />;
+      case 'leave_policy': return <LeavePolicySettings />;
       case 'od': return <LeaveSettings type="od" />;
       case 'ccl': return <LeaveSettings type="ccl" />;
       case 'resignation': return <ResignationSettings />;

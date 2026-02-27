@@ -25,7 +25,8 @@ const startWorkers = () => {
 
                 for (let i = 0; i < batch.employeePayrolls.length; i++) {
                     const payroll = batch.employeePayrolls[i];
-                    await PayrollCalculationService.calculatePayrollNew(payroll.employeeId, batch.month, userId);
+                    const empId = payroll.employeeId?._id || payroll.employeeId;
+                    await PayrollCalculationService.calculatePayrollNew(empId, batch.month, userId, { source: 'payregister' });
 
                     // Update progress
                     await job.updateProgress({
@@ -120,17 +121,40 @@ const startWorkers = () => {
 
                 const batchIds = new Set();
                 const useLegacy = job.data.strategy === 'legacy';
+                const useDynamic = job.data.strategy === 'dynamic';
+                const opts = { source: useLegacy ? 'all' : 'payregister' };
+
+                let useOutputColumnsEngine = false;
+                if (useDynamic) {
+                    const PayrollConfiguration = require('../../payroll/model/PayrollConfiguration');
+                    const config = await PayrollConfiguration.get();
+                    useOutputColumnsEngine = Array.isArray(config?.outputColumns) && config.outputColumns.length > 0;
+                }
+
+                const payrollFromOutputColumns = useOutputColumnsEngine
+                    ? require('../../payroll/services/payrollCalculationFromOutputColumnsService')
+                    : null;
 
                 for (let i = 0; i < employees.length; i++) {
                     const employee = employees[i];
                     try {
-                        const result = await PayrollCalculationService.calculatePayrollNew(
-                            employee._id.toString(),
-                            month,
-                            userId,
-                            { source: useLegacy ? 'all' : 'payregister' },
-                            sharedContext
-                        );
+                        let result;
+                        if (useOutputColumnsEngine && payrollFromOutputColumns) {
+                            result = await payrollFromOutputColumns.calculatePayrollFromOutputColumns(
+                                employee._id.toString(),
+                                month,
+                                userId,
+                                { source: 'payregister', arrearsSettlements: [] }
+                            );
+                        } else {
+                            result = await PayrollCalculationService.calculatePayrollNew(
+                                employee._id.toString(),
+                                month,
+                                userId,
+                                opts,
+                                sharedContext
+                            );
+                        }
                         if (result.batchId) batchIds.add(result.batchId.toString());
                     } catch (err) {
                         console.error(`[Worker] Failed bulk payroll for ${employee.emp_no || employee._id}:`, err.message);
@@ -151,8 +175,7 @@ const startWorkers = () => {
                 }
                 console.log(`[Worker] Bulk payroll calculation complete`);
             } else {
-                // Single employee calculation
-                await PayrollCalculationService.calculatePayrollNew(employeeId, month, userId);
+                await PayrollCalculationService.calculatePayrollNew(employeeId, month, userId, { source: 'payregister' });
             }
         } catch (error) {
             console.error(`[Worker] Payroll job ${job.id} failed:`, error.message);

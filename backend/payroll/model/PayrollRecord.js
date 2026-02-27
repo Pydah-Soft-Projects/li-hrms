@@ -82,6 +82,12 @@ const payrollRecordSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+    // EL days added as paid in this payroll (when useAsPaidInPayroll ON); debited from balance on batch complete
+    elUsedInPayroll: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     // Combined arrears from Arrears Settlement
     arrearsAmount: {
       type: Number,
@@ -230,6 +236,12 @@ const payrollRecordSchema = new mongoose.Schema(
         default: 0,
         min: 0,
       },
+      // Cumulative of all allowances (for use in later steps / formulas)
+      allowancesCumulative: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
       // Allowances breakdown (array of {name, amount, type})
       allowances: [
         {
@@ -346,10 +358,25 @@ const payrollRecordSchema = new mongoose.Schema(
           },
           base: {
             type: String,
-            enum: ['basic', 'gross'],
+            enum: ['basic', 'gross', 'fixed'],
           },
         },
       ],
+      // Statutory deductions (ESI, PF, Profession Tax) - employee share only in payroll
+      statutoryDeductions: [
+        {
+          name: String,
+          code: String,
+          employeeAmount: Number,
+          employerAmount: Number,
+        },
+      ],
+      totalStatutoryEmployee: { type: Number, default: 0, min: 0 },
+      totalStatutoryEmployer: { type: Number, default: 0, min: 0 },
+      // Cumulative statutory (employee share) for this month; YTD can be derived from sum of past months
+      statutoryCumulative: { type: Number, default: 0, min: 0 },
+      // Cumulative of all deductions (for use in later steps / formulas)
+      deductionsCumulative: { type: Number, default: 0, min: 0 },
       // Total deductions (excluding EMI and advance)
       totalDeductions: {
         type: Number,

@@ -141,7 +141,28 @@ const employeeSchema = new mongoose.Schema(
       uppercase: true,
       default: null,
     },
+    // Earned Leave (EL) balance – synced from leave register
     paidLeaves: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    casualLeaves: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    sickLeaves: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    maternityLeaves: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    onDutyLeaves: {
       type: Number,
       default: 0,
       min: 0,

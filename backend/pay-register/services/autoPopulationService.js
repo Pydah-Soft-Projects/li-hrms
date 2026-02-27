@@ -5,6 +5,7 @@ const OD = require('../../leaves/model/OD');
 const OT = require('../../overtime/model/OT');
 const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
 const LeaveSettings = require('../../leaves/model/LeaveSettings');
+const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
 const Shift = require('../../shifts/model/Shift');
 const { getPayrollDateRange, getAllDatesInRange } = require('../../shared/utils/dateUtils');
 
@@ -14,12 +15,19 @@ const { getPayrollDateRange, getAllDatesInRange } = require('../../shared/utils/
  */
 
 /**
- * Get leave nature from leave type
- * @param {String} leaveType - Leave type code
- * @returns {String} Leave nature ('paid', 'lop', 'without_pay')
+ * Get leave nature from leave type.
+ * For EL: when "Use EL as paid in payroll" is ON, return 'lop' (availed EL does not add to pay register; pay comes from balance in payroll). When OFF, use the nature defined in Leave Types (paid/lop).
  */
 async function getLeaveNature(leaveType) {
   try {
+    if (leaveType && String(leaveType).toUpperCase() === 'EL') {
+      const policy = await LeavePolicySettings.getSettings();
+      if (policy.earnedLeave && policy.earnedLeave.useAsPaidInPayroll === true) {
+        return 'lop';
+      }
+      // When OFF: use nature defined at leave type (fall through to Leave Settings)
+    }
+
     const leaveSettings = await LeaveSettings.findOne({ type: 'leave', isActive: true });
     if (!leaveSettings || !leaveSettings.types) {
       return 'paid'; // Default
