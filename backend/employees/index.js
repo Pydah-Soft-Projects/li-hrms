@@ -30,6 +30,9 @@ router.get('/', applyScopeFilter, employeeController.getAllEmployees);
 // Get single employee
 router.get('/:empNo', employeeController.getEmployee);
 
+// Employee history (Super Admin only)
+router.get('/:empNo/history', authorize('super_admin'), employeeController.getEmployeeHistory);
+
 // Create employee (Super Admin, Sub Admin, HR)
 router.post('/', authorize('manager', 'super_admin', 'sub_admin', 'hr'), upload.any(), employeeController.createEmployee);
 

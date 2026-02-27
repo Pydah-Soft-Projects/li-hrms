@@ -5,6 +5,20 @@
 
 const mongoose = require('mongoose');
 
+/** Predefined qualification table columns – org can enable/disable or delete. S.No is UI-only (row index), not stored. */
+function getDefaultQualificationFields() {
+  return [
+    { id: 'examination', label: 'Examination', type: 'text', isRequired: true, isEnabled: true, placeholder: 'E.g., 10th, 12th, B.Tech', validation: { minLength: 1, maxLength: 200 }, order: 1 },
+    { id: 'university_board', label: 'University/Board', type: 'text', isRequired: false, isEnabled: true, placeholder: 'E.g., CBSE, Mumbai University', validation: { minLength: 0, maxLength: 200 }, order: 2 },
+    { id: 'school_college_name', label: 'School/College name', type: 'text', isRequired: false, isEnabled: true, placeholder: 'Name of institution', validation: { minLength: 0, maxLength: 300 }, order: 3 },
+    { id: 'subjects', label: 'Subjects', type: 'text', isRequired: false, isEnabled: true, placeholder: 'E.g., Physics, Chemistry, Maths', validation: { minLength: 0, maxLength: 500 }, order: 4 },
+    { id: 'month_year_of_pass', label: 'Month & Year of pass', type: 'date', isRequired: false, isEnabled: true, placeholder: 'Month & Year', order: 5 },
+    { id: 'marks', label: 'Marks', type: 'text', isRequired: false, isEnabled: true, placeholder: 'E.g., 85% or 450/500', validation: { minLength: 0, maxLength: 50 }, order: 6 },
+    { id: 'grade_division', label: 'Grade/Division', type: 'text', isRequired: false, isEnabled: true, placeholder: 'E.g., First Class, A+', validation: { minLength: 0, maxLength: 100 }, order: 7 },
+    { id: 'certificate_submitted', label: 'Certificate submitted?', type: 'boolean', isRequired: false, isEnabled: true, placeholder: '', order: 8 },
+  ];
+}
+
 const FieldSchema = new mongoose.Schema(
   {
     // Field identifier (unique within group)
@@ -217,51 +231,22 @@ const EmployeeApplicationFormSettingsSchema = new mongoose.Schema(
       // Fields within each qualification object
       fields: [
         {
-          id: {
-            type: String,
-            required: true,
-            trim: true,
-          },
-          label: {
-            type: String,
-            required: true,
-            trim: true,
-          },
-          type: {
-            type: String,
-            enum: ['text', 'textarea', 'number', 'date', 'select'],
-            required: true,
-          },
-          isRequired: {
-            type: Boolean,
-            default: false,
-          },
-          isEnabled: {
-            type: Boolean,
-            default: true,
-          },
-          placeholder: {
-            type: String,
-            default: '',
-          },
-          validation: {
-            minLength: Number,
-            maxLength: Number,
-            min: Number,
-            max: Number,
-          },
-          options: [
-            {
-              label: String,
-              value: String,
-            },
-          ],
-          order: {
-            type: Number,
-            default: 0,
-          },
+          id: { type: String, required: true, trim: true },
+          label: { type: String, required: true, trim: true },
+          type: { type: String, enum: ['text', 'textarea', 'number', 'date', 'select', 'boolean'], required: true },
+          isRequired: { type: Boolean, default: false },
+          isEnabled: { type: Boolean, default: true },
+          placeholder: { type: String, default: '' },
+          validation: { minLength: Number, maxLength: Number, min: Number, max: Number },
+          options: [{ label: String, value: String }],
+          order: { type: Number, default: 0 },
         },
       ],
+      // Pre-filled rows set by super admin; shown read-only on application form (applicants cannot modify)
+      defaultRows: {
+        type: [mongoose.Schema.Types.Mixed],
+        default: [],
+      },
     },
   },
   {
@@ -276,6 +261,9 @@ EmployeeApplicationFormSettingsSchema.index({ isActive: 1 });
 EmployeeApplicationFormSettingsSchema.statics.getActiveSettings = async function () {
   return this.findOne({ isActive: true }).sort({ createdAt: -1 });
 };
+
+// Predefined qualification table columns (for merge on getSettings)
+EmployeeApplicationFormSettingsSchema.statics.getDefaultQualificationFields = getDefaultQualificationFields;
 
 // Static method to initialize default settings
 EmployeeApplicationFormSettingsSchema.statics.initializeDefault = async function (userId) {
@@ -588,32 +576,12 @@ EmployeeApplicationFormSettingsSchema.statics.initializeDefault = async function
         ],
       },
     ],
-    // Default Qualifications Configuration
+    // Default Qualifications Configuration – table-like columns (predefined)
     qualifications: {
       isEnabled: true,
-      enableCertificateUpload: false, // Can be enabled from form settings
-      fields: [
-        {
-          id: 'degree',
-          label: 'Degree',
-          type: 'text',
-          isRequired: true,
-          isEnabled: true,
-          placeholder: 'E.g., B.Tech, MBA',
-          validation: { minLength: 2, maxLength: 100 },
-          order: 1,
-        },
-        {
-          id: 'qualified_year',
-          label: 'Qualified Year',
-          type: 'number',
-          isRequired: true,
-          isEnabled: true,
-          placeholder: 'E.g., 2020',
-          validation: { min: 1900, max: 2100 },
-          order: 2,
-        },
-      ],
+      enableCertificateUpload: false,
+      fields: getDefaultQualificationFields(),
+      defaultRows: [],
     },
   };
 

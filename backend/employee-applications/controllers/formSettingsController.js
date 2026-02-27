@@ -134,6 +134,26 @@ exports.getSettings = async (req, res) => {
       bankDetailsGroup.fields.sort((a, b) => (a.order || 0) - (b.order || 0));
     }
 
+    // Ensure predefined qualification table columns exist (S.No, Examination, University/Board, etc.)
+    const defaultQualFields = EmployeeApplicationFormSettings.getDefaultQualificationFields();
+    if (!settingsObj.qualifications) {
+      settingsObj.qualifications = { isEnabled: true, enableCertificateUpload: false, fields: [], defaultRows: [] };
+    }
+    if (!Array.isArray(settingsObj.qualifications.fields)) {
+      settingsObj.qualifications.fields = [];
+    }
+    if (!Array.isArray(settingsObj.qualifications.defaultRows)) {
+      settingsObj.qualifications.defaultRows = [];
+    }
+    const existingQualIds = new Set(settingsObj.qualifications.fields.map((f) => f.id));
+    defaultQualFields.forEach((def) => {
+      if (!existingQualIds.has(def.id)) {
+        settingsObj.qualifications.fields.push({ ...def });
+        existingQualIds.add(def.id);
+      }
+    });
+    settingsObj.qualifications.fields.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
     res.status(200).json({
       success: true,
       data: settingsObj,
@@ -660,7 +680,7 @@ exports.updateQualificationsConfig = async (req, res) => {
     }
 
     if (!settings.qualifications) {
-      settings.qualifications = { isEnabled: true, enableCertificateUpload: false, fields: [] };
+      settings.qualifications = { isEnabled: true, enableCertificateUpload: false, fields: [], defaultRows: [] };
     }
 
     // Update fields if provided
@@ -669,6 +689,9 @@ exports.updateQualificationsConfig = async (req, res) => {
     }
     if (enableCertificateUpload !== undefined) {
       settings.qualifications.enableCertificateUpload = enableCertificateUpload;
+    }
+    if (Array.isArray(req.body.defaultRows)) {
+      settings.qualifications.defaultRows = req.body.defaultRows;
     }
 
     settings.updatedBy = req.user._id;
@@ -866,6 +889,14 @@ exports.deleteQualificationsField = async (req, res) => {
     }
 
     settings.qualifications.fields.splice(fieldIndex, 1);
+    // Remove this field from every default row so stored data stays consistent
+    if (settings.qualifications.defaultRows && Array.isArray(settings.qualifications.defaultRows)) {
+      settings.qualifications.defaultRows.forEach((row) => {
+        if (row && typeof row === 'object' && !Array.isArray(row) && Object.prototype.hasOwnProperty.call(row, fieldId)) {
+          delete row[fieldId];
+        }
+      });
+    }
     settings.updatedBy = req.user._id;
     settings.version = (settings.version || 1) + 1;
 

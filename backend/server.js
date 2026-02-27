@@ -94,6 +94,10 @@ app.use('/api/workspaces', workspaceRoutes);
 const leaveRoutes = require('./leaves/index.js');
 app.use('/api/leaves', leaveRoutes);
 
+// Resignation policy and requests
+const resignationRoutes = require('./resignations/index.js');
+app.use('/api/resignations', resignationRoutes);
+
 const loanRoutes = require('./loans/index.js');
 app.use('/api/loans', loanRoutes);
 
