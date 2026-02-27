@@ -175,7 +175,8 @@ export default function PayrollConfigPage() {
       newCol = { header: 'Statutory cumulative', source: 'field', field: 'deductions.statutoryCumulative', formula: '', order: nextOrder };
     }
     if (newCol) {
-      setOutputColumns((prev) => prev.map((c, i) => ({ ...c, order: i })).concat([newCol!]));
+      const withOrder = { ...newCol, order: newCol.order ?? nextOrder };
+      setOutputColumns((prev) => prev.map((c, i) => ({ ...c, order: i })).concat([withOrder]));
       toast.success('Added cumulative column');
     }
   };
