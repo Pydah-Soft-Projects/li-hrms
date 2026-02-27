@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { api, Employee, Department, Division, Designation, EmployeeApplication, Allowance, Deduction } from '@/lib/api';
 import { alertSuccess, alertError, alertConfirm, alertLoading } from '@/lib/customSwal';
 import { auth } from '@/lib/auth';
+import Swal from 'sweetalert2';
 import BulkUpload from '@/components/BulkUpload';
 import DynamicEmployeeForm from '@/components/DynamicEmployeeForm';
 import EmployeeUpdateModal from '@/components/EmployeeUpdateModal';
@@ -31,6 +32,7 @@ import {
   Edit2,
   Trash2,
   Mail,
+  KeyRound,
   Upload,
   Settings,
   Users
@@ -290,6 +292,7 @@ export default function EmployeesPage() {
   const [includeLeftEmployees, setIncludeLeftEmployees] = useState(false);
   const [passwordMode, setPasswordMode] = useState<'random' | 'phone_empno'>('random');
   const [isResending, setIsResending] = useState<string | null>(null);
+  const [isResetting, setIsResetting] = useState<string | null>(null);
   const [selectedApplicationIds, setSelectedApplicationIds] = useState<string[]>([]);
   const [updatingStatusIds, setUpdatingStatusIds] = useState<Set<string>>(new Set());
   const [showEmployeeUpdateModal, setShowEmployeeUpdateModal] = useState(false);
@@ -1397,9 +1400,9 @@ export default function EmployeesPage() {
       const isNewEmployee = !editingEmployee;
       const qualities = isNewEmployee
         ? [
-            ...defaultRows.map((r: any) => ({ ...r, isPreFilled: true })),
-            ...applicantQuals.map((q: any) => ({ ...q, isPreFilled: false })),
-          ]
+          ...defaultRows.map((r: any) => ({ ...r, isPreFilled: true })),
+          ...applicantQuals.map((q: any) => ({ ...q, isPreFilled: false })),
+        ]
         : (Array.isArray(formData.qualifications) ? formData.qualifications : []);
       console.log('Skills/Qualities before processing:', qualities);
 
@@ -3008,6 +3011,51 @@ export default function EmployeesPage() {
                                       )}
                                     </button>
                                     <button
+                                      onClick={async (e) => {
+                                        e.stopPropagation();
+
+                                        const result = await Swal.fire({
+                                          title: 'Reset Credentials',
+                                          text: `Reset credentials for ${employee.employee_name}? Enter a custom password or leave blank to auto-generate.`,
+                                          input: 'text',
+                                          inputPlaceholder: 'Enter custom password (optional)',
+                                          showCancelButton: true,
+                                          confirmButtonText: 'Reset & Send',
+                                          cancelButtonText: 'Cancel',
+                                          confirmButtonColor: '#f97316',
+                                          inputAttributes: {
+                                            autocapitalize: 'off',
+                                            autocorrect: 'off'
+                                          }
+                                        });
+
+                                        if (!result.isConfirmed) return;
+
+                                        setIsResetting(employee.emp_no);
+                                        try {
+                                          const res = await api.resetEmployeeCredentials(employee.emp_no, { customPassword: result.value });
+                                          if (res.success) {
+                                            alertSuccess('Sent!', 'Credentials reset successfully!');
+                                          } else {
+                                            alertError('Failed', res.message || 'Failed to reset');
+                                          }
+                                        } catch (err: any) {
+                                          alertError('Error', err.message || 'Failed to reset');
+                                        } finally {
+                                          setIsResetting(null);
+                                        }
+                                      }}
+                                      disabled={isResetting === employee.emp_no}
+                                      className="ml-2 rounded-lg p-2 text-slate-400 transition-all hover:bg-orange-50 hover:text-orange-600 dark:hover:bg-orange-900/30 dark:hover:text-orange-400 disabled:opacity-50"
+                                      title="Reset Credentials"
+                                    >
+                                      {isResetting === employee.emp_no ? (
+                                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-orange-500 border-t-transparent" />
+                                      ) : (
+                                        <KeyRound className="h-4 w-4" />
+                                      )}
+                                    </button>
+                                    <button
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         if (updatingStatusIds.has(employee.emp_no)) return;
@@ -3415,7 +3463,7 @@ export default function EmployeesPage() {
                   </div>
                 )}
 
-                  <div className="space-y-6">
+                <div className="space-y-6">
                   {/* Application Details */}
                   <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
                     <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Application Details</h3>
@@ -4514,22 +4562,20 @@ export default function EmployeesPage() {
                       <button
                         type="button"
                         onClick={() => setEmployeeViewTab('profile')}
-                        className={`px-3 py-1 rounded-full transition ${
-                          employeeViewTab === 'profile'
-                            ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-slate-100'
-                            : 'bg-transparent'
-                        }`}
+                        className={`px-3 py-1 rounded-full transition ${employeeViewTab === 'profile'
+                          ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-slate-100'
+                          : 'bg-transparent'
+                          }`}
                       >
                         Profile
                       </button>
                       <button
                         type="button"
                         onClick={() => setEmployeeViewTab('history')}
-                        className={`px-3 py-1 rounded-full transition ${
-                          employeeViewTab === 'history'
-                            ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-slate-100'
-                            : 'bg-transparent'
-                        }`}
+                        className={`px-3 py-1 rounded-full transition ${employeeViewTab === 'history'
+                          ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-slate-100'
+                          : 'bg-transparent'
+                          }`}
                       >
                         History
                       </button>
@@ -4537,187 +4583,187 @@ export default function EmployeesPage() {
                   </div>
 
                   {employeeViewTab === 'profile' && (
-                  <>
-                  {/* Basic Information */}
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                    <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Basic Information</h3>
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Employee Number</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.emp_no || '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Name</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.employee_name || '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Department</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.department?.name || '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Designation</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.designation?.name || '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Date of Joining</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.doj ? new Date(viewingEmployee.doj).toLocaleDateString() : '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Date of Birth</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.dob ? new Date(viewingEmployee.dob).toLocaleDateString() : '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Gross Salary</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.gross_salary ? `₹${viewingEmployee.gross_salary.toLocaleString()}` : '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Second Salary</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.second_salary ? `₹${viewingEmployee.second_salary.toLocaleString()}` : '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">CTC Salary</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{(viewingEmployee as any).ctcSalary ? `₹${(viewingEmployee as any).ctcSalary.toLocaleString()}` : '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Calculated Salary (Net)</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{(viewingEmployee as any).calculatedSalary ? `₹${(viewingEmployee as any).calculatedSalary.toLocaleString()}` : '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Paid Leaves</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.paidLeaves ?? '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Gender</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.gender || '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Marital Status</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.marital_status || '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Blood Group</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.blood_group || '-'}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Contact Information */}
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                    <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Contact Information</h3>
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Phone Number</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.phone_number || '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Alternate Phone</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.alt_phone_number || '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Email</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.email || '-'}</p>
-                      </div>
-                      <div className="sm:col-span-2 lg:col-span-3">
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Address</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.address || '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Location</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.location || '-'}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Professional Information */}
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                    <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Professional Information</h3>
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                      <div className="sm:col-span-2 lg:col-span-3">
-                        <div className="mb-2 flex items-center justify-between">
-                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Qualifications</label>
-                          {(() => {
-                            const quals = viewingEmployee.qualifications;
-                            if (!quals || !Array.isArray(quals) || quals.length === 0) return null;
-                            const total = quals.length;
-                            const certLabel = formSettings?.qualifications?.fields?.find((f: any) => f.id === 'certificate_submitted')?.label;
-                            const count = quals.filter((q: any) => {
-                              const v = q.certificate_submitted ?? (certLabel ? q[certLabel] : null);
-                              return v === true || v === 'Yes' || (typeof v === 'string' && v.toLowerCase() === 'yes');
-                            }).length;
-                            const status = total === 0 ? '—' : count === total ? 'Certified' : `Partial (${count}/${total})`;
-                            return (
-                              <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${count === total ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' : 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'}`}>
-                                {status}
-                              </span>
-                            );
-                          })()}
+                    <>
+                      {/* Basic Information */}
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                        <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Basic Information</h3>
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Employee Number</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.emp_no || '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Name</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.employee_name || '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Department</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.department?.name || '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Designation</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.designation?.name || '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Date of Joining</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.doj ? new Date(viewingEmployee.doj).toLocaleDateString() : '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Date of Birth</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.dob ? new Date(viewingEmployee.dob).toLocaleDateString() : '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Gross Salary</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.gross_salary ? `₹${viewingEmployee.gross_salary.toLocaleString()}` : '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Second Salary</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.second_salary ? `₹${viewingEmployee.second_salary.toLocaleString()}` : '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">CTC Salary</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{(viewingEmployee as any).ctcSalary ? `₹${(viewingEmployee as any).ctcSalary.toLocaleString()}` : '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Calculated Salary (Net)</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{(viewingEmployee as any).calculatedSalary ? `₹${(viewingEmployee as any).calculatedSalary.toLocaleString()}` : '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Paid Leaves</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.paidLeaves ?? '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Gender</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.gender || '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Marital Status</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.marital_status || '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Blood Group</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.blood_group || '-'}</p>
+                          </div>
                         </div>
-                        {(() => {
-                          const quals = viewingEmployee.qualifications;
-                          if (!quals || (Array.isArray(quals) && quals.length === 0)) {
-                            return <p className="text-sm font-medium text-slate-900 dark:text-slate-100">-</p>;
-                          }
-                          if (Array.isArray(quals)) {
-                            const qualFields = (formSettings?.qualifications?.fields || []).filter((f: any) => f.isEnabled !== false).sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
-                            return (
-                              <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
-                                <table className="w-full min-w-[700px] text-left text-sm">
-                                  <thead>
-                                    <tr className="border-b border-slate-200 bg-slate-100/80 dark:border-slate-700 dark:bg-slate-800/80">
-                                      {qualFields.map((f: any) => (
-                                        <th key={f.id} className="whitespace-nowrap px-3 py-2 font-semibold text-slate-700 dark:text-slate-300">
-                                          {f.label}
-                                        </th>
-                                      ))}
-                                      <th className="w-20 px-3 py-2 font-semibold text-slate-700 dark:text-slate-300">View</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {quals.map((qual: any, idx: number) => {
-                                      const certificateUrl = qual.certificateUrl;
-                                      const isPDF = certificateUrl?.toLowerCase().endsWith('.pdf');
-                                      return (
-                                        <tr key={idx} className="border-b border-slate-100 dark:border-slate-700/50">
-                                          {qualFields.map((f: any) => {
-                                            const val = qual[f.id] ?? qual[f.label];
-                                            const display = val != null && val !== '' ? (f.type === 'boolean' ? (val ? 'Yes' : 'No') : String(val)) : '—';
-                                            return (
-                                              <td key={f.id} className="px-3 py-2 text-slate-700 dark:text-slate-300">
-                                                {display}
-                                              </td>
-                                            );
-                                          })}
-                                          <td className="px-3 py-2">
-                                            {certificateUrl ? (
-                                              <button
-                                                type="button"
-                                                onClick={() => setCertificatePreviewUrl(certificateUrl)}
-                                                className="rounded bg-slate-200 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-300 dark:bg-slate-600 dark:text-slate-200 dark:hover:bg-slate-500"
-                                              >
-                                                View
-                                              </button>
-                                            ) : (
-                                              <span className="text-slate-400 dark:text-slate-500">—</span>
-                                            )}
-                                          </td>
+                      </div>
+
+                      {/* Contact Information */}
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                        <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Contact Information</h3>
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Phone Number</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.phone_number || '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Alternate Phone</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.alt_phone_number || '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Email</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.email || '-'}</p>
+                          </div>
+                          <div className="sm:col-span-2 lg:col-span-3">
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Address</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.address || '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Location</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.location || '-'}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Professional Information */}
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                        <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Professional Information</h3>
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                          <div className="sm:col-span-2 lg:col-span-3">
+                            <div className="mb-2 flex items-center justify-between">
+                              <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Qualifications</label>
+                              {(() => {
+                                const quals = viewingEmployee.qualifications;
+                                if (!quals || !Array.isArray(quals) || quals.length === 0) return null;
+                                const total = quals.length;
+                                const certLabel = formSettings?.qualifications?.fields?.find((f: any) => f.id === 'certificate_submitted')?.label;
+                                const count = quals.filter((q: any) => {
+                                  const v = q.certificate_submitted ?? (certLabel ? q[certLabel] : null);
+                                  return v === true || v === 'Yes' || (typeof v === 'string' && v.toLowerCase() === 'yes');
+                                }).length;
+                                const status = total === 0 ? '—' : count === total ? 'Certified' : `Partial (${count}/${total})`;
+                                return (
+                                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${count === total ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' : 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'}`}>
+                                    {status}
+                                  </span>
+                                );
+                              })()}
+                            </div>
+                            {(() => {
+                              const quals = viewingEmployee.qualifications;
+                              if (!quals || (Array.isArray(quals) && quals.length === 0)) {
+                                return <p className="text-sm font-medium text-slate-900 dark:text-slate-100">-</p>;
+                              }
+                              if (Array.isArray(quals)) {
+                                const qualFields = (formSettings?.qualifications?.fields || []).filter((f: any) => f.isEnabled !== false).sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
+                                return (
+                                  <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+                                    <table className="w-full min-w-[700px] text-left text-sm">
+                                      <thead>
+                                        <tr className="border-b border-slate-200 bg-slate-100/80 dark:border-slate-700 dark:bg-slate-800/80">
+                                          {qualFields.map((f: any) => (
+                                            <th key={f.id} className="whitespace-nowrap px-3 py-2 font-semibold text-slate-700 dark:text-slate-300">
+                                              {f.label}
+                                            </th>
+                                          ))}
+                                          <th className="w-20 px-3 py-2 font-semibold text-slate-700 dark:text-slate-300">View</th>
                                         </tr>
-                                      );
-                                    })}
-                                  </tbody>
-                                </table>
-                              </div>
-                            );
-                          }
-                          return <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{String(quals)}</p>;
-                        })()}
+                                      </thead>
+                                      <tbody>
+                                        {quals.map((qual: any, idx: number) => {
+                                          const certificateUrl = qual.certificateUrl;
+                                          const isPDF = certificateUrl?.toLowerCase().endsWith('.pdf');
+                                          return (
+                                            <tr key={idx} className="border-b border-slate-100 dark:border-slate-700/50">
+                                              {qualFields.map((f: any) => {
+                                                const val = qual[f.id] ?? qual[f.label];
+                                                const display = val != null && val !== '' ? (f.type === 'boolean' ? (val ? 'Yes' : 'No') : String(val)) : '—';
+                                                return (
+                                                  <td key={f.id} className="px-3 py-2 text-slate-700 dark:text-slate-300">
+                                                    {display}
+                                                  </td>
+                                                );
+                                              })}
+                                              <td className="px-3 py-2">
+                                                {certificateUrl ? (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => setCertificatePreviewUrl(certificateUrl)}
+                                                    className="rounded bg-slate-200 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-300 dark:bg-slate-600 dark:text-slate-200 dark:hover:bg-slate-500"
+                                                  >
+                                                    View
+                                                  </button>
+                                                ) : (
+                                                  <span className="text-slate-400 dark:text-slate-500">—</span>
+                                                )}
+                                              </td>
+                                            </tr>
+                                          );
+                                        })}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                );
+                              }
+                              return <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{String(quals)}</p>;
+                            })()}
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Experience (Years)</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.experience ?? '-'}</p>
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Experience (Years)</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.experience ?? '-'}</p>
-                      </div>
-                    </div>
-                  </div>
-                  </>
+                    </>
                   )}
 
                   {employeeViewTab === 'history' && (
@@ -4957,112 +5003,112 @@ export default function EmployeesPage() {
 
                   {/* Bank Details (profile view only) */}
                   {employeeViewTab === 'profile' && (
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                    <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Bank Details</h3>
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Account Number</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_account_no || '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Bank Name</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_name || '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Bank Place</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_place || '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">IFSC Code</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.ifsc_code || '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Salary Mode</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.salary_mode || 'Bank'}</p>
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                      <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Bank Details</h3>
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                        <div>
+                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Account Number</label>
+                          <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_account_no || '-'}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Bank Name</label>
+                          <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_name || '-'}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Bank Place</label>
+                          <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_place || '-'}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">IFSC Code</label>
+                          <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.ifsc_code || '-'}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Salary Mode</label>
+                          <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.salary_mode || 'Bank'}</p>
+                        </div>
                       </div>
                     </div>
-                  </div>
                   )}
 
                   {/* Allowances & Deductions (profile view only) */}
                   {employeeViewTab === 'profile' && (
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                    <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Allowances & Deductions</h3>
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                      <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Allowances & Deductions</h3>
 
-                    {/* Allowances */}
-                    {(Array.isArray(viewingEmployee.employeeAllowances) && viewingEmployee.employeeAllowances.length > 0) ? (
-                      <div className="mb-6">
-                        <h4 className="mb-3 text-sm font-semibold text-green-700 dark:text-green-400">Allowances</h4>
-                        <div className="space-y-2">
-                          {viewingEmployee.employeeAllowances.map((allowance: any, idx: number) => (
-                            <div key={idx} className="flex items-center justify-between rounded-lg border border-green-200 bg-green-50/50 p-3 dark:border-green-800 dark:bg-green-900/20">
-                              <div className="flex-1">
-                                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{allowance.name || '-'}</p>
-                                <p className="text-xs text-slate-500 dark:text-slate-400">
-                                  {allowance.type === 'percentage'
-                                    ? `${allowance.percentage}% of ${allowance.percentageBase || 'basic'}`
-                                    : 'Fixed Amount'}
-                                  {allowance.isOverride && (
-                                    <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                                      Override
-                                    </span>
-                                  )}
+                      {/* Allowances */}
+                      {(Array.isArray(viewingEmployee.employeeAllowances) && viewingEmployee.employeeAllowances.length > 0) ? (
+                        <div className="mb-6">
+                          <h4 className="mb-3 text-sm font-semibold text-green-700 dark:text-green-400">Allowances</h4>
+                          <div className="space-y-2">
+                            {viewingEmployee.employeeAllowances.map((allowance: any, idx: number) => (
+                              <div key={idx} className="flex items-center justify-between rounded-lg border border-green-200 bg-green-50/50 p-3 dark:border-green-800 dark:bg-green-900/20">
+                                <div className="flex-1">
+                                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{allowance.name || '-'}</p>
+                                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                                    {allowance.type === 'percentage'
+                                      ? `${allowance.percentage}% of ${allowance.percentageBase || 'basic'}`
+                                      : 'Fixed Amount'}
+                                    {allowance.isOverride && (
+                                      <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                                        Override
+                                      </span>
+                                    )}
+                                  </p>
+                                </div>
+                                <p className="text-sm font-semibold text-green-700 dark:text-green-400">
+                                  {allowance.amount !== null && allowance.amount !== undefined
+                                    ? `₹${Number(allowance.amount).toLocaleString()}`
+                                    : '-'}
                                 </p>
                               </div>
-                              <p className="text-sm font-semibold text-green-700 dark:text-green-400">
-                                {allowance.amount !== null && allowance.amount !== undefined
-                                  ? `₹${Number(allowance.amount).toLocaleString()}`
-                                  : '-'}
-                              </p>
-                            </div>
-                          ))}
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    ) : (
-                      <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-                        <p className="text-sm text-slate-500 dark:text-slate-400">
-                          No employee-level allowance overrides. Default allowances from Department/Global settings will be used during payroll calculation.
-                        </p>
-                      </div>
-                    )}
+                      ) : (
+                        <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+                          <p className="text-sm text-slate-500 dark:text-slate-400">
+                            No employee-level allowance overrides. Default allowances from Department/Global settings will be used during payroll calculation.
+                          </p>
+                        </div>
+                      )}
 
-                    {/* Deductions */}
-                    {(Array.isArray(viewingEmployee.employeeDeductions) && viewingEmployee.employeeDeductions.length > 0) ? (
-                      <div>
-                        <h4 className="mb-3 text-sm font-semibold text-red-700 dark:text-red-400">Deductions</h4>
-                        <div className="space-y-2">
-                          {viewingEmployee.employeeDeductions.map((deduction: any, idx: number) => (
-                            <div key={idx} className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50/50 p-3 dark:border-red-800 dark:bg-red-900/20">
-                              <div className="flex-1">
-                                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{deduction.name || '-'}</p>
-                                <p className="text-xs text-slate-500 dark:text-slate-400">
-                                  {deduction.type === 'percentage'
-                                    ? `${deduction.percentage}% of ${deduction.percentageBase || 'basic'}`
-                                    : 'Fixed Amount'}
-                                  {deduction.isOverride && (
-                                    <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                                      Override
-                                    </span>
-                                  )}
+                      {/* Deductions */}
+                      {(Array.isArray(viewingEmployee.employeeDeductions) && viewingEmployee.employeeDeductions.length > 0) ? (
+                        <div>
+                          <h4 className="mb-3 text-sm font-semibold text-red-700 dark:text-red-400">Deductions</h4>
+                          <div className="space-y-2">
+                            {viewingEmployee.employeeDeductions.map((deduction: any, idx: number) => (
+                              <div key={idx} className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50/50 p-3 dark:border-red-800 dark:bg-red-900/20">
+                                <div className="flex-1">
+                                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{deduction.name || '-'}</p>
+                                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                                    {deduction.type === 'percentage'
+                                      ? `${deduction.percentage}% of ${deduction.percentageBase || 'basic'}`
+                                      : 'Fixed Amount'}
+                                    {deduction.isOverride && (
+                                      <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                                        Override
+                                      </span>
+                                    )}
+                                  </p>
+                                </div>
+                                <p className="text-sm font-semibold text-red-700 dark:text-red-400">
+                                  {deduction.amount !== null && deduction.amount !== undefined
+                                    ? `₹${Number(deduction.amount).toLocaleString()}`
+                                    : '-'}
                                 </p>
                               </div>
-                              <p className="text-sm font-semibold text-red-700 dark:text-red-400">
-                                {deduction.amount !== null && deduction.amount !== undefined
-                                  ? `₹${Number(deduction.amount).toLocaleString()}`
-                                  : '-'}
-                              </p>
-                            </div>
-                          ))}
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    ) : (
-                      <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-                        <p className="text-sm text-slate-500 dark:text-slate-400">
-                          No employee-level deduction overrides. Default deductions from Department/Global settings will be used during payroll calculation.
-                        </p>
-                      </div>
-                    )}
-                  </div>
+                      ) : (
+                        <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+                          <p className="text-sm text-slate-500 dark:text-slate-400">
+                            No employee-level deduction overrides. Default deductions from Department/Global settings will be used during payroll calculation.
+                          </p>
+                        </div>
+                      )}
+                    </div>
                   )}
 
                   {/* Left Date Information (profile view only) */}
@@ -5095,49 +5141,49 @@ export default function EmployeesPage() {
 
                   {/* Leave Information (profile view only) */}
                   {employeeViewTab === 'profile' && (
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                    <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Leave Information</h3>
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Monthly Paid Leaves</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                          {viewingEmployee.paidLeaves !== undefined && viewingEmployee.paidLeaves !== null
-                            ? `${viewingEmployee.paidLeaves} days/month`
-                            : '0 days/month'}
-                        </p>
-                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                          Recurring monthly paid leaves
-                        </p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Yearly Allotted Leaves</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                          {viewingEmployee.allottedLeaves !== undefined && viewingEmployee.allottedLeaves !== null
-                            ? `${viewingEmployee.allottedLeaves} days/year`
-                            : '0 days/year'}
-                        </p>
-                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                          Total for without_pay/LOP leaves (for balance tracking)
-                        </p>
-                      </div>
-                      {((viewingEmployee as any).ctcSalary !== undefined && (viewingEmployee as any).ctcSalary !== null) && (
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                      <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Leave Information</h3>
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                         <div>
-                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">CTC Salary</label>
+                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Monthly Paid Leaves</label>
                           <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                            ₹{Number((viewingEmployee as any).ctcSalary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                            {viewingEmployee.paidLeaves !== undefined && viewingEmployee.paidLeaves !== null
+                              ? `${viewingEmployee.paidLeaves} days/month`
+                              : '0 days/month'}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            Recurring monthly paid leaves
                           </p>
                         </div>
-                      )}
-                      {((viewingEmployee as any).calculatedSalary !== undefined && (viewingEmployee as any).calculatedSalary !== null) && (
                         <div>
-                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Calculated Salary (Net)</label>
+                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Yearly Allotted Leaves</label>
                           <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                            ₹{Number((viewingEmployee as any).calculatedSalary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                            {viewingEmployee.allottedLeaves !== undefined && viewingEmployee.allottedLeaves !== null
+                              ? `${viewingEmployee.allottedLeaves} days/year`
+                              : '0 days/year'}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            Total for without_pay/LOP leaves (for balance tracking)
                           </p>
                         </div>
-                      )}
+                        {((viewingEmployee as any).ctcSalary !== undefined && (viewingEmployee as any).ctcSalary !== null) && (
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">CTC Salary</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                              ₹{Number((viewingEmployee as any).ctcSalary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                            </p>
+                          </div>
+                        )}
+                        {((viewingEmployee as any).calculatedSalary !== undefined && (viewingEmployee as any).calculatedSalary !== null) && (
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Calculated Salary (Net)</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                              ₹{Number((viewingEmployee as any).calculatedSalary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                            </p>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
                   )}
 
                   {/* Reporting Authority Section (profile view only) - Check both root and dynamicFields */}
