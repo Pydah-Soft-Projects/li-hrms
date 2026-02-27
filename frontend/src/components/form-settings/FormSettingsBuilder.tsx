@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import { api } from '@/lib/api';
 import Spinner from '@/components/Spinner';
 import { alertSuccess, alertError, alertConfirm } from '@/lib/customSwal';
@@ -67,6 +67,7 @@ export interface FormSettings {
     isEnabled?: boolean;
     enableCertificateUpload?: boolean;
     fields?: QualificationField[];
+    defaultRows?: Record<string, unknown>[];
   };
   version?: number;
   isActive?: boolean;
@@ -100,6 +101,7 @@ const QUAL_FIELD_TYPES = [
   { value: 'number', label: 'Number' },
   { value: 'date', label: 'Date' },
   { value: 'select', label: 'Dropdown' },
+  { value: 'boolean', label: 'Yes/No' },
 ];
 
 function getQualTypeLabel(type: string): string {
@@ -1023,7 +1025,7 @@ export default function FormSettingsBuilder() {
               </div>
               <div>
                 <h3 className="text-lg font-semibold text-slate-800 dark:text-white">Education & qualifications</h3>
-                <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">Credential fields shown in the form (e.g. Degree, Year).</p>
+                <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">Table columns for qualifications. Enable/disable columns below; applicants fill one row per exam (e.g. 10th, 12th, B.Tech).</p>
                 <div className="mt-4 flex flex-wrap items-center gap-6">
                   <label className="flex items-center gap-2.5 cursor-pointer">
                     <input
@@ -1064,155 +1066,30 @@ export default function FormSettingsBuilder() {
                 </div>
               </div>
             </div>
-            {settings.qualifications.isEnabled !== false && (
-              <button
-                type="button"
-                onClick={() => {
-                  setShowAddQualField(true);
-                  setNewQualField({
-                    id: `qual_${Date.now()}`,
-                    label: '',
-                    type: 'text',
-                    isRequired: false,
-                    isEnabled: true,
-                    placeholder: '',
-                    order: (settings.qualifications?.fields?.length ?? 0) + 1,
-                  });
-                }}
-                className="shrink-0 inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 dark:focus:ring-offset-slate-900"
-              >
-                <Plus className="h-4 w-4" />
-                Add qualification field
-              </button>
-            )}
           </div>
 
           {settings.qualifications.isEnabled !== false && (
             <>
-              {/* Add qualification field form */}
-              {showAddQualField && (
-                <div className="mt-6 rounded-2xl border border-violet-100 bg-violet-50/50 p-5 dark:border-violet-900/30 dark:bg-violet-900/10">
-                  <h4 className="text-sm font-semibold text-slate-800 dark:text-white">New qualification field</h4>
-                  <div className="mt-4 space-y-4">
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                      <div>
-                        <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">Field name</label>
-                        <input
-                          type="text"
-                          value={newQualField.label}
-                          onChange={(e) => setNewQualField({ ...newQualField, label: e.target.value, id: e.target.value.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') || newQualField.id })}
-                          className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm focus:border-violet-400 focus:ring-1 focus:ring-violet-400 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-                          placeholder="e.g. Degree"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">ID</label>
-                        <input
-                          type="text"
-                          value={newQualField.id}
-                          onChange={(e) => setNewQualField({ ...newQualField, id: e.target.value })}
-                          className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm focus:border-violet-400 focus:ring-1 focus:ring-violet-400 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-                          placeholder="e.g. degree"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">Type</label>
-                        <select
-                          value={newQualField.type}
-                          onChange={(e) => setNewQualField({ ...newQualField, type: e.target.value })}
-                          className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm focus:border-violet-400 focus:ring-1 focus:ring-violet-400 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-                        >
-                          {QUAL_FIELD_TYPES.map((t) => (
-                            <option key={t.value} value={t.value}>{t.label}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="flex items-end">
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={newQualField.isRequired}
-                            onChange={(e) => setNewQualField({ ...newQualField, isRequired: e.target.checked })}
-                            className="h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
-                          />
-                          <span className="text-sm text-slate-600 dark:text-slate-300">Required</span>
-                        </label>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                      <div className="sm:col-span-2">
-                        <label className="block text-xs font-medium text-slate-600 dark:text-slate-400">Placeholder (optional)</label>
-                        <input
-                          type="text"
-                          value={newQualField.placeholder}
-                          onChange={(e) => setNewQualField({ ...newQualField, placeholder: e.target.value })}
-                          className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm focus:border-violet-400 focus:ring-1 focus:ring-violet-400 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-                          placeholder="e.g. E.g., B.Tech, MBA or E.g., 2020"
-                        />
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          if (!newQualField.label.trim() || !newQualField.id.trim()) {
-                            alertError('Required', 'Field name and ID are required.');
-                            return;
-                          }
-                          try {
-                            setSaving(true);
-                            const validation =
-                              newQualField.type === 'number'
-                                ? { min: 1900, max: 2100 }
-                                : (newQualField.type === 'text' || newQualField.type === 'textarea')
-                                  ? { minLength: 2, maxLength: 100 }
-                                  : undefined;
-                            await api.addQualificationsField({
-                              id: newQualField.id,
-                              label: newQualField.label,
-                              type: newQualField.type,
-                              isRequired: newQualField.isRequired,
-                              isEnabled: newQualField.isEnabled,
-                              placeholder: newQualField.placeholder.trim() || undefined,
-                              validation: newQualField.validation ?? validation,
-                              order: newQualField.order,
-                            });
-                            await loadSettings();
-                            setShowAddQualField(false);
-                            setNewQualField({ id: '', label: '', type: 'text', isRequired: false, isEnabled: true, placeholder: '', order: 0 });
-                            alertSuccess('Qualification field added', 'The field was added.');
-                          } catch (err: any) {
-                            alertError('Failed to add field', err.message || 'Could not add field.');
-                          } finally {
-                            setSaving(false);
-                          }
-                        }}
-                        disabled={saving}
-                        className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50"
-                      >
-                        {saving ? 'Adding…' : 'Add field'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => { setShowAddQualField(false); setNewQualField({ id: '', label: '', type: 'text', isRequired: false, isEnabled: true, placeholder: '', order: 0 }); }}
-                        className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* List of qualification fields */}
-              <div className="mt-6">
-                <h4 className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Credential fields</h4>
+              {/* Table: predefined qualification columns – enable/disable per column */}
+              <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800/30">
+                <h4 className="border-b border-slate-200 bg-slate-50/80 px-4 py-3 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-300">Qualifications table columns</h4>
                 {(settings.qualifications.fields && settings.qualifications.fields.length > 0) ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[640px] text-left text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-200 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-800/50">
+                          <th className="px-4 py-3 font-semibold text-slate-600 dark:text-slate-400 w-14">S.No</th>
+                          <th className="px-4 py-3 font-semibold text-slate-600 dark:text-slate-400">Column name</th>
+                          <th className="px-4 py-3 font-semibold text-slate-600 dark:text-slate-400 w-32">Type</th>
+                          <th className="px-4 py-3 font-semibold text-slate-600 dark:text-slate-400 w-20">Required</th>
+                          <th className="px-4 py-3 font-semibold text-slate-600 dark:text-slate-400 w-24">Enabled</th>
+                          <th className="px-4 py-3 font-semibold text-slate-600 dark:text-slate-400 w-20">Edit</th>
+                        </tr>
+                      </thead>
+                      <tbody>
                     {[...(settings.qualifications.fields)]
                       .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-                      .map((field) => {
-                        const validationHint = formatQualValidation(field.validation, field.type);
+                      .map((field, index) => {
                         const isEditingThis = editingQualFieldId === field.id;
                         const updateQualFieldInSettings = (updates: Partial<QualificationField>) => {
                           setSettings(prev => {
@@ -1227,12 +1104,10 @@ export default function FormSettingsBuilder() {
                           });
                         };
                         return (
-                        <div
-                          key={field._id ?? field.id}
-                          className={`rounded-2xl border border-slate-200/80 bg-white shadow-md shadow-slate-200/50 transition-shadow hover:shadow-lg hover:shadow-slate-200/50 dark:border-slate-700/60 dark:bg-slate-800/50 dark:shadow-slate-900/30 dark:hover:shadow-slate-900/40 ${isEditingThis ? 'sm:col-span-2 xl:col-span-3' : ''}`}
-                        >
+                          <Fragment key={field._id ?? field.id}>
                           {isEditingThis ? (
-                            <div className="p-5">
+                            <tr className="bg-violet-50/50 dark:bg-slate-800/50">
+                              <td colSpan={6} className="p-4">
                               <h4 className="text-sm font-semibold text-slate-800 dark:text-white">Edit qualification field</h4>
                               <div className="mt-4 space-y-4">
                                 <div>
@@ -1311,82 +1186,217 @@ export default function FormSettingsBuilder() {
                                   Cancel
                                 </button>
                               </div>
-                            </div>
+                              </td>
+                            </tr>
                           ) : (
-                            <div className="flex items-start justify-between gap-4 p-5">
-                              <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="font-medium text-slate-800 dark:text-white">{field.label}</span>
-                              {field.isRequired && (
-                                <span className="rounded-lg bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">Required</span>
-                              )}
-                            </div>
-                            <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
-                              ID: {field.id} · {getQualTypeLabel(field.type)}
-                              {validationHint && <span className="ml-1">· {validationHint}</span>}
-                            </p>
-                            {field.placeholder && (
-                              <p className="mt-1.5 text-sm text-slate-400 dark:text-slate-500 italic">“{field.placeholder}”</p>
-                            )}
-                          </div>
-                          <div className="flex shrink-0 items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => setEditingQualFieldId(field.id)}
-                              className="rounded-xl p-2.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700 dark:hover:text-slate-300 transition-colors"
-                              title="Edit field"
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </button>
-                            <label className="flex items-center gap-2 cursor-pointer rounded-lg px-2 py-1.5 hover:bg-slate-50 dark:hover:bg-slate-700/50">
-                              <input
-                                type="checkbox"
-                                checked={field.isEnabled !== false}
-                                onChange={async (e) => {
-                                  try {
-                                    await api.updateQualificationsField(field.id, { isEnabled: e.target.checked });
-                                    await loadSettings();
-                                    alertSuccess('Field updated', 'Changes were saved.');
-                                  } catch (err: any) {
-                                    alertError('Error', err.message || 'Failed to update');
-                                  }
-                                }}
-                                className="h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
-                              />
-                              <span className="text-xs text-slate-500 dark:text-slate-400">On</span>
-                            </label>
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                const confirmed = await alertConfirm('Remove field?', `Remove "${field.label}"?`, 'Remove');
-                                if (!confirmed.isConfirmed) return;
-                                try {
-                                  await api.deleteQualificationsField(field.id);
-                                  await loadSettings();
-                                  alertSuccess('Field removed', 'The qualification field was removed.');
-                                } catch (err: any) {
-                                  alertError('Error', err.message || 'Failed to remove');
-                                }
-                              }}
-                              className="rounded-xl p-2.5 text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-slate-700 dark:hover:text-red-400 transition-colors"
-                              title="Remove field"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </div>
-                            </div>
+                            <tr className="border-b border-slate-100 hover:bg-slate-50/50 dark:border-slate-700 dark:hover:bg-slate-800/30">
+                              <td className="px-4 py-3 text-slate-600 dark:text-slate-400">{field.order ?? index + 1}</td>
+                              <td className="px-4 py-3 font-medium text-slate-800 dark:text-white">{field.label}</td>
+                              <td className="px-4 py-3 text-slate-600 dark:text-slate-400">{getQualTypeLabel(field.type)}</td>
+                              <td className="px-4 py-3">
+                                {field.isRequired ? <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">Yes</span> : <span className="text-slate-400 dark:text-slate-500">—</span>}
+                              </td>
+                              <td className="px-4 py-3">
+                                <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={field.isEnabled !== false}
+                                    onChange={async (e) => {
+                                      try {
+                                        await api.updateQualificationsField(field.id, { isEnabled: e.target.checked });
+                                        await loadSettings();
+                                        alertSuccess('Field updated', 'Changes were saved.');
+                                      } catch (err: any) {
+                                        alertError('Error', err.message || 'Failed to update');
+                                      }
+                                    }}
+                                    className="h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
+                                  />
+                                  <span className="text-xs text-slate-500 dark:text-slate-400">{field.isEnabled !== false ? 'On' : 'Off'}</span>
+                                </label>
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingQualFieldId(field.id)}
+                                    className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700 dark:hover:text-slate-300"
+                                    title="Edit column"
+                                  >
+                                    <Pencil className="h-4 w-4" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      const confirmed = await alertConfirm('Delete column?', `Delete "${field.label}" from the database? This cannot be undone. Use Enable/Disable to hide the column without deleting.`, 'Delete');
+                                      if (!confirmed.isConfirmed) return;
+                                      try {
+                                        await api.deleteQualificationsField(field.id);
+                                        await loadSettings();
+                                        alertSuccess('Column deleted', 'The column was removed from the database.');
+                                      } catch (err: any) {
+                                        alertError('Error', err.message || 'Failed to delete');
+                                      }
+                                    }}
+                                    className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-slate-700 dark:hover:text-red-400"
+                                    title="Delete column from database"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
                           )}
-                        </div>
+                          </Fragment>
                       ); })}
+                      </tbody>
+                    </table>
                   </div>
                 ) : (
                   <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 py-8 text-center dark:border-slate-700 dark:bg-slate-800/20">
                     <GraduationCap className="mx-auto h-10 w-10 text-slate-300 dark:text-slate-600" />
                     <p className="mt-2 text-sm font-medium text-slate-600 dark:text-slate-400">No qualification fields yet</p>
-                    <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-500">Add fields like Degree, Qualified year, etc.</p>
+                    <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-500">Predefined columns (Examination, University/Board, etc.) will appear after you load or initialize form settings.</p>
                   </div>
                 )}
               </div>
+
+              {/* Pre-filled rows: super admin fills these; applicants see them read-only */}
+              {settings.qualifications.fields && settings.qualifications.fields.filter((f) => f.isEnabled !== false).length > 0 && (
+                <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800/30">
+                  <h4 className="border-b border-slate-200 bg-slate-50/80 px-4 py-3 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-300">
+                    Pre-filled rows (read-only for applicants)
+                  </h4>
+                  <p className="border-b border-slate-100 px-4 py-2 text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                    Rows you add here will appear at the top of the qualifications table on the application form. Applicants cannot edit or remove them; they can only add and fill their own rows below.
+                  </p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[800px] text-left text-sm">
+                      <thead>
+                        <tr className="border-b border-slate-200 bg-slate-50/50 dark:border-slate-700 dark:bg-slate-800/50">
+                          <th className="px-3 py-2 font-semibold text-slate-600 dark:text-slate-400 w-12">S.No</th>
+                          {[...(settings.qualifications.fields)]
+                            .filter((f) => f.isEnabled !== false)
+                            .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+                            .map((f) => (
+                              <th key={f.id} className="px-3 py-2 font-semibold text-slate-600 dark:text-slate-400">
+                                {f.label}
+                              </th>
+                            ))}
+                          <th className="w-20 px-3 py-2 font-semibold text-slate-600 dark:text-slate-400">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {((settings.qualifications.defaultRows) || []).map((row: Record<string, unknown>, rowIndex: number) => (
+                          <tr key={rowIndex} className="border-b border-slate-100 dark:border-slate-700/50">
+                            <td className="px-3 py-2 text-slate-600 dark:text-slate-400">{rowIndex + 1}</td>
+                            {[...(settings.qualifications!.fields!)]
+                              .filter((f) => f.isEnabled !== false)
+                              .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+                              .map((f) => (
+                                <td key={f.id} className="px-3 py-2">
+                                  {f.type === 'boolean' ? (
+                                    <label className="flex items-center gap-1.5">
+                                      <input
+                                        type="checkbox"
+                                        checked={!!row[f.id]}
+                                        onChange={(e) => {
+                                          const rows = [...(settings.qualifications!.defaultRows || [])];
+                                          if (!rows[rowIndex]) rows[rowIndex] = {};
+                                          rows[rowIndex] = { ...rows[rowIndex], [f.id]: e.target.checked };
+                                          setSettings((prev) => prev ? { ...prev, qualifications: { ...prev.qualifications!, defaultRows: rows } } : prev);
+                                        }}
+                                        className="h-4 w-4 rounded border-slate-300 text-violet-600"
+                                      />
+                                      <span className="text-xs text-slate-500">Yes/No</span>
+                                    </label>
+                                  ) : f.type === 'date' ? (
+                                    <input
+                                      type={f.id === 'month_year_of_pass' ? 'month' : 'date'}
+                                      value={row[f.id] ? String(row[f.id]).slice(0, f.id === 'month_year_of_pass' ? 7 : 10) : ''}
+                                      onChange={(e) => {
+                                        const rows = [...(settings.qualifications!.defaultRows || [])];
+                                        if (!rows[rowIndex]) rows[rowIndex] = {};
+                                        rows[rowIndex] = { ...rows[rowIndex], [f.id]: e.target.value ? (f.id === 'month_year_of_pass' ? `${e.target.value}-01` : e.target.value) : '' };
+                                        setSettings((prev) => prev ? { ...prev, qualifications: { ...prev.qualifications!, defaultRows: rows } } : prev);
+                                      }}
+                                      className="w-full min-w-0 rounded-lg border border-slate-200 px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                                    />
+                                  ) : (
+                                    <input
+                                      type={f.type === 'number' ? 'number' : 'text'}
+                                      value={String(row[f.id] ?? '')}
+                                      onChange={(e) => {
+                                        const rows = [...(settings.qualifications!.defaultRows || [])];
+                                        if (!rows[rowIndex]) rows[rowIndex] = {};
+                                        rows[rowIndex] = { ...rows[rowIndex], [f.id]: f.type === 'number' ? (parseFloat(e.target.value) || 0) : e.target.value };
+                                        setSettings((prev) => prev ? { ...prev, qualifications: { ...prev.qualifications!, defaultRows: rows } } : prev);
+                                      }}
+                                      placeholder={f.placeholder}
+                                      className="w-full min-w-0 rounded-lg border border-slate-200 px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                                    />
+                                  )}
+                                </td>
+                              ))}
+                            <td className="px-3 py-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const rows = (settings.qualifications!.defaultRows || []).filter((_: unknown, i: number) => i !== rowIndex);
+                                  setSettings((prev) => prev ? { ...prev, qualifications: { ...prev.qualifications!, defaultRows: rows } } : prev);
+                                }}
+                                className="rounded px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+                              >
+                                Remove
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="flex gap-2 border-t border-slate-200 p-3 dark:border-slate-700">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const qualFields = [...(settings.qualifications!.fields!)].filter((f) => f.isEnabled !== false).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+                        const newRow = qualFields.reduce((acc, f) => {
+                          acc[f.id] = f.type === 'number' ? 0 : f.type === 'boolean' ? false : '';
+                          return acc;
+                        }, {} as Record<string, unknown>);
+                        const rows = [...(settings.qualifications!.defaultRows || []), newRow];
+                        setSettings((prev) => prev ? { ...prev, qualifications: { ...prev.qualifications!, defaultRows: rows } } : prev);
+                      }}
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                    >
+                      Add row
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          setSaving(true);
+                          await api.updateQualificationsConfig({
+                            isEnabled: settings.qualifications!.isEnabled,
+                            enableCertificateUpload: settings.qualifications!.enableCertificateUpload,
+                            defaultRows: settings.qualifications!.defaultRows || [],
+                          });
+                          await loadSettings();
+                          alertSuccess('Pre-filled rows saved', 'Applicants will see these rows as read-only.');
+                        } catch (err: any) {
+                          alertError('Error', err.message || 'Failed to save');
+                        } finally {
+                          setSaving(false);
+                        }
+                      }}
+                      disabled={saving}
+                      className="rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50"
+                    >
+                      {saving ? 'Saving…' : 'Save pre-filled rows'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>

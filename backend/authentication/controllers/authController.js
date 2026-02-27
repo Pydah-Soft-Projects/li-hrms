@@ -77,6 +77,18 @@ exports.login = async (req, res) => {
       });
     }
 
+    // Employee: treat as deactivated after last working date (resignation date)
+    if (userType === 'employee' && user.leftDate) {
+      const startOfToday = new Date();
+      startOfToday.setUTCHours(0, 0, 0, 0);
+      if (new Date(user.leftDate) < startOfToday) {
+        return res.status(401).json({
+          success: false,
+          message: 'Your last working date has passed. Account is deactivated.',
+        });
+      }
+    }
+
     // Check password
     console.log(`[AuthLogin] Verifying password for ${userType} ${identifier}...`);
     const isPasswordValid = await user.comparePassword(password);

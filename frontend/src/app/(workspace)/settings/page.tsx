@@ -20,7 +20,8 @@ import {
   AlertTriangle,
   Globe,
   Menu,
-  X
+  X,
+  LogOut
 } from 'lucide-react';
 
 import ShiftSettings from '@/components/settings/ShiftSettings';
@@ -35,6 +36,7 @@ import CommunicationSettings from '@/components/settings/CommunicationSettings';
 import FeatureControlSettings from '@/components/settings/FeatureControlSettings';
 import GeneralSettings from '@/components/settings/GeneralSettings';
 import AttendanceDeductionsSettings from '@/components/settings/AttendanceDeductionsSettings';
+import ResignationSettings from '@/components/settings/ResignationSettings';
 
 type TabType =
   | 'general'
@@ -42,6 +44,7 @@ type TabType =
   | 'leave'
   | 'od'
   | 'ccl'
+  | 'resignation'
   | 'shift'
   | 'attendance'
   | 'attendance_deductions'
@@ -97,6 +100,7 @@ const SettingsPage = () => {
       case 'leave': return <LeaveSettings type="leave" />;
       case 'od': return <LeaveSettings type="od" />;
       case 'ccl': return <LeaveSettings type="ccl" />;
+      case 'resignation': return <ResignationSettings />;
       case 'shift': return <ShiftSettings />;
       case 'attendance': return <AttendanceSettings />;
       case 'attendance_deductions': return <AttendanceDeductionsSettings />;

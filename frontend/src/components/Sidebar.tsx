@@ -52,6 +52,7 @@ const navItems: NavItem[] = [
   { href: '/superadmin/dashboard', label: 'Dashboard', icon: LayoutDashboard, category: 'Main', moduleCode: 'DASHBOARD' },
   { href: '/superadmin/security/gate', label: 'Security Gate', icon: ShieldCheck, category: 'Main', moduleCode: 'SECURITY' },
   { href: '/superadmin/employees', label: 'Employees', icon: Users, category: 'Employee Management', moduleCode: 'EMPLOYEES' },
+  { href: '/superadmin/resignations', label: 'Resignations', icon: LogOut, category: 'Employee Management', moduleCode: 'RESIGNATION' },
   { href: '/superadmin/employees/form-settings', label: 'Form Settings', icon: FileCog, category: 'Employee Management', moduleCode: 'EMPLOYEES' },
   { href: '/superadmin/attendance', label: 'Attendance', icon: CalendarClock, category: 'Time & Attendance', moduleCode: 'ATTENDANCE' },
   { href: '/superadmin/ot-permissions', label: 'OT & Permissions', icon: Clock, category: 'Time & Attendance', moduleCode: 'OT_PERMISSIONS' },
