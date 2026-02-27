@@ -3710,7 +3710,7 @@ export const api = {
   previewELCalculation: async (data: { employeeId: string; month: number; year: number }) => {
     return apiRequest<any>('/settings/leave-policy/preview', { 
       method: 'POST', 
-      body: data 
+      body: JSON.stringify(data)
     });
   },
 
@@ -3721,7 +3721,7 @@ export const api = {
   performAnnualCLReset: async (data: { targetYear?: number; confirmReset?: boolean }) => {
     return apiRequest<any>('/leaves/annual-reset', { 
       method: 'POST', 
-      body: data 
+      body: JSON.stringify(data)
     });
   },
 
@@ -3742,7 +3742,7 @@ export const api = {
   previewAnnualReset: async (data: { sampleSize?: number }) => {
     return apiRequest<any>('/leaves/annual-reset/preview', { 
       method: 'POST', 
-      body: data 
+      body: JSON.stringify(data)
     });
   },
 
