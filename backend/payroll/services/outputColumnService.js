@@ -203,9 +203,16 @@ function buildRowFromOutputColumns(payslip, outputColumns, serialNo = null) {
   const sorted = [...outputColumns].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   const baseContext = getContextFromPayslip(payslip);
   const columnContext = { ...baseContext };
+  const usedHeaders = new Set();
 
-  for (const col of sorted) {
-    const header = col.header || 'Column';
+  for (let i = 0; i < sorted.length; i++) {
+    const col = sorted[i];
+    let header = (col.header && String(col.header).trim()) ? String(col.header).trim() : 'Column';
+    if (header === 'Column' || usedHeaders.has(header)) {
+      header = `Column ${i}`;
+    }
+    usedHeaders.add(header);
+
     let val;
 
     // Prefer formula when it exists, regardless of source flag – this keeps
@@ -224,8 +231,136 @@ function buildRowFromOutputColumns(payslip, outputColumns, serialNo = null) {
   return row;
 }
 
+/**
+ * Detect if a column is the "Allowances cumulative" / "Total Allowances" column (by field or header).
+ */
+function isAllowancesCumulativeColumn(col) {
+  const field = (col.field || '').trim();
+  const headerKey = headerToKey(col.header || '');
+  return (
+    field === 'earnings.allowancesCumulative' ||
+    headerKey === 'allowances_cumulative' ||
+    headerKey === 'total_allowances'
+  );
+}
+
+/**
+ * Detect if a column is the "Deductions cumulative" column (by field or header).
+ */
+function isDeductionsCumulativeColumn(col) {
+  const field = (col.field || '').trim();
+  const headerKey = headerToKey(col.header || '');
+  return (
+    field === 'deductions.deductionsCumulative' ||
+    headerKey === 'deductions_cumulative'
+  );
+}
+
+/**
+ * Detect if a column is the "Statutory cumulative" column (by field or header).
+ */
+function isStatutoryCumulativeColumn(col) {
+  const field = (col.field || '').trim();
+  const headerKey = headerToKey(col.header || '');
+  return (
+    field === 'deductions.statutoryCumulative' ||
+    headerKey === 'statutory_cumulative' ||
+    headerKey === 'statutory_deductions'
+  );
+}
+
+/**
+ * Expand output columns by inserting breakdown columns before each cumulative column:
+ * - Before Allowances cumulative: one column per allowance name (earnings.allowanceAmount:Name), value or 0.
+ * - Before Deductions cumulative: one column per deduction name (deductions.otherDeductionAmount:Name), value or 0.
+ * - Before Statutory cumulative: one column per statutory code (deductions.statutoryAmount:Code), e.g. PF, ESI, PT.
+ * allAllowanceNames, allDeductionNames, allStatutoryCodes are arrays or Sets of strings (names/codes).
+ * Returns new array with order 0,1,2,... so formulas that reference earlier columns still work.
+ */
+function expandOutputColumnsWithBreakdown(outputColumns, allAllowanceNames = [], allDeductionNames = [], allStatutoryCodes = []) {
+  if (!Array.isArray(outputColumns) || outputColumns.length === 0) {
+    return [];
+  }
+  const allowances = [...(Array.isArray(allAllowanceNames) ? allAllowanceNames : Array.from(allAllowanceNames || []))].sort((a, b) => String(a).localeCompare(String(b)));
+  const deductions = [...(Array.isArray(allDeductionNames) ? allDeductionNames : Array.from(allDeductionNames || []))].sort((a, b) => String(a).localeCompare(String(b)));
+  const statutoryRaw = Array.isArray(allStatutoryCodes) ? allStatutoryCodes : Array.from(allStatutoryCodes || []);
+  const statutoryOrder = ['PF', 'ESI', 'PT'];
+  const statutory = [...statutoryRaw].sort((a, b) => {
+    const ia = statutoryOrder.indexOf(String(a).toUpperCase());
+    const ib = statutoryOrder.indexOf(String(b).toUpperCase());
+    if (ia >= 0 && ib >= 0) return ia - ib;
+    if (ia >= 0) return -1;
+    if (ib >= 0) return 1;
+    return String(a).localeCompare(String(b));
+  });
+
+  const sorted = [...outputColumns].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const expanded = [];
+  const seenHeaders = new Set();
+  let nextOrder = 0;
+
+  function uniqueHeader(header, order) {
+    const h = (header && String(header).trim()) ? String(header).trim() : `Column ${order}`;
+    if (h === 'Column' || seenHeaders.has(h)) {
+      const unique = `Column ${order}`;
+      seenHeaders.add(unique);
+      return unique;
+    }
+    seenHeaders.add(h);
+    return h;
+  }
+
+  for (const col of sorted) {
+    if (isAllowancesCumulativeColumn(col)) {
+      allowances.forEach((name) => {
+        if (!name) return;
+        expanded.push({
+          header: String(name).trim(),
+          source: 'field',
+          field: `earnings.allowanceAmount:${String(name).trim()}`,
+          formula: '',
+          order: nextOrder++,
+        });
+      });
+    }
+    if (isDeductionsCumulativeColumn(col)) {
+      deductions.forEach((name) => {
+        if (!name) return;
+        expanded.push({
+          header: String(name).trim(),
+          source: 'field',
+          field: `deductions.otherDeductionAmount:${String(name).trim()}`,
+          formula: '',
+          order: nextOrder++,
+        });
+      });
+    }
+    if (isStatutoryCumulativeColumn(col)) {
+      statutory.forEach((code) => {
+        if (!code) return;
+        expanded.push({
+          header: String(code).trim(),
+          source: 'field',
+          field: `deductions.statutoryAmount:${String(code).trim()}`,
+          formula: '',
+          order: nextOrder++,
+        });
+      });
+    }
+    const order = nextOrder++;
+    expanded.push({
+      ...col,
+      header: uniqueHeader(col.header, order),
+      order,
+    });
+  }
+
+  return expanded;
+}
+
 module.exports = {
   buildRowFromOutputColumns,
+  expandOutputColumnsWithBreakdown,
   getValueByPath,
   getContextFromPayslip,
   safeEvalFormula,

@@ -721,9 +721,10 @@ exports.exportPayrollExcel = async (req, res) => {
       });
     }
 
-    // Step 2: Collect ALL unique allowances and deductions across all employees
+    // Step 2: Collect ALL unique allowances, deductions, and statutory codes across all employees
     const allAllowanceNames = new Set();
     const allDeductionNames = new Set();
+    const allStatutoryCodes = new Set();
 
     payslips.forEach(payslip => {
       if (Array.isArray(payslip.earnings?.allowances)) {
@@ -736,22 +737,34 @@ exports.exportPayrollExcel = async (req, res) => {
           if (deduction.name) allDeductionNames.add(deduction.name);
         });
       }
+      if (Array.isArray(payslip.deductions?.statutoryDeductions)) {
+        payslip.deductions.statutoryDeductions.forEach(s => {
+          if (s && (s.code || s.name)) allStatutoryCodes.add(String(s.code || s.name).trim());
+        });
+      }
     });
 
-    console.log(`\n📊 Excel Export: Found ${allAllowanceNames.size} unique allowances and ${allDeductionNames.size} unique deductions for ${payslips.length} employees`);
+    console.log(`\n📊 Excel Export: Found ${allAllowanceNames.size} unique allowances, ${allDeductionNames.size} deductions, ${allStatutoryCodes.size} statutory for ${payslips.length} employees`);
     console.log(`Allowances: ${Array.from(allAllowanceNames).join(', ')}`);
-    console.log(`Deductions: ${Array.from(allDeductionNames).join(', ')}\n`);
+    console.log(`Deductions: ${Array.from(allDeductionNames).join(', ')}`);
+    console.log(`Statutory: ${Array.from(allStatutoryCodes).join(', ')}\n`);
 
     // Step 3: Build rows – when caller sends strategy=dynamic, export using dynamic output columns
-    //         (from PayrollConfiguration.outputColumns). Otherwise use default normalized columns.
+    //         (from PayrollConfiguration.outputColumns) with breakdown columns before each cumulative.
     let rows;
     const config = await PayrollConfiguration.get();
     const useDynamicExport = String(strategy || '').toLowerCase() === 'dynamic';
     const hasOutputColumns = config && Array.isArray(config.outputColumns) && config.outputColumns.length > 0;
 
     if (useDynamicExport && hasOutputColumns) {
+      const expandedColumns = outputColumnService.expandOutputColumnsWithBreakdown(
+        config.outputColumns,
+        allAllowanceNames,
+        allDeductionNames,
+        allStatutoryCodes
+      );
       rows = payslips.map((payslip, index) =>
-        outputColumnService.buildRowFromOutputColumns(payslip, config.outputColumns, index + 1)
+        outputColumnService.buildRowFromOutputColumns(payslip, expandedColumns, index + 1)
       );
     } else {
       rows = payslips.map((payslip, index) =>
@@ -833,13 +846,25 @@ exports.getPaysheetData = async (req, res) => {
 
     const userId = req.user?._id?.toString() || req.user?.id;
     const config = await PayrollConfiguration.get();
-    const outputColumns = Array.isArray(config?.outputColumns) ? config.outputColumns : [];
-    const sortedColumns = [...outputColumns].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    // Normalize to plain objects so Mongoose subdocuments don't lose field/formula when passed around
+    const rawColumns = Array.isArray(config?.outputColumns) ? config.outputColumns : [];
+    const outputColumns = rawColumns.map((c, i) => {
+      const doc = c && typeof c.toObject === 'function' ? c.toObject() : (c && typeof c === 'object' ? { ...c } : {});
+      return {
+        header: doc.header != null && String(doc.header).trim() ? String(doc.header).trim() : `Column ${i}`,
+        source: doc.source === 'formula' ? 'formula' : 'field',
+        field: doc.field != null ? String(doc.field) : '',
+        formula: doc.formula != null ? String(doc.formula) : '',
+        order: typeof doc.order === 'number' ? doc.order : i,
+      };
+    });
 
     let rows = [];
     let headers = [];
 
-    if (sortedColumns.length > 0) {
+    if (outputColumns.length > 0) {
+      // First pass: get all payslips (records) so we can collect allowance/deduction/statutory names
+      const payslips = [];
       for (let index = 0; index < targetEmployeeIds.length; index++) {
         const empId = targetEmployeeIds[index];
         try {
@@ -849,15 +874,39 @@ exports.getPaysheetData = async (req, res) => {
             userId,
             { source: 'payregister', arrearsSettlements: [] }
           );
-          if (result?.row) {
-            const rowData = { 'S.No': index + 1, ...result.row };
-            rows.push(rowData);
+          if (result?.payslip) {
+            const slip = result.payslip;
+            payslips.push(slip && typeof slip.toObject === 'function' ? slip.toObject() : slip);
           }
         } catch (err) {
           console.error(`Error calculating payroll for paysheet (employee ${empId}):`, err.message);
         }
       }
-      headers = ['S.No', ...sortedColumns.map((c) => c.header || 'Column')];
+      if (payslips.length > 0) {
+        const allAllowanceNames = new Set();
+        const allDeductionNames = new Set();
+        const allStatutoryCodes = new Set();
+        payslips.forEach((p) => {
+          (p.earnings?.allowances || []).forEach((a) => { if (a && a.name) allAllowanceNames.add(a.name); });
+          (p.deductions?.otherDeductions || []).forEach((d) => { if (d && d.name) allDeductionNames.add(d.name); });
+          (p.deductions?.statutoryDeductions || []).forEach((s) => {
+            if (s && (s.code || s.name)) allStatutoryCodes.add(String(s.code || s.name).trim());
+          });
+        });
+        const expandedColumns = outputColumnService.expandOutputColumnsWithBreakdown(
+          outputColumns,
+          allAllowanceNames,
+          allDeductionNames,
+          allStatutoryCodes
+        );
+        rows = payslips.map((payslip, index) => {
+          const rowData = outputColumnService.buildRowFromOutputColumns(payslip, expandedColumns, index + 1);
+          return { 'S.No': index + 1, ...rowData };
+        });
+        headers = rows.length > 0
+          ? ['S.No', ...Object.keys(rows[0]).filter((k) => k !== 'S.No')]
+          : ['S.No', ...expandedColumns.map((c) => c.header || 'Column')];
+      }
     } else {
       const payslips = [];
       for (const empId of targetEmployeeIds) {
