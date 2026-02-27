@@ -1392,6 +1392,14 @@ export const api = {
     });
   },
 
+  // Reset credentials
+  resetEmployeeCredentials: async (empNo: string, data?: { passwordMode?: string; customPassword?: string }) => {
+    return apiRequest<any>(`/employees/${empNo}/reset-credentials`, {
+      method: 'POST',
+      body: JSON.stringify(data || {}),
+    });
+  },
+
   // Bulk resend credentials
   bulkResendCredentials: async (filters: { search?: string; divisionId?: string; departmentId?: string; designationId?: string; includeLeft?: string }) => {
     return apiRequest<any>('/employees/bulk-resend-credentials', {
