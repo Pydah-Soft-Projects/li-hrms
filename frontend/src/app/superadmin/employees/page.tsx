@@ -244,6 +244,13 @@ export default function EmployeesPage() {
   const [editingApplicationID, setEditingApplicationID] = useState<string | null>(null);
   const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null);
   const [showViewDialog, setShowViewDialog] = useState(false);
+  const [employeeHistory, setEmployeeHistory] = useState<any[]>([]);
+  const [employeeHistoryLoading, setEmployeeHistoryLoading] = useState(false);
+  const [employeeViewTab, setEmployeeViewTab] = useState<'profile' | 'history'>('profile');
+  const [historyViewComplete, setHistoryViewComplete] = useState<{
+    eventLabel: string;
+    changes: { field: string; fieldLabel: string; previous: unknown; current: unknown }[];
+  } | null>(null);
   const [certificatePreviewUrl, setCertificatePreviewUrl] = useState<string | null>(null);
   const [formData, setFormData] = useState<Partial<Employee>>(initialFormState);
   const [formSettings, setFormSettings] = useState<FormSettings | null>(null);
@@ -1194,6 +1201,30 @@ export default function EmployeesPage() {
     return departments;
   }, [selectedDivisionFilter, divisions, departments]);
 
+  // Id -> name maps for resolving division/department/designation in history (e.g. previous value was raw ObjectId)
+  const historyRefNames = useMemo(() => {
+    const divMap: Record<string, string> = {};
+    const deptMap: Record<string, string> = {};
+    const desMap: Record<string, string> = {};
+    (divisions || []).forEach((d: any) => {
+      if (d._id != null && d.name != null) divMap[String(d._id)] = d.name;
+    });
+    (departments || []).forEach((d: any) => {
+      if (d._id != null && d.name != null) deptMap[String(d._id)] = d.name;
+    });
+    (divisions || []).forEach((div: any) => {
+      ((div.departments as any[]) || []).forEach((d: any) => {
+        const id = typeof d === 'string' ? d : d?._id;
+        const name = typeof d === 'string' ? d : d?.name;
+        if (id != null && name != null) deptMap[String(id)] = name;
+      });
+    });
+    (designations || []).forEach((d: any) => {
+      if (d._id != null && d.name != null) desMap[String(d._id)] = d.name;
+    });
+    return { division: divMap, department: deptMap, designation: desMap };
+  }, [divisions, departments, designations]);
+
   // Trigger search and filter
   useEffect(() => {
     loadEmployees(1);
@@ -1800,7 +1831,13 @@ export default function EmployeesPage() {
   };
 
   const handleRemoveLeftDate = async (employee: Employee) => {
-    if (!confirm(`Are you sure you want to reactivate ${employee.employee_name}? This will remove their left date.`)) return;
+    const result = await alertConfirm(
+      'Reactivate employee?',
+      `Are you sure you want to reactivate ${employee.employee_name}? This will remove their left date.`,
+      'Yes, reactivate'
+    );
+
+    if (!result.isConfirmed) return;
 
     try {
       setError('');
@@ -1808,33 +1845,48 @@ export default function EmployeesPage() {
       const response = await api.removeEmployeeLeftDate(employee.emp_no);
 
       if (response.success) {
-        setSuccess('Employee reactivated successfully!');
+        await alertSuccess('Employee reactivated', 'Employee reactivated successfully!');
         loadEmployees();
       } else {
-        setError(response.message || 'Failed to reactivate employee');
+        await alertError('Failed to reactivate', response.message || 'Failed to reactivate employee');
       }
     } catch (err: any) {
-      setError(err.message || 'An error occurred');
+      await alertError('An error occurred', err.message || 'An error occurred');
       console.error(err);
     }
   };
 
   const handleViewEmployee = async (employee: Employee) => {
     // Initial set to show dialog immediately with available data
-    console.log('DEBUG: handleViewEmployee triggered for:', employee.emp_no);
     setViewingEmployee(employee);
+    setEmployeeViewTab('profile');
+    setEmployeeHistory([]);
     setShowViewDialog(true);
 
     // Fetch latest data to ensure A&D overrides and other fields are fresh
     try {
       const response = await api.getEmployee(employee.emp_no);
-      console.log('DEBUG: api.getEmployee response:', response);
       if (response.success && response.data) {
-        console.log('DEBUG: Setting viewingEmployee with fresh data:', response.data);
         setViewingEmployee(response.data);
       }
     } catch (error) {
       console.error('Error refreshing employee data:', error);
+    }
+
+    // Fetch employee history (Super Admin only; backend enforces authorization)
+    try {
+      setEmployeeHistoryLoading(true);
+      const historyRes = await api.getEmployeeHistory(employee.emp_no);
+      if (historyRes.success && Array.isArray(historyRes.data)) {
+        setEmployeeHistory(historyRes.data);
+      } else {
+        setEmployeeHistory([]);
+      }
+    } catch (error) {
+      console.error('Error fetching employee history:', error);
+      setEmployeeHistory([]);
+    } finally {
+      setEmployeeHistoryLoading(false);
     }
   };
 
@@ -3361,7 +3413,7 @@ export default function EmployeesPage() {
                   </div>
                 )}
 
-                <div className="space-y-6">
+                  <div className="space-y-6">
                   {/* Application Details */}
                   <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
                     <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Application Details</h3>
@@ -4407,6 +4459,18 @@ export default function EmployeesPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    {viewingEmployee.leftDate && (
+                      <button
+                        onClick={() => {
+                          setShowViewDialog(false);
+                          setCertificatePreviewUrl(null);
+                          handleRemoveLeftDate(viewingEmployee);
+                        }}
+                        className="rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
+                      >
+                        Reactivate
+                      </button>
+                    )}
                     <button
                       onClick={() => {
                         setShowViewDialog(false);
@@ -4430,14 +4494,48 @@ export default function EmployeesPage() {
 
                 <div className="space-y-6">
                   {/* Status Badge */}
-                  <div className="flex items-center gap-2">
-                    <span className={viewingEmployee.is_active !== false
-                      ? 'inline-flex rounded-full px-3 py-1 text-sm font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                      : 'inline-flex rounded-full px-3 py-1 text-sm font-medium bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}>
-                      {viewingEmployee.is_active !== false ? 'Active' : 'Inactive'}
-                    </span>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className={viewingEmployee.is_active !== false
+                        ? 'inline-flex rounded-full px-3 py-1 text-sm font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                        : 'inline-flex rounded-full px-3 py-1 text-sm font-medium bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}>
+                        {viewingEmployee.is_active !== false ? 'Active' : 'Inactive'}
+                      </span>
+                      {viewingEmployee.leftDate && (
+                        <span className="inline-flex rounded-full px-3 py-1 text-xs font-medium bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                          Last working date: {new Date(viewingEmployee.leftDate).toLocaleDateString()}
+                        </span>
+                      )}
+                    </div>
+                    {/* Simple tabs: Profile / History (history visible for super admin users) */}
+                    <div className="inline-flex rounded-full bg-slate-100 p-1 text-xs font-medium text-slate-600 dark:bg-slate-900 dark:text-slate-300">
+                      <button
+                        type="button"
+                        onClick={() => setEmployeeViewTab('profile')}
+                        className={`px-3 py-1 rounded-full transition ${
+                          employeeViewTab === 'profile'
+                            ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-slate-100'
+                            : 'bg-transparent'
+                        }`}
+                      >
+                        Profile
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEmployeeViewTab('history')}
+                        className={`px-3 py-1 rounded-full transition ${
+                          employeeViewTab === 'history'
+                            ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-slate-100'
+                            : 'bg-transparent'
+                        }`}
+                      >
+                        History
+                      </button>
+                    </div>
                   </div>
 
+                  {employeeViewTab === 'profile' && (
+                  <>
                   {/* Basic Information */}
                   <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
                     <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Basic Information</h3>
@@ -4617,27 +4715,246 @@ export default function EmployeesPage() {
                       </div>
                     </div>
                   </div>
+                  </>
+                  )}
 
-                  {/* Financial Information */}
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                    <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Financial Information</h3>
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">PF Number</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.pf_number || '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">ESI Number</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.esi_number || '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Aadhar Number</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.aadhar_number || '-'}</p>
+                  {employeeViewTab === 'history' && (
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-5 dark:border-slate-700 dark:bg-slate-900/60">
+                      <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Employee History</h3>
+                      {employeeHistoryLoading && (
+                        <p className="text-sm text-slate-500 dark:text-slate-400">Loading history…</p>
+                      )}
+                      {!employeeHistoryLoading && employeeHistory.length === 0 && (
+                        <p className="text-sm text-slate-500 dark:text-slate-400">No history recorded for this employee yet.</p>
+                      )}
+                      {!employeeHistoryLoading && employeeHistory.length > 0 && (
+                        <ol className="relative space-y-4 border-l border-slate-200 pl-4 text-sm dark:border-slate-700">
+                          {employeeHistory.map((h: any, index: number) => {
+                            const ts = h.timestamp || h.created_at;
+                            const when = ts ? new Date(ts).toLocaleString() : '-';
+                            const actor = h.performedByName || 'System';
+                            const role = h.performedByRole ? ` (${h.performedByRole})` : '';
+                            const labelMap: Record<string, string> = {
+                              application_created: 'Application created',
+                              employee_verified: 'Employee verified',
+                              salary_approved: 'Salary approved',
+                              data_updated: 'Data updated',
+                              status_changed: 'Status changed',
+                              employee_updated: 'Profile updated',
+                              resignation_submitted: 'Resignation submitted',
+                              resignation_step_approved: 'Resignation step approved',
+                              resignation_step_rejected: 'Resignation step rejected',
+                              resignation_final_approved: 'Resignation fully approved',
+                              resignation_rejected: 'Resignation rejected',
+                              left_date_set: 'Left date set',
+                              left_date_cleared: 'Left date cleared',
+                              leave_applied: 'Leave applied',
+                              leave_approved: 'Leave approved',
+                              leave_rejected: 'Leave rejected',
+                              od_applied: 'OD applied',
+                              od_approved: 'OD approved',
+                              od_rejected: 'OD rejected',
+                              credentials_resent: 'Credentials resent',
+                              password_reset: 'Password reset',
+                              user_promoted: 'User promoted',
+                              user_demoted: 'User role changed',
+                              user_activated: 'User activated',
+                              user_deactivated: 'User deactivated',
+                              user_deleted: 'User deleted',
+                            };
+                            const label = labelMap[h.event] || h.event || 'Event';
+                            const rawChanges = h.details?.changes;
+                            const skipDisplayFields = new Set(['getQualifications', 'allData', 'updated_at', '__v', 'created_at']);
+                            const changes = Array.isArray(rawChanges)
+                              ? rawChanges.filter((c: any) => !skipDisplayFields.has(c.field))
+                              : [];
+                            const fieldLabelMap: Record<string, string> = {
+                              division_id: 'Division',
+                              department_id: 'Department',
+                              designation_id: 'Designation',
+                              qualifications: 'Qualifications',
+                              dynamicFields: 'Dynamic fields',
+                              name: 'Name',
+                              employee_name: 'Name',
+                              email: 'Email',
+                              phone: 'Phone',
+                              emp_no: 'Employee number',
+                              date_of_joining: 'Date of joining',
+                              leftDate: 'Left date',
+                              leftReason: 'Left reason',
+                            };
+                            const refMaps = historyRefNames;
+                            const formatChangeValue = (v: unknown, field?: string): string => {
+                              if (v === undefined || v === null) return '—';
+                              if (Array.isArray(v)) {
+                                const arr = v as any[];
+                                if (!arr.length) return '—';
+                                if (field === 'qualifications') {
+                                  const summaries = arr.map((item: any) => {
+                                    if (item && typeof item === 'object') {
+                                      const o = item as Record<string, any>;
+                                      const primary = o.Examination ?? o['Examination'] ?? o.degree ?? o.course ?? o.title ?? o['School/College name'] ?? o.University ?? o['University/Board'] ?? o.name;
+                                      if (primary != null) return String(primary);
+                                      const keys = Object.keys(o).filter((k) => !k.startsWith('_'));
+                                      if (keys.length) return `${keys[0]}: ${String(o[keys[0]])}`;
+                                      return '[item]';
+                                    }
+                                    return String(item);
+                                  });
+                                  const preview = summaries.slice(0, 2).join(', ');
+                                  return summaries.length > 2 ? `${preview} +${summaries.length - 2} more` : preview;
+                                }
+                                const allPrimitive = arr.every((it) => it == null || typeof it !== 'object');
+                                if (allPrimitive) return arr.map((it) => String(it)).join(', ');
+                                return `${arr.length} item(s)`;
+                              }
+                              if (typeof v === 'object' && v !== null) {
+                                const o = v as Record<string, unknown>;
+                                if (typeof o.name === 'string') return o.name;
+                                const keys = Object.keys(o).filter((k) => !k.startsWith('_'));
+                                if (keys.length) return `${keys.length} field(s)`;
+                                return '[updated]';
+                              }
+                              const s = String(v);
+                              if (s === '[object Object]') return '[updated]';
+                              if (field === 'division_id' && /^[a-f\d]{24}$/i.test(s)) return refMaps.division[s] ?? s;
+                              if (field === 'department_id' && /^[a-f\d]{24}$/i.test(s)) return refMaps.department[s] ?? s;
+                              if (field === 'designation_id' && /^[a-f\d]{24}$/i.test(s)) return refMaps.designation[s] ?? s;
+                              if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s)) {
+                                try {
+                                  return new Date(s).toLocaleString();
+                                } catch {
+                                  return s;
+                                }
+                              }
+                              return s;
+                            };
+                            // Choose colour variant based on event category
+                            let ringColor = 'border-slate-400';
+                            let cardBorder = 'border-slate-200 dark:border-slate-700';
+                            let pillBg = 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200';
+
+                            const ev = h.event as string;
+                            if (ev?.startsWith('resignation') || ev === 'left_date_set' || ev === 'left_date_cleared') {
+                              ringColor = 'border-orange-500';
+                              cardBorder = 'border-orange-200 dark:border-orange-700/70';
+                              pillBg = 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200';
+                            } else if (ev?.startsWith('leave_')) {
+                              ringColor = 'border-emerald-500';
+                              cardBorder = 'border-emerald-200 dark:border-emerald-700/70';
+                              pillBg = 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200';
+                            } else if (ev?.startsWith('od_')) {
+                              ringColor = 'border-sky-500';
+                              cardBorder = 'border-sky-200 dark:border-sky-700/70';
+                              pillBg = 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200';
+                            } else if (ev === 'credentials_resent' || ev === 'password_reset' || ev?.startsWith('user_')) {
+                              ringColor = 'border-violet-500';
+                              cardBorder = 'border-violet-200 dark:border-violet-700/70';
+                              pillBg = 'bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-200';
+                            } else if (ev === 'employee_updated') {
+                              ringColor = 'border-amber-500';
+                              cardBorder = 'border-amber-200 dark:border-amber-700/70';
+                              pillBg = 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200';
+                            }
+
+                            return (
+                              <li key={h._id || `${h.event}-${when}-${actor}-${index}`} className="relative pl-4">
+                                {/* Timeline dot */}
+                                <span
+                                  className={`absolute -left-[9px] flex h-4 w-4 items-center justify-center rounded-full border-2 ${ringColor} bg-white dark:bg-slate-950`}
+                                >
+                                  <span className="h-1.5 w-1.5 rounded-full bg-slate-500 dark:bg-slate-300" />
+                                </span>
+
+                                {/* Card */}
+                                <div
+                                  className={`rounded-2xl border ${cardBorder} bg-white/90 p-3 shadow-sm shadow-slate-900/5 dark:bg-slate-950/70`}
+                                >
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="space-y-1">
+                                      <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${pillBg}`}>
+                                        {label}
+                                      </span>
+                                      <div className="text-xs text-slate-500 dark:text-slate-400">
+                                        {when} • {actor}
+                                        {role}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  {h.comments && (
+                                    <div className="mt-2 text-xs text-slate-700 dark:text-slate-200">
+                                      {h.comments}
+                                    </div>
+                                  )}
+                                  {Array.isArray(changes) && changes.length > 0 && (
+                                    <>
+                                      <ul className="mt-2 space-y-0.5 text-xs text-slate-600 dark:text-slate-300">
+                                        {changes.map((c: any, idx: number) => {
+                                          const fieldLabel = fieldLabelMap[c.field] ?? c.field;
+                                          return (
+                                            <li key={`${c.field}-${idx}`} className="flex flex-wrap items-center gap-x-1 gap-y-0.5">
+                                              <span className="font-semibold">{fieldLabel}</span>{' '}
+                                              changed from{' '}
+                                              <span className="font-mono text-slate-700 dark:text-slate-100">
+                                                {formatChangeValue(c.previous, c.field)}
+                                              </span>{' '}
+                                              to{' '}
+                                              <span className="font-mono text-slate-700 dark:text-slate-100">
+                                                {formatChangeValue(c.current, c.field)}
+                                              </span>
+                                            </li>
+                                          );
+                                        })}
+                                      </ul>
+                                      <button
+                                        type="button"
+                                        onClick={() => setHistoryViewComplete({
+                                          eventLabel: label,
+                                          changes: changes.map((c: any) => ({
+                                            field: c.field,
+                                            fieldLabel: fieldLabelMap[c.field] ?? c.field,
+                                            previous: c.previous,
+                                            current: c.current,
+                                          })),
+                                        })}
+                                        className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100 dark:border-amber-600 dark:bg-amber-900/30 dark:text-amber-200 dark:hover:bg-amber-900/50"
+                                      >
+                                        View complete
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </li>
+                            );
+                          })}
+                        </ol>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Financial Information (profile view only) */}
+                  {employeeViewTab === 'profile' && (
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                      <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Financial Information</h3>
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                        <div>
+                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">PF Number</label>
+                          <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.pf_number || '-'}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">ESI Number</label>
+                          <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.esi_number || '-'}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Aadhar Number</label>
+                          <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.aadhar_number || '-'}</p>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
 
-                  {/* Bank Details */}
+                  {/* Bank Details (profile view only) */}
+                  {employeeViewTab === 'profile' && (
                   <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
                     <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Bank Details</h3>
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -4663,8 +4980,10 @@ export default function EmployeesPage() {
                       </div>
                     </div>
                   </div>
+                  )}
 
-                  {/* Allowances & Deductions - Always show both sections */}
+                  {/* Allowances & Deductions (profile view only) */}
+                  {employeeViewTab === 'profile' && (
                   <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
                     <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Allowances & Deductions</h3>
 
@@ -4742,9 +5061,10 @@ export default function EmployeesPage() {
                       </div>
                     )}
                   </div>
+                  )}
 
-                  {/* Left Date Information */}
-                  {viewingEmployee.leftDate && (
+                  {/* Left Date Information (profile view only) */}
+                  {employeeViewTab === 'profile' && viewingEmployee.leftDate && (
                     <div className="rounded-2xl border border-orange-200 bg-orange-50/50 p-5 dark:border-orange-800 dark:bg-orange-900/20 mb-5">
                       <h3 className="mb-4 text-lg font-semibold text-orange-900 dark:text-orange-100">Left Date Information</h3>
                       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -4767,22 +5087,12 @@ export default function EmployeesPage() {
                           </div>
                         )}
                       </div>
-                      <div className="mt-4">
-                        <button
-                          onClick={() => {
-                            setShowViewDialog(false);
-                            setCertificatePreviewUrl(null);
-                            handleRemoveLeftDate(viewingEmployee);
-                          }}
-                          className="rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
-                        >
-                          Reactivate Employee
-                        </button>
-                      </div>
+                      {/* Reactivate button moved to header; no button here */}
                     </div>
                   )}
 
-                  {/* Leave Information */}
+                  {/* Leave Information (profile view only) */}
+                  {employeeViewTab === 'profile' && (
                   <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
                     <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Leave Information</h3>
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -4826,9 +5136,10 @@ export default function EmployeesPage() {
                       )}
                     </div>
                   </div>
+                  )}
 
-                  {/* Reporting Authority Section - Check both root and dynamicFields, handle both reporting_to and reporting_to_ */}
-                  {((viewingEmployee as any).reporting_to || (viewingEmployee as any).reporting_to_ || viewingEmployee.dynamicFields?.reporting_to || viewingEmployee.dynamicFields?.reporting_to_) && (
+                  {/* Reporting Authority Section (profile view only) - Check both root and dynamicFields */}
+                  {employeeViewTab === 'profile' && (((viewingEmployee as any).reporting_to || (viewingEmployee as any).reporting_to_ || viewingEmployee.dynamicFields?.reporting_to || viewingEmployee.dynamicFields?.reporting_to_)) && (
                     <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
                       <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Reporting Authority</h3>
                       {(() => {
@@ -4906,6 +5217,52 @@ export default function EmployeesPage() {
             </div>
           )
         }
+
+        {/* History – View complete modal (all changes for one entry, full data) */}
+        {historyViewComplete && (
+          <div className="fixed inset-0 z-[55] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setHistoryViewComplete(null)} />
+            <div className="relative z-10 flex max-h-[85vh] w-full max-w-4xl flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                  {historyViewComplete.eventLabel} – complete data
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setHistoryViewComplete(null)}
+                  className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+              <div className="overflow-auto p-4 space-y-4">
+                {historyViewComplete.changes.map((c, idx) => (
+                  <div key={`${c.field}-${idx}`} className="rounded-xl border border-slate-200 bg-slate-50/50 p-3 dark:border-slate-700 dark:bg-slate-800/50">
+                    <p className="mb-2 text-sm font-semibold text-slate-800 dark:text-slate-200">{c.fieldLabel}</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Previous</p>
+                        <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-white p-2 text-xs text-slate-800 dark:bg-slate-900 dark:text-slate-200">
+                          {typeof c.previous === 'object' && c.previous !== null
+                            ? JSON.stringify(c.previous, null, 2)
+                            : String(c.previous ?? '—')}
+                        </pre>
+                      </div>
+                      <div>
+                        <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Current</p>
+                        <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-white p-2 text-xs text-slate-800 dark:bg-slate-900 dark:text-slate-200">
+                          {typeof c.current === 'object' && c.current !== null
+                            ? JSON.stringify(c.current, null, 2)
+                            : String(c.current ?? '—')}
+                        </pre>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Left Date Modal */}
         {

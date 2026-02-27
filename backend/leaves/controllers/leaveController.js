@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const Leave = require('../model/Leave');
 const LeaveSettings = require('../model/LeaveSettings');
 const Employee = require('../../employees/model/Employee');
+const EmployeeHistory = require('../../employees/model/EmployeeHistory');
 const User = require('../../users/model/User');
 const Settings = require('../../settings/model/Settings');
 const { isHRMSConnected, getEmployeeByIdMSSQL } = require('../../employees/config/sqlHelper');
@@ -732,6 +733,28 @@ exports.applyLeave = async (req, res) => {
 
     await leave.save();
 
+    // Employee history: leave applied
+    try {
+      await EmployeeHistory.create({
+        emp_no: employee.emp_no,
+        event: 'leave_applied',
+        performedBy: req.user._id,
+        performedByName: req.user.name,
+        performedByRole: req.user.role,
+        details: {
+          leaveId: leave._id,
+          fromDate: leave.fromDate,
+          toDate: leave.toDate,
+          numberOfDays: leave.numberOfDays,
+          isHalfDay: leave.isHalfDay,
+          halfDayType: leave.halfDayType,
+        },
+        comments: remarks || 'Leave applied',
+      });
+    } catch (err) {
+      console.error('Failed to log leave applied history:', err.message);
+    }
+
     // Populate for response
     await leave.populate([
       { path: 'employeeId', select: 'first_name last_name emp_no' },
@@ -1341,6 +1364,47 @@ exports.processLeaveAction = async (req, res) => {
     leave.markModified('approvals');
 
     await leave.save();
+
+    // Employee history: leave final decision
+    try {
+      if (action === 'approve' && leave.status === 'approved') {
+        await EmployeeHistory.create({
+          emp_no: leave.emp_no,
+          event: 'leave_approved',
+          performedBy: req.user._id,
+          performedByName: req.user.name,
+          performedByRole: userRole,
+          details: {
+            leaveId: leave._id,
+            fromDate: leave.fromDate,
+            toDate: leave.toDate,
+            numberOfDays: leave.numberOfDays,
+          },
+          comments: comments && comments.trim()
+            ? comments
+            : 'Leave fully approved; employee will be marked on leave for these dates',
+        });
+      } else if (action === 'reject' && leave.status === 'rejected') {
+        await EmployeeHistory.create({
+          emp_no: leave.emp_no,
+          event: 'leave_rejected',
+          performedBy: req.user._id,
+          performedByName: req.user.name,
+          performedByRole: userRole,
+          details: {
+            leaveId: leave._id,
+            fromDate: leave.fromDate,
+            toDate: leave.toDate,
+            numberOfDays: leave.numberOfDays,
+          },
+          comments: comments && comments.trim()
+            ? comments
+            : 'Leave rejected',
+        });
+      }
+    } catch (err) {
+      console.error('Failed to log leave approval/rejection history:', err.message);
+    }
 
     await leave.populate([
       { path: 'employeeId', select: 'first_name last_name emp_no' },

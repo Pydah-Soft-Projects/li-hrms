@@ -1351,6 +1351,10 @@ export const api = {
     return apiRequest<any>(`/employees/${empNo}`, { method: 'GET' });
   },
 
+  getEmployeeHistory: async (empNo: string) => {
+    return apiRequest<any>(`/employees/${empNo}/history`, { method: 'GET' });
+  },
+
   createEmployee: async (data: any) => {
     return apiRequest<any>('/employees', {
       method: 'POST',

@@ -1,6 +1,7 @@
 const ResignationRequest = require('../model/ResignationRequest');
 const ResignationSettings = require('../model/ResignationSettings');
 const Employee = require('../../employees/model/Employee');
+const EmployeeHistory = require('../../employees/model/EmployeeHistory');
 const { getEmployeeIdsInScope } = require('../../shared/middleware/dataScopeMiddleware');
 
 function buildWorkflowVisibilityFilter(user) {
@@ -148,6 +149,25 @@ exports.createResignationRequest = async (req, res) => {
     });
     await resignation.save();
 
+    // Employee history: resignation submitted
+    try {
+      await EmployeeHistory.create({
+        emp_no: employee.emp_no,
+        event: 'resignation_submitted',
+        performedBy: req.user._id,
+        performedByName: req.user.name,
+        performedByRole: req.user.role,
+        details: {
+          resignationId: resignation._id,
+          leftDate: resignation.leftDate,
+          remarks: resignation.remarks,
+        },
+        comments: remarks || 'Resignation submitted',
+      });
+    } catch (err) {
+      console.error('Failed to log resignation submission history:', err.message);
+    }
+
     const populated = await ResignationRequest.findById(resignation._id)
       .populate('employeeId', 'employee_name emp_no department_id division_id')
       .populate('requestedBy', 'name email')
@@ -260,6 +280,25 @@ exports.approveResignationRequest = async (req, res) => {
       timestamp: new Date(),
     });
 
+    // Employee history: per-step approval / rejection
+    try {
+      await EmployeeHistory.create({
+        emp_no: resignation.emp_no,
+        event: isApprove ? 'resignation_step_approved' : 'resignation_step_rejected',
+        performedBy: req.user._id,
+        performedByName: req.user.name,
+        performedByRole: req.user.role,
+        details: {
+          resignationId: resignation._id,
+          stepRole: step.role,
+          stepOrder: step.stepOrder,
+        },
+        comments: comments || '',
+      });
+    } catch (err) {
+      console.error('Failed to log resignation step history:', err.message);
+    }
+
     const nextIndex = activeIndex + 1;
     const isLastStep = nextIndex >= chain.length;
 
@@ -269,6 +308,24 @@ exports.approveResignationRequest = async (req, res) => {
       resignation.workflow.currentStepRole = null;
       resignation.workflow.nextApproverRole = null;
       await resignation.save();
+
+      // Employee history: overall resignation rejected
+      try {
+        await EmployeeHistory.create({
+          emp_no: resignation.emp_no,
+          event: 'resignation_rejected',
+          performedBy: req.user._id,
+          performedByName: req.user.name,
+          performedByRole: req.user.role,
+          details: {
+            resignationId: resignation._id,
+          },
+          comments: comments || 'Resignation request rejected',
+        });
+      } catch (err) {
+        console.error('Failed to log resignation rejection history:', err.message);
+      }
+
       return res.status(200).json({
         success: true,
         message: 'Resignation request rejected',
@@ -290,6 +347,24 @@ exports.approveResignationRequest = async (req, res) => {
         // Do not set is_active = false here: account stays active until last working date (leftDate).
         // Auth and listings treat employee as inactive only when leftDate is in the past.
         await emp.save();
+
+        // Employee history: final approval / left date set
+        try {
+          await EmployeeHistory.create({
+            emp_no: emp.emp_no,
+            event: 'resignation_final_approved',
+            performedBy: req.user._id,
+            performedByName: req.user.name,
+            performedByRole: req.user.role,
+            details: {
+              resignationId: resignation._id,
+              leftDate: emp.leftDate,
+            },
+            comments: comments || 'Resignation fully approved; left date set',
+          });
+        } catch (err) {
+          console.error('Failed to log final resignation approval history:', err.message);
+        }
       }
 
       return res.status(200).json({
