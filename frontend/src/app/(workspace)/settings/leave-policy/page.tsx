@@ -86,6 +86,7 @@ interface LeavePolicySettings {
         resetToBalance: number;
         addCarryForward: boolean;
         resetMonth: number;
+        resetDay: number;
     };
     autoUpdate: {
         enabled: boolean;
@@ -558,7 +559,7 @@ export default function LeavePolicySettingsPage() {
                                     type="number"
                                     min="1"
                                     max="31"
-                                    value={settings.annualCLReset.resetDay}
+                                    value={settings.annualCLReset?.resetDay ?? 1}
                                     onChange={(e) => updateSettings('annualCLReset.resetDay', '', parseInt(e.target.value))}
                                     className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-sm"
                                 />
