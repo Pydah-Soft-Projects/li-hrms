@@ -3163,10 +3163,10 @@ export const api = {
   },
 
   getStatutoryConfig: async () => {
-    return apiRequest<{ success: boolean; data: StatutoryDeductionConfig }>('/payroll/statutory-config', { method: 'GET' });
+    return apiRequest<StatutoryDeductionConfig>('/payroll/statutory-config', { method: 'GET' });
   },
   putStatutoryConfig: async (body: { esi?: Partial<StatutoryESI>; pf?: Partial<StatutoryPF>; professionTax?: Partial<StatutoryProfessionTax> }) => {
-    return apiRequest<{ success: boolean; data: StatutoryDeductionConfig }>('/payroll/statutory-config', { method: 'PUT', body: JSON.stringify(body) });
+    return apiRequest<StatutoryDeductionConfig>('/payroll/statutory-config', { method: 'PUT', body: JSON.stringify(body) });
   },
 
   getPayRegisterSummary: async (params?: { month?: string; filter_department?: string; filter_status?: string }) => {
