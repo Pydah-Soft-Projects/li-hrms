@@ -76,7 +76,7 @@ export default function LeaveRegisterPage() {
         reason: ''
     });
     const [showEmployeeDetailModal, setShowEmployeeDetailModal] = useState(false);
-    const [selectedEmployeeDetail, setSelectedEmployeeDetail] = useState(null);
+    const [selectedEmployeeDetail, setSelectedEmployeeDetail] = useState<EmployeeDetail | null>(null);
     const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
     const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
     const [periodStart, setPeriodStart] = useState<string | null>(null);
