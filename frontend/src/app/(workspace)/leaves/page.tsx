@@ -3049,9 +3049,10 @@ export default function LeavesPage() {
                   </button>
                   <button
                     type="submit"
-                    className={`flex-1 py-2 sm:py-2.5 text-sm font-bold text-white rounded-xl ${applyType === 'leave' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-purple-600 hover:bg-purple-700'}`}
+                    disabled={loading}
+                    className={`flex-1 py-2 sm:py-2.5 text-sm font-bold text-white rounded-xl transition-opacity ${loading ? 'opacity-60 cursor-not-allowed' : ''} ${applyType === 'leave' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-purple-600 hover:bg-purple-700'}`}
                   >
-                    Apply {applyType === 'leave' ? 'Leave' : 'OD'}
+                    {loading ? 'Submitting...' : `Apply ${applyType === 'leave' ? 'Leave' : 'OD'}`}
                   </button>
                 </div>
               </form>

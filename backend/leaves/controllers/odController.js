@@ -11,6 +11,7 @@ const {
   checkJurisdiction
 } = require('../../shared/middleware/dataScopeMiddleware');
 const Department = require('../../departments/model/Department');
+const EmployeeHistory = require('../../employees/model/EmployeeHistory');
 
 /**
  * Get employee settings from database
@@ -730,6 +731,28 @@ exports.applyOD = async (req, res) => {
 
     await od.save();
 
+    // Employee history: OD applied/assigned
+    try {
+      await EmployeeHistory.create({
+        emp_no: employee.emp_no,
+        event: 'od_applied',
+        performedBy: req.user._id,
+        performedByName: req.user.name,
+        performedByRole: req.user.role,
+        details: {
+          odId: od._id,
+          fromDate: od.fromDate,
+          toDate: od.toDate,
+          numberOfDays: od.numberOfDays,
+          odType: od.odType,
+          odType_extended: od.odType_extended,
+        },
+        comments: remarks || (isAssigned ? 'OD assigned by manager' : 'OD applied'),
+      });
+    } catch (err) {
+      console.error('Failed to log OD applied history:', err.message);
+    }
+
     // Populate for response
     await od.populate([
       { path: 'employeeId', select: 'first_name last_name emp_no' },
@@ -1328,8 +1351,51 @@ exports.processODAction = async (req, res) => {
         });
     }
 
-    od.workflow.history.push(historyEntry);
-    await od.save();
+        od.workflow.history.push(historyEntry);
+        await od.save();
+
+        // Employee history: OD final decision
+        try {
+          if (action === 'approve' && od.status === 'approved') {
+            await EmployeeHistory.create({
+              emp_no: od.emp_no,
+              event: 'od_approved',
+              performedBy: req.user._id,
+              performedByName: req.user.name,
+              performedByRole: userRole,
+              details: {
+                odId: od._id,
+                fromDate: od.fromDate,
+                toDate: od.toDate,
+                numberOfDays: od.numberOfDays,
+                odType: od.odType,
+                odType_extended: od.odType_extended,
+              },
+              comments: comments && comments.trim()
+                ? comments
+                : 'OD fully approved; employee will be on official duty for these dates',
+            });
+          } else if (action === 'reject' && od.status === 'rejected') {
+            await EmployeeHistory.create({
+              emp_no: od.emp_no,
+              event: 'od_rejected',
+              performedBy: req.user._id,
+              performedByName: req.user.name,
+              performedByRole: userRole,
+              details: {
+                odId: od._id,
+                fromDate: od.fromDate,
+                toDate: od.toDate,
+                numberOfDays: od.numberOfDays,
+              },
+              comments: comments && comments.trim()
+                ? comments
+                : 'OD rejected',
+            });
+          }
+        } catch (err) {
+          console.error('Failed to log OD approval/rejection history:', err.message);
+        }
 
     // NEW: If OD is fully approved and has hours, store in AttendanceDaily
     if (action === 'approve' && od.status === 'approved' && od.odType_extended === 'hours') {

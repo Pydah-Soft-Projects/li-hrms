@@ -381,11 +381,28 @@ employeeSchema.methods.getPermanentFields = function () {
 };
 
 /**
+ * Returns MongoDB filter for "currently active" employees: is_active and either no leftDate or leftDate on/after today.
+ * Use this so that resigned employees stay visible/active until their last working date.
+ * @returns {Object} - Filter to use with find/countDocuments
+ */
+employeeSchema.statics.getCurrentlyActiveFilter = function () {
+  const startOfToday = new Date();
+  startOfToday.setUTCHours(0, 0, 0, 0);
+  return {
+    is_active: { $ne: false },
+    $or: [
+      { leftDate: null },
+      { leftDate: { $gte: startOfToday } },
+    ],
+  };
+};
+
+/**
  * Static method to check if employee should be included for a given month
  * @param {Date|String} leftDate - Employee's left date
  * @param {String} month - Month in YYYY-MM format
  * @returns {Boolean} - True if employee should be included for this month
- * 
+ *
  * Logic:
  * - If no leftDate: Always include (employee is still active)
  * - If leftDate is within the month: Include (they left during this month)

@@ -70,6 +70,7 @@ const moduleIcons: Record<string, any> = {
     PAYROLL: BadgeDollarSign,
     LOANS_SALARY_ADVANCE: HandCoins,
     HOLIDAY_CALENDAR: CalendarHeart,
+    RESIGNATION: LogOut,
 };
 
 export default function WorkspaceSidebar() {
@@ -99,25 +100,20 @@ export default function WorkspaceSidebar() {
         const fetchFeatureControl = async () => {
             if (!user?.role) return;
 
-            if (user.featureControl && Array.isArray(user.featureControl) && user.featureControl.length > 0) {
-                setFeatureControl(user.featureControl);
-                return;
-            }
-
             try {
+                // Always fetch from Settings so admin changes (e.g. adding Resignation for manager) apply without re-login
                 const response = await api.getSetting(`feature_control_${user.role}`);
-                if (response.success && response.data?.value?.activeModules) {
+                if (response.success && response.data?.value && Array.isArray(response.data.value.activeModules)) {
                     setFeatureControl(response.data.value.activeModules);
-                } else {
-                    const managementRoles = ['manager', 'hr', 'hod'];
-                    if (managementRoles.includes(user.role)) {
-                        setFeatureControl(MODULE_CATEGORIES.flatMap(c => c.modules.map(m => m.code)));
-                    } else {
-                        setFeatureControl(['DASHBOARD', 'LEAVE_OD', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS']);
-                    }
+                    return;
                 }
             } catch (error) {
                 console.error('Error fetching RBAC settings:', error);
+            }
+            // Fallback: use user.featureControl from login or default list
+            if (user.featureControl && Array.isArray(user.featureControl) && user.featureControl.length > 0) {
+                setFeatureControl(user.featureControl);
+            } else {
                 const managementRoles = ['manager', 'hr', 'hod'];
                 if (managementRoles.includes(user.role)) {
                     setFeatureControl(MODULE_CATEGORIES.flatMap(c => c.modules.map(m => m.code)));
@@ -212,7 +208,8 @@ export default function WorkspaceSidebar() {
                                         {enabledModules.map(module => {
                                             const isActive = pathname === module.href ||
                                                 (module.code === 'LEAVE_OD' && (pathname === '/leaves' || pathname === '/od')) ||
-                                                (module.code === 'CCL' && pathname === '/ccl');
+                                                (module.code === 'CCL' && pathname === '/ccl') ||
+                                                (module.code === 'RESIGNATION' && pathname === '/resignations');
 
                                             const Icon = moduleIcons[module.code] || LayoutDashboard;
 
