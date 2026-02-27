@@ -69,6 +69,7 @@ const moduleIcons: Record<string, any> = {
   PAYROLL: BadgeDollarSign,
   LOANS_SALARY_ADVANCE: HandCoins,
   HOLIDAY_CALENDAR: CalendarHeart,
+  RESIGNATION: LogOut,
 };
 
 const shortModuleLabels: Record<string, string> = {
@@ -100,6 +101,7 @@ const shortModuleLabels: Record<string, string> = {
   PAYROLL: 'Roll',
   LOANS_SALARY_ADVANCE: 'Adv',
   HOLIDAY_CALENDAR: 'Hols',
+  RESIGNATION: 'Resign',
 };
 
 export default function MobileBottomNav() {
@@ -126,27 +128,20 @@ export default function MobileBottomNav() {
     const fetchFeatureControl = async () => {
       if (!user?.role) return;
 
-      if (user.featureControl && Array.isArray(user.featureControl) && user.featureControl.length > 0) {
-        setFeatureControl(user.featureControl);
-        return;
-      }
-
       try {
+        // Always fetch from Settings so admin changes (e.g. adding Resignation for manager) apply without re-login
         const response = await api.getSetting(`feature_control_${user.role}`);
-        if (response.success && response.data?.value?.activeModules) {
+        if (response.success && response.data?.value && Array.isArray(response.data.value.activeModules)) {
           setFeatureControl(response.data.value.activeModules);
-        } else {
-          // Default fallbacks same as sidebar
-          const managementRoles = ['manager', 'hr', 'hod'];
-          if (managementRoles.includes(user.role)) {
-            setFeatureControl(MODULE_CATEGORIES.flatMap(c => c.modules.map(m => m.code)));
-          } else {
-            setFeatureControl(['DASHBOARD', 'LEAVE_OD', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS']);
-          }
+          return;
         }
       } catch (error) {
         console.error('Error fetching RBAC settings:', error);
-        // Fallbacks
+      }
+      // Fallback: use user.featureControl from login or default list
+      if (user.featureControl && Array.isArray(user.featureControl) && user.featureControl.length > 0) {
+        setFeatureControl(user.featureControl);
+      } else {
         const managementRoles = ['manager', 'hr', 'hod'];
         if (managementRoles.includes(user.role)) {
           setFeatureControl(MODULE_CATEGORIES.flatMap(c => c.modules.map(m => m.code)));

@@ -1351,6 +1351,10 @@ export const api = {
     return apiRequest<any>(`/employees/${empNo}`, { method: 'GET' });
   },
 
+  getEmployeeHistory: async (empNo: string) => {
+    return apiRequest<any>(`/employees/${empNo}/history`, { method: 'GET' });
+  },
+
   createEmployee: async (data: any) => {
     return apiRequest<any>('/employees', {
       method: 'POST',
@@ -1548,7 +1552,7 @@ export const api = {
   },
 
   // Qualifications management
-  updateQualificationsConfig: async (config: { isEnabled?: boolean; enableCertificateUpload?: boolean }) => {
+  updateQualificationsConfig: async (config: { isEnabled?: boolean; enableCertificateUpload?: boolean; defaultRows?: Record<string, unknown>[] }) => {
     return apiRequest<any>('/employee-applications/form-settings/qualifications', {
       method: 'PUT',
       body: JSON.stringify(config),
@@ -1572,6 +1576,7 @@ export const api = {
   },
   updateQualificationsField: async (fieldId: string, data: {
     label?: string;
+    type?: string;
     isRequired?: boolean;
     isEnabled?: boolean;
     placeholder?: string;
@@ -2174,6 +2179,38 @@ export const api = {
   // Get leave/OD/CCL types
   getLeaveTypes: async (type: 'leave' | 'od' | 'ccl') => {
     return apiRequest<any>(`/leaves/types/${type}`, { method: 'GET' });
+  },
+
+  // ==========================================
+  // RESIGNATION POLICY & REQUESTS
+  // ==========================================
+  getResignationSettings: async () => {
+    return apiRequest<any>('/resignations/settings', { method: 'GET' });
+  },
+  saveResignationSettings: async (data: any) => {
+    return apiRequest<any>('/resignations/settings', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+  createResignationRequest: async (data: { emp_no: string; leftDate: string; remarks?: string }) => {
+    return apiRequest<any>('/resignations', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+  getResignationPendingApprovals: async () => {
+    return apiRequest<any>('/resignations/pending-approvals', { method: 'GET' });
+  },
+  approveResignationRequest: async (id: string, action: 'approve' | 'reject', comments?: string) => {
+    return apiRequest<any>(`/resignations/${id}/approve`, {
+      method: 'PUT',
+      body: JSON.stringify({ action, comments }),
+    });
+  },
+  getResignationRequests: async (params?: { emp_no?: string }) => {
+    const q = params?.emp_no ? `?emp_no=${encodeURIComponent(params.emp_no)}` : '';
+    return apiRequest<any>(`/resignations${q}`, { method: 'GET' });
   },
 
   // ==========================================

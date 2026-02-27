@@ -70,6 +70,17 @@ exports.protect = async (req, res, next) => {
           message: 'Employee account is deactivated',
         });
       }
+      // Employee with past leftDate (resignation date): treat as deactivated
+      if (authEmployee && authEmployee.leftDate) {
+        const startOfToday = new Date();
+        startOfToday.setUTCHours(0, 0, 0, 0);
+        if (new Date(authEmployee.leftDate) < startOfToday) {
+          return res.status(401).json({
+            success: false,
+            message: 'Your last working date has passed. Account is deactivated.',
+          });
+        }
+      }
 
       // Set user on request with merged data
       // Preference for User record for role-based logic, but use Employee for identity

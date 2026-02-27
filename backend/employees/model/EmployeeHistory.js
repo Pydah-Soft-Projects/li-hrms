@@ -22,6 +22,33 @@ const employeeHistorySchema = new mongoose.Schema(
                 'salary_approved',
                 'data_updated',
                 'status_changed',
+                'employee_updated',
+                // Resignation lifecycle
+                'resignation_submitted',
+                'resignation_step_approved',
+                'resignation_step_rejected',
+                'resignation_final_approved',
+                'resignation_rejected',
+                // Left date / separation changes
+                'left_date_set',
+                'left_date_cleared',
+                // Leave lifecycle
+                'leave_applied',
+                'leave_approved',
+                'leave_rejected',
+                // OD lifecycle
+                'od_applied',
+                'od_approved',
+                'od_rejected',
+                // Credentials & access
+                'credentials_resent',
+                'password_reset',
+                // User / role lifecycle
+                'user_promoted',
+                'user_demoted',
+                'user_activated',
+                'user_deactivated',
+                'user_deleted',
             ],
             required: true,
         },
@@ -29,6 +56,16 @@ const employeeHistorySchema = new mongoose.Schema(
             type: mongoose.Schema.Types.ObjectId,
             ref: 'User',
             required: true,
+        },
+        performedByName: {
+            type: String,
+            trim: true,
+            default: null,
+        },
+        performedByRole: {
+            type: String,
+            trim: true,
+            default: null,
         },
         details: {
             type: mongoose.Schema.Types.Mixed,
