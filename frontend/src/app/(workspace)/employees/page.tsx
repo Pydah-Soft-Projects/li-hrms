@@ -27,6 +27,7 @@ import {
   Edit2,
   Trash2,
   Mail,
+  KeyRound,
   ChevronRight,
   ChevronLeft,
   UserCheck,
@@ -38,6 +39,7 @@ import {
 import BulkUpload from '@/components/BulkUpload';
 import DynamicEmployeeForm from '@/components/DynamicEmployeeForm';
 import Spinner from '@/components/Spinner';
+import Swal from 'sweetalert2';
 import {
   EMPLOYEE_TEMPLATE_HEADERS,
   EMPLOYEE_TEMPLATE_SAMPLE,
@@ -229,6 +231,7 @@ export default function EmployeesPage() {
   const [passwordMode, setPasswordMode] = useState<'random' | 'phone_empno'>('random');
   const [notificationChannels, setNotificationChannels] = useState({ email: true, sms: true });
   const [isResending, setIsResending] = useState<string | null>(null);
+  const [isResetting, setIsResetting] = useState<string | null>(null);
 
   const SENSITIVE_FIELDS = [
     'gross_salary',
@@ -2863,6 +2866,49 @@ export default function EmployeesPage() {
                                 )}
                               </button>
                             )}
+                            {hasManagePermission && !employee.leftDate && (
+                              <button
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+
+                                  const result = await Swal.fire({
+                                    title: 'Reset Credentials',
+                                    text: `Reset credentials for ${employee.employee_name}? Enter a custom password or leave blank to auto-generate.`,
+                                    input: 'text',
+                                    inputPlaceholder: 'Enter custom password (optional)',
+                                    showCancelButton: true,
+                                    confirmButtonText: 'Reset & Send',
+                                    cancelButtonText: 'Cancel',
+                                    confirmButtonColor: '#f97316',
+                                    inputAttributes: {
+                                      autocapitalize: 'off',
+                                      autocorrect: 'off'
+                                    }
+                                  });
+
+                                  if (!result.isConfirmed) return;
+
+                                  setIsResetting(employee.emp_no);
+                                  try {
+                                    await api.resetEmployeeCredentials(employee.emp_no, { customPassword: result.value });
+                                    setSuccess('Credentials reset and sent!');
+                                  } catch (err) {
+                                    setError('Failed to reset');
+                                  } finally {
+                                    setIsResetting(null);
+                                  }
+                                }}
+                                disabled={isResetting === employee.emp_no}
+                                className="w-8 h-8 flex items-center justify-center rounded-lg text-text-secondary hover:bg-orange-500/10 hover:text-orange-500 transition-all font-bold disabled:opacity-50"
+                                title="Reset Credentials"
+                              >
+                                {isResetting === employee.emp_no ? (
+                                  <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-orange-500 border-t-transparent" />
+                                ) : (
+                                  <KeyRound className="h-3.5 w-3.5" />
+                                )}
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -3036,6 +3082,49 @@ export default function EmployeesPage() {
                           <div className="h-3 w-3 animate-spin rounded-full border-2 border-purple-500 border-t-transparent" />
                         ) : (
                           <Mail className="h-3 w-3" />
+                        )}
+                      </button>
+                    )}
+                    {hasManagePermission && !employee.leftDate && (
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+
+                          const result = await Swal.fire({
+                            title: 'Reset Credentials',
+                            text: `Reset credentials for ${employee.employee_name}? Enter a custom password or leave blank to auto-generate.`,
+                            input: 'text',
+                            inputPlaceholder: 'Enter custom password (optional)',
+                            showCancelButton: true,
+                            confirmButtonText: 'Reset & Send',
+                            cancelButtonText: 'Cancel',
+                            confirmButtonColor: '#f97316',
+                            inputAttributes: {
+                              autocapitalize: 'off',
+                              autocorrect: 'off'
+                            }
+                          });
+
+                          if (!result.isConfirmed) return;
+
+                          setIsResetting(employee.emp_no);
+                          try {
+                            await api.resetEmployeeCredentials(employee.emp_no, { customPassword: result.value });
+                            setSuccess('Credentials reset and sent!');
+                          } catch (err) {
+                            setError('Failed to reset');
+                          } finally {
+                            setIsResetting(null);
+                          }
+                        }}
+                        disabled={isResetting === employee.emp_no}
+                        className="p-1.5 rounded-lg bg-orange-500/10 text-orange-500 hover:bg-orange-500/20 transition-colors disabled:opacity-50"
+                        title="Reset Credentials"
+                      >
+                        {isResetting === employee.emp_no ? (
+                          <div className="h-3 w-3 animate-spin rounded-full border-2 border-orange-500 border-t-transparent" />
+                        ) : (
+                          <KeyRound className="h-3 w-3" />
                         )}
                       </button>
                     )}
