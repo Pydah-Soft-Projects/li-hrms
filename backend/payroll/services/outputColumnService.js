@@ -137,42 +137,6 @@ function safeEvalFormula(formula, context) {
   }
 }
 
-/** Short field names (no dot) to full path so config typos or short names still resolve */
-const SHORT_FIELD_TO_PATH = {
-  emp_no: 'employee.emp_no',
-  name: 'employee.name',
-  designation: 'employee.designation',
-  department: 'employee.department',
-  division: 'employee.division',
-  basicPay: 'earnings.basicPay',
-  perDayBasicPay: 'earnings.perDayBasicPay',
-  otPay: 'earnings.otPay',
-  incentive: 'earnings.incentive',
-  allowancesCumulative: 'earnings.allowancesCumulative',
-  grossSalary: 'earnings.grossSalary',
-  presentDays: 'attendance.presentDays',
-  payableShifts: 'attendance.payableShifts',
-  totalDaysInMonth: 'attendance.totalDaysInMonth',
-  weeklyOffs: 'attendance.weeklyOffs',
-  holidays: 'attendance.holidays',
-  paidLeaveDays: 'attendance.paidLeaveDays',
-  lopDays: 'attendance.lopDays',
-  odDays: 'attendance.odDays',
-  absentDays: 'attendance.absentDays',
-  attendanceDeductionDays: 'attendance.attendanceDeductionDays',
-  elUsedInPayroll: 'attendance.elUsedInPayroll',
-  attendanceDeduction: 'deductions.attendanceDeduction',
-  statutoryCumulative: 'deductions.statutoryCumulative',
-  deductionsCumulative: 'deductions.deductionsCumulative',
-  totalDeductions: 'deductions.totalDeductions',
-  advanceDeduction: 'loanAdvance.advanceDeduction',
-  totalEMI: 'loanAdvance.totalEMI',
-  remainingBalance: 'loanAdvance.remainingBalance',
-  roundOff: 'roundOff',
-  arrearsAmount: 'arrears.arrearsAmount',
-  netSalary: 'netSalary',
-};
-
 /**
  * Resolve component amount by name/code for use in paysheet columns (flow order).
  * - earnings.allowanceAmount:Name → amount from earnings.allowances[] where name === Name
@@ -181,11 +145,7 @@ const SHORT_FIELD_TO_PATH = {
  */
 function getValueByPath(obj, path) {
   if (!path || typeof path !== 'string') return '';
-  let trimmed = path.trim();
-  if (!trimmed) return '';
-  if (!trimmed.includes('.') && trimmed.indexOf(':') < 0 && SHORT_FIELD_TO_PATH[trimmed]) {
-    trimmed = SHORT_FIELD_TO_PATH[trimmed];
-  }
+  const trimmed = path.trim();
   const colonIdx = trimmed.indexOf(':');
   if (colonIdx > 0) {
     const basePath = trimmed.slice(0, colonIdx).trim();
@@ -227,187 +187,13 @@ function getValueByPath(obj, path) {
   return val;
 }
 
-/** Map common field paths to display headers when config has no header set */
-function fieldToHeader(field) {
-  if (!field || typeof field !== 'string') return '';
-  const f = field.trim();
-  const map = {
-    'employee.emp_no': 'Employee Code',
-    'employee.name': 'Name',
-    'employee.designation': 'Designation',
-    'employee.department': 'Department',
-    'employee.division': 'Division',
-    'earnings.basicPay': 'Basic pay',
-    'earnings.perDayBasicPay': 'Per day basic',
-    'earnings.otPay': 'OT pay',
-    'earnings.incentive': 'Incentive',
-    'earnings.allowancesCumulative': 'Allowances cumulative',
-    'earnings.grossSalary': 'Gross salary',
-    'attendance.presentDays': 'Present days',
-    'attendance.payableShifts': 'Payable shifts',
-    'attendance.totalDaysInMonth': 'Month days',
-    'attendance.weeklyOffs': 'Week offs',
-    'attendance.holidays': 'Holidays',
-    'attendance.paidLeaveDays': 'Paid leave days',
-    'attendance.elUsedInPayroll': 'EL used',
-    'attendance.lopDays': 'LOP days',
-    'attendance.odDays': 'OD days',
-    'attendance.absentDays': 'Absent days',
-    'attendance.attendanceDeductionDays': 'Attendance deduction days',
-    'deductions.attendanceDeduction': 'Attendance deduction',
-    'deductions.statutoryCumulative': 'Statutory cumulative',
-    'deductions.deductionsCumulative': 'Deductions cumulative',
-    'deductions.totalDeductions': 'Total deductions',
-    'loanAdvance.advanceDeduction': 'Advance deduction',
-    'loanAdvance.totalEMI': 'Loan EMI',
-    'loanAdvance.remainingBalance': 'Remaining balance',
-    'roundOff': 'Round off',
-    'arrears.arrearsAmount': 'Arrears',
-    'netSalary': 'Net salary',
-  };
-  if (map[f]) return map[f];
-  if (f.startsWith('earnings.allowanceAmount:')) return f.replace('earnings.allowanceAmount:', '').trim() || 'Allowance';
-  if (f.startsWith('deductions.statutoryAmount:')) return f.replace('deductions.statutoryAmount:', '').trim() || 'Statutory';
-  if (f.startsWith('deductions.otherDeductionAmount:')) return f.replace('deductions.otherDeductionAmount:', '').trim() || 'Deduction';
-  return f.split('.').pop().replace(/([A-Z])/g, ' $1').replace(/^./, (s) => s.toUpperCase()).trim() || f;
-}
-
-/**
- * Expand outputColumns so that before each cumulative column we insert breakdown columns:
- * - Before earnings.allowancesCumulative: one column per allowance (earnings.allowanceAmount:Name).
- * - Before deductions.statutoryCumulative: one column per statutory (deductions.statutoryAmount:Code) e.g. PF, ESI, PT.
- * - Before deductions.deductionsCumulative: one column per other deduction (deductions.otherDeductionAmount:Name).
- * @param {Array} outputColumns - Configured output columns
- * @param {Array} payslips - Array of payslip objects (used to collect union of allowance names, statutory codes, other deduction names)
- * @returns {Array} New column array with breakdown columns inserted; each item has { header, field, source, formula?, order }.
- */
-function expandOutputColumnsWithBreakdown(outputColumns, payslips = []) {
-  if (!Array.isArray(outputColumns) || outputColumns.length === 0) return outputColumns;
-
-  const allowanceNames = new Set();
-  const statutoryKeys = new Map(); // code -> display name (name or code)
-  const otherDeductionNames = new Set();
-
-  for (const p of payslips) {
-    (p.earnings?.allowances || []).forEach((a) => {
-      if (a && a.name) allowanceNames.add(String(a.name).trim());
-    });
-    (p.deductions?.statutoryDeductions || []).forEach((s) => {
-      if (s && (s.code || s.name)) {
-        const code = String(s.code || s.name).trim();
-        if (!statutoryKeys.has(code)) statutoryKeys.set(code, String(s.name || s.code).trim());
-      }
-    });
-    (p.deductions?.otherDeductions || []).forEach((d) => {
-      if (d && d.name) otherDeductionNames.add(String(d.name).trim());
-    });
-  }
-
-  const sorted = [...outputColumns].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-  const expanded = [];
-  let order = 0;
-
-  for (const col of sorted) {
-    const field = (col.field || '').trim();
-
-    // Before "Allowances cumulative": one column per allowance – header = allowance name
-    if (field === 'earnings.allowancesCumulative' && allowanceNames.size > 0) {
-      for (const name of [...allowanceNames].sort()) {
-        const header = (name && String(name).trim()) || 'Allowance';
-        expanded.push({
-          header,
-          field: `earnings.allowanceAmount:${name}`,
-          source: 'field',
-          formula: '',
-          order: order++,
-        });
-      }
-    }
-
-    // Before "Statutory cumulative": one column per statutory (PF, ESI, PT, etc.) – header = statutory name
-    if (field === 'deductions.statutoryCumulative' && statutoryKeys.size > 0) {
-      for (const [code, displayName] of [...statutoryKeys.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
-        const header = (displayName && String(displayName).trim()) || (code && String(code).trim()) || 'Statutory';
-        expanded.push({
-          header,
-          field: `deductions.statutoryAmount:${code}`,
-          source: 'field',
-          formula: '',
-          order: order++,
-        });
-      }
-    }
-
-    // Before "Deductions cumulative": one column per other deduction – header = deduction name
-    if (field === 'deductions.deductionsCumulative') {
-      for (const name of [...otherDeductionNames].sort()) {
-        const header = (name && String(name).trim()) || 'Deduction';
-        expanded.push({
-          header,
-          field: `deductions.otherDeductionAmount:${name}`,
-          source: 'field',
-          formula: '',
-          order: order++,
-        });
-      }
-    }
-
-    const resolvedHeader = (col.header && String(col.header).trim()) || fieldToHeader(col.field) || 'Column';
-    expanded.push({
-      ...col,
-      header: resolvedHeader,
-      order: order++,
-    });
-  }
-
-  return expanded;
-}
-
-/** Map field paths to getContextFromPayslip keys for fallback when getValueByPath returns empty */
-const FIELD_TO_CONTEXT_KEY = {
-  'employee.emp_no': 'emp_no',
-  'employee.name': 'name',
-  'employee.designation': 'designation',
-  'employee.department': 'department',
-  'employee.division': 'division',
-  'earnings.basicPay': 'basicPay',
-  'earnings.perDayBasicPay': 'perDayBasicPay',
-  'earnings.otPay': 'otPay',
-  'earnings.incentive': 'incentive',
-  'earnings.allowancesCumulative': 'allowancesCumulative',
-  'earnings.grossSalary': 'grossSalary',
-  'earnings.payableAmount': 'earnedSalary',
-  'earnings.earnedSalary': 'earnedSalary',
-  'attendance.presentDays': 'presentDays',
-  'attendance.payableShifts': 'payableShifts',
-  'attendance.totalDaysInMonth': 'monthDays',
-  'attendance.weeklyOffs': 'weeklyOffs',
-  'attendance.holidays': 'holidays',
-  'attendance.paidLeaveDays': 'paidLeaveDays',
-  'attendance.elUsedInPayroll': 'elUsedInPayroll',
-  'attendance.lopDays': 'lopDays',
-  'attendance.odDays': 'odDays',
-  'attendance.absentDays': 'absentDays',
-  'attendance.attendanceDeductionDays': 'attendanceDeductionDays',
-  'deductions.attendanceDeduction': 'attendanceDeduction',
-  'deductions.statutoryCumulative': 'statutoryCumulative',
-  'deductions.deductionsCumulative': 'deductionsCumulative',
-  'deductions.totalDeductions': 'totalDeductions',
-  'loanAdvance.advanceDeduction': 'advanceDeduction',
-  'loanAdvance.totalEMI': 'loanEMI',
-  'loanAdvance.remainingBalance': 'remaining_balance',
-  'roundOff': 'roundOff',
-  'arrears.arrearsAmount': 'arrearsAmount',
-  'netSalary': 'netSalary',
-};
-
 /**
  * Build one row from payslip and output column config (same config as payroll flow).
  * Columns are evaluated in config order so that:
  * - FIELD: value is provided by the service and controller — getValueByPath(payslip, col.field).
- *   If the value is empty, fall back to getContextFromPayslip(payslip) using FIELD_TO_CONTEXT_KEY so
- *   employee/attendance/earnings/deductions display correctly (e.g. from PayrollRecord-built payslips).
+ *   The payslip is built by the controller from PayrollRecord (DB), which is filled by the payroll calculation steps.
  * - FORMULA: value uses before columns (earlier columns in this list) plus context from the payslip.
+ *   columnContext starts as getContextFromPayslip(payslip); after each column we add that column's value by header key so the next formula can reference it (e.g. "Basic Pay" -> basic_pay).
  */
 function buildRowFromOutputColumns(payslip, outputColumns, serialNo = null) {
   const row = {};
@@ -424,14 +210,7 @@ function buildRowFromOutputColumns(payslip, outputColumns, serialNo = null) {
     if (col.source === 'formula' && col.formula) {
       val = safeEvalFormula(col.formula, columnContext);
     } else {
-      const field = (col.field || '').trim();
-      val = getValueByPath(payslip, field);
-      if ((val === '' || val === undefined || val === null) && field && FIELD_TO_CONTEXT_KEY[field] != null) {
-        const contextVal = baseContext[FIELD_TO_CONTEXT_KEY[field]];
-        if (contextVal !== undefined && contextVal !== null && contextVal !== '') {
-          val = contextVal;
-        }
-      }
+      val = getValueByPath(payslip, col.field || '');
     }
     row[header] = val;
     const key = headerToKey(header);
@@ -442,7 +221,6 @@ function buildRowFromOutputColumns(payslip, outputColumns, serialNo = null) {
 
 module.exports = {
   buildRowFromOutputColumns,
-  expandOutputColumnsWithBreakdown,
   getValueByPath,
   getContextFromPayslip,
   safeEvalFormula,

@@ -750,17 +750,9 @@ exports.exportPayrollExcel = async (req, res) => {
     const hasOutputColumns = config && Array.isArray(config.outputColumns) && config.outputColumns.length > 0;
 
     if (useDynamicExport && hasOutputColumns) {
-      const expandedColumns = outputColumnService.expandOutputColumnsWithBreakdown(config.outputColumns, payslips);
-      const exportHeaders = ['S.No', ...expandedColumns.map((c) => c.header || 'Column')];
-      rows = payslips.map((payslip, index) => {
-        const raw = outputColumnService.buildRowFromOutputColumns(payslip, expandedColumns, index + 1);
-        const aligned = {};
-        for (const h of exportHeaders) {
-          const v = raw[h];
-          aligned[h] = v !== undefined && v !== null ? v : '';
-        }
-        return aligned;
-      });
+      rows = payslips.map((payslip, index) =>
+        outputColumnService.buildRowFromOutputColumns(payslip, config.outputColumns, index + 1)
+      );
     } else {
       rows = payslips.map((payslip, index) =>
         buildPayslipExcelRowsNormalized(payslip, allAllowanceNames, allDeductionNames, index + 1)
@@ -848,7 +840,6 @@ exports.getPaysheetData = async (req, res) => {
     let headers = [];
 
     if (sortedColumns.length > 0) {
-      const payslips = [];
       for (let index = 0; index < targetEmployeeIds.length; index++) {
         const empId = targetEmployeeIds[index];
         try {
@@ -858,20 +849,15 @@ exports.getPaysheetData = async (req, res) => {
             userId,
             { source: 'payregister', arrearsSettlements: [] }
           );
-          if (result?.payslip) payslips.push(result.payslip);
+          if (result?.row) {
+            const rowData = { 'S.No': index + 1, ...result.row };
+            rows.push(rowData);
+          }
         } catch (err) {
           console.error(`Error calculating payroll for paysheet (employee ${empId}):`, err.message);
         }
       }
-      const expandedColumns = outputColumnService.expandOutputColumnsWithBreakdown(outputColumns, payslips);
-      headers = ['S.No', ...expandedColumns.map((c) => c.header || 'Column')];
-      rows = payslips.map((p, i) => {
-        const raw = outputColumnService.buildRowFromOutputColumns(p, expandedColumns, i + 1);
-        return headers.map((h) => {
-          const v = raw[h];
-          return v !== undefined && v !== null ? v : '';
-        });
-      });
+      headers = ['S.No', ...sortedColumns.map((c) => c.header || 'Column')];
     } else {
       const payslips = [];
       for (const empId of targetEmployeeIds) {
