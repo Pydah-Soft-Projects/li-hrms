@@ -2446,7 +2446,7 @@ export const api = {
   // ==========================================
 
   // Get leave register data (employeeId or empNo for single-employee balance, e.g. CL for apply form; balanceAsOf=true for balance as of that month)
-  getLeaveRegister: async (filters?: { divisionId?: string; departmentId?: string; searchTerm?: string; month?: number; year?: number; employeeId?: string; empNo?: string; balanceAsOf?: boolean }) => {
+  getLeaveRegister: async (filters?: { divisionId?: string; departmentId?: string; searchTerm?: string; month?: number; year?: number; employeeId?: string; empNo?: string; balanceAsOf?: boolean; baseDate?: string }) => {
     const params = new URLSearchParams();
     if (filters?.divisionId) params.append('divisionId', filters.divisionId);
     if (filters?.departmentId) params.append('departmentId', filters.departmentId);
@@ -2456,6 +2456,7 @@ export const api = {
     if (filters?.employeeId) params.append('employeeId', filters.employeeId);
     if (filters?.empNo) params.append('empNo', filters.empNo);
     if (filters?.balanceAsOf) params.append('balanceAsOf', 'true');
+    if (filters?.baseDate) params.append('baseDate', filters.baseDate);
     const query = params.toString() ? `?${params.toString()}` : '';
     return apiRequest<any>(`/leaves/register${query}`, { method: 'GET' });
   },
@@ -2481,6 +2482,18 @@ export const api = {
     return apiRequest<any>('/leaves/register/adjust', {
       method: 'POST',
       body: JSON.stringify(data),
+    });
+  },
+
+  // ==========================================
+  // EARNED LEAVE (EL)
+  // ==========================================
+
+  // Trigger bulk EL update for all employees for a given payroll month/year
+  updateAllEL: async (payload: { month?: number; year?: number }) => {
+    return apiRequest<any>('/leaves/earned/update-all', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
   },
 
