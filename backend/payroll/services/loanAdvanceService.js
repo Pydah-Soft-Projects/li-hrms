@@ -72,10 +72,13 @@ async function calculateTotalEMI(employeeId) {
       }
     }
 
+    const remainingBalance = loans.reduce((sum, loan) => sum + (loan.repayment?.remainingBalance || 0), 0);
+
     return {
       totalEMI: Math.round(totalEMI * 100) / 100,
       emiBreakdown,
       loanCount: loans.length,
+      remainingBalance: Math.round(remainingBalance * 100) / 100,
     };
   } catch (error) {
     console.error('Error calculating total EMI:', error);
@@ -83,6 +86,7 @@ async function calculateTotalEMI(employeeId) {
       totalEMI: 0,
       emiBreakdown: [],
       loanCount: 0,
+      remainingBalance: 0,
     };
   }
 }
@@ -267,6 +271,7 @@ async function calculateLoanAdvance(employeeId, month, payableAmount = 0) {
     totalEMI: loanResult.totalEMI || 0,
     emiBreakdown: loanResult.emiBreakdown || [],
     loanCount: loanResult.loanCount || 0,
+    remainingBalance: loanResult.remainingBalance ?? 0,
     advanceDeduction: advanceResult.advanceDeduction || 0,
     advanceBreakdown: advanceResult.advanceBreakdown || [],
     totalAdvanceBalance: advanceResult.totalAdvanceBalance || 0,

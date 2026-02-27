@@ -411,7 +411,11 @@ async function processAdmsPost(req, res, SN, table, clientIp) {
                         const axios = require('axios'); // Lazy load
                         const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:5000';
                         const syncEndpoint = `${BACKEND_URL}/api/internal/attendance/sync`;
-                        const SYSTEM_KEY = 'hrms-microservice-secret-key-999';
+                        const SYSTEM_KEY = process.env.HRMS_MICROSERVICE_SECRET_KEY || "hrms-secret-key-2026-abc123xyz789";
+                        if (!SYSTEM_KEY) {
+                            logger.error('HRMS_MICROSERVICE_SECRET_KEY not configured in biometric service');
+                            return;
+                        }
 
                         const syncPayload = records.map(rec => {
                             const logType = LOG_TYPE_MAP[rec.inOutMode] || 'CHECK-IN';

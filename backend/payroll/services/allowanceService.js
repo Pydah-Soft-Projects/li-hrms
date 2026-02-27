@@ -95,10 +95,10 @@ function calculateAllowanceAmount(rule, basicPay, grossSalary = null, attendance
   if (rule.type === 'fixed') {
     amount = rule.amount || 0;
 
-    // Prorate based on present days if enabled
+    // Prorate based on present days if enabled. Present days already include OD; do not add OD again.
     if (rule.basedOnPresentDays && attendanceData) {
-      const { presentDays = 0, paidLeaveDays = 0, odDays = 0, monthDays = 30 } = attendanceData;
-      const totalPaidDays = presentDays + paidLeaveDays + odDays;
+      const { presentDays = 0, paidLeaveDays = 0, monthDays = 30 } = attendanceData;
+      const totalPaidDays = presentDays + paidLeaveDays;
 
       if (monthDays > 0) {
         const perDayAmount = amount / monthDays;
