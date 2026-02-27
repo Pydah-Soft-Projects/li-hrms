@@ -140,7 +140,7 @@ export default function PayRegisterPage() {
   const [selectedArrears, setSelectedArrears] = useState<Array<{ id: string, amount: number, employeeId?: string }>>([]);
   const [payrollStartDate, setPayrollStartDate] = useState<string | null>(null);
   const [payrollEndDate, setPayrollEndDate] = useState<string | null>(null);
-  // const [cycleStartDay, setCycleStartDay] = useState<number | null>(null);
+  const [cycleStartDay, setCycleStartDay] = useState<number | null>(null);
   const [alignedToCycle, setAlignedToCycle] = useState(false);
 
   useEffect(() => {
