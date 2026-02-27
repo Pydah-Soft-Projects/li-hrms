@@ -516,7 +516,7 @@ exports.calculatePayroll = async (req, res) => {
  */
 exports.exportPayrollExcel = async (req, res) => {
   try {
-    const { month, departmentId, divisionId, status, search, employeeIds } = req.query;
+    const { month, departmentId, divisionId, status, search, employeeIds, strategy } = req.query;
 
     if (!month || !/^\d{4}-\d{2}$/.test(month)) {
       return res.status(400).json({
@@ -742,13 +742,25 @@ exports.exportPayrollExcel = async (req, res) => {
     console.log(`Allowances: ${Array.from(allAllowanceNames).join(', ')}`);
     console.log(`Deductions: ${Array.from(allDeductionNames).join(', ')}\n`);
 
-    // Step 3: Build rows – use configured output columns if set, else default normalized columns
+    // Step 3: Build rows – when caller sends strategy=dynamic, export using dynamic output columns
+    //         (from PayrollConfiguration.outputColumns). Otherwise use default normalized columns.
     let rows;
     const config = await PayrollConfiguration.get();
-    if (config && config.enabled && Array.isArray(config.outputColumns) && config.outputColumns.length > 0) {
-      rows = payslips.map((payslip, index) =>
-        outputColumnService.buildRowFromOutputColumns(payslip, config.outputColumns, index + 1)
-      );
+    const useDynamicExport = String(strategy || '').toLowerCase() === 'dynamic';
+    const hasOutputColumns = config && Array.isArray(config.outputColumns) && config.outputColumns.length > 0;
+
+    if (useDynamicExport && hasOutputColumns) {
+      const expandedColumns = outputColumnService.expandOutputColumnsWithBreakdown(config.outputColumns, payslips);
+      const exportHeaders = ['S.No', ...expandedColumns.map((c) => c.header || 'Column')];
+      rows = payslips.map((payslip, index) => {
+        const raw = outputColumnService.buildRowFromOutputColumns(payslip, expandedColumns, index + 1);
+        const aligned = {};
+        for (const h of exportHeaders) {
+          const v = raw[h];
+          aligned[h] = v !== undefined && v !== null ? v : '';
+        }
+        return aligned;
+      });
     } else {
       rows = payslips.map((payslip, index) =>
         buildPayslipExcelRowsNormalized(payslip, allAllowanceNames, allDeductionNames, index + 1)
@@ -836,6 +848,7 @@ exports.getPaysheetData = async (req, res) => {
     let headers = [];
 
     if (sortedColumns.length > 0) {
+      const payslips = [];
       for (let index = 0; index < targetEmployeeIds.length; index++) {
         const empId = targetEmployeeIds[index];
         try {
@@ -845,15 +858,20 @@ exports.getPaysheetData = async (req, res) => {
             userId,
             { source: 'payregister', arrearsSettlements: [] }
           );
-          if (result?.row) {
-            const rowData = { 'S.No': index + 1, ...result.row };
-            rows.push(rowData);
-          }
+          if (result?.payslip) payslips.push(result.payslip);
         } catch (err) {
           console.error(`Error calculating payroll for paysheet (employee ${empId}):`, err.message);
         }
       }
-      headers = ['S.No', ...sortedColumns.map((c) => c.header || 'Column')];
+      const expandedColumns = outputColumnService.expandOutputColumnsWithBreakdown(outputColumns, payslips);
+      headers = ['S.No', ...expandedColumns.map((c) => c.header || 'Column')];
+      rows = payslips.map((p, i) => {
+        const raw = outputColumnService.buildRowFromOutputColumns(p, expandedColumns, i + 1);
+        return headers.map((h) => {
+          const v = raw[h];
+          return v !== undefined && v !== null ? v : '';
+        });
+      });
     } else {
       const payslips = [];
       for (const empId of targetEmployeeIds) {

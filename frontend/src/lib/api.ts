@@ -3078,7 +3078,8 @@ export const api = {
     divisionId?: string;
     status?: string;
     search?: string;
-    employeeIds?: string[]
+    employeeIds?: string[];
+    strategy?: 'new' | 'legacy' | 'dynamic';
   }) => {
     const query = new URLSearchParams();
     query.append('month', params.month);
@@ -3088,6 +3089,9 @@ export const api = {
     if (params.search) query.append('search', params.search);
     if (params.employeeIds && params.employeeIds.length > 0) {
       query.append('employeeIds', params.employeeIds.join(','));
+    }
+    if (params.strategy) {
+      query.append('strategy', params.strategy);
     }
 
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
