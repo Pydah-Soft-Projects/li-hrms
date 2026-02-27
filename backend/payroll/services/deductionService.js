@@ -142,9 +142,10 @@ function calculateDaysToDeduct(multiplier, remainder, threshold, deductionType, 
  * @param {String} month - Month in YYYY-MM format
  * @param {String} departmentId - Department ID
  * @param {Number} perDayBasicPay - Per day basic pay
+ * @param {Object} [options] - Optional: { absentDays, enableAbsentDeduction, lopDaysPerAbsent }. When enableAbsentDeduction is true, adds (absentDays * (lopDaysPerAbsent - 1)) to deduction (absent already not in paid days; only X-1 extra).
  * @returns {Object} Attendance deduction result
  */
-async function calculateAttendanceDeduction(employeeId, month, departmentId, perDayBasicPay, divisionId = null) {
+async function calculateAttendanceDeduction(employeeId, month, departmentId, perDayBasicPay, divisionId = null, options = {}) {
   try {
     // 1. Fetch counts FIRST (so we can return them even if no deduction rules apply)
     const PayRegisterSummary = require('../../pay-register/model/PayRegisterSummary');
@@ -200,20 +201,33 @@ async function calculateAttendanceDeduction(employeeId, month, departmentId, per
     // 2. Fetch Rules and Calculate Deduction
     const rules = await getResolvedAttendanceDeductionRules(departmentId, divisionId);
 
-    // If no rules configured, return counts but zero deduction result
+    // If no rules configured, still apply absent extra if enabled
     if (!rules.combinedCountThreshold || !rules.deductionType || !rules.calculationMode) {
-      console.log('[Deduction] No valid rules configured. Returning counts with 0 deduction.');
+      const absentDaysNoRules = Number(options.absentDays) || 0;
+      const enableAbsentNoRules = options.enableAbsentDeduction === true;
+      const lopPerAbsentNoRules = Math.max(0, Number(options.lopDaysPerAbsent) || 1);
+      let absentExtraNoRules = 0;
+      if (enableAbsentNoRules && absentDaysNoRules > 0 && lopPerAbsentNoRules > 1) {
+        absentExtraNoRules = absentDaysNoRules * (lopPerAbsentNoRules - 1);
+      }
+      const totalDeductedNoRules = absentExtraNoRules;
+      const amountNoRules = totalDeductedNoRules * perDayBasicPay;
+      console.log('[Deduction] No valid late/early rules. Absent extra days:', absentExtraNoRules);
       const combined = lateInsCount + earlyOutsCount;
       const freeAllowed = rules.freeAllowedPerMonth != null ? Number(rules.freeAllowedPerMonth) : 0;
       return {
-        attendanceDeduction: 0,
+        attendanceDeduction: Math.round(amountNoRules * 100) / 100,
         breakdown: {
           lateInsCount,
           earlyOutsCount,
           combinedCount: combined,
           freeAllowedPerMonth: freeAllowed,
           effectiveCount: Math.max(0, combined - freeAllowed),
-          daysDeducted: 0,
+          daysDeducted: totalDeductedNoRules,
+          lateEarlyDaysDeducted: 0,
+          absentExtraDays: absentExtraNoRules,
+          absentDays: absentDaysNoRules,
+          lopDaysPerAbsent: enableAbsentNoRules ? lopPerAbsentNoRules : null,
           deductionType: null,
           calculationMode: null,
         },
@@ -244,7 +258,18 @@ async function calculateAttendanceDeduction(employeeId, month, departmentId, per
       console.log(`[Deduction] Effective count ${effectiveCount} is below threshold ${rules.combinedCountThreshold}`);
     }
 
-    const attendanceDeduction = daysDeducted * perDayBasicPay;
+    // Absent extra: when enable_absent_deduction is true, deduct (absentDays * (lopDaysPerAbsent - 1)) days. Absent is already not in paid days (1 day unpaid); settings say treat as X LOP so we add (X-1) extra deduction days.
+    let absentExtraDays = 0;
+    const absentDays = Number(options.absentDays) || 0;
+    const enableAbsentDeduction = options.enableAbsentDeduction === true;
+    const lopDaysPerAbsent = Math.max(0, Number(options.lopDaysPerAbsent) || 1);
+    if (enableAbsentDeduction && absentDays > 0 && lopDaysPerAbsent > 1) {
+      absentExtraDays = absentDays * (lopDaysPerAbsent - 1);
+      console.log(`[Deduction] Absent extra: ${absentDays} absent × (${lopDaysPerAbsent} - 1) = ${absentExtraDays} days`);
+    }
+
+    const totalDaysDeducted = daysDeducted + absentExtraDays;
+    const attendanceDeduction = totalDaysDeducted * perDayBasicPay;
 
     return {
       attendanceDeduction: Math.round(attendanceDeduction * 100) / 100,
@@ -254,7 +279,11 @@ async function calculateAttendanceDeduction(employeeId, month, departmentId, per
         combinedCount,
         freeAllowedPerMonth: freeAllowed,
         effectiveCount,
-        daysDeducted,
+        daysDeducted: totalDaysDeducted,
+        lateEarlyDaysDeducted: daysDeducted,
+        absentExtraDays,
+        absentDays,
+        lopDaysPerAbsent: enableAbsentDeduction ? lopDaysPerAbsent : null,
         deductionType: rules.deductionType,
         calculationMode: rules.calculationMode,
       },
@@ -270,6 +299,10 @@ async function calculateAttendanceDeduction(employeeId, month, departmentId, per
         freeAllowedPerMonth: 0,
         effectiveCount: 0,
         daysDeducted: 0,
+        lateEarlyDaysDeducted: 0,
+        absentExtraDays: 0,
+        absentDays: 0,
+        lopDaysPerAbsent: null,
         deductionType: null,
         calculationMode: null,
       },
@@ -380,12 +413,8 @@ async function calculatePermissionDeduction(employeeId, month, departmentId, per
 }
 
 /**
- * Calculate leave deduction
- * @param {Number} totalLeaves - Total leaves from attendance summary
- * @param {Number} paidLeaves - Paid leaves from department settings
- * @param {Number} totalDaysInMonth - Total days in month
- * @param {Number} basicPay - Basic pay
- * @returns {Object} Leave deduction result
+ * Calculate leave deduction (legacy: quota-based unpaid = totalLeaves - paidLeaves quota)
+ * @deprecated Prefer calculateLeaveDeductionFromUnpaidDays when pay register marks paid vs LOP by nature.
  */
 function calculateLeaveDeduction(totalLeaves, paidLeaves, totalDaysInMonth, basicPay) {
   const unpaidLeaves = Math.max(0, totalLeaves - (paidLeaves || 0));
@@ -399,6 +428,33 @@ function calculateLeaveDeduction(totalLeaves, paidLeaves, totalDaysInMonth, basi
       paidLeaves: paidLeaves || 0,
       unpaidLeaves,
       daysDeducted,
+    },
+  };
+}
+
+/**
+ * Calculate leave deduction from unpaid days only (LOP + absent).
+ * Paid leave days (CL, EL, CCL by nature) are already counted as paid in totalPayableShifts;
+ * only LOP and absent days are deducted from salary.
+ * @param {Number} lopDays - LOP (loss of pay) leave days from attendance summary
+ * @param {Number} absentDays - Absent days from attendance summary
+ * @param {Number} totalDaysInMonth - Total days in month
+ * @param {Number} basicPay - Basic pay
+ * @returns {Object} Leave deduction result
+ */
+function calculateLeaveDeductionFromUnpaidDays(lopDays, absentDays, totalDaysInMonth, basicPay) {
+  const daysDeducted = (Number(lopDays) || 0) + (Number(absentDays) || 0);
+  const leaveDeduction = totalDaysInMonth > 0 ? (daysDeducted / totalDaysInMonth) * basicPay : 0;
+
+  return {
+    leaveDeduction: Math.round(leaveDeduction * 100) / 100,
+    breakdown: {
+      lopDays: Number(lopDays) || 0,
+      absentDays: Number(absentDays) || 0,
+      daysDeducted,
+      totalLeaves: daysDeducted,
+      paidLeaves: 0,
+      unpaidLeaves: daysDeducted,
     },
   };
 }
@@ -647,10 +703,10 @@ function calculateDeductionAmount(rule, basicPay, grossSalary = null, attendance
   if (rule.type === 'fixed') {
     amount = rule.amount || 0;
 
-    // Prorate based on present days if enabled
+    // Prorate based on present days if enabled. Present days already include OD; do not add OD again.
     if (rule.basedOnPresentDays && attendanceData) {
-      const { presentDays = 0, paidLeaveDays = 0, odDays = 0, monthDays = 30 } = attendanceData;
-      const totalPaidDays = presentDays + paidLeaveDays + odDays;
+      const { presentDays = 0, paidLeaveDays = 0, monthDays = 30 } = attendanceData;
+      const totalPaidDays = presentDays + paidLeaveDays;
 
       if (monthDays > 0) {
         const perDayAmount = amount / monthDays;
@@ -690,6 +746,7 @@ module.exports = {
   calculateAttendanceDeduction,
   calculatePermissionDeduction,
   calculateLeaveDeduction,
+  calculateLeaveDeductionFromUnpaidDays,
   calculateOtherDeductions,
   getResolvedDeductionRule,
   calculateDeductionAmount,

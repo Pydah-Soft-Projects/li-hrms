@@ -613,7 +613,21 @@ exports.applyLeave = async (req, res) => {
           limitWarnings.push(`Total leave days for this month(${newTotal} days) would exceed the recommended monthly limit of ${resolvedLeaveSettings.monthlyLimit} days.Current month total: ${totalDaysThisMonth} days`);
         }
       }
+
+      // STRICT ENFORCEMENT for Casual Leave (CL) - max per month (when settings exist)
+      if (leaveType === 'CL' && resolvedLeaveSettings) {
+        if (resolvedLeaveSettings.maxCasualLeavesPerMonth !== null && resolvedLeaveSettings.maxCasualLeavesPerMonth > 0) {
+          if (numberOfDays > resolvedLeaveSettings.maxCasualLeavesPerMonth) {
+            return res.status(400).json({
+              success: false,
+              error: `Casual Leave usage is restricted to ${resolvedLeaveSettings.maxCasualLeavesPerMonth} day(s) per month for your department.`
+            });
+          }
+        }
+      }
     }
+
+    // CL balance is validated on the frontend only; backend does not enforce balance check here.
 
     // Validate against OD conflicts (with half-day support) - Only check APPROVED records for creation
     const { validateLeaveRequest } = require('../../shared/services/conflictValidationService');
@@ -1364,6 +1378,15 @@ exports.processLeaveAction = async (req, res) => {
     leave.markModified('approvals');
 
     await leave.save();
+
+    // When leave is finally approved, record a DEBIT in the leave register
+    if (action === 'approve' && leave.status === 'approved') {
+      try {
+        await leaveRegisterService.addLeaveDebit(leave);
+      } catch (err) {
+        console.error('Leave register debit failed (leave already approved):', err);
+      }
+    }
 
     // Employee history: leave final decision
     try {
