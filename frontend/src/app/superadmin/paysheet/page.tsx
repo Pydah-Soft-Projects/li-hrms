@@ -138,7 +138,7 @@ export default function PaysheetPage() {
                 .filter((d) => {
                   if (!selectedDivision) return true;
                   const div = divisions.find((x) => x._id === selectedDivision);
-                  return div?.departments?.some((id: string) => id === d._id);
+                  return div?.departments?.some((item) => (typeof item === 'string' ? item : item._id) === d._id);
                 })
                 .map((d) => (
                   <option key={d._id} value={d._id}>
