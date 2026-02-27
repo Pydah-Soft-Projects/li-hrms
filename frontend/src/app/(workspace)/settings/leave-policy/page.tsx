@@ -234,14 +234,14 @@ export default function LeavePolicySettingsPage() {
             {/* Tabs */}
             <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 mb-6">
                 <div className="flex flex-wrap border-b border-slate-200 dark:border-slate-700">
-                    {[
+                    {([
                         { id: 'basic', label: 'Financial Year', icon: Calendar },
                         { id: 'earning', label: 'EL Earning Rules', icon: Calculator },
                         { id: 'carryforward', label: 'Carry Forward', icon: RefreshCw },
                         { id: 'annualreset', label: 'Annual CL Reset', icon: AlertTriangle },
                         { id: 'encashment', label: 'Encashment', icon: Settings },
                         { id: 'compliance', label: 'Compliance', icon: AlertTriangle }
-                    ].map(tab => (
+                    ] as const).map(tab => (
                         <button
                             key={tab.id}
                             onClick={() => setActiveTab(tab.id)}
