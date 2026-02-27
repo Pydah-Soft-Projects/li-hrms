@@ -69,10 +69,8 @@ async function getAbsentDeductionSettings(departmentId, divisionId = null) {
       enableGlobal && enableGlobal.value !== undefined
         ? !!enableGlobal.value
         : defaults.enableAbsentDeduction;
-    const lopDaysPerAbsent =
-      lopGlobal && typeof lopGlobal.value === 'number' && lopGlobal.value >= 0
-        ? lopGlobal.value
-        : defaults.lopDaysPerAbsent;
+    const lopNum = lopGlobal && (typeof lopGlobal.value === 'number' || lopGlobal.value !== undefined) ? Number(lopGlobal.value) : NaN;
+    const lopDaysPerAbsent = !Number.isNaN(lopNum) && lopNum >= 0 ? lopNum : defaults.lopDaysPerAbsent;
 
     return { enableAbsentDeduction, lopDaysPerAbsent };
   } catch (e) {
