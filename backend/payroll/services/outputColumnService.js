@@ -207,7 +207,12 @@ function buildRowFromOutputColumns(payslip, outputColumns, serialNo = null) {
   for (const col of sorted) {
     const header = col.header || 'Column';
     let val;
-    if (col.source === 'formula' && col.formula) {
+
+    // Prefer formula when it exists, regardless of source flag – this keeps
+    // older configurations working where users entered a formula but left
+    // "Data source" as "Field".
+    const hasFormula = typeof col.formula === 'string' && col.formula.trim().length > 0;
+    if (hasFormula) {
       val = safeEvalFormula(col.formula, columnContext);
     } else {
       val = getValueByPath(payslip, col.field || '');
