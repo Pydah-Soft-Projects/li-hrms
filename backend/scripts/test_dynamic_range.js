@@ -3,7 +3,7 @@ require('dotenv').config();
 const Settings = require('../settings/model/Settings');
 const { getPayrollDateRange, getAllDatesInRange } = require('../shared/utils/dateUtils');
 
-async function testDynamicPayrollRange() {
+async function testPayrollDateRange() {
     try {
         const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/li-hrms';
         await mongoose.connect(mongoUri);
@@ -51,4 +51,4 @@ async function testDynamicPayrollRange() {
     }
 }
 
-testDynamicPayrollRange();
+testPayrollDateRange();

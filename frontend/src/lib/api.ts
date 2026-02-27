@@ -257,6 +257,82 @@ export interface PayrollRecordResponse {
   finalPaidDays?: number;
 }
 
+/** Per-step component (allowance or deduction: fixed, percentage, or formula) */
+export interface PayrollStepComponent {
+  id: string;
+  /** Reference to dynamic allowance/deduction master (AllowanceDeductionMaster) */
+  masterId?: string | null;
+  name?: string;
+  type: 'fixed' | 'percentage' | 'formula';
+  amount?: number;
+  percentage?: number;
+  base?: 'basic' | 'gross';
+  /** Optional formula override for this component */
+  formula?: string;
+  order?: number;
+}
+
+/** Payroll configuration: calculation steps order + output/paysheet columns */
+export interface PayrollConfigStep {
+  id: string;
+  type: string;
+  label?: string;
+  order: number;
+  enabled: boolean;
+  /** Optional formula for this step */
+  formula?: string;
+  /** Components (e.g. allowances in allowances step, deductions in other_deductions step) */
+  components?: PayrollStepComponent[];
+  config?: Record<string, unknown>;
+}
+
+export interface PayrollOutputColumn {
+  header: string;
+  source: 'field' | 'formula';
+  field?: string;
+  formula?: string;
+  order?: number;
+}
+
+export interface PayrollConfig {
+  _id?: string;
+  enabled: boolean;
+  steps: PayrollConfigStep[];
+  outputColumns: PayrollOutputColumn[];
+  updatedAt?: string;
+}
+
+export interface StatutoryESI {
+  enabled: boolean;
+  employeePercent: number;
+  employerPercent: number;
+  wageBasePercentOfBasic: number;
+  wageCeiling: number;
+}
+export interface StatutoryPF {
+  enabled: boolean;
+  employeePercent: number;
+  employerPercent: number;
+  wageCeiling: number;
+  base: 'basic' | 'basic_da';
+}
+export interface ProfessionTaxSlab {
+  min: number;
+  max: number | null;
+  amount: number;
+}
+export interface StatutoryProfessionTax {
+  enabled: boolean;
+  state: string;
+  slabs: ProfessionTaxSlab[];
+}
+export interface StatutoryDeductionConfig {
+  esi?: StatutoryESI;
+  pf?: StatutoryPF;
+  professionTax?: StatutoryProfessionTax;
+  updatedAt?: string;
+}
+
 export interface ApiResponse<T> {
   success: boolean;
   message?: string;
@@ -2373,6 +2449,78 @@ export const api = {
     return apiRequest<any>('/leaves/settings/initialize', { method: 'POST' });
   },
 
+  // ==========================================
+  // LEAVE REGISTER
+  // ==========================================
+
+  // Get leave register data (employeeId or empNo for single-employee balance, e.g. CL for apply form; balanceAsOf=true for balance as of that month)
+  getLeaveRegister: async (filters?: { divisionId?: string; departmentId?: string; searchTerm?: string; month?: number; year?: number; employeeId?: string; empNo?: string; balanceAsOf?: boolean; baseDate?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.divisionId) params.append('divisionId', filters.divisionId);
+    if (filters?.departmentId) params.append('departmentId', filters.departmentId);
+    if (filters?.searchTerm) params.append('searchTerm', filters.searchTerm);
+    if (filters?.month) params.append('month', String(filters.month));
+    if (filters?.year) params.append('year', String(filters.year));
+    if (filters?.employeeId) params.append('employeeId', filters.employeeId);
+    if (filters?.empNo) params.append('empNo', filters.empNo);
+    if (filters?.balanceAsOf) params.append('balanceAsOf', 'true');
+    if (filters?.baseDate) params.append('baseDate', filters.baseDate);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return apiRequest<any>(`/leaves/register${query}`, { method: 'GET' });
+  },
+
+  // Get employee leave register data
+  getEmployeeRegister: async (employeeId: string) => {
+    return apiRequest<any>(`/leaves/register/employee/${employeeId}`, { method: 'GET' });
+  },
+
+  // Get employee ledger for specific leave type
+  getEmployeeLedger: async (employeeId: string, leaveType: string) => {
+    return apiRequest<any>(`/leaves/register/employee/${employeeId}/ledger/${leaveType}`, { method: 'GET' });
+  },
+
+  // Adjust leave balance (any type: CREDIT, DEBIT, or ADJUSTMENT)
+  adjustLeaveBalance: async (data: {
+    employeeId: string;
+    leaveType: string;
+    amount: number;
+    transactionType: 'CREDIT' | 'DEBIT' | 'ADJUSTMENT';
+    reason: string;
+  }) => {
+    return apiRequest<any>('/leaves/register/adjust', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // ==========================================
+  // EARNED LEAVE (EL)
+  // ==========================================
+
+  // Trigger bulk EL update for all employees for a given payroll month/year
+  updateAllEL: async (payload: { month?: number; year?: number }) => {
+    return apiRequest<any>('/leaves/earned/update-all', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  // Adjust CL balance by days (positive = add, negative = subtract)
+  adjustCLBalance: async (data: { employeeId: string; days: number; reason: string }) => {
+    const amount = Math.abs(data.days);
+    const transactionType = data.days >= 0 ? 'CREDIT' : 'DEBIT';
+    return apiRequest<any>('/leaves/register/adjust', {
+      method: 'POST',
+      body: JSON.stringify({
+        employeeId: data.employeeId,
+        leaveType: 'CL',
+        amount,
+        transactionType,
+        reason: data.reason,
+      }),
+    });
+  },
+
   // Attendance
   // Monthly Summary
   getMonthlySummary: async (employeeId?: string, month?: string, year?: number, monthNumber?: number) => {
@@ -2938,7 +3086,8 @@ export const api = {
     divisionId?: string;
     status?: string;
     search?: string;
-    employeeIds?: string[]
+    employeeIds?: string[];
+    strategy?: 'new' | 'legacy' | 'dynamic';
   }) => {
     const query = new URLSearchParams();
     query.append('month', params.month);
@@ -2948,6 +3097,9 @@ export const api = {
     if (params.search) query.append('search', params.search);
     if (params.employeeIds && params.employeeIds.length > 0) {
       query.append('employeeIds', params.employeeIds.join(','));
+    }
+    if (params.strategy) {
+      query.append('strategy', params.strategy);
     }
 
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
@@ -2990,10 +3142,40 @@ export const api = {
     return apiRequest<any>(`/payroll${query ? `?${query}` : ''}`, { method: 'GET' });
   },
 
+  /** Paysheet table data: headers + rows from config output columns (same as Excel export) */
+  getPaysheetData: async (params: { month: string; departmentId?: string; divisionId?: string; status?: string; search?: string; employeeIds?: string[] }) => {
+    const queryParams = new URLSearchParams();
+    if (params.month) queryParams.append('month', params.month);
+    if (params.departmentId) queryParams.append('departmentId', params.departmentId);
+    if (params.divisionId) queryParams.append('divisionId', params.divisionId);
+    if (params.status) queryParams.append('status', params.status);
+    if (params.search) queryParams.append('search', params.search);
+    if (params.employeeIds?.length) queryParams.append('employeeIds', params.employeeIds.join(','));
+    const query = queryParams.toString();
+    return apiRequest<{ headers: string[]; rows: Record<string, unknown>[] }>(
+      `/payroll/paysheet${query ? `?${query}` : ''}`,
+      { method: 'GET' }
+    );
+  },
+
   getPayrollById: async (payrollId: string) => {
     return apiRequest<PayrollRecordResponse>(`/payroll/record/${payrollId}`, { method: 'GET' });
   },
 
+  getPayrollConfig: async () => {
+    return apiRequest<{ success: boolean; data: PayrollConfig }>('/payroll/config', { method: 'GET' });
+  },
+
+  putPayrollConfig: async (body: { enabled?: boolean; steps?: PayrollConfigStep[]; outputColumns?: PayrollOutputColumn[] }) => {
+    return apiRequest<{ success: boolean; data: PayrollConfig }>('/payroll/config', { method: 'PUT', body: JSON.stringify(body) });
+  },
+
+  getStatutoryConfig: async () => {
+    return apiRequest<StatutoryDeductionConfig>('/payroll/statutory-config', { method: 'GET' });
+  },
+  putStatutoryConfig: async (body: { esi?: Partial<StatutoryESI>; pf?: Partial<StatutoryPF>; professionTax?: Partial<StatutoryProfessionTax> }) => {
+    return apiRequest<StatutoryDeductionConfig>('/payroll/statutory-config', { method: 'PUT', body: JSON.stringify(body) });
+  },
 
   getPayRegisterSummary: async (params?: { month?: string; filter_department?: string; filter_status?: string }) => {
     const queryParams = new URLSearchParams();
@@ -3507,5 +3689,82 @@ export const api = {
 
   getJobStatus: async (jobId: string, queue: string = 'payroll') => {
     return apiRequest<any>(`/jobs/status/${jobId}?queue=${queue}`, { method: 'GET' });
+  },
+
+  // ==========================================
+  // LEAVE POLICY SETTINGS
+  // ==========================================
+
+  getLeavePolicySettings: async () => {
+    return apiRequest<any>('/settings/leave-policy', { method: 'GET' });
+  },
+
+  updateLeavePolicySettings: async (data: any) => {
+    return apiRequest<any>('/settings/leave-policy', { 
+      method: 'PUT', 
+      body: JSON.stringify(data),
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+  },
+
+  resetLeavePolicySettings: async () => {
+    return apiRequest<any>('/settings/leave-policy/reset', { 
+      method: 'POST' 
+    });
+  },
+
+  previewELCalculation: async (data: { employeeId: string; month: number; year: number }) => {
+    return apiRequest<any>('/settings/leave-policy/preview', { 
+      method: 'POST', 
+      body: JSON.stringify(data)
+    });
+  },
+
+  // ==========================================
+  // ANNUAL CL RESET API
+  // ==========================================
+
+  performAnnualCLReset: async (data: { targetYear?: number; confirmReset?: boolean }) => {
+    return apiRequest<any>('/leaves/annual-reset', { 
+      method: 'POST', 
+      body: JSON.stringify(data)
+    });
+  },
+
+  getCLResetStatus: async (filters?: { employeeIds?: string; departmentId?: string; divisionId?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.employeeIds) params.append('employeeIds', filters.employeeIds);
+    if (filters?.departmentId) params.append('departmentId', filters.departmentId);
+    if (filters?.divisionId) params.append('divisionId', filters.divisionId);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    
+    return apiRequest<any>(`/leaves/annual-reset/status${query}`, { method: 'GET' });
+  },
+
+  getNextCLResetDate: async () => {
+    return apiRequest<any>('/leaves/annual-reset/next-date', { method: 'GET' });
+  },
+
+  previewAnnualReset: async (data: { sampleSize?: number }) => {
+    return apiRequest<any>('/leaves/annual-reset/preview', { 
+      method: 'POST', 
+      body: JSON.stringify(data)
+    });
+  },
+
+  /** Apply initial CL balance from policy to all employees (manual; creates ADJUSTMENT transactions). Not the annual reset. */
+  performInitialCLSync: async (confirm: boolean = true) => {
+    return apiRequest<any>('/leaves/initial-cl-sync', {
+      method: 'POST',
+      body: JSON.stringify({ confirm }),
+    });
+  },
+
+  initLeavePolicySettings: async () => {
+    return apiRequest<any>('/settings/leave-policy/init', { 
+      method: 'POST' 
+    });
   },
 };

@@ -77,6 +77,7 @@ function RosterPage() {
   // Payroll Cycle Config
   const [cycleStartDay, setCycleStartDay] = useState<number>(1);
   const [cycleDates, setCycleDates] = useState<{ startDate: string; endDate: string; label: string } | null>(null);
+  const [alignedToCycle, setAlignedToCycle] = useState(false);
 
   const [showWeekOff, setShowWeekOff] = useState(false);
   const [weekOffDays, setWeekOffDays] = useState<Record<string, boolean>>(
@@ -91,6 +92,24 @@ function RosterPage() {
       }
     }).catch(err => console.error('Failed to load payroll cycle settings', err));
   }, []);
+
+  // Once we know the cycle start day, align initial month so that the selected pay cycle contains today
+  useEffect(() => {
+    if (alignedToCycle || !cycleStartDay) return;
+    const today = new Date();
+    let y = today.getFullYear();
+    let m = today.getMonth() + 1;
+    if (cycleStartDay > 1 && today.getDate() >= cycleStartDay) {
+      if (m === 12) {
+        m = 1;
+        y += 1;
+      } else {
+        m += 1;
+      }
+    }
+    setMonth(formatMonthInput(new Date(y, m - 1, 1)));
+    setAlignedToCycle(true);
+  }, [cycleStartDay, alignedToCycle]);
 
   // Calculate cycle dates whenever month or cycleStartDay changes
   useEffect(() => {

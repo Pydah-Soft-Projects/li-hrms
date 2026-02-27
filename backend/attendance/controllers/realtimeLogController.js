@@ -23,7 +23,11 @@ exports.receiveRealTimeLogs = async (req, res) => {
     const startTime = Date.now();
 
     // SECURITY CHECK: Verify it's the microservice
-    const SYSTEM_KEY = 'hrms-microservice-secret-key-999';
+    const SYSTEM_KEY = process.env.HRMS_MICROSERVICE_SECRET_KEY || "hrms-secret-key-2026-abc123xyz789";
+    if (!SYSTEM_KEY) {
+        console.error('[RealTime] System key not configured in environment variables');
+        return res.status(500).json({ success: false, message: 'Server configuration error' });
+    }
     if (req.headers['x-system-key'] !== SYSTEM_KEY) {
         console.warn('[RealTime] Unauthorized access attempt blocked.');
         return res.status(401).json({ success: false, message: 'Unauthorized System Access' });
@@ -34,6 +38,37 @@ exports.receiveRealTimeLogs = async (req, res) => {
     // 1. Basic Validation
     if (!logs || !Array.isArray(logs) || logs.length === 0) {
         return res.status(400).json({ success: false, message: 'No logs provided' });
+    }
+
+    // Validate each log structure
+    for (const log of logs) {
+        if (!log.employeeId || !log.timestamp || !log.logType) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Invalid log structure. Required: employeeId, timestamp, logType',
+                invalidLog: log
+            });
+        }
+        
+        // Validate timestamp format
+        const timestamp = new Date(log.timestamp);
+        if (isNaN(timestamp.getTime())) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Invalid timestamp format',
+                invalidLog: log
+            });
+        }
+        
+        // Validate logType
+        const validLogTypes = ['CHECK-IN', 'CHECK-OUT', 'BREAK-OUT', 'BREAK-IN', 'OVERTIME-IN', 'OVERTIME-OUT', null];
+        if (!validLogTypes.includes(log.logType.toUpperCase())) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'Invalid logType. Must be one of: ' + validLogTypes.join(', '),
+                invalidLog: log
+            });
+        }
     }
 
     try {
@@ -110,7 +145,7 @@ exports.receiveRealTimeLogs = async (req, res) => {
 
         // NEW: Apply 30-minute redundancy filtering to real-time logs
         const rawLogsForRedundancyCheck = rawLogsToSave.map(op => op.insertOne.document);
-        const filteredLogs = await filterRedundantLogs(rawLogsForRedundancyCheck, 30);
+        const filteredLogs = filterRedundantLogs(rawLogsForRedundancyCheck, 30);
         
         console.log(`[RealTime] Redundancy Filter: ${rawLogsForRedundancyCheck.length} -> ${filteredLogs.length} logs`);
         

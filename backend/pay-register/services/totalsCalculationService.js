@@ -35,6 +35,8 @@ function calculateTotals(dailyRecords) {
     totalHolidays: 0,
     lateCount: 0,
     earlyOutCount: 0,
+    totalLateInMinutes: 0,
+    totalEarlyOutMinutes: 0,
   };
 
   if (!dailyRecords || dailyRecords.length === 0) {
@@ -145,8 +147,18 @@ function calculateTotals(dailyRecords) {
       record.firstHalf?.status === 'present' || record.secondHalf?.status === 'present' ||
       record.firstHalf?.status === 'od' || record.secondHalf?.status === 'od';
 
-    if (record.isLate && isPresentOrPartial) totals.lateCount++;
-    if (record.isEarlyOut && isPresentOrPartial) totals.earlyOutCount++;
+    if (record.isLate && isPresentOrPartial) {
+      totals.lateCount++;
+      if (typeof record.lateInMinutes === 'number') {
+        totals.totalLateInMinutes += record.lateInMinutes;
+      }
+    }
+    if (record.isEarlyOut && isPresentOrPartial) {
+      totals.earlyOutCount++;
+      if (typeof record.earlyOutMinutes === 'number') {
+        totals.totalEarlyOutMinutes += record.earlyOutMinutes;
+      }
+    }
   }
 
   // Calculate totals (full days + half days * 0.5)

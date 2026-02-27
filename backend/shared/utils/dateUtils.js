@@ -1,3 +1,5 @@
+const Settings = require('../../settings/model/Settings');
+
 /**
  * Helper to construct a Date object for a specific date and time in IST (+05:30)
  * ensures consistency regardless of server timezone.
@@ -136,9 +138,20 @@ function getAllDatesInRange(startDate, endDate) {
     return result;
 }
 
+/**
+ * Get today's date as YYYY-MM-DD in IST (Asia/Kolkata).
+ * Use this for cron/scheduling so behaviour is correct on UTC or any server timezone.
+ * @param {Date} [now] - Optional; defaults to new Date()
+ * @returns {string} e.g. '2025-12-26'
+ */
+function getTodayISTDateString(now = new Date()) {
+    return extractISTComponents(now).dateStr;
+}
+
 module.exports = {
     createISTDate,
     extractISTComponents,
+    getTodayISTDateString,
     getPayrollDateRange,
     getAllDatesInRange
 };
