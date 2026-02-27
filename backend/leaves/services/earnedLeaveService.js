@@ -51,20 +51,37 @@ async function calculateEarnedLeave(employeeId, month, year, cycleStart = null, 
             cycleEnd = cycleInfo.endDate;
         }
 
-        // Check probation period
-        if (settings.compliance.probationPeriod.elApplicableAfter) {
+        // Check probation period (guarding against missing settings/DOJ)
+        const probation = settings?.compliance?.probationPeriod;
+        if (probation?.elApplicableAfter) {
+            if (!employee.doj) {
+                return {
+                    eligible: false,
+                    reason: 'Probation period cannot be evaluated due to missing DOJ',
+                    elEarned: 0,
+                    attendanceDays: 0,
+                };
+            }
             const doj = new Date(employee.doj);
+            if (Number.isNaN(doj.getTime())) {
+                return {
+                    eligible: false,
+                    reason: 'Probation period cannot be evaluated due to invalid DOJ',
+                    elEarned: 0,
+                    attendanceDays: 0,
+                };
+            }
             const currentDate = cycleEnd;
             const monthsInService = (currentDate.getFullYear() - doj.getFullYear()) * 12 +
                 (currentDate.getMonth() - doj.getMonth());
 
-            if (monthsInService < settings.compliance.probationPeriod.months) {
+            if (monthsInService < probation.months) {
                 return {
                     eligible: false,
                     reason: 'Probation period not completed',
                     elEarned: 0,
                     attendanceDays: 0,
-                    requiredDays: settings.earnedLeave.attendanceRules.minDaysForFirstEL
+                    requiredDays: settings.earnedLeave?.attendanceRules?.minDaysForFirstEL
                 };
             }
         }
@@ -100,9 +117,9 @@ async function calculateEarnedLeave(employeeId, month, year, cycleStart = null, 
             maxELForMonth: elCalculation.maxELForMonth,
             calculationBreakdown: elCalculation.breakdown,
             settings: {
-                minDaysForEL: settings.earnedLeave.attendanceRules.minDaysForFirstEL,
-                daysPerEL: settings.earnedLeave.attendanceRules.daysPerEL,
-                maxELPerMonth: settings.earnedLeave.attendanceRules.maxELPerMonth
+                minDaysForEL: settings.earnedLeave?.attendanceRules?.minDaysForFirstEL,
+                daysPerEL: settings.earnedLeave?.attendanceRules?.daysPerEL,
+                maxELPerMonth: settings.earnedLeave?.attendanceRules?.maxELPerMonth
             }
         };
 
@@ -191,7 +208,8 @@ function calculateAttendanceBasedEL(attendanceData, settings) {
             : attendanceData.attendanceDays;
         const rangeBreakdown = [];
 
-        const sortedRanges = rules.attendanceRanges.sort((a, b) => a.minDays - b.minDays);
+        // Sort a shallow copy to avoid mutating shared settings
+        const sortedRanges = [...rules.attendanceRanges].sort((a, b) => a.minDays - b.minDays);
 
         for (const range of sortedRanges) {
             if (effectiveDays >= range.minDays && effectiveDays <= range.maxDays) {
@@ -290,17 +308,15 @@ async function updateEarnedLeaveForAllEmployees(month = null, year = null) {
             year = now.getFullYear();
         }
 
-        // Get all active employees
-        const employees = await Employee.find({ is_active: true }).select('_id emp_no');
-
         const results = {
             processed: 0,
             success: 0,
             errors: [],
             details: []
         };
-
-        for (const employee of employees) {
+        // Stream active employees to avoid loading all into memory
+        const cursor = Employee.find({ is_active: true }).select('_id emp_no').cursor();
+        for await (const employee of cursor) {
             try {
                 const calculation = await calculateEarnedLeave(employee._id, month, year);
 

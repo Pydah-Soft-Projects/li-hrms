@@ -17,6 +17,8 @@ const {
   checkJurisdiction
 } = require('../../shared/middleware/dataScopeMiddleware');
 const Department = require('../../departments/model/Department');
+const leaveRegisterService = require('../services/leaveRegisterService');
+const dateCycleService = require('../services/dateCycleService');
 
 /**
  * Get employee settings from database
@@ -624,6 +626,38 @@ exports.applyLeave = async (req, res) => {
             });
           }
         }
+      }
+    }
+
+    // HARD ENFORCEMENT for Casual Leave (CL) against payroll-cycle monthly limit (including pending locks)
+    if (leaveType === 'CL') {
+      try {
+        const periodInfo = await dateCycleService.getPeriodInfo(from);
+
+        // Use payroll-cycle month/year derived from fromDate, not calendar month
+        const registerResult = await leaveRegisterService.getLeaveRegister(
+          {
+            employeeId: employee._id,
+            leaveType: 'CL',
+            balanceAsOf: true,
+          },
+          periodInfo.payrollCycle.month,
+          periodInfo.payrollCycle.year
+        );
+
+        const clEntry = Array.isArray(registerResult?.data) ? registerResult.data.find(e => e.casualLeave) : null;
+        const allowedRemaining = clEntry?.casualLeave?.allowedRemaining ?? null;
+
+        if (allowedRemaining !== null && allowedRemaining !== undefined) {
+          if (numberOfDays > allowedRemaining) {
+            return res.status(400).json({
+              success: false,
+              error: `Casual Leave monthly limit exceeded for this payroll cycle. Remaining allowed days: ${allowedRemaining}, requested: ${numberOfDays}.`,
+            });
+          }
+        }
+      } catch (err) {
+        console.error('[Apply Leave] Error enforcing CL monthly payroll-cycle limit:', err);
       }
     }
 
