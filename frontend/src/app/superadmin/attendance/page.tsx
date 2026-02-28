@@ -1389,7 +1389,7 @@ export default function AttendancePage() {
               </button>
             </div>
 
-            <div className="flex items-center gap-2 hidden">
+            <div className="flex items-center gap-2">
               <button
                 onClick={handleSyncShifts}
                 disabled={syncingShifts}
