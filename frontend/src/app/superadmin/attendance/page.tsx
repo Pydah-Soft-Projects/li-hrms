@@ -225,6 +225,7 @@ export default function AttendancePage() {
   // OT conversion state
   const [convertingToOT, setConvertingToOT] = useState(false);
   const [hasExistingOT, setHasExistingOT] = useState(false);
+  const [otRequestStatus, setOtRequestStatus] = useState<string | null>(null);
 
   // Shift selection and out-time state
   const [availableShifts, setAvailableShifts] = useState<any[]>([]);
@@ -769,6 +770,8 @@ export default function AttendancePage() {
     setSelectedDate(date);
     setSelectedEmployee(employee);
     setHasExistingOT(false);
+    setOtRequestStatus(null);
+    setOtRequestStatus(null);
     setEditingShift(false);
     setEditingOutTime(false);
     setEditingInTime(false);
@@ -790,19 +793,27 @@ export default function AttendancePage() {
       const employeeData = monthlyData.find(item => item.employee._id === employee._id);
       const dayRecord = employeeData?.dailyAttendance[date];
 
-      // Check if OT already exists for this date
+      // Check if OT already exists (pending or approved) - hide Convert button
       try {
         const otResponse = await api.getOTRequests({
           employeeId: employee._id,
           employeeNumber: employee.emp_no,
           date: date,
-          status: 'approved',
         });
-        if (otResponse.success && otResponse.data && otResponse.data.length > 0) {
+        const existing = (otResponse.data || []).filter((ot: any) =>
+          ['pending', 'approved', 'manager_approved', 'hod_approved'].includes(ot?.status)
+        );
+        if (existing.length > 0) {
           setHasExistingOT(true);
+          setOtRequestStatus(existing[0]?.status || null);
+        } else {
+          setHasExistingOT(false);
+          setOtRequestStatus(null);
         }
       } catch (otErr) {
         console.error('Error checking existing OT:', otErr);
+        setHasExistingOT(false);
+        setOtRequestStatus(null);
       }
 
       // If we have the record with leave/OD info, use it directly
@@ -863,24 +874,13 @@ export default function AttendancePage() {
       });
 
       if (response.success) {
-        setSuccess(response.message || 'Extra hours converted to OT successfully!');
+        setSuccess(response.message || 'OT conversion requested. Pending management approval.');
         setHasExistingOT(true);
+        setOtRequestStatus('pending');
 
-        // Update attendance detail - clear extra hours, add OT hours
-        setAttendanceDetail({
-          ...attendanceDetail,
-          extraHours: 0,
-          otHours: (attendanceDetail.otHours || 0) + attendanceDetail.extraHours,
-        });
-
+        // Keep extraHours visible until OT is approved
         // Reload monthly attendance to refresh the view
         await loadMonthlyAttendance();
-
-        // Close dialog after a short delay
-        setTimeout(() => {
-          setShowDetailDialog(false);
-          setSuccess('');
-        }, 2000);
       } else {
         setError(response.message || 'Failed to convert extra hours to OT');
       }
@@ -1439,10 +1439,12 @@ export default function AttendancePage() {
               { label: 'A', name: 'Absent', color: 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700' },
               { label: '!', name: 'Conflict', color: 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-800' },
               { label: '✎', name: 'Edited', color: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/10 dark:text-indigo-400 dark:border-indigo-800' },
-            ].map((item) => (
-              <div key={item.label} className="flex items-center gap-2 group cursor-help">
-                <div className={`w-6 h-6 flex items-center justify-center rounded text-[10px] font-bold border shadow-sm transition-all duration-200 group-hover:scale-110 group-hover:shadow-md ${item.color}`}>
-                  {item.label}
+              { label: '●', name: 'Late', color: 'bg-amber-500', dotOnly: true },
+              { label: '●', name: 'Early out', color: 'bg-blue-500', dotOnly: true },
+            ].map((item, idx) => (
+              <div key={`${item.label}-${item.name}-${idx}`} className="flex items-center gap-2 group cursor-help">
+                <div className={`flex items-center justify-center rounded text-[10px] font-bold border shadow-sm transition-all duration-200 group-hover:scale-110 group-hover:shadow-md ${(item as any).dotOnly ? 'w-5 h-5 border-transparent' : 'w-6 h-6'} ${(item as any).dotOnly ? '' : item.color}`}>
+                  {(item as any).dotOnly ? <span className={`inline-block h-2 w-2 rounded-full ${item.color}`} /> : item.label}
                 </div>
                 <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">{item.name}</span>
               </div>
@@ -1715,6 +1717,14 @@ export default function AttendancePage() {
                         }
 
                         const hasData = record && record.status !== '-';
+                        const isLate = hasData && (
+                          (record && (record as any).lateInMinutes != null && (record as any).lateInMinutes > 0) ||
+                          (shifts && shifts.some((s: any) => s.lateInMinutes != null && s.lateInMinutes > 0))
+                        );
+                        const isEarlyOut = hasData && (
+                          (record && (record as any).earlyOutMinutes != null && (record as any).earlyOutMinutes > 0) ||
+                          (shifts && shifts.some((s: any) => s.earlyOutMinutes != null && s.earlyOutMinutes > 0))
+                        );
 
                         return (
                           <td
@@ -1725,6 +1735,12 @@ export default function AttendancePage() {
                           >
                             {record && record.isEdited && (
                               <span className="absolute top-0.5 right-0.5 h-1.5 w-1.5 rounded-full bg-orange-500 animate-pulse z-20" title="Edited Manually"></span>
+                            )}
+                            {(isLate || isEarlyOut) && (
+                              <div className="absolute bottom-0.5 left-0 right-0 flex justify-center gap-0.5 z-10" title={`${isLate ? 'Late in' : ''}${isLate && isEarlyOut ? ' • ' : ''}${isEarlyOut ? 'Early out' : ''}`}>
+                                {isLate && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" title="Late" />}
+                                {isEarlyOut && <span className="h-1.5 w-1.5 rounded-full bg-blue-500 shrink-0" title="Early out" />}
+                              </div>
                             )}
                             <div className="flex flex-col items-center justify-center w-full h-full">
                               {hasData ? (
@@ -2071,8 +2087,12 @@ export default function AttendancePage() {
                   )}
                   {hasExistingOT && (
                     <div className="mt-3 text-right">
-                      <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-1 text-[10px] font-bold text-green-700 uppercase tracking-wider dark:bg-green-900/30 dark:text-green-400">
-                        OT Converted
+                      <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${
+                        otRequestStatus === 'approved'
+                          ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                          : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                      }`}>
+                        {otRequestStatus === 'approved' ? 'OT Converted' : 'Pending approval'}
                       </span>
                     </div>
                   )}

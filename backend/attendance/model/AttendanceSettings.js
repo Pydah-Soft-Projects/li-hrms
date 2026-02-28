@@ -87,6 +87,48 @@ const attendanceSettingsSchema = new mongoose.Schema(
         default: true, // Require admin confirmation for linked records
       },
     },
+
+    // Processing Mode (Dual-Mode: multi_shift vs single_shift)
+    processingMode: {
+      mode: {
+        type: String,
+        enum: ['multi_shift', 'single_shift'],
+        default: 'multi_shift',
+      },
+      strictCheckInOutOnly: {
+        type: Boolean,
+        default: true, // Only CHECK-IN/CHECK-OUT used for pairing; others stored but ignored
+      },
+      continuousSplitThresholdHours: {
+        type: Number,
+        default: 14,
+        min: 10,
+        max: 24,
+      },
+      splitMinGapHours: {
+        type: Number,
+        default: 3,
+        min: 0,
+        max: 12,
+      },
+      maxShiftsPerDay: {
+        type: Number,
+        default: 3,
+        min: 1,
+        max: 3,
+      },
+      rosterStrictWhenPresent: {
+        type: Boolean,
+        default: true, // When roster exists, use ONLY roster; else hierarchy
+      },
+      // When strict is OFF: OUT window extends post shift end by this many hours (for OT)
+      postShiftOutMarginHours: {
+        type: Number,
+        default: 4,
+        min: 0,
+        max: 8,
+      },
+    },
   },
   {
     timestamps: true,
@@ -100,6 +142,21 @@ attendanceSettingsSchema.statics.getSettings = async function() {
     settings = await this.create({});
   }
   return settings;
+};
+
+// Returns processingMode with defaults applied (handles existing docs without processingMode)
+attendanceSettingsSchema.statics.getProcessingMode = function(doc) {
+  const pm = doc?.processingMode || {};
+  return {
+    mode: pm.mode || 'multi_shift',
+    // Multi-shift always uses strict (CHECK-IN/OUT only); strict toggle only applies when single_shift
+    strictCheckInOutOnly: pm.mode === 'multi_shift' ? true : (pm.strictCheckInOutOnly !== false),
+    continuousSplitThresholdHours: pm.continuousSplitThresholdHours ?? 14,
+    splitMinGapHours: pm.splitMinGapHours ?? 3,
+    maxShiftsPerDay: pm.maxShiftsPerDay ?? 3,
+    rosterStrictWhenPresent: pm.rosterStrictWhenPresent !== false,
+    postShiftOutMarginHours: pm.postShiftOutMarginHours ?? 4,
+  };
 };
 
 module.exports = mongoose.models.AttendanceSettings || mongoose.model('AttendanceSettings', attendanceSettingsSchema);
