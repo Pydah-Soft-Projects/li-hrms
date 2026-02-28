@@ -129,6 +129,13 @@ const attendanceSettingsSchema = new mongoose.Schema(
         max: 8,
       },
     },
+
+    // Feature flags: control visibility/enabling of editing and upload on attendance pages
+    featureFlags: {
+      allowInTimeEditing: { type: Boolean, default: true },
+      allowOutTimeEditing: { type: Boolean, default: true },
+      allowAttendanceUpload: { type: Boolean, default: true },
+    },
   },
   {
     timestamps: true,
