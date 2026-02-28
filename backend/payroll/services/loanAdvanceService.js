@@ -16,7 +16,7 @@ async function getActiveLoans(employeeId) {
     const loans = await Loan.find({
       employeeId,
       requestType: 'loan',
-      status: 'active',
+      status: { $in: ['active', 'disbursed'] },
       'repayment.remainingBalance': { $gt: 0 },
       'loanConfig.emiAmount': { $gt: 0 },
     }).select('_id loanConfig repayment');
@@ -38,7 +38,7 @@ async function getActiveAdvances(employeeId) {
     const advances = await Loan.find({
       employeeId,
       requestType: 'salary_advance',
-      status: 'active',
+      status: { $in: ['active', 'disbursed'] },
       'repayment.remainingBalance': { $gt: 0 },
     }).select('_id repayment amount');
 
@@ -187,10 +187,20 @@ async function updateLoanRecordsAfterEMI(emiBreakdown, month, userId) {
       loan.repayment.installmentsPaid = (loan.repayment.installmentsPaid || 0) + 1;
       loan.repayment.lastPaymentDate = new Date();
 
+      const totalAmount = loan.loanConfig?.totalAmount || loan.amount;
+      loan.repayment.remainingBalance = Math.max(0, totalAmount - loan.repayment.totalPaid);
+
+      if (loan.repayment.remainingBalance <= 0) {
+        loan.status = 'completed';
+        loan.repayment.remainingBalance = 0;
+      } else if (loan.status === 'disbursed') {
+        loan.status = 'active';
+      }
+
       // Calculate next payment date (next month) - robust in IST
-      const { year, month } = extractISTComponents(new Date());
-      const nextMonthFirstDay = createISTDate(`${month === 12 ? year + 1 : year}-${String(month === 12 ? 1 : month + 1).padStart(2, '0')}-01`);
-      loan.repayment.nextPaymentDate = nextMonthFirstDay;
+      const { year: y, month: m } = extractISTComponents(new Date());
+      const nextMonthFirstDay = createISTDate(`${m === 12 ? y + 1 : y}-${String(m === 12 ? 1 : m + 1).padStart(2, '0')}-01`);
+      loan.repayment.nextPaymentDate = loan.repayment.remainingBalance > 0 ? nextMonthFirstDay : null;
 
       // Add transaction log
       loan.transactions.push({
@@ -236,6 +246,8 @@ async function updateAdvanceRecordsAfterDeduction(advanceBreakdown, month, userI
       if (advance.carriedForward === 0) {
         advanceRecord.status = 'completed';
         advanceRecord.repayment.remainingBalance = 0;
+      } else if (advanceRecord.status === 'disbursed') {
+        advanceRecord.status = 'active';
       }
 
       // Add transaction log
