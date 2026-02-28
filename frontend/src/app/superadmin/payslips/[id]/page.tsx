@@ -79,6 +79,9 @@ interface PayrollRecord {
     leaveDeduction: number;
     totalOtherDeductions: number;
     otherDeductions: Array<{ name: string; amount: number; type?: string; base?: string }>;
+    /** Statutory deductions (PF, ESI, PT, etc.) – employee share */
+    statutoryDeductions?: Array<{ name?: string; code?: string; employeeAmount?: number; employerAmount?: number }>;
+    totalStatutoryEmployee?: number;
     totalDeductions: number;
   };
   loanAdvance: {
@@ -355,8 +358,9 @@ export default function PayslipDetailPage() {
         }
       });
 
-      // Deductions (with TOTAL DEDUCTIONS foot)
+      // Deductions (statutory first, then others, then loan/advance)
       const deductionsBody = [
+        ...(payroll.deductions.statutoryDeductions || []).map(s => [s.name || s.code || 'Statutory', formatCurr(s.employeeAmount ?? 0)]),
         ['Attendance Deduction', formatCurr(payroll.deductions.attendanceDeduction)],
         ['Permission Deduction', formatCurr(payroll.deductions.permissionDeduction)],
         ['Leave Deduction', formatCurr(payroll.deductions.leaveDeduction)],
@@ -568,19 +572,19 @@ export default function PayslipDetailPage() {
                   <div className="text-[9px] font-black text-slate-300 dark:text-slate-600 uppercase tracking-widest">Additive</div>
                 </div>
                 <div className="space-y-1">
-                  <SalaryRow label="Basic Salary" value={payroll.earnings.basicPay} />
-                  <SalaryRow label="Earned Salary" value={payroll.attendance?.earnedSalary || 0} />
-                  {payroll.earnings.allowances?.map((a, i) => (
-                    <SalaryRow key={i} label={a.name} value={a.amount} />
+                  <SalaryRow label="Basic Salary" value={payroll.earnings.basicPay ?? 0} />
+                  <SalaryRow label="Earned Salary" value={payroll.attendance?.earnedSalary ?? 0} />
+                  {Array.isArray(payroll.earnings.allowances) && payroll.earnings.allowances.map((a, i) => (
+                    <SalaryRow key={i} label={a.name || 'Allowance'} value={a.amount ?? 0} />
                   ))}
-                  <SalaryRow label="Extra Days Pay" value={payroll.earnings.incentive} />
-                  <SalaryRow label="OT Allowance" value={payroll.earnings.otPay} />
-                  {payroll.arrearsAmount ? <SalaryRow label="Arrears" value={payroll.arrearsAmount} /> : null}
+                  {(payroll.earnings.incentive ?? 0) !== 0 && <SalaryRow label="Extra Days Pay" value={payroll.earnings.incentive ?? 0} />}
+                  {(payroll.earnings.otPay ?? 0) !== 0 && <SalaryRow label="OT Allowance" value={payroll.earnings.otPay ?? 0} />}
+                  {(payroll.arrearsAmount ?? 0) !== 0 && <SalaryRow label="Arrears" value={payroll.arrearsAmount ?? 0} />}
 
                   <div className="pt-2 mt-2 border-t border-slate-100 dark:border-slate-800">
                     <div className="flex justify-between items-center text-emerald-600 dark:text-emerald-400">
                       <span className="font-black text-[9px] uppercase tracking-widest">Gross Total</span>
-                      <span className="text-lg font-black">₹{payroll.earnings.grossSalary.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                      <span className="text-lg font-black">₹{(payroll.earnings.grossSalary ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                     </div>
                   </div>
                 </div>
@@ -596,19 +600,22 @@ export default function PayslipDetailPage() {
                   <div className="text-[9px] font-black text-slate-300 dark:text-slate-600 uppercase tracking-widest">Subtractive</div>
                 </div>
                 <div className="space-y-1.5">
-                  {/* <SalaryRow label="Attendance Deduct" value={payroll.deductions.attendanceDeduction} isDeduction /> */}
-                  {payroll.deductions.permissionDeduction > 0 && <SalaryRow label="Permission Deduct" value={payroll.deductions.permissionDeduction} isDeduction />}
-                  {payroll.deductions.leaveDeduction > 0 && <SalaryRow label="Leave Deduction" value={payroll.deductions.leaveDeduction} isDeduction />}
-                  {payroll.deductions.otherDeductions?.map((d, i) => (
-                    <SalaryRow key={i} label={d.name} value={d.amount} isDeduction />
+                  {Array.isArray(payroll.deductions.statutoryDeductions) && payroll.deductions.statutoryDeductions.map((s, i) => (
+                    <SalaryRow key={`stat-${i}`} label={s.name || s.code || 'Statutory'} value={s.employeeAmount ?? 0} isDeduction />
                   ))}
-                  {payroll.loanAdvance.totalEMI > 0 && <SalaryRow label="EMI (Loans)" value={payroll.loanAdvance.totalEMI} isDeduction />}
-                  {payroll.loanAdvance.advanceDeduction > 0 && <SalaryRow label="Advance Recovery" value={payroll.loanAdvance.advanceDeduction} isDeduction />}
+                  {(payroll.deductions.attendanceDeduction ?? 0) > 0 && <SalaryRow label="Attendance Deduction" value={payroll.deductions.attendanceDeduction} isDeduction />}
+                  {(payroll.deductions.permissionDeduction ?? 0) > 0 && <SalaryRow label="Permission Deduction" value={payroll.deductions.permissionDeduction} isDeduction />}
+                  {(payroll.deductions.leaveDeduction ?? 0) > 0 && <SalaryRow label="Leave Deduction" value={payroll.deductions.leaveDeduction} isDeduction />}
+                  {Array.isArray(payroll.deductions.otherDeductions) && payroll.deductions.otherDeductions.map((d, i) => (
+                    <SalaryRow key={i} label={d.name || 'Deduction'} value={d.amount ?? 0} isDeduction />
+                  ))}
+                  {(payroll.loanAdvance?.totalEMI ?? 0) > 0 && <SalaryRow label="EMI (Loans)" value={payroll.loanAdvance.totalEMI} isDeduction />}
+                  {(payroll.loanAdvance?.advanceDeduction ?? 0) > 0 && <SalaryRow label="Advance Recovery" value={payroll.loanAdvance.advanceDeduction} isDeduction />}
 
                   <div className="pt-2 mt-2 border-t border-slate-100 dark:border-slate-800">
                     <div className="flex justify-between items-center text-rose-600 dark:text-rose-400">
                       <span className="font-black text-[9px] uppercase tracking-widest">Total Deductions</span>
-                      <span className="text-lg font-black">₹{payroll.deductions.totalDeductions.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                      <span className="text-lg font-black">₹{(payroll.deductions.totalDeductions ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                     </div>
                   </div>
                 </div>
