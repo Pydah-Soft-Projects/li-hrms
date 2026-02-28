@@ -91,8 +91,11 @@ function getEffectiveInOutForShift(punches, shift, date, postShiftOutMarginHours
 
     if (punchesInWindow.length === 0) return null;
 
-    const effectiveIn = punchesInWindow[0];
-    const effectiveOut = punchesInWindow[punchesInWindow.length - 1];
+    // Respect log type: use first IN and last OUT in window when type is set
+    const firstIn = punchesInWindow.find(p => p.type === 'IN');
+    const lastOut = [...punchesInWindow].reverse().find(p => p.type === 'OUT');
+    const effectiveIn = firstIn || punchesInWindow[0];
+    const effectiveOut = lastOut || punchesInWindow[punchesInWindow.length - 1];
     return {
         effectiveIn,
         effectiveOut,
@@ -176,23 +179,27 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
             deduplicatedPunches.push(p);
         }
 
-        let targetDatePunches = deduplicatedPunches.filter(p => isSameDay(new Date(p.timestamp), date));
-        let allOutsFull = deduplicatedPunches;
+        // Respect log type: only CHECK-IN (type IN) starts a shift; only CHECK-OUT (type OUT) ends it.
+        const punchesOnDate = deduplicatedPunches.filter(p => isSameDay(new Date(p.timestamp), date));
+        const insOnDate = punchesOnDate.filter(p => p.type === 'IN');
+        const outsOnDate = punchesOnDate.filter(p => p.type === 'OUT');
+        let targetDatePunches = insOnDate; // Only IN punches can start a shift
+        const allOutsFull = deduplicatedPunches.filter(p => p.type === 'OUT'); // Only OUT punches can end a shift
         const postShiftOutMarginHours = processingMode.postShiftOutMarginHours ?? 4;
 
         // NON-STRICT: Shift-aware First-IN / Last-OUT collapse (multi-thumbers, half-day, early-out)
-        // Only collapse when span is within one shift (~14h); long spans use normal iterative split
+        // Only collapse when span is within one shift (~14h); use first IN and last OUT on date by log type.
         let effectiveOutOverride = null;
-        const spanHours = targetDatePunches.length >= 2
-            ? (new Date(targetDatePunches[targetDatePunches.length - 1].timestamp) - new Date(targetDatePunches[0].timestamp)) / (60 * 60 * 1000)
+        const firstInOnDate = insOnDate[0];
+        const lastOutOnDate = outsOnDate.length ? outsOnDate[outsOnDate.length - 1] : null;
+        const spanHours = (firstInOnDate && lastOutOnDate)
+            ? (new Date(lastOutOnDate.timestamp) - new Date(firstInOnDate.timestamp)) / (60 * 60 * 1000)
             : 0;
-        if (!processingMode.strictCheckInOutOnly && targetDatePunches.length >= 2 && spanHours < (processingMode.continuousSplitThresholdHours ?? 14)) {
-            const firstPunch = targetDatePunches[0];
-            const lastPunch = targetDatePunches[targetDatePunches.length - 1];
+        if (!processingMode.strictCheckInOutOnly && firstInOnDate && lastOutOnDate && spanHours >= 0 && spanHours < (processingMode.continuousSplitThresholdHours ?? 14)) {
             const configWithMode = { ...generalConfig, processingMode };
             const assignResult = await detectAndAssignShift(
                 employeeNumber, date,
-                firstPunch.timestamp, lastPunch.timestamp,
+                firstInOnDate.timestamp, lastOutOnDate.timestamp,
                 configWithMode
             );
             if (assignResult?.success && assignResult?.assignedShift) {
@@ -200,7 +207,7 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                 const shiftDef = await Shift.findById(assignResult.assignedShift).lean();
                 if (shiftDef) {
                     const effective = getEffectiveInOutForShift(
-                        targetDatePunches, shiftDef, date, postShiftOutMarginHours
+                        punchesOnDate, shiftDef, date, postShiftOutMarginHours
                     );
                     if (effective && effective.effectiveIn !== effective.effectiveOut) {
                         targetDatePunches = [effective.effectiveIn];
@@ -363,6 +370,7 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                                 segmentIdx++;
                             }
 
+                            const basePayablePerShift = (s) => (s.payableShifts !== undefined && s.payableShifts != null ? Number(s.payableShifts) : 1);
                             for (const split of splitSegments) {
                                 if (shiftCounter >= MAX_SHIFTS) break;
                                 shiftCounter++;
@@ -372,6 +380,28 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                                 const sWorkingHours = Math.round((sDuration / 3600000) * 100) / 100;
                                 const expectedH = split.assignedShift.duration || 8;
                                 const extraH = Math.max(0, sWorkingHours - expectedH);
+                                const effectiveWorking = sWorkingHours + (split.extraHours || 0);
+
+                                // Status & payable per segment: PRESENT = full, HALF_DAY = 0.5, ABSENT = 0
+                                let segStatus = 'PRESENT';
+                                let segPayable = basePayablePerShift(split.assignedShift);
+                                const statusRatio = expectedH > 0 ? effectiveWorking / expectedH : 1;
+                                if (statusRatio >= 0.75) {
+                                    segStatus = 'PRESENT';
+                                    segPayable = basePayablePerShift(split.assignedShift);
+                                } else if (statusRatio >= 0.40) {
+                                    segStatus = 'HALF_DAY';
+                                    segPayable = basePayablePerShift(split.assignedShift) * 0.5;
+                                } else {
+                                    segStatus = 'ABSENT';
+                                    segPayable = 0;
+                                }
+
+                                const shiftStart = timeStringToDate(split.assignedShift.startTime, formatDate(sIn), false);
+                                const isOvernightSeg = timeToMinutes(split.assignedShift.endTime) < timeToMinutes(split.assignedShift.startTime);
+                                const shiftEnd = timeStringToDate(split.assignedShift.endTime, formatDate(sIn), isOvernightSeg);
+                                const lateInMs = sIn < shiftStart ? 0 : (sIn.getTime() - shiftStart.getTime());
+                                const earlyOutMs = (sOut && sOut < shiftEnd) ? (shiftEnd.getTime() - sOut.getTime()) : 0;
 
                                 const pSplitShift = {
                                     shiftNumber: shiftCounter,
@@ -379,11 +409,11 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                                     outTime: split.outTime,
                                     duration: Math.round(sDuration / 60000),
                                     punchHours: sWorkingHours,
-                                    workingHours: sWorkingHours + (split.extraHours || 0),
+                                    workingHours: Math.round((sWorkingHours + (split.extraHours || 0)) * 100) / 100,
                                     odHours: 0,
                                     extraHours: Math.round((extraH + (split.extraHours || 0)) * 100) / 100,
                                     otHours: 0,
-                                    status: 'PRESENT',
+                                    status: segStatus,
                                     inPunchId: currentIn._id || currentIn.id,
                                     outPunchId: nextOut ? (nextOut._id || nextOut.id) : null,
                                     shiftId: split.assignedShift._id,
@@ -391,9 +421,11 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                                     shiftStartTime: split.assignedShift.startTime,
                                     shiftEndTime: split.assignedShift.endTime,
                                     expectedHours: expectedH,
-                                    isLateIn: false,
-                                    isEarlyOut: false,
-                                    payableShift: split.assignedShift.payableShifts !== undefined ? split.assignedShift.payableShifts : 1,
+                                    isLateIn: lateInMs > 0,
+                                    lateInMinutes: Math.round(lateInMs / 60000),
+                                    isEarlyOut: earlyOutMs > 0,
+                                    earlyOutMinutes: Math.round(earlyOutMs / 60000),
+                                    payableShift: segPayable,
                                 };
                                 processedShifts.push(pSplitShift);
                             }
@@ -467,7 +499,7 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                 blockUntilTime = outTime && outTime > fallbackBlock ? outTime : fallbackBlock;
             }
 
-            // 5. Construct Processed Shift Object
+            // 5. Construct Processed Shift Object (payableShift default 0; set from status below when assignment succeeds)
             shiftCounter++;
             const durationMs = nextOut ? (new Date(nextOut.timestamp) - currentInTime) : 0;
 
@@ -482,6 +514,7 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                 extraHours: 0,
                 otHours: 0,
                 status: nextOut ? 'complete' : 'incomplete',
+                payableShift: 0,
                 inPunchId: currentIn._id || currentIn.id,
                 outPunchId: nextOut ? (nextOut._id || nextOut.id) : null
             };
@@ -610,12 +643,11 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
         let status = 'ABSENT';
 
         if (processedShifts.length > 0) {
-            if (hasPresentShift || totalPayableShifts >= 1) {
+            if (hasPresentShift || totalPayableShifts >= 0.95) {
                 status = 'PRESENT';
-            } else if (processedShifts.length === 1 && (processedShifts[0].status === 'HALF_DAY' || processedShifts[0].payableShift === 0.5)) {
+            } else if (totalPayableShifts >= 0.45 || processedShifts.some(s => s.status === 'HALF_DAY')) {
                 status = 'HALF_DAY';
             } else {
-                // Determine if PARTIAL or ABSENT based on incomplete punches
                 const hasIncomplete = processedShifts.some(s => !s.outTime);
                 status = hasIncomplete ? 'PARTIAL' : 'ABSENT';
             }
