@@ -222,11 +222,21 @@ exports.getAttendanceDetail = async (req, res) => {
       date: date,
     }).sort({ timestamp: 1 });
 
+    // Check for OT request (pending or approved) for Convert button logic
+    const OT = require('../../overtime/model/OT');
+    const otRequest = await OT.findOne({
+      employeeId: allowedEmployee._id,
+      date: date,
+      status: { $in: ['pending', 'approved', 'manager_approved', 'hod_approved'] },
+      isActive: true,
+    }).select('status otHours').lean();
+
     res.status(200).json({
       success: true,
       data: {
         ...record.toObject(),
         rawLogs,
+        otRequest: otRequest ? { status: otRequest.status, otHours: otRequest.otHours } : null,
       },
     });
 

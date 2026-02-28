@@ -99,6 +99,14 @@ const attendanceDailySchema = new mongoose.Schema(
         type: Number,
         default: 0, // 0, 0.5, 1
       },
+      expectedHours: {
+        type: Number,
+        default: null, // From shift.duration for OT/extra calculation
+      },
+      extraHours: {
+        type: Number,
+        default: 0, // workingHours - expectedHours when > 0
+      },
     }],
     // Aggregate fields for multi-shift
     totalShifts: {
@@ -408,69 +416,68 @@ attendanceDailySchema.pre('save', async function () {
   }
 });
 
-// Post-save hook to recalculate monthly summary and detect extra hours
-attendanceDailySchema.post('save', async function () {
-  try {
-    const { recalculateOnAttendanceUpdate } = require('../services/summaryCalculationService');
-    const { detectExtraHours } = require('../services/extraHoursService');
+// Post-save hook: run monthly summary recalculation in background so save() returns quickly.
+// Summary is recalculated for the employee's payroll month whenever a daily record is saved.
+attendanceDailySchema.post('save', function () {
+  const employeeNumber = this.employeeNumber;
+  const date = this.date;
+  const shiftsModified = this.isModified('shifts');
+  const shifts = this.shifts;
 
-    // If shifts array was modified, we need to recalculate the entire month
-    if (this.isModified('shifts')) {
-      const { year, month: monthNumber } = extractISTComponents(this.date);
-
-      const Employee = require('../../employees/model/Employee');
-      const employee = await Employee.findOne({ emp_no: this.employeeNumber, is_active: { $ne: false } });
-
-      if (employee) {
-        const { calculateMonthlySummary } = require('../services/summaryCalculationService');
-        await calculateMonthlySummary(employee._id, employee.emp_no, year, monthNumber);
-      }
-    } else {
-      // Regular update - just recalculate for that date's month
-      await recalculateOnAttendanceUpdate(this.employeeNumber, this.date);
-    }
-
-    // Detect extra hours if shifts were modified
-    if (this.isModified('shifts')) {
-      if (this.shifts && this.shifts.length > 0) {
-        // Only detect if we have shifts
-        await detectExtraHours(this.employeeNumber, this.date);
-      }
-    }
-  } catch (error) {
-    // Don't throw - this is a background operation
-    console.error('Error in post-save hook:', error);
-  }
-});
-
-/**
- * Handle findOneAndUpdate to trigger summary recalculation
- * Since findOneAndUpdate bypasses 'save' hooks, we need this explicit hook
- */
-attendanceDailySchema.post('findOneAndUpdate', async function () {
-  try {
-    const query = this.getQuery();
-    const update = this.getUpdate();
-
-    // We only trigger if shifts were updated (sync/multi-shift) OR status was updated
-    const isShiftsUpdate = update.$set?.shifts || update.shifts;
-    const isStatusUpdate = update.$set?.status || update.status;
-    const isManualOverride = update.$set?.isEdited || update.isEdited;
-
-    if (query.employeeNumber && query.date && (isShiftsUpdate || isStatusUpdate || isManualOverride)) {
+  setImmediate(async () => {
+    try {
       const { recalculateOnAttendanceUpdate } = require('../services/summaryCalculationService');
       const { detectExtraHours } = require('../services/extraHoursService');
 
-      console.log(`[AttendanceDaily Hook] Triggering recalculation for ${query.employeeNumber} on ${query.date} (findOneAndUpdate)`);
-
-      // Recalculate summary (handles monthly summary update)
-      await recalculateOnAttendanceUpdate(query.employeeNumber, query.date);
-
-      // Detect extra hours (only if it was a shifts update)
-      if (isShiftsUpdate) {
-        await detectExtraHours(query.employeeNumber, query.date);
+      if (shiftsModified) {
+        const { year, month: monthNumber } = extractISTComponents(date);
+        const Employee = require('../../employees/model/Employee');
+        const employee = await Employee.findOne({ emp_no: employeeNumber, is_active: { $ne: false } });
+        if (employee) {
+          const { calculateMonthlySummary } = require('../services/summaryCalculationService');
+          await calculateMonthlySummary(employee._id, employee.emp_no, year, monthNumber);
+        }
+        if (shifts && shifts.length > 0) {
+          await detectExtraHours(employeeNumber, date);
+        }
+      } else {
+        await recalculateOnAttendanceUpdate(employeeNumber, date);
       }
+    } catch (error) {
+      console.error('[AttendanceDaily] Background summary recalc failed:', error);
     }
+  });
+});
+
+/**
+ * Handle findOneAndUpdate to trigger summary recalculation (runs in background).
+ * findOneAndUpdate bypasses 'save' hooks, so we need this hook when updates go through updateOne/findOneAndUpdate.
+ */
+attendanceDailySchema.post('findOneAndUpdate', async function (result) {
+  try {
+    const query = this.getQuery ? this.getQuery() : {};
+    const update = this.getUpdate ? this.getUpdate() : {};
+    const isShiftsUpdate = update.$set?.shifts || update.shifts;
+    const isStatusUpdate = update.$set?.status || update.status;
+    const isManualOverride = update.$set?.isEdited || update.isEdited;
+    if (!isShiftsUpdate && !isStatusUpdate && !isManualOverride) return;
+
+    const employeeNumber = (result && result.employeeNumber) || query.employeeNumber;
+    const date = (result && result.date) || query.date;
+    if (!employeeNumber || !date) return;
+
+    setImmediate(async () => {
+      try {
+        const { recalculateOnAttendanceUpdate } = require('../services/summaryCalculationService');
+        const { detectExtraHours } = require('../services/extraHoursService');
+        await recalculateOnAttendanceUpdate(employeeNumber, date);
+        if (isShiftsUpdate) {
+          await detectExtraHours(employeeNumber, date);
+        }
+      } catch (err) {
+        console.error('[AttendanceDaily findOneAndUpdate hook] Background summary recalc failed:', err);
+      }
+    });
   } catch (error) {
     console.error('Error in post-findOneAndUpdate hook:', error);
   }

@@ -403,6 +403,15 @@ const approveOTRequest = async (otId, userId, userRole) => {
         const attendanceRecord = await AttendanceDaily.findById(otRequest.attendanceRecordId);
         if (attendanceRecord) {
           attendanceRecord.otHours = otRequest.otHours;
+          if (otRequest.convertedFromAttendance) {
+            attendanceRecord.extraHours = 0;
+            if (attendanceRecord.shifts?.length) {
+              attendanceRecord.shifts.forEach(s => {
+                if (s.extraHours > 0) { s.otHours = (s.otHours || 0) + s.extraHours; s.extraHours = 0; }
+              });
+              attendanceRecord.markModified('shifts');
+            }
+          }
           await attendanceRecord.save();
 
           // Recalculate summary
@@ -441,6 +450,15 @@ const approveOTRequest = async (otId, userId, userRole) => {
     const attendanceRecord = await AttendanceDaily.findById(otRequest.attendanceRecordId);
     if (attendanceRecord) {
       attendanceRecord.otHours = otRequest.otHours;
+      if (otRequest.convertedFromAttendance) {
+        attendanceRecord.extraHours = 0;
+        if (attendanceRecord.shifts?.length) {
+          attendanceRecord.shifts.forEach(s => {
+            if (s.extraHours > 0) { s.otHours = (s.otHours || 0) + s.extraHours; s.extraHours = 0; }
+          });
+          attendanceRecord.markModified('shifts');
+        }
+      }
       await attendanceRecord.save();
 
       // Recalculate monthly summary
@@ -637,7 +655,7 @@ const convertExtraHoursToOT = async (employeeId, employeeNumber, date, userId, u
     // Use extra hours as OT hours
     const otHours = Math.round(attendanceRecord.extraHours * 100) / 100;
 
-    // Create OT record (auto-approved)
+    // Create OT record (pending - management must approve)
     const otRecord = await OT.create({
       employeeId: employeeId,
       employeeNumber: employeeNumber.toUpperCase(),
@@ -649,43 +667,26 @@ const convertExtraHoursToOT = async (employeeId, employeeNumber, date, userId, u
       otInTime: otInTime,
       otOutTime: otOutTime,
       otHours: otHours,
-      status: 'approved', // Auto-approved
+      status: 'pending', // Management approves via OT workflow
       requestedBy: userId,
-      approvedBy: userId,
-      approvedAt: new Date(),
       convertedFromAttendance: true,
       convertedBy: userId,
       convertedAt: new Date(),
       source: 'attendance_conversion',
-      comments: `Converted from attendance extra hours (${otHours.toFixed(2)} hrs)`,
+      comments: `Converted from attendance extra hours (${otHours.toFixed(2)} hrs) - pending approval`,
     });
 
-    // Track Edit History
+    // Track Edit History - do NOT clear extraHours or set otHours yet (wait for approval)
     attendanceRecord.isEdited = true;
     attendanceRecord.editHistory.push({
-      action: 'OT_CONVERSION',
+      action: 'OT_CONVERSION_REQUESTED',
       modifiedBy: userId,
       modifiedByName: userName,
       modifiedAt: new Date(),
-      details: `Converted ${otHours.toFixed(2)} hours extra to OT`
+      details: `Requested conversion of ${otHours.toFixed(2)} hours extra to OT (pending approval)`
     });
 
-    // Update attendance record: set otHours and clear extraHours
-    attendanceRecord.otHours = otHours;
-    attendanceRecord.extraHours = 0; // Clear extra hours as they're now converted to OT
-
-    // CRITICAL FIX: Also update the 'shifts' array for multi-shift consistency
-    if (attendanceRecord.shifts && attendanceRecord.shifts.length > 0) {
-      attendanceRecord.shifts.forEach(shift => {
-        if (shift.extraHours > 0) {
-          shift.otHours = (shift.otHours || 0) + shift.extraHours;
-          shift.extraHours = 0;
-        }
-      });
-      attendanceRecord.markModified('shifts');
-    }
-
-    await attendanceRecord.save();
+    // Do NOT update attendance record until OT is approved (extraHours stay, otHours stay 0)
 
     // Recalculate monthly summary
     const [year, month] = date.split('-').map(Number);

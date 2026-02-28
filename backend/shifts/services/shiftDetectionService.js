@@ -152,10 +152,15 @@ const filterShiftsByGender = (shiftConfigs, employeeGender) => {
 
 /**
  * Get shifts for employee based on priority
- * Priority: Pre-Scheduled → Designation → Department → General
+ * Priority: Pre-Scheduled → Designation → Department → Division → Global
+ * @param {String} employeeNumber
+ * @param {String} date - YYYY-MM-DD
+ * @param {Object} options - { rosterStrictWhenPresent } when true, if roster exists use ONLY roster
  */
-const getShiftsForEmployee = async (employeeNumber, date) => {
+const getShiftsForEmployee = async (employeeNumber, date, options = {}) => {
   try {
+    const rosterStrictWhenPresent = options.rosterStrictWhenPresent === true;
+
     // Get employee details with all organizational links
     const employee = await Employee.findOne({ emp_no: employeeNumber })
       .populate('division_id')
@@ -191,6 +196,15 @@ const getShiftsForEmployee = async (employeeNumber, date) => {
       const s = preScheduled.shiftId.toObject ? preScheduled.shiftId.toObject() : { ...preScheduled.shiftId };
       s.sourcePriority = 1; // Highest Priority
       allCandidateShifts.set(s._id.toString(), s);
+      // Roster strict: when roster exists, use ONLY roster; do not add organizational shifts
+      if (rosterStrictWhenPresent) {
+        return {
+          shifts: Array.from(allCandidateShifts.values()),
+          source: 'pre_scheduled',
+          rosteredShiftId: rosteredShift._id,
+          rosterRecordId: rosterRecordId,
+        };
+      }
     }
 
     // 2. Designation shifts (Context-Specific & Division Defaults)
@@ -705,6 +719,8 @@ const checkNextDayOutTime = async (employeeNumber, date, shift) => {
 const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null, globalConfig = {}) => {
   const globalLateInGrace = globalConfig.late_in_grace_time ?? null;
   const globalEarlyOutGrace = globalConfig.early_out_grace_time ?? null;
+  const processingMode = globalConfig.processingMode || {};
+  const shiftOptions = { rosterStrictWhenPresent: processingMode.rosterStrictWhenPresent === true };
   try {
     if (!inTime) {
       return {
@@ -713,8 +729,8 @@ const detectAndAssignShift = async (employeeNumber, date, inTime, outTime = null
       };
     }
 
-    // Get shifts for employee
-    const { shifts, source, rosteredShiftId, rosterRecordId } = await getShiftsForEmployee(employeeNumber, date);
+    // Get shifts for employee (with roster strict when configured)
+    const { shifts, source, rosteredShiftId, rosterRecordId } = await getShiftsForEmployee(employeeNumber, date, shiftOptions);
 
     // If no out-time provided, check for overnight shift and look for out-time on next day
     if (!outTime && shifts.length > 0) {

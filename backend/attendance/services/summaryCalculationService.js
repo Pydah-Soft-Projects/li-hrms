@@ -7,6 +7,15 @@ const { createISTDate, extractISTComponents } = require('../../shared/utils/date
 const dateCycleService = require('../../leaves/services/dateCycleService');
 
 /**
+ * Monthly summary is recalculated in the background when:
+ * - An AttendanceDaily doc is saved (post-save hook defers recalc via setImmediate)
+ * - An AttendanceDaily doc is updated via findOneAndUpdate (post-hook, same defer)
+ * - Leave/OD approved, OT applied, permissions, etc. (call recalculateOn* directly)
+ * Summaries are not triggered by insertMany/bulk writes; missing summaries are
+ * calculated on demand when loading the monthly attendance view.
+ */
+
+/**
  * Calculate and update monthly attendance summary for an employee
  * @param {string} employeeId - Employee ID
  * @param {string} emp_no - Employee number
@@ -194,33 +203,41 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber) {
     summary.totalPermissionHours = Math.round(totalPermissionHours * 100) / 100; // Round to 2 decimals
     summary.totalPermissionCount = totalPermissionCount;
 
-    // 10. Calculate late-in and combined late/early metrics (first shift only)
+    // 10. Calculate late-in and combined late/early from ALL shifts per day (one late + one early per day)
+    // For each day: sum lateInMinutes and earlyOutMinutes across all shifts; count day once if it has any late or early out
     let totalLateInMinutes = 0;
     let lateInCount = 0;
     let totalLateOrEarlyMinutes = 0;
     let lateOrEarlyCount = 0;
 
     for (const record of attendanceRecords) {
-      const firstShift = Array.isArray(record.shifts) && record.shifts.length > 0
-        ? record.shifts[0]
-        : null;
+      const shifts = Array.isArray(record.shifts) ? record.shifts : [];
+      let dayLateMinutes = 0;
+      let dayEarlyMinutes = 0;
 
-      const lateMinutes = firstShift
-        ? (firstShift.lateInMinutes || 0)
-        : (record.totalLateInMinutes || 0);
-      const earlyMinutes = firstShift
-        ? (firstShift.earlyOutMinutes || 0)
-        : (record.totalEarlyOutMinutes || 0);
+      if (shifts.length > 0) {
+        for (const s of shifts) {
+          if (s.lateInMinutes != null && s.lateInMinutes > 0) {
+            dayLateMinutes += Number(s.lateInMinutes);
+          }
+          if (s.earlyOutMinutes != null && s.earlyOutMinutes > 0) {
+            dayEarlyMinutes += Number(s.earlyOutMinutes);
+          }
+        }
+      } else {
+        dayLateMinutes = Number(record.totalLateInMinutes) || 0;
+        dayEarlyMinutes = Number(record.totalEarlyOutMinutes) || 0;
+      }
 
-      if (lateMinutes > 0) {
-        totalLateInMinutes += lateMinutes;
+      if (dayLateMinutes > 0) {
+        totalLateInMinutes += dayLateMinutes;
         lateInCount += 1;
       }
 
-      const combinedMinutes = (lateMinutes || 0) + (earlyMinutes || 0);
+      const combinedMinutes = dayLateMinutes + dayEarlyMinutes;
       if (combinedMinutes > 0) {
         totalLateOrEarlyMinutes += combinedMinutes;
-        lateOrEarlyCount += 1;
+        lateOrEarlyCount += 1; // count day once if it has any late and/or early out
       }
     }
 
