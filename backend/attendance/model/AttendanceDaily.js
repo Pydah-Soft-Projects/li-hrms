@@ -284,7 +284,7 @@ attendanceDailySchema.index({ shiftId: 1, date: 1 }, { background: true });
 // Handles overnight shifts where out-time is before in-time (next day scenario)
 // Method to calculate total hours - REMOVED (Legacy)
 
-// Pre-save hook to calculate aggregates from shifts array
+// Pre-save hook to calculate aggregates from shifts array + OD enrichment
 attendanceDailySchema.pre('save', async function () {
   // Fetch roster status once for both shifts-based and legacy logic (HOL/WO, remarks)
   let rosterStatus = null;
@@ -297,6 +297,47 @@ attendanceDailySchema.pre('save', async function () {
     rosterStatus = rosterEntry?.status; // 'WO' or 'HOL'
   } catch (err) {
     console.error('[AttendanceDaily Model] Error fetching roster status:', err);
+  }
+
+  // OD enrichment: add approved OD contribution to totalWorkingHours, payableShifts, status
+  let odPayableContribution = 0;
+  let odHoursContribution = 0;
+  let odDetailsFromOD = null;
+  try {
+    const OD = require('../../leaves/model/OD');
+    const dayStart = new Date(`${this.date}T00:00:00+05:30`);
+    const dayEnd = new Date(`${this.date}T23:59:59.999+05:30`);
+    const approvedODs = await OD.find({
+      emp_no: this.employeeNumber,
+      status: 'approved',
+      isActive: true,
+      fromDate: { $lte: dayEnd },
+      toDate: { $gte: dayStart },
+    }).select('odType_extended isHalfDay durationHours odStartTime odEndTime').lean();
+
+    for (const od of approvedODs || []) {
+      if (!odDetailsFromOD) {
+        odDetailsFromOD = {
+          odStartTime: od.odStartTime,
+          odEndTime: od.odEndTime,
+          durationHours: od.durationHours,
+          odType: od.odType_extended || (od.isHalfDay ? 'half_day' : 'full_day'),
+        };
+      }
+      if (od.odType_extended === 'hours') {
+        odHoursContribution += Number(od.durationHours) || 0;
+        // Hour-based: add to payable based on duration (e.g. 4h / 8h = 0.5)
+        odPayableContribution += Math.min(1, ((Number(od.durationHours) || 0) / 8));
+      } else if (od.odType_extended === 'half_day' || od.isHalfDay) {
+        odPayableContribution += 0.5;
+      } else {
+        odPayableContribution += 1;
+      }
+    }
+    odPayableContribution = Math.round(odPayableContribution * 100) / 100;
+    odHoursContribution = Math.round(odHoursContribution * 100) / 100;
+  } catch (err) {
+    console.error('[AttendanceDaily Model] Error fetching OD for enrichment:', err);
   }
 
   if (this.shifts && this.shifts.length > 0) {
@@ -322,46 +363,51 @@ attendanceDailySchema.pre('save', async function () {
       totalExpected += shift.expectedHours || 8;
     });
 
-    this.totalWorkingHours = Math.round(totalWorking * 100) / 100;
+    this.totalWorkingHours = Math.round((totalWorking + odHoursContribution) * 100) / 100;
     this.totalOTHours = Math.round(totalOT * 100) / 100;
     this.extraHours = Math.round(totalExtra * 100) / 100;
     this.totalLateInMinutes = totalLateIn;
     this.totalEarlyOutMinutes = totalEarlyOut;
     this.totalExpectedHours = totalExpected; // Placeholder or calculate if possible
+    if (odHoursContribution > 0) {
+      this.odHours = (Number(this.odHours) || 0) + odHoursContribution;
+      if (odDetailsFromOD) this.odDetails = { ...(this.odDetails || {}), ...odDetailsFromOD };
+    }
 
-    // 2. Status Determination
-    // Logic:
-    // - PRESENT: If any shift is 'PRESENT' OR the sum of payable units is >= 1.0
-    // - HALF_DAY: If any shift is 'HALF_DAY' OR the sum of payable units is >= 0.5
-    // - ABSENT/PARTIAL: Fallback
+    // 2. Status Determination (includes OD contribution: cumulative punch + OD)
     const hasPresentShift = this.shifts.some(s => s.status === 'complete' || s.status === 'PRESENT');
     const hasHalfDayShift = this.shifts.some(s => s.status === 'HALF_DAY');
-    const totalPayable = this.shifts.reduce((acc, s) => acc + (s.payableShift || 0), 0);
-    this.payableShifts = totalPayable;
+    const totalPayableFromShifts = this.shifts.reduce((acc, s) => acc + (s.payableShift || 0), 0);
+    const totalPayableWithOD = totalPayableFromShifts + odPayableContribution;
+    this.payableShifts = Math.round(totalPayableWithOD * 100) / 100;
 
-    if (hasPresentShift || totalPayable >= 0.95) { // 0.95 to account for floating point
+    if (hasPresentShift || totalPayableWithOD >= 0.95) {
       this.status = 'PRESENT';
-    } else if (hasHalfDayShift || totalPayable >= 0.45) { // 0.45 to account for floating point
+    } else if (hasHalfDayShift || totalPayableWithOD >= 0.45) {
       this.status = 'HALF_DAY';
     } else {
-      // Check if there are any punches at all to distinguish between ABSENT and PARTIAL
       const hasPunches = this.shifts.some(s => s.inTime || (s.outTime && s.outTime !== s.inTime));
       this.status = hasPunches ? 'PARTIAL' : 'ABSENT';
     }
   } else {
-    // Legacy/No-Shift Logic (likely unused now but good for safety)
-    if (this.totalWorkingHours > 0) {
+    // No shifts (OD-only or no punches): use OD contribution if any, else roster/absent
+    if (odPayableContribution > 0 || odHoursContribution > 0) {
+      this.payableShifts = Math.round(odPayableContribution * 100) / 100;
+      this.totalWorkingHours = Math.round(((Number(this.totalWorkingHours) || 0) + odHoursContribution) * 100) / 100;
+      if (odHoursContribution > 0) {
+        this.odHours = odHoursContribution;
+        if (odDetailsFromOD) this.odDetails = odDetailsFromOD;
+      }
+      if (this.payableShifts >= 0.95) this.status = 'PRESENT';
+      else if (this.payableShifts >= 0.45) this.status = 'HALF_DAY';
+      else this.status = 'PARTIAL';
+    } else if (this.totalWorkingHours > 0) {
       this.status = 'PRESENT'; // Simplified fallback
     } else {
-      // No punches - use roster status if available, else default to ABSENT
       this.payableShifts = 0;
-      if (rosterStatus === 'HOL') {
-        this.status = 'HOLIDAY';
-      } else if (rosterStatus === 'WO') {
-        this.status = 'WEEK_OFF';
-      } else {
-        this.status = 'ABSENT';
-      }
+      if (rosterStatus === 'HOL') this.status = 'HOLIDAY';
+      else if (rosterStatus === 'WO') this.status = 'WEEK_OFF';
+      else this.status = 'ABSENT';
     }
     // Special Requirement: If worked on Holiday/Week-Off (have punches on HOL/WO day), add remark
     // Checked via totalWorkingHours now
