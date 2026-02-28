@@ -2685,7 +2685,7 @@ export default function AttendancePage() {
 
 
 
-            <div className="flex items-center gap-2 hidden">
+            <div className="flex items-center gap-2">
               {hasManagePermission && (
                 <button
                   onClick={handleSyncShifts}
