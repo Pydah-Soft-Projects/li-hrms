@@ -663,6 +663,49 @@ exports.applyLeave = async (req, res) => {
 
     // CL balance is validated on the frontend only; backend does not enforce balance check here.
 
+    // Enforce minGapBetweenLeaves from leave settings (gap between approved leaves and this request)
+    const minGap = leavePolicy.minGapBetweenLeaves;
+    if (minGap != null && minGap > 0) {
+      const Leave = require('../model/Leave');
+      const approvedLeaves = await Leave.find({
+        employeeId: employee._id,
+        status: 'approved',
+        isActive: true,
+      }).select('fromDate toDate').lean();
+
+      const fromDay = new Date(from);
+      fromDay.setHours(0, 0, 0, 0);
+      const toDay = new Date(to);
+      toDay.setHours(23, 59, 59, 999);
+
+      for (const existing of approvedLeaves) {
+        const exFrom = new Date(existing.fromDate);
+        exFrom.setHours(0, 0, 0, 0);
+        const exTo = new Date(existing.toDate);
+        exTo.setHours(23, 59, 59, 999);
+
+        if (exTo < fromDay) {
+          const gapMs = fromDay - exTo;
+          const gapDays = Math.floor(gapMs / (1000 * 60 * 60 * 24));
+          if (gapDays < minGap) {
+            return res.status(400).json({
+              success: false,
+              error: `There must be at least ${minGap} day(s) between leaves. Your last approved leave ends ${gapDays} day(s) before the selected start date.`,
+            });
+          }
+        } else if (exFrom > toDay) {
+          const gapMs = exFrom - toDay;
+          const gapDays = Math.floor(gapMs / (1000 * 60 * 60 * 24));
+          if (gapDays < minGap) {
+            return res.status(400).json({
+              success: false,
+              error: `There must be at least ${minGap} day(s) between leaves. Your next approved leave starts ${gapDays} day(s) after the selected end date.`,
+            });
+          }
+        }
+      }
+    }
+
     // Validate against OD conflicts (with half-day support) - Only check APPROVED records for creation
     const { validateLeaveRequest } = require('../../shared/services/conflictValidationService');
     const validation = await validateLeaveRequest(
