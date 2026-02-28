@@ -373,6 +373,24 @@ const getRequestedDays = (fromDate: string, toDate: string, isHalfDay: boolean):
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
 };
 
+// Min/max date strings from leave or OD policy (allowBackdated, maxBackdatedDays, allowFutureDated, maxAdvanceDays)
+const getPolicyDateBounds = (policy: { allowBackdated?: boolean; maxBackdatedDays?: number; allowFutureDated?: boolean; maxAdvanceDays?: number }) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  let minDate = new Date(today);
+  let maxDate = new Date(today);
+  if (policy.allowBackdated && (policy.maxBackdatedDays ?? 0) > 0) {
+    minDate.setDate(minDate.getDate() - (policy.maxBackdatedDays ?? 0));
+  }
+  if (policy.allowFutureDated && (policy.maxAdvanceDays ?? 0) > 0) {
+    maxDate.setDate(maxDate.getDate() + (policy.maxAdvanceDays ?? 0));
+  }
+  return {
+    minDate: minDate.toISOString().split('T')[0],
+    maxDate: maxDate.toISOString().split('T')[0],
+  };
+};
+
 export default function LeavesPage() {
   const { getModuleConfig, hasPermission, activeWorkspace } = useWorkspace();
   const [activeTab, setActiveTab] = useState<'leaves' | 'od' | 'pending'>('leaves');
@@ -1091,6 +1109,23 @@ export default function LeavesPage() {
       }
 
       // 1. Validation
+      const policy = applyType === 'leave' ? leavePolicy : odPolicy;
+      const { minDate: policyMin, maxDate: policyMax } = getPolicyDateBounds(policy);
+      if (formData.fromDate && (formData.fromDate < policyMin || formData.fromDate > policyMax)) {
+        toast.error(
+          applyType === 'leave'
+            ? `From date must be within the allowed range (${policyMin} to ${policyMax}) as per leave settings.`
+            : `Date must be within the allowed range (${policyMin} to ${policyMax}) as per OD settings.`
+        );
+        setLoading(false);
+        return;
+      }
+      if (formData.toDate && (formData.toDate < policyMin || formData.toDate > policyMax)) {
+        toast.error(`To date must be within the allowed range (${policyMin} to ${policyMax}) as per ${applyType === 'leave' ? 'leave' : 'OD'} settings.`);
+        setLoading(false);
+        return;
+      }
+
       if (applyType === 'leave') {
         if (!formData.leaveType || !formData.fromDate || !formData.toDate || !formData.purpose) {
           toast.error('Please fill all required fields');
@@ -2972,24 +3007,32 @@ export default function LeavesPage() {
                   </div>
                 )}
 
-                {/* Date Selection Logic */}
+                {/* Date Selection Logic - min/max from workspace leave/OD settings */}
                 {((applyType === 'leave' && formData.isHalfDay) || applyType === 'od') ? (
                   /* Single Date Input for Half Day / Specific Hours / Any OD */
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">{applyType === 'od' ? 'Date *' : 'Date *'}</label>
-                    <input
-                      type="date"
-                      min={new Date().toISOString().split('T')[0]}
-                      value={formData.fromDate} // Use fromDate as the single source of truth
-                      onChange={(e) => setFormData({ ...formData, fromDate: e.target.value, toDate: e.target.value })}
-                      required
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                    />
-                  </div>
+                  (() => {
+                    const policy = applyType === 'leave' ? leavePolicy : odPolicy;
+                    const { minDate: singleMin, maxDate: singleMax } = getPolicyDateBounds(policy);
+                    return (
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">{applyType === 'od' ? 'Date *' : 'Date *'}</label>
+                        <input
+                          type="date"
+                          min={singleMin}
+                          max={singleMax}
+                          value={formData.fromDate}
+                          onChange={(e) => setFormData({ ...formData, fromDate: e.target.value, toDate: e.target.value })}
+                          required
+                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                        />
+                      </div>
+                    );
+                  })()
                 ) : (
                   /* Two Date Inputs for Full Day */
                   (() => {
-                    const fromMin = new Date().toISOString().split('T')[0];
+                    const policy = applyType === 'leave' ? leavePolicy : odPolicy;
+                    const { minDate: fromMin, maxDate: policyMax } = getPolicyDateBounds(policy);
                     const isCLFullDay = isCLSelected && !formData.isHalfDay && formData.fromDate && clBalanceForMonth !== null && clBalanceForMonth >= 0;
                     const maxToDateISO = isCLFullDay && formData.fromDate
                       ? (() => {
@@ -2998,6 +3041,9 @@ export default function LeavesPage() {
                           return d.toISOString().split('T')[0];
                         })()
                       : undefined;
+                    const toMax = maxToDateISO
+                      ? (policyMax && maxToDateISO > policyMax ? policyMax : maxToDateISO)
+                      : policyMax;
                     return (
                       <div className="grid grid-cols-2 gap-4">
                         <div>
@@ -3005,6 +3051,7 @@ export default function LeavesPage() {
                           <input
                             type="date"
                             min={fromMin}
+                            max={policyMax}
                             value={formData.fromDate}
                             onChange={(e) => setFormData({ ...formData, fromDate: e.target.value })}
                             required
@@ -3016,7 +3063,7 @@ export default function LeavesPage() {
                           <input
                             type="date"
                             min={formData.fromDate || fromMin}
-                            max={maxToDateISO}
+                            max={toMax}
                             value={formData.toDate}
                             onChange={(e) => {
                               let toDate = e.target.value;
@@ -3024,6 +3071,7 @@ export default function LeavesPage() {
                                 toDate = maxToDateISO;
                                 toast.info(`CL balance allows up to ${clBalanceForMonth} days; To date capped.`);
                               }
+                              if (policyMax && toDate > policyMax) toDate = policyMax;
                               setFormData({ ...formData, toDate });
                             }}
                             required
