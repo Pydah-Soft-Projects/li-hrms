@@ -223,7 +223,7 @@ export const ArrearsPayrollSection: React.FC<ArrearsPayrollSectionProps> = ({
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm text-gray-900 dark:text-white">
-                      {arr.type === 'direct' ? '—' : `${new Date(arr.startMonth).toLocaleDateString()} - ${new Date(arr.endMonth).toLocaleDateString()}`}
+                      {arr.type === 'direct' ? '—' : `${arr.startMonth ? new Date(arr.startMonth).toLocaleDateString() : '—'} - ${arr.endMonth ? new Date(arr.endMonth).toLocaleDateString() : '—'}`}
                     </div>
                     <div className="text-sm text-gray-500 dark:text-gray-400">
                       {arr.reason}
