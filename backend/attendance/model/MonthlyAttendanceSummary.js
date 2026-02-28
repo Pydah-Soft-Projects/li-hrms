@@ -117,7 +117,7 @@ const monthlyAttendanceSummarySchema = new mongoose.Schema(
       min: 0,
     },
 
-    // NEW: Early-Out Deduction Fields
+    // NEW: Early-Out / Late-In Fields
     // Total early-out minutes in this month
     totalEarlyOutMinutes: {
       type: Number,
@@ -161,6 +161,31 @@ const monthlyAttendanceSummarySchema = new mongoose.Schema(
     },
     // Count of early-out instances
     earlyOutCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    // Total late-in minutes in this month (first shift only)
+    totalLateInMinutes: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    // Count of late-in instances (days with late-in on first shift)
+    lateInCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    // Combined late-in + early-out minutes (first shift only)
+    totalLateOrEarlyMinutes: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    // Count of days with either late-in or early-out (first shift only)
+    lateOrEarlyCount: {
       type: Number,
       default: 0,
       min: 0,

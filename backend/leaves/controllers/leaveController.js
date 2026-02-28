@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const Leave = require('../model/Leave');
 const LeaveSettings = require('../model/LeaveSettings');
 const Employee = require('../../employees/model/Employee');
+const EmployeeHistory = require('../../employees/model/EmployeeHistory');
 const User = require('../../users/model/User');
 const Settings = require('../../settings/model/Settings');
 const { isHRMSConnected, getEmployeeByIdMSSQL } = require('../../employees/config/sqlHelper');
@@ -10,13 +11,14 @@ const {
   updateLeaveForAttendance,
   getLeaveConflicts
 } = require('../services/leaveConflictService');
-const leaveRegisterService = require('../services/leaveRegisterService');
 const {
   buildWorkflowVisibilityFilter,
   getEmployeeIdsInScope,
   checkJurisdiction
 } = require('../../shared/middleware/dataScopeMiddleware');
 const Department = require('../../departments/model/Department');
+const leaveRegisterService = require('../services/leaveRegisterService');
+const dateCycleService = require('../services/dateCycleService');
 
 /**
  * Get employee settings from database
@@ -330,17 +332,55 @@ exports.applyLeave = async (req, res) => {
       employeeId, // Legacy - for backward compatibility
     } = req.body;
 
-    // Validate Date (Must be today or future)
+    // Validate dates against leave policy settings
+    const leaveSettings = await LeaveSettings.getActiveSettings('leave');
+    const leavePolicy = leaveSettings?.settings || {
+      allowBackdated: false,
+      maxBackdatedDays: 7,
+      allowFutureDated: true,
+      maxAdvanceDays: 90,
+    };
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const checkFromDate = new Date(fromDate);
     checkFromDate.setHours(0, 0, 0, 0);
 
-    if (checkFromDate < today) {
-      return res.status(400).json({
-        success: false,
-        error: 'Applications are restricted to current or future dates only.'
-      });
+    // Super admin bypasses date restrictions
+    const isSuperAdmin = req.user?.role === 'super_admin';
+
+    if (!isSuperAdmin) {
+      if (checkFromDate < today) {
+        // Past date – check if backdating is allowed
+        if (!leavePolicy.allowBackdated) {
+          return res.status(400).json({
+            success: false,
+            error: 'Backdated leave applications are not allowed.',
+          });
+        }
+        const diffDays = Math.floor((today - checkFromDate) / (1000 * 60 * 60 * 24));
+        if (diffDays > leavePolicy.maxBackdatedDays) {
+          return res.status(400).json({
+            success: false,
+            error: `Leave can only be backdated up to ${leavePolicy.maxBackdatedDays} day(s). The selected date is ${diffDays} day(s) ago.`,
+          });
+        }
+      } else if (checkFromDate > today) {
+        // Future date – check if future-dated applications are allowed
+        if (!leavePolicy.allowFutureDated) {
+          return res.status(400).json({
+            success: false,
+            error: 'Future-dated leave applications are not allowed.',
+          });
+        }
+        const diffDays = Math.floor((checkFromDate - today) / (1000 * 60 * 60 * 24));
+        if (diffDays > leavePolicy.maxAdvanceDays) {
+          return res.status(400).json({
+            success: false,
+            error: `Leave can only be applied up to ${leavePolicy.maxAdvanceDays} day(s) in advance. The selected date is ${diffDays} day(s) away.`,
+          });
+        }
+      }
     }
 
     // Get employee - either from request body (HR applying for someone) or from user
@@ -589,7 +629,82 @@ exports.applyLeave = async (req, res) => {
       }
     }
 
+    // HARD ENFORCEMENT for Casual Leave (CL) against payroll-cycle monthly limit (including pending locks)
+    if (leaveType === 'CL') {
+      try {
+        const periodInfo = await dateCycleService.getPeriodInfo(from);
+
+        // Use payroll-cycle month/year derived from fromDate, not calendar month
+        const registerResult = await leaveRegisterService.getLeaveRegister(
+          {
+            employeeId: employee._id,
+            leaveType: 'CL',
+            balanceAsOf: true,
+          },
+          periodInfo.payrollCycle.month,
+          periodInfo.payrollCycle.year
+        );
+
+        const clEntry = Array.isArray(registerResult?.data) ? registerResult.data.find(e => e.casualLeave) : null;
+        const allowedRemaining = clEntry?.casualLeave?.allowedRemaining ?? null;
+
+        if (allowedRemaining !== null && allowedRemaining !== undefined) {
+          if (numberOfDays > allowedRemaining) {
+            return res.status(400).json({
+              success: false,
+              error: `Casual Leave monthly limit exceeded for this payroll cycle. Remaining allowed days: ${allowedRemaining}, requested: ${numberOfDays}.`,
+            });
+          }
+        }
+      } catch (err) {
+        console.error('[Apply Leave] Error enforcing CL monthly payroll-cycle limit:', err);
+      }
+    }
+
     // CL balance is validated on the frontend only; backend does not enforce balance check here.
+
+    // Enforce minGapBetweenLeaves from leave settings (gap between approved leaves and this request)
+    const minGap = leavePolicy.minGapBetweenLeaves;
+    if (minGap != null && minGap > 0) {
+      const Leave = require('../model/Leave');
+      const approvedLeaves = await Leave.find({
+        employeeId: employee._id,
+        status: 'approved',
+        isActive: true,
+      }).select('fromDate toDate').lean();
+
+      const fromDay = new Date(from);
+      fromDay.setHours(0, 0, 0, 0);
+      const toDay = new Date(to);
+      toDay.setHours(23, 59, 59, 999);
+
+      for (const existing of approvedLeaves) {
+        const exFrom = new Date(existing.fromDate);
+        exFrom.setHours(0, 0, 0, 0);
+        const exTo = new Date(existing.toDate);
+        exTo.setHours(23, 59, 59, 999);
+
+        if (exTo < fromDay) {
+          const gapMs = fromDay - exTo;
+          const gapDays = Math.floor(gapMs / (1000 * 60 * 60 * 24));
+          if (gapDays < minGap) {
+            return res.status(400).json({
+              success: false,
+              error: `There must be at least ${minGap} day(s) between leaves. Your last approved leave ends ${gapDays} day(s) before the selected start date.`,
+            });
+          }
+        } else if (exFrom > toDay) {
+          const gapMs = exFrom - toDay;
+          const gapDays = Math.floor(gapMs / (1000 * 60 * 60 * 24));
+          if (gapDays < minGap) {
+            return res.status(400).json({
+              success: false,
+              error: `There must be at least ${minGap} day(s) between leaves. Your next approved leave starts ${gapDays} day(s) after the selected end date.`,
+            });
+          }
+        }
+      }
+    }
 
     // Validate against OD conflicts (with half-day support) - Only check APPROVED records for creation
     const { validateLeaveRequest } = require('../../shared/services/conflictValidationService');
@@ -708,6 +823,28 @@ exports.applyLeave = async (req, res) => {
     });
 
     await leave.save();
+
+    // Employee history: leave applied
+    try {
+      await EmployeeHistory.create({
+        emp_no: employee.emp_no,
+        event: 'leave_applied',
+        performedBy: req.user._id,
+        performedByName: req.user.name,
+        performedByRole: req.user.role,
+        details: {
+          leaveId: leave._id,
+          fromDate: leave.fromDate,
+          toDate: leave.toDate,
+          numberOfDays: leave.numberOfDays,
+          isHalfDay: leave.isHalfDay,
+          halfDayType: leave.halfDayType,
+        },
+        comments: remarks || 'Leave applied',
+      });
+    } catch (err) {
+      console.error('Failed to log leave applied history:', err.message);
+    }
 
     // Populate for response
     await leave.populate([
@@ -1326,6 +1463,47 @@ exports.processLeaveAction = async (req, res) => {
       } catch (err) {
         console.error('Leave register debit failed (leave already approved):', err);
       }
+    }
+
+    // Employee history: leave final decision
+    try {
+      if (action === 'approve' && leave.status === 'approved') {
+        await EmployeeHistory.create({
+          emp_no: leave.emp_no,
+          event: 'leave_approved',
+          performedBy: req.user._id,
+          performedByName: req.user.name,
+          performedByRole: userRole,
+          details: {
+            leaveId: leave._id,
+            fromDate: leave.fromDate,
+            toDate: leave.toDate,
+            numberOfDays: leave.numberOfDays,
+          },
+          comments: comments && comments.trim()
+            ? comments
+            : 'Leave fully approved; employee will be marked on leave for these dates',
+        });
+      } else if (action === 'reject' && leave.status === 'rejected') {
+        await EmployeeHistory.create({
+          emp_no: leave.emp_no,
+          event: 'leave_rejected',
+          performedBy: req.user._id,
+          performedByName: req.user.name,
+          performedByRole: userRole,
+          details: {
+            leaveId: leave._id,
+            fromDate: leave.fromDate,
+            toDate: leave.toDate,
+            numberOfDays: leave.numberOfDays,
+          },
+          comments: comments && comments.trim()
+            ? comments
+            : 'Leave rejected',
+        });
+      }
+    } catch (err) {
+      console.error('Failed to log leave approval/rejection history:', err.message);
     }
 
     await leave.populate([

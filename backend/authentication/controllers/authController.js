@@ -77,6 +77,18 @@ exports.login = async (req, res) => {
       });
     }
 
+    // Employee: treat as deactivated after last working date (resignation date)
+    if (userType === 'employee' && user.leftDate) {
+      const startOfToday = new Date();
+      startOfToday.setUTCHours(0, 0, 0, 0);
+      if (new Date(user.leftDate) < startOfToday) {
+        return res.status(401).json({
+          success: false,
+          message: 'Your last working date has passed. Account is deactivated.',
+        });
+      }
+    }
+
     // Check password
     console.log(`[AuthLogin] Verifying password for ${userType} ${identifier}...`);
     const isPasswordValid = await user.comparePassword(password);
@@ -90,9 +102,19 @@ exports.login = async (req, res) => {
 
     console.log(`[AuthLogin] Login successful for ${userType} ${identifier}`);
 
-    // Update last login
-    user.lastLogin = new Date();
-    await user.save();
+    // Update last login on the correct record: if user is upgraded from employee, update Employee only; else update the logged-in entity
+    const now = new Date();
+    if (userType === 'user') {
+      if (user.employeeRef) {
+        await Employee.findByIdAndUpdate(user.employeeRef, { lastLogin: now });
+      } else {
+        user.lastLogin = now;
+        await user.save();
+      }
+    } else {
+      user.lastLogin = now;
+      await user.save();
+    }
 
     // Generate token
     const token = generateToken(user._id);
@@ -150,6 +172,22 @@ exports.getMe = async (req, res) => {
       });
     }
 
+    let profilePhoto = user.profilePhoto || null;
+    let joined = user.createdAt || null;
+    let lastLogin = user.lastLogin || null;
+
+    if (userType === 'user' && user.employeeRef) {
+      const emp = await Employee.findById(user.employeeRef).select('profilePhoto doj createdAt lastLogin').lean();
+      if (emp) {
+        if (emp.profilePhoto) profilePhoto = emp.profilePhoto;
+        joined = emp.doj || emp.createdAt || null;
+        lastLogin = emp.lastLogin || null;
+      }
+    } else if (userType === 'employee') {
+      joined = user.doj || user.createdAt || null;
+      lastLogin = user.lastLogin || null;
+    }
+
     res.status(200).json({
       success: true,
       data: {
@@ -166,6 +204,9 @@ exports.getMe = async (req, res) => {
           isActive: user.isActive,
           dataScope: userType === 'user' ? user.dataScope : 'own',
           divisionMapping: userType === 'user' ? user.divisionMapping : undefined,
+          profilePhoto,
+          createdAt: joined,
+          lastLogin,
         },
       },
     });
@@ -306,8 +347,13 @@ exports.ssoLogin = async (req, res) => {
       });
     }
 
-    user.lastLogin = new Date();
-    await user.save();
+    const now = new Date();
+    if (userType === 'user' && user.employeeRef) {
+      await Employee.findByIdAndUpdate(user.employeeRef, { lastLogin: now });
+    } else {
+      user.lastLogin = now;
+      await user.save();
+    }
 
     const token = generateToken(user._id);
 

@@ -373,6 +373,24 @@ const getRequestedDays = (fromDate: string, toDate: string, isHalfDay: boolean):
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
 };
 
+// Min/max date strings from leave or OD policy (allowBackdated, maxBackdatedDays, allowFutureDated, maxAdvanceDays)
+const getPolicyDateBounds = (policy: { allowBackdated?: boolean; maxBackdatedDays?: number; allowFutureDated?: boolean; maxAdvanceDays?: number }) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  let minDate = new Date(today);
+  let maxDate = new Date(today);
+  if (policy.allowBackdated && (policy.maxBackdatedDays ?? 0) > 0) {
+    minDate.setDate(minDate.getDate() - (policy.maxBackdatedDays ?? 0));
+  }
+  if (policy.allowFutureDated && (policy.maxAdvanceDays ?? 0) > 0) {
+    maxDate.setDate(maxDate.getDate() + (policy.maxAdvanceDays ?? 0));
+  }
+  return {
+    minDate: minDate.toISOString().split('T')[0],
+    maxDate: maxDate.toISOString().split('T')[0],
+  };
+};
+
 export default function LeavesPage() {
   const { getModuleConfig, hasPermission, activeWorkspace } = useWorkspace();
   const [activeTab, setActiveTab] = useState<'leaves' | 'od' | 'pending'>('leaves');
@@ -425,6 +443,11 @@ export default function LeavesPage() {
   const [leaveTypes, setLeaveTypes] = useState<any[]>([]);
   const [odTypes, setODTypes] = useState<any[]>([]);
 
+  // Leave / OD policy (backdated & future-date bounds)
+  const defaultPolicy = { allowBackdated: false, maxBackdatedDays: 0, allowFutureDated: true, maxAdvanceDays: 90 };
+  const [leavePolicy, setLeavePolicy] = useState<typeof defaultPolicy>(defaultPolicy);
+  const [odPolicy, setODPolicy] = useState<typeof defaultPolicy>({ ...defaultPolicy, allowBackdated: true, maxBackdatedDays: 30 });
+
   // Employees for "Apply For" selection
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [defaultEmployees, setDefaultEmployees] = useState<Employee[]>([]); // Store initial loaded employees
@@ -434,8 +457,10 @@ export default function LeavesPage() {
   const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
 
-  // CL balance for selected month (when leave type is CL) – used to cap selectable days
+  // CL balances for selected month/year (when leave type is CL)
   const [clBalanceForMonth, setClBalanceForMonth] = useState<number | null>(null);
+  const [clAnnualBalance, setClAnnualBalance] = useState<number | null>(null);
+  const [cclBalance, setCclBalance] = useState<number | null>(null);
   const [clBalanceLoading, setClBalanceLoading] = useState(false);
 
   // Form state
@@ -891,10 +916,32 @@ export default function LeavesPage() {
         fetchedLeaveTypes = leaveSettingsRes.data.types.filter((t: any) => t.isActive !== false);
       }
 
+      // Store leave policy settings
+      if (leaveSettingsRes.success && leaveSettingsRes.data?.settings) {
+        const s = leaveSettingsRes.data.settings;
+        setLeavePolicy({
+          allowBackdated: s.allowBackdated ?? false,
+          maxBackdatedDays: s.maxBackdatedDays ?? 0,
+          allowFutureDated: s.allowFutureDated ?? true,
+          maxAdvanceDays: s.maxAdvanceDays ?? 90,
+        });
+      }
+
       // Extract OD types from settings (field is 'types' not 'odTypes')
       let fetchedODTypes: any[] = [];
       if (odSettingsRes.success && odSettingsRes.data?.types) {
         fetchedODTypes = odSettingsRes.data.types.filter((t: any) => t.isActive !== false);
+      }
+
+      // Store OD policy settings
+      if (odSettingsRes.success && odSettingsRes.data?.settings) {
+        const s = odSettingsRes.data.settings;
+        setODPolicy({
+          allowBackdated: s.allowBackdated ?? true,
+          maxBackdatedDays: s.maxBackdatedDays ?? 30,
+          allowFutureDated: s.allowFutureDated ?? true,
+          maxAdvanceDays: s.maxAdvanceDays ?? 90,
+        });
       }
 
       // Use fetched types or defaults
@@ -1062,6 +1109,23 @@ export default function LeavesPage() {
       }
 
       // 1. Validation
+      const policy = applyType === 'leave' ? leavePolicy : odPolicy;
+      const { minDate: policyMin, maxDate: policyMax } = getPolicyDateBounds(policy);
+      if (formData.fromDate && (formData.fromDate < policyMin || formData.fromDate > policyMax)) {
+        toast.error(
+          applyType === 'leave'
+            ? `From date must be within the allowed range (${policyMin} to ${policyMax}) as per leave settings.`
+            : `Date must be within the allowed range (${policyMin} to ${policyMax}) as per OD settings.`
+        );
+        setLoading(false);
+        return;
+      }
+      if (formData.toDate && (formData.toDate < policyMin || formData.toDate > policyMax)) {
+        toast.error(`To date must be within the allowed range (${policyMin} to ${policyMax}) as per ${applyType === 'leave' ? 'leave' : 'OD'} settings.`);
+        setLoading(false);
+        return;
+      }
+
       if (applyType === 'leave') {
         if (!formData.leaveType || !formData.fromDate || !formData.toDate || !formData.purpose) {
           toast.error('Please fill all required fields');
@@ -1350,17 +1414,16 @@ export default function LeavesPage() {
       setClBalanceForMonth(null);
       return;
     }
-    const from = parseDateOnly(formData.fromDate);
-    const month = from.getMonth() + 1;
-    const year = from.getFullYear();
 
     let cancelled = false;
     setClBalanceLoading(true);
     setClBalanceForMonth(null);
 
+    // For CL, always resolve monthly limit based on the selected start date's payroll cycle,
+    // not the simple calendar month. Backend will map baseDate -> payroll month/year.
     const registerParams = hasValidEmployeeId
-      ? { employeeId: String(targetEmployeeId), month, year, balanceAsOf: true }
-      : { empNo: String(targetEmpNo), month, year, balanceAsOf: true };
+      ? { employeeId: String(targetEmployeeId), baseDate: formData.fromDate, balanceAsOf: true }
+      : { empNo: String(targetEmpNo), baseDate: formData.fromDate, balanceAsOf: true };
     api.getLeaveRegister(registerParams)
       .then((res: any) => {
         if (cancelled) return;
@@ -1368,12 +1431,17 @@ export default function LeavesPage() {
         if (Array.isArray(data) && data.length > 0 && data[0].casualLeave) {
           const cl = data[0].casualLeave;
           const balance = Number(cl.balance);
-          // Policy: 1 CL per month from first 12, plus any extra balance; cap by allowedRemaining
-          const allowed = cl.allowedRemaining != null ? Number(cl.allowedRemaining) : balance;
-          const cap = Number.isFinite(allowed) ? Math.max(0, allowed) : (Number.isFinite(balance) ? balance : 0);
-          setClBalanceForMonth(cap);
+          const allowedRaw = cl.allowedRemaining != null ? Number(cl.allowedRemaining) : balance;
+          const clCap = Number.isFinite(allowedRaw) ? Math.max(0, allowedRaw) : (Number.isFinite(balance) ? balance : 0);
+          setClBalanceForMonth(clCap);
+          setClAnnualBalance(Number.isFinite(balance) ? Math.max(0, balance) : null);
+          const cclRaw = data[0].compensatoryOff?.balance;
+          const cclVal = Number(cclRaw);
+          setCclBalance(Number.isFinite(cclVal) ? Math.max(0, cclVal) : 0);
         } else {
           setClBalanceForMonth(0);
+          setClAnnualBalance(null);
+          setCclBalance(null);
         }
       })
       .catch(() => {
@@ -1680,7 +1748,13 @@ export default function LeavesPage() {
     if (nextRole) {
       if (userRole === nextRole) return true;
       if (nextRole === 'final_authority' && userRole === 'hr') return true;
-      if (nextRole === 'reporting_manager' && ['manager', 'hod'].includes(userRole)) return true;
+      // Reporting manager step: allow if user is in workflow.reportingManagerIds (e.g. HR who is RM for this employee)
+      if (nextRole === 'reporting_manager') {
+        if (['manager', 'hod'].includes(userRole)) return true;
+        const reportingManagerIds = (item as any).workflow?.reportingManagerIds as string[] | undefined;
+        const userId = String((currentUser as any).id ?? (currentUser as any)._id ?? '').trim();
+        if (reportingManagerIds?.length && userId && reportingManagerIds.some((id: string) => String(id).trim() === userId)) return true;
+      }
       return false;
     }
 
@@ -2844,23 +2918,48 @@ export default function LeavesPage() {
                   )}
                 </div>
 
-                {/* CL balance for month – show when Casual Leave selected, cap selectable days */}
+                {/* CL summary for month/year – show when Casual Leave selected */}
                 {isCLSelected && (
-                  <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-3">
+                  <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-3 space-y-1.5">
                     {!formData.fromDate || !canFetchCLBalance ? (
                       <p className="text-sm text-slate-500 dark:text-slate-400">
-                        {currentUser?.role === 'employee' ? 'Select from date to see CL balance for that month.' : 'Select employee and from date to see CL balance for that month.'}
+                        {currentUser?.role === 'employee'
+                          ? 'Select from date to see your CL balance and monthly limit for that month.'
+                          : 'Select employee and from date to see CL balance and monthly limit for that month.'}
                       </p>
                     ) : clBalanceLoading ? (
                       <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
                         <Loader2 className="w-4 h-4 animate-spin" />
-                        Loading CL balance...
+                        Loading CL balance and monthly limit...
                       </div>
                     ) : clBalanceForMonth !== null ? (
-                      <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
-                        <span className="text-green-600 dark:text-green-400">CL balance for this month: {clBalanceForMonth} day{clBalanceForMonth !== 1 ? 's' : ''}.</span>
-                        {' '}You can apply for up to <strong>{clBalanceForMonth}</strong> day{clBalanceForMonth !== 1 ? 's' : ''} only.
-                      </p>
+                      <>
+                        <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
+                          {clAnnualBalance !== null && (
+                            <>
+                              <span className="text-slate-600 dark:text-slate-300">
+                                Yearly CL balance (remaining):{' '}
+                              </span>
+                              <span className="font-semibold">
+                                {clAnnualBalance} day{clAnnualBalance !== 1 ? 's' : ''}.
+                              </span>
+                            </>
+                          )}
+                        </p>
+                        <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
+                          <span className="text-green-600 dark:text-green-400">
+                            CL limit for this month: {clBalanceForMonth} day{clBalanceForMonth !== 1 ? 's' : ''}.
+                          </span>{' '}
+                          You can apply for up to <strong>{clBalanceForMonth}</strong> CL day{clBalanceForMonth !== 1 ? 's' : ''} in this month.
+                        </p>
+                        <p className="text-sm text-slate-700 dark:text-slate-300">
+                          Compensatory off balance:{' '}
+                          <span className="font-semibold">
+                            {cclBalance ?? 0} day{(cclBalance ?? 0) !== 1 ? 's' : ''}.
+                          </span>{' '}
+                          When you choose CCL type, you can use up to your CCL balance in addition to your CL limit.
+                        </p>
+                      </>
                     ) : (
                       <p className="text-sm text-amber-600 dark:text-amber-400">
                         Could not load CL balance. You must have a valid balance to apply for CL; try again or select employee/from date again.
@@ -2908,24 +3007,32 @@ export default function LeavesPage() {
                   </div>
                 )}
 
-                {/* Date Selection Logic */}
+                {/* Date Selection Logic - min/max from workspace leave/OD settings */}
                 {((applyType === 'leave' && formData.isHalfDay) || applyType === 'od') ? (
                   /* Single Date Input for Half Day / Specific Hours / Any OD */
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">{applyType === 'od' ? 'Date *' : 'Date *'}</label>
-                    <input
-                      type="date"
-                      min={new Date().toISOString().split('T')[0]}
-                      value={formData.fromDate} // Use fromDate as the single source of truth
-                      onChange={(e) => setFormData({ ...formData, fromDate: e.target.value, toDate: e.target.value })}
-                      required
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                    />
-                  </div>
+                  (() => {
+                    const policy = applyType === 'leave' ? leavePolicy : odPolicy;
+                    const { minDate: singleMin, maxDate: singleMax } = getPolicyDateBounds(policy);
+                    return (
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">{applyType === 'od' ? 'Date *' : 'Date *'}</label>
+                        <input
+                          type="date"
+                          min={singleMin}
+                          max={singleMax}
+                          value={formData.fromDate}
+                          onChange={(e) => setFormData({ ...formData, fromDate: e.target.value, toDate: e.target.value })}
+                          required
+                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                        />
+                      </div>
+                    );
+                  })()
                 ) : (
                   /* Two Date Inputs for Full Day */
                   (() => {
-                    const fromMin = new Date().toISOString().split('T')[0];
+                    const policy = applyType === 'leave' ? leavePolicy : odPolicy;
+                    const { minDate: fromMin, maxDate: policyMax } = getPolicyDateBounds(policy);
                     const isCLFullDay = isCLSelected && !formData.isHalfDay && formData.fromDate && clBalanceForMonth !== null && clBalanceForMonth >= 0;
                     const maxToDateISO = isCLFullDay && formData.fromDate
                       ? (() => {
@@ -2934,6 +3041,9 @@ export default function LeavesPage() {
                           return d.toISOString().split('T')[0];
                         })()
                       : undefined;
+                    const toMax = maxToDateISO
+                      ? (policyMax && maxToDateISO > policyMax ? policyMax : maxToDateISO)
+                      : policyMax;
                     return (
                       <div className="grid grid-cols-2 gap-4">
                         <div>
@@ -2941,6 +3051,7 @@ export default function LeavesPage() {
                           <input
                             type="date"
                             min={fromMin}
+                            max={policyMax}
                             value={formData.fromDate}
                             onChange={(e) => setFormData({ ...formData, fromDate: e.target.value })}
                             required
@@ -2952,7 +3063,7 @@ export default function LeavesPage() {
                           <input
                             type="date"
                             min={formData.fromDate || fromMin}
-                            max={maxToDateISO}
+                            max={toMax}
                             value={formData.toDate}
                             onChange={(e) => {
                               let toDate = e.target.value;
@@ -2960,6 +3071,7 @@ export default function LeavesPage() {
                                 toDate = maxToDateISO;
                                 toast.info(`CL balance allows up to ${clBalanceForMonth} days; To date capped.`);
                               }
+                              if (policyMax && toDate > policyMax) toDate = policyMax;
                               setFormData({ ...formData, toDate });
                             }}
                             required
@@ -3136,9 +3248,10 @@ export default function LeavesPage() {
                   </button>
                   <button
                     type="submit"
-                    className={`flex-1 py-2 sm:py-2.5 text-sm font-bold text-white rounded-xl ${applyType === 'leave' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-purple-600 hover:bg-purple-700'}`}
+                    disabled={loading}
+                    className={`flex-1 py-2 sm:py-2.5 text-sm font-bold text-white rounded-xl transition-opacity ${loading ? 'opacity-60 cursor-not-allowed' : ''} ${applyType === 'leave' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-purple-600 hover:bg-purple-700'}`}
                   >
-                    Apply {applyType === 'leave' ? 'Leave' : 'OD'}
+                    {loading ? 'Submitting...' : `Apply ${applyType === 'leave' ? 'Leave' : 'OD'}`}
                   </button>
                 </div>
               </form>

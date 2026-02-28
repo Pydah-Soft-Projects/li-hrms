@@ -8,6 +8,7 @@ const Shift = require('../model/Shift');
 const Employee = require('../../employees/model/Employee');
 const RosterMeta = require('../model/RosterMeta');
 const { rosterSyncQueue } = require('../../shared/jobs/queueManager');
+const { autoFillNextCycleFromPrevious } = require('../services/rosterAutoFillService');
 
 /**
  * @desc    Create pre-scheduled shift
@@ -342,13 +343,10 @@ exports.saveRoster = async (req, res) => {
       return res.status(404).json({ success: false, message: `Employees not found: ${missing.join(', ')}` });
     }
 
-    // Remove existing roster for month for provided employees
-    await PreScheduledShift.deleteMany({
-      employeeNumber: { $in: empNos },
-      date: { $gte: start, $lte: end },
-    });
+    // We only update the exact (employeeNumber, date) pairs in the request — no bulk delete of whole month.
+    // This keeps roster sync and attendance updates limited to the entries actually changed.
 
-    // Prepare bulk insert
+    // Prepare entries to save (per-entry replace)
     const bulk = [];
     let skippedCount = 0;
     entries.forEach((e, index) => {
@@ -431,11 +429,17 @@ exports.saveRoster = async (req, res) => {
       let duplicateCount = 0;
       const errors = [];
 
+      const mongoose = require('mongoose');
       for (let i = 0; i < bulk.length; i++) {
         const entry = bulk[i];
         try {
+          // Replace only this (employeeNumber, date) — do not touch other days or employees
+          await PreScheduledShift.deleteOne({
+            employeeNumber: entry.employeeNumber,
+            date: entry.date,
+          });
+
           // Convert shiftId string to ObjectId if it's a string
-          const mongoose = require('mongoose');
           if (entry.shiftId && typeof entry.shiftId === 'string') {
             entry.shiftId = new mongoose.Types.ObjectId(entry.shiftId);
           }
@@ -514,6 +518,55 @@ exports.saveRoster = async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to save roster',
+    });
+  }
+};
+
+/**
+ * @desc    Auto-fill next pay cycle roster from previous cycle (by weekday); respects holidays in target period
+ * @route   POST /api/shifts/roster/auto-fill-next-cycle
+ * @access  Private (Manager, Super Admin, Sub Admin, HR, HOD)
+ */
+exports.autoFillNextCycle = async (req, res) => {
+  try {
+    const { targetMonth, departmentId, divisionId } = req.body || {};
+    const result = await autoFillNextCycleFromPrevious({
+      targetMonth: targetMonth || undefined,
+      departmentId: departmentId || undefined,
+      divisionId: divisionId || undefined,
+      scheduledBy: req.user._id,
+    });
+
+    if (result.filled > 0) {
+      const allEntries = await PreScheduledShift.find({
+        date: { $gte: result.nextRange.startDate, $lte: result.nextRange.endDate },
+      })
+        .select('employeeNumber date shiftId status')
+        .lean();
+      const forSync = allEntries.map((e) => ({
+        employeeNumber: e.employeeNumber,
+        date: e.date,
+        shiftId: e.shiftId,
+        status: e.status || null,
+      }));
+      rosterSyncQueue.add('syncRoster', { entries: forSync, userId: req.user._id }).catch((err) => console.error('Roster sync job add failed:', err));
+    }
+
+    res.status(200).json({
+      success: true,
+      message: result.message,
+      data: {
+        filled: result.filled,
+        holidaysRespected: result.holidaysRespected,
+        previousRange: result.previousRange,
+        nextRange: result.nextRange,
+      },
+    });
+  } catch (error) {
+    console.error('Error auto-filling roster:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to auto-fill next cycle roster',
     });
   }
 };

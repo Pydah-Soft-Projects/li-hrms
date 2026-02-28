@@ -108,6 +108,9 @@ interface MonthlyAttendanceData {
     totalPresentDays: number;
     totalDaysInMonth: number;
     totalPayableShifts: number;
+    // Late/Early metrics (combined)
+    lateOrEarlyCount?: number;
+    totalLateOrEarlyMinutes?: number;
     lastCalculatedAt: string;
     createdAt: string;
     updatedAt: string;
@@ -191,6 +194,8 @@ export default function AttendancePage() {
   const [selectedEmployeeForSummary, setSelectedEmployeeForSummary] = useState<Employee | null>(null);
   const [monthlySummary, setMonthlySummary] = useState<any>(null);
   const [loadingSummary, setLoadingSummary] = useState(false);
+  const [payrollCycleStartDay, setPayrollCycleStartDay] = useState(1);
+  const [cycleDates, setCycleDates] = useState({ startDate: '', endDate: '', label: '' });
 
   // Search state
   const [showSearch, setShowSearch] = useState(false);
@@ -249,7 +254,19 @@ export default function AttendancePage() {
   useEffect(() => {
     loadDivisions();
     loadDepartments();
+    loadSettings();
   }, []);
+
+  const loadSettings = async () => {
+    try {
+      const response = await api.getSetting('payroll_cycle_start_day');
+      if (response.success && response.data) {
+        setPayrollCycleStartDay(parseInt(response.data.value, 10) || 1);
+      }
+    } catch (err) {
+      console.error('Error loading payroll settings:', err);
+    }
+  };
 
   useEffect(() => {
     if (selectedDepartment) {
@@ -261,10 +278,38 @@ export default function AttendancePage() {
   }, [selectedDepartment]);
 
   useEffect(() => {
+    if (payrollCycleStartDay) {
+      let startYear = year;
+      let startMonth = month;
+
+      if (payrollCycleStartDay > 1) {
+        startMonth = month - 1;
+        if (startMonth === 0) {
+          startMonth = 12;
+          startYear = year - 1;
+        }
+      }
+
+      const endDateObj = new Date(year, month - 1, payrollCycleStartDay - 1);
+      const endYear = endDateObj.getFullYear();
+      const endMonth = endDateObj.getMonth() + 1;
+      const endDay = endDateObj.getDate();
+
+      const start = `${startYear}-${String(startMonth).padStart(2, '0')}-${String(payrollCycleStartDay).padStart(2, '0')}`;
+      const end = `${endYear}-${String(endMonth).padStart(2, '0')}-${String(endDay).padStart(2, '0')}`;
+
+      setCycleDates({ startDate: start, endDate: end, label: '' });
+    }
+  }, [year, month, payrollCycleStartDay]);
+
+  useEffect(() => {
+    // wait for cycle dates
+    if (!cycleDates.startDate) return;
+
     // Reset page when filters change
     setPage(1);
     loadMonthlyAttendance(true);
-  }, [year, month, selectedDivision, selectedDepartment, selectedDesignation]); // Removed tableType dependency
+  }, [year, month, selectedDivision, selectedDepartment, selectedDesignation, cycleDates.startDate]); // Removed tableType dependency
 
   // Handle Load More when page changes
   useEffect(() => {
@@ -396,7 +441,9 @@ export default function AttendancePage() {
         search: searchQuery,
         divisionId: selectedDivision,
         departmentId: selectedDepartment,
-        designationId: selectedDesignation
+        designationId: selectedDesignation,
+        startDate: cycleDates.startDate,
+        endDate: cycleDates.endDate
       });
 
       if (response.success) {
@@ -437,7 +484,10 @@ export default function AttendancePage() {
     try {
       setLoadingAttendance(true);
       setError('');
-      const response = await api.getMonthlyAttendance(year, month);
+      const response = await api.getMonthlyAttendance(year, month, {
+        startDate: cycleDates.startDate,
+        endDate: cycleDates.endDate
+      });
       if (response.success) {
         const normalizedData = normalizeAttendanceData(response.data || []);
 
@@ -1201,17 +1251,28 @@ export default function AttendancePage() {
 
 
 
-  const formatHours = (decimalHours: number | null | undefined): string => {
-    if (decimalHours === null || decimalHours === undefined || isNaN(decimalHours)) return '-';
-    const isNegative = decimalHours < 0;
-    const absoluteHours = Math.abs(decimalHours);
-    const hours = Math.floor(absoluteHours);
-    const minutes = Math.round((absoluteHours - hours) * 60);
-    return `${isNegative ? '-' : ''}${hours}:${minutes.toString().padStart(2, '0')}`;
+  const formatHours = (hours: number | null) => {
+    if (hours === null || hours === undefined) return '-';
+    return `${hours.toFixed(2)}h`;
   };
 
   const daysInMonth = getDaysInMonth();
-  const daysArray = useMemo(() => Array.from({ length: daysInMonth }, (_, i) => i + 1), [daysInMonth]);
+  const daysArray = useMemo(() => {
+    if (!cycleDates.startDate || !cycleDates.endDate) return [];
+
+    const dates = [];
+    let current = new Date(cycleDates.startDate);
+    const end = new Date(cycleDates.endDate);
+
+    let count = 0;
+    while (current <= end && count <= 35) {
+      const dateStr = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}-${String(current.getDate()).padStart(2, '0')}`;
+      dates.push(dateStr);
+      current.setDate(current.getDate() + 1);
+      count++;
+    }
+    return dates;
+  }, [cycleDates.startDate, cycleDates.endDate]);
 
   // Virtualized row component
 
@@ -1390,7 +1451,7 @@ export default function AttendancePage() {
               </button>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 hidden">
               <button
                 onClick={handleSyncShifts}
                 disabled={syncingShifts}
@@ -1473,15 +1534,16 @@ export default function AttendancePage() {
                 <th className="sticky left-0 z-30 border-r border-slate-200 bg-slate-100 px-3 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 w-[200px] min-w-[200px]">
                   Employee
                 </th>
-                {daysArray.map((day) => {
-                  const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                  const dayName = format(parseISO(dateStr), 'EEE');
+                {daysArray.map((dateStr) => {
+                  const dateObj = parseISO(dateStr);
+                  const dayNum = dateObj.getDate();
+                  const dayName = format(dateObj, 'EEE');
                   return (
                     <th
-                      key={day}
+                      key={dateStr}
                       className="border-r border-slate-200 bg-slate-50 px-1 py-2 text-center text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 w-[35px] min-w-[35px]"
                     >
-                      <div className="text-[10px] font-bold">{day}</div>
+                      <div className="text-[10px] font-bold">{dayNum}</div>
                       <div className="text-[8px] font-medium uppercase tracking-tighter opacity-70">{dayName}</div>
                     </th>
                   );
@@ -1500,6 +1562,9 @@ export default function AttendancePage() {
                     <th className="border-r border-slate-200 bg-cyan-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-cyan-700 dark:border-slate-700 dark:bg-cyan-900/20 w-[80px] min-w-[80px]">
                       Perms
                     </th>
+                  <th className="border-r border-slate-200 bg-rose-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-rose-700 dark:border-slate-700 dark:bg-rose-900/20 w-[70px] min-w-[70px]">
+                    Lates+
+                  </th>
                     <th className="bg-green-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-green-700 dark:border-slate-700 dark:bg-green-900/20 w-[70px] min-w-[70px]">
                       Payable
                     </th>
@@ -1542,9 +1607,9 @@ export default function AttendancePage() {
                         <div className="h-4 w-32 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
                         <div className="mt-1 h-3 w-24 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
                       </td>
-                      {daysArray.map((day) => (
+                      {daysArray.map((dateStr) => (
                         <td
-                          key={day}
+                          key={dateStr}
                           className="border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700 w-[35px] min-w-[35px]"
                         >
                           <div className="h-8 w-full animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
@@ -1689,8 +1754,7 @@ export default function AttendancePage() {
                           </div>
                         </div>
                       </td>
-                      {daysArray.map((day) => {
-                        const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                      {daysArray.map((dateStr) => {
                         const record = dailyAttendance[dateStr] || null;
                         const shifts = (record as any)?.shifts || [];
                         const isMultiShift = shifts.length > 1;
@@ -1716,7 +1780,7 @@ export default function AttendancePage() {
 
                         return (
                           <td
-                            key={day}
+                            key={dateStr}
                             onClick={() => hasData && item.employee && handleDateClick(item.employee, dateStr)}
                             className={`border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700 w-[35px] min-w-[35px] align-middle relative ${hasData ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800' : ''
                               } ${getStatusColor(record)} ${getCellBackgroundColor(record)}`}
@@ -1769,8 +1833,8 @@ export default function AttendancePage() {
                                   )}
                                   {tableType === 'ot' && (
                                     <div className="text-[8px] font-medium leading-tight">
-                                      <div className="text-orange-600">{formatHours(record?.otHours)}</div>
-                                      <div className="text-purple-600">{formatHours(record?.extraHours)}</div>
+                                      <div className="text-orange-600">{record?.otHours ? record.otHours.toFixed(1) : '-'}</div>
+                                      <div className="text-purple-600">{record?.extraHours ? record.extraHours.toFixed(1) : '-'}</div>
                                     </div>
                                   )}
                                   {record?.source?.includes('manual') && (
@@ -1790,13 +1854,16 @@ export default function AttendancePage() {
                             {daysPresent}
                           </td>
                           <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 dark:text-orange-300 w-[60px] min-w-[60px]">
-                            {formatHours(dailyValues.reduce((sum, record: any) => sum + (record?.otHours || 0), 0))}
+                            {dailyValues.reduce((sum, record: any) => sum + (record?.otHours || 0), 0).toFixed(1)}
                           </td>
                           <td className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center text-[11px] font-bold text-purple-700 dark:border-slate-700 dark:bg-purple-900/20 dark:text-purple-300 w-[60px] min-w-[60px]">
-                            {formatHours(dailyValues.reduce((sum, record: any) => sum + (record?.extraHours || 0), 0))}
+                            {dailyValues.reduce((sum, record: any) => sum + (record?.extraHours || 0), 0).toFixed(1)}
                           </td>
                           <td className="border-r border-slate-200 bg-cyan-50 px-2 py-2 text-center text-[11px] font-bold text-cyan-700 dark:border-slate-700 dark:bg-cyan-900/20 dark:text-cyan-300 w-[80px] min-w-[80px]">
                             {dailyValues.reduce((sum, record: any) => sum + (record?.permissionCount || 0), 0)}
+                          </td>
+                          <td className="border-r border-slate-200 bg-rose-50 px-2 py-2 text-center text-[11px] font-bold text-rose-700 dark:border-slate-700 dark:bg-rose-900/20 dark:text-rose-300 w-[70px] min-w-[70px]">
+                            {item.summary?.lateOrEarlyCount ?? 0}
                           </td>
                           <td className="bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:border-slate-700 dark:bg-green-900/20 dark:text-green-300 w-[70px] min-w-[70px]">
                             {payableShifts.toFixed(2)}
@@ -2024,20 +2091,20 @@ export default function AttendancePage() {
                     <div>
                       <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Total Hours</label>
                       <div className="mt-1 text-sm font-bold text-slate-900 dark:text-white">
-                        {formatHours(attendanceDetail.totalWorkingHours || attendanceDetail.totalHours || 0)} hrs
+                        {attendanceDetail.totalWorkingHours ? attendanceDetail.totalWorkingHours.toFixed(2) : (attendanceDetail.totalHours ? attendanceDetail.totalHours.toFixed(2) : '0')} hrs
                       </div>
                     </div>
                     <div>
                       <label className="text-xs font-medium text-slate-500 dark:text-slate-400">OT Hours</label>
                       <div className="mt-1 text-sm font-bold text-orange-600 dark:text-orange-400">
-                        {formatHours(attendanceDetail.totalOTHours || attendanceDetail.otHours || 0)} hrs
+                        {attendanceDetail.totalOTHours ? attendanceDetail.totalOTHours.toFixed(2) : (attendanceDetail.otHours ? attendanceDetail.otHours.toFixed(2) : '0')} hrs
                       </div>
                     </div>
                     {(attendanceDetail.extraHours && attendanceDetail.extraHours > 0) ? (
                       <div>
                         <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Extra Hours</label>
                         <div className="mt-1 text-sm font-bold text-purple-600 dark:text-purple-400">
-                          {formatHours(attendanceDetail.extraHours)} hrs
+                          {attendanceDetail.extraHours.toFixed(2)} hrs
                         </div>
                       </div>
                     ) : (
@@ -2045,7 +2112,7 @@ export default function AttendancePage() {
                         <div>
                           <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Expected</label>
                           <div className="mt-1 text-sm font-bold text-slate-700 dark:text-slate-300">
-                            {formatHours(attendanceDetail.expectedHours)} hrs
+                            {attendanceDetail.expectedHours || '-'} hrs
                           </div>
                         </div>
                       )
@@ -2093,47 +2160,16 @@ export default function AttendancePage() {
                               <div className="font-bold text-sm text-slate-800 dark:text-white">{shiftName}</div>
                             </div>
                             <div className="text-[11px] font-bold text-slate-500 bg-slate-50 dark:bg-slate-800/50 px-2 py-0.5 rounded-full">
-                              {formatHours(shift.workingHours)} hrs
+                              {shift.workingHours ? `${shift.workingHours.toFixed(2)} hrs` : '0.00 hrs'}
                             </div>
                           </div>
 
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                            {/* Shift Selection */}
+                            {/* Shift Selection - read-only */}
                             <div className="flex flex-col gap-1.5">
                               <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Configured Shift</label>
                               <div className="flex items-center gap-3">
-                                {!isEditingThisShift ? (
-                                  <>
-                                    <div className="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate" title={shiftName}>{shiftName}</div>
-                                    <button
-                                      onClick={() => {
-                                        setEditingShift(true);
-                                        setSelectedShiftRecordId(shift._id);
-                                        setSelectedShiftId(shiftIdVal);
-                                      }}
-                                      className="rounded-lg bg-blue-50 px-2.5 py-1 text-[10px] font-bold text-blue-600 hover:bg-blue-100 transition-colors dark:bg-blue-900/20 dark:text-blue-400"
-                                    >
-                                      Change
-                                    </button>
-                                  </>
-                                ) : (
-                                  <div className="flex flex-col gap-2 w-full">
-                                    <select
-                                      value={selectedShiftId || ''}
-                                      onChange={(e) => setSelectedShiftId(e.target.value)}
-                                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                                    >
-                                      <option value="">Select Shift</option>
-                                      {availableShifts.map((s) => (
-                                        <option key={s._id} value={s._id}>{s.name} ({s.startTime}-{s.endTime})</option>
-                                      ))}
-                                    </select>
-                                    <div className="flex gap-2">
-                                      <button onClick={handleAssignShift} className="flex-1 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-green-700">Save</button>
-                                      <button onClick={() => { setEditingShift(false); setSelectedShiftRecordId(null); }} className="flex-1 rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-300 dark:bg-slate-700 dark:text-white dark:hover:bg-slate-600">Cancel</button>
-                                    </div>
-                                  </div>
-                                )}
+                                <div className="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate" title={shiftName}>{shiftName}</div>
                               </div>
                             </div>
 
@@ -2145,41 +2181,7 @@ export default function AttendancePage() {
                               </div>
                               <div className="flex flex-col gap-1">
                                 <label className="text-[10px] font-black uppercase tracking-widest text-rose-600/70">Check-Out</label>
-                                {!isEditingThisOutTime ? (
-                                  <div className="flex items-center gap-2">
-                                    <div className="text-sm font-black text-slate-800 dark:text-white">{formatTime(shift.outTime, true, selectedDate || '')}</div>
-                                    <button
-                                      onClick={() => {
-                                        setEditingOutTime(true);
-                                        setSelectedShiftRecordId(shift._id);
-                                        if (shift.outTime) {
-                                          const d = new Date(shift.outTime);
-                                          setOutTimeInput(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
-                                        } else {
-                                          setOutTimeInput('');
-                                        }
-                                      }}
-                                      className="rounded-lg bg-slate-100 p-1 text-slate-400 hover:bg-blue-50 hover:text-blue-600 transition-all dark:bg-slate-800"
-                                    >
-                                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                                      </svg>
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <div className="flex flex-col gap-2">
-                                    <input
-                                      type="time"
-                                      value={outTimeInput}
-                                      onChange={(e) => setOutTimeInput(e.target.value)}
-                                      className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800"
-                                    />
-                                    <div className="flex gap-1.5">
-                                      <button onClick={handleSaveOutTime} className="flex-1 rounded-md bg-green-600 px-2 py-1 text-[10px] font-bold text-white shadow-sm">Save</button>
-                                      <button onClick={() => { setEditingOutTime(false); setSelectedShiftRecordId(null); }} className="flex-1 rounded-md bg-slate-200 px-2 py-1 text-[10px] font-bold text-slate-700 dark:bg-slate-700 dark:text-white">Cancel</button>
-                                    </div>
-                                  </div>
-                                )}
+                                <div className="text-sm font-black text-slate-800 dark:text-white">{formatTime(shift.outTime, true, selectedDate || '')}</div>
                               </div>
                             </div>
                           </div>
@@ -2218,30 +2220,6 @@ export default function AttendancePage() {
                       </div>
                       <h5 className="mt-4 text-sm font-bold text-slate-900 dark:text-white">No attendance records today</h5>
                       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Employee was marked as absent for this date.</p>
-                      <div className="mt-6 flex justify-center gap-3">
-                        {!editingInTime ? (
-                          <button
-                            onClick={() => {
-                              setEditingInTime(true);
-                              setInTimeInput('09:00'); // Default suggestion
-                            }}
-                            className="rounded-xl bg-blue-600 px-6 py-2.5 text-xs font-bold text-white shadow-lg shadow-blue-500/25 transition-all hover:bg-blue-700 active:scale-95"
-                          >
-                            Mark as Present
-                          </button>
-                        ) : (
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="time"
-                              value={inTimeInput}
-                              onChange={(e) => setInTimeInput(e.target.value)}
-                              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm ring-1 ring-slate-200"
-                            />
-                            <button onClick={handleSaveInTime} className="rounded-lg bg-green-600 px-4 py-1.5 text-xs font-bold text-white shadow-sm">Save</button>
-                            <button onClick={() => setEditingInTime(false)} className="rounded-lg bg-slate-500 px-4 py-1.5 text-xs font-bold text-white shadow-sm">Cancel</button>
-                          </div>
-                        )}
-                      </div>
                     </div>
                   ) : null
                 )}
@@ -2294,7 +2272,7 @@ export default function AttendancePage() {
                   <div className="p-3 rounded-xl bg-green-50/50 dark:bg-green-900/10 border border-green-100 dark:border-green-800/50 mt-2">
                     <label className="text-[10px] font-black uppercase tracking-widest text-green-600/70">Overtime Hours</label>
                     <div className="mt-1 text-sm font-bold text-green-800 dark:text-green-400">
-                      {formatHours(attendanceDetail.otHours)} hrs approved
+                      {attendanceDetail.otHours.toFixed(2)} hrs approved
                     </div>
                   </div>
                 )}
@@ -2303,7 +2281,7 @@ export default function AttendancePage() {
                   <div className="p-3 rounded-xl bg-cyan-50/50 dark:bg-cyan-900/10 border border-cyan-100 dark:border-cyan-800/50 mt-2">
                     <label className="text-[10px] font-black uppercase tracking-widest text-cyan-600/70">Permission Hours</label>
                     <div className="mt-1 text-sm font-bold text-cyan-800 dark:text-cyan-400">
-                      {formatHours(attendanceDetail.permissionHours)} hrs ({attendanceDetail.permissionCount || 0} applications)
+                      {attendanceDetail.permissionHours.toFixed(2)} hrs ({attendanceDetail.permissionCount || 0} applications)
                     </div>
                   </div>
                 )}

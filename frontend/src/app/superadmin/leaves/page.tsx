@@ -385,6 +385,11 @@ export default function LeavesPage() {
   const [leaveTypes, setLeaveTypes] = useState<any[]>([]);
   const [odTypes, setODTypes] = useState<any[]>([]);
 
+  // Leave / OD policy (backdated & future-date bounds)
+  const defaultPolicy = { allowBackdated: false, maxBackdatedDays: 0, allowFutureDated: true, maxAdvanceDays: 90 };
+  const [leavePolicy, setLeavePolicy] = useState<typeof defaultPolicy>(defaultPolicy);
+  const [odPolicy, setODPolicy] = useState<typeof defaultPolicy>({ ...defaultPolicy, allowBackdated: true, maxBackdatedDays: 30 });
+
   // Employees for "Apply For" selection
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [employeeSearch, setEmployeeSearch] = useState('');
@@ -485,10 +490,32 @@ export default function LeavesPage() {
         fetchedLeaveTypes = leaveSettingsRes.data.types.filter((t: any) => t.isActive !== false);
       }
 
+      // Store leave policy settings
+      if (leaveSettingsRes.success && leaveSettingsRes.data?.settings) {
+        const s = leaveSettingsRes.data.settings;
+        setLeavePolicy({
+          allowBackdated: s.allowBackdated ?? false,
+          maxBackdatedDays: s.maxBackdatedDays ?? 0,
+          allowFutureDated: s.allowFutureDated ?? true,
+          maxAdvanceDays: s.maxAdvanceDays ?? 90,
+        });
+      }
+
       // Extract OD types from settings (field is 'types' not 'odTypes')
       let fetchedODTypes: any[] = [];
       if (odSettingsRes.success && odSettingsRes.data?.types) {
         fetchedODTypes = odSettingsRes.data.types.filter((t: any) => t.isActive !== false);
+      }
+
+      // Store OD policy settings
+      if (odSettingsRes.success && odSettingsRes.data?.settings) {
+        const s = odSettingsRes.data.settings;
+        setODPolicy({
+          allowBackdated: s.allowBackdated ?? true,
+          maxBackdatedDays: s.maxBackdatedDays ?? 30,
+          allowFutureDated: s.allowFutureDated ?? true,
+          maxAdvanceDays: s.maxAdvanceDays ?? 90,
+        });
       }
 
       // Use fetched types or defaults
@@ -1853,70 +1880,70 @@ export default function LeavesPage() {
                 </div>
               )}
               {/* Date Selection Logic */}
-              {((applyType === 'leave' && formData.isHalfDay) || applyType === 'od') ? (
-                /* Single Date Input for Half Day / Specific Hours / Any OD */
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">{applyType === 'od' ? 'Date *' : 'Date *'}</label>
-                  <input
-                    type="date"
-                    min={new Date().toISOString().split('T')[0]}
-                    value={formData.fromDate} // Use fromDate as the single source of truth
-                    onChange={(e) => setFormData({ ...formData, fromDate: e.target.value, toDate: e.target.value })}
-                    required
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                  />
-                </div>
-              ) : (
-                /* Two Date Inputs for Full Day */
-                (() => {
-                  const fromMin = new Date().toISOString().split('T')[0];
-                  const isCLFullDay = isCLSelected && !formData.isHalfDay && formData.fromDate && clBalanceForMonth !== null && clBalanceForMonth >= 0;
-                  const maxToDateISO = isCLFullDay && formData.fromDate
-                    ? (() => {
-                        const d = new Date(formData.fromDate);
-                        d.setDate(d.getDate() + Math.max(0, Math.floor(clBalanceForMonth!) - 1));
-                        return d.toISOString().split('T')[0];
-                      })()
-                    : undefined;
-                  return (
-                    <div className="grid grid-cols-2 gap-4">
+              {(() => {
+                const policy = applyType === 'od' ? odPolicy : leavePolicy;
+                const todayStr = new Date().toISOString().split('T')[0];
+                const minDate = policy.allowBackdated && policy.maxBackdatedDays > 0
+                  ? new Date(Date.now() - policy.maxBackdatedDays * 86400000).toISOString().split('T')[0]
+                  : todayStr;
+                const maxDate = policy.allowFutureDated && policy.maxAdvanceDays > 0
+                  ? new Date(Date.now() + policy.maxAdvanceDays * 86400000).toISOString().split('T')[0]
+                  : undefined;
+                const hint = policy.allowBackdated && policy.maxBackdatedDays > 0
+                  ? `Backdating allowed up to ${policy.maxBackdatedDays} day(s)`
+                  : policy.allowFutureDated && policy.maxAdvanceDays > 0
+                    ? `Up to ${policy.maxAdvanceDays} day(s) in advance`
+                    : null;
+                return (
+                  <>
+                    {((applyType === 'leave' && formData.isHalfDay) || applyType === 'od') ? (
+                      /* Single Date Input for Half Day / Specific Hours / Any OD */
                       <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">From Date *</label>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Date *</label>
                         <input
                           type="date"
-                          min={fromMin}
+                          min={minDate}
+                          max={maxDate}
                           value={formData.fromDate}
-                          onChange={(e) => setFormData({ ...formData, fromDate: e.target.value })}
+                          onChange={(e) => setFormData({ ...formData, fromDate: e.target.value, toDate: e.target.value })}
                           required
                           className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                         />
+                        {hint && <p className="mt-1 text-xs text-indigo-500 dark:text-indigo-400">{hint}</p>}
                       </div>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">To Date *</label>
-                        <input
-                          type="date"
-                          min={formData.fromDate || fromMin}
-                          max={maxToDateISO}
-                          value={formData.toDate}
-                          onChange={(e) => {
-                            let toDate = e.target.value;
-                            if (maxToDateISO && toDate > maxToDateISO) {
-                              toDate = maxToDateISO;
-                              toast.info(`CL balance allows up to ${clBalanceForMonth} days; To date capped.`);
-                            }
-                            setFormData({ ...formData, toDate });
-                          }}
-                          required
-                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                        />
-                        {isCLFullDay && maxToDateISO && formData.toDate > maxToDateISO && (
-                          <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">Max {clBalanceForMonth} days for CL this month.</p>
-                        )}
+                    ) : (
+                      /* Two Date Inputs for Full Day */
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">From Date *</label>
+                          <input
+                            type="date"
+                            min={minDate}
+                            max={maxDate}
+                            value={formData.fromDate}
+                            onChange={(e) => setFormData({ ...formData, fromDate: e.target.value })}
+                            required
+                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">To Date *</label>
+                          <input
+                            type="date"
+                            min={formData.fromDate || minDate}
+                            max={maxDate}
+                            value={formData.toDate}
+                            onChange={(e) => setFormData({ ...formData, toDate: e.target.value })}
+                            required
+                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                          />
+                        </div>
+                        {hint && <p className="col-span-2 text-xs text-indigo-500 dark:text-indigo-400">{hint}</p>}
                       </div>
-                    </div>
-                  );
-                })()
-              )}
+                    )}
+                  </>
+                );
+              })()}
 
               {/* Approved Records Info */}
               {approvedRecordsInfo && (approvedRecordsInfo.hasLeave || approvedRecordsInfo.hasOD) && (

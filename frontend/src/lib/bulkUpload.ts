@@ -444,6 +444,11 @@ export const matchUserByName = (
   return match?._id || null;
 };
 
+export interface ValidateEmployeeRowOptions {
+  /** When true, emp_no is optional and empty values are shown as (Auto) in preview */
+  autoGenerateEmpNo?: boolean;
+}
+
 /**
  * Header mapping configuration to support common Excel variations
  */
@@ -507,45 +512,33 @@ const HEADER_MAP: { [key: string]: string } = {
 export const validateEmployeeRow = (
   row: ParsedRow,
   divisions: { _id: string; name: string }[] = [],
-  departments: { _id: string; name: string }[],
-  designations: { _id: string; name: string; department: string; code?: string }[],
-  users: { _id: string; name: string; email?: string }[] = []
+  departments: { _id: string; name: string }[] = [],
+  designations: { _id: string; name: string; department: string; code?: string }[] = [],
+  users: { _id: string; name: string; email?: string }[] = [],
+  options: ValidateEmployeeRowOptions = {}
 ): { isValid: boolean; errors: string[]; mappedRow: ParsedRow; fieldErrors: { [key: string]: string } } => {
   const errors: string[] = [];
   const fieldErrors: { [key: string]: string } = {};
+  const mappedRow: ParsedRow = { ...row };
+  const { autoGenerateEmpNo = false } = options;
 
-  // Normalize row keys using HEADER_MAP
-  const normalizedRow: ParsedRow = {};
-  Object.entries(row).forEach(([key, value]) => {
-    if (key.startsWith('_')) {
-      normalizedRow[key] = value;
-      return;
-    }
-    const cleanKey = key.toLowerCase().trim();
-    const mappedKey = HEADER_MAP[cleanKey] || cleanKey;
-    normalizedRow[mappedKey] = value;
-  });
-
-  const mappedRow: ParsedRow = { ...normalizedRow };
-
-  // Required fields normalization
-  if (normalizedRow.emp_no !== undefined && normalizedRow.emp_no !== null) {
-    mappedRow.emp_no = String(normalizedRow.emp_no).trim();
-  }
-
-  // Required validation
-  if (!mappedRow.emp_no) {
+  // Required fields: emp_no only when auto-generate is OFF
+  const empNoBlank = row.emp_no == null || String(row.emp_no || '').trim() === '';
+  if (!autoGenerateEmpNo && empNoBlank) {
     errors.push('Employee No is required');
     fieldErrors.emp_no = 'Required';
+  } else if (autoGenerateEmpNo) {
+    // When "ignore from file" is ON, show (Auto) for all rows so payload sends empty and backend assigns
+    mappedRow.emp_no = '(Auto)';
   }
-  if (!normalizedRow.employee_name) {
+  if (!mappedRow.employee_name) {
     errors.push('Employee Name is required');
     fieldErrors.employee_name = 'Required';
   }
 
   // Map division
   let div = null;
-  const divInput = normalizedRow.division_name || normalizedRow.division;
+  const divInput = mappedRow.division_name || mappedRow.division;
   if (divInput) {
     div = divisions.find(d => d.name.toLowerCase().trim() === String(divInput).toLowerCase().trim());
   }
@@ -560,7 +553,7 @@ export const validateEmployeeRow = (
 
   // Map department
   let dept = null;
-  const deptInput = normalizedRow.department_name || normalizedRow.department;
+  const deptInput = mappedRow.department_name || mappedRow.department;
   if (deptInput) {
     dept = departments.find(d => d.name.toLowerCase().trim() === String(deptInput).toLowerCase().trim());
   }
@@ -575,7 +568,7 @@ export const validateEmployeeRow = (
 
   // Map designation
   let desig = null;
-  const desigInput = normalizedRow.designation_name || normalizedRow.designation;
+  const desigInput = mappedRow.designation_name || mappedRow.designation;
   if (desigInput) {
     const cleanDesig = String(desigInput).toLowerCase().trim();
     desig = designations.find(d =>
@@ -593,8 +586,8 @@ export const validateEmployeeRow = (
   }
 
   // Map reporting_to (if provided by name)
-  if (normalizedRow.reporting_to && typeof normalizedRow.reporting_to === 'string' && users.length > 0) {
-    const names = normalizedRow.reporting_to.split(',').map(n => n.trim());
+  if (mappedRow.reporting_to && typeof mappedRow.reporting_to === 'string' && users.length > 0) {
+    const names = mappedRow.reporting_to.split(',').map(n => n.trim());
     const ids: string[] = [];
     let hasError = false;
     names.forEach(name => {
@@ -622,8 +615,8 @@ export const validateEmployeeRow = (
   };
 
   // Gender normalization
-  const genderMatch = normalizeValue(normalizedRow.gender, ['Male', 'Female', 'Other']);
-  if (normalizedRow.gender) {
+  const genderMatch = normalizeValue(mappedRow.gender, ['Male', 'Female', 'Other']);
+  if (mappedRow.gender) {
     if (genderMatch) {
       mappedRow.gender = genderMatch;
     } else {
@@ -633,8 +626,8 @@ export const validateEmployeeRow = (
   }
 
   // Marital Status normalization
-  const maritalMatch = normalizeValue(normalizedRow.marital_status, ['Single', 'Married', 'Divorced', 'Widowed']);
-  if (normalizedRow.marital_status) {
+  const maritalMatch = normalizeValue(mappedRow.marital_status, ['Single', 'Married', 'Divorced', 'Widowed']);
+  if (mappedRow.marital_status) {
     if (maritalMatch) {
       mappedRow.marital_status = maritalMatch;
     } else {
@@ -644,8 +637,8 @@ export const validateEmployeeRow = (
   }
 
   // Blood Group normalization
-  if (normalizedRow.blood_group) {
-    const bg = String(normalizedRow.blood_group).toUpperCase().trim();
+  if (mappedRow.blood_group) {
+    const bg = String(mappedRow.blood_group).toUpperCase().trim();
     if (['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].includes(bg)) {
       mappedRow.blood_group = bg;
     } else {
@@ -655,8 +648,8 @@ export const validateEmployeeRow = (
   }
 
   // Salary Mode normalization
-  const salaryModeMatch = normalizeValue(normalizedRow.salary_mode, ['Bank', 'Cash']);
-  if (normalizedRow.salary_mode) {
+  const salaryModeMatch = normalizeValue(mappedRow.salary_mode, ['Bank', 'Cash']);
+  if (mappedRow.salary_mode) {
     if (salaryModeMatch) {
       mappedRow.salary_mode = salaryModeMatch;
     } else {

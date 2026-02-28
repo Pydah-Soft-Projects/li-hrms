@@ -5,6 +5,9 @@ const odController = require('./controllers/odController');
 const cclController = require('./controllers/cclController');
 const settingsController = require('./controllers/leaveSettingsController');
 const leaveRegisterController = require('./controllers/leaveRegisterController');
+const earnedLeaveController = require('./controllers/earnedLeaveController');
+const annualCLResetController = require('./controllers/annualCLResetController');
+const accrualController = require('./controllers/accrualController');
 const { protect, authorize } = require('../authentication/middleware/authMiddleware');
 const { applyScopeFilter } = require('../shared/middleware/dataScopeMiddleware');
 
@@ -109,8 +112,6 @@ router.post('/register/adjust', authorize('hr', 'sub_admin', 'super_admin'), lea
 // ==========================================
 // EARNED LEAVE ROUTES
 // ==========================================
-const earnedLeaveController = require('./controllers/earnedLeaveController');
-
 // Calculate EL for employee
 router.post('/earned/calculate', authorize('employee', 'manager', 'hod', 'hr', 'sub_admin', 'super_admin'), earnedLeaveController.calculateEL);
 
@@ -126,8 +127,6 @@ router.get('/earned/history/:employeeId', authorize('hr', 'sub_admin', 'super_ad
 // ==========================================
 // ANNUAL CL RESET ROUTES
 // ==========================================
-const annualCLResetController = require('./controllers/annualCLResetController');
-
 // Perform annual CL reset (HR/Admin only)
 router.post('/annual-reset', authorize('hr', 'sub_admin', 'super_admin'), annualCLResetController.performAnnualReset);
 
@@ -146,7 +145,6 @@ router.post('/initial-cl-sync', authorize('hr', 'sub_admin', 'super_admin'), ann
 // ==========================================
 // ACCRUAL ROUTES (run monthly CL/EL accrual; no cron – call manually or from external scheduler)
 // ==========================================
-const accrualController = require('./controllers/accrualController');
 router.post('/accrual/run-monthly', authorize('hr', 'sub_admin', 'super_admin'), accrualController.runMonthlyAccruals);
 
 // ==========================================

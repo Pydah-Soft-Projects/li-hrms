@@ -395,6 +395,21 @@ async function populatePayRegisterFromSources(employeeId, emp_no, year, monthNum
     const leaveType = isSplit ? null : (firstHalf.leaveType || null);
     const isOD = isSplit ? false : (firstHalf.isOD || false);
 
+    // Late/early-out: use only the first segment (first shift) when employee has multiple shifts
+    const firstShift = Array.isArray(attendance?.shifts) && attendance.shifts.length > 0 ? attendance.shifts[0] : null;
+    const isLate = firstShift
+      ? Boolean(firstShift.isLateIn || (typeof firstShift.lateInMinutes === 'number' && firstShift.lateInMinutes > 0))
+      : Boolean(attendance?.isLateIn || (typeof attendance?.totalLateInMinutes === 'number' && attendance.totalLateInMinutes > 0));
+    const isEarlyOut = firstShift
+      ? Boolean(firstShift.isEarlyOut || (typeof firstShift.earlyOutMinutes === 'number' && firstShift.earlyOutMinutes > 0))
+      : Boolean(attendance?.isEarlyOut || (typeof attendance?.totalEarlyOutMinutes === 'number' && attendance.totalEarlyOutMinutes > 0));
+    const lateInMinutes = firstShift
+      ? (typeof firstShift.lateInMinutes === 'number' ? firstShift.lateInMinutes : 0)
+      : (typeof attendance?.totalLateInMinutes === 'number' ? attendance.totalLateInMinutes : 0);
+    const earlyOutMinutes = firstShift
+      ? (typeof firstShift.earlyOutMinutes === 'number' ? firstShift.earlyOutMinutes : 0)
+      : (typeof attendance?.totalEarlyOutMinutes === 'number' ? attendance.totalEarlyOutMinutes : 0);
+
     const dailyRecord = {
       date,
       firstHalf: {
@@ -426,8 +441,10 @@ async function populatePayRegisterFromSources(employeeId, emp_no, year, monthNum
       leaveSplitIds: leave?.leaveSplitIds || [],
       odIds: od?.odIds || [],
       otIds: ot?.otIds || [],
-      isLate: attendance?.isLateIn || false,
-      isEarlyOut: attendance?.isEarlyOut || false,
+      isLate,
+      isEarlyOut,
+      lateInMinutes,
+      earlyOutMinutes,
       remarks: null,
     };
 

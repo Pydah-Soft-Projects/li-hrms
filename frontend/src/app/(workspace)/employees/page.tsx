@@ -27,6 +27,7 @@ import {
   Edit2,
   Trash2,
   Mail,
+  KeyRound,
   ChevronRight,
   ChevronLeft,
   UserCheck,
@@ -38,6 +39,7 @@ import {
 import BulkUpload from '@/components/BulkUpload';
 import DynamicEmployeeForm from '@/components/DynamicEmployeeForm';
 import Spinner from '@/components/Spinner';
+import Swal from 'sweetalert2';
 import {
   EMPLOYEE_TEMPLATE_HEADERS,
   EMPLOYEE_TEMPLATE_SAMPLE,
@@ -86,6 +88,7 @@ interface Employee {
   employeeAllowances?: any[];
   employeeDeductions?: any[];
   salaryStatus?: 'pending_approval' | 'approved';
+  profilePhoto?: string;
 }
 
 
@@ -137,6 +140,9 @@ interface EmployeeApplication {
   employeeDeductions?: any[];
 }
 
+/** Format date as YYYY-MM-DD in local time (avoids UTC shift for resignation last working date) */
+const toLocalDateString = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
 const initialFormState: Partial<Employee> = {
   emp_no: '',
   employee_name: '',
@@ -169,6 +175,7 @@ const initialFormState: Partial<Employee> = {
   is_active: true,
   employeeAllowances: [],
   employeeDeductions: [],
+  profilePhoto: '',
 };
 
 // Start of Component
@@ -205,16 +212,26 @@ export default function EmployeesPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [applicationSearchTerm, setApplicationSearchTerm] = useState('');
   const [showBulkUpload, setShowBulkUpload] = useState(false);
+  const [allowEmployeeBulkProcess, setAllowEmployeeBulkProcess] = useState(false);
+  const [autoGenerateEmployeeNumber, setAutoGenerateEmployeeNumber] = useState(false);
+  /** Toggle in bulk preview: when true, ignore emp numbers from file (auto-generate). Defaults from settings when dialog opens. */
+  const [bulkPreviewAutoGenerateEmpNo, setBulkPreviewAutoGenerateEmpNo] = useState(false);
+  const [addFormAutoGenerateEmpNo, setAddFormAutoGenerateEmpNo] = useState(false);
+  const [applicationFormAutoGenerateEmpNo, setApplicationFormAutoGenerateEmpNo] = useState(false);
   const [userRole, setUserRole] = useState<string>('');
   const [canViewApplications, setCanViewApplications] = useState(false);
   const [hasVerifyPermission, setHasVerifyPermission] = useState(false);
+  /** Role-based feature control when user has none (so permissions respect Settings > Feature Control) */
+  const [resolvedFeatureControl, setResolvedFeatureControl] = useState<string[] | null>(null);
   const [showLeftDateModal, setShowLeftDateModal] = useState(false);
   const [selectedEmployeeForLeftDate, setSelectedEmployeeForLeftDate] = useState<Employee | null>(null);
   const [leftDateForm, setLeftDateForm] = useState({ leftDate: '', leftReason: '' });
+  const [resignationNoticePeriodDays, setResignationNoticePeriodDays] = useState(0);
   const [includeLeftEmployees, setIncludeLeftEmployees] = useState(false);
   const [passwordMode, setPasswordMode] = useState<'random' | 'phone_empno'>('random');
   const [notificationChannels, setNotificationChannels] = useState({ email: true, sms: true });
   const [isResending, setIsResending] = useState<string | null>(null);
+  const [isResetting, setIsResetting] = useState<string | null>(null);
 
   const SENSITIVE_FIELDS = [
     'gross_salary',
@@ -558,11 +575,22 @@ export default function EmployeesPage() {
     const user = auth.getUser();
     if (user) {
       setUserRole(user.role);
-      const hasAppView = hasViewApplicationsPermission(user as any);
-      setCanViewApplications(hasAppView);
-      // Verify permission is strictly independent — must have EMPLOYEES:verify explicitly granted
-      setHasVerifyPermission(canVerifyFeature(user as any, 'EMPLOYEES'));
       setCurrentUser(user);
+      const hasExplicitControl = user.featureControl && Array.isArray(user.featureControl) && user.featureControl.length > 0;
+      if (!hasExplicitControl) {
+        const settingKey = `feature_control_${user.role === 'hod' ? 'hod' : user.role === 'hr' ? 'hr' : user.role === 'manager' ? 'manager' : 'employee'}`;
+        api.getSetting(settingKey)
+          .then((res) => {
+            if (res?.success && res?.data?.value?.activeModules) {
+              setResolvedFeatureControl(Array.isArray(res.data.value.activeModules) ? res.data.value.activeModules : []);
+            } else {
+              setResolvedFeatureControl([]);
+            }
+          })
+          .catch(() => setResolvedFeatureControl([]));
+      } else {
+        setResolvedFeatureControl(null);
+      }
     }
     loadEmployees(1, false); // Load first page
     loadDivisions();
@@ -572,6 +600,20 @@ export default function EmployeesPage() {
       loadApplications();
     }
   }, []);
+
+  const userForPermissions = useMemo(() => {
+    const u = currentUser || auth.getUser();
+    if (!u) return null;
+    const hasExplicit = u.featureControl && Array.isArray(u.featureControl) && u.featureControl.length > 0;
+    const fc = hasExplicit ? u.featureControl : (resolvedFeatureControl ?? []);
+    return { ...u, featureControl: fc };
+  }, [currentUser, resolvedFeatureControl]);
+
+  useEffect(() => {
+    if (!userForPermissions) return;
+    setCanViewApplications(hasViewApplicationsPermission(userForPermissions as any));
+    setHasVerifyPermission(canVerifyFeature(userForPermissions as any, 'EMPLOYEES'));
+  }, [userForPermissions]);
 
   // Reset pagination when filters change
   useEffect(() => {
@@ -629,6 +671,23 @@ export default function EmployeesPage() {
     setFilteredDesignations(designations);
   }, [designations]);
 
+  useEffect(() => {
+    if (showLeftDateModal && selectedEmployeeForLeftDate) {
+      api.getResignationSettings()
+        .then((res) => {
+          const raw = res?.data?.noticePeriodDays ?? res?.data?.value?.noticePeriodDays;
+          const days = Math.max(0, Number(raw) || 0);
+          setResignationNoticePeriodDays(days);
+          const d = new Date();
+          d.setDate(d.getDate() + days);
+          const minDateStr = toLocalDateString(d);
+          const existingLeft = selectedEmployeeForLeftDate.leftDate ? toLocalDateString(new Date(selectedEmployeeForLeftDate.leftDate)) : null;
+          setLeftDateForm((prev) => ({ ...prev, leftDate: existingLeft || minDateStr }));
+        })
+        .catch(() => setResignationNoticePeriodDays(0));
+    }
+  }, [showLeftDateModal, selectedEmployeeForLeftDate]);
+
   // Load allowance/deduction defaults when department and gross salary are set
   useEffect(() => {
     const deptId = formData.department_id;
@@ -673,6 +732,43 @@ export default function EmployeesPage() {
   useEffect(() => {
     setFilteredApplicationDesignations(designations);
   }, [designations]);
+
+  useEffect(() => {
+    api.getSetting('allow_employee_bulk_process')
+      .then((res) => { if (res?.success && res?.data != null) setAllowEmployeeBulkProcess(!!res.data.value); })
+      .catch(() => setAllowEmployeeBulkProcess(false));
+  }, []);
+
+  // Load employee settings when bulk upload dialog opens; sync toggle default for preview
+  useEffect(() => {
+    if (!showBulkUpload) return;
+    api.getEmployeeSettings()
+      .then((res) => {
+        const on = res?.data?.auto_generate_employee_number === true;
+        setAutoGenerateEmployeeNumber(on);
+        setBulkPreviewAutoGenerateEmpNo(on);
+      })
+      .catch(() => {
+        setAutoGenerateEmployeeNumber(false);
+        setBulkPreviewAutoGenerateEmpNo(false);
+      });
+  }, [showBulkUpload]);
+
+  // Load auto-generate setting when add employee dialog opens (create mode only)
+  useEffect(() => {
+    if (!showDialog || editingEmployee) return;
+    api.getEmployeeSettings()
+      .then((res) => setAddFormAutoGenerateEmpNo(!!res?.data?.auto_generate_employee_number))
+      .catch(() => setAddFormAutoGenerateEmpNo(false));
+  }, [showDialog, editingEmployee]);
+
+  // Load auto-generate setting when New Employee Application dialog opens
+  useEffect(() => {
+    if (!showApplicationDialog) return;
+    api.getEmployeeSettings()
+      .then((res) => setApplicationFormAutoGenerateEmpNo(!!res?.data?.auto_generate_employee_number))
+      .catch(() => setApplicationFormAutoGenerateEmpNo(false));
+  }, [showApplicationDialog]);
 
   const loadFormSettings = async () => {
     try {
@@ -917,11 +1013,23 @@ export default function EmployeesPage() {
   const loadEmployees = async (pageNum: number = 1, append: boolean = false) => {
     try {
       if (!append) setLoading(true);
+      // Derive division_id, department_id, designation_id from selectedDivision and header filters (by name)
+      const divisionId = selectedDivision
+        || (employeeFilters['division.name'] ? divisions.find((d) => d.name === employeeFilters['division.name'])?._id : undefined);
+      const departmentId = employeeFilters['department.name']
+        ? departments.find((d) => d.name === employeeFilters['department.name'])?._id
+        : undefined;
+      const designationId = employeeFilters['designation.name']
+        ? designations.find((d) => d.name === employeeFilters['designation.name'])?._id
+        : undefined;
       const response = await api.getEmployees({
         ...(includeLeftEmployees ? { includeLeft: true } : {}),
         page: pageNum,
         limit: 50,
-        search: searchTerm,
+        search: searchTerm || undefined,
+        ...(divisionId ? { division_id: divisionId } : {}),
+        ...(departmentId ? { department_id: departmentId } : {}),
+        ...(designationId ? { designation_id: designationId } : {}),
       });
       if (response.success) {
         // Ensure paidLeaves is always included and is a number
@@ -1026,12 +1134,25 @@ export default function EmployeesPage() {
   const loadApplications = async () => {
     try {
       setLoadingApplications(true);
-      const response = await api.getEmployeeApplications();
+      const divisionId = selectedDivision ||
+        (employeeFilters['division.name'] ? divisions.find((d) => d.name === employeeFilters['division.name'])?._id : undefined);
+      const departmentId = employeeFilters['department.name']
+        ? departments.find((d) => d.name === employeeFilters['department.name'])?._id
+        : undefined;
+      const designationId = employeeFilters['designation.name']
+        ? designations.find((d) => d.name === employeeFilters['designation.name'])?._id
+        : undefined;
+      const search = (applicationSearchTerm || searchTerm || '').trim() || undefined;
+      const response = await api.getEmployeeApplications({
+        ...(divisionId ? { division_id: divisionId } : {}),
+        ...(departmentId ? { department_id: departmentId } : {}),
+        ...(designationId ? { designation_id: designationId } : {}),
+        ...(search ? { search } : {}),
+      });
       if (response.success) {
         const apps = (response.data || []).map((app: any) => ({
           ...app,
           status: app.status || 'pending',
-          division: app.division || (typeof app.division_id === 'object' ? app.division_id : undefined),
           department: app.department || (typeof app.department_id === 'object' ? app.department_id : undefined),
           designation: app.designation || (typeof app.designation_id === 'object' ? app.designation_id : undefined)
         }));
@@ -1091,8 +1212,13 @@ export default function EmployeesPage() {
     setError('');
     setSuccess('');
 
-    if (!formData.emp_no || !formData.employee_name) {
+    const requireEmpNo = !editingEmployee && !addFormAutoGenerateEmpNo;
+    if (requireEmpNo && !formData.emp_no) {
       setError('Employee No and Name are required');
+      return;
+    }
+    if (!formData.employee_name) {
+      setError('Employee name is required');
       return;
     }
 
@@ -1358,15 +1484,11 @@ export default function EmployeesPage() {
             return { ...qual };
           }
 
-          // Ensure legacy fields (Degree/Year) are mapped if they exist and weren't caught by settings (e.g. if settings changed label)
-          if (!normalized.degree && (qual.Degree || qual.degree)) normalized.degree = qual.Degree || qual.degree;
-          if (!normalized.qualified_year && (qual.year || qual.Year || qual.qualified_year)) normalized.qualified_year = qual.year || qual.Year || qual.qualified_year;
-
           return normalized;
         });
       } else if (typeof employee.qualifications === 'string') {
-        // Old format - convert to array if needed
-        qualificationsValue = employee.qualifications.split(',').map(s => ({ degree: s.trim() }));
+        // Old format - convert to array with examination only
+        qualificationsValue = employee.qualifications.split(',').map(s => ({ examination: s.trim() }));
       }
     }
     // Also check in dynamicFields only if qualificationsValue is empty (to avoid overwriting valid data)
@@ -1377,12 +1499,7 @@ export default function EmployeesPage() {
 
           Object.keys(qual).forEach(key => {
             const lowerKey = key.toLowerCase();
-
-            if (lowerKey === 'degree') {
-              normalized.degree = qual[key];
-            } else if (lowerKey === 'year' || key === 'qualified_year') {
-              normalized.qualified_year = qual[key];
-            } else if (key === 'certificateUrl' || key === 'certificateFile') {
+            if (key === 'certificateUrl' || key === 'certificateFile' || key === 'isPreFilled') {
               normalized[key] = qual[key];
             } else {
               normalized[lowerKey] = qual[key];
@@ -1557,8 +1674,12 @@ export default function EmployeesPage() {
 
   const handleSetLeftDate = (employee: Employee) => {
     setSelectedEmployeeForLeftDate(employee);
+    const defaultLastWorking = (() => {
+      const d = new Date();
+      return d.toISOString().split('T')[0];
+    })();
     setLeftDateForm({
-      leftDate: employee.leftDate ? new Date(employee.leftDate).toISOString().split('T')[0] : '',
+      leftDate: employee.leftDate ? new Date(employee.leftDate).toISOString().split('T')[0] : defaultLastWorking,
       leftReason: employee.leftReason || '',
     });
     setShowLeftDateModal(true);
@@ -1576,20 +1697,39 @@ export default function EmployeesPage() {
     try {
       setError('');
       setSuccess('');
-      const response = await api.setEmployeeLeftDate(
-        selectedEmployeeForLeftDate.emp_no,
-        leftDateForm.leftDate,
-        leftDateForm.leftReason || undefined
-      );
+      const resSettings = await api.getResignationSettings();
+      const workflowEnabled = resSettings?.success && resSettings?.data?.workflow?.isEnabled !== false;
 
-      if (response.success) {
-        setSuccess('Employee left date set successfully!');
-        setShowLeftDateModal(false);
-        setSelectedEmployeeForLeftDate(null);
-        setLeftDateForm({ leftDate: '', leftReason: '' });
-        loadEmployees();
+      if (workflowEnabled) {
+        const response = await api.createResignationRequest({
+          emp_no: selectedEmployeeForLeftDate.emp_no,
+          leftDate: leftDateForm.leftDate,
+          remarks: leftDateForm.leftReason || undefined,
+        });
+        if (response.success) {
+          setSuccess('Resignation request submitted. It will be processed through the approval flow.');
+          setShowLeftDateModal(false);
+          setSelectedEmployeeForLeftDate(null);
+          setLeftDateForm({ leftDate: '', leftReason: '' });
+          loadEmployees();
+        } else {
+          setError(response.message || 'Failed to submit resignation request');
+        }
       } else {
-        setError(response.message || 'Failed to set left date');
+        const response = await api.setEmployeeLeftDate(
+          selectedEmployeeForLeftDate.emp_no,
+          leftDateForm.leftDate,
+          leftDateForm.leftReason || undefined
+        );
+        if (response.success) {
+          setSuccess('Employee left date set successfully!');
+          setShowLeftDateModal(false);
+          setSelectedEmployeeForLeftDate(null);
+          setLeftDateForm({ leftDate: '', leftReason: '' });
+          loadEmployees();
+        } else {
+          setError(response.message || 'Failed to set left date');
+        }
       }
     } catch (err: any) {
       setError(err.message || 'An error occurred');
@@ -1643,40 +1783,52 @@ export default function EmployeesPage() {
   };
 
   const filteredEmployees = employees.filter(emp => {
-    // Filter by search term
-    // Server-side search logic handles this now, so we return true to avoid double-filtering
-    // (which could hide results if client logic differs from server logic)
-    const matchesSearch = true;
-
-    // Filter by left employees (if includeLeftEmployees is false, exclude those with leftDate)
-    const matchesLeftFilter = includeLeftEmployees || !emp.leftDate;
+    // Search, division, department, designation are now applied server-side via getEmployees params
 
     // Filter by selected division
     const matchesDivision = !selectedDivision ||
       ((emp as any).division?._id === selectedDivision || emp.division_id === selectedDivision);
 
     // Filter by active status
+    const matchesLeftFilter = includeLeftEmployees || !emp.leftDate;
     const matchesActive = includeLeftEmployees || emp.is_active !== false;
 
-
-    // Filter by header filters
+    // Apply only non-scope header filters (e.g. status); division/department/designation are server-side
+    const scopeFilterKeys = ['division.name', 'department.name', 'designation.name'];
     const matchesHeaderFilters = Object.entries(employeeFilters).every(([key, value]) => {
-      if (!value) return true;
+      if (!value || scopeFilterKeys.includes(key)) return true;
       const [mainKey, subKey] = key.split('.');
       const actualValue = subKey ? (emp as any)[mainKey]?.[subKey] : (emp as any)[mainKey];
       return String(actualValue || '') === value;
     });
 
-    return matchesSearch && matchesLeftFilter && matchesDivision && matchesActive && matchesHeaderFilters;
+    return matchesLeftFilter && matchesActive && matchesHeaderFilters;
   });
 
 
 
   const filteredApplications = applications.filter(app => {
-    const matchesSearch = !applicationSearchTerm ||
-      app.employee_name?.toLowerCase().includes(applicationSearchTerm.toLowerCase()) ||
-      app.emp_no?.toLowerCase().includes(applicationSearchTerm.toLowerCase()) ||
-      ((app.department_id as any)?.name || app.department?.name || '')?.toLowerCase().includes(applicationSearchTerm.toLowerCase());
+    const search = (applicationSearchTerm || searchTerm || '').trim();
+    const matchesSearch = !search ||
+      app.employee_name?.toLowerCase().includes(search.toLowerCase()) ||
+      (app.emp_no ?? '')?.toString().toLowerCase().includes(search.toLowerCase()) ||
+      ((app.department_id as any)?.name || app.department?.name || '')?.toLowerCase().includes(search.toLowerCase()) ||
+      ((app.designation_id as any)?.name || app.designation?.name || '')?.toLowerCase().includes(search.toLowerCase());
+
+    const divFilter = selectedDivision || applicationFilters['division.name'];
+    const appDivName = (app as any).division?.name || (app.division_id as any)?.name || '';
+    const appDivId = (app as any).division?._id || (typeof app.division_id === 'string' ? app.division_id : (app.division_id as any)?._id);
+    const matchesDivision = !divFilter ||
+      appDivId === selectedDivision ||
+      appDivName === applicationFilters['division.name'];
+
+    const deptFilter = employeeFilters['department.name'] || applicationFilters['department.name'];
+    const appDeptName = app.department?.name || (app.department_id as any)?.name || '';
+    const matchesDepartment = !deptFilter || appDeptName === deptFilter;
+
+    const desigFilter = employeeFilters['designation.name'] || applicationFilters['designation.name'];
+    const appDesigName = app.designation?.name || (app.designation_id as any)?.name || '';
+    const matchesDesignation = !desigFilter || appDesigName === desigFilter;
 
     const matchesHeaderFilters = Object.entries(applicationFilters).every(([key, value]) => {
       if (!value) return true;
@@ -1685,10 +1837,7 @@ export default function EmployeesPage() {
       return String(actualValue || '') === value;
     });
 
-    // Filter for Stage 1 (pending) only for Workspace view
-    const matchesStage1 = app.status === 'pending';
-
-    return matchesSearch && matchesHeaderFilters && matchesStage1;
+    return matchesSearch && matchesDivision && matchesDepartment && matchesDesignation && matchesHeaderFilters;
   });
 
 
@@ -2120,13 +2269,10 @@ export default function EmployeesPage() {
     return eligibleDepts;
   }
 
-  // Permission checks using read/write pattern
-  // Write permission enables ALL actions (create, edit, delete, approve, reject)
-  // Read permission blocks all actions (view only)
-  // Future: When implementing granular create/edit/delete, only permissions.ts needs updating
+  // Permission checks using read/write pattern (respects Feature Control from Settings when user has no explicit list)
   const user = auth.getUser();
-  const hasViewPermission = user ? canViewEmployees(user as any) : false;
-  const hasManagePermission = user ? canEditEmployee(user as any) : false; // Write permission for ALL actions
+  const hasViewPermission = userForPermissions ? canViewEmployees(userForPermissions as any) : false;
+  const hasManagePermission = userForPermissions ? canEditEmployee(userForPermissions as any) : false; // Write permission for ALL actions
 
   const RenderFilterHeader = ({
     label,
@@ -2318,7 +2464,7 @@ export default function EmployeesPage() {
             )}
 
             {/* Import Button */}
-            {hasManagePermission && (
+            {hasManagePermission && allowEmployeeBulkProcess && (
               <button
                 onClick={() => setShowBulkUpload(true)}
                 className="flex items-center gap-2 rounded-xl md:rounded-2xl border border-border-base bg-bg-surface/50 px-2 py-1.5 md:px-4 md:py-2.5 text-xs md:text-sm font-bold text-text-secondary transition-all hover:bg-bg-surface hover:text-indigo-500 backdrop-blur-md shadow-sm"
@@ -2366,15 +2512,15 @@ export default function EmployeesPage() {
               <Search className="absolute left-3 md:left-4 top-1/2 -translate-y-1/2 w-3.5 h-3.5 md:w-4 md:h-4 text-text-secondary transition-colors group-focus-within:text-indigo-500" />
               <input
                 type="text"
-                placeholder={`Search by name, emp no, or ${activeTab === 'employees' ? 'department' : 'status'}...`}
-                value={activeTab === 'employees' ? searchTerm : applicationSearchTerm}
-                onChange={(e) => activeTab === 'employees' ? setSearchTerm(e.target.value) : setApplicationSearchTerm(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && (activeTab === 'employees' ? loadEmployees(1, false) : loadApplications())}
+                placeholder="Search by name, emp no, or department..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && loadEmployees(1, false)}
                 className="relative w-full h-10 md:h-12 pl-10 md:pl-12 pr-10 md:pr-4 rounded-xl md:rounded-2xl border border-border-base bg-bg-base/60 text-xs md:text-sm font-semibold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all text-text-primary placeholder:text-text-secondary/40 shadow-sm"
               />
               {/* Mobile Embedded Search Button */}
               <button
-                onClick={() => activeTab === 'employees' ? loadEmployees(1, false) : loadApplications()}
+                onClick={() => loadEmployees(1, false)}
                 className="md:hidden absolute right-1.5 top-1/2 -translate-y-1/2 p-2 rounded-lg bg-indigo-500 text-white shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"
               >
                 <Search className="w-4 h-4" />
@@ -2383,7 +2529,7 @@ export default function EmployeesPage() {
 
             {/* Desktop Search Button */}
             <button
-              onClick={() => activeTab === 'employees' ? loadEmployees(1, false) : loadApplications()}
+              onClick={() => loadEmployees(1, false)}
               className="hidden md:flex h-10 md:h-12 px-6 md:px-8 rounded-xl md:rounded-2xl bg-gradient-to-br from-indigo-500 to-indigo-600 text-white text-[10px] font-black uppercase tracking-[0.2em] shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/40 hover:scale-[1.02] active:scale-95 transition-all items-center justify-center gap-2 whitespace-nowrap flex-shrink-0"
             >
               <Search className="w-3 h-3 md:w-3.5 h-3.5" />
@@ -2580,10 +2726,25 @@ export default function EmployeesPage() {
                           {employee.emp_no}
                         </td>
                         <td className="whitespace-nowrap px-6 py-4">
-                          <div className="text-sm font-black text-text-primary uppercase tracking-tight">{employee.employee_name}</div>
-                          {employee.email && (
-                            <div className="text-[10px] font-bold text-text-secondary uppercase tracking-widest">{employee.email}</div>
-                          )}
+                          <div className="flex items-center gap-3">
+                            {(employee as any).profilePhoto ? (
+                              <img
+                                src={(employee as any).profilePhoto}
+                                alt=""
+                                className="h-9 w-9 shrink-0 rounded-lg border border-slate-200 object-cover dark:border-slate-700"
+                              />
+                            ) : (
+                              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-100 text-sm font-bold text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
+                                {(employee.employee_name || '?').charAt(0).toUpperCase()}
+                              </div>
+                            )}
+                            <div>
+                              <div className="text-sm font-black text-text-primary uppercase tracking-tight">{employee.employee_name}</div>
+                              {employee.email && (
+                                <div className="text-[10px] font-bold text-text-secondary uppercase tracking-widest">{employee.email}</div>
+                              )}
+                            </div>
+                          </div>
                         </td>
                         <td className="whitespace-nowrap px-6 py-4 text-xs font-bold text-text-secondary">
                           {employee.division?.name || (employee.division_id as { name?: string })?.name || '-'}
@@ -2705,6 +2866,49 @@ export default function EmployeesPage() {
                                 )}
                               </button>
                             )}
+                            {hasManagePermission && !employee.leftDate && (
+                              <button
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+
+                                  const result = await Swal.fire({
+                                    title: 'Reset Credentials',
+                                    text: `Reset credentials for ${employee.employee_name}? Enter a custom password or leave blank to auto-generate.`,
+                                    input: 'text',
+                                    inputPlaceholder: 'Enter custom password (optional)',
+                                    showCancelButton: true,
+                                    confirmButtonText: 'Reset & Send',
+                                    cancelButtonText: 'Cancel',
+                                    confirmButtonColor: '#f97316',
+                                    inputAttributes: {
+                                      autocapitalize: 'off',
+                                      autocorrect: 'off'
+                                    }
+                                  });
+
+                                  if (!result.isConfirmed) return;
+
+                                  setIsResetting(employee.emp_no);
+                                  try {
+                                    await api.resetEmployeeCredentials(employee.emp_no, { customPassword: result.value });
+                                    setSuccess('Credentials reset and sent!');
+                                  } catch (err) {
+                                    setError('Failed to reset');
+                                  } finally {
+                                    setIsResetting(null);
+                                  }
+                                }}
+                                disabled={isResetting === employee.emp_no}
+                                className="w-8 h-8 flex items-center justify-center rounded-lg text-text-secondary hover:bg-orange-500/10 hover:text-orange-500 transition-all font-bold disabled:opacity-50"
+                                title="Reset Credentials"
+                              >
+                                {isResetting === employee.emp_no ? (
+                                  <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-orange-500 border-t-transparent" />
+                                ) : (
+                                  <KeyRound className="h-3.5 w-3.5" />
+                                )}
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -2730,6 +2934,17 @@ export default function EmployeesPage() {
                 >
                   {/* Card Header */}
                   <div className="mb-2 flex items-start justify-between gap-2">
+                    {(employee as any).profilePhoto ? (
+                      <img
+                        src={(employee as any).profilePhoto}
+                        alt=""
+                        className="h-10 w-10 shrink-0 rounded-lg border border-border-base object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border-base bg-bg-base text-sm font-bold text-text-secondary">
+                        {(employee.employee_name || '?').charAt(0).toUpperCase()}
+                      </div>
+                    )}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-xs font-black text-indigo-500">{employee.emp_no}</span>
@@ -2870,6 +3085,49 @@ export default function EmployeesPage() {
                         )}
                       </button>
                     )}
+                    {hasManagePermission && !employee.leftDate && (
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+
+                          const result = await Swal.fire({
+                            title: 'Reset Credentials',
+                            text: `Reset credentials for ${employee.employee_name}? Enter a custom password or leave blank to auto-generate.`,
+                            input: 'text',
+                            inputPlaceholder: 'Enter custom password (optional)',
+                            showCancelButton: true,
+                            confirmButtonText: 'Reset & Send',
+                            cancelButtonText: 'Cancel',
+                            confirmButtonColor: '#f97316',
+                            inputAttributes: {
+                              autocapitalize: 'off',
+                              autocorrect: 'off'
+                            }
+                          });
+
+                          if (!result.isConfirmed) return;
+
+                          setIsResetting(employee.emp_no);
+                          try {
+                            await api.resetEmployeeCredentials(employee.emp_no, { customPassword: result.value });
+                            setSuccess('Credentials reset and sent!');
+                          } catch (err) {
+                            setError('Failed to reset');
+                          } finally {
+                            setIsResetting(null);
+                          }
+                        }}
+                        disabled={isResetting === employee.emp_no}
+                        className="p-1.5 rounded-lg bg-orange-500/10 text-orange-500 hover:bg-orange-500/20 transition-colors disabled:opacity-50"
+                        title="Reset Credentials"
+                      >
+                        {isResetting === employee.emp_no ? (
+                          <div className="h-3 w-3 animate-spin rounded-full border-2 border-orange-500 border-t-transparent" />
+                        ) : (
+                          <KeyRound className="h-3 w-3" />
+                        )}
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -2912,16 +3170,19 @@ export default function EmployeesPage() {
                 <LucideClock className="h-10 w-10" />
               </div>
               <h3 className="text-xl font-black text-text-primary tracking-tight">No applications found</h3>
-              <p className="mt-2 text-sm text-text-secondary font-medium max-w-xs mx-auto">There are no employee applications to display at this time.</p>
+              <p className="mt-2 text-sm text-text-secondary font-medium max-w-xs mx-auto">No applications match the current filters or search. Try adjusting division, department, designation, or search.</p>
               <button
                 onClick={() => {
+                  setSearchTerm('');
                   setApplicationSearchTerm('');
                   setApplicationFilters({});
+                  setEmployeeFilters({});
+                  setSelectedDivision('');
                   loadApplications();
                 }}
                 className="mt-6 px-6 py-2.5 rounded-xl bg-bg-base border border-border-base text-xs font-black uppercase tracking-widest text-text-primary hover:bg-bg-surface transition-colors"
               >
-                Refresh Applications
+                Reset filters & refresh
               </button>
             </div>
           ) : (
@@ -3158,7 +3419,58 @@ export default function EmployeesPage() {
                 </div>
               )}
 
+              {applicationFormAutoGenerateEmpNo && (
+                <div className="mb-4 flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-200">
+                  <svg className="h-5 w-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Employee number will be auto-generated when you submit.
+                </div>
+              )}
+
               <form onSubmit={handleCreateApplication} className="space-y-6">
+                {/* Profile photo (optional) - uploads to S3 profiles folder */}
+                <div className="rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
+                  <h3 className="mb-3 text-base font-semibold text-slate-900 dark:text-slate-100">Profile Photo (optional)</h3>
+                  <div className="flex flex-wrap items-start gap-4">
+                    {(applicationFormData as any).profilePhoto && (
+                      <div className="relative">
+                        <img
+                          src={(applicationFormData as any).profilePhoto}
+                          alt="Profile"
+                          className="h-24 w-24 rounded-xl border border-slate-200 object-cover dark:border-slate-700"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setApplicationFormData(prev => ({ ...prev, profilePhoto: '' }))}
+                          className="absolute -right-2 -top-2 rounded-full bg-red-500 p-1 text-white shadow hover:bg-red-600"
+                        >
+                          <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                        </button>
+                      </div>
+                    )}
+                    <div>
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/jpg"
+                        className="block w-full max-w-xs text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-4 file:py-2 file:text-slate-700 dark:text-slate-300 dark:file:bg-slate-800 dark:file:text-slate-200"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          try {
+                            const res = await api.uploadProfile(file) as { success?: boolean; url?: string };
+                            if (res?.success && res?.url) setApplicationFormData(prev => ({ ...prev, profilePhoto: res.url }));
+                          } catch (err) {
+                            setError('Failed to upload profile photo. Try again.');
+                          }
+                          e.target.value = '';
+                        }}
+                      />
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">JPG or PNG, max 5MB.</p>
+                    </div>
+                  </div>
+                </div>
+
                 <DynamicEmployeeForm
                   formData={applicationFormData}
                   onChange={setApplicationFormData}
@@ -3166,7 +3478,10 @@ export default function EmployeesPage() {
                   departments={getScopedDepartments(getEntityId(applicationFormData.division_id) || '')}
                   divisions={scopedDivisions}
                   designations={filteredApplicationDesignations as any}
-                  excludeFields={userRole === 'hod' ? SENSITIVE_FIELDS : []}
+                  excludeFields={[
+                    ...(userRole === 'hod' ? SENSITIVE_FIELDS : []),
+                    ...(applicationFormAutoGenerateEmpNo ? ['emp_no'] : []),
+                  ]}
                 />
 
                 {/* Allowances & Deductions Overrides */}
@@ -3859,7 +4174,59 @@ export default function EmployeesPage() {
                 </div>
               )}
 
+              {!editingEmployee && addFormAutoGenerateEmpNo && (
+                <div className="mb-4 flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-200">
+                  <svg className="h-5 w-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Employee number will be auto-generated when you submit.
+                </div>
+              )}
+
               <form onSubmit={handleSubmit} className="space-y-6">
+                {/* Profile photo (optional); when editing, add or update photo */}
+                <div className="rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
+                  <h3 className="mb-3 text-base font-semibold text-slate-900 dark:text-slate-100">Profile Photo (optional)</h3>
+                  <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">{editingEmployee ? 'Update or add a profile photo for this employee.' : 'Upload a profile photo. JPG or PNG, max 5MB.'}</p>
+                  <div className="flex flex-wrap items-start gap-4">
+                    {(formData as any).profilePhoto && (
+                      <div className="relative">
+                        <img
+                          src={(formData as any).profilePhoto}
+                          alt="Profile"
+                          className="h-24 w-24 rounded-xl border border-slate-200 object-cover dark:border-slate-700"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setFormData(prev => ({ ...prev, profilePhoto: '' }))}
+                          className="absolute -right-2 -top-2 rounded-full bg-red-500 p-1 text-white shadow hover:bg-red-600"
+                        >
+                          <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                        </button>
+                      </div>
+                    )}
+                    <div>
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/jpg"
+                        className="block w-full max-w-xs text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-4 file:py-2 file:text-slate-700 dark:text-slate-300 dark:file:bg-slate-800 dark:file:text-slate-200"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          try {
+                            const res = await api.uploadProfile(file) as { success?: boolean; url?: string };
+                            if (res?.success && res?.url) setFormData(prev => ({ ...prev, profilePhoto: res.url }));
+                          } catch (err) {
+                            setError('Failed to upload profile photo. Try again.');
+                          }
+                          e.target.value = '';
+                        }}
+                      />
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">JPG or PNG, max 5MB.</p>
+                    </div>
+                  </div>
+                </div>
+
                 <DynamicEmployeeForm
                   formData={formData}
                   onChange={setFormData}
@@ -3868,7 +4235,10 @@ export default function EmployeesPage() {
                   divisions={divisions}
                   designations={filteredDesignations as any}
                   onSettingsLoaded={setFormSettings}
-                  excludeFields={userRole === 'hod' ? SENSITIVE_FIELDS : []}
+                  excludeFields={[
+                    ...(userRole === 'hod' ? SENSITIVE_FIELDS : []),
+                    ...(!editingEmployee && addFormAutoGenerateEmpNo ? ['emp_no'] : []),
+                  ]}
                 />
 
                 {/* Leave Settings */}
@@ -4126,13 +4496,21 @@ export default function EmployeesPage() {
 
       {/* Bulk Upload Dialog */}
       {
-        showBulkUpload && (
+        allowEmployeeBulkProcess && showBulkUpload && (
           <BulkUpload
             title="Bulk Upload Employees"
             templateHeaders={dynamicTemplate.headers}
             templateSample={dynamicTemplate.sample}
             templateFilename="employee_template"
+            infoMessage={undefined}
+            showAutoGenerateEmpNoToggle={true}
+            autoGenerateEmpNo={bulkPreviewAutoGenerateEmpNo}
+            onAutoGenerateEmpNoChange={setBulkPreviewAutoGenerateEmpNo}
             columns={dynamicTemplate.columns.map(col => {
+              // When "ignore from file" is ON, make employee number readonly and show it will be auto-assigned
+              if (col.key === 'emp_no' && bulkPreviewAutoGenerateEmpNo) {
+                return { ...col, editable: false };
+              }
               if (col.key === 'division_name') {
                 return {
                   ...col,
@@ -4145,15 +4523,23 @@ export default function EmployeesPage() {
                   ...col,
                   type: 'select',
                   options: (row: ParsedRow) => {
-                    const rowDivName = row.division_name as string;
+                    const rowDivName = String(row.division_name || '').trim();
                     if (!rowDivName) return [];
 
-                    const div = divisions.find(d => d.name.toLowerCase() === rowDivName.toLowerCase());
+                    const div = divisions.find(d => d.name.toLowerCase().trim() === rowDivName.toLowerCase());
                     if (!div) return [];
 
-                    // Filter departments that belong to this division
+                    // Prefer division.departments (populated by API) so dropdown shows departments correctly
+                    const divDepts = (div as any).departments;
+                    if (divDepts && Array.isArray(divDepts) && divDepts.length > 0) {
+                      return divDepts.map((d: any) => ({
+                        value: typeof d === 'object' && d?.name ? d.name : (departments.find(dept => dept._id === (typeof d === 'string' ? d : d._id))?.name || String(d)),
+                        label: typeof d === 'object' && d?.name ? d.name : (departments.find(dept => dept._id === (typeof d === 'string' ? d : d._id))?.name || String(d))
+                      }));
+                    }
+                    // Fallback: filter departments by department.divisions containing this division
                     return departments
-                      .filter(dept => (dept as any).divisions?.some((d: any) => (typeof d === 'string' ? d : d._id) === div._id))
+                      .filter(dept => (dept as any).divisions?.some((d: any) => String(typeof d === 'string' ? d : d._id) === String(div._id)))
                       .map(d => ({ value: d.name, label: d.name }));
                   }
                 };
@@ -4188,16 +4574,20 @@ export default function EmployeesPage() {
             })}
             validateRow={(row, index, allData) => {
               const mappedUsers = employees.map(e => ({ _id: e._id, name: e.employee_name }));
-              const result = validateEmployeeRow(row, divisions, departments, designations as any, mappedUsers);
+              const result = validateEmployeeRow(row, divisions, departments, designations as any, mappedUsers, { autoGenerateEmpNo: bulkPreviewAutoGenerateEmpNo });
               const errors = [...result.errors];
               const fieldErrors = { ...result.fieldErrors };
 
-              // Check for duplicates within the file
+              // Check for duplicates within the file (skip for auto-assigned rows when auto-generate is ON)
               const empNo = String(row.emp_no || '').trim().toUpperCase();
-              if (empNo) {
-                const isDuplicateInFile = allData.some((r, i) =>
-                  i !== index && String(r.emp_no || '').trim().toUpperCase() === empNo
-                );
+              const isAutoRow = bulkPreviewAutoGenerateEmpNo && (empNo === '' || empNo === '(AUTO)');
+              if (empNo && !isAutoRow) {
+                const isDuplicateInFile = allData.some((r, i) => {
+                  const other = String(r.emp_no || '').trim().toUpperCase();
+                  if (i === index) return false;
+                  if (bulkPreviewAutoGenerateEmpNo && (other === '' || other === '(AUTO)')) return false;
+                  return other === empNo;
+                });
                 if (isDuplicateInFile) {
                   errors.push('Duplicate Employee No within this file');
                   fieldErrors.emp_no = 'File Duplicate';
@@ -4250,6 +4640,11 @@ export default function EmployeesPage() {
                     designation_id: desigId || undefined,
                     proposedSalary: row.proposedSalary || row.gross_salary || 0
                   };
+                  // Never send the display placeholder "(Auto)" as emp_no. Send empty so backend assigns.
+                  const empNoRaw = String(employeeData.emp_no || '').trim();
+                  if (empNoRaw.toUpperCase() === '(AUTO)' || bulkPreviewAutoGenerateEmpNo) {
+                    employeeData.emp_no = '';
+                  }
 
                   // Handle dynamic fields based on form settings
                   const coreFields = ['emp_no', 'employee_name', 'proposedSalary', 'gross_salary', 'division_id', 'department_id', 'designation_id', 'division_name', 'department_name', 'designation_name', 'doj', 'dob', 'gender', 'marital_status', 'blood_group', 'qualifications', 'experience', 'address', 'location', 'aadhar_number', 'phone_number', 'alt_phone_number', 'email', 'pf_number', 'esi_number', 'bank_account_no', 'bank_name', 'bank_place', 'ifsc_code'];
@@ -4328,13 +4723,26 @@ export default function EmployeesPage() {
             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowViewDialog(false)} />
             <div className="relative z-50 max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950/95">
               <div className="mb-6 flex items-center justify-between">
-                <div>
-                  <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-                    {viewingEmployee.employee_name}
-                  </h2>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    Employee No: {viewingEmployee.emp_no}
-                  </p>
+                <div className="flex items-center gap-4">
+                  {(viewingEmployee as any).profilePhoto ? (
+                    <img
+                      src={(viewingEmployee as any).profilePhoto}
+                      alt={viewingEmployee.employee_name || 'Profile'}
+                      className="h-16 w-16 rounded-xl border border-slate-200 object-cover dark:border-slate-700"
+                    />
+                  ) : (
+                    <div className="flex h-16 w-16 items-center justify-center rounded-xl border border-slate-200 bg-slate-100 text-xl font-semibold text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
+                      {(viewingEmployee.employee_name || '?').charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <div>
+                    <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+                      {viewingEmployee.employee_name}
+                    </h2>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                      Employee No: {viewingEmployee.emp_no}
+                    </p>
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   {hasManagePermission && (
@@ -4841,10 +5249,10 @@ export default function EmployeesPage() {
               <div className="mb-6 flex items-center justify-between">
                 <div>
                   <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
-                    Set Employee Left Date
+                    Resignation
                   </h2>
                   <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    {selectedEmployeeForLeftDate.employee_name} ({selectedEmployeeForLeftDate.emp_no})
+                    {selectedEmployeeForLeftDate.employee_name} ({selectedEmployeeForLeftDate.emp_no}) — Enter last working date and remarks. If resignation workflow is enabled in settings, the request will go through approval.
                   </p>
                 </div>
                 <button
@@ -4876,30 +5284,39 @@ export default function EmployeesPage() {
               <form onSubmit={handleSubmitLeftDate} className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    Left Date <span className="text-red-500">*</span>
+                    Last working date <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="date"
                     required
+                    readOnly
                     value={leftDateForm.leftDate}
-                    onChange={(e) => setLeftDateForm({ ...leftDateForm, leftDate: e.target.value })}
-                    max={new Date().toISOString().split('T')[0]}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    min={(() => {
+                      const d = new Date();
+                      d.setDate(d.getDate() + resignationNoticePeriodDays);
+                      return d.toISOString().split('T')[0];
+                    })()}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-300 cursor-not-allowed"
                   />
                   <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    The employee will be included in pay register for this month, but excluded from future months.
+                    This date will be recorded as the employee&apos;s last day in office. They will be included in pay register until this month, then excluded from future months.
                   </p>
+                  {resignationNoticePeriodDays > 0 && (
+                    <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                      Notice period: {resignationNoticePeriodDays} day(s). Last working date must be at least {resignationNoticePeriodDays} days from today.
+                    </p>
+                  )}
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    Reason for Leaving (Optional)
+                    Remarks for resignation (Optional)
                   </label>
                   <textarea
                     value={leftDateForm.leftReason}
                     onChange={(e) => setLeftDateForm({ ...leftDateForm, leftReason: e.target.value })}
                     rows={3}
-                    placeholder="Enter reason for leaving..."
+                    placeholder="Enter remarks for resignation..."
                     className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                   />
                 </div>
@@ -4920,7 +5337,7 @@ export default function EmployeesPage() {
                     type="submit"
                     className="rounded-xl bg-gradient-to-r from-red-500 to-orange-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-red-500/30 transition-all hover:from-red-600 hover:to-orange-600"
                   >
-                    Set Left Date
+                    Submit Resignation
                   </button>
                 </div>
               </form>

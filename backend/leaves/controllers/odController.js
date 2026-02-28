@@ -11,6 +11,7 @@ const {
   checkJurisdiction
 } = require('../../shared/middleware/dataScopeMiddleware');
 const Department = require('../../departments/model/Department');
+const EmployeeHistory = require('../../employees/model/EmployeeHistory');
 
 /**
  * Get employee settings from database
@@ -118,6 +119,12 @@ const getWorkflowSettings = async () => {
   // Return default workflow if no settings found
   if (!settings) {
     return {
+      settings: {
+        allowBackdated: false,
+        maxBackdatedDays: 0,
+        allowFutureDated: true,
+        maxAdvanceDays: 365,
+      },
       workflow: {
         isEnabled: true,
         steps: [
@@ -305,17 +312,52 @@ exports.applyOD = async (req, res) => {
       geoLocation, // ADDED
     } = req.body;
 
-    // Validate Date (Must be today or future)
+    // Get settings
+    const workflowSettings = await getWorkflowSettings();
+    const settings = workflowSettings.settings || {};
+
+    // Validate Date
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const checkFromDate = new Date(fromDate);
     checkFromDate.setHours(0, 0, 0, 0);
 
-    if (checkFromDate < today) {
-      return res.status(400).json({
-        success: false,
-        error: 'OD applications are restricted to current or future dates only.'
-      });
+    const diffTime = checkFromDate - today;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    // 1. Backdate validation
+    if (diffDays < 0) {
+      if (!settings.allowBackdated) {
+        return res.status(400).json({
+          success: false,
+          error: 'Backdated OD applications are not allowed.'
+        });
+      }
+
+      const backdateDays = Math.abs(diffDays);
+      if (settings.maxBackdatedDays !== null && settings.maxBackdatedDays !== undefined && backdateDays > settings.maxBackdatedDays) {
+        return res.status(400).json({
+          success: false,
+          error: `OD application can only be backdated up to ${settings.maxBackdatedDays} days.`
+        });
+      }
+    }
+    // 2. Future date validation
+    else if (diffDays > 0) {
+      if (!settings.allowFutureDated) {
+        return res.status(400).json({
+          success: false,
+          error: 'Future dated OD applications are not allowed.'
+        });
+      }
+
+      const advanceDays = diffDays;
+      if (settings.maxAdvanceDays !== null && settings.maxAdvanceDays !== undefined && advanceDays > settings.maxAdvanceDays) {
+        return res.status(400).json({
+          success: false,
+          error: `OD application can only be applied up to ${settings.maxAdvanceDays} days in advance.`
+        });
+      }
     }
 
     // Get employee
@@ -586,9 +628,6 @@ exports.applyOD = async (req, res) => {
     // Store warnings to include in success response
     const warnings = validation.warnings || [];
 
-    // Get workflow settings
-    const workflowSettings = await getWorkflowSettings();
-
     // Initialize Workflow (Dynamic)
     const approvalSteps = [];
     const reportingManagers = employee.dynamicFields?.reporting_to || employee.dynamicFields?.reporting_to_ || [];
@@ -691,6 +730,28 @@ exports.applyOD = async (req, res) => {
     });
 
     await od.save();
+
+    // Employee history: OD applied/assigned
+    try {
+      await EmployeeHistory.create({
+        emp_no: employee.emp_no,
+        event: 'od_applied',
+        performedBy: req.user._id,
+        performedByName: req.user.name,
+        performedByRole: req.user.role,
+        details: {
+          odId: od._id,
+          fromDate: od.fromDate,
+          toDate: od.toDate,
+          numberOfDays: od.numberOfDays,
+          odType: od.odType,
+          odType_extended: od.odType_extended,
+        },
+        comments: remarks || (isAssigned ? 'OD assigned by manager' : 'OD applied'),
+      });
+    } catch (err) {
+      console.error('Failed to log OD applied history:', err.message);
+    }
 
     // Populate for response
     await od.populate([
@@ -1290,8 +1351,51 @@ exports.processODAction = async (req, res) => {
         });
     }
 
-    od.workflow.history.push(historyEntry);
-    await od.save();
+        od.workflow.history.push(historyEntry);
+        await od.save();
+
+        // Employee history: OD final decision
+        try {
+          if (action === 'approve' && od.status === 'approved') {
+            await EmployeeHistory.create({
+              emp_no: od.emp_no,
+              event: 'od_approved',
+              performedBy: req.user._id,
+              performedByName: req.user.name,
+              performedByRole: userRole,
+              details: {
+                odId: od._id,
+                fromDate: od.fromDate,
+                toDate: od.toDate,
+                numberOfDays: od.numberOfDays,
+                odType: od.odType,
+                odType_extended: od.odType_extended,
+              },
+              comments: comments && comments.trim()
+                ? comments
+                : 'OD fully approved; employee will be on official duty for these dates',
+            });
+          } else if (action === 'reject' && od.status === 'rejected') {
+            await EmployeeHistory.create({
+              emp_no: od.emp_no,
+              event: 'od_rejected',
+              performedBy: req.user._id,
+              performedByName: req.user.name,
+              performedByRole: userRole,
+              details: {
+                odId: od._id,
+                fromDate: od.fromDate,
+                toDate: od.toDate,
+                numberOfDays: od.numberOfDays,
+              },
+              comments: comments && comments.trim()
+                ? comments
+                : 'OD rejected',
+            });
+          }
+        } catch (err) {
+          console.error('Failed to log OD approval/rejection history:', err.message);
+        }
 
     // NEW: If OD is fully approved and has hours, store in AttendanceDaily
     if (action === 'approve' && od.status === 'approved' && od.odType_extended === 'hours') {

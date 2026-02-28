@@ -90,6 +90,12 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    // Profile photo URL (S3). Used when user has no linked employee (employeeRef).
+    profilePhoto: {
+      type: String,
+      trim: true,
+      default: null,
+    },
     lastLogin: {
       type: Date,
     },

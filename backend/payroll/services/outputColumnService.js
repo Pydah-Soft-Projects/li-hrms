@@ -26,63 +26,67 @@ function getContextFromPayslip(payslip) {
   const ded = payslip.deductions || {};
   const loan = payslip.loanAdvance || {};
   const arrears = payslip.arrears || {};
+  const num = (value, fallback = 0) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : fallback;
+  };
   return {
     emp_no: emp.emp_no ?? '',
     name: emp.name ?? '',
     designation: emp.designation ?? '',
     department: emp.department ?? '',
     division: emp.division ?? '',
-    basicPay: Number(earn.basicPay) || 0,
-    basic_pay: Number(earn.basicPay) || 0,
-    grossSalary: Number(earn.grossSalary) || 0,
-    netSalary: Number(payslip.netSalary) || 0,
-    totalDeductions: Number(ded.totalDeductions) || 0,
-    roundOff: Number(payslip.roundOff) || 0,
-    presentDays: Number(att.presentDays) ?? 0,
-    payableShifts: Number(att.payableShifts) ?? 0,
-    monthDays: Number(att.totalDaysInMonth) ?? 30,
-    otPay: Number(earn.otPay) || 0,
-    incentive: Number(earn.incentive) || 0,
-    earnedSalary: Number(att.earnedSalary ?? earn.earnedSalary) ?? 0,
-    totalAllowances: Number(earn.totalAllowances) || 0,
-    allowancesCumulative: Number(earn.allowancesCumulative ?? earn.totalAllowances) || 0,
-    deductionsCumulative: Number(ded.deductionsCumulative ?? ded.totalDeductions) || 0,
-    statutoryCumulative: Number(ded.statutoryCumulative) || 0,
-    advanceDeduction: Number(loan.advanceDeduction) || 0,
-    loanEMI: Number(loan.totalEMI) || 0,
-    perDayBasicPay: Number(earn.perDayBasicPay) || 0,
-    attendanceDeduction: Number(ded.attendanceDeduction) || 0,
-    permissionDeduction: Number(ded.permissionDeduction) || 0,
-    leaveDeduction: Number(ded.leaveDeduction) || 0,
-    arrearsAmount: Number(arrears.arrearsAmount ?? payslip.arrearsAmount) || 0,
-    extraDays: Number(att.extraDays) ?? 0,
-    paidLeaveDays: Number(att.paidLeaveDays) ?? 0,
-    odDays: Number(att.odDays) ?? 0,
-    absentDays: Number(att.absentDays) ?? 0,
-    weeklyOffs: Number(att.weeklyOffs) ?? 0,
-    holidays: Number(att.holidays) ?? 0,
-    lopDays: Number(att.lopDays) ?? 0,
-    elUsedInPayroll: Number(payslip.attendance?.elUsedInPayroll ?? payslip.elUsedInPayroll) ?? 0,
-    attendanceDeductionDays: Number(att.attendanceDeductionDays ?? payslip.attendanceDeductionDays ?? ded.attendanceDeductionBreakdown?.daysDeducted) ?? 0,
+    basicPay: num(earn.basicPay),
+    basic_pay: num(earn.basicPay),
+    grossSalary: num(earn.grossSalary),
+    netSalary: num(payslip.netSalary),
+    totalDeductions: num(ded.totalDeductions),
+    roundOff: num(payslip.roundOff),
+    presentDays: num(att.presentDays),
+    payableShifts: num(att.payableShifts),
+    monthDays: num(att.totalDaysInMonth, 30),
+    otPay: num(earn.otPay),
+    incentive: num(earn.incentive),
+    earnedSalary: num(att.earnedSalary ?? earn.earnedSalary),
+    totalAllowances: num(earn.totalAllowances),
+    allowancesCumulative: num(earn.allowancesCumulative ?? earn.totalAllowances),
+    deductionsCumulative: num(ded.deductionsCumulative ?? ded.totalDeductions),
+    statutoryCumulative: num(ded.statutoryCumulative),
+    advanceDeduction: num(loan.advanceDeduction),
+    loanEMI: num(loan.totalEMI),
+    perDayBasicPay: num(earn.perDayBasicPay),
+    attendanceDeduction: num(ded.attendanceDeduction),
+    permissionDeduction: num(ded.permissionDeduction),
+    leaveDeduction: num(ded.leaveDeduction),
+    arrearsAmount: num(arrears.arrearsAmount ?? payslip.arrearsAmount),
+    extraDays: num(att.extraDays),
+    paidLeaveDays: num(att.paidLeaveDays),
+    odDays: num(att.odDays),
+    absentDays: num(att.absentDays),
+    weeklyOffs: num(att.weeklyOffs),
+    holidays: num(att.holidays),
+    lopDays: num(att.lopDays),
+    elUsedInPayroll: num(payslip.attendance?.elUsedInPayroll ?? payslip.elUsedInPayroll),
+    attendanceDeductionDays: num(att.attendanceDeductionDays ?? payslip.attendanceDeductionDays ?? ded.attendanceDeductionBreakdown?.daysDeducted),
     // Snake_case / alias for paysheet formulas (flow-order columns)
-    month_days: Number(att.totalDaysInMonth) ?? 30,
-    monthdays: Number(att.totalDaysInMonth) ?? 30,
-    present_days: Number(att.presentDays) ?? 0,
-    week_offs: Number(att.weeklyOffs) ?? 0,
-    paidleaves: Number(att.paidLeaveDays) ?? 0,
-    el: Number(payslip.attendance?.elUsedInPayroll ?? payslip.elUsedInPayroll) ?? 0,
-    salary: Number(earn.basicPay) || 0,
-    extradays: Number(att.extraDays) ?? 0,
-    statutory_deductions: Number(ded.statutoryCumulative) || 0,
-    net_salary: Number(payslip.netSalary) || 0,
-    extra_hours_pay: Number(earn.otPay) || 0,
-    total_allowances: Number(earn.allowancesCumulative ?? earn.totalAllowances) || 0,
-    gross_salary: Number(earn.grossSalary) || 0,
-    salary_advance: Number(loan.advanceDeduction) || 0,
-    loan_recovery: Number(loan.totalEMI) || 0,
-    remaining_balance: Number(loan.remainingBalance) || 0,
-    attendance_deduction: Number(ded.attendanceDeduction) || 0,
-    round_off: Number(payslip.roundOff) || 0,
+    month_days: num(att.totalDaysInMonth, 30),
+    monthdays: num(att.totalDaysInMonth, 30),
+    present_days: num(att.presentDays),
+    week_offs: num(att.weeklyOffs),
+    paidleaves: num(att.paidLeaveDays),
+    el: num(payslip.attendance?.elUsedInPayroll ?? payslip.elUsedInPayroll),
+    salary: num(earn.basicPay),
+    extradays: num(att.extraDays),
+    statutory_deductions: num(ded.statutoryCumulative),
+    net_salary: num(payslip.netSalary),
+    extra_hours_pay: num(earn.otPay),
+    total_allowances: num(earn.allowancesCumulative ?? earn.totalAllowances),
+    gross_salary: num(earn.grossSalary),
+    salary_advance: num(loan.advanceDeduction),
+    loan_recovery: num(loan.totalEMI),
+    remaining_balance: num(loan.remainingBalance),
+    attendance_deduction: num(ded.attendanceDeduction),
+    round_off: num(payslip.roundOff),
   };
 }
 
@@ -199,11 +203,23 @@ function buildRowFromOutputColumns(payslip, outputColumns, serialNo = null) {
   const sorted = [...outputColumns].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   const baseContext = getContextFromPayslip(payslip);
   const columnContext = { ...baseContext };
+  const usedHeaders = new Set();
 
-  for (const col of sorted) {
-    const header = col.header || 'Column';
+  for (let i = 0; i < sorted.length; i++) {
+    const col = sorted[i];
+    let header = (col.header && String(col.header).trim()) ? String(col.header).trim() : 'Column';
+    if (header === 'Column' || usedHeaders.has(header)) {
+      header = `Column ${i}`;
+    }
+    usedHeaders.add(header);
+
     let val;
-    if (col.source === 'formula' && col.formula) {
+
+    // Prefer formula when it exists, regardless of source flag – this keeps
+    // older configurations working where users entered a formula but left
+    // "Data source" as "Field".
+    const hasFormula = typeof col.formula === 'string' && col.formula.trim().length > 0;
+    if (hasFormula) {
       val = safeEvalFormula(col.formula, columnContext);
     } else {
       val = getValueByPath(payslip, col.field || '');
@@ -215,8 +231,136 @@ function buildRowFromOutputColumns(payslip, outputColumns, serialNo = null) {
   return row;
 }
 
+/**
+ * Detect if a column is the "Allowances cumulative" / "Total Allowances" column (by field or header).
+ */
+function isAllowancesCumulativeColumn(col) {
+  const field = (col.field || '').trim();
+  const headerKey = headerToKey(col.header || '');
+  return (
+    field === 'earnings.allowancesCumulative' ||
+    headerKey === 'allowances_cumulative' ||
+    headerKey === 'total_allowances'
+  );
+}
+
+/**
+ * Detect if a column is the "Deductions cumulative" column (by field or header).
+ */
+function isDeductionsCumulativeColumn(col) {
+  const field = (col.field || '').trim();
+  const headerKey = headerToKey(col.header || '');
+  return (
+    field === 'deductions.deductionsCumulative' ||
+    headerKey === 'deductions_cumulative'
+  );
+}
+
+/**
+ * Detect if a column is the "Statutory cumulative" column (by field or header).
+ */
+function isStatutoryCumulativeColumn(col) {
+  const field = (col.field || '').trim();
+  const headerKey = headerToKey(col.header || '');
+  return (
+    field === 'deductions.statutoryCumulative' ||
+    headerKey === 'statutory_cumulative' ||
+    headerKey === 'statutory_deductions'
+  );
+}
+
+/**
+ * Expand output columns by inserting breakdown columns before each cumulative column:
+ * - Before Allowances cumulative: one column per allowance name (earnings.allowanceAmount:Name), value or 0.
+ * - Before Deductions cumulative: one column per deduction name (deductions.otherDeductionAmount:Name), value or 0.
+ * - Before Statutory cumulative: one column per statutory code (deductions.statutoryAmount:Code), e.g. PF, ESI, PT.
+ * allAllowanceNames, allDeductionNames, allStatutoryCodes are arrays or Sets of strings (names/codes).
+ * Returns new array with order 0,1,2,... so formulas that reference earlier columns still work.
+ */
+function expandOutputColumnsWithBreakdown(outputColumns, allAllowanceNames = [], allDeductionNames = [], allStatutoryCodes = []) {
+  if (!Array.isArray(outputColumns) || outputColumns.length === 0) {
+    return [];
+  }
+  const allowances = [...(Array.isArray(allAllowanceNames) ? allAllowanceNames : Array.from(allAllowanceNames || []))].sort((a, b) => String(a).localeCompare(String(b)));
+  const deductions = [...(Array.isArray(allDeductionNames) ? allDeductionNames : Array.from(allDeductionNames || []))].sort((a, b) => String(a).localeCompare(String(b)));
+  const statutoryRaw = Array.isArray(allStatutoryCodes) ? allStatutoryCodes : Array.from(allStatutoryCodes || []);
+  const statutoryOrder = ['PF', 'ESI', 'PT'];
+  const statutory = [...statutoryRaw].sort((a, b) => {
+    const ia = statutoryOrder.indexOf(String(a).toUpperCase());
+    const ib = statutoryOrder.indexOf(String(b).toUpperCase());
+    if (ia >= 0 && ib >= 0) return ia - ib;
+    if (ia >= 0) return -1;
+    if (ib >= 0) return 1;
+    return String(a).localeCompare(String(b));
+  });
+
+  const sorted = [...outputColumns].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const expanded = [];
+  const seenHeaders = new Set();
+  let nextOrder = 0;
+
+  function uniqueHeader(header, order) {
+    const h = (header && String(header).trim()) ? String(header).trim() : `Column ${order}`;
+    if (h === 'Column' || seenHeaders.has(h)) {
+      const unique = `Column ${order}`;
+      seenHeaders.add(unique);
+      return unique;
+    }
+    seenHeaders.add(h);
+    return h;
+  }
+
+  for (const col of sorted) {
+    if (isAllowancesCumulativeColumn(col)) {
+      allowances.forEach((name) => {
+        if (!name) return;
+        expanded.push({
+          header: String(name).trim(),
+          source: 'field',
+          field: `earnings.allowanceAmount:${String(name).trim()}`,
+          formula: '',
+          order: nextOrder++,
+        });
+      });
+    }
+    if (isDeductionsCumulativeColumn(col)) {
+      deductions.forEach((name) => {
+        if (!name) return;
+        expanded.push({
+          header: String(name).trim(),
+          source: 'field',
+          field: `deductions.otherDeductionAmount:${String(name).trim()}`,
+          formula: '',
+          order: nextOrder++,
+        });
+      });
+    }
+    if (isStatutoryCumulativeColumn(col)) {
+      statutory.forEach((code) => {
+        if (!code) return;
+        expanded.push({
+          header: String(code).trim(),
+          source: 'field',
+          field: `deductions.statutoryAmount:${String(code).trim()}`,
+          formula: '',
+          order: nextOrder++,
+        });
+      });
+    }
+    const order = nextOrder++;
+    expanded.push({
+      ...col,
+      header: uniqueHeader(col.header, order),
+      order,
+    });
+  }
+
+  return expanded;
+}
+
 module.exports = {
   buildRowFromOutputColumns,
+  expandOutputColumnsWithBreakdown,
   getValueByPath,
   getContextFromPayslip,
   safeEvalFormula,

@@ -45,6 +45,7 @@ const PERMANENT_FIELDS = [
   'calculatedSalary',
   'is_active',
   'second_salary',
+  'profilePhoto',
 ];
 
 /**

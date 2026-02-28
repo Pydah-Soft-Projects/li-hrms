@@ -4,6 +4,7 @@
  */
 
 const { calculateEarnedLeave, getELBalance } = require('../services/earnedLeaveService');
+const ELHistory = require('../model/ELHistory');
 const Employee = require('../../employees/model/Employee');
 
 /**
@@ -14,13 +15,16 @@ const Employee = require('../../employees/model/Employee');
 exports.calculateEL = async (req, res) => {
     try {
         const { employeeId, month, year } = req.body;
-        
+
         // Employees can only calculate their own EL
-        if (req.user.role === 'employee' && req.user._id !== employeeId) {
-            return res.status(403).json({
-                success: false,
-                message: 'You can only calculate your own earned leave'
-            });
+        if (req.user.role === 'employee') {
+            const selfId = (req.user.employeeRef || req.user._id || '').toString();
+            if (!employeeId || selfId !== employeeId.toString()) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'You can only calculate your own earned leave'
+                });
+            }
         }
 
         const calculation = await calculateEarnedLeave(employeeId, month, year);
@@ -48,13 +52,16 @@ exports.getELBalance = async (req, res) => {
     try {
         const { employeeId } = req.params;
         const { asOfDate } = req.query;
-        
+
         // Employees can only view their own EL balance
-        if (req.user.role === 'employee' && req.user._id !== employeeId) {
-            return res.status(403).json({
-                success: false,
-                message: 'You can only view your own earned leave balance'
-            });
+        if (req.user.role === 'employee') {
+            const selfId = (req.user.employeeRef || req.user._id || '').toString();
+            if (!employeeId || selfId !== employeeId.toString()) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'You can only view your own earned leave balance'
+                });
+            }
         }
 
         const balance = await getELBalance(employeeId, asOfDate);
@@ -76,7 +83,7 @@ exports.getELBalance = async (req, res) => {
 /**
  * @desc    Update earned leave for all employees (Admin/HR only)
  * @route   POST /api/leaves/earned/update-all
- * @access  Private (HR, Admin)
+ * @access  Private (HR, Admin, Employee for self)
  */
 exports.updateAllEL = async (req, res) => {
     try {
@@ -110,14 +117,41 @@ exports.getELHistory = async (req, res) => {
     try {
         const { employeeId } = req.params;
         const { month, year, limit = 12 } = req.query;
-        
-        // Build query for EL history (you'd need to create an ELHistory model)
-        // For now, return placeholder data
-        
+
+        if (!employeeId) {
+            return res.status(400).json({
+                success: false,
+                message: 'Employee ID is required'
+            });
+        }
+
+        // Employees can only view their own EL history
+        if (req.user.role === 'employee') {
+            const selfId = (req.user.employeeRef || req.user._id || '').toString();
+            if (selfId !== employeeId.toString()) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'You can only view your own earned leave history'
+                });
+            }
+        }
+
+        const query = { employeeId };
+        if (month && year) {
+            query.month = Number(month);
+            query.year = Number(year);
+        } else if (year) {
+            query.year = Number(year);
+        }
+
+        const history = await ELHistory.find(query)
+            .sort({ createdAt: -1 })
+            .limit(Number(limit) || 12)
+            .lean();
+
         res.status(200).json({
             success: true,
-            message: 'EL history feature - implement ELHistory model for full functionality',
-            data: []
+            data: history
         });
     } catch (error) {
         console.error('Error fetching EL history:', error);

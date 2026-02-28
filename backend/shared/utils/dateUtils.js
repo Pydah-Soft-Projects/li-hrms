@@ -45,7 +45,7 @@ function extractISTComponents(dateInput) {
  * @returns {Promise<{startDate: string, endDate: string, totalDays: number}>}
  */
 async function getPayrollDateRange(year, monthNumber) {
-    // Fetch start and end days from settings
+    const Settings = require('../../settings/model/Settings');
     const startDaySetting = await Settings.findOne({ key: 'payroll_cycle_start_day' });
     const endDaySetting = await Settings.findOne({ key: 'payroll_cycle_end_day' });
 

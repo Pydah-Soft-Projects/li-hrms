@@ -1,10 +1,11 @@
-﻿'use client'; // Cache bust: Force recompile 1
+'use client'; // Cache bust: Force recompile 1
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { api, Employee, Department, Division, Designation, EmployeeApplication, Allowance, Deduction } from '@/lib/api';
 import { alertSuccess, alertError, alertConfirm, alertLoading } from '@/lib/customSwal';
 import { auth } from '@/lib/auth';
+import Swal from 'sweetalert2';
 import BulkUpload from '@/components/BulkUpload';
 import DynamicEmployeeForm from '@/components/DynamicEmployeeForm';
 import EmployeeUpdateModal from '@/components/EmployeeUpdateModal';
@@ -31,6 +32,7 @@ import {
   Edit2,
   Trash2,
   Mail,
+  KeyRound,
   Upload,
   Settings,
   Users
@@ -54,7 +56,9 @@ interface FormSettings {
   }>;
   qualifications?: {
     isEnabled: boolean;
+    enableCertificateUpload?: boolean;
     fields: Array<{ id: string; label: string }>;
+    defaultRows?: Record<string, unknown>[];
   };
 }
 
@@ -91,6 +95,7 @@ const initialFormState: Partial<Employee> = {
   is_active: true,
   employeeAllowances: [],
   employeeDeductions: [],
+  profilePhoto: '',
 };
 
 interface TemplateColumn {
@@ -215,6 +220,9 @@ const RenderFilterHeader = ({
   );
 };
 
+/** Format date as YYYY-MM-DD in local time (avoids UTC shift for resignation last working date) */
+const toLocalDateString = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
 const isEmployeeActive = (employee: any) => {
   const status = employee.is_active;
   return status === true || status === 1 || (status !== false && status !== 0 && status !== '0');
@@ -240,6 +248,14 @@ export default function EmployeesPage() {
   const [editingApplicationID, setEditingApplicationID] = useState<string | null>(null);
   const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null);
   const [showViewDialog, setShowViewDialog] = useState(false);
+  const [employeeHistory, setEmployeeHistory] = useState<any[]>([]);
+  const [employeeHistoryLoading, setEmployeeHistoryLoading] = useState(false);
+  const [employeeViewTab, setEmployeeViewTab] = useState<'profile' | 'history'>('profile');
+  const [historyViewComplete, setHistoryViewComplete] = useState<{
+    eventLabel: string;
+    changes: { field: string; fieldLabel: string; previous: unknown; current: unknown }[];
+  } | null>(null);
+  const [certificatePreviewUrl, setCertificatePreviewUrl] = useState<string | null>(null);
   const [formData, setFormData] = useState<Partial<Employee>>(initialFormState);
   const [formSettings, setFormSettings] = useState<FormSettings | null>(null);
   const [applicationFormData, setApplicationFormData] = useState<Partial<EmployeeApplication & { proposedSalary: number }>>({ ...initialFormState, proposedSalary: 0 });
@@ -262,13 +278,21 @@ export default function EmployeesPage() {
 
   const [applicationSearchTerm, setApplicationSearchTerm] = useState('');
   const [showBulkUpload, setShowBulkUpload] = useState(false);
+  const [allowEmployeeBulkProcess, setAllowEmployeeBulkProcess] = useState(false);
+  const [autoGenerateEmployeeNumber, setAutoGenerateEmployeeNumber] = useState(false);
+  /** Toggle in bulk preview: when true, ignore emp numbers from file (auto-generate). Defaults from settings when dialog opens. */
+  const [bulkPreviewAutoGenerateEmpNo, setBulkPreviewAutoGenerateEmpNo] = useState(false);
+  const [addFormAutoGenerateEmpNo, setAddFormAutoGenerateEmpNo] = useState(false);
+  const [applicationFormAutoGenerateEmpNo, setApplicationFormAutoGenerateEmpNo] = useState(false);
   const [userRole, setUserRole] = useState<string>('');
   const [showLeftDateModal, setShowLeftDateModal] = useState(false);
   const [selectedEmployeeForLeftDate, setSelectedEmployeeForLeftDate] = useState<Employee | null>(null);
   const [leftDateForm, setLeftDateForm] = useState({ leftDate: '', leftReason: '' });
+  const [resignationNoticePeriodDays, setResignationNoticePeriodDays] = useState(0);
   const [includeLeftEmployees, setIncludeLeftEmployees] = useState(false);
   const [passwordMode, setPasswordMode] = useState<'random' | 'phone_empno'>('random');
   const [isResending, setIsResending] = useState<string | null>(null);
+  const [isResetting, setIsResetting] = useState<string | null>(null);
   const [selectedApplicationIds, setSelectedApplicationIds] = useState<string[]>([]);
   const [updatingStatusIds, setUpdatingStatusIds] = useState<Set<string>>(new Set());
   const [showEmployeeUpdateModal, setShowEmployeeUpdateModal] = useState(false);
@@ -718,7 +742,30 @@ export default function EmployeesPage() {
     if (activeTab === 'applications') {
       loadApplications();
     }
-  }, [activeTab]);
+  }, [activeTab, selectedDivisionFilter, selectedDepartmentFilter, selectedDesignationFilter]);
+
+  useEffect(() => {
+    if (showLeftDateModal && selectedEmployeeForLeftDate) {
+      api.getResignationSettings()
+        .then((res) => {
+          const raw = res?.data?.noticePeriodDays ?? res?.data?.value?.noticePeriodDays;
+          const days = Math.max(0, Number(raw) || 0);
+          setResignationNoticePeriodDays(days);
+          const d = new Date();
+          d.setDate(d.getDate() + days);
+          const minDateStr = toLocalDateString(d);
+          const existingLeft = selectedEmployeeForLeftDate.leftDate ? toLocalDateString(new Date(selectedEmployeeForLeftDate.leftDate)) : null;
+          setLeftDateForm((prev) => ({ ...prev, leftDate: existingLeft || minDateStr }));
+        })
+        .catch(() => setResignationNoticePeriodDays(0));
+    }
+  }, [showLeftDateModal, selectedEmployeeForLeftDate]);
+
+  useEffect(() => {
+    api.getSetting('allow_employee_bulk_process')
+      .then((res) => { if (res?.success && res?.data != null) setAllowEmployeeBulkProcess(!!res.data.value); })
+      .catch(() => setAllowEmployeeBulkProcess(false));
+  }, []);
 
   const loadDivisions = async () => {
     try {
@@ -782,6 +829,37 @@ export default function EmployeesPage() {
     // Show all designations since they are now global
     setFilteredApplicationDesignations(designations);
   }, [designations]);
+
+  // Load employee settings when bulk upload dialog opens; sync toggle default for preview
+  useEffect(() => {
+    if (!showBulkUpload) return;
+    api.getEmployeeSettings()
+      .then((res) => {
+        const on = res?.data?.auto_generate_employee_number === true;
+        setAutoGenerateEmployeeNumber(on);
+        setBulkPreviewAutoGenerateEmpNo(on);
+      })
+      .catch(() => {
+        setAutoGenerateEmployeeNumber(false);
+        setBulkPreviewAutoGenerateEmpNo(false);
+      });
+  }, [showBulkUpload]);
+
+  // Load auto-generate setting when add employee dialog opens (create mode only)
+  useEffect(() => {
+    if (!showDialog || editingEmployee) return;
+    api.getEmployeeSettings()
+      .then((res) => setAddFormAutoGenerateEmpNo(!!res?.data?.auto_generate_employee_number))
+      .catch(() => setAddFormAutoGenerateEmpNo(false));
+  }, [showDialog, editingEmployee]);
+
+  // Load auto-generate setting when New Employee Application dialog opens
+  useEffect(() => {
+    if (!showApplicationDialog) return;
+    api.getEmployeeSettings()
+      .then((res) => setApplicationFormAutoGenerateEmpNo(!!res?.data?.auto_generate_employee_number))
+      .catch(() => setApplicationFormAutoGenerateEmpNo(false));
+  }, [showApplicationDialog]);
 
   const loadFormSettings = async () => {
     try {
@@ -1117,6 +1195,41 @@ export default function EmployeesPage() {
     }
   };
 
+  // Department options: when a division is selected, use that division's departments (from getDivisions — for workspace this is divisionMapping-only; for superadmin full link)
+  const departmentOptions = useMemo(() => {
+    if (selectedDivisionFilter) {
+      const divId = String(selectedDivisionFilter);
+      const div = divisions.find((d) => String(d._id) === divId);
+      const depts = (div?.departments ?? []) as (string | Department)[];
+      return depts.map((d) => (typeof d === 'string' ? { _id: d, name: d } : { _id: (d as any)._id, name: (d as any).name, code: (d as any).code }));
+    }
+    return departments;
+  }, [selectedDivisionFilter, divisions, departments]);
+
+  // Id -> name maps for resolving division/department/designation in history (e.g. previous value was raw ObjectId)
+  const historyRefNames = useMemo(() => {
+    const divMap: Record<string, string> = {};
+    const deptMap: Record<string, string> = {};
+    const desMap: Record<string, string> = {};
+    (divisions || []).forEach((d: any) => {
+      if (d._id != null && d.name != null) divMap[String(d._id)] = d.name;
+    });
+    (departments || []).forEach((d: any) => {
+      if (d._id != null && d.name != null) deptMap[String(d._id)] = d.name;
+    });
+    (divisions || []).forEach((div: any) => {
+      ((div.departments as any[]) || []).forEach((d: any) => {
+        const id = typeof d === 'string' ? d : d?._id;
+        const name = typeof d === 'string' ? d : d?.name;
+        if (id != null && name != null) deptMap[String(id)] = name;
+      });
+    });
+    (designations || []).forEach((d: any) => {
+      if (d._id != null && d.name != null) desMap[String(d._id)] = d.name;
+    });
+    return { division: divMap, department: deptMap, designation: desMap };
+  }, [divisions, departments, designations]);
+
   // Trigger search and filter
   useEffect(() => {
     loadEmployees(1);
@@ -1125,7 +1238,13 @@ export default function EmployeesPage() {
   const loadApplications = async () => {
     try {
       setLoadingApplications(true);
-      const response = await api.getEmployeeApplications();
+      const search = (applicationSearchTerm || searchTerm || '').trim() || undefined;
+      const response = await api.getEmployeeApplications({
+        ...(selectedDivisionFilter ? { division_id: selectedDivisionFilter } : {}),
+        ...(selectedDepartmentFilter ? { department_id: selectedDepartmentFilter } : {}),
+        ...(selectedDesignationFilter ? { designation_id: selectedDesignationFilter } : {}),
+        ...(search ? { search } : {}),
+      });
       if (response.success) {
         // Normalize applications data for consistent filtering
         const apps = (response.data || []).map((app: any) => ({
@@ -1189,8 +1308,13 @@ export default function EmployeesPage() {
     setError('');
     setSuccess('');
 
-    if (!formData.emp_no || !formData.employee_name) {
+    const requireEmpNo = !editingEmployee && !addFormAutoGenerateEmpNo;
+    if (requireEmpNo && !formData.emp_no) {
       setError('Employee No and Name are required');
+      return;
+    }
+    if (!formData.employee_name) {
+      setError('Employee name is required');
       return;
     }
 
@@ -1270,11 +1394,18 @@ export default function EmployeesPage() {
       // DEBUG: Inspect payload
       console.log('DEBUG: Final Payload Entries (Standard):', Array.from((payload as any).entries ? (payload as any).entries() : []));
 
-      // Handle Qualifications - Map Field IDs to Labels
-      const qualities = Array.isArray(formData.qualifications) ? formData.qualifications : [];
+      // Handle Qualifications - Merge pre-filled rows (from settings) + applicant rows; map Field IDs to Labels
+      const defaultRows = Array.isArray(formSettings?.qualifications?.defaultRows) ? formSettings.qualifications.defaultRows : [];
+      const applicantQuals = Array.isArray(formData.qualifications) ? formData.qualifications : [];
+      const isNewEmployee = !editingEmployee;
+      const qualities = isNewEmployee
+        ? [
+          ...defaultRows.map((r: any) => ({ ...r, isPreFilled: true })),
+          ...applicantQuals.map((q: any) => ({ ...q, isPreFilled: false })),
+        ]
+        : (Array.isArray(formData.qualifications) ? formData.qualifications : []);
       console.log('Skills/Qualities before processing:', qualities);
 
-      // Create a mapping from Field ID -> Label using formSettings
       const fieldIdToLabelMap: Record<string, string> = {};
       if (formSettings?.qualifications?.fields) {
         formSettings.qualifications.fields.forEach((f: any) => {
@@ -1283,23 +1414,19 @@ export default function EmployeesPage() {
       }
 
       const cleanQualifications = qualities.map((q: any, index: number) => {
-        const { certificateFile, ...rest } = q;
+        const { certificateFile, isPreFilled, ...rest } = q;
         console.log(`Processing qual ${index}, has certificate file?`, !!certificateFile);
         if (certificateFile) console.log('File details:', certificateFile.name, certificateFile.type, certificateFile.size);
 
-        // Transform keys from Field ID to Label (e.g. key "degree" -> "Degree")
         const transformedQ: any = {};
         Object.entries(rest).forEach(([key, val]) => {
-          // If key matches a known field ID, use its label; otherwise keep key
           const label = fieldIdToLabelMap[key] || key;
           transformedQ[label] = val;
         });
+        if (isPreFilled !== undefined) transformedQ.isPreFilled = isPreFilled;
 
         if (certificateFile instanceof File) {
-          console.log(`Appending file for qual ${index}`);
           payload.append(`qualification_cert_${index}`, certificateFile);
-        } else {
-          console.log(`Certificate file for qual ${index} is not a File instance:`, certificateFile);
         }
         return transformedQ;
       });
@@ -1348,19 +1475,15 @@ export default function EmployeesPage() {
       if (appData.qualifications && Array.isArray(appData.qualifications) && appQualFields) {
         appData.qualifications = appData.qualifications.map((q: any) => {
           const newQ: any = {};
-          // Preserve certificate meta
           if (q.certificateUrl) newQ.certificateUrl = q.certificateUrl;
+          if (q.isPreFilled !== undefined) newQ.isPreFilled = q.isPreFilled;
 
-          // Map fields
           Object.entries(q).forEach(([key, val]) => {
-            if (key === 'certificateUrl') return;
-
-            // Find field definition where label matches key
+            if (key === 'certificateUrl' || key === 'isPreFilled') return;
             const fieldDef = appQualFields.find((f: any) => f.label === key);
             if (fieldDef) {
               newQ[fieldDef.id] = val;
             } else {
-              // Keep original if no match (fallback)
               newQ[key] = val;
             }
           });
@@ -1385,9 +1508,10 @@ export default function EmployeesPage() {
       empData.qualifications = empData.qualifications.map((q: any) => {
         const newQ: any = {};
         if (q.certificateUrl) newQ.certificateUrl = q.certificateUrl;
+        if (q.isPreFilled !== undefined) newQ.isPreFilled = q.isPreFilled;
 
         Object.entries(q).forEach(([key, val]) => {
-          if (key === 'certificateUrl') return;
+          if (key === 'certificateUrl' || key === 'isPreFilled') return;
           const fieldDef = qualFields.find((f: any) => f.label === key);
           if (fieldDef) {
             newQ[fieldDef.id] = val;
@@ -1456,13 +1580,15 @@ export default function EmployeesPage() {
           });
         }
 
-        // Always preserve certificate fields and normalize casing
+        // Always preserve certificate fields, isPreFilled, and normalize casing
         Object.keys(qual).forEach(key => {
           const lowerKey = key.toLowerCase();
           if (lowerKey === 'certificateurl') {
             normalized.certificateUrl = qual[key];
           } else if (lowerKey === 'certificatefile') {
             normalized.certificateFile = qual[key];
+          } else if (lowerKey === 'isprefilled' || key === 'isPreFilled') {
+            normalized.isPreFilled = qual[key];
           }
         });
 
@@ -1471,15 +1597,11 @@ export default function EmployeesPage() {
           return { ...qual };
         }
 
-        // Ensure legacy fields (Degree/Year) are mapped
-        if (!normalized.degree && (qual.Degree || qual.degree)) normalized.degree = qual.Degree || qual.degree;
-        if (!normalized.qualified_year && (qual.year || qual.Year || qual.qualified_year)) normalized.qualified_year = qual.year || qual.Year || qual.qualified_year;
-
         return normalized;
       });
     } else if (typeof employee.qualifications === 'string') {
-      // Old format - convert to array if needed
-      qualificationsValue = employee.qualifications.split(',').map(s => ({ degree: s.trim() }));
+      // Old format - convert to array with examination only
+      qualificationsValue = employee.qualifications.split(',').map(s => ({ examination: s.trim() }));
     }
 
     // Also check in dynamicFields only if qualificationsValue is empty (to avoid overwriting valid data)
@@ -1490,12 +1612,7 @@ export default function EmployeesPage() {
 
           Object.keys(qual).forEach(key => {
             const lowerKey = key.toLowerCase();
-
-            if (lowerKey === 'degree') {
-              normalized.degree = qual[key];
-            } else if (lowerKey === 'year' || key === 'qualified_year') {
-              normalized.qualified_year = qual[key];
-            } else if (key === 'certificateUrl' || key === 'certificateFile') {
+            if (key === 'certificateUrl' || key === 'certificateFile' || key === 'isPreFilled') {
               normalized[key] = qual[key];
             } else {
               normalized[lowerKey] = qual[key];
@@ -1654,8 +1771,12 @@ export default function EmployeesPage() {
 
   const handleSetLeftDate = (employee: Employee) => {
     setSelectedEmployeeForLeftDate(employee);
+    const defaultLastWorking = (() => {
+      const d = new Date();
+      return d.toISOString().split('T')[0];
+    })();
     setLeftDateForm({
-      leftDate: employee.leftDate ? new Date(employee.leftDate).toISOString().split('T')[0] : '',
+      leftDate: employee.leftDate ? new Date(employee.leftDate).toISOString().split('T')[0] : defaultLastWorking,
       leftReason: employee.leftReason || '',
     });
     setShowLeftDateModal(true);
@@ -1673,21 +1794,40 @@ export default function EmployeesPage() {
     try {
       setError('');
       setSuccess('');
-      const response = await api.setEmployeeLeftDate(
-        selectedEmployeeForLeftDate.emp_no,
-        leftDateForm.leftDate,
-        leftDateForm.leftReason || undefined
-      );
+      const resSettings = await api.getResignationSettings();
+      const workflowEnabled = resSettings?.success && resSettings?.data?.workflow?.isEnabled !== false;
 
-      if (response.success) {
-        const syncMessage = response.syncError ? ' (MSSQL sync failed, but local update succeeded)' : '';
-        setSuccess(`Employee left date set successfully!${syncMessage}`);
-        setShowLeftDateModal(false);
-        setSelectedEmployeeForLeftDate(null);
-        setLeftDateForm({ leftDate: '', leftReason: '' });
-        loadEmployees();
+      if (workflowEnabled) {
+        const response = await api.createResignationRequest({
+          emp_no: selectedEmployeeForLeftDate.emp_no,
+          leftDate: leftDateForm.leftDate,
+          remarks: leftDateForm.leftReason || undefined,
+        });
+        if (response.success) {
+          setSuccess('Resignation request submitted. It will be processed through the approval flow.');
+          setShowLeftDateModal(false);
+          setSelectedEmployeeForLeftDate(null);
+          setLeftDateForm({ leftDate: '', leftReason: '' });
+          loadEmployees();
+        } else {
+          setError(response.message || 'Failed to submit resignation request');
+        }
       } else {
-        setError(response.message || 'Failed to set left date');
+        const response = await api.setEmployeeLeftDate(
+          selectedEmployeeForLeftDate.emp_no,
+          leftDateForm.leftDate,
+          leftDateForm.leftReason || undefined
+        );
+        if (response.success) {
+          const syncMessage = response.syncError ? ' (MSSQL sync failed, but local update succeeded)' : '';
+          setSuccess(`Employee left date set successfully!${syncMessage}`);
+          setShowLeftDateModal(false);
+          setSelectedEmployeeForLeftDate(null);
+          setLeftDateForm({ leftDate: '', leftReason: '' });
+          loadEmployees();
+        } else {
+          setError(response.message || 'Failed to set left date');
+        }
       }
     } catch (err: any) {
       setError(err.message || 'An error occurred');
@@ -1696,7 +1836,13 @@ export default function EmployeesPage() {
   };
 
   const handleRemoveLeftDate = async (employee: Employee) => {
-    if (!confirm(`Are you sure you want to reactivate ${employee.employee_name}? This will remove their left date.`)) return;
+    const result = await alertConfirm(
+      'Reactivate employee?',
+      `Are you sure you want to reactivate ${employee.employee_name}? This will remove their left date.`,
+      'Yes, reactivate'
+    );
+
+    if (!result.isConfirmed) return;
 
     try {
       setError('');
@@ -1704,33 +1850,48 @@ export default function EmployeesPage() {
       const response = await api.removeEmployeeLeftDate(employee.emp_no);
 
       if (response.success) {
-        setSuccess('Employee reactivated successfully!');
+        await alertSuccess('Employee reactivated', 'Employee reactivated successfully!');
         loadEmployees();
       } else {
-        setError(response.message || 'Failed to reactivate employee');
+        await alertError('Failed to reactivate', response.message || 'Failed to reactivate employee');
       }
     } catch (err: any) {
-      setError(err.message || 'An error occurred');
+      await alertError('An error occurred', err.message || 'An error occurred');
       console.error(err);
     }
   };
 
   const handleViewEmployee = async (employee: Employee) => {
     // Initial set to show dialog immediately with available data
-    console.log('DEBUG: handleViewEmployee triggered for:', employee.emp_no);
     setViewingEmployee(employee);
+    setEmployeeViewTab('profile');
+    setEmployeeHistory([]);
     setShowViewDialog(true);
 
     // Fetch latest data to ensure A&D overrides and other fields are fresh
     try {
       const response = await api.getEmployee(employee.emp_no);
-      console.log('DEBUG: api.getEmployee response:', response);
       if (response.success && response.data) {
-        console.log('DEBUG: Setting viewingEmployee with fresh data:', response.data);
         setViewingEmployee(response.data);
       }
     } catch (error) {
       console.error('Error refreshing employee data:', error);
+    }
+
+    // Fetch employee history (Super Admin only; backend enforces authorization)
+    try {
+      setEmployeeHistoryLoading(true);
+      const historyRes = await api.getEmployeeHistory(employee.emp_no);
+      if (historyRes.success && Array.isArray(historyRes.data)) {
+        setEmployeeHistory(historyRes.data);
+      } else {
+        setEmployeeHistory([]);
+      }
+    } catch (error) {
+      console.error('Error fetching employee history:', error);
+      setEmployeeHistory([]);
+    } finally {
+      setEmployeeHistoryLoading(false);
     }
   };
 
@@ -1747,14 +1908,29 @@ export default function EmployeesPage() {
 
 
   const filteredApplicationsBase = applications.filter(app => {
-    const matchesSearch =
-      app.employee_name?.toLowerCase().includes(applicationSearchTerm.toLowerCase()) ||
-      app.emp_no?.toLowerCase().includes(applicationSearchTerm.toLowerCase()) ||
-      ((app.department_id as any)?.name || app.department?.name || '')?.toLowerCase().includes(applicationSearchTerm.toLowerCase());
+    const search = (applicationSearchTerm || searchTerm || '').trim();
+    const matchesSearch = !search ||
+      app.employee_name?.toLowerCase().includes(search.toLowerCase()) ||
+      (app.emp_no ?? '')?.toString().toLowerCase().includes(search.toLowerCase()) ||
+      ((app.department_id as any)?.name || app.department?.name || '')?.toLowerCase().includes(search.toLowerCase()) ||
+      ((app.designation_id as any)?.name || app.designation?.name || '')?.toLowerCase().includes(search.toLowerCase());
 
-    const matchesDivision = !selectedDivisionFilter || app.division_id === selectedDivisionFilter || (app.division as any)?._id === selectedDivisionFilter;
-    const matchesDepartment = !selectedDepartmentFilter || app.department_id === selectedDepartmentFilter || (app.department as any)?._id === selectedDepartmentFilter;
-    const matchesDesignation = !selectedDesignationFilter || app.designation_id === selectedDesignationFilter || (app.designation as any)?._id === selectedDesignationFilter;
+    const appDivId = (app.division as any)?._id ?? (typeof app.division_id === 'string' ? app.division_id : (app.division_id as any)?._id);
+    const appDivName = (app.division as any)?.name || (app.division_id as any)?.name || '';
+    const divFilter = selectedDivisionFilter || applicationFilters['division.name'];
+    const matchesDivision = !divFilter ||
+      appDivId === selectedDivisionFilter ||
+      appDivName === applicationFilters['division.name'];
+
+    const appDeptId = typeof app.department_id === 'string' ? app.department_id : (app.department_id as any)?._id;
+    const appDeptName = app.department?.name || (app.department_id as any)?.name || '';
+    const deptFilter = selectedDepartmentFilter || applicationFilters['department.name'];
+    const matchesDepartment = !deptFilter || appDeptId === selectedDepartmentFilter || appDeptName === applicationFilters['department.name'];
+
+    const appDesigId = typeof app.designation_id === 'string' ? app.designation_id : (app.designation_id as any)?._id;
+    const appDesigName = app.designation?.name || (app.designation_id as any)?.name || '';
+    const desigFilter = selectedDesignationFilter || applicationFilters['designation.name'];
+    const matchesDesignation = !desigFilter || appDesigId === selectedDesignationFilter || appDesigName === applicationFilters['designation.name'];
 
     return matchesSearch && matchesDivision && matchesDepartment && matchesDesignation;
   });
@@ -2149,11 +2325,9 @@ export default function EmployeesPage() {
                     className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                   >
                     <option value="">All Departments</option>
-                    {departments
-                      .filter(dept => !selectedDivisionFilter || (dept as any).divisions?.some((d: any) => (typeof d === 'string' ? d === selectedDivisionFilter : (d._id || d) === selectedDivisionFilter)))
-                      .map((d) => (
-                        <option key={d._id} value={d._id}>{d.name}</option>
-                      ))}
+                    {departmentOptions.map((d) => (
+                      <option key={d._id} value={d._id}>{d.name}</option>
+                    ))}
                   </select>
                 </div>
 
@@ -2183,12 +2357,12 @@ export default function EmployeesPage() {
                 </label>
               </div>
             ) : (
-              /* Search and Filters for Applications */
+              /* Search and filters for Applications (same scope as Employees) */
               <div className="flex flex-wrap items-center gap-3 flex-1">
-                <div className="relative flex-1 max-w-md">
+                <div className="relative min-w-[200px] max-w-md flex-1">
                   <input
                     type="text"
-                    placeholder="Search applications..."
+                    placeholder="Search applications by name, emp no, dept..."
                     value={applicationSearchTerm}
                     onChange={(e) => setApplicationSearchTerm(e.target.value)}
                     className="w-full rounded-xl border border-slate-200 bg-white pl-11 pr-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
@@ -2197,11 +2371,8 @@ export default function EmployeesPage() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                   </svg>
                 </div>
-
-                <div className="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-1 hidden md:block"></div>
-
-                {/* Division Selection for Applications */}
-                <div className="min-w-[150px]">
+                <div className="h-8 w-px bg-slate-200 dark:bg-slate-700"></div>
+                <div className="min-w-[140px]">
                   <select
                     value={selectedDivisionFilter}
                     onChange={(e) => {
@@ -2217,9 +2388,7 @@ export default function EmployeesPage() {
                     ))}
                   </select>
                 </div>
-
-                {/* Department Selection for Applications */}
-                <div className="min-w-[150px]">
+                <div className="min-w-[140px]">
                   <select
                     value={selectedDepartmentFilter}
                     onChange={(e) => {
@@ -2229,16 +2398,12 @@ export default function EmployeesPage() {
                     className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                   >
                     <option value="">All Departments</option>
-                    {departments
-                      .filter(dept => !selectedDivisionFilter || (dept as any).divisions?.some((d: any) => (typeof d === 'string' ? d === selectedDivisionFilter : (d._id || d) === selectedDivisionFilter)))
-                      .map((d) => (
-                        <option key={d._id} value={d._id}>{d.name}</option>
-                      ))}
+                    {departmentOptions.map((d) => (
+                      <option key={d._id} value={d._id}>{d.name}</option>
+                    ))}
                   </select>
                 </div>
-
-                {/* Designation Selection for Applications */}
-                <div className="min-w-[150px]">
+                <div className="min-w-[140px]">
                   <select
                     value={selectedDesignationFilter}
                     onChange={(e) => setSelectedDesignationFilter(e.target.value)}
@@ -2267,7 +2432,7 @@ export default function EmployeesPage() {
               <div className="h-8 w-px bg-slate-200 dark:bg-slate-700"></div>
 
               {/* Employee Update Button */}
-              {activeTab === 'employees' && (
+              {activeTab === 'employees' && allowEmployeeBulkProcess && (
                 <button
                   onClick={() => setShowEmployeeUpdateModal(true)}
                   className="flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-medium text-blue-700 transition-all hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
@@ -2279,7 +2444,7 @@ export default function EmployeesPage() {
                 </button>
               )}
 
-              {(activeTab === 'employees' || activeTab === 'applications') && (
+              {(activeTab === 'employees' || activeTab === 'applications') && allowEmployeeBulkProcess && (
                 <button
                   onClick={() => setShowBulkAllowancesDeductions(true)}
                   className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-2"
@@ -2290,7 +2455,7 @@ export default function EmployeesPage() {
                   Bulk A&D Update
                 </button>
               )}
-              {(activeTab === 'employees' || activeTab === 'applications') && (
+              {(activeTab === 'employees' || activeTab === 'applications') && allowEmployeeBulkProcess && (
                 <button
                   onClick={() => setShowBulkUpload(true)}
                   className="flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-2.5 text-sm font-medium text-green-700 transition-all hover:bg-green-100 dark:border-green-800 dark:bg-green-900/30 dark:text-green-400"
@@ -2447,6 +2612,25 @@ export default function EmployeesPage() {
                 </div>
                 <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">No applications found</p>
                 <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Create a new employee application to get started</p>
+              </div>
+            ) : filteredApplications.length === 0 ? (
+              <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm p-12 text-center shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
+                <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">No applications match the current filters</p>
+                <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Try adjusting division, department, designation or search.</p>
+                <button
+                  onClick={() => {
+                    setSearchTerm('');
+                    setApplicationSearchTerm('');
+                    setSelectedDivisionFilter('');
+                    setSelectedDepartmentFilter('');
+                    setSelectedDesignationFilter('');
+                    setApplicationFilters({});
+                    loadApplications();
+                  }}
+                  className="mt-6 px-6 py-2.5 rounded-xl bg-slate-100 border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700 transition-colors"
+                >
+                  Reset filters & refresh
+                </button>
               </div>
             ) : (
               <div className="space-y-8">
@@ -2701,10 +2885,25 @@ export default function EmployeesPage() {
                                 {employee.emp_no}
                               </td>
                               <td className="whitespace-nowrap px-6 py-4">
-                                <div className="text-sm font-medium text-slate-900 dark:text-slate-100">{employee.employee_name}</div>
-                                {employee.email && (
-                                  <div className="text-xs text-slate-500 dark:text-slate-400">{employee.email}</div>
-                                )}
+                                <div className="flex items-center gap-3">
+                                  {(employee as any).profilePhoto ? (
+                                    <img
+                                      src={(employee as any).profilePhoto}
+                                      alt=""
+                                      className="h-9 w-9 shrink-0 rounded-lg border border-slate-200 object-cover dark:border-slate-700"
+                                    />
+                                  ) : (
+                                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-100 text-sm font-medium text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
+                                      {(employee.employee_name || '?').charAt(0).toUpperCase()}
+                                    </div>
+                                  )}
+                                  <div>
+                                    <div className="text-sm font-medium text-slate-900 dark:text-slate-100">{employee.employee_name}</div>
+                                    {employee.email && (
+                                      <div className="text-xs text-slate-500 dark:text-slate-400">{employee.email}</div>
+                                    )}
+                                  </div>
+                                </div>
                               </td>
                               <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
                                 {employee.division?.name || '-'}
@@ -2812,6 +3011,51 @@ export default function EmployeesPage() {
                                       )}
                                     </button>
                                     <button
+                                      onClick={async (e) => {
+                                        e.stopPropagation();
+
+                                        const result = await Swal.fire({
+                                          title: 'Reset Credentials',
+                                          text: `Reset credentials for ${employee.employee_name}? Enter a custom password or leave blank to auto-generate.`,
+                                          input: 'text',
+                                          inputPlaceholder: 'Enter custom password (optional)',
+                                          showCancelButton: true,
+                                          confirmButtonText: 'Reset & Send',
+                                          cancelButtonText: 'Cancel',
+                                          confirmButtonColor: '#f97316',
+                                          inputAttributes: {
+                                            autocapitalize: 'off',
+                                            autocorrect: 'off'
+                                          }
+                                        });
+
+                                        if (!result.isConfirmed) return;
+
+                                        setIsResetting(employee.emp_no);
+                                        try {
+                                          const res = await api.resetEmployeeCredentials(employee.emp_no, { customPassword: result.value });
+                                          if (res.success) {
+                                            alertSuccess('Sent!', 'Credentials reset successfully!');
+                                          } else {
+                                            alertError('Failed', res.message || 'Failed to reset');
+                                          }
+                                        } catch (err: any) {
+                                          alertError('Error', err.message || 'Failed to reset');
+                                        } finally {
+                                          setIsResetting(null);
+                                        }
+                                      }}
+                                      disabled={isResetting === employee.emp_no}
+                                      className="ml-2 rounded-lg p-2 text-slate-400 transition-all hover:bg-orange-50 hover:text-orange-600 dark:hover:bg-orange-900/30 dark:hover:text-orange-400 disabled:opacity-50"
+                                      title="Reset Credentials"
+                                    >
+                                      {isResetting === employee.emp_no ? (
+                                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-orange-500 border-t-transparent" />
+                                      ) : (
+                                        <KeyRound className="h-4 w-4" />
+                                      )}
+                                    </button>
+                                    <button
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         if (updatingStatusIds.has(employee.emp_no)) return;
@@ -2886,13 +3130,65 @@ export default function EmployeesPage() {
                   </div>
                 )}
 
+                {applicationFormAutoGenerateEmpNo && (
+                  <div className="mb-4 flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-200">
+                    <svg className="h-5 w-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Employee number will be auto-generated when you submit.
+                  </div>
+                )}
+
                 <form onSubmit={handleCreateApplication} className="space-y-6">
+                  {/* Profile photo (optional) - uploads to S3 profiles folder */}
+                  <div className="rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
+                    <h3 className="mb-3 text-base font-semibold text-slate-900 dark:text-slate-100">Profile Photo (optional)</h3>
+                    <div className="flex flex-wrap items-start gap-4">
+                      {(applicationFormData as any).profilePhoto && (
+                        <div className="relative">
+                          <img
+                            src={(applicationFormData as any).profilePhoto}
+                            alt="Profile"
+                            className="h-24 w-24 rounded-xl border border-slate-200 object-cover dark:border-slate-700"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setApplicationFormData(prev => ({ ...prev, profilePhoto: '' }))}
+                            className="absolute -right-2 -top-2 rounded-full bg-red-500 p-1 text-white shadow hover:bg-red-600"
+                          >
+                            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                          </button>
+                        </div>
+                      )}
+                      <div>
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/jpg"
+                          className="block w-full max-w-xs text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-4 file:py-2 file:text-slate-700 dark:text-slate-300 dark:file:bg-slate-800 dark:file:text-slate-200"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            try {
+                              const res = await api.uploadProfile(file) as { success?: boolean; url?: string };
+                              if (res?.success && res?.url) setApplicationFormData(prev => ({ ...prev, profilePhoto: res.url }));
+                            } catch (err) {
+                              setError('Failed to upload profile photo. Try again.');
+                            }
+                            e.target.value = '';
+                          }}
+                        />
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">JPG or PNG, max 5MB. Stored in S3 profiles folder.</p>
+                      </div>
+                    </div>
+                  </div>
+
                   <DynamicEmployeeForm
                     formData={applicationFormData as any}
                     onChange={setApplicationFormData}
                     departments={departments}
                     divisions={divisions}
                     designations={filteredApplicationDesignations as any}
+                    excludeFields={applicationFormAutoGenerateEmpNo ? ['emp_no'] : []}
                   />
 
                   {/* Leave Settings (Optional) */}
@@ -3632,7 +3928,59 @@ export default function EmployeesPage() {
                   </div>
                 )}
 
+                {!editingEmployee && addFormAutoGenerateEmpNo && (
+                  <div className="mb-4 flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-200">
+                    <svg className="h-5 w-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Employee number will be auto-generated when you submit.
+                  </div>
+                )}
+
                 <form onSubmit={handleSubmit} className="space-y-6">
+                  {/* Profile photo (optional) - uploads to S3 profiles folder; when editing, add or update photo */}
+                  <div className="rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
+                    <h3 className="mb-3 text-base font-semibold text-slate-900 dark:text-slate-100">Profile Photo (optional)</h3>
+                    <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">{editingEmployee ? 'Update or add a profile photo for this employee.' : 'Upload a profile photo. JPG or PNG, max 5MB.'}</p>
+                    <div className="flex flex-wrap items-start gap-4">
+                      {(formData as any).profilePhoto && (
+                        <div className="relative">
+                          <img
+                            src={(formData as any).profilePhoto}
+                            alt="Profile"
+                            className="h-24 w-24 rounded-xl border border-slate-200 object-cover dark:border-slate-700"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setFormData(prev => ({ ...prev, profilePhoto: '' }))}
+                            className="absolute -right-2 -top-2 rounded-full bg-red-500 p-1 text-white shadow hover:bg-red-600"
+                          >
+                            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                          </button>
+                        </div>
+                      )}
+                      <div>
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/jpg"
+                          className="block w-full max-w-xs text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-4 file:py-2 file:text-slate-700 dark:text-slate-300 dark:file:bg-slate-800 dark:file:text-slate-200"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            try {
+                              const res = await api.uploadProfile(file) as { success?: boolean; url?: string };
+                              if (res?.success && res?.url) setFormData(prev => ({ ...prev, profilePhoto: res.url }));
+                            } catch (err) {
+                              setError('Failed to upload profile photo. Try again.');
+                            }
+                            e.target.value = '';
+                          }}
+                        />
+                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">JPG or PNG, max 5MB. Stored in S3 profiles folder.</p>
+                      </div>
+                    </div>
+                  </div>
+
                   <DynamicEmployeeForm
                     formData={formData}
                     onChange={(newData) => {
@@ -3643,7 +3991,8 @@ export default function EmployeesPage() {
                     departments={departments}
                     designations={designations as any}
                     onSettingsLoaded={setFormSettings}
-                    excludeFields={[]}
+                    excludeFields={!editingEmployee && addFormAutoGenerateEmpNo ? ['emp_no'] : []}
+                    isEditingExistingEmployee={!!editingEmployee}
                   />
 
                   {/* Leave Settings (Optional) */}
@@ -3897,13 +4246,21 @@ export default function EmployeesPage() {
 
         {/* Bulk Upload Dialog */}
         {
-          showBulkUpload && (
+          allowEmployeeBulkProcess && showBulkUpload && (
             <BulkUpload
               title="Bulk Upload Employees"
               templateHeaders={dynamicTemplate.headers}
               templateSample={dynamicTemplate.sample}
               templateFilename="employee_template"
+              infoMessage={undefined}
+              showAutoGenerateEmpNoToggle={true}
+              autoGenerateEmpNo={bulkPreviewAutoGenerateEmpNo}
+              onAutoGenerateEmpNoChange={setBulkPreviewAutoGenerateEmpNo}
               columns={dynamicTemplate.columns.map(col => {
+                // When "ignore from file" is ON, make employee number readonly and show it will be auto-assigned
+                if (col.key === 'emp_no' && bulkPreviewAutoGenerateEmpNo) {
+                  return { ...col, editable: false };
+                }
                 if (col.key === 'division_name') {
                   return {
                     ...col,
@@ -3916,19 +4273,24 @@ export default function EmployeesPage() {
                     ...col,
                     type: 'select',
                     options: (row: ParsedRow) => {
-                      const rowDivName = row.division_name as string;
+                      const rowDivName = String(row.division_name || '').trim();
                       if (!rowDivName) return [];
 
-                      const div = divisions.find(d => d.name.toLowerCase() === rowDivName.toLowerCase());
+                      const div = divisions.find(d => d.name.toLowerCase().trim() === rowDivName.toLowerCase());
                       if (!div) return [];
 
-                      // Correctly filter based on populated divisions (array of objects) or IDs (array of strings)
-                      return departments.filter(dept => (dept as any).divisions?.some((d: any) =>
-                        (typeof d === 'string' ? d : d._id) === div._id
-                      )).map(dept => ({
-                        label: dept.name,
-                        value: dept.name
-                      }));
+                      // Prefer division.departments (populated by API) so dropdown shows departments correctly
+                      const divDepts = (div as any).departments;
+                      if (divDepts && Array.isArray(divDepts) && divDepts.length > 0) {
+                        return divDepts.map((d: any) => ({
+                          value: typeof d === 'object' && d?.name ? d.name : (departments.find(dept => dept._id === (typeof d === 'string' ? d : d._id))?.name || String(d)),
+                          label: typeof d === 'object' && d?.name ? d.name : (departments.find(dept => dept._id === (typeof d === 'string' ? d : d._id))?.name || String(d))
+                        }));
+                      }
+                      // Fallback: filter departments by department.divisions containing this division
+                      return departments
+                        .filter(dept => (dept as any).divisions?.some((d: any) => String(typeof d === 'string' ? d : d._id) === String(div._id)))
+                        .map(dept => ({ value: dept.name, label: dept.name }));
                     }
                   };
                 }
@@ -3962,16 +4324,20 @@ export default function EmployeesPage() {
               })}
               validateRow={(row, index, allData) => {
                 const mappedUsers = employees.map(e => ({ _id: e._id, name: e.employee_name }));
-                const result = validateEmployeeRow(row, divisions, departments, designations as any, mappedUsers);
+                const result = validateEmployeeRow(row, divisions, departments, designations as any, mappedUsers, { autoGenerateEmpNo: bulkPreviewAutoGenerateEmpNo });
                 const errors = [...result.errors];
                 const fieldErrors = { ...result.fieldErrors };
 
-                // Check for duplicates within the file
+                // Check for duplicates within the file (skip for auto-assigned rows when ignore-from-file is ON)
                 const empNo = String(row.emp_no || '').trim().toUpperCase();
-                if (empNo) {
-                  const isDuplicateInFile = allData.some((r, i) =>
-                    i !== index && String(r.emp_no || '').trim().toUpperCase() === empNo
-                  );
+                const isAutoRow = bulkPreviewAutoGenerateEmpNo && (empNo === '' || empNo === '(AUTO)');
+                if (empNo && !isAutoRow) {
+                  const isDuplicateInFile = allData.some((r, i) => {
+                    const other = String(r.emp_no || '').trim().toUpperCase();
+                    if (i === index) return false;
+                    if (bulkPreviewAutoGenerateEmpNo && (other === '' || other === '(AUTO)')) return false;
+                    return other === empNo;
+                  });
                   if (isDuplicateInFile) {
                     errors.push('Duplicate Employee No within this file');
                     fieldErrors.emp_no = 'File Duplicate';
@@ -4038,6 +4404,11 @@ export default function EmployeesPage() {
                       designation_id: desigId || undefined,
                       proposedSalary: row.proposedSalary || row.gross_salary || 0
                     };
+                    // Never send the display placeholder "(Auto)" as emp_no. Send empty so backend assigns.
+                    const empNoRaw = String(employeeData.emp_no || '').trim();
+                    if (empNoRaw.toUpperCase() === '(AUTO)' || bulkPreviewAutoGenerateEmpNo) {
+                      employeeData.emp_no = '';
+                    }
 
                     // Handle dynamic fields based on form settings
                     const coreFields = ['emp_no', 'employee_name', 'proposedSalary', 'gross_salary', 'second_salary', 'division_id', 'department_id', 'designation_id', 'division_name', 'department_name', 'designation_name', 'doj', 'dob', 'gender', 'marital_status', 'blood_group', 'qualifications', 'experience', 'address', 'location', 'aadhar_number', 'phone_number', 'alt_phone_number', 'email', 'pf_number', 'esi_number', 'bank_account_no', 'bank_name', 'bank_place', 'ifsc_code', 'salary_mode'];
@@ -4113,21 +4484,47 @@ export default function EmployeesPage() {
         {
           showViewDialog && viewingEmployee && (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowViewDialog(false)} />
+              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => { setShowViewDialog(false); setCertificatePreviewUrl(null); }} />
               <div className="relative z-50 max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950/95">
                 <div className="mb-6 flex items-center justify-between">
-                  <div>
-                    <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-                      {viewingEmployee.employee_name}
-                    </h2>
-                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                      Employee No: {viewingEmployee.emp_no}
-                    </p>
+                  <div className="flex items-center gap-4">
+                    {(viewingEmployee as any).profilePhoto ? (
+                      <img
+                        src={(viewingEmployee as any).profilePhoto}
+                        alt={viewingEmployee.employee_name || 'Profile'}
+                        className="h-16 w-16 rounded-xl border border-slate-200 object-cover dark:border-slate-700"
+                      />
+                    ) : (
+                      <div className="flex h-16 w-16 items-center justify-center rounded-xl border border-slate-200 bg-slate-100 text-xl font-semibold text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
+                        {(viewingEmployee.employee_name || '?').charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <div>
+                      <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+                        {viewingEmployee.employee_name}
+                      </h2>
+                      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                        Employee No: {viewingEmployee.emp_no}
+                      </p>
+                    </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    {viewingEmployee.leftDate && (
+                      <button
+                        onClick={() => {
+                          setShowViewDialog(false);
+                          setCertificatePreviewUrl(null);
+                          handleRemoveLeftDate(viewingEmployee);
+                        }}
+                        className="rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
+                      >
+                        Reactivate
+                      </button>
+                    )}
                     <button
                       onClick={() => {
                         setShowViewDialog(false);
+                        setCertificatePreviewUrl(null);
                         handleEdit(viewingEmployee);
                       }}
                       className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 transition hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-400"
@@ -4135,7 +4532,7 @@ export default function EmployeesPage() {
                       Edit
                     </button>
                     <button
-                      onClick={() => setShowViewDialog(false)}
+                      onClick={() => { setShowViewDialog(false); setCertificatePreviewUrl(null); }}
                       className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:bg-slate-900"
                     >
                       <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -4147,336 +4544,575 @@ export default function EmployeesPage() {
 
                 <div className="space-y-6">
                   {/* Status Badge */}
-                  <div className="flex items-center gap-2">
-                    <span className={viewingEmployee.is_active !== false
-                      ? 'inline-flex rounded-full px-3 py-1 text-sm font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                      : 'inline-flex rounded-full px-3 py-1 text-sm font-medium bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}>
-                      {viewingEmployee.is_active !== false ? 'Active' : 'Inactive'}
-                    </span>
-                  </div>
-
-                  {/* Basic Information */}
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                    <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Basic Information</h3>
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Employee Number</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.emp_no || '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Name</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.employee_name || '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Department</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.department?.name || '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Designation</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.designation?.name || '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Date of Joining</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.doj ? new Date(viewingEmployee.doj).toLocaleDateString() : '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Date of Birth</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.dob ? new Date(viewingEmployee.dob).toLocaleDateString() : '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Gross Salary</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.gross_salary ? `₹${viewingEmployee.gross_salary.toLocaleString()}` : '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Second Salary</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.second_salary ? `₹${viewingEmployee.second_salary.toLocaleString()}` : '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">CTC Salary</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{(viewingEmployee as any).ctcSalary ? `₹${(viewingEmployee as any).ctcSalary.toLocaleString()}` : '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Calculated Salary (Net)</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{(viewingEmployee as any).calculatedSalary ? `₹${(viewingEmployee as any).calculatedSalary.toLocaleString()}` : '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Paid Leaves</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.paidLeaves ?? '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Gender</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.gender || '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Marital Status</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.marital_status || '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Blood Group</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.blood_group || '-'}</p>
-                      </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className={viewingEmployee.is_active !== false
+                        ? 'inline-flex rounded-full px-3 py-1 text-sm font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                        : 'inline-flex rounded-full px-3 py-1 text-sm font-medium bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}>
+                        {viewingEmployee.is_active !== false ? 'Active' : 'Inactive'}
+                      </span>
+                      {viewingEmployee.leftDate && (
+                        <span className="inline-flex rounded-full px-3 py-1 text-xs font-medium bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                          Last working date: {new Date(viewingEmployee.leftDate).toLocaleDateString()}
+                        </span>
+                      )}
+                    </div>
+                    {/* Simple tabs: Profile / History (history visible for super admin users) */}
+                    <div className="inline-flex rounded-full bg-slate-100 p-1 text-xs font-medium text-slate-600 dark:bg-slate-900 dark:text-slate-300">
+                      <button
+                        type="button"
+                        onClick={() => setEmployeeViewTab('profile')}
+                        className={`px-3 py-1 rounded-full transition ${employeeViewTab === 'profile'
+                          ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-slate-100'
+                          : 'bg-transparent'
+                          }`}
+                      >
+                        Profile
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEmployeeViewTab('history')}
+                        className={`px-3 py-1 rounded-full transition ${employeeViewTab === 'history'
+                          ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-slate-100'
+                          : 'bg-transparent'
+                          }`}
+                      >
+                        History
+                      </button>
                     </div>
                   </div>
 
-                  {/* Contact Information */}
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                    <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Contact Information</h3>
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Phone Number</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.phone_number || '-'}</p>
+                  {employeeViewTab === 'profile' && (
+                    <>
+                      {/* Basic Information */}
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                        <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Basic Information</h3>
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Employee Number</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.emp_no || '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Name</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.employee_name || '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Department</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.department?.name || '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Designation</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.designation?.name || '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Date of Joining</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.doj ? new Date(viewingEmployee.doj).toLocaleDateString() : '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Date of Birth</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.dob ? new Date(viewingEmployee.dob).toLocaleDateString() : '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Gross Salary</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.gross_salary ? `₹${viewingEmployee.gross_salary.toLocaleString()}` : '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Second Salary</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.second_salary ? `₹${viewingEmployee.second_salary.toLocaleString()}` : '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">CTC Salary</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{(viewingEmployee as any).ctcSalary ? `₹${(viewingEmployee as any).ctcSalary.toLocaleString()}` : '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Calculated Salary (Net)</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{(viewingEmployee as any).calculatedSalary ? `₹${(viewingEmployee as any).calculatedSalary.toLocaleString()}` : '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Paid Leaves</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.paidLeaves ?? '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Gender</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.gender || '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Marital Status</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.marital_status || '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Blood Group</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.blood_group || '-'}</p>
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Alternate Phone</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.alt_phone_number || '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Email</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.email || '-'}</p>
-                      </div>
-                      <div className="sm:col-span-2 lg:col-span-3">
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Address</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.address || '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Location</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.location || '-'}</p>
-                      </div>
-                    </div>
-                  </div>
 
-                  {/* Professional Information */}
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                    <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Professional Information</h3>
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                      <div className="sm:col-span-2 lg:col-span-3">
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2 block">Qualifications</label>
-                        <div className="space-y-3">
-                          {(() => {
-                            const quals = viewingEmployee.qualifications;
-                            if (!quals || (Array.isArray(quals) && quals.length === 0)) {
-                              return <p className="text-sm font-medium text-slate-900 dark:text-slate-100">-</p>;
+                      {/* Contact Information */}
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                        <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Contact Information</h3>
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Phone Number</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.phone_number || '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Alternate Phone</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.alt_phone_number || '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Email</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.email || '-'}</p>
+                          </div>
+                          <div className="sm:col-span-2 lg:col-span-3">
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Address</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.address || '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Location</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.location || '-'}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Professional Information */}
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                        <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Professional Information</h3>
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                          <div className="sm:col-span-2 lg:col-span-3">
+                            <div className="mb-2 flex items-center justify-between">
+                              <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Qualifications</label>
+                              {(() => {
+                                const quals = viewingEmployee.qualifications;
+                                if (!quals || !Array.isArray(quals) || quals.length === 0) return null;
+                                const total = quals.length;
+                                const certLabel = formSettings?.qualifications?.fields?.find((f: any) => f.id === 'certificate_submitted')?.label;
+                                const count = quals.filter((q: any) => {
+                                  const v = q.certificate_submitted ?? (certLabel ? q[certLabel] : null);
+                                  return v === true || v === 'Yes' || (typeof v === 'string' && v.toLowerCase() === 'yes');
+                                }).length;
+                                const status = total === 0 ? '—' : count === total ? 'Certified' : `Partial (${count}/${total})`;
+                                return (
+                                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${count === total ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' : 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'}`}>
+                                    {status}
+                                  </span>
+                                );
+                              })()}
+                            </div>
+                            {(() => {
+                              const quals = viewingEmployee.qualifications;
+                              if (!quals || (Array.isArray(quals) && quals.length === 0)) {
+                                return <p className="text-sm font-medium text-slate-900 dark:text-slate-100">-</p>;
+                              }
+                              if (Array.isArray(quals)) {
+                                const qualFields = (formSettings?.qualifications?.fields || []).filter((f: any) => f.isEnabled !== false).sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
+                                return (
+                                  <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+                                    <table className="w-full min-w-[700px] text-left text-sm">
+                                      <thead>
+                                        <tr className="border-b border-slate-200 bg-slate-100/80 dark:border-slate-700 dark:bg-slate-800/80">
+                                          {qualFields.map((f: any) => (
+                                            <th key={f.id} className="whitespace-nowrap px-3 py-2 font-semibold text-slate-700 dark:text-slate-300">
+                                              {f.label}
+                                            </th>
+                                          ))}
+                                          <th className="w-20 px-3 py-2 font-semibold text-slate-700 dark:text-slate-300">View</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {quals.map((qual: any, idx: number) => {
+                                          const certificateUrl = qual.certificateUrl;
+                                          const isPDF = certificateUrl?.toLowerCase().endsWith('.pdf');
+                                          return (
+                                            <tr key={idx} className="border-b border-slate-100 dark:border-slate-700/50">
+                                              {qualFields.map((f: any) => {
+                                                const val = qual[f.id] ?? qual[f.label];
+                                                const display = val != null && val !== '' ? (f.type === 'boolean' ? (val ? 'Yes' : 'No') : String(val)) : '—';
+                                                return (
+                                                  <td key={f.id} className="px-3 py-2 text-slate-700 dark:text-slate-300">
+                                                    {display}
+                                                  </td>
+                                                );
+                                              })}
+                                              <td className="px-3 py-2">
+                                                {certificateUrl ? (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => setCertificatePreviewUrl(certificateUrl)}
+                                                    className="rounded bg-slate-200 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-300 dark:bg-slate-600 dark:text-slate-200 dark:hover:bg-slate-500"
+                                                  >
+                                                    View
+                                                  </button>
+                                                ) : (
+                                                  <span className="text-slate-400 dark:text-slate-500">—</span>
+                                                )}
+                                              </td>
+                                            </tr>
+                                          );
+                                        })}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                );
+                              }
+                              return <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{String(quals)}</p>;
+                            })()}
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Experience (Years)</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.experience ?? '-'}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {employeeViewTab === 'history' && (
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-5 dark:border-slate-700 dark:bg-slate-900/60">
+                      <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Employee History</h3>
+                      {employeeHistoryLoading && (
+                        <p className="text-sm text-slate-500 dark:text-slate-400">Loading history…</p>
+                      )}
+                      {!employeeHistoryLoading && employeeHistory.length === 0 && (
+                        <p className="text-sm text-slate-500 dark:text-slate-400">No history recorded for this employee yet.</p>
+                      )}
+                      {!employeeHistoryLoading && employeeHistory.length > 0 && (
+                        <ol className="relative space-y-4 border-l border-slate-200 pl-4 text-sm dark:border-slate-700">
+                          {employeeHistory.map((h: any, index: number) => {
+                            const ts = h.timestamp || h.created_at;
+                            const when = ts ? new Date(ts).toLocaleString() : '-';
+                            const actor = h.performedByName || 'System';
+                            const role = h.performedByRole ? ` (${h.performedByRole})` : '';
+                            const labelMap: Record<string, string> = {
+                              application_created: 'Application created',
+                              employee_verified: 'Employee verified',
+                              salary_approved: 'Salary approved',
+                              data_updated: 'Data updated',
+                              status_changed: 'Status changed',
+                              employee_updated: 'Profile updated',
+                              resignation_submitted: 'Resignation submitted',
+                              resignation_step_approved: 'Resignation step approved',
+                              resignation_step_rejected: 'Resignation step rejected',
+                              resignation_final_approved: 'Resignation fully approved',
+                              resignation_rejected: 'Resignation rejected',
+                              left_date_set: 'Left date set',
+                              left_date_cleared: 'Left date cleared',
+                              leave_applied: 'Leave applied',
+                              leave_approved: 'Leave approved',
+                              leave_rejected: 'Leave rejected',
+                              od_applied: 'OD applied',
+                              od_approved: 'OD approved',
+                              od_rejected: 'OD rejected',
+                              credentials_resent: 'Credentials resent',
+                              password_reset: 'Password reset',
+                              user_promoted: 'User promoted',
+                              user_demoted: 'User role changed',
+                              user_activated: 'User activated',
+                              user_deactivated: 'User deactivated',
+                              user_deleted: 'User deleted',
+                            };
+                            const label = labelMap[h.event] || h.event || 'Event';
+                            const rawChanges = h.details?.changes;
+                            const skipDisplayFields = new Set(['getQualifications', 'allData', 'updated_at', '__v', 'created_at']);
+                            const changes = Array.isArray(rawChanges)
+                              ? rawChanges.filter((c: any) => !skipDisplayFields.has(c.field))
+                              : [];
+                            const fieldLabelMap: Record<string, string> = {
+                              division_id: 'Division',
+                              department_id: 'Department',
+                              designation_id: 'Designation',
+                              qualifications: 'Qualifications',
+                              dynamicFields: 'Dynamic fields',
+                              name: 'Name',
+                              employee_name: 'Name',
+                              email: 'Email',
+                              phone: 'Phone',
+                              emp_no: 'Employee number',
+                              date_of_joining: 'Date of joining',
+                              leftDate: 'Left date',
+                              leftReason: 'Left reason',
+                            };
+                            const refMaps = historyRefNames;
+                            const formatChangeValue = (v: unknown, field?: string): string => {
+                              if (v === undefined || v === null) return '—';
+                              if (Array.isArray(v)) {
+                                const arr = v as any[];
+                                if (!arr.length) return '—';
+                                if (field === 'qualifications') {
+                                  const summaries = arr.map((item: any) => {
+                                    if (item && typeof item === 'object') {
+                                      const o = item as Record<string, any>;
+                                      const primary = o.Examination ?? o['Examination'] ?? o.degree ?? o.course ?? o.title ?? o['School/College name'] ?? o.University ?? o['University/Board'] ?? o.name;
+                                      if (primary != null) return String(primary);
+                                      const keys = Object.keys(o).filter((k) => !k.startsWith('_'));
+                                      if (keys.length) return `${keys[0]}: ${String(o[keys[0]])}`;
+                                      return '[item]';
+                                    }
+                                    return String(item);
+                                  });
+                                  const preview = summaries.slice(0, 2).join(', ');
+                                  return summaries.length > 2 ? `${preview} +${summaries.length - 2} more` : preview;
+                                }
+                                const allPrimitive = arr.every((it) => it == null || typeof it !== 'object');
+                                if (allPrimitive) return arr.map((it) => String(it)).join(', ');
+                                return `${arr.length} item(s)`;
+                              }
+                              if (typeof v === 'object' && v !== null) {
+                                const o = v as Record<string, unknown>;
+                                if (typeof o.name === 'string') return o.name;
+                                const keys = Object.keys(o).filter((k) => !k.startsWith('_'));
+                                if (keys.length) return `${keys.length} field(s)`;
+                                return '[updated]';
+                              }
+                              const s = String(v);
+                              if (s === '[object Object]') return '[updated]';
+                              if (field === 'division_id' && /^[a-f\d]{24}$/i.test(s)) return refMaps.division[s] ?? s;
+                              if (field === 'department_id' && /^[a-f\d]{24}$/i.test(s)) return refMaps.department[s] ?? s;
+                              if (field === 'designation_id' && /^[a-f\d]{24}$/i.test(s)) return refMaps.designation[s] ?? s;
+                              if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s)) {
+                                try {
+                                  return new Date(s).toLocaleString();
+                                } catch {
+                                  return s;
+                                }
+                              }
+                              return s;
+                            };
+                            // Choose colour variant based on event category
+                            let ringColor = 'border-slate-400';
+                            let cardBorder = 'border-slate-200 dark:border-slate-700';
+                            let pillBg = 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200';
+
+                            const ev = h.event as string;
+                            if (ev?.startsWith('resignation') || ev === 'left_date_set' || ev === 'left_date_cleared') {
+                              ringColor = 'border-orange-500';
+                              cardBorder = 'border-orange-200 dark:border-orange-700/70';
+                              pillBg = 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200';
+                            } else if (ev?.startsWith('leave_')) {
+                              ringColor = 'border-emerald-500';
+                              cardBorder = 'border-emerald-200 dark:border-emerald-700/70';
+                              pillBg = 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200';
+                            } else if (ev?.startsWith('od_')) {
+                              ringColor = 'border-sky-500';
+                              cardBorder = 'border-sky-200 dark:border-sky-700/70';
+                              pillBg = 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200';
+                            } else if (ev === 'credentials_resent' || ev === 'password_reset' || ev?.startsWith('user_')) {
+                              ringColor = 'border-violet-500';
+                              cardBorder = 'border-violet-200 dark:border-violet-700/70';
+                              pillBg = 'bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-200';
+                            } else if (ev === 'employee_updated') {
+                              ringColor = 'border-amber-500';
+                              cardBorder = 'border-amber-200 dark:border-amber-700/70';
+                              pillBg = 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200';
                             }
 
-                            // Handle array of objects (new format)
-                            if (Array.isArray(quals)) {
-                              return (
-                                <div className="grid gap-6 sm:grid-cols-2">
-                                  {quals.map((qual: any, idx: number) => {
-                                    const certificateUrl = qual.certificateUrl;
-                                    const isPDF = certificateUrl?.toLowerCase().endsWith('.pdf');
-                                    // Filter out internal keys like certificateUrl for list display
-                                    const displayEntries = Object.entries(qual).filter(([k, v]) =>
-                                      k !== 'certificateUrl' && v !== null && v !== undefined && v !== ''
-                                    );
+                            return (
+                              <li key={h._id || `${h.event}-${when}-${actor}-${index}`} className="relative pl-4">
+                                {/* Timeline dot */}
+                                <span
+                                  className={`absolute -left-[9px] flex h-4 w-4 items-center justify-center rounded-full border-2 ${ringColor} bg-white dark:bg-slate-950`}
+                                >
+                                  <span className="h-1.5 w-1.5 rounded-full bg-slate-500 dark:bg-slate-300" />
+                                </span>
 
-                                    return (
-                                      <div key={idx} className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white transition-all hover:border-blue-300 hover:shadow-lg dark:border-slate-700 dark:bg-slate-900 dark:hover:border-blue-700 flex flex-col h-full">
-                                        {/* Card Image Area */}
-                                        <div className="aspect-[3/2] w-full overflow-hidden bg-slate-100 dark:bg-slate-800 relative group-hover:bg-slate-50 dark:group-hover:bg-slate-800/80 transition-colors">
-                                          {certificateUrl ? (
-                                            isPDF ? (
-                                              <div className="absolute inset-0 flex items-center justify-center">
-                                                <svg className="h-20 w-20 text-red-500 opacity-80 group-hover:scale-110 transition-transform duration-300" fill="currentColor" viewBox="0 0 24 24">
-                                                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9v-2h2v2zm0-4H9V7h2v5z" />
-                                                </svg>
-                                                <span className="absolute bottom-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">PDF Document</span>
-                                              </div>
-                                            ) : (
-                                              <img
-                                                src={certificateUrl}
-                                                alt="Certificate Preview"
-                                                className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                                              />
-                                            )
-                                          ) : (
-                                            <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-300 dark:text-slate-600">
-                                              <svg className="h-16 w-16 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                              </svg>
-                                              <span className="text-xs font-medium">No Certificate</span>
-                                            </div>
-                                          )}
-
-                                          {/* Overlay Action */}
-                                          {certificateUrl && (
-                                            <a
-                                              href={certificateUrl}
-                                              target="_blank"
-                                              rel="noopener noreferrer"
-                                              className="absolute inset-0 z-10 flex items-center justify-center bg-black/0 opacity-0 transition-all duration-300 group-hover:bg-black/10 group-hover:opacity-100"
-                                            >
-                                              <div className="rounded-full bg-white/90 px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm backdrop-blur-sm hover:bg-white hover:scale-105 transition-all">
-                                                View Full {isPDF ? 'Document' : 'Image'}
-                                              </div>
-                                            </a>
-                                          )}
-                                        </div>
-
-                                        {/* Card Content Area */}
-                                        <div className="flex flex-1 flex-col p-5">
-                                          <div className="space-y-3">
-                                            {displayEntries.length > 0 ? displayEntries.map(([key, value]) => {
-                                              const fieldLabel = formSettings?.qualifications?.fields?.find((f: any) => f.id === key)?.label || key.replace(/_/g, ' ');
-                                              return (
-                                                <div key={key} className="flex flex-col border-b border-slate-100 pb-2 last:border-0 last:pb-0 dark:border-slate-800">
-                                                  <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 dark:text-slate-500 mb-0.5">
-                                                    {fieldLabel}
-                                                  </span>
-                                                  <span className="text-sm font-medium text-slate-900 dark:text-slate-100 line-clamp-1" title={String(value)}>
-                                                    {String(value)}
-                                                  </span>
-                                                </div>
-                                              );
-                                            }) : <span className="text-sm italic text-slate-400">No Qualification Details</span>}
-                                          </div>
-                                        </div>
+                                {/* Card */}
+                                <div
+                                  className={`rounded-2xl border ${cardBorder} bg-white/90 p-3 shadow-sm shadow-slate-900/5 dark:bg-slate-950/70`}
+                                >
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="space-y-1">
+                                      <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${pillBg}`}>
+                                        {label}
+                                      </span>
+                                      <div className="text-xs text-slate-500 dark:text-slate-400">
+                                        {when} • {actor}
+                                        {role}
                                       </div>
-                                    );
-                                  })}
+                                    </div>
+                                  </div>
+                                  {h.comments && (
+                                    <div className="mt-2 text-xs text-slate-700 dark:text-slate-200">
+                                      {h.comments}
+                                    </div>
+                                  )}
+                                  {Array.isArray(changes) && changes.length > 0 && (
+                                    <>
+                                      <ul className="mt-2 space-y-0.5 text-xs text-slate-600 dark:text-slate-300">
+                                        {changes.map((c: any, idx: number) => {
+                                          const fieldLabel = fieldLabelMap[c.field] ?? c.field;
+                                          return (
+                                            <li key={`${c.field}-${idx}`} className="flex flex-wrap items-center gap-x-1 gap-y-0.5">
+                                              <span className="font-semibold">{fieldLabel}</span>{' '}
+                                              changed from{' '}
+                                              <span className="font-mono text-slate-700 dark:text-slate-100">
+                                                {formatChangeValue(c.previous, c.field)}
+                                              </span>{' '}
+                                              to{' '}
+                                              <span className="font-mono text-slate-700 dark:text-slate-100">
+                                                {formatChangeValue(c.current, c.field)}
+                                              </span>
+                                            </li>
+                                          );
+                                        })}
+                                      </ul>
+                                      <button
+                                        type="button"
+                                        onClick={() => setHistoryViewComplete({
+                                          eventLabel: label,
+                                          changes: changes.map((c: any) => ({
+                                            field: c.field,
+                                            fieldLabel: fieldLabelMap[c.field] ?? c.field,
+                                            previous: c.previous,
+                                            current: c.current,
+                                          })),
+                                        })}
+                                        className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100 dark:border-amber-600 dark:bg-amber-900/30 dark:text-amber-200 dark:hover:bg-amber-900/50"
+                                      >
+                                        View complete
+                                      </button>
+                                    </>
+                                  )}
                                 </div>
-                              );
-                            }
+                              </li>
+                            );
+                          })}
+                        </ol>
+                      )}
+                    </div>
+                  )}
 
-                            // Fallback for string
-                            return <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{String(quals)}</p>;
-                          })()}
+                  {/* Financial Information (profile view only) */}
+                  {employeeViewTab === 'profile' && (
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                      <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Financial Information</h3>
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                        <div>
+                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">PF Number</label>
+                          <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.pf_number || '-'}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">ESI Number</label>
+                          <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.esi_number || '-'}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Aadhar Number</label>
+                          <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.aadhar_number || '-'}</p>
                         </div>
                       </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Experience (Years)</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.experience ?? '-'}</p>
+                    </div>
+                  )}
+
+                  {/* Bank Details (profile view only) */}
+                  {employeeViewTab === 'profile' && (
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                      <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Bank Details</h3>
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                        <div>
+                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Account Number</label>
+                          <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_account_no || '-'}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Bank Name</label>
+                          <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_name || '-'}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Bank Place</label>
+                          <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_place || '-'}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">IFSC Code</label>
+                          <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.ifsc_code || '-'}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Salary Mode</label>
+                          <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.salary_mode || 'Bank'}</p>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
 
-                  {/* Financial Information */}
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                    <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Financial Information</h3>
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">PF Number</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.pf_number || '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">ESI Number</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.esi_number || '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Aadhar Number</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.aadhar_number || '-'}</p>
-                      </div>
-                    </div>
-                  </div>
+                  {/* Allowances & Deductions (profile view only) */}
+                  {employeeViewTab === 'profile' && (
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                      <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Allowances & Deductions</h3>
 
-                  {/* Bank Details */}
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                    <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Bank Details</h3>
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Account Number</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_account_no || '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Bank Name</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_name || '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Bank Place</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_place || '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">IFSC Code</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.ifsc_code || '-'}</p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Salary Mode</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.salary_mode || 'Bank'}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Allowances & Deductions - Always show both sections */}
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                    <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Allowances & Deductions</h3>
-
-                    {/* Allowances */}
-                    {(Array.isArray(viewingEmployee.employeeAllowances) && viewingEmployee.employeeAllowances.length > 0) ? (
-                      <div className="mb-6">
-                        <h4 className="mb-3 text-sm font-semibold text-green-700 dark:text-green-400">Allowances</h4>
-                        <div className="space-y-2">
-                          {viewingEmployee.employeeAllowances.map((allowance: any, idx: number) => (
-                            <div key={idx} className="flex items-center justify-between rounded-lg border border-green-200 bg-green-50/50 p-3 dark:border-green-800 dark:bg-green-900/20">
-                              <div className="flex-1">
-                                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{allowance.name || '-'}</p>
-                                <p className="text-xs text-slate-500 dark:text-slate-400">
-                                  {allowance.type === 'percentage'
-                                    ? `${allowance.percentage}% of ${allowance.percentageBase || 'basic'}`
-                                    : 'Fixed Amount'}
-                                  {allowance.isOverride && (
-                                    <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                                      Override
-                                    </span>
-                                  )}
+                      {/* Allowances */}
+                      {(Array.isArray(viewingEmployee.employeeAllowances) && viewingEmployee.employeeAllowances.length > 0) ? (
+                        <div className="mb-6">
+                          <h4 className="mb-3 text-sm font-semibold text-green-700 dark:text-green-400">Allowances</h4>
+                          <div className="space-y-2">
+                            {viewingEmployee.employeeAllowances.map((allowance: any, idx: number) => (
+                              <div key={idx} className="flex items-center justify-between rounded-lg border border-green-200 bg-green-50/50 p-3 dark:border-green-800 dark:bg-green-900/20">
+                                <div className="flex-1">
+                                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{allowance.name || '-'}</p>
+                                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                                    {allowance.type === 'percentage'
+                                      ? `${allowance.percentage}% of ${allowance.percentageBase || 'basic'}`
+                                      : 'Fixed Amount'}
+                                    {allowance.isOverride && (
+                                      <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                                        Override
+                                      </span>
+                                    )}
+                                  </p>
+                                </div>
+                                <p className="text-sm font-semibold text-green-700 dark:text-green-400">
+                                  {allowance.amount !== null && allowance.amount !== undefined
+                                    ? `₹${Number(allowance.amount).toLocaleString()}`
+                                    : '-'}
                                 </p>
                               </div>
-                              <p className="text-sm font-semibold text-green-700 dark:text-green-400">
-                                {allowance.amount !== null && allowance.amount !== undefined
-                                  ? `₹${Number(allowance.amount).toLocaleString()}`
-                                  : '-'}
-                              </p>
-                            </div>
-                          ))}
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    ) : (
-                      <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-                        <p className="text-sm text-slate-500 dark:text-slate-400">
-                          No employee-level allowance overrides. Default allowances from Department/Global settings will be used during payroll calculation.
-                        </p>
-                      </div>
-                    )}
+                      ) : (
+                        <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+                          <p className="text-sm text-slate-500 dark:text-slate-400">
+                            No employee-level allowance overrides. Default allowances from Department/Global settings will be used during payroll calculation.
+                          </p>
+                        </div>
+                      )}
 
-                    {/* Deductions */}
-                    {(Array.isArray(viewingEmployee.employeeDeductions) && viewingEmployee.employeeDeductions.length > 0) ? (
-                      <div>
-                        <h4 className="mb-3 text-sm font-semibold text-red-700 dark:text-red-400">Deductions</h4>
-                        <div className="space-y-2">
-                          {viewingEmployee.employeeDeductions.map((deduction: any, idx: number) => (
-                            <div key={idx} className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50/50 p-3 dark:border-red-800 dark:bg-red-900/20">
-                              <div className="flex-1">
-                                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{deduction.name || '-'}</p>
-                                <p className="text-xs text-slate-500 dark:text-slate-400">
-                                  {deduction.type === 'percentage'
-                                    ? `${deduction.percentage}% of ${deduction.percentageBase || 'basic'}`
-                                    : 'Fixed Amount'}
-                                  {deduction.isOverride && (
-                                    <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                                      Override
-                                    </span>
-                                  )}
+                      {/* Deductions */}
+                      {(Array.isArray(viewingEmployee.employeeDeductions) && viewingEmployee.employeeDeductions.length > 0) ? (
+                        <div>
+                          <h4 className="mb-3 text-sm font-semibold text-red-700 dark:text-red-400">Deductions</h4>
+                          <div className="space-y-2">
+                            {viewingEmployee.employeeDeductions.map((deduction: any, idx: number) => (
+                              <div key={idx} className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50/50 p-3 dark:border-red-800 dark:bg-red-900/20">
+                                <div className="flex-1">
+                                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{deduction.name || '-'}</p>
+                                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                                    {deduction.type === 'percentage'
+                                      ? `${deduction.percentage}% of ${deduction.percentageBase || 'basic'}`
+                                      : 'Fixed Amount'}
+                                    {deduction.isOverride && (
+                                      <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                                        Override
+                                      </span>
+                                    )}
+                                  </p>
+                                </div>
+                                <p className="text-sm font-semibold text-red-700 dark:text-red-400">
+                                  {deduction.amount !== null && deduction.amount !== undefined
+                                    ? `₹${Number(deduction.amount).toLocaleString()}`
+                                    : '-'}
                                 </p>
                               </div>
-                              <p className="text-sm font-semibold text-red-700 dark:text-red-400">
-                                {deduction.amount !== null && deduction.amount !== undefined
-                                  ? `₹${Number(deduction.amount).toLocaleString()}`
-                                  : '-'}
-                              </p>
-                            </div>
-                          ))}
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    ) : (
-                      <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-                        <p className="text-sm text-slate-500 dark:text-slate-400">
-                          No employee-level deduction overrides. Default deductions from Department/Global settings will be used during payroll calculation.
-                        </p>
-                      </div>
-                    )}
-                  </div>
+                      ) : (
+                        <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+                          <p className="text-sm text-slate-500 dark:text-slate-400">
+                            No employee-level deduction overrides. Default deductions from Department/Global settings will be used during payroll calculation.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
-                  {/* Left Date Information */}
-                  {viewingEmployee.leftDate && (
+                  {/* Left Date Information (profile view only) */}
+                  {employeeViewTab === 'profile' && viewingEmployee.leftDate && (
                     <div className="rounded-2xl border border-orange-200 bg-orange-50/50 p-5 dark:border-orange-800 dark:bg-orange-900/20 mb-5">
                       <h3 className="mb-4 text-lg font-semibold text-orange-900 dark:text-orange-100">Left Date Information</h3>
                       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -4499,67 +5135,59 @@ export default function EmployeesPage() {
                           </div>
                         )}
                       </div>
-                      <div className="mt-4">
-                        <button
-                          onClick={() => {
-                            setShowViewDialog(false);
-                            handleRemoveLeftDate(viewingEmployee);
-                          }}
-                          className="rounded-xl bg-gradient-to-r from-green-500 to-green-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
-                        >
-                          Reactivate Employee
-                        </button>
+                      {/* Reactivate button moved to header; no button here */}
+                    </div>
+                  )}
+
+                  {/* Leave Information (profile view only) */}
+                  {employeeViewTab === 'profile' && (
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                      <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Leave Information</h3>
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                        <div>
+                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Monthly Paid Leaves</label>
+                          <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                            {viewingEmployee.paidLeaves !== undefined && viewingEmployee.paidLeaves !== null
+                              ? `${viewingEmployee.paidLeaves} days/month`
+                              : '0 days/month'}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            Recurring monthly paid leaves
+                          </p>
+                        </div>
+                        <div>
+                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Yearly Allotted Leaves</label>
+                          <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                            {viewingEmployee.allottedLeaves !== undefined && viewingEmployee.allottedLeaves !== null
+                              ? `${viewingEmployee.allottedLeaves} days/year`
+                              : '0 days/year'}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            Total for without_pay/LOP leaves (for balance tracking)
+                          </p>
+                        </div>
+                        {((viewingEmployee as any).ctcSalary !== undefined && (viewingEmployee as any).ctcSalary !== null) && (
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">CTC Salary</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                              ₹{Number((viewingEmployee as any).ctcSalary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                            </p>
+                          </div>
+                        )}
+                        {((viewingEmployee as any).calculatedSalary !== undefined && (viewingEmployee as any).calculatedSalary !== null) && (
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Calculated Salary (Net)</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                              ₹{Number((viewingEmployee as any).calculatedSalary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
 
-                  {/* Leave Information */}
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                    <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Leave Information</h3>
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Monthly Paid Leaves</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                          {viewingEmployee.paidLeaves !== undefined && viewingEmployee.paidLeaves !== null
-                            ? `${viewingEmployee.paidLeaves} days/month`
-                            : '0 days/month'}
-                        </p>
-                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                          Recurring monthly paid leaves
-                        </p>
-                      </div>
-                      <div>
-                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Yearly Allotted Leaves</label>
-                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                          {viewingEmployee.allottedLeaves !== undefined && viewingEmployee.allottedLeaves !== null
-                            ? `${viewingEmployee.allottedLeaves} days/year`
-                            : '0 days/year'}
-                        </p>
-                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                          Total for without_pay/LOP leaves (for balance tracking)
-                        </p>
-                      </div>
-                      {((viewingEmployee as any).ctcSalary !== undefined && (viewingEmployee as any).ctcSalary !== null) && (
-                        <div>
-                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">CTC Salary</label>
-                          <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                            ₹{Number((viewingEmployee as any).ctcSalary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                          </p>
-                        </div>
-                      )}
-                      {((viewingEmployee as any).calculatedSalary !== undefined && (viewingEmployee as any).calculatedSalary !== null) && (
-                        <div>
-                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Calculated Salary (Net)</label>
-                          <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                            ₹{Number((viewingEmployee as any).calculatedSalary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Reporting Authority Section - Check both root and dynamicFields, handle both reporting_to and reporting_to_ */}
-                  {((viewingEmployee as any).reporting_to || (viewingEmployee as any).reporting_to_ || viewingEmployee.dynamicFields?.reporting_to || viewingEmployee.dynamicFields?.reporting_to_) && (
+                  {/* Reporting Authority Section (profile view only) - Check both root and dynamicFields */}
+                  {employeeViewTab === 'profile' && (((viewingEmployee as any).reporting_to || (viewingEmployee as any).reporting_to_ || viewingEmployee.dynamicFields?.reporting_to || viewingEmployee.dynamicFields?.reporting_to_)) && (
                     <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
                       <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Reporting Authority</h3>
                       {(() => {
@@ -4611,9 +5239,78 @@ export default function EmployeesPage() {
 
                 </div>
               </div>
+              {/* Certificate image/document popup */}
+              {certificatePreviewUrl && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" onClick={() => setCertificatePreviewUrl(null)}>
+                  <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+                  <div className="relative z-10 max-h-[90vh] max-w-[90vw] rounded-2xl bg-white shadow-2xl dark:bg-slate-900" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center justify-end gap-2 border-b border-slate-200 p-2 dark:border-slate-700">
+                      <a href={certificatePreviewUrl} target="_blank" rel="noopener noreferrer" className="rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">
+                        Open in new tab
+                      </a>
+                      <button type="button" onClick={() => setCertificatePreviewUrl(null)} className="rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">
+                        Close
+                      </button>
+                    </div>
+                    <div className="p-2">
+                      {certificatePreviewUrl.toLowerCase().endsWith('.pdf') ? (
+                        <iframe src={certificatePreviewUrl} title="Certificate" className="h-[80vh] w-[85vw] max-w-4xl rounded-lg border-0" />
+                      ) : (
+                        <img src={certificatePreviewUrl} alt="Certificate" className="max-h-[80vh] max-w-full rounded-lg object-contain" />
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )
         }
+
+        {/* History – View complete modal (all changes for one entry, full data) */}
+        {historyViewComplete && (
+          <div className="fixed inset-0 z-[55] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setHistoryViewComplete(null)} />
+            <div className="relative z-10 flex max-h-[85vh] w-full max-w-4xl flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                  {historyViewComplete.eventLabel} – complete data
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setHistoryViewComplete(null)}
+                  className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+              <div className="overflow-auto p-4 space-y-4">
+                {historyViewComplete.changes.map((c, idx) => (
+                  <div key={`${c.field}-${idx}`} className="rounded-xl border border-slate-200 bg-slate-50/50 p-3 dark:border-slate-700 dark:bg-slate-800/50">
+                    <p className="mb-2 text-sm font-semibold text-slate-800 dark:text-slate-200">{c.fieldLabel}</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Previous</p>
+                        <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-white p-2 text-xs text-slate-800 dark:bg-slate-900 dark:text-slate-200">
+                          {typeof c.previous === 'object' && c.previous !== null
+                            ? JSON.stringify(c.previous, null, 2)
+                            : String(c.previous ?? '—')}
+                        </pre>
+                      </div>
+                      <div>
+                        <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Current</p>
+                        <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-white p-2 text-xs text-slate-800 dark:bg-slate-900 dark:text-slate-200">
+                          {typeof c.current === 'object' && c.current !== null
+                            ? JSON.stringify(c.current, null, 2)
+                            : String(c.current ?? '—')}
+                        </pre>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Left Date Modal */}
         {
@@ -4624,10 +5321,10 @@ export default function EmployeesPage() {
                 <div className="mb-6 flex items-center justify-between">
                   <div>
                     <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
-                      Set Employee Left Date
+                      Resignation
                     </h2>
                     <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                      {selectedEmployeeForLeftDate.employee_name} ({selectedEmployeeForLeftDate.emp_no})
+                      {selectedEmployeeForLeftDate.employee_name} ({selectedEmployeeForLeftDate.emp_no}) — Enter last working date and remarks. If resignation workflow is enabled in settings, the request will go through approval.
                     </p>
                   </div>
                   <button
@@ -4659,30 +5356,39 @@ export default function EmployeesPage() {
                 <form onSubmit={handleSubmitLeftDate} className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      Left Date <span className="text-red-500">*</span>
+                      Last working date <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="date"
                       required
+                      readOnly
                       value={leftDateForm.leftDate}
-                      onChange={(e) => setLeftDateForm({ ...leftDateForm, leftDate: e.target.value })}
-                      max={new Date().toISOString().split('T')[0]}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      min={(() => {
+                        const d = new Date();
+                        d.setDate(d.getDate() + resignationNoticePeriodDays);
+                        return d.toISOString().split('T')[0];
+                      })()}
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-300 cursor-not-allowed"
                     />
                     <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                      The employee will be included in pay register for this month, but excluded from future months.
+                      This date will be recorded as the employee&apos;s last day in office. They will be included in pay register until this month, then excluded from future months.
                     </p>
+                    {resignationNoticePeriodDays > 0 && (
+                      <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                        Notice period: {resignationNoticePeriodDays} day(s). Last working date must be at least {resignationNoticePeriodDays} days from today.
+                      </p>
+                    )}
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      Reason for Leaving (Optional)
+                      Remarks for resignation (Optional)
                     </label>
                     <textarea
                       value={leftDateForm.leftReason}
                       onChange={(e) => setLeftDateForm({ ...leftDateForm, leftReason: e.target.value })}
                       rows={3}
-                      placeholder="Enter reason for leaving..."
+                      placeholder="Enter remarks for resignation..."
                       className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     />
                   </div>
@@ -4703,7 +5409,7 @@ export default function EmployeesPage() {
                       type="submit"
                       className="rounded-xl bg-gradient-to-r from-red-500 to-orange-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-red-500/30 transition-all hover:from-red-600 hover:to-orange-600"
                     >
-                      Set Left Date
+                      Submit Resignation
                     </button>
                   </div>
                 </form>
@@ -4713,7 +5419,7 @@ export default function EmployeesPage() {
         }
       </div>
 
-      {showEmployeeUpdateModal && (
+      {allowEmployeeBulkProcess && showEmployeeUpdateModal && (
         <EmployeeUpdateModal
           onClose={() => setShowEmployeeUpdateModal(false)}
           onSuccess={() => {
@@ -4723,7 +5429,7 @@ export default function EmployeesPage() {
         />
       )}
 
-      {showBulkAllowancesDeductions && (
+      {allowEmployeeBulkProcess && showBulkAllowancesDeductions && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
           <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl dark:bg-slate-800">
             <h3 className="mb-4 text-xl font-bold text-slate-800 dark:text-white">Bulk Allowances & Deductions Update</h3>
