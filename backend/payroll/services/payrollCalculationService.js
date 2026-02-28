@@ -371,6 +371,7 @@ async function calculatePayroll(employeeId, month, userId) {
         absentDays: totalAbsentDays,
         enableAbsentDeduction: absentSettings.enableAbsentDeduction,
         lopDaysPerAbsent: absentSettings.lopDaysPerAbsent,
+        employee,
       }
     );
     console.log('Attendance Deduction Result:', JSON.stringify(attendanceDeductionResult, null, 2));
@@ -393,7 +394,8 @@ async function calculatePayroll(employeeId, month, userId) {
       month,
       departmentId.toString(),
       basicPayResult.perDayBasicPay,
-      employee.division_id?.toString() || null
+      employee.division_id?.toString() || null,
+      { employee }
     );
     console.log('Permission Deduction Result:', JSON.stringify(permissionDeductionResult, null, 2));
     console.log(`Permission Deduction Amount: ${permissionDeductionResult.permissionDeduction}`);
@@ -1153,7 +1155,8 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
       month,
       departmentId,
       perDaySalary,
-      employee.division_id // Pass division ID for granular rules
+      employee.division_id, // Pass division ID for granular rules
+      { employee }
     );
 
     let totalAttendanceDeduction = attendanceDeductionResult.attendanceDeduction || 0;
@@ -1220,6 +1223,7 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
         grossSalary: grossAmountSalary,
         earnedSalary,
         dearnessAllowance: 0,
+        employee,
       });
       if (statutoryResult.breakdown && statutoryResult.breakdown.length > 0) {
         totalDeductions += statutoryResult.totalEmployeeShare;

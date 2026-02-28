@@ -18,12 +18,14 @@ import {
 } from 'lucide-react';
 
 const ArrearsForm = ({ open, onClose, onSubmit, employees = [] }) => {
+  const [arrearsType, setArrearsType] = useState('incremental'); // 'incremental' | 'direct'
   const [formData, setFormData] = useState({
     employee: '',
     startMonth: '',
     endMonth: '',
     monthlyAmount: '',
     totalAmount: '',
+    directAmount: '',
     reason: ''
   });
 
@@ -42,25 +44,38 @@ const ArrearsForm = ({ open, onClose, onSubmit, employees = [] }) => {
     }
   }, [employees, open]);
 
-  // Fetch attendance data when selection changes
+  // Fetch attendance data when incremental arrears and period are selected (pay register / payroll source)
   useEffect(() => {
+    if (arrearsType !== 'incremental') {
+      setAttendanceData([]);
+      return;
+    }
     if (formData.employee && formData.startMonth && formData.endMonth && formData.startMonth <= formData.endMonth) {
       setFetchingAttendance(true);
       api.getAttendanceDataRange(formData.employee, formData.startMonth, formData.endMonth)
         .then(response => {
-          if (response.success) {
-            setAttendanceData(response.data || []);
+          if (response.success && Array.isArray(response.data)) {
+            setAttendanceData(response.data);
+          } else {
+            setAttendanceData([]);
           }
         })
-        .catch(err => console.error('Error fetching attendance data:', err))
+        .catch(err => {
+          console.error('Error fetching attendance data for arrears proration:', err);
+          setAttendanceData([]);
+        })
         .finally(() => setFetchingAttendance(false));
     } else {
       setAttendanceData([]);
     }
-  }, [formData.employee, formData.startMonth, formData.endMonth]);
+  }, [arrearsType, formData.employee, formData.startMonth, formData.endMonth]);
 
-  // Real-time proration calculation
+  // Real-time proration calculation (incremental only; uses attendance paid days per month)
   useEffect(() => {
+    if (arrearsType !== 'incremental') {
+      setCalculationBreakdown([]);
+      return;
+    }
     if (!formData.startMonth || !formData.endMonth || !formData.monthlyAmount) {
       setCalculationBreakdown([]);
       setFormData(prev => ({ ...prev, totalAmount: '0' }));
@@ -87,9 +102,11 @@ const ArrearsForm = ({ open, onClose, onSubmit, employees = [] }) => {
 
     const monthlyAmount = parseFloat(formData.monthlyAmount) || 0;
     const breakdown = months.map(m => {
-      const record = attendanceData.find(r => r.month === m);
-      const totalDays = record ? record.totalDaysInMonth : new Date(Number(m.split('-')[0]), Number(m.split('-')[1]), 0).getDate();
-      const paidDays = record && record.attendance ? record.attendance.totalPaidDays : 0;
+      const record = attendanceData.find(r => String(r.month) === String(m));
+      const totalDays = record
+        ? (Number(record.totalDaysInMonth) || new Date(Number(m.split('-')[0]), Number(m.split('-')[1]), 0).getDate())
+        : new Date(Number(m.split('-')[0]), Number(m.split('-')[1]), 0).getDate();
+      const paidDays = record?.attendance != null ? (Number(record.attendance.totalPaidDays) || 0) : 0;
       const proratedAmount = totalDays > 0 ? (monthlyAmount / totalDays) * paidDays : 0;
 
       return {
@@ -105,7 +122,7 @@ const ArrearsForm = ({ open, onClose, onSubmit, employees = [] }) => {
     setCalculationBreakdown(breakdown);
     const total = breakdown.reduce((sum, item) => sum + item.proratedAmount, 0);
     setFormData(prev => ({ ...prev, totalAmount: total.toFixed(2) }));
-  }, [attendanceData, formData.monthlyAmount, formData.startMonth, formData.endMonth]);
+  }, [arrearsType, attendanceData, formData.monthlyAmount, formData.startMonth, formData.endMonth]);
 
   const loadEmployees = () => {
     Promise.resolve(api.getEmployees({ is_active: true }))
@@ -142,15 +159,19 @@ const ArrearsForm = ({ open, onClose, onSubmit, employees = [] }) => {
 
   const validateForm = () => {
     const newErrors = {};
-
     if (!formData.employee) newErrors.employee = 'Required';
-    if (!formData.startMonth) newErrors.startMonth = 'Required';
-    if (!formData.endMonth) newErrors.endMonth = 'Required';
-    if (!formData.monthlyAmount) newErrors.monthlyAmount = 'Required';
     if (!formData.reason) newErrors.reason = 'Required';
 
-    if (formData.startMonth && formData.endMonth && formData.startMonth > formData.endMonth) {
-      newErrors.endMonth = 'Must be after start';
+    if (arrearsType === 'direct') {
+      const amt = parseFloat(formData.directAmount);
+      if (!formData.directAmount || isNaN(amt) || amt <= 0) newErrors.directAmount = 'Valid amount required';
+    } else {
+      if (!formData.startMonth) newErrors.startMonth = 'Required';
+      if (!formData.endMonth) newErrors.endMonth = 'Required';
+      if (!formData.monthlyAmount) newErrors.monthlyAmount = 'Required';
+      if (formData.startMonth && formData.endMonth && formData.startMonth > formData.endMonth) {
+        newErrors.endMonth = 'Must be after start';
+      }
     }
 
     setErrors(newErrors);
@@ -162,21 +183,29 @@ const ArrearsForm = ({ open, onClose, onSubmit, employees = [] }) => {
     if (!validateForm()) return;
     setLoading(true);
 
-    const submitData = {
-      employee: formData.employee,
-      startMonth: formData.startMonth,
-      endMonth: formData.endMonth,
-      monthlyAmount: parseFloat(formData.monthlyAmount),
-      totalAmount: parseFloat(formData.totalAmount),
-      reason: formData.reason,
-      calculationBreakdown: calculationBreakdown.map(b => ({
-        month: b.month,
-        monthlyAmount: b.monthlyAmount,
-        totalDays: b.totalDays,
-        paidDays: b.paidDays,
-        proratedAmount: parseFloat(b.proratedAmount.toFixed(2))
-      }))
-    };
+    const submitData = arrearsType === 'direct'
+      ? {
+          type: 'direct',
+          employee: formData.employee,
+          totalAmount: parseFloat(formData.directAmount),
+          reason: formData.reason.trim()
+        }
+      : {
+          type: 'incremental',
+          employee: formData.employee,
+          startMonth: formData.startMonth,
+          endMonth: formData.endMonth,
+          monthlyAmount: parseFloat(formData.monthlyAmount),
+          totalAmount: parseFloat(formData.totalAmount),
+          reason: formData.reason,
+          calculationBreakdown: calculationBreakdown.map(b => ({
+            month: b.month,
+            monthlyAmount: b.monthlyAmount,
+            totalDays: b.totalDays,
+            paidDays: b.paidDays,
+            proratedAmount: parseFloat(b.proratedAmount.toFixed(2))
+          }))
+        };
 
     Promise.resolve(onSubmit(submitData))
       .then(() => {
@@ -186,6 +215,7 @@ const ArrearsForm = ({ open, onClose, onSubmit, employees = [] }) => {
           endMonth: '',
           monthlyAmount: '',
           totalAmount: '',
+          directAmount: '',
           reason: ''
         });
         setCalculationBreakdown([]);
@@ -226,6 +256,27 @@ const ArrearsForm = ({ open, onClose, onSubmit, employees = [] }) => {
         <div className="flex-1 overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-slate-300 text-slate-950">
           <form id="arrears-form" onSubmit={handleSubmit} className="space-y-6">
 
+            {/* Type: Incremental vs Direct */}
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-slate-700">Arrears Type</label>
+              <div className="flex rounded-xl border border-slate-300 dark:border-slate-700 overflow-hidden bg-slate-100 dark:bg-slate-900/50 p-1">
+                <button
+                  type="button"
+                  onClick={() => setArrearsType('incremental')}
+                  className={`flex-1 py-2.5 text-[10px] font-bold uppercase tracking-widest transition-all ${arrearsType === 'incremental' ? 'bg-white dark:bg-slate-800 text-slate-950 dark:text-white shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white'}`}
+                >
+                  Incremental (Period)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setArrearsType('direct')}
+                  className={`flex-1 py-2.5 text-[10px] font-bold uppercase tracking-widest transition-all ${arrearsType === 'direct' ? 'bg-white dark:bg-slate-800 text-slate-950 dark:text-white shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-950 dark:hover:text-white'}`}
+                >
+                  Direct (Amount + Remarks)
+                </button>
+              </div>
+            </div>
+
             {/* Row 1: Employee */}
             <div className="space-y-1.5">
               <label className="text-[10px] font-bold uppercase tracking-widest text-slate-700 flex items-center gap-2">
@@ -253,92 +304,138 @@ const ArrearsForm = ({ open, onClose, onSubmit, employees = [] }) => {
               {errors.employee && <p className="text-[9px] font-bold text-rose-700 uppercase tracking-widest ml-1">{errors.employee}</p>}
             </div>
 
-            {/* Row 2: Period & Amount Matrix */}
-            <div className="grid grid-cols-2 gap-x-4 gap-y-4 pt-2">
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-slate-700 flex items-center gap-2">
-                  <Calendar className="h-3 w-3" />
-                  Start Period
-                </label>
-                <input
-                  type="month"
-                  value={formData.startMonth}
-                  onChange={(e) => handleMonthChange('startMonth', e.target.value)}
-                  className={`w-full rounded-xl border bg-white py-2.5 px-4 text-xs font-semibold text-slate-950 focus:ring-4 dark:bg-slate-900 dark:text-white ${errors.startMonth
-                      ? 'border-rose-500 focus:ring-rose-500/20'
-                      : 'border-slate-300 focus:border-blue-500 focus:ring-blue-500/10 dark:border-slate-700'
-                    }`}
-                />
-                {errors.startMonth && <p className="text-[9px] font-bold text-rose-700 uppercase tracking-widest ml-1">{errors.startMonth}</p>}
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-slate-700 flex items-center gap-2">
-                  <Calendar className="h-3 w-3" />
-                  End Period
-                </label>
-                <input
-                  type="month"
-                  value={formData.endMonth}
-                  onChange={(e) => handleMonthChange('endMonth', e.target.value)}
-                  className={`w-full rounded-xl border bg-white py-2.5 px-4 text-xs font-semibold text-slate-950 focus:ring-4 dark:bg-slate-900 dark:text-white ${errors.endMonth
-                      ? 'border-rose-500 focus:ring-rose-500/20'
-                      : 'border-slate-300 focus:border-blue-500 focus:ring-blue-500/10 dark:border-slate-700'
-                    }`}
-                />
-                {errors.endMonth && <p className="text-[9px] font-bold text-rose-700 uppercase tracking-widest ml-1">{errors.endMonth}</p>}
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-slate-700 flex items-center gap-2">
-                  <IndianRupee className="h-3 w-3" />
-                  Monthly Val.
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={formData.monthlyAmount}
-                  onChange={handleMonthlyAmountChange}
-                  placeholder="0.00"
-                  className={`w-full rounded-xl border bg-white py-2.5 px-4 text-xs font-semibold text-slate-950 focus:ring-4 dark:bg-slate-900 dark:text-white placeholder:text-slate-300 ${errors.monthlyAmount
-                      ? 'border-rose-500 focus:ring-rose-500/20'
-                      : 'border-slate-300 focus:border-blue-500 focus:ring-blue-500/10 dark:border-slate-700'
-                    }`}
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-slate-700 flex items-center gap-2">
-                  <Zap className="h-3 w-3" />
-                  Total Commitment
-                </label>
-                <div className="flex h-[38px] items-center rounded-xl bg-slate-200/50 px-4 text-xs font-bold text-slate-950 dark:bg-slate-900/50 dark:text-white border border-slate-300 dark:border-slate-800 shadow-inner">
-                  ₹{parseFloat(formData.totalAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            {/* Direct: Amount + Remarks only (no period, no commitment, no attendance) */}
+            {arrearsType === 'direct' && (
+              <>
+                <div className="space-y-1.5 pt-2">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-slate-700 flex items-center gap-2">
+                    <IndianRupee className="h-3 w-3" />
+                    Amount
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={formData.directAmount}
+                    onChange={(e) => setFormData(prev => ({ ...prev, directAmount: e.target.value }))}
+                    placeholder="0.00"
+                    className={`w-full rounded-xl border bg-white py-2.5 px-4 text-xs font-semibold text-slate-950 focus:ring-4 dark:bg-slate-900 dark:text-white placeholder:text-slate-300 ${errors.directAmount
+                        ? 'border-rose-500 focus:ring-rose-500/20'
+                        : 'border-slate-300 focus:border-blue-500 focus:ring-blue-500/10 dark:border-slate-700'
+                      }`}
+                  />
+                  {errors.directAmount && <p className="text-[9px] font-bold text-rose-700 uppercase tracking-widest ml-1">{errors.directAmount}</p>}
                 </div>
-              </div>
-            </div>
+                <div className="space-y-1.5 pt-2">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-slate-700 flex items-center gap-2">
+                    <FileText className="h-3 w-3" />
+                    Remarks
+                  </label>
+                  <textarea
+                    value={formData.reason}
+                    onChange={(e) => setFormData(prev => ({ ...prev, reason: e.target.value }))}
+                    placeholder="Reason or notes for this arrears..."
+                    rows="2"
+                    className={`w-full resize-none rounded-xl border bg-white p-4 text-xs font-semibold text-slate-950 transition-all focus:ring-4 dark:bg-slate-900 dark:text-white placeholder:text-slate-300 ${errors.reason
+                        ? 'border-rose-500 focus:ring-rose-500/20'
+                        : 'border-slate-300 focus:border-blue-500 focus:ring-blue-500/10 dark:border-slate-700'
+                      }`}
+                  />
+                  {errors.reason && <p className="text-[9px] font-bold text-rose-700 uppercase tracking-widest ml-1">{errors.reason}</p>}
+                </div>
+              </>
+            )}
 
-            {/* Justification */}
-            <div className="space-y-1.5 pt-2">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-slate-700 flex items-center gap-2">
-                <FileText className="h-3 w-3" />
-                Reason for Adjustment
-              </label>
-              <textarea
-                value={formData.reason}
-                onChange={(e) => setFormData(prev => ({ ...prev, reason: e.target.value }))}
-                placeholder="Retroactive rationale..."
-                rows="2"
-                className={`w-full resize-none rounded-xl border bg-white p-4 text-xs font-semibold text-slate-950 transition-all focus:ring-4 dark:bg-slate-900 dark:text-white placeholder:text-slate-300 ${errors.reason
-                    ? 'border-rose-500 focus:ring-rose-500/20'
-                    : 'border-slate-300 focus:border-blue-500 focus:ring-blue-500/10 dark:border-slate-700'
-                  }`}
-              />
-            </div>
+            {/* Incremental: Period, Monthly Val., Total Commitment (attendance-prorated), Reason, Compute Log */}
+            {arrearsType === 'incremental' && (
+              <>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-4 pt-2">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-700 flex items-center gap-2">
+                      <Calendar className="h-3 w-3" />
+                      Start Period
+                    </label>
+                    <input
+                      type="month"
+                      value={formData.startMonth}
+                      onChange={(e) => handleMonthChange('startMonth', e.target.value)}
+                      className={`w-full rounded-xl border bg-white py-2.5 px-4 text-xs font-semibold text-slate-950 focus:ring-4 dark:bg-slate-900 dark:text-white ${errors.startMonth
+                          ? 'border-rose-500 focus:ring-rose-500/20'
+                          : 'border-slate-300 focus:border-blue-500 focus:ring-blue-500/10 dark:border-slate-700'
+                        }`}
+                    />
+                    {errors.startMonth && <p className="text-[9px] font-bold text-rose-700 uppercase tracking-widest ml-1">{errors.startMonth}</p>}
+                  </div>
 
-            {/* Calculation Logs - Very Compact */}
-            {(formData.startMonth && formData.endMonth && formData.monthlyAmount) && (
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-700 flex items-center gap-2">
+                      <Calendar className="h-3 w-3" />
+                      End Period
+                    </label>
+                    <input
+                      type="month"
+                      value={formData.endMonth}
+                      onChange={(e) => handleMonthChange('endMonth', e.target.value)}
+                      className={`w-full rounded-xl border bg-white py-2.5 px-4 text-xs font-semibold text-slate-950 focus:ring-4 dark:bg-slate-900 dark:text-white ${errors.endMonth
+                          ? 'border-rose-500 focus:ring-rose-500/20'
+                          : 'border-slate-300 focus:border-blue-500 focus:ring-blue-500/10 dark:border-slate-700'
+                        }`}
+                    />
+                    {errors.endMonth && <p className="text-[9px] font-bold text-rose-700 uppercase tracking-widest ml-1">{errors.endMonth}</p>}
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-700 flex items-center gap-2">
+                      <IndianRupee className="h-3 w-3" />
+                      Monthly Val.
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={formData.monthlyAmount}
+                      onChange={handleMonthlyAmountChange}
+                      placeholder="0.00"
+                      className={`w-full rounded-xl border bg-white py-2.5 px-4 text-xs font-semibold text-slate-950 focus:ring-4 dark:bg-slate-900 dark:text-white placeholder:text-slate-300 ${errors.monthlyAmount
+                          ? 'border-rose-500 focus:ring-rose-500/20'
+                          : 'border-slate-300 focus:border-blue-500 focus:ring-blue-500/10 dark:border-slate-700'
+                        }`}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-700 flex items-center gap-2">
+                      <Zap className="h-3 w-3" />
+                      Total Commitment
+                    </label>
+                    <div className="flex h-[38px] items-center rounded-xl bg-slate-200/50 px-4 text-xs font-bold text-slate-950 dark:bg-slate-900/50 dark:text-white border border-slate-300 dark:border-slate-800 shadow-inner">
+                      ₹{(parseFloat(formData.totalAmount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5 pt-2">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-slate-700 flex items-center gap-2">
+                    <FileText className="h-3 w-3" />
+                    Reason for Adjustment
+                  </label>
+                  <textarea
+                    value={formData.reason}
+                    onChange={(e) => setFormData(prev => ({ ...prev, reason: e.target.value }))}
+                    placeholder="Retroactive rationale..."
+                    rows="2"
+                    className={`w-full resize-none rounded-xl border bg-white p-4 text-xs font-semibold text-slate-950 transition-all focus:ring-4 dark:bg-slate-900 dark:text-white placeholder:text-slate-300 ${errors.reason
+                        ? 'border-rose-500 focus:ring-rose-500/20'
+                        : 'border-slate-300 focus:border-blue-500 focus:ring-blue-500/10 dark:border-slate-700'
+                      }`}
+                  />
+                  {errors.reason && <p className="text-[9px] font-bold text-rose-700 uppercase tracking-widest ml-1">{errors.reason}</p>}
+                </div>
+              </>
+            )}
+
+            {/* Calculation Logs - Very Compact (Incremental only) */}
+            {arrearsType === 'incremental' && (formData.startMonth && formData.endMonth && formData.monthlyAmount) && (
               <div className="rounded-2xl border border-slate-300 bg-slate-100 overflow-hidden dark:border-slate-800 dark:bg-slate-900/20 shadow-sm">
                 <div className="flex items-center justify-between px-4 py-2 bg-slate-200 dark:bg-slate-900 border-b border-slate-300 dark:border-slate-800">
                   <span className="text-[9px] font-bold uppercase tracking-widest text-slate-700">Compute Log</span>
@@ -361,6 +458,11 @@ const ArrearsForm = ({ open, onClose, onSubmit, employees = [] }) => {
                     </tbody>
                   </table>
                 </div>
+                {calculationBreakdown.length > 0 && !calculationBreakdown.some(b => b.hasRecord) && !fetchingAttendance && (
+                  <p className="px-4 py-2 text-[9px] text-amber-700 bg-amber-50 dark:bg-amber-900/20 dark:text-amber-400 border-t border-slate-200 dark:border-slate-800">
+                    No attendance data for this range. Fill pay register for these months to prorate by paid days.
+                  </p>
+                )}
               </div>
             )}
           </form>

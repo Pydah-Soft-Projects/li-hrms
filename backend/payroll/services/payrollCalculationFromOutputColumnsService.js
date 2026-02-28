@@ -25,6 +25,257 @@ const {
 const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
 const { createISTDate, getPayrollDateRange } = require('../../shared/utils/dateUtils');
 const outputColumnService = require('./outputColumnService');
+const ArrearsPayrollIntegrationService = require('../../arrears/services/arrearsPayrollIntegrationService');
+
+/** Extract identifier-like variable names from a formula string (for demand-driven service resolution). */
+function extractFormulaVariableNames(formula) {
+  if (!formula || typeof formula !== 'string') return new Set();
+  const trimmed = formula.trim();
+  if (!trimmed) return new Set();
+  const words = trimmed.split(/\s+|(?=[+\-*/(),?:])|(?<=[+\-*/(),?:])/).filter(Boolean);
+  const out = new Set();
+  for (const w of words) {
+    if (/^\d+\.?\d*$/.test(w)) continue;
+    if (/^[+\-*/(),.:?]$/.test(w)) continue;
+    if (w === 'Math') continue;
+    if (/^Math\.(min|max|round|floor|ceil|abs)$/.test(w)) continue;
+    if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(w)) out.add(w);
+  }
+  return out;
+}
+
+/**
+ * Scan output columns to determine which services are required.
+ * Uses field paths and formula variable names so we only run services that are actually needed.
+ */
+function getRequiredServices(outputColumns) {
+  const required = {
+    needsBasicPay: false,
+    needsOT: false,
+    needsAllowances: false,
+    needsAttendanceDeduction: false,
+    needsStatutory: false,
+    needsOtherDeductions: false,
+    needsLoanAdvance: false,
+    needsArrears: false,
+  };
+  if (!Array.isArray(outputColumns)) return required;
+
+  const formulaVarsNeedingBasicPay = new Set(['basicPay', 'basic_pay', 'perDayBasicPay', 'earnedSalary', 'payableAmount', 'incentive', 'salary']);
+  const formulaVarsNeedingAttendanceDeduction = new Set(['attendanceDeduction', 'attendanceDeductionDays', 'attendance_deduction', 'attendance_deduction_days']);
+  const formulaVarsNeedingStatutory = new Set(['statutoryCumulative', 'statutory_deductions']);
+  const formulaVarsNeedingAllowances = new Set(['totalAllowances', 'allowancesCumulative', 'grossSalary', 'gross_salary', 'total_allowances']);
+  const formulaVarsNeedingOT = new Set(['otPay', 'extra_hours_pay']);
+  const formulaVarsNeedingOtherDeductions = new Set(['otherDeductions', 'deductionsCumulative', 'totalDeductions']);
+  const formulaVarsNeedingLoan = new Set(['advanceDeduction', 'loanEMI', 'salary_advance', 'loan_recovery', 'remaining_balance']);
+  const formulaVarsNeedingArrears = new Set(['arrearsAmount']);
+
+  for (const col of outputColumns) {
+    const field = (col.field || '').trim();
+    const formula = (col.formula || '').trim();
+    const hasFormula = formula.length > 0;
+
+    if (hasFormula) {
+      const vars = extractFormulaVariableNames(formula);
+      for (const v of vars) {
+        if (formulaVarsNeedingBasicPay.has(v)) required.needsBasicPay = true;
+        if (formulaVarsNeedingAttendanceDeduction.has(v)) required.needsAttendanceDeduction = true;
+        if (formulaVarsNeedingStatutory.has(v)) required.needsStatutory = true;
+        if (formulaVarsNeedingAllowances.has(v)) required.needsAllowances = true;
+        if (formulaVarsNeedingOT.has(v)) required.needsOT = true;
+        if (formulaVarsNeedingOtherDeductions.has(v)) required.needsOtherDeductions = true;
+        if (formulaVarsNeedingLoan.has(v)) required.needsLoanAdvance = true;
+        if (formulaVarsNeedingArrears.has(v)) required.needsArrears = true;
+      }
+    } else if (field) {
+      if (field.startsWith('earnings.basicPay') || field.startsWith('earnings.perDayBasicPay') || field === 'earnings.payableAmount' || field === 'earnings.earnedSalary' || field === 'earnings.incentive') required.needsBasicPay = true;
+      if (field.startsWith('earnings.ot')) required.needsOT = true;
+      if (field.startsWith('earnings.allowances') || field === 'earnings.totalAllowances' || field === 'earnings.allowancesCumulative' || field === 'earnings.grossSalary') required.needsAllowances = true;
+      if (field.startsWith('deductions.attendanceDeduction') || field === 'attendance.attendanceDeductionDays' || field === 'attendanceDeductionDays') required.needsAttendanceDeduction = true;
+      if (field.startsWith('deductions.statutory')) required.needsStatutory = true;
+      if (field.startsWith('deductions.other') || field === 'deductions.totalOtherDeductions') required.needsOtherDeductions = true;
+      if (field === 'deductions.deductionsCumulative' || field === 'deductions.totalDeductions') {
+        required.needsAttendanceDeduction = true;
+        required.needsStatutory = true;
+        required.needsOtherDeductions = true;
+        required.needsLoanAdvance = true;
+      }
+      if (field.startsWith('loanAdvance.')) required.needsLoanAdvance = true;
+      if (field.startsWith('arrears.')) required.needsArrears = true;
+    }
+  }
+  if (required.needsAllowances || required.needsStatutory || required.needsOtherDeductions) required.needsBasicPay = true;
+  if (required.needsAttendanceDeduction) required.needsBasicPay = true;
+  if (required.needsOtherDeductions) {
+    required.needsAttendanceDeduction = true;
+    required.needsStatutory = true;
+    required.needsLoanAdvance = true;
+  }
+  return required;
+}
+
+/**
+ * Run only the services that are required by output columns; fill record so we don't depend on column order.
+ * Order: basicPay (uses employee.gross_salary) → OT → allowances → attendance deduction → statutory → other deductions → loanAdvance → arrears.
+ */
+async function runRequiredServices(required, record, employee, employeeId, month, payRegisterSummary, attendanceSummary, departmentId, divisionId) {
+  if (!record) return;
+
+  const num = (v) => (typeof v === 'number' && !Number.isNaN(v) ? v : Number(v) || 0);
+
+  if (required.needsBasicPay) {
+    const basicPayResult = basicPayService.calculateBasicPay(employee, attendanceSummary);
+    if (!record.earnings) record.earnings = {};
+    record.earnings.basicPay = basicPayResult.basicPay ?? employee.gross_salary ?? 0;
+    record.earnings.perDayBasicPay = basicPayResult.perDayBasicPay ?? 0;
+    record.earnings.payableAmount = basicPayResult.payableAmount ?? basicPayResult.basePayForWork ?? 0;
+    record.earnings.earnedSalary = record.earnings.payableAmount;
+    record.earnings.incentive = basicPayResult.incentive ?? 0;
+    if (!record.attendance) record.attendance = {};
+    record.attendance.extraDays = basicPayResult.extraDays ?? 0;
+    record.attendance.totalPaidDays = (basicPayResult.physicalUnits ?? 0) + (record.attendance.extraDays || 0);
+    record.attendance.earnedSalary = record.earnings.payableAmount;
+  }
+
+  if (required.needsOT) {
+    const departmentIdStr = (employee?.department_id?._id || employee?.department_id)?.toString() || departmentId?.toString();
+    const otPayResult = await otPayService.calculateOTPay(attendanceSummary.totalOTHours || 0, departmentIdStr);
+    if (!record.earnings) record.earnings = {};
+    record.earnings.otPay = otPayResult.otPay ?? 0;
+    record.earnings.otHours = attendanceSummary.totalOTHours ?? 0;
+    record.earnings.otRatePerHour = otPayResult.otPayPerHour ?? 0;
+  }
+
+  if (required.needsAllowances) {
+    const basicPay = num(record.earnings?.basicPay);
+    const earnedSalary = num(record.earnings?.payableAmount ?? record.earnings?.earnedSalary);
+    const otPay = num(record.earnings?.otPay);
+    let grossSoFar = earnedSalary + otPay;
+    const attendanceData = {
+      presentDays: record.attendance?.presentDays ?? 0,
+      paidLeaveDays: record.attendance?.paidLeaveDays ?? 0,
+      odDays: record.attendance?.odDays ?? 0,
+      monthDays: record.attendance?.totalDaysInMonth ?? 30,
+    };
+    const includeMissing = await getIncludeMissingFlag(departmentId, divisionId);
+    const { allowances: baseAllowances } = await buildBaseComponents(departmentId, basicPay, attendanceData, employee?.division_id);
+    const normalized = (employee?.employeeAllowances || []).filter((o) => o && (o.masterId || o.name)).map((o) => ({ ...o, category: 'allowance' }));
+    const resolvedAllowances = mergeWithOverrides(baseAllowances, normalized, includeMissing);
+    let totalAllowances = 0;
+    const allowanceBreakdown = (resolvedAllowances || [])
+      .filter((a) => a && a.name)
+      .map((a) => {
+        const baseAmount = (a.base || '').toLowerCase() === 'gross' ? grossSoFar : earnedSalary;
+        const amount = allowanceService.calculateAllowanceAmount(a, baseAmount, grossSoFar, attendanceData);
+        totalAllowances += amount;
+        return { name: a.name, amount, type: a.type || 'fixed', base: (a.base || '').toLowerCase() === 'gross' ? 'gross' : 'basic' };
+      });
+    grossSoFar += totalAllowances;
+    if (!record.earnings) record.earnings = {};
+    record.earnings.allowances = allowanceBreakdown;
+    record.earnings.totalAllowances = totalAllowances;
+    record.earnings.allowancesCumulative = totalAllowances;
+    record.earnings.grossSalary = grossSoFar;
+  }
+
+  if (required.needsAttendanceDeduction) {
+    const perDaySalary = num(record.earnings?.perDayBasicPay);
+    const absentDays = num(record.attendance?.absentDays);
+    const absentSettings = await getAbsentDeductionSettings(departmentId || '', divisionId || null);
+    const attendanceDeductionResult = await deductionService.calculateAttendanceDeduction(
+      employeeId,
+      month,
+      departmentId,
+      perDaySalary,
+      employee?.division_id ?? divisionId,
+      {
+        employee: employee ?? undefined,
+        absentDays,
+        enableAbsentDeduction: absentSettings?.enableAbsentDeduction,
+        lopDaysPerAbsent: absentSettings?.lopDaysPerAbsent,
+      }
+    );
+    if (!record.deductions) record.deductions = {};
+    record.deductions.attendanceDeduction = attendanceDeductionResult.attendanceDeduction ?? 0;
+    record.deductions.attendanceDeductionBreakdown = attendanceDeductionResult.breakdown ?? {};
+    if (!record.attendance) record.attendance = {};
+    record.attendance.attendanceDeductionDays = attendanceDeductionResult.breakdown?.daysDeducted ?? 0;
+  }
+
+  if (required.needsStatutory) {
+    const basicPay = num(record.earnings?.basicPay);
+    const grossSalary = num(record.earnings?.grossSalary);
+    const earnedSalary = num(record.earnings?.payableAmount ?? record.earnings?.earnedSalary);
+    const statutoryResult = await statutoryDeductionService.calculateStatutoryDeductions({
+      basicPay, grossSalary, earnedSalary, dearnessAllowance: 0, employee,
+    });
+    if (!record.deductions) record.deductions = {};
+    record.deductions.statutoryDeductions = (statutoryResult.breakdown || []).map((s) => ({
+      name: s.name, code: s.code, employeeAmount: s.employeeAmount, employerAmount: s.employerAmount,
+    }));
+    record.deductions.statutoryCumulative = statutoryResult.totalEmployeeShare ?? 0;
+    record.deductions.totalStatutoryEmployee = record.deductions.statutoryCumulative;
+  }
+
+  if (required.needsOtherDeductions) {
+    const earnedSalary = num(record.earnings?.payableAmount ?? record.earnings?.earnedSalary);
+    const grossSalary = num(record.earnings?.grossSalary);
+    const attendanceData = {
+      presentDays: record.attendance?.presentDays ?? 0,
+      paidLeaveDays: record.attendance?.paidLeaveDays ?? 0,
+      odDays: record.attendance?.odDays ?? 0,
+      monthDays: record.attendance?.totalDaysInMonth ?? 30,
+    };
+    const includeMissing = await getIncludeMissingFlag(departmentId, divisionId);
+    const { deductions: baseDeductions } = await buildBaseComponents(departmentId, record.earnings?.basicPay ?? 0, attendanceData, employee?.division_id);
+    const normalized = (employee?.employeeDeductions || []).filter((o) => o && (o.masterId || o.name)).map((o) => ({ ...o, category: 'deduction' }));
+    const resolvedDeductions = mergeWithOverrides(baseDeductions, normalized, includeMissing);
+    let totalOther = 0;
+    const otherBreakdown = (resolvedDeductions || [])
+      .filter((d) => d && d.name)
+      .map((d) => {
+        const baseAmount = (d.base || '').toLowerCase() === 'gross' ? grossSalary : earnedSalary;
+        const amount = deductionService.calculateDeductionAmount(d, baseAmount, grossSalary, attendanceData);
+        totalOther += amount;
+        return { name: d.name, amount, type: d.type || 'fixed', base: (d.base || '').toLowerCase() === 'gross' ? 'gross' : 'basic' };
+      });
+    if (!record.deductions) record.deductions = {};
+    record.deductions.otherDeductions = otherBreakdown;
+    record.deductions.totalOtherDeductions = totalOther;
+  }
+
+  if (required.needsLoanAdvance) {
+    const loanAdvanceResult = await loanAdvanceService.calculateLoanAdvance(employeeId, month);
+    if (!record.loanAdvance) record.loanAdvance = {};
+    record.loanAdvance.totalEMI = loanAdvanceResult.totalEMI ?? 0;
+    record.loanAdvance.advanceDeduction = loanAdvanceResult.advanceDeduction ?? 0;
+    record.loanAdvance.remainingBalance = loanAdvanceResult.remainingBalance ?? 0;
+  }
+
+  if (required.needsArrears) {
+    try {
+      const pendingArrears = await ArrearsPayrollIntegrationService.getPendingArrearsForPayroll(employeeId);
+      const arrearsAmount = (pendingArrears || []).reduce((sum, ar) => sum + (ar.remainingAmount || 0), 0);
+      if (!record.arrears) record.arrears = { arrearsAmount: 0, arrearsSettlements: [] };
+      record.arrears.arrearsAmount = Math.round(arrearsAmount * 100) / 100;
+    } catch (e) {
+      if (!record.arrears) record.arrears = { arrearsAmount: 0, arrearsSettlements: [] };
+      record.arrears.arrearsAmount = 0;
+    }
+  }
+
+  if (required.needsAttendanceDeduction || required.needsStatutory || required.needsOtherDeductions || required.needsLoanAdvance) {
+    const att = num(record.deductions?.attendanceDeduction);
+    const other = num(record.deductions?.totalOtherDeductions);
+    const statutory = num(record.deductions?.statutoryCumulative);
+    const loanEMI = num(record.loanAdvance?.totalEMI);
+    const advance = num(record.loanAdvance?.advanceDeduction);
+    const total = att + other + statutory + loanEMI + advance;
+    if (!record.deductions) record.deductions = {};
+    record.deductions.deductionsCumulative = total;
+    record.deductions.totalDeductions = total;
+  }
+}
 
 function headerToKey(header) {
   if (!header || typeof header !== 'string') return '';
@@ -148,6 +399,34 @@ async function resolveFieldValue(fieldPath, employee, employeeId, month, payRegi
   const path = (fieldPath || '').trim();
   if (!path) return 0;
 
+  // attendance.attendanceDeductionDays — ensure attendance deduction is computed first (column-order independent)
+  if (path === 'attendance.attendanceDeductionDays' || path === 'attendanceDeductionDays') {
+    if (record.deductions?.attendanceDeductionBreakdown == null) {
+      const perDaySalary = Number(record.earnings?.perDayBasicPay) || 0;
+      const absentDays = Number(record.attendance?.absentDays ?? 0);
+      const absentSettings = await getAbsentDeductionSettings(departmentId || '', divisionId || null);
+      const attendanceDeductionResult = await deductionService.calculateAttendanceDeduction(
+        employeeId,
+        month,
+        departmentId,
+        perDaySalary,
+        employee?.division_id ?? divisionId,
+        {
+          employee: employee ?? undefined,
+          absentDays,
+          enableAbsentDeduction: absentSettings?.enableAbsentDeduction,
+          lopDaysPerAbsent: absentSettings?.lopDaysPerAbsent,
+        }
+      );
+      if (!record.deductions) record.deductions = {};
+      record.deductions.attendanceDeduction = attendanceDeductionResult.attendanceDeduction || 0;
+      record.deductions.attendanceDeductionBreakdown = attendanceDeductionResult.breakdown || {};
+      if (!record.attendance) record.attendance = {};
+      record.attendance.attendanceDeductionDays = attendanceDeductionResult.breakdown?.daysDeducted ?? 0;
+    }
+    return Number(record.attendance?.attendanceDeductionDays ?? record.deductions?.attendanceDeductionBreakdown?.daysDeducted ?? 0);
+  }
+
   // employee.* display fields (name, designation, emp_no, etc.) — return as-is, never coerce to number
   if (path.startsWith('employee.')) {
     const key = path.slice('employee.'.length);
@@ -248,11 +527,23 @@ async function resolveFieldValue(fieldPath, employee, employeeId, month, payRegi
     return totalAllowances;
   }
 
-  // deductions.attendanceDeduction
+  // deductions.attendanceDeduction (employee flags respected via options.employee; absent-extra parity with main payroll)
   if (path.startsWith('deductions.attendanceDeduction')) {
     const perDaySalary = Number(record.earnings?.perDayBasicPay) || 0;
+    const absentDays = Number(record.attendance?.absentDays ?? 0);
+    const absentSettings = await getAbsentDeductionSettings(departmentId || '', divisionId || null);
     const attendanceDeductionResult = await deductionService.calculateAttendanceDeduction(
-      employeeId, month, departmentId, perDaySalary, employee?.division_id
+      employeeId,
+      month,
+      departmentId,
+      perDaySalary,
+      employee?.division_id ?? divisionId,
+      {
+        employee: employee ?? undefined,
+        absentDays,
+        enableAbsentDeduction: absentSettings?.enableAbsentDeduction,
+        lopDaysPerAbsent: absentSettings?.lopDaysPerAbsent,
+      }
     );
     const amt = attendanceDeductionResult.attendanceDeduction || 0;
     if (!record.deductions) record.deductions = {};
@@ -298,7 +589,7 @@ async function resolveFieldValue(fieldPath, employee, employeeId, month, payRegi
     const grossSalary = Number(record.earnings?.grossSalary) || 0;
     const earnedSalary = Number(record.earnings?.payableAmount ?? record.earnings?.earnedSalary) || 0;
     const statutoryResult = await statutoryDeductionService.calculateStatutoryDeductions({
-      basicPay, grossSalary, earnedSalary, dearnessAllowance: 0,
+      basicPay, grossSalary, earnedSalary, dearnessAllowance: 0, employee,
     });
     const totalStatutory = statutoryResult.totalEmployeeShare || 0;
     if (!record.deductions) record.deductions = {};
@@ -417,7 +708,7 @@ async function calculatePayrollFromOutputColumns(employeeId, month, userId, opti
       pf_number: employee.pf_number || '',
       esi_number: employee.esi_number || '',
     },
-    attendance,
+    attendance: { ...attendance },
     earnings: {},
     deductions: {},
     loanAdvance: {},
@@ -427,6 +718,14 @@ async function calculatePayrollFromOutputColumns(employeeId, month, userId, opti
     status: 'calculated',
   };
 
+  // Basic pay from employee model; standard days from pay register (already in record.attendance).
+  const employeeBasicPay = Number(employee.gross_salary) || 0;
+  record.earnings.basicPay = employeeBasicPay;
+  record.earnings.basic_pay = employeeBasicPay;
+
+  const required = getRequiredServices(sorted);
+  await runRequiredServices(required, record, employee, employeeId, month, payRegisterSummary, attendanceSummary, departmentId, divisionId);
+
   const context = { ...outputColumnService.getContextFromPayslip(record) };
   const row = {};
 
@@ -435,21 +734,24 @@ async function calculatePayrollFromOutputColumns(employeeId, month, userId, opti
     let val;
     const hasFormula = typeof col.formula === 'string' && col.formula.trim().length > 0;
     if (hasFormula) {
-      // Formula column: use formula only; ignore field (even if set) so legacy
-      // configs that entered formulas but left source as "Field" still work.
       val = outputColumnService.safeEvalFormula(col.formula, context) ?? 0;
     } else {
-      // Field column: resolve value from employee/attendance/earnings/deductions/etc. via col.field.
-      val = await resolveFieldValue(
-        col.field || '', employee, employeeId, month, payRegisterSummary,
-        record, attendanceSummary, departmentId, divisionId
-      );
+      const fieldPath = (col.field || '').trim();
+      const fromRecord = fieldPath ? getValueByPath(record, fieldPath) : undefined;
+      const hasFromRecord = fromRecord !== '' && fromRecord !== undefined && fromRecord !== null;
+      if (hasFromRecord) {
+        val = fromRecord;
+      } else {
+        val = await resolveFieldValue(
+          fieldPath, employee, employeeId, month, payRegisterSummary,
+          record, attendanceSummary, departmentId, divisionId
+        );
+      }
+      if (fieldPath) setValueByPath(record, fieldPath, val);
     }
     row[header] = val;
     const numForContext = typeof val === 'number' && !Number.isNaN(val) ? val : (Number(val) || 0);
     for (const k of getContextKeysAndAliases(header)) context[k] = numForContext;
-    // Only non-formula columns write to record; formula columns do not use field.
-    if (!hasFormula && col.field) setValueByPath(record, col.field, val);
   }
 
   // Ensure net and roundOff
@@ -531,4 +833,6 @@ module.exports = {
   calculatePayrollFromOutputColumns,
   buildAttendanceFromSummary,
   resolveFieldValue,
+  getRequiredServices,
+  extractFormulaVariableNames,
 };

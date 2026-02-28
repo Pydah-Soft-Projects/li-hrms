@@ -97,9 +97,10 @@ const getStatusLabel = (status: string) => {
 
 interface Arrears {
   _id: string;
+  type?: 'incremental' | 'direct';
   employee: { _id: string; emp_no: string; employee_name?: string; first_name?: string; last_name?: string };
-  startMonth: string;
-  endMonth: string;
+  startMonth?: string;
+  endMonth?: string;
   totalAmount: number;
   remainingAmount: number;
   status: string;
@@ -350,12 +351,16 @@ export default function ArrearsPage() {
                       </div>
                     </td>
                     <td className="px-8 py-6">
-                      <div className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300">
-                        <Calendar className="h-3.5 w-3.5 text-slate-600" />
-                        <span>{ar.startMonth}</span>
-                        <ArrowRight className="h-3 w-3 text-slate-500" />
-                        <span>{ar.endMonth}</span>
-                      </div>
+                      {ar.type === 'direct' ? (
+                        <span className="text-slate-500 dark:text-slate-400">—</span>
+                      ) : (
+                        <div className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300">
+                          <Calendar className="h-3.5 w-3.5 text-slate-600" />
+                          <span>{ar.startMonth ?? '—'}</span>
+                          <ArrowRight className="h-3 w-3 text-slate-500" />
+                          <span>{ar.endMonth ?? '—'}</span>
+                        </div>
+                      )}
                     </td>
                     <td className="px-8 py-6 text-right">
                       <div className="flex flex-col items-end">
