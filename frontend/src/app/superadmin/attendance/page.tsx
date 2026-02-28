@@ -194,6 +194,8 @@ export default function AttendancePage() {
   const [selectedEmployeeForSummary, setSelectedEmployeeForSummary] = useState<Employee | null>(null);
   const [monthlySummary, setMonthlySummary] = useState<any>(null);
   const [loadingSummary, setLoadingSummary] = useState(false);
+  const [payrollCycleStartDay, setPayrollCycleStartDay] = useState(1);
+  const [cycleDates, setCycleDates] = useState({ startDate: '', endDate: '', label: '' });
 
   // Search state
   const [showSearch, setShowSearch] = useState(false);
@@ -252,7 +254,19 @@ export default function AttendancePage() {
   useEffect(() => {
     loadDivisions();
     loadDepartments();
+    loadSettings();
   }, []);
+
+  const loadSettings = async () => {
+    try {
+      const response = await api.getSetting('payroll_cycle_start_day');
+      if (response.success && response.data) {
+        setPayrollCycleStartDay(parseInt(response.data.value, 10) || 1);
+      }
+    } catch (err) {
+      console.error('Error loading payroll settings:', err);
+    }
+  };
 
   useEffect(() => {
     if (selectedDepartment) {
@@ -264,10 +278,38 @@ export default function AttendancePage() {
   }, [selectedDepartment]);
 
   useEffect(() => {
+    if (payrollCycleStartDay) {
+      let startYear = year;
+      let startMonth = month;
+
+      if (payrollCycleStartDay > 1) {
+        startMonth = month - 1;
+        if (startMonth === 0) {
+          startMonth = 12;
+          startYear = year - 1;
+        }
+      }
+
+      const endDateObj = new Date(year, month - 1, payrollCycleStartDay - 1);
+      const endYear = endDateObj.getFullYear();
+      const endMonth = endDateObj.getMonth() + 1;
+      const endDay = endDateObj.getDate();
+
+      const start = `${startYear}-${String(startMonth).padStart(2, '0')}-${String(payrollCycleStartDay).padStart(2, '0')}`;
+      const end = `${endYear}-${String(endMonth).padStart(2, '0')}-${String(endDay).padStart(2, '0')}`;
+
+      setCycleDates({ startDate: start, endDate: end, label: '' });
+    }
+  }, [year, month, payrollCycleStartDay]);
+
+  useEffect(() => {
+    // wait for cycle dates
+    if (!cycleDates.startDate) return;
+
     // Reset page when filters change
     setPage(1);
     loadMonthlyAttendance(true);
-  }, [year, month, selectedDivision, selectedDepartment, selectedDesignation]); // Removed tableType dependency
+  }, [year, month, selectedDivision, selectedDepartment, selectedDesignation, cycleDates.startDate]); // Removed tableType dependency
 
   // Handle Load More when page changes
   useEffect(() => {
@@ -399,7 +441,9 @@ export default function AttendancePage() {
         search: searchQuery,
         divisionId: selectedDivision,
         departmentId: selectedDepartment,
-        designationId: selectedDesignation
+        designationId: selectedDesignation,
+        startDate: cycleDates.startDate,
+        endDate: cycleDates.endDate
       });
 
       if (response.success) {
@@ -440,7 +484,10 @@ export default function AttendancePage() {
     try {
       setLoadingAttendance(true);
       setError('');
-      const response = await api.getMonthlyAttendance(year, month);
+      const response = await api.getMonthlyAttendance(year, month, {
+        startDate: cycleDates.startDate,
+        endDate: cycleDates.endDate
+      });
       if (response.success) {
         const normalizedData = normalizeAttendanceData(response.data || []);
 
@@ -1210,7 +1257,22 @@ export default function AttendancePage() {
   };
 
   const daysInMonth = getDaysInMonth();
-  const daysArray = useMemo(() => Array.from({ length: daysInMonth }, (_, i) => i + 1), [daysInMonth]);
+  const daysArray = useMemo(() => {
+    if (!cycleDates.startDate || !cycleDates.endDate) return [];
+
+    const dates = [];
+    let current = new Date(cycleDates.startDate);
+    const end = new Date(cycleDates.endDate);
+
+    let count = 0;
+    while (current <= end && count <= 35) {
+      const dateStr = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}-${String(current.getDate()).padStart(2, '0')}`;
+      dates.push(dateStr);
+      current.setDate(current.getDate() + 1);
+      count++;
+    }
+    return dates;
+  }, [cycleDates.startDate, cycleDates.endDate]);
 
   // Virtualized row component
 
@@ -1472,15 +1534,16 @@ export default function AttendancePage() {
                 <th className="sticky left-0 z-30 border-r border-slate-200 bg-slate-100 px-3 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 w-[200px] min-w-[200px]">
                   Employee
                 </th>
-                {daysArray.map((day) => {
-                  const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                  const dayName = format(parseISO(dateStr), 'EEE');
+                {daysArray.map((dateStr) => {
+                  const dateObj = parseISO(dateStr);
+                  const dayNum = dateObj.getDate();
+                  const dayName = format(dateObj, 'EEE');
                   return (
                     <th
-                      key={day}
+                      key={dateStr}
                       className="border-r border-slate-200 bg-slate-50 px-1 py-2 text-center text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 w-[35px] min-w-[35px]"
                     >
-                      <div className="text-[10px] font-bold">{day}</div>
+                      <div className="text-[10px] font-bold">{dayNum}</div>
                       <div className="text-[8px] font-medium uppercase tracking-tighter opacity-70">{dayName}</div>
                     </th>
                   );
@@ -1544,9 +1607,9 @@ export default function AttendancePage() {
                         <div className="h-4 w-32 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
                         <div className="mt-1 h-3 w-24 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
                       </td>
-                      {daysArray.map((day) => (
+                      {daysArray.map((dateStr) => (
                         <td
-                          key={day}
+                          key={dateStr}
                           className="border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700 w-[35px] min-w-[35px]"
                         >
                           <div className="h-8 w-full animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
@@ -1691,8 +1754,7 @@ export default function AttendancePage() {
                           </div>
                         </div>
                       </td>
-                      {daysArray.map((day) => {
-                        const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                      {daysArray.map((dateStr) => {
                         const record = dailyAttendance[dateStr] || null;
                         const shifts = (record as any)?.shifts || [];
                         const isMultiShift = shifts.length > 1;
@@ -1718,7 +1780,7 @@ export default function AttendancePage() {
 
                         return (
                           <td
-                            key={day}
+                            key={dateStr}
                             onClick={() => hasData && item.employee && handleDateClick(item.employee, dateStr)}
                             className={`border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700 w-[35px] min-w-[35px] align-middle relative ${hasData ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800' : ''
                               } ${getStatusColor(record)} ${getCellBackgroundColor(record)}`}
