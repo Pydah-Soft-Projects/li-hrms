@@ -37,7 +37,16 @@ const AttendanceSettings = () => {
                 if (processingMode.mode === 'multi_shift') {
                     processingMode.strictCheckInOutOnly = true;
                 }
-                setAttendanceSettings({ ...data, processingMode });
+                const featureFlags = data.featureFlags || {};
+                setAttendanceSettings({
+                    ...data,
+                    processingMode,
+                    featureFlags: {
+                        allowInTimeEditing: featureFlags.allowInTimeEditing !== false,
+                        allowOutTimeEditing: featureFlags.allowOutTimeEditing !== false,
+                        allowAttendanceUpload: featureFlags.allowAttendanceUpload !== false,
+                    },
+                });
             }
         } catch (err) {
             console.error('Error loading attendance settings:', err);
@@ -60,7 +69,15 @@ const AttendanceSettings = () => {
             if (processingMode.mode === 'multi_shift') {
                 processingMode.strictCheckInOutOnly = true;
             }
-            const payload = { ...attendanceSettings, processingMode };
+            const payload = {
+                ...attendanceSettings,
+                processingMode,
+                featureFlags: attendanceSettings.featureFlags || {
+                    allowInTimeEditing: true,
+                    allowOutTimeEditing: true,
+                    allowAttendanceUpload: true,
+                },
+            };
             const res = await api.updateAttendanceSettings(payload);
             if (res.success) {
                 toast.success('Attendance settings saved successfully');
@@ -328,6 +345,73 @@ const AttendanceSettings = () => {
                                     </div>
                                 </div>
                             )}
+                        </div>
+                    </section>
+
+                    {/* Editing & Upload Controls */}
+                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden p-4 sm:p-6 lg:p-8">
+                        <div className="px-8 py-6 border-b border-gray-100 dark:border-gray-800">
+                            <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider flex items-center gap-2">
+                                <Clock className="h-4 w-4 text-indigo-500" />
+                                Editing &amp; Upload Controls
+                            </h3>
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Enable or disable in-time editing, out-time editing, and attendance Excel upload on the attendance pages.</p>
+                        </div>
+                        <div className="p-8 space-y-4">
+                            <div className="flex items-center justify-between p-4 rounded-xl bg-gray-50/50 dark:bg-black/10 border border-gray-100 dark:border-gray-800">
+                                <div className="space-y-1">
+                                    <p className="text-xs font-bold text-gray-900 dark:text-white uppercase tracking-tight">Allow In-Time Editing</p>
+                                    <p className="text-[10px] text-gray-400">When ON, users can edit check-in time from the attendance detail panel.</p>
+                                </div>
+                                <button
+                                    onClick={() => setAttendanceSettings({
+                                        ...attendanceSettings,
+                                        featureFlags: {
+                                            ...(attendanceSettings.featureFlags || {}),
+                                            allowInTimeEditing: !(attendanceSettings.featureFlags?.allowInTimeEditing !== false),
+                                        },
+                                    })}
+                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all ${(attendanceSettings.featureFlags?.allowInTimeEditing !== false) ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-gray-800'}`}
+                                >
+                                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${(attendanceSettings.featureFlags?.allowInTimeEditing !== false) ? 'translate-x-6' : 'translate-x-1'}`} />
+                                </button>
+                            </div>
+                            <div className="flex items-center justify-between p-4 rounded-xl bg-gray-50/50 dark:bg-black/10 border border-gray-100 dark:border-gray-800">
+                                <div className="space-y-1">
+                                    <p className="text-xs font-bold text-gray-900 dark:text-white uppercase tracking-tight">Allow Out-Time Editing</p>
+                                    <p className="text-[10px] text-gray-400">When ON, users can edit check-out time (including next-day for overnight shifts).</p>
+                                </div>
+                                <button
+                                    onClick={() => setAttendanceSettings({
+                                        ...attendanceSettings,
+                                        featureFlags: {
+                                            ...(attendanceSettings.featureFlags || {}),
+                                            allowOutTimeEditing: !(attendanceSettings.featureFlags?.allowOutTimeEditing !== false),
+                                        },
+                                    })}
+                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all ${(attendanceSettings.featureFlags?.allowOutTimeEditing !== false) ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-gray-800'}`}
+                                >
+                                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${(attendanceSettings.featureFlags?.allowOutTimeEditing !== false) ? 'translate-x-6' : 'translate-x-1'}`} />
+                                </button>
+                            </div>
+                            <div className="flex items-center justify-between p-4 rounded-xl bg-gray-50/50 dark:bg-black/10 border border-gray-100 dark:border-gray-800">
+                                <div className="space-y-1">
+                                    <p className="text-xs font-bold text-gray-900 dark:text-white uppercase tracking-tight">Allow Attendance Upload</p>
+                                    <p className="text-[10px] text-gray-400">When ON, the Upload Excel button is shown on the attendance page.</p>
+                                </div>
+                                <button
+                                    onClick={() => setAttendanceSettings({
+                                        ...attendanceSettings,
+                                        featureFlags: {
+                                            ...(attendanceSettings.featureFlags || {}),
+                                            allowAttendanceUpload: !(attendanceSettings.featureFlags?.allowAttendanceUpload !== false),
+                                        },
+                                    })}
+                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all ${(attendanceSettings.featureFlags?.allowAttendanceUpload !== false) ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-gray-800'}`}
+                                >
+                                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${(attendanceSettings.featureFlags?.allowAttendanceUpload !== false) ? 'translate-x-6' : 'translate-x-1'}`} />
+                                </button>
+                            </div>
                         </div>
                     </section>
 

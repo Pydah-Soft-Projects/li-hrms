@@ -2907,10 +2907,10 @@ export const api = {
   },
 
   // Update inTime for attendance
-  updateAttendanceInTime: async (empNo: string, date: string, inTime: string) => {
-    return apiRequest<any>('/attendance/in-time', {
+  updateAttendanceInTime: async (employeeNumber: string, date: string, inTime: string, shiftRecordId?: string) => {
+    return apiRequest<any>(`/attendance/${employeeNumber}/${date}/intime`, {
       method: 'PUT',
-      body: JSON.stringify({ empNo, date, inTime }),
+      body: JSON.stringify({ inTime, shiftRecordId }),
     });
   },
 

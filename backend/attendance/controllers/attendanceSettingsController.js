@@ -63,6 +63,7 @@ exports.updateSettings = async (req, res) => {
       syncSettings,
       previousDayLinking,
       processingMode,
+      featureFlags,
     } = req.body;
 
     const settings = await AttendanceSettings.getSettings();
@@ -137,6 +138,21 @@ exports.updateSettings = async (req, res) => {
       }
       if (processingMode.postShiftOutMarginHours !== undefined) {
         settings.processingMode.postShiftOutMarginHours = processingMode.postShiftOutMarginHours;
+      }
+    }
+
+    if (featureFlags) {
+      if (featureFlags.allowInTimeEditing !== undefined) {
+        if (!settings.featureFlags) settings.featureFlags = {};
+        settings.featureFlags.allowInTimeEditing = featureFlags.allowInTimeEditing;
+      }
+      if (featureFlags.allowOutTimeEditing !== undefined) {
+        if (!settings.featureFlags) settings.featureFlags = {};
+        settings.featureFlags.allowOutTimeEditing = featureFlags.allowOutTimeEditing;
+      }
+      if (featureFlags.allowAttendanceUpload !== undefined) {
+        if (!settings.featureFlags) settings.featureFlags = {};
+        settings.featureFlags.allowAttendanceUpload = featureFlags.allowAttendanceUpload;
       }
     }
 

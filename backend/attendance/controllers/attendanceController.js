@@ -393,6 +393,15 @@ exports.updateOutTime = async (req, res) => {
     const { employeeNumber, date } = req.params;
     const { outTime, shiftRecordId } = req.body;
 
+    const AttendanceSettings = require('../model/AttendanceSettings');
+    const attSettings = await AttendanceSettings.getSettings();
+    if (attSettings?.featureFlags?.allowOutTimeEditing === false) {
+      return res.status(403).json({
+        success: false,
+        message: 'Out-time editing is disabled by settings.',
+      });
+    }
+
     // Restrict to HR/Superadmin
     if (!req.user || (req.user.role !== 'hr' && req.user.role !== 'super_admin' && req.user.role !== 'superadmin' && req.user.role !== 'admin')) {
       return res.status(403).json({
@@ -977,7 +986,16 @@ exports.getRecentActivity = async (req, res) => {
 exports.updateInTime = async (req, res) => {
   try {
     const { employeeNumber, date } = req.params;
-    const { inTime } = req.body;
+    const { inTime, shiftRecordId } = req.body;
+
+    const AttendanceSettings = require('../model/AttendanceSettings');
+    const attSettings = await AttendanceSettings.getSettings();
+    if (attSettings?.featureFlags?.allowInTimeEditing === false) {
+      return res.status(403).json({
+        success: false,
+        message: 'In-time editing is disabled by settings.',
+      });
+    }
 
     // Validate inTime format (YYYY-MM-DDTHH:mm:ss.sssZ or similar ISO string)
     if (!inTime) {
@@ -1002,17 +1020,26 @@ exports.updateInTime = async (req, res) => {
     }
 
     // Ensure we have shifts - if not, we must create a default one or fail?
-    // Since we are setting InTime, we likely want to start a shift.
     if (!attendanceRecord.shifts || attendanceRecord.shifts.length === 0) {
-      // Create a default shift entry
       attendanceRecord.shifts = [{
         shiftNumber: 1,
-        status: 'incomplete', // Will differ based on newInTime
+        status: 'incomplete',
         payableShift: 0
       }];
     }
 
-    const shiftSegment = attendanceRecord.shifts[0]; // Legacy endpoint targets first shift
+    let shiftSegment;
+    if (shiftRecordId) {
+      shiftSegment = attendanceRecord.shifts.id(shiftRecordId);
+      if (!shiftSegment) {
+        return res.status(404).json({
+          success: false,
+          message: 'Shift segment not found',
+        });
+      }
+    } else {
+      shiftSegment = attendanceRecord.shifts[0];
+    }
 
     // Parse new In Time
     const newInTime = new Date(inTime);

@@ -467,7 +467,16 @@ export default function AttendancePage() {
 
   const [updatingOutTime, setUpdatingOutTime] = useState(false);
 
+  const [attendanceFeatureFlags, setAttendanceFeatureFlags] = useState<{
+    allowInTimeEditing: boolean;
+    allowOutTimeEditing: boolean;
+    allowAttendanceUpload: boolean;
+  }>({ allowInTimeEditing: true, allowOutTimeEditing: true, allowAttendanceUpload: true });
 
+  const [showInTimeDialog, setShowInTimeDialog] = useState(false);
+  const [selectedRecordForInTime, setSelectedRecordForInTime] = useState<any>(null);
+  const [inTimeDialogValue, setInTimeDialogValue] = useState('');
+  const [updatingInTime, setUpdatingInTime] = useState(false);
 
   // Leave conflict state
 
@@ -492,7 +501,24 @@ export default function AttendancePage() {
     loadDepartments();
   }, []); // Run on mount, relying on auth/permissions rather than workspace
 
-
+  useEffect(() => {
+    const loadFlags = async () => {
+      try {
+        const res = await api.getAttendanceSettings();
+        if (res?.data?.featureFlags) {
+          const ff = res.data.featureFlags;
+          setAttendanceFeatureFlags({
+            allowInTimeEditing: ff.allowInTimeEditing !== false,
+            allowOutTimeEditing: ff.allowOutTimeEditing !== false,
+            allowAttendanceUpload: ff.allowAttendanceUpload !== false,
+          });
+        }
+      } catch {
+        // keep defaults
+      }
+    };
+    loadFlags();
+  }, []);
 
   useEffect(() => {
 
@@ -2045,7 +2071,9 @@ export default function AttendancePage() {
 
         selectedRecordForOutTime.date,
 
-        isoString
+        isoString,
+
+        selectedRecordForOutTime.shiftRecordId
 
       );
 
@@ -2117,7 +2145,48 @@ export default function AttendancePage() {
 
   };
 
-
+  const handleUpdateInTime = async () => {
+    if (!selectedRecordForInTime || !inTimeDialogValue) {
+      alert('Please enter in time');
+      return;
+    }
+    try {
+      setUpdatingInTime(true);
+      setError('');
+      setSuccess('');
+      const isoString = inTimeDialogValue.includes('T')
+        ? new Date(inTimeDialogValue).toISOString()
+        : (() => {
+            const [hours, mins] = inTimeDialogValue.split(':').map(Number);
+            const d = new Date(selectedRecordForInTime.date);
+            d.setHours(hours, mins, 0, 0);
+            return d.toISOString();
+          })();
+      const response = await api.updateAttendanceInTime(
+        selectedRecordForInTime.employee.emp_no,
+        selectedRecordForInTime.date,
+        isoString,
+        selectedRecordForInTime.shiftRecordId
+      );
+      if (response.success) {
+        setSuccess('In time updated successfully.');
+        setShowInTimeDialog(false);
+        setSelectedRecordForInTime(null);
+        setInTimeDialogValue('');
+        await loadMonthlyAttendance();
+        if (attendanceDetail && selectedRecordForInTime?.employee?.emp_no === attendanceDetail.employee?.emp_no && selectedRecordForInTime?.date === attendanceDetail.date) {
+          const updated = await api.getAttendanceDetail(selectedRecordForInTime.employee.emp_no, selectedRecordForInTime.date);
+          if (updated?.success && updated?.data) setAttendanceDetail(updated.data);
+        }
+      } else {
+        setError(response.message || 'Failed to update in time');
+      }
+    } catch (err: any) {
+      setError(err.message || 'An error occurred while updating in time');
+    } finally {
+      setUpdatingInTime(false);
+    }
+  };
 
   const handleShiftOutTimeUpdate = async () => {
 
@@ -2704,7 +2773,7 @@ export default function AttendancePage() {
                 </button>
               )}
 
-              {hasManagePermission && (
+              {hasManagePermission && attendanceFeatureFlags.allowAttendanceUpload && (
                 <button
                   onClick={() => setShowUploadDialog(true)}
                   title="Upload Excel"
@@ -3261,7 +3330,7 @@ export default function AttendancePage() {
                       required
                     />
                     <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                      Enter the logout time. Shift will be automatically assigned based on in-time and out-time.
+                      Enter the logout date and time. For overnight shifts, select the <strong>next calendar day</strong> as the date.
                     </p>
                   </div>
 
@@ -3289,6 +3358,68 @@ export default function AttendancePage() {
             </div>
           )
         }
+
+        {showInTimeDialog && selectedRecordForInTime && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Enter In Time</h3>
+                <button
+                  onClick={() => {
+                    setShowInTimeDialog(false);
+                    setSelectedRecordForInTime(null);
+                    setInTimeDialogValue('');
+                  }}
+                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="space-y-4">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800">
+                  <div className="text-sm font-medium text-slate-900 dark:text-white">
+                    {selectedRecordForInTime?.employee?.employee_name}
+                  </div>
+                  <div className="text-xs text-slate-600 dark:text-slate-400">
+                    {selectedRecordForInTime?.employee?.emp_no} • {selectedRecordForInTime?.date}
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">In Time (date + time) *</label>
+                  <input
+                    type="datetime-local"
+                    value={inTimeDialogValue}
+                    onChange={(e) => setInTimeDialogValue(e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                    required
+                  />
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Enter the check-in date and time.</p>
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleUpdateInTime}
+                    disabled={!inTimeDialogValue || updatingInTime}
+                    className="flex-1 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {updatingInTime ? 'Updating...' : 'Update In Time'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowInTimeDialog(false);
+                      setSelectedRecordForInTime(null);
+                      setInTimeDialogValue('');
+                    }}
+                    className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Detail Dialog */}
         {
@@ -3397,6 +3528,58 @@ export default function AttendancePage() {
                         {attendanceDetail.expectedHours ? formatHours(attendanceDetail.expectedHours) : '-'}
                       </div>
                     </div>
+                    {selectedEmployee && selectedDate && attendanceDetail.date && (attendanceFeatureFlags.allowInTimeEditing || attendanceFeatureFlags.allowOutTimeEditing) && (
+                      <div className="col-span-full sm:col-span-2 flex items-end gap-3">
+                        {attendanceFeatureFlags.allowInTimeEditing && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const firstShift = attendanceDetail.shifts?.[0];
+                              const inTime = firstShift?.inTime ? new Date(firstShift.inTime) : null;
+                              const baseDate = selectedDate || attendanceDetail.date;
+                              const defaultDateTime = inTime
+                                ? `${inTime.getFullYear()}-${String(inTime.getMonth() + 1).padStart(2, '0')}-${String(inTime.getDate()).padStart(2, '0')}T${String(inTime.getHours()).padStart(2, '0')}:${String(inTime.getMinutes()).padStart(2, '0')}`
+                                : `${baseDate}T09:00`;
+                              setInTimeDialogValue(defaultDateTime);
+                              setSelectedRecordForInTime({
+                                employee: selectedEmployee,
+                                date: baseDate,
+                                shiftRecordId: firstShift?._id,
+                              });
+                              setShowInTimeDialog(true);
+                              setShowDetailDialog(false);
+                            }}
+                            className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
+                          >
+                            Edit In Time
+                          </button>
+                        )}
+                        {attendanceFeatureFlags.allowOutTimeEditing && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const firstShift = attendanceDetail.shifts?.[0];
+                              const outTime = firstShift?.outTime ? new Date(firstShift.outTime) : null;
+                              const baseDate = selectedDate || attendanceDetail.date;
+                              const defaultDateTime = outTime
+                                ? `${outTime.getFullYear()}-${String(outTime.getMonth() + 1).padStart(2, '0')}-${String(outTime.getDate()).padStart(2, '0')}T${String(outTime.getHours()).padStart(2, '0')}:${String(outTime.getMinutes()).padStart(2, '0')}`
+                                : `${baseDate}T18:00`;
+                              setOutTimeValue(defaultDateTime);
+                              setSelectedRecordForOutTime({
+                                employee: selectedEmployee,
+                                date: baseDate,
+                                shiftRecordId: firstShift?._id,
+                              });
+                              setShowOutTimeDialog(true);
+                              setShowDetailDialog(false);
+                            }}
+                            className="text-xs font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                          >
+                            Edit Out Time
+                          </button>
+                        )}
+                      </div>
+                    )}
                     {/* Late In Display - Support Multi-Shift */}
                     {(() => {
                       const shiftsWithLate = attendanceDetail.shifts?.filter((s: any) => s.lateInMinutes && s.lateInMinutes > 0) || [];
