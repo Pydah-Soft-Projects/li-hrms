@@ -232,17 +232,34 @@ exports.getCalendarViewData = async (employee, year, month) => {
 /**
  * Get attendance data for table view (Multiple Employees)
  */
-exports.getMonthlyTableViewData = async (employees, year, month) => {
+exports.getMonthlyTableViewData = async (employees, year, month, startQueryDate, endQueryDate) => {
   const targetYear = parseInt(year);
   const targetMonth = parseInt(month);
 
-  const startDate = `${targetYear}-${String(targetMonth).padStart(2, '0')}-01`;
-  const endDate = new Date(targetYear, targetMonth, 0);
-  const endDateStr = `${targetYear}-${String(targetMonth).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`;
-  const daysInMonth = endDate.getDate();
+  const startDate = startQueryDate || `${targetYear}-${String(targetMonth).padStart(2, '0')}-01`;
+  const endDateStr = endQueryDate || `${targetYear}-${String(targetMonth).padStart(2, '0')}-${String(new Date(targetYear, targetMonth, 0).getDate()).padStart(2, '0')}`;
 
-  const startDateObj = new Date(targetYear, targetMonth - 1, 1);
-  const endDateObj = new Date(targetYear, targetMonth, 0, 23, 59, 59, 999);
+  const startDateObj = new Date(startDate);
+  const endDateObj = new Date(endDateStr);
+  endDateObj.setHours(23, 59, 59, 999);
+
+  // Helper function to get dates in range
+  const getDatesInRange = (start, end) => {
+    const dates = [];
+    const current = new Date(start);
+    const last = new Date(end);
+
+    current.setHours(0, 0, 0, 0);
+    last.setHours(0, 0, 0, 0);
+
+    while (current <= last) {
+      dates.push(`${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}-${String(current.getDate()).padStart(2, '0')}`);
+      current.setDate(current.getDate() + 1);
+    }
+    return dates;
+  };
+
+  const datesInRange = getDatesInRange(startDate, endDateStr);
 
   // Get all attendance records for the month (Using .lean() and projections)
   const empNos = employees.map(e => e.emp_no);
@@ -379,8 +396,7 @@ exports.getMonthlyTableViewData = async (employees, year, month) => {
   // Build final response structure
   return employees.map(emp => {
     const dailyAttendance = {};
-    for (let day = 1; day <= daysInMonth; day++) {
-      const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    for (const dateStr of datesInRange) {
       const record = attendanceMap[emp.emp_no]?.[dateStr] || null;
       const leaveInfo = leaveMapByEmployee[emp.emp_no]?.[dateStr] || null;
       const odInfo = odMapByEmployee[emp.emp_no]?.[dateStr] || null;
