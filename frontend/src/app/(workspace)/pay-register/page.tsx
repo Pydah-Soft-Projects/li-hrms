@@ -989,6 +989,25 @@ export default function PayRegisterPage() {
             )}
 
             {(() => {
+              const exportExcelButton = hasGeneratePermission && (
+                <button
+                  key="export-excel"
+                  onClick={async () => {
+                    const listedEmployeeIds = payRegisters.map((pr) =>
+                      typeof pr.employeeId === 'object' ? pr.employeeId._id : pr.employeeId
+                    );
+                    await downloadPayrollExcel(listedEmployeeIds);
+                  }}
+                  disabled={exportingExcel || payRegisters.length === 0}
+                  className="h-8 sm:h-9 flex-1 sm:flex-initial px-2 sm:px-4 flex items-center justify-center gap-1 sm:gap-2 bg-slate-800 hover:bg-slate-900 text-white text-[10px] sm:text-xs font-bold rounded-lg sm:rounded-xl shadow-sm disabled:opacity-50 transition-all whitespace-nowrap"
+                >
+                  <svg className="h-3.5 w-3.5 sm:h-4 sm:w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  {exportingExcel ? '...' : 'Export'}
+                </button>
+              );
+
               // Strict restriction for Past Months
               if (isPastMonth) {
                 const hasPayrollRecords = payRegisters.some(pr => !!pr.payrollId);
@@ -1000,38 +1019,46 @@ export default function PayRegisterPage() {
                 const status = batchInfo?.status || 'pending';
                 const permissionGranted = batchInfo?.permissionGranted || false;
 
-                if (status === 'freeze' || status === 'complete') return null;
+                if (status === 'freeze' || status === 'complete') {
+                  return exportExcelButton ?? null;
+                }
 
                 if (status === 'approved' && !permissionGranted) {
                   return (
-                    hasManagePermission && (
-                      <button
-                        onClick={() => {
-                          if (batchInfo?.batchId) {
-                            setPendingBatchId(batchInfo.batchId);
-                            setShowPermissionModal(true);
-                          } else {
-                            toast.error("Batch ID not found");
-                          }
-                        }}
-                        className="h-9 px-4 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold rounded-xl shadow-sm transition-all"
-                      >
-                        Permission Required
-                      </button>
-                    )
+                    <>
+                      {hasManagePermission && (
+                        <button
+                          onClick={() => {
+                            if (batchInfo?.batchId) {
+                              setPendingBatchId(batchInfo.batchId);
+                              setShowPermissionModal(true);
+                            } else {
+                              toast.error("Batch ID not found");
+                            }
+                          }}
+                          className="h-9 px-4 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold rounded-xl shadow-sm transition-all"
+                        >
+                          Permission Required
+                        </button>
+                      )}
+                      {exportExcelButton}
+                    </>
                   );
                 }
 
                 return (
-                  hasManagePermission && (
-                    <button
-                      onClick={handleCalculatePayrollForAll}
-                      disabled={bulkCalculating || exportingExcel}
-                      className="h-8 sm:h-9 flex-1 sm:flex-initial px-2 sm:px-4 flex items-center justify-center bg-green-600 hover:bg-green-700 text-white text-[10px] sm:text-xs font-bold rounded-lg sm:rounded-xl shadow-sm disabled:opacity-50 transition-all whitespace-nowrap"
-                    >
-                      {bulkCalculating ? '...' : 'Recalculate'}
-                    </button>
-                  )
+                  <>
+                    {hasManagePermission && (
+                      <button
+                        onClick={handleCalculatePayrollForAll}
+                        disabled={bulkCalculating || exportingExcel}
+                        className="h-8 sm:h-9 flex-1 sm:flex-initial px-2 sm:px-4 flex items-center justify-center bg-green-600 hover:bg-green-700 text-white text-[10px] sm:text-xs font-bold rounded-lg sm:rounded-xl shadow-sm disabled:opacity-50 transition-all whitespace-nowrap"
+                      >
+                        {bulkCalculating ? '...' : 'Recalculate'}
+                      </button>
+                    )}
+                    {exportExcelButton}
+                  </>
                 );
               }
 
@@ -1046,24 +1073,7 @@ export default function PayRegisterPage() {
                       {bulkCalculating ? '...' : 'Calculate'}
                     </button>
                   )}
-
-                  {hasGeneratePermission && (
-                    <button
-                      onClick={async () => {
-                        const listedEmployeeIds = payRegisters.map((pr) =>
-                          typeof pr.employeeId === 'object' ? pr.employeeId._id : pr.employeeId
-                        );
-                        await downloadPayrollExcel(listedEmployeeIds);
-                      }}
-                      disabled={exportingExcel || payRegisters.length === 0}
-                      className="h-8 sm:h-9 flex-1 sm:flex-initial px-2 sm:px-4 flex items-center justify-center gap-1 sm:gap-2 bg-slate-800 hover:bg-slate-900 text-white text-[10px] sm:text-xs font-bold rounded-lg sm:rounded-xl shadow-sm disabled:opacity-50 transition-all whitespace-nowrap"
-                    >
-                      <svg className="h-3.5 w-3.5 sm:h-4 sm:w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                      </svg>
-                      {exportingExcel ? '...' : 'Export'}
-                    </button>
-                  )}
+                  {exportExcelButton}
                 </>
               );
             })()}
