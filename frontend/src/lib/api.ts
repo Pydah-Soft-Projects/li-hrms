@@ -2429,7 +2429,7 @@ export const api = {
     return apiRequest<any>(`/attendance/employees${query}`, { method: 'GET' });
   },
 
-  getMonthlyAttendance: async (year: number, month: number, filters?: { page?: number; limit?: number; search?: string; divisionId?: string; departmentId?: string; designationId?: string }) => {
+  getMonthlyAttendance: async (year: number, month: number, filters?: { page?: number; limit?: number; search?: string; divisionId?: string; departmentId?: string; designationId?: string; startDate?: string; endDate?: string }) => {
     const params = new URLSearchParams();
     params.append('year', String(year));
     params.append('month', String(month));
@@ -2440,6 +2440,8 @@ export const api = {
     if (filters?.divisionId) params.append('divisionId', filters.divisionId);
     if (filters?.departmentId) params.append('departmentId', filters.departmentId);
     if (filters?.designationId) params.append('designationId', filters.designationId);
+    if (filters?.startDate) params.append('startDate', filters.startDate);
+    if (filters?.endDate) params.append('endDate', filters.endDate);
 
     const query = params.toString() ? `?${params.toString()}` : '';
     return apiRequest<any>(`/attendance/monthly${query}`, {

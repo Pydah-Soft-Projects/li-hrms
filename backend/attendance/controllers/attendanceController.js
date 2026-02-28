@@ -311,7 +311,7 @@ exports.getEmployeesWithAttendance = async (req, res) => {
  */
 exports.getMonthlyAttendance = async (req, res) => {
   try {
-    const { year, month, page = 1, limit = 20, search, divisionId, departmentId, designationId } = req.query;
+    const { year, month, page = 1, limit = 20, search, divisionId, departmentId, designationId, startDate, endDate } = req.query;
 
     if (!year || !month) {
       return res.status(400).json({
@@ -348,7 +348,7 @@ exports.getMonthlyAttendance = async (req, res) => {
     const totalEmployees = await Employee.countDocuments(filter);
 
     const { getMonthlyTableViewData } = require('../services/attendanceViewService');
-    const employeesWithAttendance = await getMonthlyTableViewData(employees, year, month);
+    const employeesWithAttendance = await getMonthlyTableViewData(employees, year, month, startDate, endDate);
 
     res.status(200).json({
       success: true,
@@ -362,6 +362,8 @@ exports.getMonthlyAttendance = async (req, res) => {
       month: parseInt(month),
       year: parseInt(year),
       daysInMonth: new Date(parseInt(year), parseInt(month), 0).getDate(),
+      startDate,
+      endDate
     });
 
   } catch (error) {
