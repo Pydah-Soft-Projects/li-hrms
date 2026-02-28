@@ -1750,10 +1750,28 @@ exports.calculatePayrollBulk = async (req, res) => {
 };
 
 /**
- * @desc    Get attendance data for a range of months for an employee
+ * @desc    Get attendance data for a range of months for an employee (for incremental arrears proration).
+ * Uses Pay Register Summary (attendance source) first; falls back to PayrollRecord if no pay register for that month.
  * @route   GET /api/payroll/attendance-range
  * @access  Private
  */
+function getMonthsInRange(startMonth, endMonth) {
+  const [startYear, startM] = startMonth.split('-').map(Number);
+  const [endYear, endM] = endMonth.split('-').map(Number);
+  const months = [];
+  let y = startYear;
+  let m = startM;
+  while (y < endYear || (y === endYear && m <= endM)) {
+    months.push(`${y}-${String(m).padStart(2, '0')}`);
+    m += 1;
+    if (m > 12) {
+      m = 1;
+      y += 1;
+    }
+  }
+  return months;
+}
+
 exports.getAttendanceDataRange = async (req, res) => {
   try {
     const { employeeId, startMonth, endMonth } = req.query;
@@ -1765,16 +1783,56 @@ exports.getAttendanceDataRange = async (req, res) => {
       });
     }
 
-    // Fetch payroll records for the range
-    // Since month is "YYYY-MM", string comparison works for range
-    const records = await PayrollRecord.find({
+    const months = getMonthsInRange(startMonth, endMonth);
+    if (months.length === 0) {
+      return res.status(200).json({ success: true, data: [] });
+    }
+
+    // Primary: Pay Register Summary (attendance / pay register – exists as soon as register is filled)
+    const payRegisters = await PayRegisterSummary.find({
       employeeId,
-      month: { $gte: startMonth, $lte: endMonth }
-    }).select('month totalDaysInMonth attendance.totalPaidDays');
+      month: { $in: months }
+    }).select('month totalDaysInMonth totals.totalPayableShifts totals.totalPresentDays totals.totalPaidLeaveDays totals.totalWeeklyOffs totals.totalHolidays').lean();
+
+    // Fallback: PayrollRecord (only exists after payroll run for that month)
+    const payrollRecords = await PayrollRecord.find({
+      employeeId,
+      month: { $in: months }
+    }).select('month totalDaysInMonth attendance.totalPaidDays').lean();
+
+    const byMonthPR = Object.fromEntries((payRegisters || []).map((r) => [r.month, r]));
+    const byMonthPayroll = Object.fromEntries((payrollRecords || []).map((r) => [r.month, r]));
+
+    const data = months.map((month) => {
+      const pr = byMonthPR[month];
+      const payroll = byMonthPayroll[month];
+      let totalDaysInMonth = 0;
+      let totalPaidDays = 0;
+
+      if (pr) {
+        totalDaysInMonth = Number(pr.totalDaysInMonth) || 0;
+        const tot = pr.totals || {};
+        const payable = tot.totalPayableShifts;
+        totalPaidDays = Number.isFinite(payable) ? payable : (Number(tot.totalPresentDays) || 0) + (Number(tot.totalPaidLeaveDays) || 0) + (Number(tot.totalWeeklyOffs) || 0) + (Number(tot.totalHolidays) || 0);
+      } else if (payroll) {
+        totalDaysInMonth = Number(payroll.totalDaysInMonth) || 0;
+        totalPaidDays = Number(payroll.attendance?.totalPaidDays) || 0;
+      }
+      if (totalDaysInMonth <= 0) {
+        const [y, m] = month.split('-').map(Number);
+        totalDaysInMonth = new Date(y, m, 0).getDate();
+      }
+
+      return {
+        month,
+        totalDaysInMonth: Number(totalDaysInMonth),
+        attendance: { totalPaidDays: Number(totalPaidDays) }
+      };
+    });
 
     res.status(200).json({
       success: true,
-      data: records
+      data
     });
   } catch (error) {
     console.error('Error fetching attendance data range:', error);

@@ -3,21 +3,26 @@ const StatutoryDeductionConfig = require('../model/StatutoryDeductionConfig');
 /**
  * Calculate statutory deductions for an employee for a month.
  * Only employee share is deducted from salary; employer share is for reporting.
+ * Respects employee-level flags: applyESI, applyPF, applyProfessionTax (default true = apply).
  * @param {Object} params
  * @param {number} params.basicPay - Basic pay (full month)
  * @param {number} params.grossSalary - Gross salary (after allowances) - used for ESI
  * @param {number} params.earnedSalary - Earned salary (prorated) - optional for proration
  * @param {number} [params.dearnessAllowance=0] - DA if PF base is basic_da
+ * @param {Object} [params.employee] - Employee doc; if applyESI/applyPF/applyProfessionTax are false, that deduction is skipped (amount 0).
  * @returns {Promise<{ breakdown: Array<{ name, code, employeeAmount, employerAmount }>, totalEmployeeShare, totalEmployerShare }>}
  */
-async function calculateStatutoryDeductions({ basicPay = 0, grossSalary = 0, earnedSalary = 0, dearnessAllowance = 0 }) {
+async function calculateStatutoryDeductions({ basicPay = 0, grossSalary = 0, earnedSalary = 0, dearnessAllowance = 0, employee = null }) {
   const config = await StatutoryDeductionConfig.get();
   const breakdown = [];
   let totalEmployeeShare = 0;
   let totalEmployerShare = 0;
+  const applyESI = employee == null || (employee && employee.applyESI !== false);
+  const applyPF = employee == null || (employee && employee.applyPF !== false);
+  const applyPT = employee == null || (employee && employee.applyProfessionTax !== false);
 
   // ESI: calculated on (wageBasePercentOfBasic % of basic). When enabled, wage ceiling applies: applicable when basic ≤ ceiling (0 = no ceiling).
-  if (config.esi && config.esi.enabled) {
+  if (applyESI && config.esi && config.esi.enabled) {
     const basic = Number(basicPay) || 0;
     const wageBasePct = Math.min(100, Math.max(0, config.esi.wageBasePercentOfBasic ?? 50));
     const wageCeiling = config.esi.wageCeiling || 0;
@@ -40,7 +45,7 @@ async function calculateStatutoryDeductions({ basicPay = 0, grossSalary = 0, ear
   }
 
   // PF: on Basic (or Basic + DA). Upper limit (wage ceiling): if salary ≥ ceiling, calculate on ceiling amount; else calculate on full basic. So contribution base = min(basic or basic+DA, wageCeiling).
-  if (config.pf && config.pf.enabled) {
+  if (applyPF && config.pf && config.pf.enabled) {
     const base = (config.pf.base === 'basic_da') ? (Number(basicPay) || 0) + (Number(dearnessAllowance) || 0) : (Number(basicPay) || 0);
     const wageCeiling = config.pf.wageCeiling || 15000;
     const empPct = config.pf.employeePercent ?? 12;
@@ -61,7 +66,7 @@ async function calculateStatutoryDeductions({ basicPay = 0, grossSalary = 0, ear
   }
 
   // Profession Tax: employee only; slab-based on basic pay (slab where basicPay falls → amount)
-  if (config.professionTax && config.professionTax.enabled && Array.isArray(config.professionTax.slabs) && config.professionTax.slabs.length > 0) {
+  if (applyPT && config.professionTax && config.professionTax.enabled && Array.isArray(config.professionTax.slabs) && config.professionTax.slabs.length > 0) {
     const basic = Number(basicPay) || 0;
     const sorted = [...config.professionTax.slabs].filter(s => s && typeof s.min === 'number').sort((a, b) => a.min - b.min);
     let amount = 0;
