@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { api } from '@/lib/api';
+import { api, Division, Department, Designation } from '@/lib/api';
 import { QRCodeSVG } from 'qrcode.react';
 import LocationPhotoCapture from '@/components/LocationPhotoCapture';
 import Spinner from '@/components/Spinner';
+import EmployeeSelect from '@/components/EmployeeSelect';
 
 const Portal = ({ children }: { children: React.ReactNode }) => {
   const [mounted, setMounted] = useState(false);
@@ -275,8 +276,61 @@ export default function OTAndPermissionsPage() {
     date: string;
   } | null>(null);
 
+  // Advanced Filters State
+  const [divisions, setDivisions] = useState<Division[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [designations, setDesignations] = useState<Designation[]>([]);
+  const [selectedDivision, setSelectedDivision] = useState('');
+  const [selectedDepartment, setSelectedDepartment] = useState('');
+  const [selectedDesignation, setSelectedDesignation] = useState('');
+
+  const loadFilterOptions = async () => {
+    try {
+      const [divRes, deptRes, desigRes] = await Promise.all([
+        api.getDivisions(),
+        api.getDepartments(),
+        api.getAllDesignations(),
+      ]);
+      if (divRes.success) setDivisions(divRes.data || []);
+      if (deptRes.success) setDepartments(deptRes.data as any[] || []);
+      if (desigRes.success) setDesignations(desigRes.data || []);
+    } catch (error) {
+      console.error('Error loading filter options:', error);
+    }
+  };
+
+  const filteredDepartmentsByDivision = useMemo(() => {
+    if (!selectedDivision) return departments;
+    const division = divisions.find(d => d._id === selectedDivision);
+    if (!division || !division.departments) return departments;
+    return departments.filter(dept =>
+      (division.departments || []).some(d => (typeof d === 'string' ? d : (d as any)._id) === dept._id)
+    );
+  }, [selectedDivision, divisions, departments]);
+
+  const applyAdvancedFilters = (item: OTRequest | PermissionRequest) => {
+    const emp = item.employeeId as any;
+    if (!emp) return true;
+
+    if (selectedDivision) {
+      const divId = typeof emp.division === 'object' ? emp.division._id : emp.division;
+      if (divId !== selectedDivision) return false;
+    }
+    if (selectedDepartment) {
+      const deptId = typeof emp.department === 'object' ? emp.department._id : emp.department;
+      if (deptId !== selectedDepartment) return false;
+    }
+    if (selectedDesignation) {
+      const desigId = typeof emp.designation === 'object' ? emp.designation._id : emp.designation;
+      if (desigId !== selectedDesignation) return false;
+    }
+
+    return true;
+  };
+
   useEffect(() => {
     loadData();
+    loadFilterOptions();
   }, [activeTab, otFilters, permissionFilters]);
 
   // Auto-fetch attendance when OT dialog opens with employee and date
@@ -869,6 +923,50 @@ export default function OTAndPermissionsPage() {
               />
             </div>
           </div>
+          <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Division</label>
+              <select
+                value={selectedDivision}
+                onChange={(e) => {
+                  setSelectedDivision(e.target.value);
+                  setSelectedDepartment('');
+                }}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+              >
+                <option value="">All Divisions</option>
+                {divisions.map((div) => (
+                  <option key={div._id} value={div._id}>{div.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Department</label>
+              <select
+                value={selectedDepartment}
+                onChange={(e) => setSelectedDepartment(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+              >
+                <option value="">All Departments</option>
+                {filteredDepartmentsByDivision.map((dept) => (
+                  <option key={dept._id} value={dept._id}>{dept.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Designation</label>
+              <select
+                value={selectedDesignation}
+                onChange={(e) => setSelectedDesignation(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+              >
+                <option value="">All Designations</option>
+                {designations.map((desig) => (
+                  <option key={desig._id} value={desig._id}>{desig.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
         </div>
 
         {/* Content */}
@@ -900,7 +998,7 @@ export default function OTAndPermissionsPage() {
                       </td>
                     </tr>
                   ) : (
-                    otRequests.map((ot) => (
+                    otRequests.filter(applyAdvancedFilters).map((ot) => (
                       <tr key={ot._id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
                         <td className="px-3 py-2.5">
                           <div className="text-sm font-medium text-slate-900 dark:text-white">
@@ -988,7 +1086,7 @@ export default function OTAndPermissionsPage() {
                       </td>
                     </tr>
                   ) : (
-                    permissions.map((perm) => (
+                    permissions.filter(applyAdvancedFilters).map((perm) => (
                       <tr key={perm._id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
                         <td className="px-3 py-2.5">
                           <div className="text-sm font-medium text-slate-900 dark:text-white">
@@ -1101,37 +1199,22 @@ export default function OTAndPermissionsPage() {
 
                   <div>
                     <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Employee *</label>
-                    <select
+                    <EmployeeSelect
                       value={otFormData.employeeId}
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        if (!value) return;
-
-                        // Find employee by _id or emp_no
-                        const employee = employees.find(emp => (emp._id === value) || (emp.emp_no === value));
+                      onChange={(employee) => {
                         if (employee && employee.emp_no) {
                           const employeeId = employee._id || employee.emp_no;
                           handleEmployeeSelect(employeeId, employee.emp_no, otFormData.date);
+                        } else {
+                          // Clear employee selection
+                          setOTFormData(prev => ({ ...prev, employeeId: '', employeeNumber: '' }));
+                          setAttendanceData(null);
+                          setSelectedShift(null);
+                          setConfusedShift(null);
                         }
                       }}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                    >
-                      <option value="">Select Employee</option>
-                      {employees && employees.length > 0 ? (
-                        employees
-                          .filter(emp => emp.emp_no) // Only require emp_no, not _id
-                          .map((emp, index) => {
-                            const identifier = emp._id || emp.emp_no;
-                            return (
-                              <option key={`ot-employee-${identifier}-${index}`} value={identifier}>
-                                {emp.emp_no} - {emp.employee_name || 'Unknown'}
-                              </option>
-                            );
-                          })
-                      ) : (
-                        <option value="" disabled>No employees available</option>
-                      )}
-                    </select>
+                      placeholder="Search Employee..."
+                    />
                   </div>
 
                   <div>
@@ -1389,11 +1472,10 @@ export default function OTAndPermissionsPage() {
                   )}
                   <div>
                     <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Employee *</label>
-                    <select
+                    <EmployeeSelect
                       value={permissionFormData.employeeId}
-                      onChange={async (e) => {
-                        const value = e.target.value;
-                        if (!value) {
+                      onChange={async (employee) => {
+                        if (!employee) {
                           setPermissionFormData(prev => ({
                             ...prev,
                             employeeId: '',
@@ -1403,8 +1485,6 @@ export default function OTAndPermissionsPage() {
                           return;
                         }
 
-                        // Find employee by _id or emp_no
-                        const employee = employees.find(emp => (emp._id === value) || (emp.emp_no === value));
                         if (employee && employee.emp_no) {
                           const employeeId = employee._id || employee.emp_no;
                           setPermissionFormData(prev => ({
@@ -1436,24 +1516,8 @@ export default function OTAndPermissionsPage() {
                           setPermissionValidationError('');
                         }
                       }}
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                    >
-                      <option value="">Select Employee</option>
-                      {employees && employees.length > 0 ? (
-                        employees
-                          .filter(emp => emp.emp_no) // Only require emp_no, not _id
-                          .map((emp, index) => {
-                            const identifier = emp._id || emp.emp_no;
-                            return (
-                              <option key={`perm-employee-${identifier}-${index}`} value={identifier}>
-                                {emp.emp_no} - {emp.employee_name || 'Unknown'}
-                              </option>
-                            );
-                          })
-                      ) : (
-                        <option value="" disabled>No employees available</option>
-                      )}
-                    </select>
+                      placeholder="Search Employee..."
+                    />
                   </div>
 
                   <div>

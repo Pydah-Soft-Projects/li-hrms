@@ -1,11 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { api } from '@/lib/api';
 import { auth } from '@/lib/auth';
 import { toast, ToastContainer } from 'react-toastify';
 import Swal from 'sweetalert2';
 import 'react-toastify/dist/ReactToastify.css';
+import EmployeeSelect from '@/components/EmployeeSelect';
+import { Department, Division, Designation } from '@/lib/api';
 
 // Icons
 const PlusIcon = () => (
@@ -129,6 +131,15 @@ export default function LoansPage() {
   const [actionComment, setActionComment] = useState('');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Filter Select states
+  const [divisions, setDivisions] = useState<Division[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [designations, setDesignations] = useState<Designation[]>([]);
+
+  const [selectedDivisionFilter, setSelectedDivisionFilter] = useState('');
+  const [selectedDepartmentFilter, setSelectedDepartmentFilter] = useState('');
+  const [selectedDesignationFilter, setSelectedDesignationFilter] = useState('');
 
   // Edit dialog state
   const [showEditDialog, setShowEditDialog] = useState(false);
@@ -404,6 +415,38 @@ export default function LoansPage() {
       setLoading(false);
     }
   };
+
+  const loadFilterData = async () => {
+    try {
+      const [divRes, deptRes, desigRes] = await Promise.all([
+        api.getDivisions(),
+        api.getDepartments(),
+        api.getAllDesignations()
+      ]);
+
+      if (divRes.success && divRes.data) setDivisions(divRes.data);
+      if (deptRes.success && deptRes.data) setDepartments(deptRes.data as any[]);
+      if (desigRes.success && desigRes.data) setDesignations(desigRes.data);
+    } catch (err) {
+      console.error('Failed to load filter options:', err);
+    }
+  };
+
+  useEffect(() => {
+    loadFilterData();
+  }, []);
+
+  // Filtered departments based on selected division
+  const filteredDepartments = useMemo(() => {
+    if (!selectedDivisionFilter) return departments;
+    const div = divisions.find(d => String(d._id) === selectedDivisionFilter);
+    if (!div || !div.departments) return departments;
+    return departments.filter(dept =>
+      (div.departments || []).some((d: any) =>
+        (typeof d === 'string' ? d : String((d as any)._id)) === String(dept._id)
+      )
+    );
+  }, [selectedDivisionFilter, divisions, departments]);
 
   const handleAction = async (loanId: string, action: 'approve' | 'reject' | 'forward') => {
     if (action === 'approve' && approvalValidation?.level === 'error') {
@@ -1081,46 +1124,86 @@ export default function LoansPage() {
         ))}
       </div>
 
-      {/* Premium Tabs */}
-      <div className="mb-6 flex flex-wrap items-center gap-3">
-        <div className="flex gap-1 rounded-2xl bg-slate-100/80 p-1.5 dark:bg-slate-900/80">
-          {[
-            { id: 'loans', label: 'Loans', count: loans.length },
-            { id: 'advances', label: 'Advances', count: advances.length },
-            { id: 'pending', label: 'Pending Approvals', count: pendingLoans.length + pendingAdvances.length }
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              className={`relative flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold transition-all duration-300 ${activeTab === tab.id
-                ? 'bg-white text-emerald-600 shadow-md ring-1 ring-slate-200/50 dark:bg-slate-800 dark:text-emerald-400 dark:ring-slate-700'
-                : 'text-slate-500 hover:bg-white/50 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800/50 dark:hover:text-slate-200'
-                }`}
-            >
-              <span>{tab.label}</span>
-              <span className={`flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] ${activeTab === tab.id
-                ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-400'
-                : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
-                }`}>
-                {tab.count}
-              </span>
-            </button>
-          ))}
+      {/* Premium Tabs and Filters */}
+      <div className="mb-6 flex flex-col xl:flex-row gap-4">
+        <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto">
+          <div className="flex gap-1 rounded-2xl bg-slate-100/80 p-1.5 dark:bg-slate-900/80 w-full sm:w-auto overflow-x-auto">
+            {[
+              { id: 'loans', label: 'Loans', count: loans.length },
+              { id: 'advances', label: 'Advances', count: advances.length },
+              { id: 'pending', label: 'Pending Approvals', count: pendingLoans.length + pendingAdvances.length }
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`relative flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold transition-all duration-300 whitespace-nowrap ${activeTab === tab.id
+                  ? 'bg-white text-emerald-600 shadow-md ring-1 ring-slate-200/50 dark:bg-slate-800 dark:text-emerald-400 dark:ring-slate-700'
+                  : 'text-slate-500 hover:bg-white/50 hover:text-slate-700 dark:text-slate-400 dark:hover:bg-slate-800/50 dark:hover:text-slate-200'
+                  }`}
+              >
+                <span>{tab.label}</span>
+                <span className={`flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] ${activeTab === tab.id
+                  ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-400'
+                  : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                  }`}>
+                  {tab.count}
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* Search Input Integrated next to tabs if space permits */}
-        {(activeTab === 'loans' || activeTab === 'advances') && (
-          <div className="relative flex-1 min-w-[300px]">
-            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
-              <SearchIcon />
+        {/* Filters and Search Input */}
+        {(activeTab === 'loans' || activeTab === 'advances' || activeTab === 'pending') && (
+          <div className="flex flex-wrap items-center gap-3 flex-1">
+            <select
+              value={selectedDivisionFilter}
+              onChange={(e) => {
+                setSelectedDivisionFilter(e.target.value);
+                setSelectedDepartmentFilter(''); // Reset department when division changes
+              }}
+              className="rounded-xl border border-slate-200/60 bg-white/80 px-4 py-2 text-sm font-medium text-slate-700 transition-all focus:border-emerald-400 focus:outline-none focus:ring-4 focus:ring-emerald-400/10 dark:border-slate-800/60 dark:bg-slate-950/80 dark:text-white"
+            >
+              <option value="">All Divisions</option>
+              {divisions.map((div) => (
+                <option key={div._id} value={div._id}>{div.name}</option>
+              ))}
+            </select>
+
+            <select
+              value={selectedDepartmentFilter}
+              onChange={(e) => setSelectedDepartmentFilter(e.target.value)}
+              className="rounded-xl border border-slate-200/60 bg-white/80 px-4 py-2 text-sm font-medium text-slate-700 transition-all focus:border-emerald-400 focus:outline-none focus:ring-4 focus:ring-emerald-400/10 dark:border-slate-800/60 dark:bg-slate-950/80 dark:text-white"
+            >
+              <option value="">All Departments</option>
+              {filteredDepartments.map((dept) => (
+                <option key={dept._id} value={dept._id}>{dept.name}</option>
+              ))}
+            </select>
+
+            <select
+              value={selectedDesignationFilter}
+              onChange={(e) => setSelectedDesignationFilter(e.target.value)}
+              className="rounded-xl border border-slate-200/60 bg-white/80 px-4 py-2 text-sm font-medium text-slate-700 transition-all focus:border-emerald-400 focus:outline-none focus:ring-4 focus:ring-emerald-400/10 dark:border-slate-800/60 dark:bg-slate-950/80 dark:text-white"
+            >
+              <option value="">All Designations</option>
+              {designations.map((desig) => (
+                <option key={desig._id} value={desig._id}>{desig.name}</option>
+              ))}
+            </select>
+
+            <div className="relative flex-1 min-w-[200px]">
+              <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
+                <SearchIcon />
+              </div>
+              <input
+                type="text"
+                placeholder="Search by employee name, ID, or reason..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full rounded-xl border border-slate-200/60 bg-white/80 py-2.5 pl-11 pr-4 text-sm font-medium transition-all focus:border-emerald-400 focus:outline-none focus:ring-4 focus:ring-emerald-400/10 dark:border-slate-800/60 dark:bg-slate-950/80 dark:text-white"
+              />
             </div>
-            <input
-              type="text"
-              placeholder="Search by employee name, ID, or reason..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full rounded-2xl border border-slate-200/60 bg-white/80 py-2.5 pl-11 pr-4 text-sm font-medium transition-all focus:border-emerald-400 focus:outline-none focus:ring-4 focus:ring-emerald-400/10 dark:border-slate-800/60 dark:bg-slate-950/80 dark:text-white"
-            />
           </div>
         )}
       </div>
@@ -1158,17 +1241,34 @@ export default function LoansPage() {
                       Loading...
                     </td>
                   </tr>
-                ) : loans.filter((item) => {
+                ) : loans.filter((loan) => {
                   if (searchTerm) {
                     const searchLower = searchTerm.toLowerCase();
-                    const empName = item.employeeId?.employee_name || '';
-                    const empNo = item.emp_no || item.employeeId?.emp_no || '';
-                    return (
+                    const empName = loan.employeeId?.employee_name || '';
+                    const empNo = loan.emp_no || loan.employeeId?.emp_no || '';
+                    if (!(
                       empName.toLowerCase().includes(searchLower) ||
                       empNo.toLowerCase().includes(searchLower) ||
-                      item.reason.toLowerCase().includes(searchLower)
-                    );
+                      (loan.reason && loan.reason.toLowerCase().includes(searchLower))
+                    )) {
+                      return false;
+                    }
                   }
+
+                  const emp = loan.employeeId as any;
+                  if (selectedDivisionFilter) {
+                    const divId = typeof emp?.division === 'object' ? emp?.division?._id : (emp?.division_id || emp?.division);
+                    if (String(divId) !== String(selectedDivisionFilter)) return false;
+                  }
+                  if (selectedDepartmentFilter) {
+                    const deptId = typeof emp?.department === 'object' ? emp?.department?._id : (emp?.department_id || emp?.department);
+                    if (String(deptId) !== String(selectedDepartmentFilter)) return false;
+                  }
+                  if (selectedDesignationFilter) {
+                    const desigId = typeof emp?.designation === 'object' ? emp?.designation?._id : (emp?.designation_id || emp?.designation);
+                    if (String(desigId) !== String(selectedDesignationFilter)) return false;
+                  }
+
                   return true;
                 }).length === 0 ? (
                   <tr>
@@ -1177,17 +1277,34 @@ export default function LoansPage() {
                     </td>
                   </tr>
                 ) : (
-                  loans.filter((item) => {
+                  loans.filter((loan) => {
                     if (searchTerm) {
                       const searchLower = searchTerm.toLowerCase();
-                      const empName = item.employeeId?.employee_name || '';
-                      const empNo = item.emp_no || item.employeeId?.emp_no || '';
-                      return (
+                      const empName = loan.employeeId?.employee_name || '';
+                      const empNo = loan.emp_no || loan.employeeId?.emp_no || '';
+                      if (!(
                         empName.toLowerCase().includes(searchLower) ||
                         empNo.toLowerCase().includes(searchLower) ||
-                        item.reason.toLowerCase().includes(searchLower)
-                      );
+                        (loan.reason && loan.reason.toLowerCase().includes(searchLower))
+                      )) {
+                        return false;
+                      }
                     }
+
+                    const emp = loan.employeeId as any;
+                    if (selectedDivisionFilter) {
+                      const divId = typeof emp?.division === 'object' ? emp?.division?._id : (emp?.division_id || emp?.division);
+                      if (String(divId) !== String(selectedDivisionFilter)) return false;
+                    }
+                    if (selectedDepartmentFilter) {
+                      const deptId = typeof emp?.department === 'object' ? emp?.department?._id : (emp?.department_id || emp?.department);
+                      if (String(deptId) !== String(selectedDepartmentFilter)) return false;
+                    }
+                    if (selectedDesignationFilter) {
+                      const desigId = typeof emp?.designation === 'object' ? emp?.designation?._id : (emp?.designation_id || emp?.designation);
+                      if (String(desigId) !== String(selectedDesignationFilter)) return false;
+                    }
+
                     return true;
                   }).map((loan) => (
                     <tr
@@ -1248,15 +1365,15 @@ export default function LoansPage() {
                       Loading...
                     </td>
                   </tr>
-                ) : advances.filter((item) => {
+                ) : advances.filter((advance) => {
                   if (searchTerm) {
                     const searchLower = searchTerm.toLowerCase();
-                    const empName = item.employeeId?.employee_name || '';
-                    const empNo = item.emp_no || item.employeeId?.emp_no || '';
+                    const empName = advance.employeeId?.employee_name || '';
+                    const empNo = advance.emp_no || advance.employeeId?.emp_no || '';
                     return (
                       empName.toLowerCase().includes(searchLower) ||
                       empNo.toLowerCase().includes(searchLower) ||
-                      item.reason.toLowerCase().includes(searchLower)
+                      (advance.reason && advance.reason.toLowerCase().includes(searchLower))
                     );
                   }
                   return true;
@@ -1267,17 +1384,34 @@ export default function LoansPage() {
                     </td>
                   </tr>
                 ) : (
-                  advances.filter((item) => {
+                  advances.filter((advance) => {
                     if (searchTerm) {
                       const searchLower = searchTerm.toLowerCase();
-                      const empName = item.employeeId?.employee_name || '';
-                      const empNo = item.emp_no || item.employeeId?.emp_no || '';
-                      return (
+                      const empName = advance.employeeId?.employee_name || '';
+                      const empNo = advance.emp_no || advance.employeeId?.emp_no || '';
+                      if (!(
                         empName.toLowerCase().includes(searchLower) ||
                         empNo.toLowerCase().includes(searchLower) ||
-                        item.reason.toLowerCase().includes(searchLower)
-                      );
+                        (advance.reason && advance.reason.toLowerCase().includes(searchLower))
+                      )) {
+                        return false;
+                      }
                     }
+
+                    const emp = advance.employeeId as any;
+                    if (selectedDivisionFilter) {
+                      const divId = typeof emp?.division === 'object' ? emp?.division?._id : (emp?.division_id || emp?.division);
+                      if (String(divId) !== String(selectedDivisionFilter)) return false;
+                    }
+                    if (selectedDepartmentFilter) {
+                      const deptId = typeof emp?.department === 'object' ? emp?.department?._id : (emp?.department_id || emp?.department);
+                      if (String(deptId) !== String(selectedDepartmentFilter)) return false;
+                    }
+                    if (selectedDesignationFilter) {
+                      const desigId = typeof emp?.designation === 'object' ? emp?.designation?._id : (emp?.designation_id || emp?.designation);
+                      if (String(desigId) !== String(selectedDesignationFilter)) return false;
+                    }
+
                     return true;
                   }).map((advance) => (
                     <tr
@@ -1329,7 +1463,36 @@ export default function LoansPage() {
                   Pending Loans ({pendingLoans.length})
                 </h3>
                 <div className="space-y-4">
-                  {pendingLoans.map((loan) => (
+                  {pendingLoans.filter((loan) => {
+                    if (searchTerm) {
+                      const searchLower = searchTerm.toLowerCase();
+                      const empName = loan.employeeId?.employee_name || '';
+                      const empNo = loan.emp_no || loan.employeeId?.emp_no || '';
+                      if (!(
+                        empName.toLowerCase().includes(searchLower) ||
+                        empNo.toLowerCase().includes(searchLower) ||
+                        (loan.reason && loan.reason.toLowerCase().includes(searchLower))
+                      )) {
+                        return false;
+                      }
+                    }
+
+                    const emp = loan.employeeId as any;
+                    if (selectedDivisionFilter) {
+                      const divId = typeof emp?.division === 'object' ? emp?.division?._id : (emp?.division_id || emp?.division);
+                      if (String(divId) !== String(selectedDivisionFilter)) return false;
+                    }
+                    if (selectedDepartmentFilter) {
+                      const deptId = typeof emp?.department === 'object' ? emp?.department?._id : (emp?.department_id || emp?.department);
+                      if (String(deptId) !== String(selectedDepartmentFilter)) return false;
+                    }
+                    if (selectedDesignationFilter) {
+                      const desigId = typeof emp?.designation === 'object' ? emp?.designation?._id : (emp?.designation_id || emp?.designation);
+                      if (String(desigId) !== String(selectedDesignationFilter)) return false;
+                    }
+
+                    return true;
+                  }).map((loan) => (
                     <div key={loan._id} className="rounded-2xl border-2 border-amber-200/50 bg-gradient-to-br from-amber-50/80 to-yellow-50/50 p-5 dark:border-amber-800/30 dark:from-amber-900/20 dark:to-yellow-900/10 shadow-sm hover:shadow-md transition-all duration-300">
                       <div className="flex items-start justify-between gap-4">
                         <div className="flex-1">
@@ -1384,7 +1547,36 @@ export default function LoansPage() {
                   Pending Advances ({pendingAdvances.length})
                 </h3>
                 <div className="space-y-4">
-                  {pendingAdvances.map((advance) => (
+                  {pendingAdvances.filter((advance) => {
+                    if (searchTerm) {
+                      const searchLower = searchTerm.toLowerCase();
+                      const empName = advance.employeeId?.employee_name || '';
+                      const empNo = advance.emp_no || advance.employeeId?.emp_no || '';
+                      if (!(
+                        empName.toLowerCase().includes(searchLower) ||
+                        empNo.toLowerCase().includes(searchLower) ||
+                        (advance.reason && advance.reason.toLowerCase().includes(searchLower))
+                      )) {
+                        return false;
+                      }
+                    }
+
+                    const emp = advance.employeeId as any;
+                    if (selectedDivisionFilter) {
+                      const divId = typeof emp?.division === 'object' ? emp?.division?._id : (emp?.division_id || emp?.division);
+                      if (String(divId) !== String(selectedDivisionFilter)) return false;
+                    }
+                    if (selectedDepartmentFilter) {
+                      const deptId = typeof emp?.department === 'object' ? emp?.department?._id : (emp?.department_id || emp?.department);
+                      if (String(deptId) !== String(selectedDepartmentFilter)) return false;
+                    }
+                    if (selectedDesignationFilter) {
+                      const desigId = typeof emp?.designation === 'object' ? emp?.designation?._id : (emp?.designation_id || emp?.designation);
+                      if (String(desigId) !== String(selectedDesignationFilter)) return false;
+                    }
+
+                    return true;
+                  }).map((advance) => (
                     <div key={advance._id} className="rounded-2xl border-2 border-amber-200/50 bg-gradient-to-br from-amber-50/80 to-yellow-50/50 p-5 dark:border-amber-800/30 dark:from-amber-900/20 dark:to-yellow-900/10 shadow-sm hover:shadow-md transition-all duration-300">
                       <div className="flex items-start justify-between gap-4">
                         <div className="flex-1">
@@ -2782,105 +2974,16 @@ export default function LoansPage() {
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
                     Apply For Employee *
                   </label>
-                  <div className="relative">
-                    {selectedEmployee ? (
-                      <div className="flex items-center justify-between p-3 rounded-xl border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white font-semibold">
-                            {getEmployeeInitials(selectedEmployee)}
-                          </div>
-                          <div>
-                            <div className="font-medium text-slate-900 dark:text-white">
-                              {getEmployeeName(selectedEmployee)}
-                            </div>
-                            <div className="text-xs text-slate-500 dark:text-slate-400">
-                              {selectedEmployee.emp_no}
-                            </div>
-                            <div className="flex flex-wrap gap-1.5 mt-1">
-                              {selectedEmployee.department?.name && (
-                                <span className="px-1.5 py-0.5 text-[10px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-800 dark:text-blue-300 rounded">
-                                  {selectedEmployee.department.name}
-                                </span>
-                              )}
-                              {selectedEmployee.designation?.name && (
-                                <span className="px-1.5 py-0.5 text-[10px] font-medium bg-green-100 text-green-700 dark:bg-green-800 dark:text-green-300 rounded">
-                                  {selectedEmployee.designation.name}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedEmployee(null);
-                            setEmployeeSearch('');
-                          }}
-                          className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                        >
-                          <XIcon />
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="relative">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                          <SearchIcon />
-                        </div>
-                        <input
-                          type="text"
-                          value={employeeSearch}
-                          onChange={(e) => {
-                            setEmployeeSearch(e.target.value);
-                            setShowEmployeeDropdown(true);
-                          }}
-                          onFocus={() => setShowEmployeeDropdown(true)}
-                          placeholder="Search by name, emp no, or department..."
-                          className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20"
-                        />
-
-                        {/* Employee Dropdown */}
-                        {showEmployeeDropdown && (
-                          <div className="absolute z-10 w-full mt-1 max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-800">
-                            {filteredEmployees.length === 0 ? (
-                              <div className="p-4 text-center text-sm text-slate-500">
-                                {employeeSearch ? 'No employees found' : 'Type to search employees'}
-                              </div>
-                            ) : (
-                              filteredEmployees.slice(0, 10).map((emp) => (
-                                <button
-                                  key={emp._id}
-                                  type="button"
-                                  onClick={() => {
-                                    setSelectedEmployee(emp);
-                                    setEmployeeSearch('');
-                                    setShowEmployeeDropdown(false);
-                                  }}
-                                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-700 text-left transition-colors border-b border-slate-100 dark:border-slate-700 last:border-0"
-                                >
-                                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-slate-400 to-slate-500 flex items-center justify-center text-white text-sm font-medium">
-                                    {getEmployeeInitials(emp)}
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <div className="font-medium text-slate-900 dark:text-white truncate">
-                                      {getEmployeeName(emp)}
-                                    </div>
-                                    <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                                      {emp.emp_no} • {emp.department?.name || 'No Department'} • {emp.designation?.name || 'No Designation'}
-                                    </div>
-                                  </div>
-                                </button>
-                              ))
-                            )}
-                            {filteredEmployees.length > 10 && (
-                              <div className="px-4 py-2 text-center text-xs text-slate-500 bg-slate-50 dark:bg-slate-900">
-                                Showing 10 of {filteredEmployees.length} results. Type more to filter.
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                  <EmployeeSelect
+                    value={selectedEmployee?._id || ''}
+                    onChange={(emp) => {
+                      setSelectedEmployee(emp);
+                      if (!emp) {
+                        setEmployeeSearch('');
+                      }
+                    }}
+                    disabled={isEmployee}
+                  />
                 </div>
 
                 {/* Eligibility Calculator - ONLY for Salary Advance */}

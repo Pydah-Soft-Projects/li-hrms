@@ -13,6 +13,7 @@ import Swal from 'sweetalert2';
 import 'react-toastify/dist/ReactToastify.css';
 
 import LocationPhotoCapture from '@/components/LocationPhotoCapture';
+import EmployeeSelect from '@/components/EmployeeSelect';
 import {
   Calendar,
   Briefcase,
@@ -2775,110 +2776,18 @@ export default function LeavesPage() {
                       Apply For Employee *
                     </label>
                     <div className="relative">
-                      {selectedEmployee ? (
-                        <div className="flex items-center justify-between p-3 rounded-xl border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white font-semibold">
-                              {getEmployeeInitials(selectedEmployee!)}
-                            </div>
-                            <div>
-                              <div className="font-medium text-slate-900 dark:text-white">
-                                {getEmployeeName(selectedEmployee!)}
-                              </div>
-                              <div className="text-xs text-slate-500 dark:text-slate-400">
-                                {selectedEmployee!.emp_no}
-                              </div>
-                              <div className="flex flex-wrap gap-1.5 mt-1">
-                                {selectedEmployee!.department?.name && (
-                                  <span className="px-1.5 py-0.5 text-[10px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-800 dark:text-blue-300 rounded">
-                                    {selectedEmployee!.department.name}
-                                  </span>
-                                )}
-                                {selectedEmployee.designation?.name && (
-                                  <span className="px-1.5 py-0.5 text-[10px] font-medium bg-green-100 text-green-700 dark:bg-green-800 dark:text-green-300 rounded">
-                                    {selectedEmployee.designation.name}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedEmployee(null);
-                              setFormData(prev => ({ ...prev, contactNumber: '' }));
-                            }}
-                            className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                          >
-                            <X />
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="relative">
-                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <Search />
-                          </div>
-                          <input
-                            type="text"
-                            value={employeeSearch}
-                            onChange={(e) => {
-                              setEmployeeSearch(e.target.value);
-                              setShowEmployeeDropdown(true);
-                            }}
-                            onFocus={() => setShowEmployeeDropdown(true)}
-                            placeholder="Search by name, emp no, or department..."
-                            className="w-full pl-10 pr-4 py-2 sm:py-2.5 rounded-xl border border-slate-200 bg-white text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20"
-                            onBlur={() => {
-                              // Delay hiding to allow click event on options to fire
-                              setTimeout(() => setShowEmployeeDropdown(false), 200);
-                            }}
-                          />
-
-                          {/* Employee Dropdown */}
-                          {showEmployeeDropdown && (
-                            <div className="absolute z-10 w-full mt-1 max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-800">
-                              {isSearching ? (
-                                <div className="p-4 flex flex-col items-center justify-center text-slate-500 gap-2">
-                                  <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
-                                  <span className="text-xs">Searching employees...</span>
-                                </div>
-                              ) : filteredEmployees.length === 0 ? (
-                                <div className="p-4 text-center text-sm text-slate-500">
-                                  {employeeSearch
-                                    ? 'No employees found'
-                                    : 'Type to search employees'}
-                                </div>
-                              ) : (
-                                filteredEmployees.slice(0, 10).map((emp, idx) => (
-                                  <button
-                                    key={emp._id || emp.emp_no || `emp-${idx}`}
-                                    type="button"
-                                    onClick={() => handleSelectEmployee(emp)}
-                                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-700 text-left transition-colors border-b border-slate-100 dark:border-slate-700 last:border-0"
-                                  >
-                                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-slate-400 to-slate-500 flex items-center justify-center text-white text-sm font-medium">
-                                      {getEmployeeInitials(emp)}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                      <div className="font-medium text-slate-900 dark:text-white truncate">
-                                        {getEmployeeName(emp)}
-                                      </div>
-                                      <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                                        {emp.emp_no} • {emp.department?.name || 'No Department'} • {emp.designation?.name || 'No Designation'}
-                                      </div>
-                                    </div>
-                                  </button>
-                                ))
-                              )}
-                              {filteredEmployees.length > 10 && (
-                                <div className="px-4 py-2 text-center text-xs text-slate-500 bg-slate-50 dark:bg-slate-900">
-                                  Showing 10 of {filteredEmployees.length} results. Type more to filter.
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      )}
+                      <EmployeeSelect
+                        value={selectedEmployee?._id || selectedEmployee?.emp_no || ''}
+                        onChange={(emp) => {
+                          if (!emp) {
+                            setSelectedEmployee(null);
+                            setFormData(prev => ({ ...prev, contactNumber: '' }));
+                          } else {
+                            handleSelectEmployee(emp);
+                          }
+                        }}
+                        placeholder="Search by name, emp no, or department..."
+                      />
                     </div>
                   </div>
                 )}
@@ -3036,10 +2945,10 @@ export default function LeavesPage() {
                     const isCLFullDay = isCLSelected && !formData.isHalfDay && formData.fromDate && clBalanceForMonth !== null && clBalanceForMonth >= 0;
                     const maxToDateISO = isCLFullDay && formData.fromDate
                       ? (() => {
-                          const d = new Date(formData.fromDate);
-                          d.setDate(d.getDate() + Math.max(0, Math.floor(clBalanceForMonth!) - 1));
-                          return d.toISOString().split('T')[0];
-                        })()
+                        const d = new Date(formData.fromDate);
+                        d.setDate(d.getDate() + Math.max(0, Math.floor(clBalanceForMonth!) - 1));
+                        return d.toISOString().split('T')[0];
+                      })()
                       : undefined;
                     const toMax = maxToDateISO
                       ? (policyMax && maxToDateISO > policyMax ? policyMax : maxToDateISO)
