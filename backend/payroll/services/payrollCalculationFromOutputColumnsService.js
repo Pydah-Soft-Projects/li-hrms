@@ -208,31 +208,9 @@ async function runRequiredServices(required, record, employee, employeeId, month
     // skip here; will run when statutory column is resolved, with context for paid/total days (by config or by name)
   }
 
+  // Other deductions run in column loop so paid days can come from output column (same as statutory).
   if (required.needsOtherDeductions) {
-    const earnedSalary = num(record.earnings?.payableAmount ?? record.earnings?.earnedSalary);
-    const grossSalary = num(record.earnings?.grossSalary);
-    const attendanceData = {
-      presentDays: record.attendance?.presentDays ?? 0,
-      paidLeaveDays: record.attendance?.paidLeaveDays ?? 0,
-      odDays: record.attendance?.odDays ?? 0,
-      monthDays: record.attendance?.totalDaysInMonth ?? 30,
-    };
-    const includeMissing = await getIncludeMissingFlag(departmentId, divisionId);
-    const { deductions: baseDeductions } = await buildBaseComponents(departmentId, record.earnings?.basicPay ?? 0, attendanceData, employee?.division_id);
-    const normalized = (employee?.employeeDeductions || []).filter((o) => o && (o.masterId || o.name)).map((o) => ({ ...o, category: 'deduction' }));
-    const resolvedDeductions = mergeWithOverrides(baseDeductions, normalized, includeMissing);
-    let totalOther = 0;
-    const otherBreakdown = (resolvedDeductions || [])
-      .filter((d) => d && d.name)
-      .map((d) => {
-        const baseAmount = (d.base || '').toLowerCase() === 'gross' ? grossSalary : earnedSalary;
-        const amount = deductionService.calculateDeductionAmount(d, baseAmount, grossSalary, attendanceData);
-        totalOther += amount;
-        return { name: d.name, amount, type: d.type || 'fixed', base: (d.base || '').toLowerCase() === 'gross' ? 'gross' : 'basic' };
-      });
-    if (!record.deductions) record.deductions = {};
-    record.deductions.otherDeductions = otherBreakdown;
-    record.deductions.totalOtherDeductions = totalOther;
+    // skip here; will run when deduction column is resolved, with context for paid/total days
   }
 
   if (required.needsLoanAdvance) {
@@ -297,6 +275,33 @@ function getFromContextByHeaderNames(context, candidateHeaders) {
     return num;
   }
   return null;
+}
+
+/** Get paid days and total days from output column context (config header or auto-detect by name). For use by allowances and other deductions in dynamic payroll. */
+function getPaidDaysAndTotalDaysFromContext(colContext, payrollConfig) {
+  let paidDays = null;
+  let totalDaysInMonth = null;
+  const paidDaysHeader = payrollConfig && typeof payrollConfig.statutoryProratePaidDaysColumnHeader === 'string' && payrollConfig.statutoryProratePaidDaysColumnHeader.trim();
+  const totalDaysHeader = payrollConfig && typeof payrollConfig.statutoryProrateTotalDaysColumnHeader === 'string' && payrollConfig.statutoryProrateTotalDaysColumnHeader.trim();
+  if (paidDaysHeader && colContext && typeof colContext === 'object') {
+    const key = headerToKey(paidDaysHeader);
+    if (key && key in colContext) {
+      const v = colContext[key];
+      const n = typeof v === 'number' && !Number.isNaN(v) ? v : Number(v);
+      if (Number.isFinite(n) && n >= 0) paidDays = n;
+    }
+  }
+  if (paidDays == null && colContext) paidDays = getFromContextByHeaderNames(colContext, PAID_DAYS_HEADER_CANDIDATES);
+  if (totalDaysHeader && colContext && typeof colContext === 'object') {
+    const key = headerToKey(totalDaysHeader);
+    if (key && key in colContext) {
+      const v = colContext[key];
+      const n = typeof v === 'number' && !Number.isNaN(v) ? v : Number(v);
+      if (Number.isFinite(n) && n > 0) totalDaysInMonth = n;
+    }
+  }
+  if (totalDaysInMonth == null && colContext) totalDaysInMonth = getFromContextByHeaderNames(colContext, TOTAL_DAYS_HEADER_CANDIDATES);
+  return { paidDays, totalDaysInMonth };
 }
 
 // Aliases so formula variable names (e.g. extradays, month_days) match context keys from column headers.
@@ -509,8 +514,8 @@ async function resolveFieldValue(fieldPath, employee, employeeId, month, payRegi
     return record.earnings.otPay || 0;
   }
 
-  // earnings.allowances, totalAllowances, allowancesCumulative
-  if (path.startsWith('earnings.allowances') || path === 'earnings.totalAllowances' || path === 'earnings.allowancesCumulative') {
+  // earnings.allowances, totalAllowances, allowancesCumulative, grossSalary — use paid days from output column (context) when in dynamic payroll, same as statutory
+  if (path.startsWith('earnings.allowances') || path === 'earnings.totalAllowances' || path === 'earnings.allowancesCumulative' || path === 'earnings.grossSalary') {
     const basicPay = Number(record.earnings?.basicPay) || 0;
     const earnedSalary = Number(record.earnings?.payableAmount ?? record.earnings?.earnedSalary) || 0;
     const otPay = Number(record.earnings?.otPay) || 0;
@@ -521,6 +526,12 @@ async function resolveFieldValue(fieldPath, employee, employeeId, month, payRegi
       odDays: record.attendance?.odDays ?? 0,
       monthDays: record.attendance?.totalDaysInMonth ?? 30,
     };
+    const { paidDays: paidDaysFromCol, totalDaysInMonth: totalDaysFromCol } = getPaidDaysAndTotalDaysFromContext(colContext, payrollConfig);
+    if (paidDaysFromCol != null) attendanceData.totalPaidDays = paidDaysFromCol;
+    if (totalDaysFromCol != null && totalDaysFromCol > 0) {
+      attendanceData.totalDaysInMonth = totalDaysFromCol;
+      attendanceData.monthDays = totalDaysFromCol;
+    }
     const includeMissing = await getIncludeMissingFlag(departmentId, divisionId);
     const { allowances: baseAllowances } = await buildBaseComponents(departmentId, basicPay, attendanceData, employee?.division_id);
     const normalized = (employee?.employeeAllowances || []).filter((o) => o && (o.masterId || o.name)).map((o) => ({ ...o, category: 'allowance' }));
@@ -571,7 +582,7 @@ async function resolveFieldValue(fieldPath, employee, employeeId, month, payRegi
     return amt;
   }
 
-  // deductions.otherDeductions, totalOtherDeductions
+  // deductions.otherDeductions, totalOtherDeductions — use paid days from output column (context) when in dynamic payroll, same as statutory
   if (path.startsWith('deductions.other') || path === 'deductions.totalOtherDeductions') {
     const earnedSalary = Number(record.earnings?.payableAmount ?? record.earnings?.earnedSalary) || 0;
     const grossSalary = Number(record.earnings?.grossSalary) || 0;
@@ -581,6 +592,12 @@ async function resolveFieldValue(fieldPath, employee, employeeId, month, payRegi
       odDays: record.attendance?.odDays ?? 0,
       monthDays: record.attendance?.totalDaysInMonth ?? 30,
     };
+    const { paidDays: paidDaysFromCol, totalDaysInMonth: totalDaysFromCol } = getPaidDaysAndTotalDaysFromContext(colContext, payrollConfig);
+    if (paidDaysFromCol != null) attendanceData.totalPaidDays = paidDaysFromCol;
+    if (totalDaysFromCol != null && totalDaysFromCol > 0) {
+      attendanceData.totalDaysInMonth = totalDaysFromCol;
+      attendanceData.monthDays = totalDaysFromCol;
+    }
     const includeMissing = await getIncludeMissingFlag(departmentId, divisionId);
     const { deductions: baseDeductions } = await buildBaseComponents(departmentId, record.earnings?.basicPay || 0, attendanceData, employee?.division_id);
     const normalized = (employee?.employeeDeductions || []).filter((o) => o && (o.masterId || o.name)).map((o) => ({ ...o, category: 'deduction' }));
@@ -892,4 +909,5 @@ module.exports = {
   resolveFieldValue,
   getRequiredServices,
   extractFormulaVariableNames,
+  getPaidDaysAndTotalDaysFromContext,
 };

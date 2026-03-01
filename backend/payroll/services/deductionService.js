@@ -738,7 +738,7 @@ function getResolvedDeductionRule(deductionMaster, departmentId, divisionId = nu
  * @param {Object} rule - Resolved rule
  * @param {Number} basicPay - Basic pay
  * @param {Number} grossSalary - Gross salary (for percentage base = 'gross')
- * @param {Object} attendanceData - Attendance data for proration { presentDays, paidLeaveDays, odDays, monthDays }
+ * @param {Object} attendanceData - Attendance data for proration { presentDays, paidLeaveDays, odDays, monthDays } or from dynamic payroll { totalPaidDays, totalDaysInMonth } (from output column)
  * @returns {Number} Deduction amount
  */
 function calculateDeductionAmount(rule, basicPay, grossSalary = null, attendanceData = null) {
@@ -751,15 +751,16 @@ function calculateDeductionAmount(rule, basicPay, grossSalary = null, attendance
   if (rule.type === 'fixed') {
     amount = rule.amount || 0;
 
-    // Prorate based on paid days: present + paid leave. Present days already include OD, so do not add odDays again.
+    // Prorate: use totalPaidDays/totalDaysInMonth from dynamic payroll output column when provided; else present + paid leave + OD.
     if (rule.basedOnPresentDays && attendanceData) {
-      const { presentDays = 0, paidLeaveDays = 0, monthDays = 30 } = attendanceData;
-      const totalPaidDays = presentDays + paidLeaveDays;
+      const { presentDays = 0, paidLeaveDays = 0, odDays = 0, monthDays = 30, totalPaidDays: fromColumn, totalDaysInMonth: totalDaysFromColumn } = attendanceData;
+      const totalPaidDays = typeof fromColumn === 'number' && fromColumn >= 0 ? fromColumn : (presentDays + paidLeaveDays + odDays);
+      const totalDays = (typeof totalDaysFromColumn === 'number' && totalDaysFromColumn > 0) ? totalDaysFromColumn : monthDays;
 
-      if (monthDays > 0) {
-        const perDayAmount = amount / monthDays;
+      if (totalDays > 0) {
+        const perDayAmount = amount / totalDays;
         amount = perDayAmount * totalPaidDays;
-        console.log(`[Deduction] Prorated ${rule.name || 'deduction'}: ${rule.amount} / ${monthDays} * ${totalPaidDays} = ${amount}`);
+        console.log(`[Deduction] Prorated ${rule.name || 'deduction'}: ${rule.amount} / ${totalDays} * ${totalPaidDays} = ${amount}`);
       }
     }
   } else if (rule.type === 'percentage') {

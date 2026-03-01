@@ -517,7 +517,7 @@ export default function PayrollConfigPage() {
                 Paysheet flow (payroll flow configuration)
               </h2>
               <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                This is the actual payroll flow: add columns in order. Field values (OT pay, attendance deduction, basic pay, etc.) come from the dedicated functions in the services and controllers—for the respective employee we get those values from them. Use &quot;Add cumulative from step&quot; to place Allowances cumulative, Deductions cumulative, or Statutory cumulative for that employee.
+                This is the actual payroll flow: add columns in order. Field values (OT pay, attendance deduction, basic pay, etc.) come from the dedicated functions in the services and controllers—for the respective employee we get those values from them. Use &quot;Add cumulative from step&quot; to place Allowances cumulative, Deductions cumulative, or Statutory cumulative for that employee. <strong>Include a &quot;Paid Days&quot; or &quot;Present days&quot; column before those cumulatives</strong> so statutory, allowances and deductions use it for proration (see section below).
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2 shrink-0">
@@ -733,15 +733,26 @@ export default function PayrollConfigPage() {
           )}
         </div>
 
-        {/* Statutory proration – use which output column's value as paid days for statutory (ESI/PF/PT) */}
+        {/* Required column for proration: statutory, allowances, deductions all use this paid days column when present */}
         <div className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white dark:bg-slate-900/80 shadow-sm overflow-hidden">
           <div className="px-5 sm:px-6 py-4 border-b border-slate-100 dark:border-slate-700/80">
             <h2 className="text-base font-semibold text-slate-900 dark:text-white">
-              Statutory proration (paid / working days)
+              Required column for proration (statutory, allowances, deductions)
             </h2>
             <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-              Choose which <strong>paysheet column</strong> value to use as &quot;paid days&quot; (or working days) when prorating statutory deductions (ESI, PF, Profession Tax). That column must appear <strong>before</strong> the Statutory cumulative column in the list above. Leave empty to use attendance-based paid days.
+              The <strong>paid days</strong> (or working days) column value is used to prorate <strong>statutory deductions</strong> (ESI, PF, Profession Tax), <strong>allowances</strong>, and <strong>other deductions</strong>. You can select a column here, or leave empty: <strong>the system auto-detects by column name</strong> (e.g. &quot;Paid Days&quot;, &quot;Present days&quot;, &quot;Working Days&quot;, &quot;Month days&quot;). The chosen or detected column must appear <strong>before</strong> Allowances cumulative, Deductions cumulative, and Statutory cumulative in the list above.
             </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-800">
+                Statutory (ESI, PF, PT)
+              </span>
+              <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-800">
+                Allowances
+              </span>
+              <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-800">
+                Other deductions
+              </span>
+            </div>
           </div>
           <div className="px-5 sm:px-6 py-4 space-y-4">
             <div>
@@ -753,7 +764,7 @@ export default function PayrollConfigPage() {
                 onChange={(e) => setStatutoryProratePaidDaysColumnHeader(e.target.value)}
                 className="w-full max-w-md px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
               >
-                <option value="">Don't use column (use attendance)</option>
+                <option value="">Auto-detect by name (Paid Days, Present days, …)</option>
                 {[...outputColumns]
                   .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
                   .map((c) => {
@@ -775,7 +786,7 @@ export default function PayrollConfigPage() {
                 onChange={(e) => setStatutoryProrateTotalDaysColumnHeader(e.target.value)}
                 className="w-full max-w-md px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
               >
-                <option value="">Use default (month days from attendance)</option>
+                <option value="">Auto-detect by name (Month days, Total days, …)</option>
                 {[...outputColumns]
                   .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
                   .map((c) => {
