@@ -66,6 +66,8 @@ export default function PayrollConfigPage() {
   const [formulaHelpOpen, setFormulaHelpOpen] = useState(false);
   const [selectedStepIndex, setSelectedStepIndex] = useState<number | null>(null);
   const [statutoryConfig, setStatutoryConfig] = useState<StatutoryDeductionConfig | null>(null);
+  const [statutoryProratePaidDaysColumnHeader, setStatutoryProratePaidDaysColumnHeader] = useState('');
+  const [statutoryProrateTotalDaysColumnHeader, setStatutoryProrateTotalDaysColumnHeader] = useState('');
 
   const loadConfig = useCallback(async () => {
     setLoading(true);
@@ -104,6 +106,8 @@ export default function PayrollConfigPage() {
       } else {
         setOutputColumns([]);
       }
+      setStatutoryProratePaidDaysColumnHeader(data?.statutoryProratePaidDaysColumnHeader ?? '');
+      setStatutoryProrateTotalDaysColumnHeader(data?.statutoryProrateTotalDaysColumnHeader ?? '');
     } catch (e) {
       console.error(e);
       toast.error('Failed to load payroll config');
@@ -139,6 +143,8 @@ export default function PayrollConfigPage() {
         enabled,
         steps: steps.map((s, i) => ({ ...s, order: i })),
         outputColumns: normalizedColumns,
+        statutoryProratePaidDaysColumnHeader: statutoryProratePaidDaysColumnHeader.trim(),
+        statutoryProrateTotalDaysColumnHeader: statutoryProrateTotalDaysColumnHeader.trim(),
       };
       await api.putPayrollConfig(payload);
       toast.success('Payroll configuration saved');
@@ -725,6 +731,64 @@ export default function PayrollConfigPage() {
               <div className="h-8 w-36 rounded-lg bg-slate-200 dark:bg-slate-700 animate-pulse" />
             </div>
           )}
+        </div>
+
+        {/* Statutory proration – use which output column's value as paid days for statutory (ESI/PF/PT) */}
+        <div className="rounded-2xl border border-slate-200/80 dark:border-slate-700/80 bg-white dark:bg-slate-900/80 shadow-sm overflow-hidden">
+          <div className="px-5 sm:px-6 py-4 border-b border-slate-100 dark:border-slate-700/80">
+            <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+              Statutory proration (paid / working days)
+            </h2>
+            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+              Choose which <strong>paysheet column</strong> value to use as &quot;paid days&quot; (or working days) when prorating statutory deductions (ESI, PF, Profession Tax). That column must appear <strong>before</strong> the Statutory cumulative column in the list above. Leave empty to use attendance-based paid days.
+            </p>
+          </div>
+          <div className="px-5 sm:px-6 py-4 space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">
+                Paid days column (header)
+              </label>
+              <select
+                value={statutoryProratePaidDaysColumnHeader}
+                onChange={(e) => setStatutoryProratePaidDaysColumnHeader(e.target.value)}
+                className="w-full max-w-md px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
+              >
+                <option value="">Don't use column (use attendance)</option>
+                {[...outputColumns]
+                  .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+                  .map((c) => {
+                    const header = (c.header && String(c.header).trim()) || `Column ${(c.order ?? 0) + 1}`;
+                    return (
+                      <option key={header + (c.order ?? 0)} value={header}>
+                        {header}
+                      </option>
+                    );
+                  })}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">
+                Total days column (optional)
+              </label>
+              <select
+                value={statutoryProrateTotalDaysColumnHeader}
+                onChange={(e) => setStatutoryProrateTotalDaysColumnHeader(e.target.value)}
+                className="w-full max-w-md px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
+              >
+                <option value="">Use default (month days from attendance)</option>
+                {[...outputColumns]
+                  .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+                  .map((c) => {
+                    const header = (c.header && String(c.header).trim()) || `Column ${(c.order ?? 0) + 1}`;
+                    return (
+                      <option key={header + (c.order ?? 0)} value={header}>
+                        {header}
+                      </option>
+                    );
+                  })}
+              </select>
+            </div>
+          </div>
         </div>
       </div>
     </div>

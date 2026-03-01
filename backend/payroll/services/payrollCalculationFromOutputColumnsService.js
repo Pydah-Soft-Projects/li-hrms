@@ -117,8 +117,9 @@ function getRequiredServices(outputColumns) {
 /**
  * Run only the services that are required by output columns; fill record so we don't depend on column order.
  * Order: basicPay (uses employee.gross_salary) → OT → allowances → attendance deduction → statutory → other deductions → loanAdvance → arrears.
+ * Statutory is always skipped here and run in the column loop so paid/total days can come from output columns (by config header or auto-detect by name).
  */
-async function runRequiredServices(required, record, employee, employeeId, month, payRegisterSummary, attendanceSummary, departmentId, divisionId) {
+async function runRequiredServices(required, record, employee, employeeId, month, payRegisterSummary, attendanceSummary, departmentId, divisionId, config = null) {
   if (!record) return;
 
   const num = (v) => (typeof v === 'number' && !Number.isNaN(v) ? v : Number(v) || 0);
@@ -202,19 +203,9 @@ async function runRequiredServices(required, record, employee, employeeId, month
     record.attendance.attendanceDeductionDays = attendanceDeductionResult.breakdown?.daysDeducted ?? 0;
   }
 
+  // Statutory is run in the column loop so we can use output column values (config header or auto-detect by name like "Paid Days", "Present Days").
   if (required.needsStatutory) {
-    const basicPay = num(record.earnings?.basicPay);
-    const grossSalary = num(record.earnings?.grossSalary);
-    const earnedSalary = num(record.earnings?.payableAmount ?? record.earnings?.earnedSalary);
-    const statutoryResult = await statutoryDeductionService.calculateStatutoryDeductions({
-      basicPay, grossSalary, earnedSalary, dearnessAllowance: 0, employee,
-    });
-    if (!record.deductions) record.deductions = {};
-    record.deductions.statutoryDeductions = (statutoryResult.breakdown || []).map((s) => ({
-      name: s.name, code: s.code, employeeAmount: s.employeeAmount, employerAmount: s.employerAmount,
-    }));
-    record.deductions.statutoryCumulative = statutoryResult.totalEmployeeShare ?? 0;
-    record.deductions.totalStatutoryEmployee = record.deductions.statutoryCumulative;
+    // skip here; will run when statutory column is resolved, with context for paid/total days (by config or by name)
   }
 
   if (required.needsOtherDeductions) {
@@ -267,7 +258,7 @@ async function runRequiredServices(required, record, employee, employeeId, month
   if (required.needsAttendanceDeduction || required.needsStatutory || required.needsOtherDeductions || required.needsLoanAdvance) {
     const att = num(record.deductions?.attendanceDeduction);
     const other = num(record.deductions?.totalOtherDeductions);
-    const statutory = num(record.deductions?.statutoryCumulative);
+    const statutory = num(record.deductions?.statutoryCumulative); // may be 0 if prorateByColumn (filled in column loop)
     const loanEMI = num(record.loanAdvance?.totalEMI);
     const advance = num(record.loanAdvance?.advanceDeduction);
     const total = att + other + statutory + loanEMI + advance;
@@ -280,6 +271,32 @@ async function runRequiredServices(required, record, employee, employeeId, month
 function headerToKey(header) {
   if (!header || typeof header !== 'string') return '';
   return header.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') || 'col';
+}
+
+/** Candidate column header names for "paid days" / "working days". First match in context is used for statutory proration (auto-detect by name). */
+const PAID_DAYS_HEADER_CANDIDATES = [
+  'Paid Days', 'Present Days', 'Working Days', 'Payable Shifts', 'Total Paid Days',
+  'Paid days', 'Present days', 'Working days', 'Payable shifts',
+  'totalPaidDays', 'presentDays', 'paidDays', 'workingDays', 'payableShifts',
+];
+/** Candidate column header names for "total days in month". */
+const TOTAL_DAYS_HEADER_CANDIDATES = [
+  'Month days', 'Total Days', 'Total days in month', 'Days in month', 'Month Days',
+  'monthDays', 'totalDays', 'totalDaysInMonth', 'daysInMonth',
+];
+
+/** Get numeric value from context by trying candidate header names (auto-detect by name, not by config id). Returns null if none found. */
+function getFromContextByHeaderNames(context, candidateHeaders) {
+  if (!context || typeof context !== 'object') return null;
+  for (const name of candidateHeaders) {
+    const key = headerToKey(name);
+    if (!key || !(key in context)) continue;
+    const val = context[key];
+    const num = typeof val === 'number' && !Number.isNaN(val) ? val : Number(val);
+    if (!Number.isFinite(num) || num < 0) continue;
+    return num;
+  }
+  return null;
 }
 
 // Aliases so formula variable names (e.g. extradays, month_days) match context keys from column headers.
@@ -395,9 +412,10 @@ async function buildAttendanceFromSummary(payRegisterSummary, employee, month) {
  * Resolve a field value: from employee, from attendance (pay register), or by calling the right service.
  * Fills record with the computed block when a service is called.
  */
-async function resolveFieldValue(fieldPath, employee, employeeId, month, payRegisterSummary, record, attendanceSummary, departmentId, divisionId) {
+async function resolveFieldValue(fieldPath, employee, employeeId, month, payRegisterSummary, record, attendanceSummary, departmentId, divisionId, options = {}) {
   const path = (fieldPath || '').trim();
   if (!path) return 0;
+  const { context: colContext, config: payrollConfig } = options;
 
   // attendance.attendanceDeductionDays — ensure attendance deduction is computed first (column-order independent)
   if (path === 'attendance.attendanceDeductionDays' || path === 'attendanceDeductionDays') {
@@ -584,12 +602,39 @@ async function resolveFieldValue(fieldPath, employee, employeeId, month, payRegi
   }
 
   // deductions.statutoryDeductions, statutoryCumulative
+  // Paid/total days for proration: 1) explicit config header if set, 2) else auto-detect by column name (e.g. "Paid Days", "Present Days"), 3) else record.attendance.
   if (path.startsWith('deductions.statutory')) {
     const basicPay = Number(record.earnings?.basicPay) || 0;
     const grossSalary = Number(record.earnings?.grossSalary) || 0;
     const earnedSalary = Number(record.earnings?.payableAmount ?? record.earnings?.earnedSalary) || 0;
+    let totalDaysInMonth = Number(record.attendance?.totalDaysInMonth) || 30;
+    let paidDays;
+    const paidDaysHeader = payrollConfig && typeof payrollConfig.statutoryProratePaidDaysColumnHeader === 'string' && payrollConfig.statutoryProratePaidDaysColumnHeader.trim();
+    const totalDaysHeader = payrollConfig && typeof payrollConfig.statutoryProrateTotalDaysColumnHeader === 'string' && payrollConfig.statutoryProrateTotalDaysColumnHeader.trim();
+    if (paidDaysHeader && colContext && typeof colContext === 'object') {
+      const paidDaysKey = headerToKey(paidDaysHeader);
+      const fromCol = colContext[paidDaysKey];
+      paidDays = typeof fromCol === 'number' && !Number.isNaN(fromCol) ? fromCol : (Number(fromCol) || 0);
+    } else {
+      const autoPaid = getFromContextByHeaderNames(colContext, PAID_DAYS_HEADER_CANDIDATES);
+      paidDays = autoPaid != null ? autoPaid : (
+        (typeof record.attendance?.totalPaidDays === 'number' && record.attendance.totalPaidDays >= 0)
+          ? record.attendance.totalPaidDays
+          : ((Number(record.attendance?.presentDays) || 0) + (Number(record.attendance?.paidLeaveDays) || 0) + (Number(record.attendance?.weeklyOffs) || 0) + (Number(record.attendance?.holidays) || 0))
+      );
+    }
+    if (totalDaysHeader && colContext && typeof colContext === 'object') {
+      const totalDaysKey = headerToKey(totalDaysHeader);
+      const fromCol = colContext[totalDaysKey];
+      const t = typeof fromCol === 'number' && !Number.isNaN(fromCol) ? fromCol : (Number(fromCol) || 0);
+      if (t > 0) totalDaysInMonth = t;
+    } else {
+      const autoTotal = getFromContextByHeaderNames(colContext, TOTAL_DAYS_HEADER_CANDIDATES);
+      if (autoTotal != null && autoTotal > 0) totalDaysInMonth = autoTotal;
+    }
     const statutoryResult = await statutoryDeductionService.calculateStatutoryDeductions({
       basicPay, grossSalary, earnedSalary, dearnessAllowance: 0, employee,
+      paidDays, totalDaysInMonth,
     });
     const totalStatutory = statutoryResult.totalEmployeeShare || 0;
     if (!record.deductions) record.deductions = {};
@@ -724,7 +769,7 @@ async function calculatePayrollFromOutputColumns(employeeId, month, userId, opti
   record.earnings.basic_pay = employeeBasicPay;
 
   const required = getRequiredServices(sorted);
-  await runRequiredServices(required, record, employee, employeeId, month, payRegisterSummary, attendanceSummary, departmentId, divisionId);
+  await runRequiredServices(required, record, employee, employeeId, month, payRegisterSummary, attendanceSummary, departmentId, divisionId, config);
 
   const context = { ...outputColumnService.getContextFromPayslip(record) };
   const row = {};
@@ -744,7 +789,8 @@ async function calculatePayrollFromOutputColumns(employeeId, month, userId, opti
       } else {
         val = await resolveFieldValue(
           fieldPath, employee, employeeId, month, payRegisterSummary,
-          record, attendanceSummary, departmentId, divisionId
+          record, attendanceSummary, departmentId, divisionId,
+          { context, config }
         );
       }
       if (fieldPath) setValueByPath(record, fieldPath, val);
@@ -752,6 +798,17 @@ async function calculatePayrollFromOutputColumns(employeeId, month, userId, opti
     row[header] = val;
     const numForContext = typeof val === 'number' && !Number.isNaN(val) ? val : (Number(val) || 0);
     for (const k of getContextKeysAndAliases(header)) context[k] = numForContext;
+  }
+
+  // Recompute total deductions from record (statutory may have been set in column loop when prorate-by-column is used)
+  if (record.deductions) {
+    const att = Number(record.deductions.attendanceDeduction) || 0;
+    const other = Number(record.deductions.totalOtherDeductions) || 0;
+    const statutory = Number(record.deductions.statutoryCumulative) || 0;
+    const loanEMI = Number(record.loanAdvance?.totalEMI) || 0;
+    const advance = Number(record.loanAdvance?.advanceDeduction) || 0;
+    record.deductions.deductionsCumulative = att + other + statutory + loanEMI + advance;
+    record.deductions.totalDeductions = record.deductions.deductionsCumulative;
   }
 
   // Ensure net and roundOff

@@ -46,6 +46,10 @@ const payrollConfigurationSchema = new mongoose.Schema({
   enabled: { type: Boolean, default: false },
   steps: { type: [stepSchema], default: [] },
   outputColumns: { type: [outputColumnSchema], default: [] },
+  /** Header of the output column whose value is used as paid days for statutory proration (e.g. "Paid Days", "Present Days"). That column must appear before statutory columns in order. */
+  statutoryProratePaidDaysColumnHeader: { type: String, default: '' },
+  /** Header of the output column whose value is used as total days in month for statutory proration. If empty, record.attendance.totalDaysInMonth is used. */
+  statutoryProrateTotalDaysColumnHeader: { type: String, default: '' },
   updatedAt: { type: Date, default: Date.now },
 }, { timestamps: true });
 
@@ -98,6 +102,12 @@ function normalizeConfigPayload(payload = {}) {
       const formula = source === 'formula' ? formulaStr : '';
       return { header, source, field, formula, order };
     });
+  }
+  if (payload.statutoryProratePaidDaysColumnHeader !== undefined) {
+    update.statutoryProratePaidDaysColumnHeader = String(payload.statutoryProratePaidDaysColumnHeader || '').trim();
+  }
+  if (payload.statutoryProrateTotalDaysColumnHeader !== undefined) {
+    update.statutoryProrateTotalDaysColumnHeader = String(payload.statutoryProrateTotalDaysColumnHeader || '').trim();
   }
   return update;
 }
