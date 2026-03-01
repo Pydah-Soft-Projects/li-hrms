@@ -1,13 +1,14 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { api } from '@/lib/api';
+import { useState, useEffect, useMemo } from 'react';
+import { api, Department, Division, Designation } from '@/lib/api';
 import { auth } from '@/lib/auth';
 import { toast, ToastContainer } from 'react-toastify';
 import Swal from 'sweetalert2';
 import 'react-toastify/dist/ReactToastify.css';
 import Spinner from '@/components/Spinner';
 import LocationPhotoCapture from '@/components/LocationPhotoCapture';
+import EmployeeSelect from '@/components/EmployeeSelect';
 import { Loader2 } from 'lucide-react';
 
 
@@ -449,10 +450,49 @@ export default function LeavesPage() {
     capturedAt: Date;
   } | null>(null);
 
+  // Filter Dropdown States
+  const [searchTerm, setSearchTerm] = useState('');
+  const [divisions, setDivisions] = useState<Division[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [designations, setDesignations] = useState<Designation[]>([]);
+
+  const [selectedDivisionFilter, setSelectedDivisionFilter] = useState('');
+  const [selectedDepartmentFilter, setSelectedDepartmentFilter] = useState('');
+  const [selectedDesignationFilter, setSelectedDesignationFilter] = useState('');
+
+  const loadFilterData = async () => {
+    try {
+      const [divRes, deptRes, desigRes] = await Promise.all([
+        api.getDivisions(),
+        api.getDepartments(),
+        api.getAllDesignations()
+      ]);
+
+      if (divRes.success && divRes.data) setDivisions(divRes.data);
+      if (deptRes.success && deptRes.data) setDepartments(deptRes.data as any[]);
+      if (desigRes.success && desigRes.data) setDesignations(desigRes.data);
+    } catch (err) {
+      console.error('Failed to load filter options:', err);
+    }
+  };
+
+  // Filtered departments based on selected division
+  const filteredDepartments = useMemo(() => {
+    if (!selectedDivisionFilter) return departments;
+    const div = divisions.find(d => String(d._id) === selectedDivisionFilter);
+    if (!div || !div.departments) return departments;
+    return departments.filter(dept =>
+      (div.departments || []).some(d =>
+        (typeof d === 'string' ? d : String((d as any)._id)) === String(dept._id)
+      )
+    );
+  }, [selectedDivisionFilter, divisions, departments]);
+
   useEffect(() => {
     loadData();
     loadTypes();
     loadEmployees();
+    loadFilterData();
   }, []);
 
   const loadData = async () => {
@@ -1194,6 +1234,33 @@ export default function LeavesPage() {
 
   const totalPending = pendingLeaves.length + pendingODs.length;
 
+  const applyFilters = (item: LeaveApplication | ODApplication) => {
+    if (searchTerm) {
+      const lowerSearch = searchTerm.toLowerCase();
+      const empName = item.employeeId?.employee_name || item.employeeId?.first_name || '';
+      const empNo = item.emp_no || item.employeeId?.emp_no || '';
+      if (!empName.toLowerCase().includes(lowerSearch) && !empNo.toLowerCase().includes(lowerSearch)) {
+        return false;
+      }
+    }
+
+    const emp = item.employeeId as any;
+    if (selectedDivisionFilter) {
+      const divId = typeof emp?.division === 'object' ? emp?.division?._id : (emp?.division_id || emp?.division);
+      if (String(divId) !== String(selectedDivisionFilter)) return false;
+    }
+    if (selectedDepartmentFilter) {
+      const deptId = typeof emp?.department === 'object' ? emp?.department?._id : (emp?.department_id || emp?.department);
+      if (String(deptId) !== String(selectedDepartmentFilter)) return false;
+    }
+    if (selectedDesignationFilter) {
+      const desigId = typeof emp?.designation === 'object' ? emp?.designation?._id : (emp?.designation_id || emp?.designation);
+      if (String(desigId) !== String(selectedDesignationFilter)) return false;
+    }
+
+    return true;
+  };
+
   const canPerformAction = (item: LeaveApplication | ODApplication) => {
     const user = auth.getUser() as any;
     if (!user || user.role === 'employee') return false;
@@ -1339,6 +1406,58 @@ export default function LeavesPage() {
         </div>
       </div>
 
+      {/* Filters */}
+      <div className="mb-6 flex flex-wrap gap-4 items-center">
+        <select
+          value={selectedDivisionFilter}
+          onChange={(e) => {
+            setSelectedDivisionFilter(e.target.value);
+            setSelectedDepartmentFilter('');
+          }}
+          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+        >
+          <option value="">All Divisions</option>
+          {divisions.map((div) => (
+            <option key={div._id} value={div._id}>{div.name}</option>
+          ))}
+        </select>
+
+        <select
+          value={selectedDepartmentFilter}
+          onChange={(e) => setSelectedDepartmentFilter(e.target.value)}
+          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+        >
+          <option value="">All Departments</option>
+          {filteredDepartments.map((dept) => (
+            <option key={dept._id} value={dept._id}>{dept.name}</option>
+          ))}
+        </select>
+
+        <select
+          value={selectedDesignationFilter}
+          onChange={(e) => setSelectedDesignationFilter(e.target.value)}
+          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+        >
+          <option value="">All Designations</option>
+          {designations.map((desig) => (
+            <option key={desig._id} value={desig._id}>{desig.name}</option>
+          ))}
+        </select>
+
+        <div className="relative flex-grow max-w-sm">
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+            <SearchIcon />
+          </div>
+          <input
+            type="text"
+            placeholder="Search employees..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="block w-full rounded-lg border border-slate-300 bg-white pl-10 pr-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+          />
+        </div>
+      </div>
+
       {/* Content */}
       <div className="rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800 overflow-hidden">
         {activeTab === 'leaves' && (
@@ -1356,7 +1475,7 @@ export default function LeavesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                {leaves.map((leave) => (
+                {leaves.filter(applyFilters).map((leave) => (
                   <tr
                     key={leave._id}
                     className="hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer transition-colors"
@@ -1417,7 +1536,7 @@ export default function LeavesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                {ods.map((od) => (
+                {ods.filter(applyFilters).map((od) => (
                   <tr
                     key={od._id}
                     className="hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer transition-colors"
@@ -1473,7 +1592,7 @@ export default function LeavesPage() {
                   Pending Leaves ({pendingLeaves.length})
                 </h3>
                 <div className="space-y-3">
-                  {pendingLeaves.map((leave) => (
+                  {pendingLeaves.filter(applyFilters).map((leave) => (
                     <div key={leave._id} className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-900/50">
                       <div className="flex items-start justify-between gap-4">
                         <div className="flex-1">
@@ -1521,7 +1640,7 @@ export default function LeavesPage() {
                   Pending ODs ({pendingODs.length})
                 </h3>
                 <div className="space-y-3">
-                  {pendingODs.map((od) => (
+                  {pendingODs.filter(applyFilters).map((od) => (
                     <div key={od._id} className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-900/50">
                       <div className="flex items-start justify-between gap-4">
                         <div className="flex-1">
@@ -1617,99 +1736,18 @@ export default function LeavesPage() {
                   Apply For Employee *
                 </label>
                 <div className="relative">
-                  {selectedEmployee ? (
-                    <div className="flex items-center justify-between p-3 rounded-xl border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white font-semibold">
-                          {getEmployeeInitials(selectedEmployee)}
-                        </div>
-                        <div>
-                          <div className="font-medium text-slate-900 dark:text-white">
-                            {getEmployeeName(selectedEmployee)}
-                          </div>
-                          <div className="text-xs text-slate-500 dark:text-slate-400">
-                            {selectedEmployee.emp_no}
-                          </div>
-                          <div className="flex flex-wrap gap-1.5 mt-1">
-                            {selectedEmployee.department?.name && (
-                              <span className="px-1.5 py-0.5 text-[10px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-800 dark:text-blue-300 rounded">
-                                {selectedEmployee.department.name}
-                              </span>
-                            )}
-                            {selectedEmployee.designation?.name && (
-                              <span className="px-1.5 py-0.5 text-[10px] font-medium bg-green-100 text-green-700 dark:bg-green-800 dark:text-green-300 rounded">
-                                {selectedEmployee.designation.name}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedEmployee(null);
-                          setFormData(prev => ({ ...prev, contactNumber: '' }));
-                        }}
-                        className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                      >
-                        <XIcon />
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <SearchIcon />
-                      </div>
-                      <input
-                        type="text"
-                        value={employeeSearch}
-                        onChange={(e) => {
-                          setEmployeeSearch(e.target.value);
-                          setShowEmployeeDropdown(true);
-                        }}
-                        onFocus={() => setShowEmployeeDropdown(true)}
-                        placeholder="Search by name, emp no, or department..."
-                        className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20"
-                      />
-
-                      {/* Employee Dropdown */}
-                      {showEmployeeDropdown && (
-                        <div className="absolute z-10 w-full mt-1 max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-800">
-                          {filteredEmployees.length === 0 ? (
-                            <div className="p-4 text-center text-sm text-slate-500">
-                              {employeeSearch ? 'No employees found' : 'Type to search employees'}
-                            </div>
-                          ) : (
-                            filteredEmployees.slice(0, 10).map((emp, idx) => (
-                              <button
-                                key={emp._id || emp.emp_no || `emp-${idx}`}
-                                type="button"
-                                onClick={() => handleSelectEmployee(emp)}
-                                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-700 text-left transition-colors border-b border-slate-100 dark:border-slate-700 last:border-0"
-                              >
-                                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-slate-400 to-slate-500 flex items-center justify-center text-white text-sm font-medium">
-                                  {getEmployeeInitials(emp)}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="font-medium text-slate-900 dark:text-white truncate">
-                                    {getEmployeeName(emp)}
-                                  </div>
-                                  <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                                    {emp.emp_no} • {emp.department?.name || 'No Department'} • {emp.designation?.name || 'No Designation'}
-                                  </div>
-                                </div>
-                              </button>
-                            ))
-                          )}
-                          {filteredEmployees.length > 10 && (
-                            <div className="px-4 py-2 text-center text-xs text-slate-500 bg-slate-50 dark:bg-slate-900">
-                              Showing 10 of {filteredEmployees.length} results. Type more to filter.
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  <EmployeeSelect
+                    value={selectedEmployee?._id || selectedEmployee?.emp_no || ''}
+                    onChange={(emp) => {
+                      if (!emp) {
+                        setSelectedEmployee(null);
+                        setFormData(prev => ({ ...prev, contactNumber: '' }));
+                      } else {
+                        handleSelectEmployee(emp);
+                      }
+                    }}
+                    placeholder="Search by name, emp no, or department..."
+                  />
                 </div>
               </div>
 

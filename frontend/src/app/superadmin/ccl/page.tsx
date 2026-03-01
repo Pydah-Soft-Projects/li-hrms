@@ -1,11 +1,12 @@
 'use client';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import React, { useState, useEffect } from 'react';
-import { api } from '@/lib/api';
+import React, { useState, useEffect, useMemo } from 'react';
+import { api, Department, Division, Designation } from '@/lib/api';
 import Spinner from '@/components/Spinner';
 import { PlusIcon, Check, X } from 'lucide-react';
 import WorkflowTimeline from '@/components/WorkflowTimeline';
+import EmployeeSelect from '@/components/EmployeeSelect';
 
 const StatusBadge = ({ status }: { status: string }) => {
   const isApproved = status === 'approved';
@@ -84,6 +85,16 @@ export default function SuperadminCCLPage() {
 
   const [filters, setFilters] = useState({ status: '', fromDate: '', toDate: '' });
 
+  // Filter Select states
+  const [searchTerm, setSearchTerm] = useState('');
+  const [divisions, setDivisions] = useState<Division[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [designations, setDesignations] = useState<Designation[]>([]);
+
+  const [selectedDivisionFilter, setSelectedDivisionFilter] = useState('');
+  const [selectedDepartmentFilter, setSelectedDepartmentFilter] = useState('');
+  const [selectedDesignationFilter, setSelectedDesignationFilter] = useState('');
+
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split('T')[0],
     isHalfDay: false,
@@ -121,6 +132,38 @@ export default function SuperadminCCLPage() {
 
   useEffect(() => { loadData(); }, [activeTab]);
   useEffect(() => { if (activeTab === 'all') loadData(); }, [filters.status, filters.fromDate, filters.toDate]);
+
+  const loadFilterData = async () => {
+    try {
+      const [divRes, deptRes, desigRes] = await Promise.all([
+        api.getDivisions(),
+        api.getDepartments(),
+        api.getAllDesignations()
+      ]);
+
+      if (divRes.success && divRes.data) setDivisions(divRes.data);
+      if (deptRes.success && deptRes.data) setDepartments(deptRes.data as any[]);
+      if (desigRes.success && desigRes.data) setDesignations(desigRes.data);
+    } catch (err) {
+      console.error('Failed to load filter options:', err);
+    }
+  };
+
+  useEffect(() => {
+    loadFilterData();
+  }, []);
+
+  // Filtered departments based on selected division
+  const filteredDepartments = useMemo(() => {
+    if (!selectedDivisionFilter) return departments;
+    const div = divisions.find(d => String(d._id) === selectedDivisionFilter);
+    if (!div || !div.departments) return departments;
+    return departments.filter(dept =>
+      (div.departments || []).some(d =>
+        (typeof d === 'string' ? d : String((d as any)._id)) === String(dept._id)
+      )
+    );
+  }, [selectedDivisionFilter, divisions, departments]);
 
   useEffect(() => {
     if (!showForm) return;
@@ -263,32 +306,78 @@ export default function SuperadminCCLPage() {
             Pending Approvals {pendingCCLs.length > 0 && `(${pendingCCLs.length})`}
           </button>
         </div>
-        {activeTab === 'all' && (
-          <div className="flex flex-wrap items-center gap-2">
-            <select
-              value={filters.status}
-              onChange={(e) => setFilters((p) => ({ ...p, status: e.target.value }))}
-              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-            >
-              <option value="">All status</option>
-              <option value="pending">Pending</option>
-              <option value="approved">Approved</option>
-              <option value="rejected">Rejected</option>
-            </select>
-            <input
-              type="date"
-              value={filters.fromDate}
-              onChange={(e) => setFilters((p) => ({ ...p, fromDate: e.target.value }))}
-              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-            />
-            <input
-              type="date"
-              value={filters.toDate}
-              onChange={(e) => setFilters((p) => ({ ...p, toDate: e.target.value }))}
-              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-            />
-          </div>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {activeTab === 'all' && (
+            <>
+              <select
+                value={filters.status}
+                onChange={(e) => setFilters((p) => ({ ...p, status: e.target.value }))}
+                className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+              >
+                <option value="">All status</option>
+                <option value="pending">Pending</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
+              </select>
+              <input
+                type="date"
+                value={filters.fromDate}
+                onChange={(e) => setFilters((p) => ({ ...p, fromDate: e.target.value }))}
+                className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+              />
+              <input
+                type="date"
+                value={filters.toDate}
+                onChange={(e) => setFilters((p) => ({ ...p, toDate: e.target.value }))}
+                className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+              />
+            </>
+          )}
+
+          <select
+            value={selectedDivisionFilter}
+            onChange={(e) => {
+              setSelectedDivisionFilter(e.target.value);
+              setSelectedDepartmentFilter(''); // Reset department when division changes
+            }}
+            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+          >
+            <option value="">All Divisions</option>
+            {divisions.map((div) => (
+              <option key={div._id} value={div._id}>{div.name}</option>
+            ))}
+          </select>
+
+          <select
+            value={selectedDepartmentFilter}
+            onChange={(e) => setSelectedDepartmentFilter(e.target.value)}
+            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+          >
+            <option value="">All Departments</option>
+            {filteredDepartments.map((dept) => (
+              <option key={dept._id} value={dept._id}>{dept.name}</option>
+            ))}
+          </select>
+
+          <select
+            value={selectedDesignationFilter}
+            onChange={(e) => setSelectedDesignationFilter(e.target.value)}
+            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+          >
+            <option value="">All Designations</option>
+            {designations.map((desig) => (
+              <option key={desig._id} value={desig._id}>{desig.name}</option>
+            ))}
+          </select>
+
+          <input
+            type="text"
+            placeholder="Search employee..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+          />
+        </div>
       </div>
 
       <div className="overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-gray-800 dark:ring-gray-700">
@@ -312,7 +401,36 @@ export default function SuperadminCCLPage() {
                 {list.length === 0 ? (
                   <tr><td colSpan={7} className="py-16 text-center text-sm text-gray-500 dark:text-gray-400">No CCL requests found</td></tr>
                 ) : (
-                  list.map((ccl) => (
+                  list.filter((ccl) => {
+                    if (searchTerm) {
+                      const searchLower = searchTerm.toLowerCase();
+                      const empName = ccl.employeeId?.employee_name || '';
+                      const empNo = ccl.emp_no || ccl.employeeId?.emp_no || '';
+                      if (!(
+                        empName.toLowerCase().includes(searchLower) ||
+                        empNo.toLowerCase().includes(searchLower) ||
+                        (ccl.purpose && ccl.purpose.toLowerCase().includes(searchLower))
+                      )) {
+                        return false;
+                      }
+                    }
+
+                    const emp = ccl.employeeId as any;
+                    if (selectedDivisionFilter) {
+                      const divId = typeof emp?.division === 'object' ? emp?.division?._id : (emp?.division_id || emp?.division);
+                      if (String(divId) !== String(selectedDivisionFilter)) return false;
+                    }
+                    if (selectedDepartmentFilter) {
+                      const deptId = typeof emp?.department === 'object' ? emp?.department?._id : (emp?.department_id || emp?.department);
+                      if (String(deptId) !== String(selectedDepartmentFilter)) return false;
+                    }
+                    if (selectedDesignationFilter) {
+                      const desigId = typeof emp?.designation === 'object' ? emp?.designation?._id : (emp?.designation_id || emp?.designation);
+                      if (String(desigId) !== String(selectedDesignationFilter)) return false;
+                    }
+
+                    return true;
+                  }).map((ccl) => (
                     <tr key={ccl._id} className="cursor-pointer transition hover:bg-gray-50 dark:hover:bg-gray-700/50" onClick={() => setSelectedCCL(ccl)}>
                       <td className="whitespace-nowrap py-4 pl-4 pr-3 sm:pl-6">
                         <div className="flex items-center gap-3">
@@ -362,21 +480,15 @@ export default function SuperadminCCLPage() {
             <form onSubmit={handleSubmit} className="space-y-5 p-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Employee *</label>
-                <select
+                <EmployeeSelect
                   value={formData.employeeId}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    const emp = employees.find((x) => x._id === val);
-                    setFormData((p) => ({ ...p, employeeId: val || '', empNo: emp?.emp_no || '' }));
+                  onChange={(emp) => {
+                    setFormData((p) => ({ ...p, employeeId: emp?._id || '', empNo: emp?.emp_no || '' }));
                   }}
-                  required
-                  className="mt-1.5 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-                >
-                  <option value="">Select employee</option>
-                  {employees.map((emp) => (
-                    <option key={emp._id} value={emp._id}>{emp.employee_name} ({emp.emp_no})</option>
-                  ))}
-                </select>
+                  required={true}
+                  className="mt-1.5 w-full"
+                  placeholder="Select employee"
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Date *</label>

@@ -16,6 +16,7 @@ import {
   Zap,
   ChevronDown
 } from 'lucide-react';
+import EmployeeSelect from '@/components/EmployeeSelect';
 
 const ArrearsForm = ({ open, onClose, onSubmit, employees = [] }) => {
   const [arrearsType, setArrearsType] = useState('incremental'); // 'incremental' | 'direct'
@@ -185,27 +186,27 @@ const ArrearsForm = ({ open, onClose, onSubmit, employees = [] }) => {
 
     const submitData = arrearsType === 'direct'
       ? {
-          type: 'direct',
-          employee: formData.employee,
-          totalAmount: parseFloat(formData.directAmount),
-          reason: formData.reason.trim()
-        }
+        type: 'direct',
+        employee: formData.employee,
+        totalAmount: parseFloat(formData.directAmount),
+        reason: formData.reason.trim()
+      }
       : {
-          type: 'incremental',
-          employee: formData.employee,
-          startMonth: formData.startMonth,
-          endMonth: formData.endMonth,
-          monthlyAmount: parseFloat(formData.monthlyAmount),
-          totalAmount: parseFloat(formData.totalAmount),
-          reason: formData.reason,
-          calculationBreakdown: calculationBreakdown.map(b => ({
-            month: b.month,
-            monthlyAmount: b.monthlyAmount,
-            totalDays: b.totalDays,
-            paidDays: b.paidDays,
-            proratedAmount: parseFloat(b.proratedAmount.toFixed(2))
-          }))
-        };
+        type: 'incremental',
+        employee: formData.employee,
+        startMonth: formData.startMonth,
+        endMonth: formData.endMonth,
+        monthlyAmount: parseFloat(formData.monthlyAmount),
+        totalAmount: parseFloat(formData.totalAmount),
+        reason: formData.reason,
+        calculationBreakdown: calculationBreakdown.map(b => ({
+          month: b.month,
+          monthlyAmount: b.monthlyAmount,
+          totalDays: b.totalDays,
+          paidDays: b.paidDays,
+          proratedAmount: parseFloat(b.proratedAmount.toFixed(2))
+        }))
+      };
 
     Promise.resolve(onSubmit(submitData))
       .then(() => {
@@ -284,22 +285,12 @@ const ArrearsForm = ({ open, onClose, onSubmit, employees = [] }) => {
                 Employee Information
               </label>
               <div className="relative group">
-                <select
+                <EmployeeSelect
                   value={formData.employee}
-                  onChange={(e) => setFormData(prev => ({ ...prev, employee: e.target.value }))}
-                  className={`w-full appearance-none rounded-xl border bg-white py-2.5 pl-4 pr-10 text-xs font-semibold text-slate-950 transition-all focus:ring-4 dark:bg-slate-900 dark:text-white ${errors.employee
-                      ? 'border-rose-500 focus:ring-rose-500/20'
-                      : 'border-slate-300 focus:border-blue-500 focus:ring-blue-500/10 dark:border-slate-700'
-                    }`}
-                >
-                  <option value="">Search internal registry...</option>
-                  {localEmployees.map(emp => (
-                    <option key={emp._id} value={emp._id}>
-                      {getEmployeeName(emp)} ({emp.emp_no})
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-600 pointer-events-none" />
+                  onChange={(emp) => setFormData(prev => ({ ...prev, employee: emp ? emp._id : '' }))}
+                  placeholder="Search internal registry..."
+                  error={errors.employee}
+                />
               </div>
               {errors.employee && <p className="text-[9px] font-bold text-rose-700 uppercase tracking-widest ml-1">{errors.employee}</p>}
             </div>
@@ -320,8 +311,8 @@ const ArrearsForm = ({ open, onClose, onSubmit, employees = [] }) => {
                     onChange={(e) => setFormData(prev => ({ ...prev, directAmount: e.target.value }))}
                     placeholder="0.00"
                     className={`w-full rounded-xl border bg-white py-2.5 px-4 text-xs font-semibold text-slate-950 focus:ring-4 dark:bg-slate-900 dark:text-white placeholder:text-slate-300 ${errors.directAmount
-                        ? 'border-rose-500 focus:ring-rose-500/20'
-                        : 'border-slate-300 focus:border-blue-500 focus:ring-blue-500/10 dark:border-slate-700'
+                      ? 'border-rose-500 focus:ring-rose-500/20'
+                      : 'border-slate-300 focus:border-blue-500 focus:ring-blue-500/10 dark:border-slate-700'
                       }`}
                   />
                   {errors.directAmount && <p className="text-[9px] font-bold text-rose-700 uppercase tracking-widest ml-1">{errors.directAmount}</p>}
@@ -337,8 +328,8 @@ const ArrearsForm = ({ open, onClose, onSubmit, employees = [] }) => {
                     placeholder="Reason or notes for this arrears..."
                     rows="2"
                     className={`w-full resize-none rounded-xl border bg-white p-4 text-xs font-semibold text-slate-950 transition-all focus:ring-4 dark:bg-slate-900 dark:text-white placeholder:text-slate-300 ${errors.reason
-                        ? 'border-rose-500 focus:ring-rose-500/20'
-                        : 'border-slate-300 focus:border-blue-500 focus:ring-blue-500/10 dark:border-slate-700'
+                      ? 'border-rose-500 focus:ring-rose-500/20'
+                      : 'border-slate-300 focus:border-blue-500 focus:ring-blue-500/10 dark:border-slate-700'
                       }`}
                   />
                   {errors.reason && <p className="text-[9px] font-bold text-rose-700 uppercase tracking-widest ml-1">{errors.reason}</p>}
@@ -360,8 +351,8 @@ const ArrearsForm = ({ open, onClose, onSubmit, employees = [] }) => {
                       value={formData.startMonth}
                       onChange={(e) => handleMonthChange('startMonth', e.target.value)}
                       className={`w-full rounded-xl border bg-white py-2.5 px-4 text-xs font-semibold text-slate-950 focus:ring-4 dark:bg-slate-900 dark:text-white ${errors.startMonth
-                          ? 'border-rose-500 focus:ring-rose-500/20'
-                          : 'border-slate-300 focus:border-blue-500 focus:ring-blue-500/10 dark:border-slate-700'
+                        ? 'border-rose-500 focus:ring-rose-500/20'
+                        : 'border-slate-300 focus:border-blue-500 focus:ring-blue-500/10 dark:border-slate-700'
                         }`}
                     />
                     {errors.startMonth && <p className="text-[9px] font-bold text-rose-700 uppercase tracking-widest ml-1">{errors.startMonth}</p>}
@@ -377,8 +368,8 @@ const ArrearsForm = ({ open, onClose, onSubmit, employees = [] }) => {
                       value={formData.endMonth}
                       onChange={(e) => handleMonthChange('endMonth', e.target.value)}
                       className={`w-full rounded-xl border bg-white py-2.5 px-4 text-xs font-semibold text-slate-950 focus:ring-4 dark:bg-slate-900 dark:text-white ${errors.endMonth
-                          ? 'border-rose-500 focus:ring-rose-500/20'
-                          : 'border-slate-300 focus:border-blue-500 focus:ring-blue-500/10 dark:border-slate-700'
+                        ? 'border-rose-500 focus:ring-rose-500/20'
+                        : 'border-slate-300 focus:border-blue-500 focus:ring-blue-500/10 dark:border-slate-700'
                         }`}
                     />
                     {errors.endMonth && <p className="text-[9px] font-bold text-rose-700 uppercase tracking-widest ml-1">{errors.endMonth}</p>}
@@ -397,8 +388,8 @@ const ArrearsForm = ({ open, onClose, onSubmit, employees = [] }) => {
                       onChange={handleMonthlyAmountChange}
                       placeholder="0.00"
                       className={`w-full rounded-xl border bg-white py-2.5 px-4 text-xs font-semibold text-slate-950 focus:ring-4 dark:bg-slate-900 dark:text-white placeholder:text-slate-300 ${errors.monthlyAmount
-                          ? 'border-rose-500 focus:ring-rose-500/20'
-                          : 'border-slate-300 focus:border-blue-500 focus:ring-blue-500/10 dark:border-slate-700'
+                        ? 'border-rose-500 focus:ring-rose-500/20'
+                        : 'border-slate-300 focus:border-blue-500 focus:ring-blue-500/10 dark:border-slate-700'
                         }`}
                     />
                   </div>
@@ -425,8 +416,8 @@ const ArrearsForm = ({ open, onClose, onSubmit, employees = [] }) => {
                     placeholder="Retroactive rationale..."
                     rows="2"
                     className={`w-full resize-none rounded-xl border bg-white p-4 text-xs font-semibold text-slate-950 transition-all focus:ring-4 dark:bg-slate-900 dark:text-white placeholder:text-slate-300 ${errors.reason
-                        ? 'border-rose-500 focus:ring-rose-500/20'
-                        : 'border-slate-300 focus:border-blue-500 focus:ring-blue-500/10 dark:border-slate-700'
+                      ? 'border-rose-500 focus:ring-rose-500/20'
+                      : 'border-slate-300 focus:border-blue-500 focus:ring-blue-500/10 dark:border-slate-700'
                       }`}
                   />
                   {errors.reason && <p className="text-[9px] font-bold text-rose-700 uppercase tracking-widest ml-1">{errors.reason}</p>}
