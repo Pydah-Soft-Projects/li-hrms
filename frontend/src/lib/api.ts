@@ -299,6 +299,10 @@ export interface PayrollConfig {
   enabled: boolean;
   steps: PayrollConfigStep[];
   outputColumns: PayrollOutputColumn[];
+  /** Header of the output column whose value is used as paid days for statutory proration (e.g. "Paid Days", "Present days"). */
+  statutoryProratePaidDaysColumnHeader?: string;
+  /** Header of the output column whose value is used as total days in month for statutory proration. */
+  statutoryProrateTotalDaysColumnHeader?: string;
   updatedAt?: string;
 }
 
@@ -3166,7 +3170,13 @@ export const api = {
     return apiRequest<{ success: boolean; data: PayrollConfig }>('/payroll/config', { method: 'GET' });
   },
 
-  putPayrollConfig: async (body: { enabled?: boolean; steps?: PayrollConfigStep[]; outputColumns?: PayrollOutputColumn[] }) => {
+  putPayrollConfig: async (body: {
+    enabled?: boolean;
+    steps?: PayrollConfigStep[];
+    outputColumns?: PayrollOutputColumn[];
+    statutoryProratePaidDaysColumnHeader?: string;
+    statutoryProrateTotalDaysColumnHeader?: string;
+  }) => {
     return apiRequest<{ success: boolean; data: PayrollConfig }>('/payroll/config', { method: 'PUT', body: JSON.stringify(body) });
   },
 
