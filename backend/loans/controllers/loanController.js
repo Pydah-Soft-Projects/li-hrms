@@ -358,34 +358,33 @@ exports.calculateEligibility = async (req, res) => {
       });
     }
 
-    // Get current month attendance
+    // Get current month attendance (AttendanceDaily uses uppercase status: PRESENT, PARTIAL, HALF_DAY)
     const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
     const now = new Date();
     const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     const firstDayOfMonth = `${currentMonth}-01`;
     const today = now.toISOString().split('T')[0];
+    const empNoForQuery = (employee.emp_no && String(employee.emp_no).toUpperCase()) || employee.emp_no;
 
     const attendance = await AttendanceDaily.find({
-      employeeNumber: employee.emp_no,
+      employeeNumber: empNoForQuery,
       date: {
         $gte: firstDayOfMonth,
         $lte: today
       }
-    });
+    }).select('status').lean();
 
     // Calculate days
     const applicationDate = now.getDate();
     const totalDaysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
     const daysElapsed = applicationDate;
 
-    // Calculate days worked (Present + Half Day)
-    const daysWorked = attendance.filter(a =>
-      a.status === 'Present' || a.status === 'Half Day'
+    // Calculate days worked: PRESENT/PARTIAL = 1 day, HALF_DAY = 0.5 (match AttendanceDaily enum)
+    const presentOrPartial = attendance.filter(a =>
+      a.status === 'PRESENT' || a.status === 'PARTIAL'
     ).length;
-
-    // Calculate half days
-    const halfDays = attendance.filter(a => a.status === 'Half Day').length;
-    const effectiveDaysWorked = daysWorked - (halfDays * 0.5);
+    const halfDays = attendance.filter(a => a.status === 'HALF_DAY').length;
+    const effectiveDaysWorked = presentOrPartial + (halfDays * 0.5);
 
     // Attendance percentage
     const attendancePercentage = daysElapsed > 0
@@ -415,8 +414,10 @@ exports.calculateEligibility = async (req, res) => {
     const maxPercentage = settings.settings?.salaryBasedLimits?.advancePercentage || 50;
     const maxLimitAmount = (maxPercentage / 100) * basicSalary;
 
-    // Final max allowed = MIN(eligible amount, max limit)
-    const finalMaxAllowed = Math.min(eligibleAmount, maxLimitAmount);
+    // Final max allowed: when considerAttendance is true, cap by attendance-prorated amount; else by time-eligible amount
+    const finalMaxAllowed = considerAttendance
+      ? Math.min(proratedAmount, maxLimitAmount)
+      : Math.min(eligibleAmount, maxLimitAmount);
 
     res.json({
       success: true,

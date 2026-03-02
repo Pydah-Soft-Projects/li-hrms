@@ -2,9 +2,9 @@
  * Sync Week Offs and Holidays from Shift Roster to Attendance Daily
  *
  * Reads PreScheduledShift entries with status WO or HOL for a pay cycle and
- * creates/updates AttendanceDaily with WEEK_OFF or HOLIDAY so attendance
- * reflects the roster. Does NOT override days where the employee has punches
- * (in-time / biometric) — those are left as-is.
+ * creates/updates AttendanceDaily with WEEK_OFF or HOLIDAY. Decides per (employee, date) only:
+ * does NOT override a day that has punches (in-time / OD / biometric) — skip that day only;
+ * other WO/HOL days for the same employee are still synced.
  *
  * Usage (from backend folder):
  *   node scripts/sync_roster_wo_hol_to_attendance.js
@@ -66,6 +66,7 @@ async function run() {
     let updated = 0;
     let skippedHasPunches = 0;
 
+    /** True only if this single day's record has punch/OD data. Skip that day only; other days for same employee still synced. */
     function hasPunches(daily) {
       if (!daily) return false;
       if (daily.totalWorkingHours > 0) return true;
@@ -92,6 +93,12 @@ async function run() {
 
       let daily = await AttendanceDaily.findOne({ employeeNumber: empNo, date: dateStr });
 
+      // Skip only this day if it has punches; other WO/HOL days for this employee are still processed.
+      if (hasPunches(daily)) {
+        skippedHasPunches++;
+        continue;
+      }
+
       if (!daily) {
         daily = new AttendanceDaily({
           employeeNumber: empNo,
@@ -102,10 +109,6 @@ async function run() {
         await daily.save();
         created++;
       } else {
-        if (hasPunches(daily)) {
-          skippedHasPunches++;
-          continue;
-        }
         daily.status = updateFields.status;
         daily.shifts = updateFields.shifts;
         daily.totalWorkingHours = updateFields.totalWorkingHours;
@@ -123,7 +126,7 @@ async function run() {
     console.log('Done.');
     console.log(`  Created: ${created}`);
     console.log(`  Updated: ${updated}`);
-    console.log(`  Skipped (has punches): ${skippedHasPunches}`);
+    console.log(`  Skipped (that day only has punches – not touched): ${skippedHasPunches}`);
     console.log(`  Total synced: ${created + updated}`);
   } catch (err) {
     console.error('Error:', err);
