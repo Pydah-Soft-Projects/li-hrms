@@ -5,7 +5,7 @@ import { format } from 'date-fns';
 import { toast, ToastContainer } from 'react-toastify';
 import Swal from 'sweetalert2';
 import 'react-toastify/dist/ReactToastify.css';
-import { api } from '@/lib/api';
+import { api, Department, Division, Designation } from '@/lib/api';
 import ArrearsDetailDialog from '@/components/Arrears/ArrearsDetailDialog';
 import ArrearsForm from '@/components/Arrears/ArrearsForm';
 import Spinner from '@/components/Spinner';
@@ -97,9 +97,10 @@ const getStatusLabel = (status: string) => {
 
 interface Arrears {
   _id: string;
-  employee: { _id: string; emp_no: string; employee_name?: string; first_name?: string; last_name?: string };
-  startMonth: string;
-  endMonth: string;
+  type?: 'incremental' | 'direct';
+  employee: { _id: string; emp_no: string; employee_name?: string; first_name?: string; last_name?: string; division_id?: string; department_id?: string; designation_id?: string; };
+  startMonth?: string;
+  endMonth?: string;
   totalAmount: number;
   remainingAmount: number;
   status: string;
@@ -116,9 +117,32 @@ export default function ArrearsPage() {
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [employees, setEmployees] = useState([]);
 
+  // Filter States
+  const [divisions, setDivisions] = useState<Division[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [designations, setDesignations] = useState<Designation[]>([]);
+  const [selectedDivisionFilter, setSelectedDivisionFilter] = useState('');
+  const [selectedDepartmentFilter, setSelectedDepartmentFilter] = useState('');
+  const [selectedDesignationFilter, setSelectedDesignationFilter] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+
+  // Derived state to get departments under the selected division
+  const filteredDepartments = React.useMemo(() => {
+    if (selectedDivisionFilter) {
+      const divId = String(selectedDivisionFilter);
+      const div = divisions.find((d) => String(d._id) === divId);
+      const depts = (div?.departments ?? []) as (string | Department)[];
+      return depts.map((d) => (typeof d === 'string' ? { _id: d, name: d } : { _id: (d as any)._id, name: (d as any).name, code: (d as any).code }));
+    }
+    return departments;
+  }, [selectedDivisionFilter, divisions, departments]);
+
   useEffect(() => {
     loadData();
     loadEmployees();
+    loadDivisions();
+    loadDepartments();
+    loadDesignations();
   }, []);
 
   const loadData = () => {
@@ -152,6 +176,39 @@ export default function ArrearsPage() {
       });
   };
 
+  const loadDivisions = async () => {
+    try {
+      const response = await api.getDivisions();
+      if (response.success && response.data) {
+        setDivisions(response.data);
+      }
+    } catch (err) {
+      console.error('Error loading divisions:', err);
+    }
+  };
+
+  const loadDepartments = async () => {
+    try {
+      const response = await api.getDepartments();
+      if (response.success && response.data) {
+        setDepartments(response.data);
+      }
+    } catch (err) {
+      console.error('Error loading departments:', err);
+    }
+  };
+
+  const loadDesignations = async () => {
+    try {
+      const response = await api.getAllDesignations();
+      if (response.success && response.data) {
+        setDesignations(response.data);
+      }
+    } catch (err) {
+      console.error('Error loading designations:', err);
+    }
+  };
+
   const handleViewDetails = (id: string) => {
     setSelectedArrearsId(id);
     setDetailDialogOpen(true);
@@ -173,6 +230,22 @@ export default function ArrearsPage() {
   };
 
   const filteredArrears = arrears.filter(ar => {
+    // Search Term Match
+    if (searchTerm) {
+      const searchLower = searchTerm.toLowerCase();
+      const empName = getEmployeeName(ar.employee).toLowerCase();
+      const empNo = ar.employee.emp_no?.toLowerCase() || '';
+      if (!empName.includes(searchLower) && !empNo.includes(searchLower)) {
+        return false;
+      }
+    }
+
+    // Role Filters Match
+    if (selectedDivisionFilter && String(ar.employee.division_id) !== String(selectedDivisionFilter)) return false;
+    if (selectedDepartmentFilter && String(ar.employee.department_id) !== String(selectedDepartmentFilter)) return false;
+    if (selectedDesignationFilter && String(ar.employee.designation_id) !== String(selectedDesignationFilter)) return false;
+
+    // Tab Match
     if (activeTab === 'pending') {
       return ['pending_hod', 'pending_hr', 'pending_admin'].includes(ar.status);
     }
@@ -277,8 +350,8 @@ export default function ArrearsPage() {
       <div className="rounded-[2.5rem] border border-slate-300 bg-slate-50 shadow-xl dark:border-slate-800 dark:bg-slate-900/50 overflow-hidden">
         {/* Navigation & Search Bar */}
         <div className="border-b border-slate-200 bg-slate-100/50 p-6 dark:border-slate-800 dark:bg-slate-900/80">
-          <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-            <div className="flex items-center gap-1.5 rounded-2xl bg-slate-200/80 p-1.5 dark:bg-slate-800/50 backdrop-blur-sm shadow-inner">
+          <div className="flex flex-col gap-6 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex flex-wrap items-center gap-1.5 rounded-2xl bg-slate-200/80 p-1.5 dark:bg-slate-800/50 backdrop-blur-sm shadow-inner overflow-x-auto">
               {['all', 'pending', 'approved', 'settled', 'rejected'].map(tab => (
                 <button
                   key={tab}
@@ -293,13 +366,62 @@ export default function ArrearsPage() {
               ))}
             </div>
 
-            <div className="relative group min-w-[320px]">
-              <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-600 transition-colors group-hover:text-blue-600" />
-              <input
-                type="text"
-                placeholder="Search by employee or ID..."
-                className="w-full rounded-2xl border border-slate-300 bg-white py-3 pl-11 pr-4 text-sm font-semibold text-slate-950 transition-all focus:border-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
-              />
+            <div className="flex flex-wrap gap-4 items-center">
+              {/* Division Filter */}
+              <select
+                value={selectedDivisionFilter}
+                onChange={(e) => {
+                  setSelectedDivisionFilter(e.target.value);
+                  setSelectedDepartmentFilter(''); // Reset department when division changes
+                }}
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+              >
+                <option value="">All Divisions</option>
+                {divisions.map((div) => (
+                  <option key={div._id} value={div._id}>
+                    {div.name}
+                  </option>
+                ))}
+              </select>
+
+              {/* Department Filter */}
+              <select
+                value={selectedDepartmentFilter}
+                onChange={(e) => setSelectedDepartmentFilter(e.target.value)}
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+              >
+                <option value="">All Departments</option>
+                {filteredDepartments.map((dept) => (
+                  <option key={(dept as any)._id} value={(dept as any)._id}>
+                    {(dept as any).name}
+                  </option>
+                ))}
+              </select>
+
+              {/* Designation Filter */}
+              <select
+                value={selectedDesignationFilter}
+                onChange={(e) => setSelectedDesignationFilter(e.target.value)}
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+              >
+                <option value="">All Designations</option>
+                {designations.map((desig) => (
+                  <option key={desig._id} value={desig._id}>
+                    {desig.name}
+                  </option>
+                ))}
+              </select>
+
+              <div className="relative group min-w-[280px]">
+                <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-600 transition-colors group-hover:text-blue-600" />
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Search by employee or ID..."
+                  className="w-full rounded-2xl border border-slate-300 bg-white py-3 pl-11 pr-4 text-sm font-semibold text-slate-950 transition-all focus:border-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -350,12 +472,16 @@ export default function ArrearsPage() {
                       </div>
                     </td>
                     <td className="px-8 py-6">
-                      <div className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300">
-                        <Calendar className="h-3.5 w-3.5 text-slate-600" />
-                        <span>{ar.startMonth}</span>
-                        <ArrowRight className="h-3 w-3 text-slate-500" />
-                        <span>{ar.endMonth}</span>
-                      </div>
+                      {ar.type === 'direct' ? (
+                        <span className="text-slate-500 dark:text-slate-400">—</span>
+                      ) : (
+                        <div className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300">
+                          <Calendar className="h-3.5 w-3.5 text-slate-600" />
+                          <span>{ar.startMonth ?? '—'}</span>
+                          <ArrowRight className="h-3 w-3 text-slate-500" />
+                          <span>{ar.endMonth ?? '—'}</span>
+                        </div>
+                      )}
                     </td>
                     <td className="px-8 py-6 text-right">
                       <div className="flex flex-col items-end">

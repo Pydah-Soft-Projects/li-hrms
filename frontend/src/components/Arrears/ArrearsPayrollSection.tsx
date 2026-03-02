@@ -11,6 +11,7 @@ interface ArrearsForPayrollResponse {
 
 interface ArrearsForPayroll {
   _id: string;
+  type?: 'incremental' | 'direct';
   employee: {
     _id: string;
     emp_no: string;
@@ -22,8 +23,8 @@ interface ArrearsForPayroll {
   settledAmount: number;
   isFullySettled: boolean;
   status: string;
-  startMonth: string;
-  endMonth: string;
+  startMonth?: string;
+  endMonth?: string;
   reason: string;
   monthlyAmount: number;
   remainingAmount?: number;
@@ -222,7 +223,7 @@ export const ArrearsPayrollSection: React.FC<ArrearsPayrollSectionProps> = ({
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm text-gray-900 dark:text-white">
-                      {new Date(arr.startMonth).toLocaleDateString()} - {new Date(arr.endMonth).toLocaleDateString()}
+                      {arr.type === 'direct' ? '—' : `${arr.startMonth ? new Date(arr.startMonth).toLocaleDateString() : '—'} - ${arr.endMonth ? new Date(arr.endMonth).toLocaleDateString() : '—'}`}
                     </div>
                     <div className="text-sm text-gray-500 dark:text-gray-400">
                       {arr.reason}

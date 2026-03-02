@@ -22,6 +22,7 @@ class ArrearsPayrollIntegrationService {
 
       return arrears.map(ar => ({
         id: ar._id,
+        type: ar.type || 'incremental',
         startMonth: ar.startMonth,
         endMonth: ar.endMonth,
         totalAmount: ar.totalAmount,
@@ -54,7 +55,8 @@ class ArrearsPayrollIntegrationService {
       totalAmount: totalPendingAmount,
       details: pendingArrears.map(ar => ({
         id: ar.id.toString(),
-        period: `${ar.startMonth} to ${ar.endMonth}`,
+        type: ar.type || 'incremental',
+        period: ar.type === 'direct' ? 'Direct' : (ar.startMonth && ar.endMonth ? `${ar.startMonth} to ${ar.endMonth}` : 'N/A'),
         reason: ar.reason,
         totalAmount: ar.totalAmount,
         settledAmount: ar.settledAmount,
@@ -159,9 +161,12 @@ class ArrearsPayrollIntegrationService {
     // Build settlement details
     const details = settlements.map(settlement => {
       const arrear = pendingArrears.find(ar => ar.id.toString() === settlement.arrearId.toString());
+      const period = arrear
+        ? (arrear.type === 'direct' ? 'Direct' : (arrear.startMonth && arrear.endMonth ? `${arrear.startMonth} to ${arrear.endMonth}` : 'N/A'))
+        : 'N/A';
       return {
         arrearId: settlement.arrearId,
-        period: arrear ? `${arrear.startMonth} to ${arrear.endMonth}` : 'N/A',
+        period,
         amount: settlement.amount,
         reason: arrear ? arrear.reason : 'N/A'
       };

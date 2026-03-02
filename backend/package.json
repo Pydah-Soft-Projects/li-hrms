@@ -9,6 +9,8 @@
     "test": "jest",
     "test:api": "jest tests/api",
     "test:health": "jest tests/api/health.test.js",
+    "test:attendance": "node tests/attendance-dual-mode-comprehensive.test.js",
+    "sync:atlas-biometric": "node scripts/sync_atlas_biometric_to_attendance.js",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage"
   },

@@ -238,23 +238,25 @@ async function calculateSecondSalary(employeeId, month, userId, sharedContext = 
         const totalAllowances = secondSalaryAllowanceService.calculateTotalAllowances(mergedAllowances);
         grossAmountSalary += totalAllowances;
 
-        // 5. Deductions
+        // 5. Deductions (second salary uses its own deduction service; employee flags respected there)
         // 5a. Attendance Deductions (Lates/Early Outs)
         const attendanceDeductionResult = await secondSalaryDeductionService.calculateAttendanceDeduction(
             employeeId,
             month,
             departmentId.toString(),
             perDaySalary,
-            divisionId?.toString()
+            divisionId?.toString(),
+            { employee }
         );
 
-        // 5b. Permission Deductions (New - for parity)
+        // 5b. Permission Deductions
         const permissionDeductionResult = await secondSalaryDeductionService.calculatePermissionDeduction(
             employeeId,
             month,
             departmentId.toString(),
             perDaySalary,
-            divisionId?.toString()
+            divisionId?.toString(),
+            { employee }
         );
 
         // Leave deduction is NOT added to totalDeductions if basic is already prorated

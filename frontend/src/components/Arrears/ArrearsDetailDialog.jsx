@@ -50,13 +50,18 @@ const ArrearsDetailDialog = ({ open, onClose, arrearsId, onUpdate }) => {
       .then((response) => {
         if (response.success) {
           setArrears(response.data);
-          setEditData({
-            startMonth: response.data.startMonth,
-            endMonth: response.data.endMonth,
-            monthlyAmount: response.data.monthlyAmount,
-            totalAmount: response.data.totalAmount,
-            reason: response.data.reason
-          });
+          const d = response.data;
+          if (d.type === 'direct') {
+            setEditData({ totalAmount: d.totalAmount, reason: d.reason });
+          } else {
+            setEditData({
+              startMonth: d.startMonth,
+              endMonth: d.endMonth,
+              monthlyAmount: d.monthlyAmount,
+              totalAmount: d.totalAmount,
+              reason: d.reason
+            });
+          }
         }
       })
       .catch((err) => {
@@ -205,25 +210,26 @@ const ArrearsDetailDialog = ({ open, onClose, arrearsId, onUpdate }) => {
               </div>
             </div>
 
-            {/* Period & Reason */}
+            {/* Reason/Remarks (direct: no period; incremental: period + reason) */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-6 border border-slate-200 dark:border-slate-700">
-                <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-4">Period</h3>
-                <div className="space-y-2">
-                  <div className="flex justify-between">
-                    <span className="text-slate-600 dark:text-slate-400">From:</span>
-                    <span className="font-medium text-slate-900 dark:text-white">{arrears.startMonth}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-600 dark:text-slate-400">To:</span>
-                    <span className="font-medium text-slate-900 dark:text-white">{arrears.endMonth}</span>
+              {arrears.type !== 'direct' && (
+                <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-6 border border-slate-200 dark:border-slate-700">
+                  <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-4">Period</h3>
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-slate-600 dark:text-slate-400">From:</span>
+                      <span className="font-medium text-slate-900 dark:text-white">{arrears.startMonth ?? '—'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-600 dark:text-slate-400">To:</span>
+                      <span className="font-medium text-slate-900 dark:text-white">{arrears.endMonth ?? '—'}</span>
+                    </div>
                   </div>
                 </div>
-              </div>
-
-              <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-6 border border-slate-200 dark:border-slate-700">
-                <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-4">Reason</h3>
-                <p className="text-slate-700 dark:text-slate-300 text-sm leading-relaxed">{arrears.reason}</p>
+              )}
+              <div className={`bg-slate-50 dark:bg-slate-900/50 rounded-xl p-6 border border-slate-200 dark:border-slate-700 ${arrears.type === 'direct' ? 'md:col-span-2' : ''}`}>
+                <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-4">{arrears.type === 'direct' ? 'Remarks' : 'Reason'}</h3>
+                <p className="text-slate-700 dark:text-slate-300 text-sm leading-relaxed">{arrears.reason || '—'}</p>
               </div>
             </div>
 
@@ -461,6 +467,31 @@ const ArrearsDetailDialog = ({ open, onClose, arrearsId, onUpdate }) => {
               <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-6 border border-blue-200 dark:border-blue-800 space-y-4">
                 <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-4">Edit Arrears Details</h3>
                 
+                {arrears.type === 'direct' ? (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Amount (₹)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={editData.totalAmount}
+                        onChange={(e) => setEditData({...editData, totalAmount: parseFloat(e.target.value) || 0})}
+                        className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Remarks</label>
+                      <textarea
+                        value={editData.reason}
+                        onChange={(e) => setEditData({...editData, reason: e.target.value})}
+                        rows={3}
+                        className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white"
+                      />
+                    </div>
+                  </>
+                ) : (
+                <>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Start Month</label>
@@ -520,8 +551,8 @@ const ArrearsDetailDialog = ({ open, onClose, arrearsId, onUpdate }) => {
                   </div>
                 </div>
 
-                {/* Summary in Edit Mode */}
-                {editData.monthlyAmount && editData.totalAmount && (
+                {/* Summary in Edit Mode (Incremental only) */}
+                {editData.monthlyAmount && editData.totalAmount && editData.startMonth && editData.endMonth && (
                   <div className="bg-white dark:bg-slate-700 rounded-lg p-4 border border-slate-200 dark:border-slate-600">
                     <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">Summary</h4>
                     <div className="space-y-2 text-sm">
@@ -550,6 +581,8 @@ const ArrearsDetailDialog = ({ open, onClose, arrearsId, onUpdate }) => {
                     className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white"
                   />
                 </div>
+                </>
+                )}
               </div>
             )}
 
