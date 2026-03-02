@@ -3425,14 +3425,14 @@ export const api = {
     });
   },
 
-  // Uploads
-  uploadEvidence: async (file: File) => {
+  // Uploads (backend returns { success, url, key, filename } at top level; apiRequest spreads it)
+  uploadEvidence: async (file: File): Promise<ApiResponse<{ url: string; key: string; filename: string }> & { url?: string; key?: string; filename?: string }> => {
     const formData = new FormData();
     formData.append('file', file);
     return apiRequest<{ url: string; key: string; filename: string }>('/upload/evidence', {
       method: 'POST',
       body: formData,
-    });
+    }) as Promise<ApiResponse<{ url: string; key: string; filename: string }> & { url?: string; key?: string; filename?: string }>;
   },
 
   uploadProfile: async (file: File) => {

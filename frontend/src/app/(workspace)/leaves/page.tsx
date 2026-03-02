@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import dynamic from 'next/dynamic';
 import { api } from '@/lib/api';
 import { auth } from '@/lib/auth';
 import {
@@ -14,6 +15,8 @@ import 'react-toastify/dist/ReactToastify.css';
 
 import LocationPhotoCapture from '@/components/LocationPhotoCapture';
 import EmployeeSelect from '@/components/EmployeeSelect';
+
+const LocationMap = dynamic(() => import('@/components/LocationMap'), { ssr: false });
 import {
   Calendar,
   Briefcase,
@@ -3290,6 +3293,88 @@ export default function LeavesPage() {
                       </div>
                     )}
                   </div>
+
+                  {/* Photo Evidence & Location (OD view) - photo, address, Google Maps link */}
+                  {detailType === 'od' && ((selectedItem as any).photoEvidence || (selectedItem as any).geoLocation) && (
+                    <div className="rounded-xl bg-slate-50 dark:bg-slate-900/50 p-4 sm:p-5 border border-slate-200 dark:border-slate-700">
+                      <p className="text-xs uppercase font-bold text-slate-400 mb-3 tracking-wider">Evidence & Location</p>
+                      <div className="space-y-4">
+                        {(selectedItem as any).photoEvidence && (
+                          <div className="flex items-start gap-3">
+                            <a
+                              href={(selectedItem as any).photoEvidence.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="relative group block shrink-0"
+                            >
+                              <img
+                                src={(selectedItem as any).photoEvidence.url}
+                                alt="Evidence"
+                                className="w-20 h-20 rounded-lg object-cover border border-slate-200 dark:border-slate-600 shadow-sm transition-transform group-hover:scale-105"
+                              />
+                              <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/20 transition-colors rounded-lg">
+                                <svg className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                              </div>
+                            </a>
+                            <div>
+                              <p className="text-sm font-medium text-slate-900 dark:text-white">Photo Evidence</p>
+                              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Captured at application time</p>
+                            </div>
+                          </div>
+                        )}
+                        {(selectedItem as any).geoLocation && (
+                          <div className="p-3 rounded-lg bg-white dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700">
+                            <div className="flex items-center gap-2 mb-2">
+                              <svg className="w-4 h-4 text-red-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                              <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Location</span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                              <div>
+                                <span className="text-slate-500">Lat:</span>
+                                <span className="ml-1 font-mono text-slate-700 dark:text-slate-300">{(selectedItem as any).geoLocation.latitude?.toFixed(6)}</span>
+                              </div>
+                              <div>
+                                <span className="text-slate-500">Lon:</span>
+                                <span className="ml-1 font-mono text-slate-700 dark:text-slate-300">{(selectedItem as any).geoLocation.longitude?.toFixed(6)}</span>
+                              </div>
+                              {(selectedItem as any).geoLocation.address && (
+                                <div className="col-span-2 pt-2 border-t border-slate-100 dark:border-slate-700 mt-1">
+                                  <span className="block text-slate-500 mb-0.5">Address</span>
+                                  <p className="text-slate-700 dark:text-slate-300 leading-tight text-xs">{(selectedItem as any).geoLocation.address}</p>
+                                </div>
+                              )}
+                              <div className="col-span-2 mt-1">
+                                <a
+                                  href={`https://www.google.com/maps?q=${(selectedItem as any).geoLocation.latitude},${(selectedItem as any).geoLocation.longitude}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1 font-medium text-xs"
+                                >
+                                  View on Google Maps
+                                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                                </a>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        {/* Leaflet map view */}
+                        {(() => {
+                          const geo = (selectedItem as any).geoLocation;
+                          const exif = (selectedItem as any).photoEvidence?.exifLocation;
+                          const lat = geo?.latitude ?? exif?.latitude;
+                          const lng = geo?.longitude ?? exif?.longitude;
+                          const address = geo?.address ?? null;
+                          if (lat == null || lng == null) return null;
+                          return (
+                            <div className="mt-2">
+                              <span className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Map</span>
+                              <LocationMap latitude={lat} longitude={lng} address={address} height="180px" />
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Approval Steps - Timeline / Progress */}
                   {((selectedItem as any).workflow?.approvalChain?.length > 0) && (
