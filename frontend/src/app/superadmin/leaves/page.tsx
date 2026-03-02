@@ -393,6 +393,10 @@ export default function LeavesPage() {
   const defaultPolicy = { allowBackdated: false, maxBackdatedDays: 0, allowFutureDated: true, maxAdvanceDays: 90 };
   const [leavePolicy, setLeavePolicy] = useState<typeof defaultPolicy>(defaultPolicy);
   const [odPolicy, setODPolicy] = useState<typeof defaultPolicy>({ ...defaultPolicy, allowBackdated: true, maxBackdatedDays: 30 });
+  const [leaveWorkflowAllowHigherAuthority, setLeaveWorkflowAllowHigherAuthority] = useState(false);
+  const [leaveWorkflowRoleOrder, setLeaveWorkflowRoleOrder] = useState<string[]>([]);
+  const [odWorkflowAllowHigherAuthority, setODWorkflowAllowHigherAuthority] = useState(false);
+  const [odWorkflowRoleOrder, setODWorkflowRoleOrder] = useState<string[]>([]);
 
   // Employees for "Apply For" selection
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -543,6 +547,12 @@ export default function LeavesPage() {
           maxAdvanceDays: s.maxAdvanceDays ?? 90,
         });
       }
+      if (leaveSettingsRes.success && leaveSettingsRes.data?.workflow) {
+        const wf = leaveSettingsRes.data.workflow as { allowHigherAuthorityToApproveLowerLevels?: boolean; steps?: { stepOrder: number; approverRole: string }[] };
+        setLeaveWorkflowAllowHigherAuthority(Boolean(wf.allowHigherAuthorityToApproveLowerLevels));
+        const steps = (wf.steps || []).slice().sort((a: any, b: any) => (a.stepOrder ?? 999) - (b.stepOrder ?? 999));
+        setLeaveWorkflowRoleOrder(steps.map((st: any) => String(st.approverRole || '').toLowerCase()).filter(Boolean));
+      }
 
       // Extract OD types from settings (field is 'types' not 'odTypes')
       let fetchedODTypes: any[] = [];
@@ -559,6 +569,12 @@ export default function LeavesPage() {
           allowFutureDated: s.allowFutureDated ?? true,
           maxAdvanceDays: s.maxAdvanceDays ?? 90,
         });
+      }
+      if (odSettingsRes.success && odSettingsRes.data?.workflow) {
+        const wf = odSettingsRes.data.workflow as { allowHigherAuthorityToApproveLowerLevels?: boolean; steps?: { stepOrder: number; approverRole: string }[] };
+        setODWorkflowAllowHigherAuthority(Boolean(wf.allowHigherAuthorityToApproveLowerLevels));
+        const steps = (wf.steps || []).slice().sort((a: any, b: any) => (a.stepOrder ?? 999) - (b.stepOrder ?? 999));
+        setODWorkflowRoleOrder(steps.map((st: any) => String(st.approverRole || '').toLowerCase()).filter(Boolean));
       }
 
       // Use fetched types or defaults
@@ -1264,14 +1280,38 @@ export default function LeavesPage() {
     return true;
   };
 
-  const canPerformAction = (item: LeaveApplication | ODApplication) => {
+  const getRoleOrderFromItem = (item: LeaveApplication | ODApplication): string[] => {
+    const chain = (item as any).workflow?.approvalChain;
+    if (!chain || !Array.isArray(chain) || chain.length === 0) return [];
+    const sorted = chain.slice().sort((a: any, b: any) => (a.stepOrder ?? 999) - (b.stepOrder ?? 999));
+    return sorted.map((s: any) => String(s.role || s.stepRole || '').toLowerCase()).filter(Boolean);
+  };
+
+  const canPerformAction = (item: LeaveApplication | ODApplication, source?: 'leave' | 'od') => {
     const user = auth.getUser() as any;
     if (!user || user.role === 'employee') return false;
     if (['super_admin', 'sub_admin'].includes(user.role)) return !['approved', 'rejected', 'cancelled'].includes(item.status);
-    // Strict: nextApproverRole must match user.role (current step = user's turn)
+    const isOD = source === 'od' || ((item as any).odType !== undefined);
+    const allowHigher = isOD ? odWorkflowAllowHigherAuthority : leaveWorkflowAllowHigherAuthority;
+    const itemRoleOrder = getRoleOrderFromItem(item);
+    const globalRoleOrder = isOD ? odWorkflowRoleOrder : leaveWorkflowRoleOrder;
+    const roleOrder = itemRoleOrder.length > 0 ? itemRoleOrder : globalRoleOrder;
     const next = String((item as any).workflow?.nextApproverRole || (item as any).workflow?.nextApprover || '').toLowerCase();
     const role = String(user.role || '').toLowerCase();
-    return next && (role === next || (next === 'final_authority' && role === 'hr') || (next === 'reporting_manager' && ['manager', 'hod'].includes(role)));
+    if (!next) return false;
+    if (role === next || (next === 'final_authority' && role === 'hr') || (next === 'reporting_manager' && ['manager', 'hod'].includes(role))) return true;
+    if (allowHigher && roleOrder.length > 0) {
+      const nextIdx = roleOrder.indexOf(next);
+      let userIdx = roleOrder.indexOf(role);
+      if (userIdx === -1 && (role === 'hr' || role === 'super_admin')) userIdx = roleOrder.length;
+      if (userIdx === -1 && role === 'manager') {
+        const reportingIdx = roleOrder.indexOf('reporting_manager');
+        const hrIdx = roleOrder.indexOf('hr');
+        userIdx = reportingIdx >= 0 ? reportingIdx : (hrIdx >= 0 ? hrIdx : roleOrder.length);
+      }
+      if (nextIdx >= 0 && userIdx >= 0 && userIdx >= nextIdx) return true;
+    }
+    return false;
   };
 
   if (loading) {
@@ -2827,7 +2867,7 @@ export default function LeavesPage() {
                 )}
 
                 {/* Approval Actions - only show to current approver */}
-                {!['approved', 'rejected', 'cancelled'].includes(selectedItem.status) && canPerformAction(selectedItem) && (
+                {!['approved', 'rejected', 'cancelled'].includes(selectedItem.status) && canPerformAction(selectedItem, detailType) && (
                   <>
                     <p className="text-xs text-slate-500 uppercase font-semibold">Take Action</p>
 

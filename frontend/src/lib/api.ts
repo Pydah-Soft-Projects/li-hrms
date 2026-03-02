@@ -343,6 +343,7 @@ export interface ApiResponse<T> {
   data?: T;
   error?: string;
   dataSource?: string;
+  source?: string;
   jobId?: string;
   status?: string;
   pagination?: {
@@ -3147,7 +3148,7 @@ export const api = {
   },
 
   /** Paysheet table data: headers + rows from config output columns (same as Excel export) */
-  getPaysheetData: async (params: { month: string; departmentId?: string; divisionId?: string; status?: string; search?: string; employeeIds?: string[] }) => {
+  getPaysheetData: async (params: { month: string; departmentId?: string; divisionId?: string; status?: string; search?: string; employeeIds?: string[]; source?: 'existing' | 'calculate' }) => {
     const queryParams = new URLSearchParams();
     if (params.month) queryParams.append('month', params.month);
     if (params.departmentId) queryParams.append('departmentId', params.departmentId);
@@ -3155,6 +3156,7 @@ export const api = {
     if (params.status) queryParams.append('status', params.status);
     if (params.search) queryParams.append('search', params.search);
     if (params.employeeIds?.length) queryParams.append('employeeIds', params.employeeIds.join(','));
+    if (params.source) queryParams.append('source', params.source);
     const query = queryParams.toString();
     return apiRequest<{ headers: string[]; rows: Record<string, unknown>[] }>(
       `/payroll/paysheet${query ? `?${query}` : ''}`,
