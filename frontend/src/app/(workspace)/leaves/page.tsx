@@ -451,6 +451,10 @@ export default function LeavesPage() {
   const defaultPolicy = { allowBackdated: false, maxBackdatedDays: 0, allowFutureDated: true, maxAdvanceDays: 90 };
   const [leavePolicy, setLeavePolicy] = useState<typeof defaultPolicy>(defaultPolicy);
   const [odPolicy, setODPolicy] = useState<typeof defaultPolicy>({ ...defaultPolicy, allowBackdated: true, maxBackdatedDays: 30 });
+  const [leaveWorkflowAllowHigherAuthority, setLeaveWorkflowAllowHigherAuthority] = useState(false);
+  const [leaveWorkflowRoleOrder, setLeaveWorkflowRoleOrder] = useState<string[]>([]);
+  const [odWorkflowAllowHigherAuthority, setODWorkflowAllowHigherAuthority] = useState(false);
+  const [odWorkflowRoleOrder, setODWorkflowRoleOrder] = useState<string[]>([]);
 
   // Employees for "Apply For" selection
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -643,7 +647,7 @@ export default function LeavesPage() {
         return;
       }
 
-      // Check both leave and od settings for workspace permissions
+      // Check both leave and od settings for workspace permissions (and workflow options for approve/reject visibility)
       const [leaveSettingsRes, odSettingsRes] = await Promise.all([
         api.getLeaveSettings('leave'),
         api.getLeaveSettings('od'),
@@ -652,143 +656,44 @@ export default function LeavesPage() {
       console.log('[Workspace Leaves] Leave settings response:', leaveSettingsRes);
       console.log('[Workspace Leaves] OD settings response:', odSettingsRes);
 
-      const workspaceIdStr = String(workspaceId);
-
-      // Check Leave permissions from leave settings
-      let leavePermissionsFromLeave = null;
-      if (leaveSettingsRes.success && leaveSettingsRes.data?.settings?.workspacePermissions) {
-        const allPermissions = leaveSettingsRes.data.settings.workspacePermissions;
-        console.log('[Workspace Leaves] Leave settings permissions:', JSON.stringify(allPermissions, null, 2));
-        for (const key in allPermissions) {
-          if (String(key) === workspaceIdStr) {
-            leavePermissionsFromLeave = allPermissions[key];
-            console.log('[Workspace Leaves] Found leave permissions in leave settings:', JSON.stringify(leavePermissionsFromLeave, null, 2));
-            break;
-          }
-        }
+      // Apply workflow "allow higher authority" and role order so Pending tab shows Approve/Reject when setting is on
+      if (leaveSettingsRes.success && leaveSettingsRes.data?.workflow) {
+        const wf = leaveSettingsRes.data.workflow as { allowHigherAuthorityToApproveLowerLevels?: boolean; steps?: { stepOrder: number; approverRole: string }[] };
+        setLeaveWorkflowAllowHigherAuthority(Boolean(wf.allowHigherAuthorityToApproveLowerLevels));
+        const steps = (wf.steps || []).slice().sort((a: any, b: any) => (a.stepOrder ?? 999) - (b.stepOrder ?? 999));
+        setLeaveWorkflowRoleOrder(steps.map((st: any) => String(st.approverRole || '').toLowerCase()).filter(Boolean));
+      }
+      if (odSettingsRes.success && odSettingsRes.data?.workflow) {
+        const wf = odSettingsRes.data.workflow as { allowHigherAuthorityToApproveLowerLevels?: boolean; steps?: { stepOrder: number; approverRole: string }[] };
+        setODWorkflowAllowHigherAuthority(Boolean(wf.allowHigherAuthorityToApproveLowerLevels));
+        const steps = (wf.steps || []).slice().sort((a: any, b: any) => (a.stepOrder ?? 999) - (b.stepOrder ?? 999));
+        setODWorkflowRoleOrder(steps.map((st: any) => String(st.approverRole || '').toLowerCase()).filter(Boolean));
       }
 
-      // Check OD permissions from od settings
-      let odPermissionsFromOD = null;
-      if (odSettingsRes.success && odSettingsRes.data?.settings?.workspacePermissions) {
-        const allPermissions = odSettingsRes.data.settings.workspacePermissions;
-        console.log('[Workspace Leaves] OD settings permissions:', JSON.stringify(allPermissions, null, 2));
-        for (const key in allPermissions) {
-          if (String(key) === workspaceIdStr) {
-            odPermissionsFromOD = allPermissions[key];
-            console.log('[Workspace Leaves] Found OD permissions in OD settings:', JSON.stringify(odPermissionsFromOD, null, 2));
-            break;
-          }
-        }
-      }
-
-      // Process Leave permissions
+      // Do not use workspace permissions from settings; role-based only
       let leaveSelf = false;
       let leaveOthers = false;
-
-      if (leavePermissionsFromLeave) {
-        console.log('[Workspace Leaves] Processing leave permissions, type:', typeof leavePermissionsFromLeave, 'has leave prop:', !!leavePermissionsFromLeave.leave);
-        if (typeof leavePermissionsFromLeave === 'boolean') {
-          // Old format
-          console.log('[Workspace Leaves] Using old boolean format for leave');
-          leaveSelf = false;
-          leaveOthers = leavePermissionsFromLeave;
-        } else if (leavePermissionsFromLeave.leave) {
-          // New format with separate leave/od - structure: { leave: { canApplyForSelf, canApplyForOthers } }
-          console.log('[Workspace Leaves] Using new nested format for leave:', leavePermissionsFromLeave.leave);
-          leaveSelf = leavePermissionsFromLeave.leave.canApplyForSelf || false;
-          leaveOthers = leavePermissionsFromLeave.leave.canApplyForOthers || false;
-        } else {
-          // Legacy object format (but check if it has OD data, if so, this is for OD not leave)
-          if (!leavePermissionsFromLeave.od) {
-            console.log('[Workspace Leaves] Using legacy object format for leave');
-            leaveSelf = leavePermissionsFromLeave.canApplyForSelf || false;
-            leaveOthers = leavePermissionsFromLeave.canApplyForOthers || false;
-          } else {
-            console.log('[Workspace Leaves] Leave permissions object contains OD data, skipping');
-          }
-        }
-      } else {
-        console.log('[Workspace Leaves] No leave permissions found');
-      }
-
-
-      // Override based on Role (Strict Role-Based Access)
-      if (currentUser) {
-        if (currentUser.role === 'employee') {
-          leaveSelf = true; // Employees can always apply for themselves
-          leaveOthers = false;
-        } else if (['manager', 'hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser.role)) {
-          leaveOthers = true;
-          leaveSelf = true; // Admins/Managers/HODs should also be able to apply
-        }
-      }
-
-      console.log('[Workspace Leaves] Parsed leave permissions:', { self: leaveSelf, others: leaveOthers });
-      setCanApplyLeaveForSelf(leaveSelf);
-      setCanApplyLeaveForOthers(leaveOthers);
-
-      // Process OD permissions - check OD settings first, then fallback to leave settings
       let odSelf = false;
       let odOthers = false;
-
-      // First try OD settings
-      if (odPermissionsFromOD) {
-        console.log('[Workspace Leaves] Processing OD permissions from OD settings, type:', typeof odPermissionsFromOD, 'has od prop:', !!odPermissionsFromOD.od);
-        if (typeof odPermissionsFromOD === 'boolean') {
-          // Old format
-          console.log('[Workspace Leaves] Using old boolean format for OD');
-          odSelf = false;
-          odOthers = odPermissionsFromOD;
-        } else if (odPermissionsFromOD.od) {
-          // New format with separate leave/od - structure: { od: { canApplyForSelf, canApplyForOthers } }
-          console.log('[Workspace Leaves] Using new nested format for OD:', odPermissionsFromOD.od);
-          odSelf = odPermissionsFromOD.od.canApplyForSelf || false;
-          odOthers = odPermissionsFromOD.od.canApplyForOthers || false;
-        } else {
-          // Legacy object format
-          console.log('[Workspace Leaves] Using legacy object format for OD');
-          odSelf = odPermissionsFromOD.canApplyForSelf || false;
-          odOthers = odPermissionsFromOD.canApplyForOthers || false;
-        }
-      }
-      // If not found in OD settings, check leave settings (might have OD permissions stored there)
-      else if (leavePermissionsFromLeave && typeof leavePermissionsFromLeave === 'object' && leavePermissionsFromLeave.od) {
-        console.log('[Workspace Leaves] Found OD permissions in leave settings, using them');
-        odSelf = leavePermissionsFromLeave.od.canApplyForSelf || false;
-        odOthers = leavePermissionsFromLeave.od.canApplyForOthers || false;
-      }
-      // Final fallback: use leave permissions if no OD-specific permissions found
-      else if (leavePermissionsFromLeave && typeof leavePermissionsFromLeave !== 'boolean' && !leavePermissionsFromLeave.leave && !leavePermissionsFromLeave.od) {
-        // Use leave permissions as fallback for OD (legacy behavior)
-        console.log('[Workspace Leaves] Using leave permissions as fallback for OD');
-        odSelf = leavePermissionsFromLeave.canApplyForSelf || false;
-        odOthers = leavePermissionsFromLeave.canApplyForOthers || false;
-      } else {
-        console.log('[Workspace Leaves] No OD permissions found');
-      }
-
-
-      // Override OD based on Role
       if (currentUser) {
         if (currentUser.role === 'employee') {
-          odSelf = true; // Employees can always apply for OD
+          leaveSelf = true;
+          leaveOthers = false;
+          odSelf = true;
           odOthers = false;
         } else if (['manager', 'hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser.role)) {
-          odOthers = true;
+          leaveSelf = true;
+          leaveOthers = true;
           odSelf = true;
+          odOthers = true;
         }
       }
-
-      console.log('[Workspace Leaves] Parsed OD permissions:', { self: odSelf, others: odOthers });
+      setCanApplyLeaveForSelf(leaveSelf);
+      setCanApplyLeaveForOthers(leaveOthers);
       setCanApplyODForSelf(odSelf);
       setCanApplyODForOthers(odOthers);
-
-      // Set combined permissions (for backward compatibility)
       setCanApplyForSelf(leaveSelf || odSelf);
       setCanApplyForOthers(leaveOthers || odOthers);
-
-      console.log('[Workspace Leaves] Final permissions - Leave:', { self: leaveSelf, others: leaveOthers }, 'OD:', { self: odSelf, others: odOthers });
     } catch (err) {
       console.error('[Workspace Leaves] Failed to check workspace permission:', err);
       setCanApplyLeaveForSelf(false);
@@ -930,6 +835,13 @@ export default function LeavesPage() {
           maxAdvanceDays: s.maxAdvanceDays ?? 90,
         });
       }
+      // Leave workflow: allow higher authority to approve lower levels
+      if (leaveSettingsRes.success && leaveSettingsRes.data?.workflow) {
+        const wf = leaveSettingsRes.data.workflow as { allowHigherAuthorityToApproveLowerLevels?: boolean; steps?: { stepOrder: number; approverRole: string }[] };
+        setLeaveWorkflowAllowHigherAuthority(Boolean(wf.allowHigherAuthorityToApproveLowerLevels));
+        const steps = (wf.steps || []).slice().sort((a: any, b: any) => (a.stepOrder ?? 999) - (b.stepOrder ?? 999));
+        setLeaveWorkflowRoleOrder(steps.map((st: any) => String(st.approverRole || '').toLowerCase()).filter(Boolean));
+      }
 
       // Extract OD types from settings (field is 'types' not 'odTypes')
       let fetchedODTypes: any[] = [];
@@ -946,6 +858,13 @@ export default function LeavesPage() {
           allowFutureDated: s.allowFutureDated ?? true,
           maxAdvanceDays: s.maxAdvanceDays ?? 90,
         });
+      }
+      // OD workflow: allow higher authority to approve lower levels
+      if (odSettingsRes.success && odSettingsRes.data?.workflow) {
+        const wf = odSettingsRes.data.workflow as { allowHigherAuthorityToApproveLowerLevels?: boolean; steps?: { stepOrder: number; approverRole: string }[] };
+        setODWorkflowAllowHigherAuthority(Boolean(wf.allowHigherAuthorityToApproveLowerLevels));
+        const steps = (wf.steps || []).slice().sort((a: any, b: any) => (a.stepOrder ?? 999) - (b.stepOrder ?? 999));
+        setODWorkflowRoleOrder(steps.map((st: any) => String(st.approverRole || '').toLowerCase()).filter(Boolean));
       }
 
       // Use fetched types or defaults
@@ -1736,7 +1655,15 @@ export default function LeavesPage() {
 
   const totalPending = stats.totalPending;
 
-  const canPerformAction = (item: LeaveApplication | ODApplication) => {
+  // Build role order from the leave/OD's stored workflow (dynamic per record)
+  const getRoleOrderFromItem = (item: LeaveApplication | ODApplication): string[] => {
+    const chain = (item as any).workflow?.approvalChain;
+    if (!chain || !Array.isArray(chain) || chain.length === 0) return [];
+    const sorted = chain.slice().sort((a: any, b: any) => (a.stepOrder ?? 999) - (b.stepOrder ?? 999));
+    return sorted.map((s: any) => String(s.role || s.stepRole || '').toLowerCase()).filter(Boolean);
+  };
+
+  const canPerformAction = (item: LeaveApplication | ODApplication, source?: 'leave' | 'od') => {
     if (!currentUser) return false;
     if (currentUser.role === 'employee') return false;
 
@@ -1744,6 +1671,13 @@ export default function LeavesPage() {
     if (['super_admin', 'sub_admin'].includes(currentUser.role)) {
       return !['approved', 'rejected', 'cancelled'].includes(item.status);
     }
+
+    const isOD = source === 'od' || ((item as any).odType !== undefined);
+    const allowHigher = isOD ? odWorkflowAllowHigherAuthority : leaveWorkflowAllowHigherAuthority;
+    // Use workflow order stored on the leave/OD (dynamic); fallback to global settings order if missing
+    const itemRoleOrder = getRoleOrderFromItem(item);
+    const globalRoleOrder = isOD ? odWorkflowRoleOrder : leaveWorkflowRoleOrder;
+    const roleOrder = itemRoleOrder.length > 0 ? itemRoleOrder : globalRoleOrder;
 
     // Strict check: nextApproverRole must match user.role (current step = user's turn)
     const nextRole = String((item as any).workflow?.nextApproverRole || (item as any).workflow?.nextApprover || '').toLowerCase().trim();
@@ -1757,6 +1691,18 @@ export default function LeavesPage() {
         const reportingManagerIds = (item as any).workflow?.reportingManagerIds as string[] | undefined;
         const userId = String((currentUser as any).id ?? (currentUser as any)._id ?? '').trim();
         if (reportingManagerIds?.length && userId && reportingManagerIds.some((id: string) => String(id).trim() === userId)) return true;
+      }
+      // Setting: allow higher authority to approve lower levels (using this leave's workflow order)
+      if (allowHigher && roleOrder.length > 0) {
+        const nextIdx = roleOrder.indexOf(nextRole);
+        let userIdx = roleOrder.indexOf(userRole);
+        if (userIdx === -1 && (userRole === 'hr' || userRole === 'super_admin')) userIdx = roleOrder.length;
+        if (userIdx === -1 && userRole === 'manager') {
+          const reportingIdx = roleOrder.indexOf('reporting_manager');
+          const hrIdx = roleOrder.indexOf('hr');
+          userIdx = reportingIdx >= 0 ? reportingIdx : (hrIdx >= 0 ? hrIdx : roleOrder.length);
+        }
+        if (nextIdx >= 0 && userIdx >= 0 && userIdx >= nextIdx) return true;
       }
       return false;
     }
@@ -2594,7 +2540,7 @@ export default function LeavesPage() {
 
                           {/* Actions */}
 
-                          {canPerformAction(leave) && (hasManagePermission || hasManagePermission) && (
+                          {canPerformAction(leave, 'leave') && (hasManagePermission || hasManagePermission) && (
                             <div className="flex items-center gap-2 mt-auto">
                               {hasManagePermission && (
                                 <button
@@ -2688,7 +2634,7 @@ export default function LeavesPage() {
                           </div>
 
                           {/* Actions */}
-                          {canPerformAction(od) && (hasManagePermission || hasManagePermission) && (
+                          {canPerformAction(od, 'od') && (hasManagePermission || hasManagePermission) && (
                             <div className="flex items-center gap-2 mt-auto">
                               {hasManagePermission && (
                                 <button
@@ -3485,7 +3431,7 @@ export default function LeavesPage() {
                 {/* Footer Actions - Sticky Bottom */}
                 {/* Footer Actions - Sticky Bottom */}
                 <div className="p-4 bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row gap-3 justify-end items-stretch sm:items-center">
-                  {!['approved', 'rejected', 'cancelled'].includes(selectedItem.status) && canPerformAction(selectedItem) && (
+                  {!['approved', 'rejected', 'cancelled'].includes(selectedItem.status) && canPerformAction(selectedItem, detailType) && (
                     <>
                       <textarea
                         value={actionComment}
