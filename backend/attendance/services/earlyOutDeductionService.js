@@ -183,22 +183,25 @@ async function calculateMonthlyEarlyOutDeductions(employeeNumber, year, monthNum
       if (settings) await cacheService.set(settingsCacheKey, settings, 600);
     }
 
-    // Calculate deductions for each day
+    // Calculate deductions for each day using all shifts (sum early-out minutes per day)
     for (const record of attendanceRecords) {
-      // Use only the first shift's early-out minutes when there are multiple shifts
-      const firstShift = Array.isArray(record.shifts) && record.shifts.length > 0
-        ? record.shifts[0]
-        : null;
+      const shifts = Array.isArray(record.shifts) ? record.shifts : [];
+      let dayEarlyOut = 0;
+      if (shifts.length > 0) {
+        for (const s of shifts) {
+          if (s.earlyOutMinutes != null && s.earlyOutMinutes > 0) {
+            dayEarlyOut += Number(s.earlyOutMinutes);
+          }
+        }
+      } else {
+        dayEarlyOut = Number(record.totalEarlyOutMinutes) || 0;
+      }
 
-      const earlyOut = firstShift
-        ? (firstShift.earlyOutMinutes || 0)
-        : (record.totalEarlyOutMinutes || 0);
-
-      if (earlyOut > 0) {
-        totalEarlyOutMinutes += earlyOut;
+      if (dayEarlyOut > 0) {
+        totalEarlyOutMinutes += dayEarlyOut;
 
         // Calculate deduction for this day - PASS SETTINGS to avoid redundant DB hits
-        const deduction = await calculateEarlyOutDeduction(earlyOut, settings);
+        const deduction = await calculateEarlyOutDeduction(dayEarlyOut, settings);
 
         if (deduction.deductionApplied) {
           if (deduction.deductionDays) {
@@ -213,16 +216,21 @@ async function calculateMonthlyEarlyOutDeductions(employeeNumber, year, monthNum
       }
     }
 
-    // earlyOutCount should reflect only days where an early-out was actually counted
+    // earlyOutCount = number of days with at least one early-out (from any shift)
     const earlyOutCount = totalEarlyOutMinutes > 0
       ? attendanceRecords.reduce((count, record) => {
-          const firstShift = Array.isArray(record.shifts) && record.shifts.length > 0
-            ? record.shifts[0]
-            : null;
-          const earlyOut = firstShift
-            ? (firstShift.earlyOutMinutes || 0)
-            : (record.totalEarlyOutMinutes || 0);
-          return earlyOut > 0 ? count + 1 : count;
+          const shifts = Array.isArray(record.shifts) ? record.shifts : [];
+          let dayEarlyOut = 0;
+          if (shifts.length > 0) {
+            for (const s of shifts) {
+              if (s.earlyOutMinutes != null && s.earlyOutMinutes > 0) {
+                dayEarlyOut += Number(s.earlyOutMinutes);
+              }
+            }
+          } else {
+            dayEarlyOut = Number(record.totalEarlyOutMinutes) || 0;
+          }
+          return dayEarlyOut > 0 ? count + 1 : count;
         }, 0)
       : 0;
 

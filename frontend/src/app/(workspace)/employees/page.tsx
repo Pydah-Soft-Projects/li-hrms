@@ -4993,6 +4993,60 @@ export default function EmployeesPage() {
                   </div>
                 )}
 
+                {/* Deduction Preferences - Statutory & Attendance flags */}
+                {userRole !== 'hod' && (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                    <h3 className="mb-2 text-lg font-semibold text-slate-900 dark:text-slate-100">Deduction Preferences</h3>
+                    <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
+                      Controls which statutory and attendance deductions apply to this employee during payroll. Disabled items are not calculated (amount 0).
+                    </p>
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                      <div>
+                        <p className="mb-2 text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">Statutory</p>
+                        <div className="space-y-2">
+                          {[
+                            { key: 'applyProfessionTax', label: 'Profession Tax' },
+                            { key: 'applyESI', label: 'ESI' },
+                            { key: 'applyPF', label: 'PF' },
+                          ].map(({ key, label }) => {
+                            const enabled = (viewingEmployee as any)[key] !== false;
+                            return (
+                              <div key={key} className="flex items-center justify-between">
+                                <span className="text-sm text-slate-700 dark:text-slate-300">{label}</span>
+                                <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${enabled ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'}`}>
+                                  {enabled ? 'Enabled' : 'Disabled'}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      <div>
+                        <p className="mb-2 text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">Attendance deduction</p>
+                        <div className="space-y-2">
+                          {[
+                            { key: 'applyAttendanceDeduction', label: 'Apply attendance deduction' },
+                            { key: 'deductLateIn', label: 'Late-ins' },
+                            { key: 'deductEarlyOut', label: 'Early-outs' },
+                            { key: 'deductPermission', label: 'Permission' },
+                            { key: 'deductAbsent', label: 'Absents (extra LOP)' },
+                          ].map(({ key, label }) => {
+                            const enabled = (viewingEmployee as any)[key] !== false;
+                            return (
+                              <div key={key} className="flex items-center justify-between">
+                                <span className="text-sm text-slate-700 dark:text-slate-300">{label}</span>
+                                <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${enabled ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'}`}>
+                                  {enabled ? 'Enabled' : 'Disabled'}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Bank Details */}
                 {userRole !== 'hod' && (
                   <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">

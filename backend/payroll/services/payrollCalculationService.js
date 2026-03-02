@@ -371,6 +371,7 @@ async function calculatePayroll(employeeId, month, userId) {
         absentDays: totalAbsentDays,
         enableAbsentDeduction: absentSettings.enableAbsentDeduction,
         lopDaysPerAbsent: absentSettings.lopDaysPerAbsent,
+        employee,
       }
     );
     console.log('Attendance Deduction Result:', JSON.stringify(attendanceDeductionResult, null, 2));
@@ -393,7 +394,8 @@ async function calculatePayroll(employeeId, month, userId) {
       month,
       departmentId.toString(),
       basicPayResult.perDayBasicPay,
-      employee.division_id?.toString() || null
+      employee.division_id?.toString() || null,
+      { employee }
     );
     console.log('Permission Deduction Result:', JSON.stringify(permissionDeductionResult, null, 2));
     console.log(`Permission Deduction Amount: ${permissionDeductionResult.permissionDeduction}`);
@@ -1153,7 +1155,8 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
       month,
       departmentId,
       perDaySalary,
-      employee.division_id // Pass division ID for granular rules
+      employee.division_id, // Pass division ID for granular rules
+      { employee }
     );
 
     let totalAttendanceDeduction = attendanceDeductionResult.attendanceDeduction || 0;
@@ -1220,6 +1223,7 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
         grossSalary: grossAmountSalary,
         earnedSalary,
         dearnessAllowance: 0,
+        employee,
       });
       if (statutoryResult.breakdown && statutoryResult.breakdown.length > 0) {
         totalDeductions += statutoryResult.totalEmployeeShare;
@@ -1577,37 +1581,28 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     }
 
     let batchId = null;
-    // Update Payroll Batch
+    // Create or find batch and add this payroll record (same as dynamic engine — batches right after record save)
+    const deptId = employee?.department_id?._id ?? employee?.department_id;
+    const divId = employee?.division_id?._id ?? employee?.division_id;
     try {
-      if (employee && employee.department_id) {
-        // console.log(`\n--- Updating Payroll Batch for Department: ${employee.department_id} ---`); // Optional logging
+      if (employee && deptId && divId) {
         let batch = await PayrollBatch.findOne({
-          department: employee.department_id,
-          division: employee.division_id, // Strict Scope
+          department: deptId,
+          division: divId,
           month: month
         });
 
         if (!batch) {
-          console.log('Batch does not exist, creating new batch...');
-          // Create batch if not exists
-          batch = await PayrollBatchService.createBatch(
-            employee.department_id,
-            employee.division_id, // Pass Division ID
-            month,
-            userId
-          );
+          batch = await PayrollBatchService.createBatch(deptId, divId, month, userId);
         }
 
-        // Add payroll to batch
         if (batch) {
           await PayrollBatchService.addPayrollToBatch(batch._id, payrollRecord._id);
           batchId = batch._id;
-          // console.log(`✓ Added payroll record to batch: ${batch.batchNumber}`);
         }
       }
     } catch (batchError) {
       console.error('Error updating payroll batch:', batchError);
-      // Don't fail the calculation, just log error
     }
 
     return { success: true, payrollRecord, batchId, payslip };
