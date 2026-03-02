@@ -410,11 +410,18 @@ const startWorkers = () => {
                 const empNo = String(entry.employeeNumber || '').toUpperCase();
 
                 if (entry.status === 'WO' || entry.status === 'HOL') {
-                    // Update or Create AttendanceDaily via .save() to trigger hooks
+                    // Create or update AttendanceDaily for this WO/HOL day (only for saved roster entries)
                     let dailyRecord = await AttendanceDaily.findOne({
                         employeeNumber: empNo,
                         date: entry.date
                     });
+
+                    // Skip only this (employee, date) day if it has punches (e.g. OD, CCL). Other WO/HOL days for same employee still synced.
+                    const hasPunches = dailyRecord && (
+                        (dailyRecord.totalWorkingHours > 0) ||
+                        (dailyRecord.shifts && dailyRecord.shifts.length > 0 && dailyRecord.shifts.some(s => s && s.inTime))
+                    );
+                    if (hasPunches) continue;
 
                     const updateFields = {
                         status: entry.status === 'WO' ? 'WEEK_OFF' : 'HOLIDAY',
@@ -435,8 +442,9 @@ const startWorkers = () => {
                         Object.keys(updateFields).forEach(key => {
                             dailyRecord[key] = updateFields[key];
                         });
-                        if (!dailyRecord.source.includes('roster-sync')) {
-                            dailyRecord.source.push('roster-sync');
+                        if (!dailyRecord.source || !dailyRecord.source.includes('roster-sync')) {
+                            dailyRecord.source = dailyRecord.source || [];
+                            if (!dailyRecord.source.includes('roster-sync')) dailyRecord.source.push('roster-sync');
                         }
                     }
 

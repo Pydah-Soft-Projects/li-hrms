@@ -1549,6 +1549,65 @@ export default function DynamicEmployeeForm({
           </div>
         );
       })}
+
+      {/* Deduction preferences: statutory (PT, ESI, PF) and attendance (late/early/permission/absent). Default all true. */}
+      {!excludeFields.includes('deductionPreferences') && (
+        <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+          <h3 className="mb-2 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            Deduction preferences
+          </h3>
+          <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
+            Choose which statutory and attendance deductions apply to this employee. Unchecked items are not calculated (amount 0).
+          </p>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">Statutory</p>
+              <div className="space-y-2">
+                {[
+                  { key: 'applyProfessionTax', label: 'Profession Tax' },
+                  { key: 'applyESI', label: 'ESI' },
+                  { key: 'applyPF', label: 'PF' },
+                ].map(({ key, label }) => (
+                  <label key={key} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData[key] !== false}
+                      onChange={(e) => handleFieldChange(key, e.target.checked)}
+                      disabled={isViewMode}
+                      className="h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-800"
+                    />
+                    <span className="text-sm text-slate-700 dark:text-slate-300">{label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">Attendance deduction</p>
+              <div className="space-y-2">
+                {[
+                  { key: 'applyAttendanceDeduction', label: 'Apply attendance deduction' },
+                  { key: 'deductLateIn', label: 'Late-ins' },
+                  { key: 'deductEarlyOut', label: 'Early-outs' },
+                  { key: 'deductPermission', label: 'Permission' },
+                  { key: 'deductAbsent', label: 'Absents (extra LOP)' },
+                ].map(({ key, label }) => (
+                  <label key={key} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData[key] !== false}
+                      onChange={(e) => handleFieldChange(key, e.target.checked)}
+                      disabled={isViewMode}
+                      className="h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-800"
+                    />
+                    <span className="text-sm text-slate-700 dark:text-slate-300">{label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* If no personal info group exists, still show qualifications at the end */}
       {!sortedGroups.some((g) => g.id === 'personal_info') && qualificationsBlock}
     </div>

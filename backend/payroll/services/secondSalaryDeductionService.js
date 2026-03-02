@@ -120,10 +120,30 @@ function calculateDaysToDeduct(multiplier, remainder, threshold, deductionType, 
 }
 
 /**
- * Calculate attendance deduction (late-ins + early-outs) for Second Salary
+ * Calculate attendance deduction (late-ins + early-outs) for Second Salary.
+ * Respects employee flags: applyAttendanceDeduction (master), deductLateIn, deductEarlyOut (default true).
+ * @param {Object} [options] - Optional: { employee }. If employee.applyAttendanceDeduction === false, return 0; deductLateIn/deductEarlyOut false zero that count.
  */
-async function calculateAttendanceDeduction(employeeId, month, departmentId, perDayBasicPay, divisionId = null) {
+async function calculateAttendanceDeduction(employeeId, month, departmentId, perDayBasicPay, divisionId = null, options = {}) {
     try {
+        const employee = options && options.employee != null ? options.employee : null;
+        const applyAttendanceDeduction = employee == null || (employee && employee.applyAttendanceDeduction !== false);
+        if (!applyAttendanceDeduction) {
+            return {
+                attendanceDeduction: 0,
+                breakdown: {
+                    lateInsCount: 0,
+                    earlyOutsCount: 0,
+                    combinedCount: 0,
+                    freeAllowedPerMonth: 0,
+                    effectiveCount: 0,
+                    daysDeducted: 0,
+                    deductionType: null,
+                    calculationMode: null,
+                },
+            };
+        }
+
         const PayRegisterSummary = require('../../pay-register/model/PayRegisterSummary');
         let payRegister = await PayRegisterSummary.findOne({ employeeId, month }).lean();
         let lateInsCount = 0;
@@ -167,6 +187,11 @@ async function calculateAttendanceDeduction(employeeId, month, departmentId, per
                 }
             }
         }
+
+        const deductLateIn = employee == null || employee.deductLateIn !== false;
+        const deductEarlyOut = employee == null || employee.deductEarlyOut !== false;
+        if (!deductLateIn) lateInsCount = 0;
+        if (!deductEarlyOut) earlyOutsCount = 0;
 
         console.log(`[SecondSalaryDeduction] Employee ${employeeId} - Lates: ${lateInsCount}, Early: ${earlyOutsCount} (Source: ${source})`);
 
@@ -239,10 +264,26 @@ async function calculateAttendanceDeduction(employeeId, month, departmentId, per
 }
 
 /**
- * Calculate permission deduction for Second Salary
+ * Calculate permission deduction for Second Salary.
+ * Respects employee.deductPermission (default true). When false, returns 0.
  */
-async function calculatePermissionDeduction(employeeId, month, departmentId, perDayBasicPay, divisionId = null) {
+async function calculatePermissionDeduction(employeeId, month, departmentId, perDayBasicPay, divisionId = null, options = {}) {
     try {
+        const employee = options && options.employee != null ? options.employee : null;
+        const deductPermission = employee == null || (employee && employee.deductPermission !== false);
+        if (!deductPermission) {
+            return {
+                permissionDeduction: 0,
+                breakdown: {
+                    permissionCount: 0,
+                    eligiblePermissionCount: 0,
+                    daysDeducted: 0,
+                    deductionType: null,
+                    calculationMode: null,
+                },
+            };
+        }
+
         const rules = await getResolvedPermissionDeductionRules(departmentId, divisionId);
 
         if (!rules.countThreshold || !rules.deductionType || !rules.calculationMode) {

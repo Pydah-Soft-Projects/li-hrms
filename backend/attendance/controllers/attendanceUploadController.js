@@ -39,6 +39,15 @@ exports.uploadExcel = async (req, res) => {
       });
     }
 
+    const AttendanceSettings = require('../model/AttendanceSettings');
+    const attSettings = await AttendanceSettings.getSettings();
+    if (attSettings?.featureFlags?.allowAttendanceUpload === false) {
+      return res.status(403).json({
+        success: false,
+        message: 'Attendance upload is disabled by settings.',
+      });
+    }
+
     // Parse Excel file with date/serial awareness
     const workbook = XLSX.read(req.file.buffer, {
       type: 'buffer',

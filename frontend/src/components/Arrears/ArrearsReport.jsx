@@ -259,7 +259,7 @@ const ArrearsReport = ({ onViewDetails, employees = [] }) => {
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-slate-700 dark:text-slate-300">{ar.startMonth} to {ar.endMonth}</td>
+                    <td className="px-6 py-4 text-slate-700 dark:text-slate-300">{ar.type === 'direct' ? '—' : `${ar.startMonth || '—'} to ${ar.endMonth || '—'}`}</td>
                     <td className="px-6 py-4 text-right font-semibold text-slate-900 dark:text-white">
                       ₹{ar.totalAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                     </td>
