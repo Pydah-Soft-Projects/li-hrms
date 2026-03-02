@@ -1215,22 +1215,21 @@ export default function LeavesPage() {
         }
       }
 
-      // 3. Evidence Upload
+      // 3. Evidence Upload (mandatory for OD)
       if (applyType === 'od') {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const odSettings = getModuleConfig('OD')?.settings as any;
-        if (odSettings?.requirePhotoEvidence && !evidenceFile) {
-          toast.error('Photo evidence is required');
+        if (!evidenceFile) {
+          toast.error('Photo evidence is required for OD applications');
           setLoading(false);
           return;
         }
 
         if (evidenceFile) {
           const uploadRes = await api.uploadEvidence(evidenceFile);
-          if (uploadRes.success && uploadRes.data) {
+          // API returns { success, url, key, filename } at top level (no .data wrapper)
+          if (uploadRes.success && uploadRes.url) {
             payload.photoEvidence = {
-              url: uploadRes.data.url,
-              key: uploadRes.data.key,
+              url: uploadRes.url,
+              key: uploadRes.key,
               exifLocation: (evidenceFile as any).exifLocation
             };
           } else {
@@ -3109,7 +3108,7 @@ export default function LeavesPage() {
                       />
                     </div>
                     <LocationPhotoCapture
-                      required={(getModuleConfig('OD')?.settings as any)?.requirePhotoEvidence || false}
+                      required
                       label="Photo Evidence"
                       onCapture={(loc, photo) => {
                         setEvidenceFile(photo.file);

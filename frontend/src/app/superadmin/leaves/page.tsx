@@ -2112,10 +2112,11 @@ export default function LeavesPage() {
                 />
               </div>
 
-              {/* Photo Evidence (OD Only) */}
+              {/* Photo Evidence (OD Only - mandatory) */}
               {applyType === 'od' && (
                 <div className="pt-2 border-t border-slate-100 dark:border-slate-700/50">
                   <LocationPhotoCapture
+                    required
                     label="Live Photo Evidence"
                     onCapture={(loc, photo) => {
                       setEvidenceFile(photo.file);

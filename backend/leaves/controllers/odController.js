@@ -312,6 +312,14 @@ exports.applyOD = async (req, res) => {
       geoLocation, // ADDED
     } = req.body;
 
+    // Photo evidence is mandatory for OD
+    if (!photoEvidence || !photoEvidence.url) {
+      return res.status(400).json({
+        success: false,
+        error: 'Photo evidence is required for OD applications.',
+      });
+    }
+
     // Get settings
     const workflowSettings = await getWorkflowSettings();
     const settings = workflowSettings.settings || {};
