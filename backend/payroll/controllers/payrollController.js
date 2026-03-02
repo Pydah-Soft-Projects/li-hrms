@@ -554,6 +554,84 @@ exports.exportPayrollExcel = async (req, res) => {
       targetEmployeeIds = emps.map((e) => e._id.toString());
     }
 
+    const config = await PayrollConfiguration.get();
+    const useDynamicExport = String(strategy || '').toLowerCase() === 'dynamic';
+    const rawColumns = Array.isArray(config?.outputColumns) ? config.outputColumns : [];
+    const hasOutputColumns = rawColumns.length > 0;
+
+    // When strategy=dynamic and we have output columns, use the same data source as the paysheet:
+    // compute payslips via the dynamic engine (no PayrollRecord required). Export will match display.
+    if (useDynamicExport && hasOutputColumns) {
+      if (targetEmployeeIds.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'No employees in scope. Apply filters or select employees to export.',
+        });
+      }
+      const userId = req.user?._id?.toString() || req.user?.id;
+      const payslips = [];
+      for (const empId of targetEmployeeIds) {
+        try {
+          const result = await payrollCalculationFromOutputColumnsService.calculatePayrollFromOutputColumns(
+            empId,
+            month,
+            userId,
+            { source: 'payregister', arrearsSettlements: [] }
+          );
+          if (result?.payslip) {
+            const slip = result.payslip;
+            payslips.push(slip && typeof slip.toObject === 'function' ? slip.toObject() : slip);
+          }
+        } catch (err) {
+          console.error(`Error calculating payroll for export (employee ${empId}):`, err.message);
+        }
+      }
+      if (payslips.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'No payslip data available to export. Ensure pay register is filled and try again.',
+        });
+      }
+      const allAllowanceNames = new Set();
+      const allDeductionNames = new Set();
+      const allStatutoryCodes = new Set();
+      payslips.forEach((p) => {
+        (p.earnings?.allowances || []).forEach((a) => { if (a && a.name) allAllowanceNames.add(a.name); });
+        (p.deductions?.otherDeductions || []).forEach((d) => { if (d && d.name) allDeductionNames.add(d.name); });
+        (p.deductions?.statutoryDeductions || []).forEach((s) => {
+          if (s && (s.code || s.name)) allStatutoryCodes.add(String(s.code || s.name).trim());
+        });
+      });
+      const outputColumns = rawColumns.map((c, i) => {
+        const doc = c && typeof c.toObject === 'function' ? c.toObject() : (c && typeof c === 'object' ? { ...c } : {});
+        return {
+          header: doc.header != null && String(doc.header).trim() ? String(doc.header).trim() : `Column ${i}`,
+          source: doc.source === 'formula' ? 'formula' : 'field',
+          field: doc.field != null ? String(doc.field) : '',
+          formula: doc.formula != null ? String(doc.formula) : '',
+          order: typeof doc.order === 'number' ? doc.order : i,
+        };
+      });
+      const expandedColumns = outputColumnService.expandOutputColumnsWithBreakdown(
+        outputColumns,
+        allAllowanceNames,
+        allDeductionNames,
+        allStatutoryCodes
+      );
+      const rows = payslips.map((payslip, index) => {
+        const rowData = outputColumnService.buildRowFromOutputColumns(payslip, expandedColumns, index + 1);
+        return { 'S.No': index + 1, ...rowData };
+      });
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(rows);
+      XLSX.utils.book_append_sheet(wb, ws, 'Payslips');
+      const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+      const filename = `payslips_${month}${departmentId ? `_dept_${departmentId}` : ''}.xlsx`;
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      return res.send(buf);
+    }
+
     const query = { month };
     if (targetEmployeeIds.length > 0) {
       query.employeeId = { $in: targetEmployeeIds };
@@ -751,11 +829,8 @@ exports.exportPayrollExcel = async (req, res) => {
 
     // Step 3: Build rows – when caller sends strategy=dynamic, export using dynamic output columns
     //         (from PayrollConfiguration.outputColumns) with breakdown columns before each cumulative.
+    // config, useDynamicExport, hasOutputColumns already declared above (dynamic path returns early).
     let rows;
-    const config = await PayrollConfiguration.get();
-    const useDynamicExport = String(strategy || '').toLowerCase() === 'dynamic';
-    const hasOutputColumns = config && Array.isArray(config.outputColumns) && config.outputColumns.length > 0;
-
     if (useDynamicExport && hasOutputColumns) {
       const expandedColumns = outputColumnService.expandOutputColumnsWithBreakdown(
         config.outputColumns,
@@ -1750,10 +1825,28 @@ exports.calculatePayrollBulk = async (req, res) => {
 };
 
 /**
- * @desc    Get attendance data for a range of months for an employee
+ * @desc    Get attendance data for a range of months for an employee (for incremental arrears proration).
+ * Uses Pay Register Summary (attendance source) first; falls back to PayrollRecord if no pay register for that month.
  * @route   GET /api/payroll/attendance-range
  * @access  Private
  */
+function getMonthsInRange(startMonth, endMonth) {
+  const [startYear, startM] = startMonth.split('-').map(Number);
+  const [endYear, endM] = endMonth.split('-').map(Number);
+  const months = [];
+  let y = startYear;
+  let m = startM;
+  while (y < endYear || (y === endYear && m <= endM)) {
+    months.push(`${y}-${String(m).padStart(2, '0')}`);
+    m += 1;
+    if (m > 12) {
+      m = 1;
+      y += 1;
+    }
+  }
+  return months;
+}
+
 exports.getAttendanceDataRange = async (req, res) => {
   try {
     const { employeeId, startMonth, endMonth } = req.query;
@@ -1765,16 +1858,56 @@ exports.getAttendanceDataRange = async (req, res) => {
       });
     }
 
-    // Fetch payroll records for the range
-    // Since month is "YYYY-MM", string comparison works for range
-    const records = await PayrollRecord.find({
+    const months = getMonthsInRange(startMonth, endMonth);
+    if (months.length === 0) {
+      return res.status(200).json({ success: true, data: [] });
+    }
+
+    // Primary: Pay Register Summary (attendance / pay register – exists as soon as register is filled)
+    const payRegisters = await PayRegisterSummary.find({
       employeeId,
-      month: { $gte: startMonth, $lte: endMonth }
-    }).select('month totalDaysInMonth attendance.totalPaidDays');
+      month: { $in: months }
+    }).select('month totalDaysInMonth totals.totalPayableShifts totals.totalPresentDays totals.totalPaidLeaveDays totals.totalWeeklyOffs totals.totalHolidays').lean();
+
+    // Fallback: PayrollRecord (only exists after payroll run for that month)
+    const payrollRecords = await PayrollRecord.find({
+      employeeId,
+      month: { $in: months }
+    }).select('month totalDaysInMonth attendance.totalPaidDays').lean();
+
+    const byMonthPR = Object.fromEntries((payRegisters || []).map((r) => [r.month, r]));
+    const byMonthPayroll = Object.fromEntries((payrollRecords || []).map((r) => [r.month, r]));
+
+    const data = months.map((month) => {
+      const pr = byMonthPR[month];
+      const payroll = byMonthPayroll[month];
+      let totalDaysInMonth = 0;
+      let totalPaidDays = 0;
+
+      if (pr) {
+        totalDaysInMonth = Number(pr.totalDaysInMonth) || 0;
+        const tot = pr.totals || {};
+        const payable = tot.totalPayableShifts;
+        totalPaidDays = Number.isFinite(payable) ? payable : (Number(tot.totalPresentDays) || 0) + (Number(tot.totalPaidLeaveDays) || 0) + (Number(tot.totalWeeklyOffs) || 0) + (Number(tot.totalHolidays) || 0);
+      } else if (payroll) {
+        totalDaysInMonth = Number(payroll.totalDaysInMonth) || 0;
+        totalPaidDays = Number(payroll.attendance?.totalPaidDays) || 0;
+      }
+      if (totalDaysInMonth <= 0) {
+        const [y, m] = month.split('-').map(Number);
+        totalDaysInMonth = new Date(y, m, 0).getDate();
+      }
+
+      return {
+        month,
+        totalDaysInMonth: Number(totalDaysInMonth),
+        attendance: { totalPaidDays: Number(totalPaidDays) }
+      };
+    });
 
     res.status(200).json({
       success: true,
-      data: records
+      data
     });
   } catch (error) {
     console.error('Error fetching attendance data range:', error);

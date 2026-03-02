@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import dynamic from 'next/dynamic';
 import { api } from '@/lib/api';
 import { auth } from '@/lib/auth';
 import {
@@ -13,6 +14,9 @@ import Swal from 'sweetalert2';
 import 'react-toastify/dist/ReactToastify.css';
 
 import LocationPhotoCapture from '@/components/LocationPhotoCapture';
+import EmployeeSelect from '@/components/EmployeeSelect';
+
+const LocationMap = dynamic(() => import('@/components/LocationMap'), { ssr: false });
 import {
   Calendar,
   Briefcase,
@@ -1214,22 +1218,21 @@ export default function LeavesPage() {
         }
       }
 
-      // 3. Evidence Upload
+      // 3. Evidence Upload (mandatory for OD)
       if (applyType === 'od') {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const odSettings = getModuleConfig('OD')?.settings as any;
-        if (odSettings?.requirePhotoEvidence && !evidenceFile) {
-          toast.error('Photo evidence is required');
+        if (!evidenceFile) {
+          toast.error('Photo evidence is required for OD applications');
           setLoading(false);
           return;
         }
 
         if (evidenceFile) {
           const uploadRes = await api.uploadEvidence(evidenceFile);
-          if (uploadRes.success && uploadRes.data) {
+          // API returns { success, url, key, filename } at top level (no .data wrapper)
+          if (uploadRes.success && uploadRes.url) {
             payload.photoEvidence = {
-              url: uploadRes.data.url,
-              key: uploadRes.data.key,
+              url: uploadRes.url,
+              key: uploadRes.key,
               exifLocation: (evidenceFile as any).exifLocation
             };
           } else {
@@ -2775,110 +2778,18 @@ export default function LeavesPage() {
                       Apply For Employee *
                     </label>
                     <div className="relative">
-                      {selectedEmployee ? (
-                        <div className="flex items-center justify-between p-3 rounded-xl border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white font-semibold">
-                              {getEmployeeInitials(selectedEmployee!)}
-                            </div>
-                            <div>
-                              <div className="font-medium text-slate-900 dark:text-white">
-                                {getEmployeeName(selectedEmployee!)}
-                              </div>
-                              <div className="text-xs text-slate-500 dark:text-slate-400">
-                                {selectedEmployee!.emp_no}
-                              </div>
-                              <div className="flex flex-wrap gap-1.5 mt-1">
-                                {selectedEmployee!.department?.name && (
-                                  <span className="px-1.5 py-0.5 text-[10px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-800 dark:text-blue-300 rounded">
-                                    {selectedEmployee!.department.name}
-                                  </span>
-                                )}
-                                {selectedEmployee.designation?.name && (
-                                  <span className="px-1.5 py-0.5 text-[10px] font-medium bg-green-100 text-green-700 dark:bg-green-800 dark:text-green-300 rounded">
-                                    {selectedEmployee.designation.name}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedEmployee(null);
-                              setFormData(prev => ({ ...prev, contactNumber: '' }));
-                            }}
-                            className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                          >
-                            <X />
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="relative">
-                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <Search />
-                          </div>
-                          <input
-                            type="text"
-                            value={employeeSearch}
-                            onChange={(e) => {
-                              setEmployeeSearch(e.target.value);
-                              setShowEmployeeDropdown(true);
-                            }}
-                            onFocus={() => setShowEmployeeDropdown(true)}
-                            placeholder="Search by name, emp no, or department..."
-                            className="w-full pl-10 pr-4 py-2 sm:py-2.5 rounded-xl border border-slate-200 bg-white text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20"
-                            onBlur={() => {
-                              // Delay hiding to allow click event on options to fire
-                              setTimeout(() => setShowEmployeeDropdown(false), 200);
-                            }}
-                          />
-
-                          {/* Employee Dropdown */}
-                          {showEmployeeDropdown && (
-                            <div className="absolute z-10 w-full mt-1 max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-800">
-                              {isSearching ? (
-                                <div className="p-4 flex flex-col items-center justify-center text-slate-500 gap-2">
-                                  <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
-                                  <span className="text-xs">Searching employees...</span>
-                                </div>
-                              ) : filteredEmployees.length === 0 ? (
-                                <div className="p-4 text-center text-sm text-slate-500">
-                                  {employeeSearch
-                                    ? 'No employees found'
-                                    : 'Type to search employees'}
-                                </div>
-                              ) : (
-                                filteredEmployees.slice(0, 10).map((emp, idx) => (
-                                  <button
-                                    key={emp._id || emp.emp_no || `emp-${idx}`}
-                                    type="button"
-                                    onClick={() => handleSelectEmployee(emp)}
-                                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-700 text-left transition-colors border-b border-slate-100 dark:border-slate-700 last:border-0"
-                                  >
-                                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-slate-400 to-slate-500 flex items-center justify-center text-white text-sm font-medium">
-                                      {getEmployeeInitials(emp)}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                      <div className="font-medium text-slate-900 dark:text-white truncate">
-                                        {getEmployeeName(emp)}
-                                      </div>
-                                      <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                                        {emp.emp_no} • {emp.department?.name || 'No Department'} • {emp.designation?.name || 'No Designation'}
-                                      </div>
-                                    </div>
-                                  </button>
-                                ))
-                              )}
-                              {filteredEmployees.length > 10 && (
-                                <div className="px-4 py-2 text-center text-xs text-slate-500 bg-slate-50 dark:bg-slate-900">
-                                  Showing 10 of {filteredEmployees.length} results. Type more to filter.
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      )}
+                      <EmployeeSelect
+                        value={selectedEmployee?._id || selectedEmployee?.emp_no || ''}
+                        onChange={(emp) => {
+                          if (!emp) {
+                            setSelectedEmployee(null);
+                            setFormData(prev => ({ ...prev, contactNumber: '' }));
+                          } else {
+                            handleSelectEmployee(emp);
+                          }
+                        }}
+                        placeholder="Search by name, emp no, or department..."
+                      />
                     </div>
                   </div>
                 )}
@@ -3036,10 +2947,10 @@ export default function LeavesPage() {
                     const isCLFullDay = isCLSelected && !formData.isHalfDay && formData.fromDate && clBalanceForMonth !== null && clBalanceForMonth >= 0;
                     const maxToDateISO = isCLFullDay && formData.fromDate
                       ? (() => {
-                          const d = new Date(formData.fromDate);
-                          d.setDate(d.getDate() + Math.max(0, Math.floor(clBalanceForMonth!) - 1));
-                          return d.toISOString().split('T')[0];
-                        })()
+                        const d = new Date(formData.fromDate);
+                        d.setDate(d.getDate() + Math.max(0, Math.floor(clBalanceForMonth!) - 1));
+                        return d.toISOString().split('T')[0];
+                      })()
                       : undefined;
                     const toMax = maxToDateISO
                       ? (policyMax && maxToDateISO > policyMax ? policyMax : maxToDateISO)
@@ -3200,7 +3111,7 @@ export default function LeavesPage() {
                       />
                     </div>
                     <LocationPhotoCapture
-                      required={(getModuleConfig('OD')?.settings as any)?.requirePhotoEvidence || false}
+                      required
                       label="Photo Evidence"
                       onCapture={(loc, photo) => {
                         setEvidenceFile(photo.file);
@@ -3382,6 +3293,88 @@ export default function LeavesPage() {
                       </div>
                     )}
                   </div>
+
+                  {/* Photo Evidence & Location (OD view) - photo, address, Google Maps link */}
+                  {detailType === 'od' && ((selectedItem as any).photoEvidence || (selectedItem as any).geoLocation) && (
+                    <div className="rounded-xl bg-slate-50 dark:bg-slate-900/50 p-4 sm:p-5 border border-slate-200 dark:border-slate-700">
+                      <p className="text-xs uppercase font-bold text-slate-400 mb-3 tracking-wider">Evidence & Location</p>
+                      <div className="space-y-4">
+                        {(selectedItem as any).photoEvidence && (
+                          <div className="flex items-start gap-3">
+                            <a
+                              href={(selectedItem as any).photoEvidence.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="relative group block shrink-0"
+                            >
+                              <img
+                                src={(selectedItem as any).photoEvidence.url}
+                                alt="Evidence"
+                                className="w-20 h-20 rounded-lg object-cover border border-slate-200 dark:border-slate-600 shadow-sm transition-transform group-hover:scale-105"
+                              />
+                              <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/20 transition-colors rounded-lg">
+                                <svg className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                              </div>
+                            </a>
+                            <div>
+                              <p className="text-sm font-medium text-slate-900 dark:text-white">Photo Evidence</p>
+                              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Captured at application time</p>
+                            </div>
+                          </div>
+                        )}
+                        {(selectedItem as any).geoLocation && (
+                          <div className="p-3 rounded-lg bg-white dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700">
+                            <div className="flex items-center gap-2 mb-2">
+                              <svg className="w-4 h-4 text-red-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                              <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Location</span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                              <div>
+                                <span className="text-slate-500">Lat:</span>
+                                <span className="ml-1 font-mono text-slate-700 dark:text-slate-300">{(selectedItem as any).geoLocation.latitude?.toFixed(6)}</span>
+                              </div>
+                              <div>
+                                <span className="text-slate-500">Lon:</span>
+                                <span className="ml-1 font-mono text-slate-700 dark:text-slate-300">{(selectedItem as any).geoLocation.longitude?.toFixed(6)}</span>
+                              </div>
+                              {(selectedItem as any).geoLocation.address && (
+                                <div className="col-span-2 pt-2 border-t border-slate-100 dark:border-slate-700 mt-1">
+                                  <span className="block text-slate-500 mb-0.5">Address</span>
+                                  <p className="text-slate-700 dark:text-slate-300 leading-tight text-xs">{(selectedItem as any).geoLocation.address}</p>
+                                </div>
+                              )}
+                              <div className="col-span-2 mt-1">
+                                <a
+                                  href={`https://www.google.com/maps?q=${(selectedItem as any).geoLocation.latitude},${(selectedItem as any).geoLocation.longitude}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1 font-medium text-xs"
+                                >
+                                  View on Google Maps
+                                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                                </a>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        {/* Leaflet map view */}
+                        {(() => {
+                          const geo = (selectedItem as any).geoLocation;
+                          const exif = (selectedItem as any).photoEvidence?.exifLocation;
+                          const lat = geo?.latitude ?? exif?.latitude;
+                          const lng = geo?.longitude ?? exif?.longitude;
+                          const address = geo?.address ?? null;
+                          if (lat == null || lng == null) return null;
+                          return (
+                            <div className="mt-2">
+                              <span className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Map</span>
+                              <LocationMap latitude={lat} longitude={lng} address={address} height="180px" />
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Approval Steps - Timeline / Progress */}
                   {((selectedItem as any).workflow?.approvalChain?.length > 0) && (

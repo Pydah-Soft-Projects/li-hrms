@@ -62,6 +62,8 @@ exports.updateSettings = async (req, res) => {
       mssqlConfig,
       syncSettings,
       previousDayLinking,
+      processingMode,
+      featureFlags,
     } = req.body;
 
     const settings = await AttendanceSettings.getSettings();
@@ -109,6 +111,48 @@ exports.updateSettings = async (req, res) => {
       }
       if (previousDayLinking.requireConfirmation !== undefined) {
         settings.previousDayLinking.requireConfirmation = previousDayLinking.requireConfirmation;
+      }
+    }
+
+    if (processingMode) {
+      if (processingMode.mode !== undefined) {
+        settings.processingMode.mode = processingMode.mode;
+      }
+      if (processingMode.strictCheckInOutOnly !== undefined) {
+        settings.processingMode.strictCheckInOutOnly = processingMode.strictCheckInOutOnly;
+      }
+      if (settings.processingMode.mode === 'multi_shift') {
+        settings.processingMode.strictCheckInOutOnly = true;
+      }
+      if (processingMode.continuousSplitThresholdHours !== undefined) {
+        settings.processingMode.continuousSplitThresholdHours = processingMode.continuousSplitThresholdHours;
+      }
+      if (processingMode.splitMinGapHours !== undefined) {
+        settings.processingMode.splitMinGapHours = processingMode.splitMinGapHours;
+      }
+      if (processingMode.maxShiftsPerDay !== undefined) {
+        settings.processingMode.maxShiftsPerDay = processingMode.maxShiftsPerDay;
+      }
+      if (processingMode.rosterStrictWhenPresent !== undefined) {
+        settings.processingMode.rosterStrictWhenPresent = processingMode.rosterStrictWhenPresent;
+      }
+      if (processingMode.postShiftOutMarginHours !== undefined) {
+        settings.processingMode.postShiftOutMarginHours = processingMode.postShiftOutMarginHours;
+      }
+    }
+
+    if (featureFlags) {
+      if (featureFlags.allowInTimeEditing !== undefined) {
+        if (!settings.featureFlags) settings.featureFlags = {};
+        settings.featureFlags.allowInTimeEditing = featureFlags.allowInTimeEditing;
+      }
+      if (featureFlags.allowOutTimeEditing !== undefined) {
+        if (!settings.featureFlags) settings.featureFlags = {};
+        settings.featureFlags.allowOutTimeEditing = featureFlags.allowOutTimeEditing;
+      }
+      if (featureFlags.allowAttendanceUpload !== undefined) {
+        if (!settings.featureFlags) settings.featureFlags = {};
+        settings.featureFlags.allowAttendanceUpload = featureFlags.allowAttendanceUpload;
       }
     }
 

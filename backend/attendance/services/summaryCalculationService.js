@@ -7,6 +7,15 @@ const { createISTDate, extractISTComponents } = require('../../shared/utils/date
 const dateCycleService = require('../../leaves/services/dateCycleService');
 
 /**
+ * Monthly summary is recalculated in the background when:
+ * - An AttendanceDaily doc is saved (post-save hook defers recalc via setImmediate)
+ * - An AttendanceDaily doc is updated via findOneAndUpdate (post-hook, same defer)
+ * - Leave/OD approved, OT applied, permissions, etc. (call recalculateOn* directly)
+ * Summaries are not triggered by insertMany/bulk writes; missing summaries are
+ * calculated on demand when loading the monthly attendance view.
+ */
+
+/**
  * Calculate and update monthly attendance summary for an employee
  * @param {string} employeeId - Employee ID
  * @param {string} emp_no - Employee number
@@ -57,17 +66,16 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber) {
     }
     summary.totalPresentDays = Math.round(totalPresentDays * 10) / 10;
 
-    // 3. Calculate total payable shifts from attendance
-    // Include HALF_DAY in the set of days that contribute to payable shifts
-    const activeAttendanceDays = attendanceRecords.filter(r =>
-      r.status === 'PRESENT' || r.status === 'PARTIAL' || r.status === 'HALF_DAY'
-    );
-
+    // 3. Total payable shifts = sum of each day's payableShifts in period (from AttendanceDaily)
+    // Each day's payableShifts is the sum of that day's shift.payableShift (multi-shift aware).
+    // Fallback: if daily payableShifts missing, sum from shifts[].payableShift (e.g. legacy docs).
     let totalPayableShifts = 0;
-    for (const record of activeAttendanceDays) {
-      if (record.payableShifts !== undefined && record.payableShifts !== null) {
-        totalPayableShifts += Number(record.payableShifts);
+    for (const record of attendanceRecords) {
+      let dayPayable = Number(record.payableShifts ?? 0);
+      if (dayPayable === 0 && Array.isArray(record.shifts) && record.shifts.length > 0) {
+        dayPayable = record.shifts.reduce((sum, s) => sum + (Number(s.payableShift) || 0), 0);
       }
+      totalPayableShifts += dayPayable;
     }
 
     // 4. Get approved leaves for this month (Using .lean() and projections)
@@ -148,10 +156,22 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber) {
     }
     summary.totalODs = Math.round(totalODDays * 10) / 10; // Round to 1 decimal
 
-    // 6. Add ODs to payable shifts (each OD day = 1 payable shift)
-    // IMPORTANT: Only full-day and half-day ODs contribute to payable shifts
-    // Hour-based ODs are excluded (they're stored as hours in attendance, not days)
-    totalPayableShifts += totalODDays;
+    // 6. Total payable shifts = sum of daily payableShifts + OD contribution for days with no record
+    // AttendanceDaily pre-save enriches each day with OD, so daily has attendance+OD. For OD-only
+    // days without a record (e.g. OD approved before upsert), add OD contribution here.
+    const datesWithAttendance = new Set((attendanceRecords || []).map(r => r.date));
+    for (const od of approvedODs || []) {
+      if (od.odType_extended === 'hours') continue;
+      let d = new Date(extractISTComponents(od.fromDate).dateStr);
+      const odEnd = new Date(extractISTComponents(od.toDate).dateStr);
+      while (d <= odEnd) {
+        const dateStr = extractISTComponents(d).dateStr;
+        if (dateStr >= startDateStr && dateStr <= endDateStr && !datesWithAttendance.has(dateStr)) {
+          totalPayableShifts += od.isHalfDay ? 0.5 : 1;
+        }
+        d.setDate(d.getDate() + 1);
+      }
+    }
     summary.totalPayableShifts = Math.round(totalPayableShifts * 100) / 100; // Round to 2 decimals
 
     // 7. Calculate total OT hours (from approved OT requests)
@@ -194,33 +214,41 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber) {
     summary.totalPermissionHours = Math.round(totalPermissionHours * 100) / 100; // Round to 2 decimals
     summary.totalPermissionCount = totalPermissionCount;
 
-    // 10. Calculate late-in and combined late/early metrics (first shift only)
+    // 10. Calculate late-in and combined late/early from ALL shifts per day (one late + one early per day)
+    // For each day: sum lateInMinutes and earlyOutMinutes across all shifts; count day once if it has any late or early out
     let totalLateInMinutes = 0;
     let lateInCount = 0;
     let totalLateOrEarlyMinutes = 0;
     let lateOrEarlyCount = 0;
 
     for (const record of attendanceRecords) {
-      const firstShift = Array.isArray(record.shifts) && record.shifts.length > 0
-        ? record.shifts[0]
-        : null;
+      const shifts = Array.isArray(record.shifts) ? record.shifts : [];
+      let dayLateMinutes = 0;
+      let dayEarlyMinutes = 0;
 
-      const lateMinutes = firstShift
-        ? (firstShift.lateInMinutes || 0)
-        : (record.totalLateInMinutes || 0);
-      const earlyMinutes = firstShift
-        ? (firstShift.earlyOutMinutes || 0)
-        : (record.totalEarlyOutMinutes || 0);
+      if (shifts.length > 0) {
+        for (const s of shifts) {
+          if (s.lateInMinutes != null && s.lateInMinutes > 0) {
+            dayLateMinutes += Number(s.lateInMinutes);
+          }
+          if (s.earlyOutMinutes != null && s.earlyOutMinutes > 0) {
+            dayEarlyMinutes += Number(s.earlyOutMinutes);
+          }
+        }
+      } else {
+        dayLateMinutes = Number(record.totalLateInMinutes) || 0;
+        dayEarlyMinutes = Number(record.totalEarlyOutMinutes) || 0;
+      }
 
-      if (lateMinutes > 0) {
-        totalLateInMinutes += lateMinutes;
+      if (dayLateMinutes > 0) {
+        totalLateInMinutes += dayLateMinutes;
         lateInCount += 1;
       }
 
-      const combinedMinutes = (lateMinutes || 0) + (earlyMinutes || 0);
+      const combinedMinutes = dayLateMinutes + dayEarlyMinutes;
       if (combinedMinutes > 0) {
         totalLateOrEarlyMinutes += combinedMinutes;
-        lateOrEarlyCount += 1;
+        lateOrEarlyCount += 1; // count day once if it has any late and/or early out
       }
     }
 
@@ -369,23 +397,40 @@ async function recalculateOnODApproval(od) {
     }
 
     const Employee = require('../../employees/model/Employee');
+    const AttendanceDaily = require('../model/AttendanceDaily');
     const employee = await Employee.findById(od.employeeId);
     if (!employee) {
       console.warn(`Employee not found for OD: ${od._id}`);
       return;
     }
 
-    // Calculate all payroll cycles affected by this OD using payroll-aware periods
+    const empNo = (od.emp_no || employee.emp_no || '').toUpperCase();
+    if (!empNo) return;
+
+    const fromStr = extractISTComponents(od.fromDate).dateStr;
+    const toStr = extractISTComponents(od.toDate).dateStr;
+
+    // Upsert AttendanceDaily for each date in OD range (pre-save enriches with OD)
+    let d = new Date(fromStr);
+    const toDate = new Date(toStr);
+    while (d <= toDate) {
+      const dateStr = extractISTComponents(d).dateStr;
+      let daily = await AttendanceDaily.findOne({ employeeNumber: empNo, date: dateStr });
+      if (!daily) {
+        daily = new AttendanceDaily({ employeeNumber: empNo, date: dateStr, shifts: [] });
+      }
+      await daily.save();
+      d.setDate(d.getDate() + 1);
+    }
+
+    // Recalculate monthly summaries for affected payroll cycles
     const { payrollCycle: startCycle } = await dateCycleService.getPeriodInfo(od.fromDate);
     const { payrollCycle: endCycle } = await dateCycleService.getPeriodInfo(od.toDate);
-
     let currentYear = startCycle.year;
     let currentMonth = startCycle.month;
 
     while (currentYear < endCycle.year || (currentYear === endCycle.year && currentMonth <= endCycle.month)) {
       await calculateMonthlySummary(employee._id, employee.emp_no, currentYear, currentMonth);
-
-      // Move to next payroll month
       if (currentMonth === 12) {
         currentMonth = 1;
         currentYear += 1;
@@ -395,7 +440,6 @@ async function recalculateOnODApproval(od) {
     }
   } catch (error) {
     console.error(`Error recalculating summary on OD approval for OD ${od._id}:`, error);
-    // Don't throw - this is a background operation
   }
 }
 

@@ -220,13 +220,14 @@ export default function AttendancePage() {
 
   // OutTime dialog state
   const [showOutTimeDialog, setShowOutTimeDialog] = useState(false);
-  const [selectedRecordForOutTime, setSelectedRecordForOutTime] = useState<{ employee: Employee; date: string } | null>(null);
+  const [selectedRecordForOutTime, setSelectedRecordForOutTime] = useState<{ employee: Employee; date: string; shiftRecordId?: string } | null>(null);
   const [outTimeValue, setOutTimeValue] = useState('');
   const [updatingOutTime, setUpdatingOutTime] = useState(false);
 
   // OT conversion state
   const [convertingToOT, setConvertingToOT] = useState(false);
   const [hasExistingOT, setHasExistingOT] = useState(false);
+  const [otRequestStatus, setOtRequestStatus] = useState<string | null>(null);
 
   // Shift selection and out-time state
   const [availableShifts, setAvailableShifts] = useState<any[]>([]);
@@ -248,6 +249,19 @@ export default function AttendancePage() {
   const [revokingLeave, setRevokingLeave] = useState(false);
   const [updatingLeave, setUpdatingLeave] = useState(false);
 
+  // Attendance feature flags (from settings) – control visibility of Edit In/Out and Upload
+  const [attendanceFeatureFlags, setAttendanceFeatureFlags] = useState<{
+    allowInTimeEditing: boolean;
+    allowOutTimeEditing: boolean;
+    allowAttendanceUpload: boolean;
+  }>({ allowInTimeEditing: true, allowOutTimeEditing: true, allowAttendanceUpload: true });
+
+  // In Time dialog state
+  const [showInTimeDialog, setShowInTimeDialog] = useState(false);
+  const [selectedRecordForInTime, setSelectedRecordForInTime] = useState<{ employee: Employee; date: string; shiftRecordId?: string } | null>(null);
+  const [inTimeDialogValue, setInTimeDialogValue] = useState('');
+  const [updatingInTime, setUpdatingInTime] = useState(false);
+
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth() + 1;
 
@@ -267,6 +281,25 @@ export default function AttendancePage() {
       console.error('Error loading payroll settings:', err);
     }
   };
+
+  useEffect(() => {
+    const loadFlags = async () => {
+      try {
+        const res = await api.getAttendanceSettings();
+        if (res?.data?.featureFlags) {
+          const ff = res.data.featureFlags;
+          setAttendanceFeatureFlags({
+            allowInTimeEditing: ff.allowInTimeEditing !== false,
+            allowOutTimeEditing: ff.allowOutTimeEditing !== false,
+            allowAttendanceUpload: ff.allowAttendanceUpload !== false,
+          });
+        }
+      } catch {
+        // keep defaults
+      }
+    };
+    loadFlags();
+  }, []);
 
   useEffect(() => {
     if (selectedDepartment) {
@@ -816,6 +849,8 @@ export default function AttendancePage() {
     setSelectedDate(date);
     setSelectedEmployee(employee);
     setHasExistingOT(false);
+    setOtRequestStatus(null);
+    setOtRequestStatus(null);
     setEditingShift(false);
     setEditingOutTime(false);
     setEditingInTime(false);
@@ -837,19 +872,27 @@ export default function AttendancePage() {
       const employeeData = monthlyData.find(item => item.employee._id === employee._id);
       const dayRecord = employeeData?.dailyAttendance[date];
 
-      // Check if OT already exists for this date
+      // Check if OT already exists (pending or approved) - hide Convert button
       try {
         const otResponse = await api.getOTRequests({
           employeeId: employee._id,
           employeeNumber: employee.emp_no,
           date: date,
-          status: 'approved',
         });
-        if (otResponse.success && otResponse.data && otResponse.data.length > 0) {
+        const existing = (otResponse.data || []).filter((ot: any) =>
+          ['pending', 'approved', 'manager_approved', 'hod_approved'].includes(ot?.status)
+        );
+        if (existing.length > 0) {
           setHasExistingOT(true);
+          setOtRequestStatus(existing[0]?.status || null);
+        } else {
+          setHasExistingOT(false);
+          setOtRequestStatus(null);
         }
       } catch (otErr) {
         console.error('Error checking existing OT:', otErr);
+        setHasExistingOT(false);
+        setOtRequestStatus(null);
       }
 
       // If we have the record with leave/OD info, use it directly
@@ -910,24 +953,13 @@ export default function AttendancePage() {
       });
 
       if (response.success) {
-        setSuccess(response.message || 'Extra hours converted to OT successfully!');
+        setSuccess(response.message || 'OT conversion requested. Pending management approval.');
         setHasExistingOT(true);
+        setOtRequestStatus('pending');
 
-        // Update attendance detail - clear extra hours, add OT hours
-        setAttendanceDetail({
-          ...attendanceDetail,
-          extraHours: 0,
-          otHours: (attendanceDetail.otHours || 0) + attendanceDetail.extraHours,
-        });
-
+        // Keep extraHours visible until OT is approved
         // Reload monthly attendance to refresh the view
         await loadMonthlyAttendance();
-
-        // Close dialog after a short delay
-        setTimeout(() => {
-          setShowDetailDialog(false);
-          setSuccess('');
-        }, 2000);
       } else {
         setError(response.message || 'Failed to convert extra hours to OT');
       }
@@ -1126,16 +1158,22 @@ export default function AttendancePage() {
       setError('');
       setSuccess('');
 
-      // Format datetime for API - Convert local input to UTC
-      const [hours, mins] = outTimeValue.split(':').map(Number);
-      const date = new Date(selectedRecordForOutTime.date);
-      date.setHours(hours, mins, 0, 0);
-      const isoString = date.toISOString();
+      // Support datetime-local (YYYY-MM-DDTHH:mm) for overnight: use full date from input. Else time-only on record date.
+      let isoString: string;
+      if (outTimeValue.includes('T')) {
+        isoString = new Date(outTimeValue).toISOString();
+      } else {
+        const [hours, mins] = outTimeValue.split(':').map(Number);
+        const date = new Date(selectedRecordForOutTime.date);
+        date.setHours(hours, mins, 0, 0);
+        isoString = date.toISOString();
+      }
 
       const response = await api.updateAttendanceOutTime(
         selectedRecordForOutTime.employee.emp_no,
         selectedRecordForOutTime.date,
-        isoString
+        isoString,
+        selectedRecordForOutTime.shiftRecordId
       );
 
       if (response.success) {
@@ -1169,6 +1207,50 @@ export default function AttendancePage() {
       setError(err.message || 'An error occurred while updating out time');
     } finally {
       setUpdatingOutTime(false);
+    }
+  };
+
+  const handleUpdateInTime = async () => {
+    if (!selectedRecordForInTime || !inTimeDialogValue) {
+      alert('Please enter in time');
+      return;
+    }
+    try {
+      setUpdatingInTime(true);
+      setError('');
+      setSuccess('');
+      let isoString: string;
+      if (inTimeDialogValue.includes('T')) {
+        isoString = new Date(inTimeDialogValue).toISOString();
+      } else {
+        const [hours, mins] = inTimeDialogValue.split(':').map(Number);
+        const d = new Date(selectedRecordForInTime.date);
+        d.setHours(hours, mins, 0, 0);
+        isoString = d.toISOString();
+      }
+      const response = await api.updateAttendanceInTime(
+        selectedRecordForInTime.employee.emp_no,
+        selectedRecordForInTime.date,
+        isoString,
+        selectedRecordForInTime.shiftRecordId
+      );
+      if (response.success) {
+        setSuccess('In time updated successfully.');
+        setShowInTimeDialog(false);
+        setSelectedRecordForInTime(null);
+        setInTimeDialogValue('');
+        await loadMonthlyAttendance();
+        if (selectedEmployee && selectedDate && selectedRecordForInTime.employee.emp_no === selectedEmployee.emp_no && selectedRecordForInTime.date === selectedDate) {
+          const updatedResponse = await api.getAttendanceDetail(selectedEmployee.emp_no, selectedDate);
+          if (updatedResponse.success) setAttendanceDetail(updatedResponse.data);
+        }
+      } else {
+        setError(response.message || 'Failed to update in time');
+      }
+    } catch (err: any) {
+      setError(err.message || 'An error occurred while updating in time');
+    } finally {
+      setUpdatingInTime(false);
     }
   };
 
@@ -1451,7 +1533,7 @@ export default function AttendancePage() {
               </button>
             </div>
 
-            <div className="flex items-center gap-2 hidden">
+            <div className="flex items-center gap-2">
               <button
                 onClick={handleSyncShifts}
                 disabled={syncingShifts}
@@ -1468,18 +1550,18 @@ export default function AttendancePage() {
                 <span className="hidden md:inline text-xs font-semibold">Sync</span>
               </button>
 
-              <button
-                onClick={() => setShowUploadDialog(true)}
-                title="Upload Excel"
-                className="h-9 flex items-center px-4 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 text-xs font-bold text-white shadow-lg shadow-green-500/25 hover:shadow-green-500/40 hover:-translate-y-0.5 transition-all active:scale-95"
-              >
-                <svg className="mr-2 h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                </svg>
-                Upload
-              </button>
-
-
+              {attendanceFeatureFlags.allowAttendanceUpload && (
+                <button
+                  onClick={() => setShowUploadDialog(true)}
+                  title="Upload Excel"
+                  className="h-9 flex items-center px-4 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 text-xs font-bold text-white shadow-lg shadow-green-500/25 hover:shadow-green-500/40 hover:-translate-y-0.5 transition-all active:scale-95"
+                >
+                  <svg className="mr-2 h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                  </svg>
+                  Upload
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -1501,10 +1583,12 @@ export default function AttendancePage() {
               { label: 'A', name: 'Absent', color: 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700' },
               { label: '!', name: 'Conflict', color: 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-800' },
               { label: '✎', name: 'Edited', color: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/10 dark:text-indigo-400 dark:border-indigo-800' },
-            ].map((item) => (
-              <div key={item.label} className="flex items-center gap-2 group cursor-help">
-                <div className={`w-6 h-6 flex items-center justify-center rounded text-[10px] font-bold border shadow-sm transition-all duration-200 group-hover:scale-110 group-hover:shadow-md ${item.color}`}>
-                  {item.label}
+              { label: '●', name: 'Late', color: 'bg-amber-500', dotOnly: true },
+              { label: '●', name: 'Early out', color: 'bg-blue-500', dotOnly: true },
+            ].map((item, idx) => (
+              <div key={`${item.label}-${item.name}-${idx}`} className="flex items-center gap-2 group cursor-help">
+                <div className={`flex items-center justify-center rounded text-[10px] font-bold border shadow-sm transition-all duration-200 group-hover:scale-110 group-hover:shadow-md ${(item as any).dotOnly ? 'w-5 h-5 border-transparent' : 'w-6 h-6'} ${(item as any).dotOnly ? '' : item.color}`}>
+                  {(item as any).dotOnly ? <span className={`inline-block h-2 w-2 rounded-full ${item.color}`} /> : item.label}
                 </div>
                 <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">{item.name}</span>
               </div>
@@ -1777,6 +1861,14 @@ export default function AttendancePage() {
                         }
 
                         const hasData = record && record.status !== '-';
+                        const isLate = hasData && (
+                          (record && (record as any).lateInMinutes != null && (record as any).lateInMinutes > 0) ||
+                          (shifts && shifts.some((s: any) => s.lateInMinutes != null && s.lateInMinutes > 0))
+                        );
+                        const isEarlyOut = hasData && (
+                          (record && (record as any).earlyOutMinutes != null && (record as any).earlyOutMinutes > 0) ||
+                          (shifts && shifts.some((s: any) => s.earlyOutMinutes != null && s.earlyOutMinutes > 0))
+                        );
 
                         return (
                           <td
@@ -1787,6 +1879,12 @@ export default function AttendancePage() {
                           >
                             {record && record.isEdited && (
                               <span className="absolute top-0.5 right-0.5 h-1.5 w-1.5 rounded-full bg-orange-500 animate-pulse z-20" title="Edited Manually"></span>
+                            )}
+                            {(isLate || isEarlyOut) && (
+                              <div className="absolute bottom-0.5 left-0 right-0 flex justify-center gap-0.5 z-10" title={`${isLate ? 'Late in' : ''}${isLate && isEarlyOut ? ' • ' : ''}${isEarlyOut ? 'Early out' : ''}`}>
+                                {isLate && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" title="Late" />}
+                                {isEarlyOut && <span className="h-1.5 w-1.5 rounded-full bg-blue-500 shrink-0" title="Early out" />}
+                              </div>
                             )}
                             <div className="flex flex-col items-center justify-center w-full h-full">
                               {hasData ? (
@@ -2003,7 +2101,7 @@ export default function AttendancePage() {
 
                 <div>
                   <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                    Out Time *
+                    Out Time (date + time) *
                   </label>
                   <input
                     type="datetime-local"
@@ -2013,7 +2111,7 @@ export default function AttendancePage() {
                     required
                   />
                   <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    Enter the logout time. Shift will be automatically assigned based on in-time and out-time.
+                    Enter the logout date and time. For overnight shifts, select the <strong>next calendar day</strong> as the date.
                   </p>
                 </div>
 
@@ -2030,6 +2128,68 @@ export default function AttendancePage() {
                       setShowOutTimeDialog(false);
                       setSelectedRecordForOutTime(null);
                       setOutTimeValue('');
+                    }}
+                    className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showInTimeDialog && selectedRecordForInTime && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Enter In Time</h3>
+                <button
+                  onClick={() => {
+                    setShowInTimeDialog(false);
+                    setSelectedRecordForInTime(null);
+                    setInTimeDialogValue('');
+                  }}
+                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="space-y-4">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800">
+                  <div className="text-sm font-medium text-slate-900 dark:text-white">
+                    {selectedRecordForInTime?.employee?.employee_name}
+                  </div>
+                  <div className="text-xs text-slate-600 dark:text-slate-400">
+                    {selectedRecordForInTime?.employee?.emp_no} • {selectedRecordForInTime?.date}
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">In Time (date + time) *</label>
+                  <input
+                    type="datetime-local"
+                    value={inTimeDialogValue}
+                    onChange={(e) => setInTimeDialogValue(e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                    required
+                  />
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Enter the check-in date and time.</p>
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleUpdateInTime}
+                    disabled={!inTimeDialogValue || updatingInTime}
+                    className="flex-1 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {updatingInTime ? 'Updating...' : 'Update In Time'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowInTimeDialog(false);
+                      setSelectedRecordForInTime(null);
+                      setInTimeDialogValue('');
                     }}
                     className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
                   >
@@ -2133,8 +2293,12 @@ export default function AttendancePage() {
                   )}
                   {hasExistingOT && (
                     <div className="mt-3 text-right">
-                      <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-1 text-[10px] font-bold text-green-700 uppercase tracking-wider dark:bg-green-900/30 dark:text-green-400">
-                        OT Converted
+                      <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${
+                        otRequestStatus === 'approved'
+                          ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                          : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                      }`}>
+                        {otRequestStatus === 'approved' ? 'OT Converted' : 'Pending approval'}
                       </span>
                     </div>
                   )}
@@ -2205,6 +2369,56 @@ export default function AttendancePage() {
                               <span className={`text-[10px] font-black uppercase ${shift.status === 'PRESENT' ? 'text-green-600' : 'text-slate-500'}`}>{shift.status || '-'}</span>
                             </div>
                           </div>
+                          {selectedEmployee && selectedDate && (attendanceFeatureFlags.allowInTimeEditing || attendanceFeatureFlags.allowOutTimeEditing) && (
+                            <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap gap-3">
+                              {attendanceFeatureFlags.allowInTimeEditing && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const inTime = shift.inTime ? new Date(shift.inTime) : null;
+                                    const baseDate = selectedDate || attendanceDetail.date;
+                                    const defaultDateTime = inTime
+                                      ? `${inTime.getFullYear()}-${String(inTime.getMonth() + 1).padStart(2, '0')}-${String(inTime.getDate()).padStart(2, '0')}T${String(inTime.getHours()).padStart(2, '0')}:${String(inTime.getMinutes()).padStart(2, '0')}`
+                                      : `${baseDate}T09:00`;
+                                    setInTimeDialogValue(defaultDateTime);
+                                    setSelectedRecordForInTime({
+                                      employee: selectedEmployee,
+                                      date: baseDate,
+                                      shiftRecordId: shift._id,
+                                    });
+                                    setShowInTimeDialog(true);
+                                    setShowDetailDialog(false);
+                                  }}
+                                  className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
+                                >
+                                  Edit In Time
+                                </button>
+                              )}
+                              {attendanceFeatureFlags.allowOutTimeEditing && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const outTime = shift.outTime ? new Date(shift.outTime) : null;
+                                    const baseDate = selectedDate || attendanceDetail.date;
+                                    const defaultDateTime = outTime
+                                      ? `${outTime.getFullYear()}-${String(outTime.getMonth() + 1).padStart(2, '0')}-${String(outTime.getDate()).padStart(2, '0')}T${String(outTime.getHours()).padStart(2, '0')}:${String(outTime.getMinutes()).padStart(2, '0')}`
+                                      : `${baseDate}T18:00`;
+                                    setOutTimeValue(defaultDateTime);
+                                    setSelectedRecordForOutTime({
+                                      employee: selectedEmployee,
+                                      date: baseDate,
+                                      shiftRecordId: shift._id,
+                                    });
+                                    setShowOutTimeDialog(true);
+                                    setShowDetailDialog(false);
+                                  }}
+                                  className="text-xs font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                                >
+                                  Edit Out Time
+                                </button>
+                              )}
+                            </div>
+                          )}
                         </div>
                       );
                     })}

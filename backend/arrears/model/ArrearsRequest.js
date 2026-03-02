@@ -80,6 +80,13 @@ const calculationBreakdownSchema = new mongoose.Schema({
 
 const arrearsRequestSchema = new mongoose.Schema(
   {
+    /** 'incremental' = period-based with start/end month and monthly amount; 'direct' = single amount with remarks only */
+    type: {
+      type: String,
+      enum: ['incremental', 'direct'],
+      default: 'incremental',
+      index: true
+    },
     employee: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Employee',
@@ -87,16 +94,16 @@ const arrearsRequestSchema = new mongoose.Schema(
       index: true
     },
     startMonth: {
-      type: String, // Format: YYYY-MM
-      required: [true, 'Start month is required']
+      type: String, // Format: YYYY-MM; required for type incremental
+      default: null
     },
     endMonth: {
-      type: String, // Format: YYYY-MM
-      required: [true, 'End month is required']
+      type: String, // Format: YYYY-MM; required for type incremental
+      default: null
     },
     monthlyAmount: {
       type: Number,
-      required: [true, 'Monthly amount is required'],
+      default: null,
       min: [0, 'Monthly amount must be positive']
     },
     totalAmount: {
@@ -111,7 +118,7 @@ const arrearsRequestSchema = new mongoose.Schema(
     },
     reason: {
       type: String,
-      required: [true, 'Reason is required'],
+      required: [true, 'Reason/remarks is required'],
       trim: true
     },
     status: {
