@@ -1,7 +1,23 @@
 /**
  * Single-Shift Attendance Processing Service
- * One shift per day: first IN, last OUT
- * Per ATTENDANCE_DUAL_MODE_DESIGN.md Section 5
+ * One shift per day: first IN, last OUT.
+ * Per ATTENDANCE_DUAL_MODE_DESIGN.md Section 5.
+ *
+ * Two modes (strict IN/OUT setting):
+ *
+ * 1. STRICT IN/OUT ENABLED
+ *    - Only punches with type IN or OUT (or punch_state 0/1) are used.
+ *    - We correctly assign shifts and validate which punch is IN and which is OUT.
+ *    - First IN and last OUT on the date (or next-day OUT for overnight) form the pair.
+ *
+ * 2. STRICT IN/OUT DISABLED (shift-aware)
+ *    - All punches are considered (including type null / thumb-only).
+ *    - Logs come in real time: people punch at shift start and when completing their shift.
+ *    - We correlate punches to assigned shift start time (IN) and shift end time (OUT).
+ *    - Classification is by proximity to shift start vs shift end; overnight OUT may be next day.
+ *    - Next-day OUT is accepted if and only if it is at shift end ± 3 hours (grace).
+ *    - First punch in [00:00, previous overnight shift end + 1hr] on today is reserved as that
+ *      overnight's OUT and not used as today's IN.
  */
 
 const AttendanceDaily = require('../model/AttendanceDaily');
@@ -58,9 +74,17 @@ async function getShiftAwareInOutPair(employeeNumber, date, allPunches, processi
     : createISTDate(date, endTime);
 
   const nextDay = nextDateStr(date);
+  const OVERNIGHT_OUT_GRACE_HOURS = 3;
+  const graceMs = OVERNIGHT_OUT_GRACE_HOURS * 60 * 60 * 1000;
   const punchesInWindow = allPunches.filter(p => {
     const { dateStr } = extractISTComponents(new Date(p.timestamp));
-    return dateStr === date || (isOvernight && dateStr === nextDay);
+    if (dateStr === date) return true;
+    if (isOvernight && dateStr === nextDay) {
+      const t = new Date(p.timestamp).getTime();
+      const endMs = shiftEndDate.getTime();
+      return Math.abs(t - endMs) <= graceMs;
+    }
+    return false;
   });
   if (punchesInWindow.length === 0) return null;
 
@@ -172,8 +196,8 @@ async function processSingleShiftAttendance(employeeNumber, date, rawLogs, gener
 
     const strict = processingMode.strictCheckInOutOnly !== false;
 
-    // When strict IN/OUT is disabled: use assigned shift timings to pick IN/OUT from all punches (including null/thumb).
-    // Respects overnight: OUT at shift end may be next day.
+    // Strict OFF: shift-aware — correlate punches to shift start (IN) and shift end (OUT); real-time safe.
+    // Strict ON: use only typed IN/OUT, validate and assign correctly.
     if (!strict) {
       const pair = await getShiftAwareInOutPair(employeeNumber, date, allPunches, processingMode);
       if (pair) {
@@ -184,7 +208,7 @@ async function processSingleShiftAttendance(employeeNumber, date, rawLogs, gener
       }
     }
 
-    // Fallback: typed IN/OUT (and punch_state), first IN and last OUT on date, then overnight next-day first OUT
+    // Fallback (strict ON or no shift-aware pair): typed IN/OUT only — first IN, last OUT; overnight next-day OUT.
     if (!firstInTime || !lastOutTime) {
       const ins = targetDatePunches.filter(isIN);
       const outs = targetDatePunches.filter(isOUT);
@@ -203,8 +227,23 @@ async function processSingleShiftAttendance(employeeNumber, date, rawLogs, gener
         if (nextDayOuts.length) {
           const nextDayFirstOut = new Date(nextDayOuts[0].timestamp);
           if (nextDayFirstOut > firstInTime) {
-            lastOutTime = nextDayFirstOut;
-            outPunchRecord = nextDayOuts[0];
+            const shiftOptions = { rosterStrictWhenPresent: processingMode?.rosterStrictWhenPresent === true };
+            const { shifts } = await getShiftsForEmployee(employeeNumber, date, shiftOptions);
+            let withinGrace = true;
+            if (shifts && shifts.length > 0 && shifts[0].endTime) {
+              const endMins = timeToMinutes(shifts[0].endTime);
+              const startMins = timeToMinutes(shifts[0].startTime || '00:00');
+              const isOvernight = endMins <= startMins || (startMins >= 20 * 60 && endMins < 12 * 60);
+              if (isOvernight) {
+                const shiftEndOnNext = createISTDate(nextDay, shifts[0].endTime);
+                const graceMs = 3 * 60 * 60 * 1000;
+                withinGrace = Math.abs(nextDayFirstOut.getTime() - shiftEndOnNext.getTime()) <= graceMs;
+              }
+            }
+            if (withinGrace) {
+              lastOutTime = nextDayFirstOut;
+              outPunchRecord = nextDayOuts[0];
+            }
           }
         }
       }
