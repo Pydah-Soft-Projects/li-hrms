@@ -930,10 +930,17 @@ exports.getPaysheetData = async (req, res) => {
 
     if (useExisting && outputColumns.length > 0) {
       // Return existing PayrollRecords only – no calculation. Filters applied on records.
+      // Respect resignation: same as pay register – include only active employees or those who left in this payroll month.
+      const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
+      const [yearNum, monthNum] = month.split('-').map(Number);
+      const { startDate: rangeStartStr, endDate: rangeEndStr } = await getPayrollDateRange(yearNum, monthNum);
+      const payrollRangeStart = new Date(rangeStartStr + 'T00:00:00.000Z');
+      const payrollRangeEnd = new Date(rangeEndStr + 'T23:59:59.999Z');
+
       const records = await PayrollRecord.find({ month })
         .populate({
           path: 'employeeId',
-          select: 'employee_name emp_no first_name last_name department_id division_id designation_id',
+          select: 'employee_name emp_no first_name last_name department_id division_id designation_id leftDate',
           populate: [
             { path: 'department_id', select: 'name' },
             { path: 'division_id', select: 'name' },
@@ -944,8 +951,9 @@ exports.getPaysheetData = async (req, res) => {
         .lean();
 
       let filtered = records;
+      // Filter by department, division, search
       if (departmentId || divisionId || search) {
-        filtered = records.filter((r) => {
+        filtered = filtered.filter((r) => {
           const emp = r.employeeId;
           if (!emp) return false;
           if (departmentId && (emp.department_id?._id?.toString() || emp.department_id?.toString()) !== departmentId) return false;
@@ -959,6 +967,15 @@ exports.getPaysheetData = async (req, res) => {
           return true;
         });
       }
+      // Respect resignation: exclude employees who left before this payroll month
+      filtered = filtered.filter((r) => {
+        const emp = r.employeeId;
+        if (!emp) return false;
+        const left = emp.leftDate;
+        if (!left) return true;
+        const leftDate = left instanceof Date ? left : new Date(left);
+        return leftDate >= payrollRangeStart && leftDate <= payrollRangeEnd;
+      });
 
       const payslips = filtered.map((r) => recordToPayslip(r));
       if (payslips.length === 0) {
@@ -1013,7 +1030,23 @@ exports.getPaysheetData = async (req, res) => {
       if (divisionId) employeeQuery.division_id = divisionId;
       if (status === 'active') employeeQuery.is_active = true;
       else if (status === 'inactive') employeeQuery.is_active = false;
-      if (search) {
+      // Respect resignation (same as pay register): only active or left in this payroll month; skip when status=inactive
+      if (status !== 'inactive') {
+        const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
+        const [y, m] = month.split('-').map(Number);
+        const { startDate: startStr, endDate: endStr } = await getPayrollDateRange(y, m);
+        const rangeStart = new Date(startStr + 'T00:00:00.000Z');
+        const rangeEnd = new Date(endStr + 'T23:59:59.999Z');
+        const resignationOr = { $or: [ { is_active: true, leftDate: null }, { leftDate: { $gte: rangeStart, $lte: rangeEnd } } ] };
+        if (search) {
+          employeeQuery.$and = [
+            { $or: [ { employee_name: { $regex: search, $options: 'i' } }, { emp_no: { $regex: search, $options: 'i' } } ] },
+            resignationOr,
+          ];
+        } else {
+          Object.assign(employeeQuery, resignationOr);
+        }
+      } else if (search) {
         employeeQuery.$or = [
           { employee_name: { $regex: search, $options: 'i' } },
           { emp_no: { $regex: search, $options: 'i' } },

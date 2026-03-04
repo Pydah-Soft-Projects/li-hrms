@@ -561,6 +561,13 @@ exports.applyOD = async (req, res) => {
       });
     }
 
+    // Populate division, department, designation so we have names for snapshot (avoids saving 'N/A')
+    await employee.populate([
+      { path: 'division_id', select: 'name' },
+      { path: 'department_id', select: 'name' },
+      { path: 'designation_id', select: 'name' },
+    ]);
+
     // Calculate number of days
     const from = new Date(fromDate);
     const to = new Date(toDate);
@@ -715,10 +722,10 @@ exports.applyOD = async (req, res) => {
       expectedOutcome,
       travelDetails,
       division_id: employee.division_id?._id || employee.division_id, // Save division at time of application
-      division_name: employee.division_id?.name || 'N/A',
+      division_name: employee.division_id?.name || '',
       department: employee.department_id?._id || employee.department_id || employee.department, // Support both field names
       department_id: employee.department_id?._id || employee.department_id,
-      department_name: employee.department_id?.name || 'N/A',
+      department_name: employee.department_id?.name || '',
       designation: employee.designation_id || employee.designation, // Support both field names
       appliedBy: req.user._id,
       appliedAt: new Date(),
@@ -974,16 +981,15 @@ exports.updateOD = async (req, res) => {
 
     await od.save();
 
-    // NEW: If OD is hour-based and approved, update AttendanceDaily
+    // NEW: If OD is hour-based and approved, update AttendanceDaily (same date format as approval flow)
     if (od.status === 'approved' && od.odType_extended === 'hours' && od.durationHours) {
       try {
         const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
         const formatDate = (date) => {
           const d = new Date(date);
-          return `${d.getFullYear()} -${String(d.getMonth() + 1).padStart(2, '0')} -${String(d.getDate()).padStart(2, '0')} `;
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
         };
 
-        // Get the attendance record for the OD date
         const attendanceDate = formatDate(od.fromDate);
         const attendance = await AttendanceDaily.findOne({
           employeeNumber: String(od.emp_no || '').toUpperCase(),
@@ -991,7 +997,6 @@ exports.updateOD = async (req, res) => {
         });
 
         if (attendance) {
-          // Update attendance record with OD hours
           attendance.odHours = od.durationHours || 0;
           attendance.odDetails = {
             odStartTime: od.odStartTime,
@@ -1002,12 +1007,11 @@ exports.updateOD = async (req, res) => {
             approvedAt: od.approvedAt || new Date(),
             approvedBy: od.approvedBy || req.user._id,
           };
-          await attendance.save();
-          console.log(`✅ OD hours updated in AttendanceDaily for ${od.emp_no} on ${attendanceDate} `);
+          await attendance.save(); // post-save hook recalculates totalWorkingHours, status, payableShifts
+          console.log(`✅ OD hours updated in AttendanceDaily for ${od.emp_no} on ${attendanceDate}`);
         }
       } catch (error) {
         console.error('Error updating OD hours in AttendanceDaily:', error);
-        // Don't throw - OD is already updated, just log the error
       }
     }
 
@@ -1104,56 +1108,97 @@ exports.cancelOD = async (req, res) => {
 // @desc    Get pending approvals for current user
 // @route   GET /api/od/pending-approvals
 // @access  Private
-// Data scope: Show ODs to ALL workflow participants (roles in approvalChain) with division/department scope.
-// Approve/Reject buttons shown only when nextApproverRole === user.role (enforced in frontend via canPerformAction).
+// Query: page, limit, search, odType, fromDate, toDate, department, division
 exports.getPendingApprovals = async (req, res) => {
   try {
     const userRole = req.user.role;
-    // Base filter: Active AND Not Applied by Me (Self-requests go to "My ODs")
+    const { page = 1, limit = 20, search, odType, fromDate, toDate, department, division, designation } = req.query;
+    const pageNum = Math.max(1, parseInt(page, 10));
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10)));
+    const skip = (pageNum - 1) * limitNum;
+
     let filter = {
       isActive: true,
       appliedBy: { $ne: req.user._id }
     };
 
-    // 1. Super Admin / Sub Admin: View all non-final ODs
     if (['sub_admin', 'super_admin'].includes(userRole)) {
       filter.status = { $nin: ['approved', 'rejected', 'cancelled'] };
     }
-    // 2. Scoped Roles (HOD, HR, Manager) - show to ALL whose role is in the workflow
     else if (['hod', 'hr', 'manager'].includes(userRole)) {
       const roleVariants = [userRole];
       if (userRole === 'hr') roleVariants.push('final_authority');
-
       filter['$or'] = [
         { 'workflow.approvalChain': { $elemMatch: { role: { $in: roleVariants } } } },
         { 'workflow.reportingManagerIds': req.user._id.toString() }
       ];
-
       const employeeIds = await getEmployeeIdsInScope(req.user);
       if (employeeIds.length > 0) {
         filter.employeeId = { $in: employeeIds };
       } else {
-        console.warn(`[GetPendingODApprovals] User ${req.user._id} (${userRole}) has no employees in scope.`);
         filter.employeeId = { $in: [] };
       }
       filter.status = { $nin: ['approved', 'rejected', 'cancelled'] };
     }
     else {
-      // Check if user is a reporting manager even if they don't have an admin role
       filter['workflow.reportingManagerIds'] = req.user._id.toString();
       filter.status = { $nin: ['approved', 'rejected', 'cancelled'] };
     }
 
-    const ods = await OD.find(filter)
-      .populate('employeeId', 'employee_name emp_no')
-      .populate('department', 'name')
-      .populate('designation', 'name')
-      .populate('assignedBy', 'name email')
-      .sort({ appliedAt: -1 });
+    if (odType) filter.odType = odType;
+    if (fromDate) {
+      filter.fromDate = filter.fromDate || {};
+      filter.fromDate.$gte = new Date(fromDate);
+    }
+    if (toDate) {
+      filter.toDate = filter.toDate || {};
+      filter.toDate.$lte = new Date(toDate);
+    }
+    if (department) filter.department = department;
+    if (division) filter.division_id = division;
+    if (designation) filter.designation = designation;
+
+    if (search && String(search).trim()) {
+      const searchStr = String(search).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(searchStr, 'i');
+      const matchedEmployees = await Employee.find({
+        $or: [
+          { emp_no: regex },
+          { employee_name: regex },
+          { first_name: regex },
+          { last_name: regex }
+        ]
+      }).select('_id').lean();
+      const ids = matchedEmployees.map(e => e._id);
+      if (ids.length > 0) {
+        const scopeIds = filter.employeeId && filter.employeeId.$in ? filter.employeeId.$in : null;
+        filter.employeeId = scopeIds
+          ? { $in: scopeIds.filter(id => ids.some(i => i.toString() === id.toString())) }
+          : { $in: ids };
+      } else {
+        filter.employeeId = { $in: [] };
+      }
+    }
+
+    const [ods, total] = await Promise.all([
+      OD.find(filter)
+        .populate('employeeId', 'employee_name emp_no first_name last_name')
+        .populate('department', 'name')
+        .populate('designation', 'name')
+        .populate('assignedBy', 'name email')
+        .sort({ appliedAt: -1 })
+        .skip(skip)
+        .limit(limitNum)
+        .lean(),
+      OD.countDocuments(filter)
+    ]);
 
     res.status(200).json({
       success: true,
       count: ods.length,
+      total,
+      page: pageNum,
+      totalPages: Math.ceil(total / limitNum) || 1,
       data: ods,
     });
   } catch (error) {
@@ -1424,40 +1469,100 @@ exports.processODAction = async (req, res) => {
           console.error('Failed to log OD approval/rejection history:', err.message);
         }
 
-    // NEW: If OD is fully approved and has hours, store in AttendanceDaily
-    if (action === 'approve' && od.status === 'approved' && od.odType_extended === 'hours') {
+    // When OD is fully approved, update or create AttendanceDaily for each day in OD range so totalWorkingHours/status/payableShifts reflect OD
+    if (action === 'approve' && od.status === 'approved') {
       try {
         const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
         const formatDate = (date) => {
           const d = new Date(date);
-          return `${d.getFullYear()} -${String(d.getMonth() + 1).padStart(2, '0')} -${String(d.getDate()).padStart(2, '0')} `;
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
         };
+        const dateFrom = formatDate(od.fromDate);
+        const dateTo = formatDate(od.toDate);
+        const empNoRaw = od.emp_no != null ? String(od.emp_no).trim() : '';
+        const empNoUpper = empNoRaw.toUpperCase();
+        if (!empNoUpper) return;
 
-        // Get the attendance record for the OD date
-        const attendanceDate = formatDate(od.fromDate);
-        const attendance = await AttendanceDaily.findOne({
-          employeeNumber: String(od.emp_no || '').toUpperCase(),
-          date: attendanceDate,
-        });
+        const datesToUpdate = [];
+        let d = new Date(dateFrom + 'T12:00:00');
+        const end = new Date(dateTo + 'T12:00:00');
+        while (d <= end) {
+          datesToUpdate.push(formatDate(d));
+          d.setDate(d.getDate() + 1);
+        }
 
-        if (attendance) {
-          // Update attendance record with OD hours
-          attendance.odHours = od.durationHours || 0;
-          attendance.odDetails = {
-            odStartTime: od.odStartTime,
-            odEndTime: od.odEndTime,
-            durationHours: od.durationHours,
-            odType: od.odType_extended,
-            odId: od._id,
-            approvedAt: new Date(),
-            approvedBy: req.user._id,
-          };
-          await attendance.save();
-          console.log(`✅ OD hours stored in AttendanceDaily for ${od.emp_no} on ${attendanceDate} `);
+        for (const attendanceDate of datesToUpdate) {
+          // Find AttendanceDaily (match common employeeNumber formats: "2067", 2067, etc.)
+          const empNoVariants = [...new Set([empNoUpper, empNoRaw, String(od.emp_no)].filter(Boolean))];
+          const attendance = await AttendanceDaily.findOne({
+            date: attendanceDate,
+            employeeNumber: empNoVariants.length ? { $in: empNoVariants } : empNoUpper,
+          });
+
+          if (attendance) {
+            if (od.odType_extended === 'hours') {
+              attendance.odHours = od.durationHours || 0;
+              attendance.odDetails = {
+                odStartTime: od.odStartTime,
+                odEndTime: od.odEndTime,
+                durationHours: od.durationHours,
+                odType: od.odType_extended,
+                odId: od._id,
+                approvedAt: new Date(),
+                approvedBy: req.user._id,
+              };
+            }
+            await attendance.save(); // post-save hook recalculates monthly summary from all approved ODs
+            console.log(`✅ AttendanceDaily updated for OD approval: ${od.emp_no} on ${attendanceDate}`);
+          } else {
+            const isFullDayOD = od.odType_extended === 'full_day' || (!od.odType_extended && !od.isHalfDay);
+            const isHourBased = od.odType_extended === 'hours';
+            if (isHourBased) {
+              attendance = new AttendanceDaily({
+                employeeNumber: empNoUpper,
+                date: attendanceDate,
+                shifts: [],
+                odHours: od.durationHours || 0,
+                odDetails: {
+                  odStartTime: od.odStartTime,
+                  odEndTime: od.odEndTime,
+                  durationHours: od.durationHours,
+                  odType: od.odType_extended,
+                  odId: od._id,
+                  approvedAt: new Date(),
+                  approvedBy: req.user._id,
+                },
+              });
+              await attendance.save();
+              console.log(`✅ AttendanceDaily created with hour-based OD for ${od.emp_no} on ${attendanceDate}`);
+            } else if (isFullDayOD) {
+              attendance = new AttendanceDaily({
+                employeeNumber: empNoUpper,
+                date: attendanceDate,
+                shifts: [],
+                status: 'PRESENT',
+                payableShifts: 1,
+                totalWorkingHours: 0,
+              });
+              await attendance.save(); // post-save triggers monthly summary recalc
+              console.log(`✅ AttendanceDaily created for full-day OD: ${od.emp_no} on ${attendanceDate}`);
+            }
+            // Half-day OD with no record: do not create daily; monthly summary adds 0.5 in recalc
+          }
+        }
+
+        // Explicitly recalc monthly summary so it reflects hour-based OD (shift/day -> PRESENT)
+        // Post-save on each daily runs async (setImmediate); this ensures summary is updated in this request
+        try {
+          const { recalculateOnAttendanceUpdate } = require('../../attendance/services/summaryCalculationService');
+          for (const attendanceDate of datesToUpdate) {
+            await recalculateOnAttendanceUpdate(empNoUpper, attendanceDate);
+          }
+        } catch (recalcErr) {
+          console.error('Error recalculating monthly summary after OD approval:', recalcErr);
         }
       } catch (error) {
-        console.error('Error storing OD hours in AttendanceDaily:', error);
-        // Don't throw - OD is already approved, just log the error
+        console.error('Error updating AttendanceDaily on OD approval:', error);
       }
     }
 

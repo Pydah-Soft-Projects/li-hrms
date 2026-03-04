@@ -28,9 +28,12 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber) {
     // Get or create summary
     const summary = await MonthlyAttendanceSummary.getOrCreate(employeeId, emp_no, year, monthNumber);
 
-    // Resolve the actual period window using payroll cycle (pay-cycle aware month),
-    // based on a mid-month anchor date for the provided (year, monthNumber)
-    const anchorDateStr = `${year}-${String(monthNumber).padStart(2, '0')}-15`;
+    // Resolve the actual period window using payroll cycle (pay-cycle aware month).
+    // (year, monthNumber) from getPayrollCycleForDate is the cycle that *starts* on the 26th of that month
+    // (e.g. 2026-02-04 -> cycle 26 Jan–25 Feb -> month 1). Use an anchor inside that cycle (10th of next month).
+    const nextMonth = monthNumber >= 12 ? 1 : monthNumber + 1;
+    const nextYear = monthNumber >= 12 ? year + 1 : year;
+    const anchorDateStr = `${nextYear}-${String(nextMonth).padStart(2, '0')}-10`;
     const anchorDate = createISTDate(anchorDateStr);
     const periodInfo = await dateCycleService.getPeriodInfo(anchorDate);
     const payrollStart = periodInfo.payrollCycle.startDate;
@@ -43,9 +46,12 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber) {
     const startDate = createISTDate(startDateStr);
     const endDate = createISTDate(endDateStr);
 
-    // 1. Get all attendance records for this month (Using .lean() and projections)
+    // Normalize emp_no so we match AttendanceDaily.employeeNumber (schema uses uppercase)
+    const empNoNorm = (emp_no && String(emp_no).trim()) ? String(emp_no).toUpperCase() : emp_no;
+
+    // 1. Get all attendance records for this month (fresh from DB so we see latest status/payableShifts after OD updates)
     const attendanceRecords = await AttendanceDaily.find({
-      employeeNumber: emp_no,
+      employeeNumber: empNoNorm,
       date: {
         $gte: startDateStr,
         $lte: endDateStr,
@@ -156,22 +162,25 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber) {
     }
     summary.totalODs = Math.round(totalODDays * 10) / 10; // Round to 1 decimal
 
-    // 6. Total payable shifts = sum of daily payableShifts + OD contribution for days with no record
-    // AttendanceDaily pre-save enriches each day with OD, so daily has attendance+OD. For OD-only
-    // days without a record (e.g. OD approved before upsert), add OD contribution here.
+    // 6. Total payable shifts and present days: add half-day (0.5) / full-day (1) OD for days with no attendance record
+    // So monthly aggregates include approved half-day and full-day OD even when no punch record exists.
     const datesWithAttendance = new Set((attendanceRecords || []).map(r => r.date));
+    let odOnlyPresentDays = 0;
     for (const od of approvedODs || []) {
       if (od.odType_extended === 'hours') continue;
+      const contrib = od.isHalfDay ? 0.5 : 1;
       let d = new Date(extractISTComponents(od.fromDate).dateStr);
       const odEnd = new Date(extractISTComponents(od.toDate).dateStr);
       while (d <= odEnd) {
         const dateStr = extractISTComponents(d).dateStr;
         if (dateStr >= startDateStr && dateStr <= endDateStr && !datesWithAttendance.has(dateStr)) {
-          totalPayableShifts += od.isHalfDay ? 0.5 : 1;
+          totalPayableShifts += contrib;
+          odOnlyPresentDays += contrib;
         }
         d.setDate(d.getDate() + 1);
       }
     }
+    summary.totalPresentDays = Math.round((totalPresentDays + odOnlyPresentDays) * 10) / 10;
     summary.totalPayableShifts = Math.round(totalPayableShifts * 100) / 100; // Round to 2 decimals
 
     // 7. Calculate total OT hours (from approved OT requests)
@@ -326,7 +335,8 @@ async function calculateAllEmployeesSummary(year, monthNumber) {
 async function recalculateOnAttendanceUpdate(emp_no, date) {
   try {
     const Employee = require('../../employees/model/Employee');
-    const employee = await Employee.findOne({ emp_no: emp_no.toUpperCase() });
+    const empNoNorm = (emp_no && String(emp_no).trim()) ? String(emp_no).toUpperCase() : emp_no;
+    const employee = await Employee.findOne({ emp_no: empNoNorm });
 
     if (!employee) {
       console.warn(`Employee not found for emp_no: ${emp_no}`);
@@ -338,7 +348,7 @@ async function recalculateOnAttendanceUpdate(emp_no, date) {
     const periodInfo = await dateCycleService.getPeriodInfo(baseDate);
     const { year, month: monthNumber } = periodInfo.payrollCycle;
 
-    await calculateMonthlySummary(employee._id, emp_no, year, monthNumber);
+    await calculateMonthlySummary(employee._id, empNoNorm, year, monthNumber);
   } catch (error) {
     console.error(`Error recalculating summary on attendance update for ${emp_no}, ${date}:`, error);
     // Don't throw - this is a background operation

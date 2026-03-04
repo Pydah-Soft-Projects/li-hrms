@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { api, Department } from '@/lib/api';
 import { toast } from 'react-toastify';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, FileSpreadsheet, Search, Calendar, Building2 } from 'lucide-react';
 
 const ROWS_PER_PAGE_OPTIONS = [10, 25, 50, 100] as const;
 
@@ -131,37 +131,55 @@ export default function PaysheetPage() {
     }
   };
 
-  return (
-    <div className="min-h-screen w-full bg-slate-50 dark:bg-slate-950/50 py-6">
-      <header className="mb-8">
-          <h1 className="text-2xl font-semibold text-slate-900 dark:text-white tracking-tight">
-            Paysheet
-          </h1>
-          <p className="mt-1.5 text-sm text-slate-500 dark:text-slate-400">
-            Existing payroll records load on open. Use filters, then click “Load paysheet” to recalculate. Columns follow Payroll Configuration.
-          </p>
-      </header>
+  const isLoading = loadingExisting && rows.length === 0;
+  const isEmpty = !loadingExisting && headers.length === 0 && rows.length === 0;
+  const hasData = headers.length > 0 && rows.length > 0;
 
-      <div className="mb-6 flex flex-wrap items-end gap-3 sm:gap-4">
-          <div>
-            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
+  return (
+    <div className="flex flex-col min-h-screen bg-slate-50 dark:bg-slate-950/50 -mx-4 w-[calc(100%+2rem)] sm:-mx-5 sm:w-[calc(100%+2.5rem)] lg:-mx-6 lg:w-[calc(100%+3rem)] px-4 sm:px-5 lg:px-6">
+      {/* Page header */}
+      <div className="flex-shrink-0 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 py-2">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400">
+              <FileSpreadsheet className="h-5 w-5" />
+            </div>
+            <div>
+              <h1 className="text-xl font-semibold text-slate-900 dark:text-white tracking-tight">
+                Paysheet
+              </h1>
+              <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
+                Payroll records by month. Columns follow Payroll Configuration.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Filters bar */}
+      <div className="flex-shrink-0 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 py-2">
+        <div className="flex flex-wrap items-end gap-4">
+          <div className="flex flex-col gap-1.5">
+            <label className="flex items-center gap-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">
+              <Calendar className="h-3.5 w-3.5" />
               Month
             </label>
             <input
               type="month"
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(e.target.value)}
-              className="h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500 transition-shadow"
+              className="h-9 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 text-sm text-slate-900 dark:text-white focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 focus:outline-none"
             />
           </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
+          <div className="flex flex-col gap-1.5">
+            <label className="flex items-center gap-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">
+              <Building2 className="h-3.5 w-3.5" />
               Department
             </label>
             <select
               value={selectedDepartment}
               onChange={(e) => setSelectedDepartment(e.target.value)}
-              className="h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm min-w-[160px] focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500"
+              className="h-9 min-w-[180px] rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 text-sm text-slate-900 dark:text-white focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 focus:outline-none"
             >
               <option value="">All departments</option>
               {departments.map((d) => (
@@ -171,8 +189,9 @@ export default function PaysheetPage() {
               ))}
             </select>
           </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">
+          <div className="flex flex-col gap-1.5">
+            <label className="flex items-center gap-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">
+              <Search className="h-3.5 w-3.5" />
               Search
             </label>
             <input
@@ -180,118 +199,148 @@ export default function PaysheetPage() {
               value={searchFilter}
               onChange={(e) => setSearchFilter(e.target.value)}
               placeholder="Name or emp no"
-              className="h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm min-w-[140px] focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500"
+              className="h-9 min-w-[160px] rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 focus:outline-none"
             />
           </div>
           <button
             type="button"
             onClick={loadPaysheet}
             disabled={loading || !selectedMonth}
-            className="h-9 px-4 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-700 focus:ring-2 focus:ring-violet-500/50 disabled:opacity-50 disabled:pointer-events-none transition-colors"
+            className="hidden"
+            aria-hidden
           >
             {loading ? 'Calculating…' : 'Load paysheet'}
           </button>
+        </div>
       </div>
 
-      {(loadingExisting && rows.length === 0) ? (
-          <div className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/80 p-16 text-center">
-            <div className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-slate-300 border-t-violet-500" />
-            <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">Loading existing records…</p>
+      {/* Main content: loading / empty / table */}
+      <div className="flex-1 min-h-0 flex flex-col">
+        {isLoading && (
+          <div className="flex-1 flex flex-col items-center justify-center py-8">
+            <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-200 border-t-violet-500 dark:border-slate-600" />
+            <p className="mt-4 text-sm font-medium text-slate-600 dark:text-slate-400">
+              Loading payroll records…
+            </p>
           </div>
-        ) : (
-          <div className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/80 shadow-sm overflow-hidden">
-            {headers.length === 0 && rows.length === 0 ? (
-              <div className="p-16 text-center text-slate-500 dark:text-slate-400 text-sm">
-                No payroll records for this month. Adjust filters or click “Load paysheet” to calculate.
-              </div>
-            ) : (
-              <>
-                <div className="overflow-x-auto w-full">
-                  <table className="w-full min-w-full text-sm border-collapse">
-                    <thead>
-                      <tr className="border-b border-slate-200 dark:border-slate-700 bg-slate-50/90 dark:bg-slate-800/50 sticky top-0 z-10">
-                        {headers.map((h, i) => (
-                          <th
-                            key={i}
-                            className="text-left px-4 py-3 font-medium text-slate-600 dark:text-slate-300 whitespace-nowrap first:pl-6 last:pr-6"
-                          >
-                            {h}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {paginatedRows.map((row, rIdx) => (
-                        <tr
-                          key={startRow + rIdx}
-                          className="border-b border-slate-100 dark:border-slate-800/80 hover:bg-slate-50/70 dark:hover:bg-slate-800/30 transition-colors"
-                        >
-                          {headers.map((header, cIdx) => (
-                            <td
-                              key={cIdx}
-                              className="px-4 py-2.5 text-slate-700 dark:text-slate-300 whitespace-nowrap first:pl-6 last:pr-6"
-                            >
-                              {formatCell(row[header])}
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+        )}
 
-                {totalRows > 0 && (
-                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 sm:px-6 py-3 border-t border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30">
-                    <div className="flex items-center gap-4 text-sm text-slate-600 dark:text-slate-400">
-                      <span>
-                        Showing <span className="font-medium text-slate-800 dark:text-slate-200">{startRow + 1}</span>
-                        –<span className="font-medium text-slate-800 dark:text-slate-200">{endRow}</span>
-                        {' '}of <span className="font-medium text-slate-800 dark:text-slate-200">{totalRows}</span>
-                      </span>
-                      <label className="flex items-center gap-2">
-                        <span>Rows per page</span>
-                        <select
-                          value={rowsPerPage}
-                          onChange={(e) => setRowsPerPage(Number(e.target.value))}
-                          className="h-8 pl-2 pr-7 rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-sm focus:ring-2 focus:ring-violet-500/50"
+        {!isLoading && isEmpty && (
+          <div className="flex-1 flex flex-col items-center justify-center py-8">
+            <div className="rounded-full bg-slate-100 dark:bg-slate-800 p-4">
+              <FileSpreadsheet className="h-8 w-8 text-slate-400 dark:text-slate-500" />
+            </div>
+            <p className="mt-4 text-sm font-medium text-slate-700 dark:text-slate-300">
+              No payroll records for this month
+            </p>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400 text-center max-w-sm">
+              Adjust month or filters to load data.
+            </p>
+          </div>
+        )}
+
+        {!isLoading && hasData && (
+          <div className="flex-1 min-h-0 flex flex-col bg-white dark:bg-slate-900/50 border-t border-slate-200 dark:border-slate-800">
+            {/* Table summary */}
+            <div className="flex-shrink-0 flex items-center justify-between py-1.5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
+              <span className="text-sm text-slate-600 dark:text-slate-400">
+                <span className="font-medium text-slate-800 dark:text-slate-200">{totalRows}</span>
+                {' '}row{totalRows !== 1 ? 's' : ''}
+              </span>
+            </div>
+
+            {/* Table wrapper: scrollable, full width */}
+            <div className="flex-1 min-h-0 overflow-auto">
+              <table className="w-full border-collapse text-sm">
+                <thead className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800/90 shadow-sm">
+                  <tr>
+                    {headers.map((h, i) => (
+                      <th
+                        key={i}
+                        className="text-left px-4 py-3 font-semibold text-slate-700 dark:text-slate-200 whitespace-nowrap border-b border-slate-200 dark:border-slate-700 border-r border-slate-200 dark:border-slate-700 last:border-r-0"
+                      >
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginatedRows.map((row, rIdx) => (
+                    <tr
+                      key={startRow + rIdx}
+                      className="border-b border-slate-100 dark:border-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800/40 even:bg-slate-50/50 dark:even:bg-slate-800/20 transition-colors"
+                    >
+                      {headers.map((header, cIdx) => (
+                        <td
+                          key={cIdx}
+                          className="px-4 py-2.5 text-slate-700 dark:text-slate-300 whitespace-nowrap border-r border-slate-100 dark:border-slate-800/80 last:border-r-0"
                         >
-                          {ROWS_PER_PAGE_OPTIONS.map((n) => (
-                            <option key={n} value={n}>
-                              {n}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => setPage((p) => Math.max(1, p - 1))}
-                        disabled={page <= 1}
-                        className="h-8 w-8 inline-flex items-center justify-center rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-40 disabled:pointer-events-none transition-colors"
-                        aria-label="Previous page"
-                      >
-                        <ChevronLeft className="h-4 w-4" />
-                      </button>
-                      <span className="min-w-[100px] text-center text-sm text-slate-600 dark:text-slate-400">
-                        Page <span className="font-medium text-slate-800 dark:text-slate-200">{page}</span> of <span className="font-medium text-slate-800 dark:text-slate-200">{totalPages}</span>
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                        disabled={page >= totalPages}
-                        className="h-8 w-8 inline-flex items-center justify-center rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-40 disabled:pointer-events-none transition-colors"
-                        aria-label="Next page"
-                      >
-                        <ChevronRight className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </>
+                          {formatCell(row[header])}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination */}
+            {totalRows > 0 && (
+              <div className="flex-shrink-0 flex flex-col sm:flex-row items-center justify-between gap-3 py-2 border-t border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/30">
+                <div className="flex items-center gap-4 text-sm text-slate-600 dark:text-slate-400">
+                  <span>
+                    Showing{' '}
+                    <span className="font-medium text-slate-800 dark:text-slate-200">{startRow + 1}</span>
+                    –<span className="font-medium text-slate-800 dark:text-slate-200">{endRow}</span>
+                    {' '}of{' '}
+                    <span className="font-medium text-slate-800 dark:text-slate-200">{totalRows}</span>
+                  </span>
+                  <label className="flex items-center gap-2">
+                    <span>Rows per page</span>
+                    <select
+                      value={rowsPerPage}
+                      onChange={(e) => setRowsPerPage(Number(e.target.value))}
+                      className="h-8 rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 pl-2 pr-8 text-sm text-slate-700 dark:text-slate-300 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 focus:outline-none"
+                    >
+                      {ROWS_PER_PAGE_OPTIONS.map((n) => (
+                        <option key={n} value={n}>
+                          {n}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page <= 1}
+                    className="h-8 w-8 inline-flex items-center justify-center rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-40 disabled:pointer-events-none transition-colors"
+                    aria-label="Previous page"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <span className="min-w-[100px] text-center text-sm text-slate-600 dark:text-slate-400">
+                    Page{' '}
+                    <span className="font-medium text-slate-800 dark:text-slate-200">{page}</span>
+                    {' '}of{' '}
+                    <span className="font-medium text-slate-800 dark:text-slate-200">{totalPages}</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={page >= totalPages}
+                    className="h-8 w-8 inline-flex items-center justify-center rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-40 disabled:pointer-events-none transition-colors"
+                    aria-label="Next page"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         )}
+      </div>
     </div>
   );
 }
