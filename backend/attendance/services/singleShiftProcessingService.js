@@ -11,13 +11,14 @@
  *    - First IN and last OUT on the date (or next-day OUT for overnight) form the pair.
  *
  * 2. STRICT IN/OUT DISABLED (shift-aware)
+ *    - Respect roster first: use PreScheduledShift for this date so the correct shift (A-S/B-S/C-S) is used.
  *    - All punches are considered (including type null / thumb-only).
  *    - Logs come in real time: people punch at shift start and when completing their shift.
- *    - We correlate punches to assigned shift start time (IN) and shift end time (OUT).
- *    - Classification is by proximity to shift start vs shift end; overnight OUT may be next day.
+ *    - We correlate punches to roster shift start (IN) and shift end (OUT).
+ *    - IN only if punch is within shift start ± 3 hours; OUT only if within shift end ± 3 hours.
  *    - Next-day OUT is accepted if and only if it is at shift end ± 3 hours (grace).
  *    - First punch in [00:00, previous overnight shift end + 1hr] on today is reserved as that
- *      overnight's OUT and not used as today's IN.
+ *      overnight's OUT (when previous day roster was overnight) and not used as today's IN.
  */
 
 const AttendanceDaily = require('../model/AttendanceDaily');
@@ -45,6 +46,33 @@ function timeToMinutes(timeStr) {
 }
 
 /**
+ * Parse HH:MM to a Date on refDate (IST). If isNextDay, use next calendar day.
+ */
+function timeStringToDate(timeStr, refDateStr, isNextDay = false) {
+  if (!timeStr || !refDateStr) return null;
+  let dateStr = refDateStr;
+  if (isNextDay) {
+    const d = new Date(refDateStr + 'T12:00:00+05:30');
+    d.setDate(d.getDate() + 1);
+    dateStr = extractISTComponents(d).dateStr;
+  }
+  const [hours, mins] = timeStr.split(':').map(Number);
+  const h = String(hours ?? 0).padStart(2, '0');
+  const m = String(mins ?? 0).padStart(2, '0');
+  return new Date(`${dateStr}T${h}:${m}:00+05:30`);
+}
+
+/**
+ * Overlap between two time ranges in minutes.
+ */
+function getOverlapMinutes(startA, endA, startB, endB) {
+  if (!startA || !endA || !startB || !endB) return 0;
+  const start = Math.max(startA.getTime(), startB.getTime());
+  const end = Math.min(endA.getTime(), endB.getTime());
+  return Math.max(0, (end - start) / (1000 * 60));
+}
+
+/**
  * When strict IN/OUT is disabled: use assigned shift timings to decide which punch is IN and which is OUT.
  * All punches (including type null / thumb-only) are considered. Each punch is classified by proximity to
  * shift start (IN) or shift end (OUT). Overnight: shift end is next day, so next-day punch at shift end = OUT.
@@ -55,7 +83,8 @@ function timeToMinutes(timeStr) {
  */
 async function getShiftAwareInOutPair(employeeNumber, date, allPunches, processingMode) {
   if (!allPunches || allPunches.length === 0) return null;
-  const shiftOptions = { rosterStrictWhenPresent: processingMode?.rosterStrictWhenPresent === true };
+  // Respect roster first: when roster exists, use only that shift for this date.
+  const shiftOptions = { rosterStrictWhenPresent: true };
   const { shifts } = await getShiftsForEmployee(employeeNumber, date, shiftOptions);
   if (!shifts || shifts.length === 0) return null;
 
@@ -115,6 +144,8 @@ async function getShiftAwareInOutPair(employeeNumber, date, allPunches, processi
     }
   }
 
+  const SHIFT_WINDOW_GRACE_HOURS = 3;
+  const windowGraceMs = SHIFT_WINDOW_GRACE_HOURS * 60 * 60 * 1000;
   const inCandidates = [];
   const outCandidates = [];
   const isReserved = (p) => {
@@ -129,9 +160,11 @@ async function getShiftAwareInOutPair(employeeNumber, date, allPunches, processi
     const t = new Date(p.timestamp).getTime();
     const distStart = Math.abs(t - shiftStartDate.getTime());
     const distEnd = Math.abs(t - shiftEndDate.getTime());
-    if (distStart <= distEnd) {
+    const withinStartWindow = distStart <= windowGraceMs;
+    const withinEndWindow = distEnd <= windowGraceMs;
+    if (distStart <= distEnd && withinStartWindow) {
       inCandidates.push(p);
-    } else {
+    } else if (distEnd < distStart && withinEndWindow) {
       outCandidates.push(p);
     }
   }
@@ -227,8 +260,8 @@ async function processSingleShiftAttendance(employeeNumber, date, rawLogs, gener
         if (nextDayOuts.length) {
           const nextDayFirstOut = new Date(nextDayOuts[0].timestamp);
           if (nextDayFirstOut > firstInTime) {
-            const shiftOptions = { rosterStrictWhenPresent: processingMode?.rosterStrictWhenPresent === true };
-            const { shifts } = await getShiftsForEmployee(employeeNumber, date, shiftOptions);
+            const rosterFirst = { rosterStrictWhenPresent: true };
+            const { shifts } = await getShiftsForEmployee(employeeNumber, date, rosterFirst);
             let withinGrace = true;
             if (shifts && shifts.length > 0 && shifts[0].endTime) {
               const endMins = timeToMinutes(shifts[0].endTime);
@@ -319,8 +352,55 @@ async function processSingleShiftAttendance(employeeNumber, date, rawLogs, gener
       pShift.isEarlyOut = shiftAssignment.isEarlyOut;
       pShift.expectedHours = shiftAssignment.expectedHours || expectedHours;
 
+      // Hour-based OD gap-fill: add OD time not covered by punches to working hours; waive early-out if OD covers gap
+      const dayStart = new Date(`${date}T00:00:00+05:30`);
+      const dayEnd = new Date(`${date}T23:59:59.999+05:30`);
+      let approvedODs = [];
+      try {
+        approvedODs = await OD.find({
+          emp_no: employeeNumber,
+          status: 'approved',
+          isActive: true,
+          fromDate: { $lte: dayEnd },
+          toDate: { $gte: dayStart },
+        }).select('odType_extended odStartTime odEndTime durationHours').lean();
+      } catch (e) {
+        // ignore
+      }
+      if (approvedODs && approvedODs.length > 0 && pShift.shiftStartTime && pShift.shiftEndTime) {
+        const isOvernight = timeToMinutes(pShift.shiftEndTime) < timeToMinutes(pShift.shiftStartTime);
+        const shiftStartDate = timeStringToDate(pShift.shiftStartTime, date, false);
+        const shiftEndDate = timeStringToDate(pShift.shiftEndTime, date, isOvernight);
+        const punchIn = firstInTime instanceof Date ? firstInTime : new Date(firstInTime);
+        const punchOut = lastOutTime instanceof Date ? lastOutTime : new Date(lastOutTime);
+        let addedOdMinutes = 0;
+        for (const od of approvedODs) {
+          if (od.odType_extended === 'hours' && od.odStartTime && od.odEndTime) {
+            const odEndNextDay = timeToMinutes(od.odEndTime) <= timeToMinutes(od.odStartTime);
+            const odStart = timeStringToDate(od.odStartTime, date, false);
+            const odEnd = timeStringToDate(od.odEndTime, date, odEndNextDay);
+            const odInShiftOverlap = getOverlapMinutes(shiftStartDate, shiftEndDate, odStart, odEnd);
+            const odInPunchOverlap = getOverlapMinutes(punchIn, punchOut, odStart, odEnd);
+            addedOdMinutes += Math.max(0, odInShiftOverlap - odInPunchOverlap);
+            // Waive early-out when OD end covers shift end; set to 0
+            if (pShift.isEarlyOut && odStart <= punchOut && odEnd >= shiftEndDate) {
+              pShift.isEarlyOut = false;
+              pShift.earlyOutMinutes = 0;
+            }
+            // Waive late-in when OD start is at or before shift start
+            if (pShift.isLateIn && odStart <= shiftStartDate && odEnd >= punchIn) {
+              pShift.isLateIn = false;
+              pShift.lateInMinutes = 0;
+            }
+          }
+        }
+        const addedOdHours = Math.round((addedOdMinutes / 60) * 100) / 100;
+        pShift.odHours = addedOdHours;
+        pShift.workingHours = Math.round((punchHours + addedOdHours) * 100) / 100;
+      }
+
       const basePayable = (assignedShiftDef?.payableShifts ?? 1);
-      const statusDuration = punchHours + (pShift.odHours || 0); // Use actual punch duration for status
+      const statusDuration = punchHours + (pShift.odHours || 0); // Use punch + OD gap-fill for status
 
       if (statusDuration >= expectedHours * 0.75) {
         pShift.status = 'PRESENT';
@@ -345,14 +425,14 @@ async function processSingleShiftAttendance(employeeNumber, date, rawLogs, gener
     const updateData = {
       shifts: processedShifts,
       totalShifts: 1,
-      totalWorkingHours: punchHours,
+      totalWorkingHours: pShift.workingHours,
       totalOTHours: 0, // Only set when OT is approved via Convert to OT
       extraHours,
       payableShifts: totalPayableShifts,
       status,
       lastSyncedAt: new Date(),
       totalLateInMinutes: pShift.lateInMinutes || 0,
-      totalEarlyOutMinutes: pShift.earlyOutMinutes || 0,
+      totalEarlyOutMinutes: pShift.earlyOutMinutes ?? 0,
       totalExpectedHours: pShift.expectedHours || expectedHours,
       otHours: 0, // Display as extra hours until Convert to OT + management approval
     };

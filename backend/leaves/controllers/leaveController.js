@@ -559,6 +559,13 @@ exports.applyLeave = async (req, res) => {
       });
     }
 
+    // Populate division, department, designation so we have names for snapshot (avoids saving 'N/A')
+    await employee.populate([
+      { path: 'division_id', select: 'name' },
+      { path: 'department_id', select: 'name' },
+      { path: 'designation_id', select: 'name' },
+    ]);
+
     // Get workflow settings
     const workflowSettings = await getWorkflowSettings();
 
@@ -810,10 +817,10 @@ exports.applyLeave = async (req, res) => {
       contactNumber,
       emergencyContact,
       division_id: employee.division_id?._id || employee.division_id, // Save division at time of application
-      division_name: employee.division_id?.name || 'N/A',
+      division_name: employee.division_id?.name || '',
       department: employee.department_id?._id || employee.department_id || employee.department, // Support both field names
       department_id: employee.department_id?._id || employee.department_id,
-      department_name: employee.department_id?.name || 'N/A',
+      department_name: employee.department_id?.name || '',
       designation: employee.designation_id || employee.designation, // Support both field names
       appliedBy: req.user._id,
       appliedAt: new Date(),
@@ -1102,11 +1109,16 @@ exports.cancelLeave = async (req, res) => {
 // @desc    Get pending approvals for current user
 // @route   GET /api/leaves/pending-approvals
 // @access  Private
+// Query: page, limit, search, leaveType, fromDate, toDate, department, division
 // Data scope: Show leaves to ALL workflow participants (roles in approvalChain) with division/department scope.
-// Approve/Reject buttons shown only when nextApproverRole === user.role (enforced in frontend via canPerformAction).
 exports.getPendingApprovals = async (req, res) => {
   try {
     const userRole = req.user.role;
+    const { page = 1, limit = 20, search, leaveType, fromDate, toDate, department, division, designation } = req.query;
+    const pageNum = Math.max(1, parseInt(page, 10));
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10)));
+    const skip = (pageNum - 1) * limitNum;
+
     // Base filter: Active AND Not Applied by Me (Self-requests go to "My Leaves")
     let filter = {
       isActive: true,
@@ -1117,30 +1129,22 @@ exports.getPendingApprovals = async (req, res) => {
     if (['sub_admin', 'super_admin'].includes(userRole)) {
       filter.status = { $nin: ['approved', 'rejected', 'cancelled'] };
     }
-    // 2, 3, 4: Scoped Roles (HOD, HR, Manager) - show to ALL whose role is in the workflow
+    // 2, 3, 4: Scoped Roles (HOD, HR, Manager)
     else if (['hod', 'hr', 'manager'].includes(userRole)) {
-      // User's role must appear in the approval chain (they're a workflow participant)
       const roleVariants = [userRole];
       if (userRole === 'hr') roleVariants.push('final_authority');
-
       filter['$or'] = [
         { 'workflow.approvalChain': { $elemMatch: { role: { $in: roleVariants } } } },
         { 'workflow.reportingManagerIds': req.user._id.toString() }
       ];
-
-      // Division/Department scope: only leaves for employees in user's scope
       const employeeIds = await getEmployeeIdsInScope(req.user);
-
       if (employeeIds.length > 0) {
         filter.employeeId = { $in: employeeIds };
       } else {
-        console.warn(`[GetPendingApprovals] User ${req.user._id} (${userRole}) has no employees in scope.`);
         filter.employeeId = { $in: [] };
       }
-
       filter.status = { $nin: ['approved', 'rejected', 'cancelled'] };
     }
-    // 5. Generic / Custom Role or Reporting Manager without admin role
     else {
       filter['$or'] = [
         { 'workflow.approvalChain': { $elemMatch: { role: userRole } } },
@@ -1149,15 +1153,61 @@ exports.getPendingApprovals = async (req, res) => {
       filter.status = { $nin: ['approved', 'rejected', 'cancelled'] };
     }
 
-    const leaves = await Leave.find(filter)
-      .populate('employeeId', 'employee_name emp_no')
-      .populate('department', 'name')
-      .populate('designation', 'name')
-      .sort({ appliedAt: -1 });
+    // Apply query filters
+    if (leaveType) filter.leaveType = leaveType;
+    if (fromDate) {
+      filter.fromDate = filter.fromDate || {};
+      filter.fromDate.$gte = new Date(fromDate);
+    }
+    if (toDate) {
+      filter.toDate = filter.toDate || {};
+      filter.toDate.$lte = new Date(toDate);
+    }
+    if (department) filter.department = department;
+    if (division) filter.division_id = division;
+    if (designation) filter.designation = designation;
+
+    // Search: by emp_no or employee name (resolve employee ids first)
+    if (search && String(search).trim()) {
+      const searchStr = String(search).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(searchStr, 'i');
+      const matchedEmployees = await Employee.find({
+        $or: [
+          { emp_no: regex },
+          { employee_name: regex },
+          { first_name: regex },
+          { last_name: regex }
+        ]
+      }).select('_id').lean();
+      const ids = matchedEmployees.map(e => e._id);
+      if (ids.length > 0) {
+        const scopeIds = filter.employeeId && filter.employeeId.$in ? filter.employeeId.$in : null;
+        filter.employeeId = scopeIds
+          ? { $in: scopeIds.filter(id => ids.some(i => i.toString() === id.toString())) }
+          : { $in: ids };
+      } else {
+        filter.employeeId = { $in: [] };
+      }
+    }
+
+    const [leaves, total] = await Promise.all([
+      Leave.find(filter)
+        .populate('employeeId', 'employee_name emp_no first_name last_name')
+        .populate('department', 'name')
+        .populate('designation', 'name')
+        .sort({ appliedAt: -1 })
+        .skip(skip)
+        .limit(limitNum)
+        .lean(),
+      Leave.countDocuments(filter)
+    ]);
 
     res.status(200).json({
       success: true,
       count: leaves.length,
+      total,
+      page: pageNum,
+      totalPages: Math.ceil(total / limitNum) || 1,
       data: leaves,
     });
   } catch (error) {

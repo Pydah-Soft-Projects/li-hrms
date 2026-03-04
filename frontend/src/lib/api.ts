@@ -1949,9 +1949,20 @@ export const api = {
     });
   },
 
-  // Get pending leave approvals
-  getPendingLeaveApprovals: async () => {
-    return apiRequest<any>('/leaves/pending-approvals', { method: 'GET' });
+  // Get pending leave approvals (supports pagination and filters)
+  getPendingLeaveApprovals: async (params?: { page?: number; limit?: number; search?: string; leaveType?: string; fromDate?: string; toDate?: string; department?: string; division?: string; designation?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.page != null) q.append('page', String(params.page));
+    if (params?.limit != null) q.append('limit', String(params.limit));
+    if (params?.search) q.append('search', params.search);
+    if (params?.leaveType) q.append('leaveType', params.leaveType);
+    if (params?.fromDate) q.append('fromDate', params.fromDate);
+    if (params?.toDate) q.append('toDate', params.toDate);
+    if (params?.department) q.append('department', params.department);
+    if (params?.division) q.append('division', params.division);
+    if (params?.designation) q.append('designation', params.designation);
+    const query = q.toString();
+    return apiRequest<any>(`/leaves/pending-approvals${query ? `?${query}` : ''}`, { method: 'GET' });
   },
 
   // Process leave action (approve/reject)
@@ -2200,9 +2211,20 @@ export const api = {
     });
   },
 
-  // Get pending OD approvals
-  getPendingODApprovals: async () => {
-    return apiRequest<any>('/leaves/od/pending-approvals', { method: 'GET' });
+  // Get pending OD approvals (supports pagination and filters)
+  getPendingODApprovals: async (params?: { page?: number; limit?: number; search?: string; odType?: string; fromDate?: string; toDate?: string; department?: string; division?: string; designation?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.page != null) q.append('page', String(params.page));
+    if (params?.limit != null) q.append('limit', String(params.limit));
+    if (params?.search) q.append('search', params.search);
+    if (params?.odType) q.append('odType', params.odType);
+    if (params?.fromDate) q.append('fromDate', params.fromDate);
+    if (params?.toDate) q.append('toDate', params.toDate);
+    if (params?.department) q.append('department', params.department);
+    if (params?.division) q.append('division', params.division);
+    if (params?.designation) q.append('designation', params.designation);
+    const query = q.toString();
+    return apiRequest<any>(`/leaves/od/pending-approvals${query ? `?${query}` : ''}`, { method: 'GET' });
   },
 
   // Process OD action (approve/reject)

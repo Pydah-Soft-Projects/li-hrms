@@ -369,6 +369,12 @@ export default function LeavesPage() {
   const [ods, setODs] = useState<ODApplication[]>([]);
   const [pendingLeaves, setPendingLeaves] = useState<LeaveApplication[]>([]);
   const [pendingODs, setPendingODs] = useState<ODApplication[]>([]);
+  const [pendingLeavesTotal, setPendingLeavesTotal] = useState(0);
+  const [pendingODsTotal, setPendingODsTotal] = useState(0);
+  const [pendingLeavesPage, setPendingLeavesPage] = useState(1);
+  const [pendingODsPage, setPendingODsPage] = useState(1);
+  const pendingLimit = 20;
+  const [loadingPending, setLoadingPending] = useState(false);
   const [loading, setLoading] = useState(true);
 
   // Dialog states
@@ -502,24 +508,57 @@ export default function LeavesPage() {
     loadFilterData();
   }, []);
 
+  useEffect(() => {
+    if (activeTab !== 'pending') return;
+    setPendingLeavesPage(1);
+    setPendingODsPage(1);
+    loadPendingData(1, 1);
+  }, [activeTab, selectedDivisionFilter, selectedDepartmentFilter, selectedDesignationFilter, searchTerm]);
+
   const loadData = async () => {
     setLoading(true);
     try {
-      const [leavesRes, odsRes, pendingLeavesRes, pendingODsRes] = await Promise.all([
+      const [leavesRes, odsRes] = await Promise.all([
         api.getLeaves({ limit: 50 }),
         api.getODs({ limit: 50 }),
-        api.getPendingLeaveApprovals(),
-        api.getPendingODApprovals(),
       ]);
-
       if (leavesRes.success) setLeaves(leavesRes.data || []);
       if (odsRes.success) setODs(odsRes.data || []);
-      if (pendingLeavesRes.success) setPendingLeaves(pendingLeavesRes.data || []);
-      if (pendingODsRes.success) setPendingODs(pendingODsRes.data || []);
     } catch (err: any) {
       toast.error(err.message || 'Failed to load data');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const getPendingFilters = () => ({
+    search: searchTerm?.trim() || undefined,
+    department: selectedDepartmentFilter || undefined,
+    division: selectedDivisionFilter || undefined,
+    designation: selectedDesignationFilter || undefined,
+  });
+
+  const loadPendingData = async (leavePage = pendingLeavesPage, odPage = pendingODsPage) => {
+    if (activeTab !== 'pending') return;
+    setLoadingPending(true);
+    const filters = getPendingFilters();
+    try {
+      const [leavesRes, odsRes] = await Promise.all([
+        api.getPendingLeaveApprovals({ ...filters, page: leavePage, limit: pendingLimit }),
+        api.getPendingODApprovals({ ...filters, page: odPage, limit: pendingLimit }),
+      ]);
+      if (leavesRes.success) {
+        setPendingLeaves(leavesRes.data || []);
+        setPendingLeavesTotal((leavesRes as any).total ?? (leavesRes.data?.length ?? 0));
+      }
+      if (odsRes.success) {
+        setPendingODs(odsRes.data || []);
+        setPendingODsTotal((odsRes as any).total ?? (odsRes.data?.length ?? 0));
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to load pending approvals');
+    } finally {
+      setLoadingPending(false);
     }
   };
 
@@ -824,6 +863,7 @@ export default function LeavesPage() {
           showConfirmButton: false,
         });
         loadData();
+        if (activeTab === 'pending') loadPendingData(pendingLeavesPage, pendingODsPage);
       } else {
         Swal.fire({
           icon: 'error',
@@ -1251,7 +1291,7 @@ export default function LeavesPage() {
     }
   };
 
-  const totalPending = pendingLeaves.length + pendingODs.length;
+  const totalPending = pendingLeavesTotal + pendingODsTotal;
 
   const applyFilters = (item: LeaveApplication | ODApplication) => {
     if (searchTerm) {
@@ -1626,109 +1666,179 @@ export default function LeavesPage() {
         )}
 
         {activeTab === 'pending' && (
-          <div className="p-4 space-y-4">
-            {/* Pending Leaves */}
-            {pendingLeaves.length > 0 && (
-              <div>
-                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-2">
-                  <CalendarIcon />
-                  Pending Leaves ({pendingLeaves.length})
-                </h3>
-                <div className="space-y-3">
-                  {pendingLeaves.filter(applyFilters).map((leave) => (
-                    <div key={leave._id} className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-900/50">
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            <span className="font-medium text-slate-900 dark:text-white">
-                              {leave.employeeId?.first_name} {leave.employeeId?.last_name}
-                            </span>
-                            <span className="text-xs text-slate-500">({leave.employeeId?.emp_no})</span>
-                            <span className={`px-2 py-0.5 text-xs font-medium rounded ${getStatusColor(leave.status)}`}>
-                              {leave.status.replace('_', ' ')}
-                            </span>
-                          </div>
-                          <div className="text-sm text-slate-600 dark:text-slate-400 space-y-1">
-                            <div><strong>Type:</strong> {leave.leaveType} | <strong>Days:</strong> {leave.numberOfDays}</div>
-                            <div><strong>From:</strong> {formatDate(leave.fromDate)} <strong>To:</strong> {formatDate(leave.toDate)}</div>
-                            <div><strong>Reason:</strong> {leave.purpose}</div>
-                          </div>
-                        </div>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => handleAction(leave._id, 'leave', 'approve')}
-                            className="px-3 py-1.5 text-sm font-medium text-green-700 bg-green-100 rounded-lg hover:bg-green-200 flex items-center gap-1"
-                          >
-                            <CheckIcon /> Approve
-                          </button>
-                          <button
-                            onClick={() => handleAction(leave._id, 'leave', 'reject')}
-                            className="px-3 py-1.5 text-sm font-medium text-red-700 bg-red-100 rounded-lg hover:bg-red-200 flex items-center gap-1"
-                          >
-                            <XIcon /> Reject
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+          <div className="p-4 space-y-6">
+            {loadingPending && (
+              <div className="flex justify-center py-8">
+                <Spinner />
               </div>
             )}
+
+            {/* Pending Leaves */}
+            <div>
+              <h3 className="inline-flex items-center gap-2 rounded-xl bg-blue-500/15 px-4 py-2.5 text-sm font-black uppercase tracking-wider text-blue-700 dark:bg-blue-400/20 dark:text-blue-300 mb-3 border border-blue-200/60 dark:border-blue-500/30">
+                <CalendarIcon />
+                Pending Leaves ({pendingLeavesTotal})
+              </h3>
+
+              {/* Desktop: Table */}
+              <div className="hidden md:block overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700">
+                    <tr>
+                      <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-300">Employee</th>
+                      <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-300">Type</th>
+                      <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-300">Dates</th>
+                      <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-300">Days</th>
+                      <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-300">Status</th>
+                      <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-300 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                    {!loadingPending && pendingLeaves.length === 0 && (
+                      <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-500">No pending leaves</td></tr>
+                    )}
+                    {pendingLeaves.map((leave) => (
+                      <tr key={leave._id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                        <td className="px-4 py-3">
+                          <div className="font-medium text-slate-900 dark:text-white">{getEmployeeName({ employee_name: leave.employeeId?.employee_name ?? '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no ?? leave.emp_no ?? '' } as Employee)}</div>
+                          <div className="text-xs text-slate-500">{leave.employeeId?.emp_no ?? leave.emp_no}</div>
+                        </td>
+                        <td className="px-4 py-3">{leave.leaveType}</td>
+                        <td className="px-4 py-3">{formatDate(leave.fromDate)} – {formatDate(leave.toDate)}</td>
+                        <td className="px-4 py-3">{leave.numberOfDays}</td>
+                        <td className="px-4 py-3"><span className={`px-2 py-0.5 text-xs font-medium rounded ${getStatusColor(leave.status)}`}>{leave.status.replace('_', ' ')}</span></td>
+                        <td className="px-4 py-3 text-right">
+                          <button onClick={() => handleAction(leave._id, 'leave', 'approve')} className="px-2 py-1 text-xs font-medium text-green-700 bg-green-100 rounded hover:bg-green-200 mr-1">Approve</button>
+                          <button onClick={() => handleAction(leave._id, 'leave', 'reject')} className="px-2 py-1 text-xs font-medium text-red-700 bg-red-100 rounded hover:bg-red-200">Reject</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {pendingLeavesTotal > pendingLimit && (
+                  <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50">
+                    <span className="text-xs text-slate-600 dark:text-slate-400">Page {pendingLeavesPage} of {Math.ceil(pendingLeavesTotal / pendingLimit) || 1}</span>
+                    <div className="flex gap-2">
+                      <button disabled={pendingLeavesPage <= 1} onClick={() => { const prev = pendingLeavesPage - 1; setPendingLeavesPage(prev); loadPendingData(prev, pendingODsPage); }} className="px-3 py-1 text-xs font-medium rounded border border-slate-300 dark:border-slate-600 disabled:opacity-50">Prev</button>
+                      <button disabled={pendingLeavesPage >= Math.ceil(pendingLeavesTotal / pendingLimit)} onClick={() => { const next = pendingLeavesPage + 1; setPendingLeavesPage(next); loadPendingData(next, pendingODsPage); }} className="px-3 py-1 text-xs font-medium rounded border border-slate-300 dark:border-slate-600 disabled:opacity-50">Next</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Mobile: Cards */}
+              <div className="md:hidden space-y-3">
+                {!loadingPending && pendingLeaves.length === 0 && <div className="text-center py-6 text-slate-500 text-sm">No pending leaves</div>}
+                {pendingLeaves.map((leave) => (
+                  <div key={leave._id} className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-900/50">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-slate-900 dark:text-white">{getEmployeeName({ employee_name: leave.employeeId?.employee_name ?? '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no ?? leave.emp_no ?? '' } as Employee)}</div>
+                        <div className="text-xs text-slate-500">({leave.employeeId?.emp_no ?? leave.emp_no}) · {leave.leaveType} · {leave.numberOfDays}d</div>
+                        <div className="text-xs text-slate-600 dark:text-slate-400 mt-1">{formatDate(leave.fromDate)} – {formatDate(leave.toDate)}</div>
+                      </div>
+                      <div className="flex flex-col gap-1 shrink-0">
+                        <button onClick={() => handleAction(leave._id, 'leave', 'approve')} className="px-2 py-1 text-xs font-medium text-green-700 bg-green-100 rounded">Approve</button>
+                        <button onClick={() => handleAction(leave._id, 'leave', 'reject')} className="px-2 py-1 text-xs font-medium text-red-700 bg-red-100 rounded">Reject</button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {pendingLeavesTotal > pendingLimit && (
+                  <div className="flex items-center justify-between pt-2">
+                    <span className="text-xs text-slate-500">Page {pendingLeavesPage} of {Math.ceil(pendingLeavesTotal / pendingLimit) || 1}</span>
+                    <div className="flex gap-2">
+                      <button disabled={pendingLeavesPage <= 1} onClick={() => { const prev = pendingLeavesPage - 1; setPendingLeavesPage(prev); loadPendingData(prev, pendingODsPage); }} className="px-2 py-1 text-xs rounded border border-slate-300 disabled:opacity-50">Prev</button>
+                      <button disabled={pendingLeavesPage >= Math.ceil(pendingLeavesTotal / pendingLimit)} onClick={() => { const next = pendingLeavesPage + 1; setPendingLeavesPage(next); loadPendingData(next, pendingODsPage); }} className="px-2 py-1 text-xs rounded border border-slate-300 disabled:opacity-50">Next</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
 
             {/* Pending ODs */}
-            {pendingODs.length > 0 && (
-              <div>
-                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-2">
-                  <BriefcaseIcon />
-                  Pending ODs ({pendingODs.length})
-                </h3>
-                <div className="space-y-3">
-                  {pendingODs.filter(applyFilters).map((od) => (
-                    <div key={od._id} className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-900/50">
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            <span className="font-medium text-slate-900 dark:text-white">
-                              {od.employeeId?.first_name} {od.employeeId?.last_name}
-                            </span>
-                            <span className="text-xs text-slate-500">({od.employeeId?.emp_no})</span>
-                            <span className={`px-2 py-0.5 text-xs font-medium rounded ${getStatusColor(od.status)}`}>
-                              {od.status.replace('_', ' ')}
-                            </span>
-                          </div>
-                          <div className="text-sm text-slate-600 dark:text-slate-400 space-y-1">
-                            <div><strong>Type:</strong> {od.odType} | <strong>Days:</strong> {od.numberOfDays}</div>
-                            <div><strong>Place:</strong> {od.placeVisited}</div>
-                            <div><strong>From:</strong> {formatDate(od.fromDate)} <strong>To:</strong> {formatDate(od.toDate)}</div>
-                            <div><strong>Purpose:</strong> {od.purpose}</div>
-                          </div>
-                        </div>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => handleAction(od._id, 'od', 'approve')}
-                            className="px-3 py-1.5 text-sm font-medium text-green-700 bg-green-100 rounded-lg hover:bg-green-200 flex items-center gap-1"
-                          >
-                            <CheckIcon /> Approve
-                          </button>
-                          <button
-                            onClick={() => handleAction(od._id, 'od', 'reject')}
-                            className="px-3 py-1.5 text-sm font-medium text-red-700 bg-red-100 rounded-lg hover:bg-red-200 flex items-center gap-1"
-                          >
-                            <XIcon /> Reject
-                          </button>
-                        </div>
+            <div>
+              <h3 className="inline-flex items-center gap-2 rounded-xl bg-purple-500/15 px-4 py-2.5 text-sm font-black uppercase tracking-wider text-purple-700 dark:bg-purple-400/20 dark:text-purple-300 mb-3 border border-purple-200/60 dark:border-purple-500/30">
+                <BriefcaseIcon />
+                Pending ODs ({pendingODsTotal})
+              </h3>
+
+              {/* Desktop: Table */}
+              <div className="hidden md:block overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700">
+                    <tr>
+                      <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-300">Employee</th>
+                      <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-300">Type</th>
+                      <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-300">Place</th>
+                      <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-300">Dates</th>
+                      <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-300">Days</th>
+                      <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-300 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                    {!loadingPending && pendingODs.length === 0 && (
+                      <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-500">No pending ODs</td></tr>
+                    )}
+                    {pendingODs.map((od) => (
+                      <tr key={od._id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                        <td className="px-4 py-3">
+                          <div className="font-medium text-slate-900 dark:text-white">{getEmployeeName({ employee_name: od.employeeId?.employee_name ?? '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no ?? od.emp_no ?? '' } as Employee)}</div>
+                          <div className="text-xs text-slate-500">{od.employeeId?.emp_no ?? od.emp_no}</div>
+                        </td>
+                        <td className="px-4 py-3">{od.odType}</td>
+                        <td className="px-4 py-3 max-w-[120px] truncate" title={od.placeVisited}>{od.placeVisited || '–'}</td>
+                        <td className="px-4 py-3">{formatDate(od.fromDate)} – {formatDate(od.toDate)}</td>
+                        <td className="px-4 py-3">{od.numberOfDays}</td>
+                        <td className="px-4 py-3 text-right">
+                          <button onClick={() => handleAction(od._id, 'od', 'approve')} className="px-2 py-1 text-xs font-medium text-green-700 bg-green-100 rounded hover:bg-green-200 mr-1">Approve</button>
+                          <button onClick={() => handleAction(od._id, 'od', 'reject')} className="px-2 py-1 text-xs font-medium text-red-700 bg-red-100 rounded hover:bg-red-200">Reject</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {pendingODsTotal > pendingLimit && (
+                  <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50">
+                    <span className="text-xs text-slate-600 dark:text-slate-400">Page {pendingODsPage} of {Math.ceil(pendingODsTotal / pendingLimit) || 1}</span>
+                    <div className="flex gap-2">
+                      <button disabled={pendingODsPage <= 1} onClick={() => { const prev = pendingODsPage - 1; setPendingODsPage(prev); loadPendingData(pendingLeavesPage, prev); }} className="px-3 py-1 text-xs font-medium rounded border border-slate-300 dark:border-slate-600 disabled:opacity-50">Prev</button>
+                      <button disabled={pendingODsPage >= Math.ceil(pendingODsTotal / pendingLimit)} onClick={() => { const next = pendingODsPage + 1; setPendingODsPage(next); loadPendingData(pendingLeavesPage, next); }} className="px-3 py-1 text-xs font-medium rounded border border-slate-300 dark:border-slate-600 disabled:opacity-50">Next</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Mobile: Cards */}
+              <div className="md:hidden space-y-3">
+                {!loadingPending && pendingODs.length === 0 && <div className="text-center py-6 text-slate-500 text-sm">No pending ODs</div>}
+                {pendingODs.map((od) => (
+                  <div key={od._id} className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-900/50">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-slate-900 dark:text-white">{getEmployeeName({ employee_name: od.employeeId?.employee_name ?? '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no ?? od.emp_no ?? '' } as Employee)}</div>
+                        <div className="text-xs text-slate-500">({od.employeeId?.emp_no ?? od.emp_no}) · {od.odType} · {od.numberOfDays}d</div>
+                        <div className="text-xs text-slate-600 dark:text-slate-400 mt-1">{formatDate(od.fromDate)} – {formatDate(od.toDate)}</div>
+                        {od.placeVisited && <div className="text-xs text-slate-500 mt-0.5 truncate">{od.placeVisited}</div>}
+                      </div>
+                      <div className="flex flex-col gap-1 shrink-0">
+                        <button onClick={() => handleAction(od._id, 'od', 'approve')} className="px-2 py-1 text-xs font-medium text-green-700 bg-green-100 rounded">Approve</button>
+                        <button onClick={() => handleAction(od._id, 'od', 'reject')} className="px-2 py-1 text-xs font-medium text-red-700 bg-red-100 rounded">Reject</button>
                       </div>
                     </div>
-                  ))}
-                </div>
+                  </div>
+                ))}
+                {pendingODsTotal > pendingLimit && (
+                  <div className="flex items-center justify-between pt-2">
+                    <span className="text-xs text-slate-500">Page {pendingODsPage} of {Math.ceil(pendingODsTotal / pendingLimit) || 1}</span>
+                    <div className="flex gap-2">
+                      <button disabled={pendingODsPage <= 1} onClick={() => { const prev = pendingODsPage - 1; setPendingODsPage(prev); loadPendingData(pendingLeavesPage, prev); }} className="px-2 py-1 text-xs rounded border border-slate-300 disabled:opacity-50">Prev</button>
+                      <button disabled={pendingODsPage >= Math.ceil(pendingODsTotal / pendingLimit)} onClick={() => { const next = pendingODsPage + 1; setPendingODsPage(next); loadPendingData(pendingLeavesPage, next); }} className="px-2 py-1 text-xs rounded border border-slate-300 disabled:opacity-50">Next</button>
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
-
-            {totalPending === 0 && (
-              <div className="text-center py-12 text-slate-500">
-                No pending approvals
-              </div>
-            )}
+            </div>
           </div>
         )}
 
