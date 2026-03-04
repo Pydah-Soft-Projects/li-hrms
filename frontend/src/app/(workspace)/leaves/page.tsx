@@ -507,7 +507,9 @@ export default function LeavesPage() {
     status: '',
     leaveType: '',
     startDate: '',
-    endDate: ''
+    endDate: '',
+    division: '',
+    department: ''
   });
 
   // Evidence State
@@ -1603,15 +1605,40 @@ export default function LeavesPage() {
   };
 
 
+  // Helper: get department name from item (top-level or nested on employeeId)
+  const getItemDepartmentName = (item: any) =>
+    item?.department?.name || (item?.employeeId as any)?.department?.name || (item?.department_name) || '';
+
+  // Helper: get division name from item (top-level or nested)
+  const getItemDivisionName = (item: any) =>
+    item?.division_name || (item?.employeeId as any)?.department?.division?.name || (item?.division_id as any)?.name || '';
+
+  // Helper: get designation name from item (top-level or nested on employeeId)
+  const getItemDesignationName = (item: any) =>
+    item?.designation?.name || (item?.employeeId as any)?.designation?.name || item?.designation_name || '';
+
   // Filter logic
   const filterData = (data: any[]) => {
     return data.filter(item => {
-      // 1. Employee Search
-      const searchContent = leaveFilters.employeeNumber.toLowerCase();
+      // 1. Search: name (all variants), emp_no, department, division
+      const searchContent = (leaveFilters.employeeNumber || '').trim().toLowerCase();
+      const itemDept = getItemDepartmentName(item);
+      const itemDiv = getItemDivisionName(item);
+      const fullName = [
+        item.employeeId?.employee_name,
+        item.employee_name,
+        [item.employeeId?.first_name, item.employeeId?.last_name].filter(Boolean).join(' ')
+      ].filter(Boolean).join(' ');
       const matchesSearch = !searchContent ||
         (item.employeeId?.employee_name?.toLowerCase().includes(searchContent)) ||
         (item.employee_name?.toLowerCase().includes(searchContent)) ||
-        (item.emp_no?.toLowerCase().includes(searchContent));
+        (item.employeeId?.first_name?.toLowerCase().includes(searchContent)) ||
+        (item.employeeId?.last_name?.toLowerCase().includes(searchContent)) ||
+        (fullName.toLowerCase().includes(searchContent)) ||
+        (item.emp_no?.toLowerCase().includes(searchContent)) ||
+        (item.employeeId?.emp_no?.toLowerCase().includes(searchContent)) ||
+        (itemDept?.toLowerCase().includes(searchContent)) ||
+        (itemDiv?.toLowerCase().includes(searchContent));
 
       // 2. Status Filter
       const matchesStatus = !leaveFilters.status || item.status === leaveFilters.status;
@@ -1620,7 +1647,13 @@ export default function LeavesPage() {
       const type = item.leaveType || item.odType;
       const matchesType = !leaveFilters.leaveType || (type && type === leaveFilters.leaveType);
 
-      // 4. Date Range Filter
+      // 4. Division Filter
+      const matchesDivision = !leaveFilters.division || (getItemDivisionName(item) === leaveFilters.division);
+
+      // 5. Department Filter
+      const matchesDepartment = !leaveFilters.department || (getItemDepartmentName(item) === leaveFilters.department);
+
+      // 6. Date Range Filter
       let matchesDate = true;
       if (leaveFilters.startDate || leaveFilters.endDate) {
         const itemDate = new Date(item.fromDate).getTime(); // Using fromDate as reference
@@ -1629,7 +1662,7 @@ export default function LeavesPage() {
         matchesDate = itemDate >= start && itemDate <= end;
       }
 
-      return matchesSearch && matchesStatus && matchesType && matchesDate;
+      return matchesSearch && matchesStatus && matchesType && matchesDivision && matchesDepartment && matchesDate;
     });
   };
 
@@ -1738,6 +1771,33 @@ export default function LeavesPage() {
       showDepartment: true // Always show department for non-HODs as per requirement
     };
   }, [leaves, ods, activeTab, currentUser]);
+
+  // Unique division and department names for filter dropdowns (from all lists)
+  const filterDivisionOptions = useMemo(() => {
+    const collected = new Set<string>();
+    const addFrom = (list: any[]) => list.forEach(item => {
+      const n = item?.division_name || (item?.employeeId as any)?.department?.division?.name || (item?.division_id as any)?.name;
+      if (n) collected.add(n);
+    });
+    addFrom(leaves);
+    addFrom(ods);
+    addFrom(pendingLeaves);
+    addFrom(pendingODs);
+    return Array.from(collected).sort();
+  }, [leaves, ods, pendingLeaves, pendingODs]);
+
+  const filterDepartmentOptions = useMemo(() => {
+    const collected = new Set<string>();
+    const addFrom = (list: any[]) => list.forEach(item => {
+      const n = item?.department?.name || (item?.employeeId as any)?.department?.name || item?.department_name;
+      if (n) collected.add(n);
+    });
+    addFrom(leaves);
+    addFrom(ods);
+    addFrom(pendingLeaves);
+    addFrom(pendingODs);
+    return Array.from(collected).sort();
+  }, [leaves, ods, pendingLeaves, pendingODs]);
 
 
 
@@ -1983,6 +2043,40 @@ export default function LeavesPage() {
                   </select>
                 </div>
 
+                {/* Division Filter - when we have divisions and user is not HOD */}
+                {currentUser?.role !== 'hod' && filterDivisionOptions.length > 0 && (
+                  <div className="relative">
+                    <Filter className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                    <select
+                      value={leaveFilters.division}
+                      onChange={(e) => setLeaveFilters(prev => ({ ...prev, division: e.target.value }))}
+                      className="h-10 pl-9 pr-8 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all appearance-none cursor-pointer w-full"
+                    >
+                      <option value="">All Divisions</option>
+                      {filterDivisionOptions.map(name => (
+                        <option key={name} value={name}>{name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Department Filter */}
+                {currentUser?.role !== 'hod' && filterDepartmentOptions.length > 0 && (
+                  <div className="relative">
+                    <Filter className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                    <select
+                      value={leaveFilters.department}
+                      onChange={(e) => setLeaveFilters(prev => ({ ...prev, department: e.target.value }))}
+                      className="h-10 pl-9 pr-8 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all appearance-none cursor-pointer w-full"
+                    >
+                      <option value="">All Departments</option>
+                      {filterDepartmentOptions.map(name => (
+                        <option key={name} value={name}>{name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
                 {/* Date Range */}
                 <div className="col-span-2 flex items-center flex-nowrap gap-2 px-0 py-0 bg-transparent border-0 md:px-3 md:py-1.5 md:rounded-xl md:bg-slate-100 md:dark:bg-slate-800 md:border md:border-slate-200 md:dark:border-slate-700">
                   <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
@@ -2194,11 +2288,17 @@ export default function LeavesPage() {
                               {getEmployeeInitials({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: '' } as any)}
                             </div>
                           )}
-                          <div>
+                          <div className="min-w-0">
                             {currentUser?.role !== 'employee' && (
-                              <h4 className="font-bold text-slate-900 dark:text-white text-sm">
-                                {leave.employeeId?.employee_name || leave.emp_no}
-                              </h4>
+                              <>
+                                <h4 className="font-bold text-slate-900 dark:text-white text-sm">
+                                  {getEmployeeName({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no || leave.emp_no || '' } as Employee)}
+                                </h4>
+                                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                  {leave.employeeId?.emp_no || leave.emp_no}
+                                  {(leave.employeeId as any)?.department?.name && ` • ${(leave.employeeId as any).department.name}`}
+                                </p>
+                              </>
                             )}
                             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                               {leave.leaveType?.replace('_', ' ')}
@@ -2395,11 +2495,17 @@ export default function LeavesPage() {
                               {getEmployeeInitials({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: '' } as any)}
                             </div>
                           )}
-                          <div>
+                          <div className="min-w-0">
                             {currentUser?.role !== 'employee' && (
-                              <h4 className="font-bold text-slate-900 dark:text-white text-sm">
-                                {od.employeeId?.employee_name || od.emp_no}
-                              </h4>
+                              <>
+                                <h4 className="font-bold text-slate-900 dark:text-white text-sm">
+                                  {getEmployeeName({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no || od.emp_no || '' } as Employee)}
+                                </h4>
+                                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                  {od.employeeId?.emp_no || od.emp_no}
+                                  {(od.employeeId as any)?.department?.name && ` • ${(od.employeeId as any).department.name}`}
+                                </p>
+                              </>
                             )}
                             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                               {od.odType?.replace('_', ' ')}
@@ -2473,8 +2579,8 @@ export default function LeavesPage() {
                 {filteredPendingLeaves.length > 0 && (
                   <div className="space-y-4">
                     <div className="flex items-center justify-between px-2">
-                      <h3 className="text-xs font-black text-slate-500 uppercase tracking-wider flex items-center gap-2">
-                        <Calendar className="w-3.5 h-3.5" />
+                      <h3 className="inline-flex items-center gap-2 rounded-xl bg-blue-500/15 px-4 py-2.5 text-sm font-black uppercase tracking-wider text-blue-700 dark:bg-blue-400/20 dark:text-blue-300 border border-blue-200/60 dark:border-blue-500/30">
+                        <Calendar className="w-4 h-4" />
                         Pending Leaves ({filteredPendingLeaves.length})
                       </h3>
                     </div>
@@ -2484,27 +2590,31 @@ export default function LeavesPage() {
                           {/* Status Strip */}
                           <div className="absolute top-0 left-0 w-1 h-full bg-blue-500/80 rounded-l-2xl group-hover:w-1.5 transition-all" />
 
-                          {/* Header */}
+                          {/* Header: name, division & department beside name (no labels), emp no, designation under name */}
                           <div className="flex items-start justify-between gap-3 mb-4">
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-3 min-w-0 flex-1">
                               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600 font-bold dark:bg-blue-900/30 dark:text-blue-400">
                                 {getEmployeeInitials({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: '' } as any)}
                               </div>
-                              <div>
-                                <h4 className="font-semibold text-slate-900 dark:text-white line-clamp-1">
-                                  {leave.employeeId?.first_name} {leave.employeeId?.last_name}
-                                </h4>
-                                <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
-                                  <span>{leave.employeeId?.emp_no}</span>
-                                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                                  {(leave.employeeId as any)?.department?.name && (
-                                    <>
-                                      <span>•</span>
-                                      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                                      <span className="truncate max-w-[100px]">{(leave.employeeId as any)?.department?.name}</span>
-                                    </>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                                  <h4 className="font-semibold text-slate-900 dark:text-white line-clamp-1" title={getEmployeeName({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no || leave.emp_no || '' } as Employee)}>
+                                    {getEmployeeName({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no || leave.emp_no || '' } as Employee)}
+                                  </h4>
+                                  {([getItemDivisionName(leave), getItemDepartmentName(leave)].filter(v => v && v !== 'N/A').length > 0) && (
+                                    <span className="text-xs text-slate-500 dark:text-slate-400">
+                                      {[getItemDivisionName(leave), getItemDepartmentName(leave)].filter(v => v && v !== 'N/A').join(' · ')}
+                                    </span>
                                   )}
+                                </div>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                  {leave.employeeId?.emp_no || leave.emp_no}
                                 </p>
+                                {(getItemDesignationName(leave) && getItemDesignationName(leave) !== 'N/A') && (
+                                  <p className="text-xs font-medium text-slate-600 dark:text-slate-300 mt-0.5">
+                                    {getItemDesignationName(leave)}
+                                  </p>
+                                )}
                               </div>
                             </div>
                             <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(leave.status)}`}>
@@ -2571,35 +2681,39 @@ export default function LeavesPage() {
                 {/* Pending ODs */}
                 {filteredPendingODs.length > 0 && (
                   <div>
-                    <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-2">
-                      <Briefcase />
+                    <h3 className="inline-flex items-center gap-2 rounded-xl bg-purple-500/15 px-4 py-2.5 text-sm font-black uppercase tracking-wider text-purple-700 dark:bg-purple-400/20 dark:text-purple-300 mb-3 border border-purple-200/60 dark:border-purple-500/30">
+                      <Briefcase className="w-4 h-4" />
                       Pending ODs ({filteredPendingODs.length})
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                       {filteredPendingODs.map((od) => (
                         <div key={od._id} className="group relative flex flex-col justify-between rounded-xl border border-slate-200 border-l-4 border-l-purple-500 bg-white p-5 shadow-sm transition-all hover:shadow-md dark:border-slate-700 dark:bg-slate-800">
 
-                          {/* Header */}
+                          {/* Header: name, division & department beside name (no labels), emp no, designation under name */}
                           <div className="flex items-start justify-between gap-3 mb-4">
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-3 min-w-0 flex-1">
                               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-purple-100 text-purple-600 font-bold dark:bg-purple-900/30 dark:text-purple-400">
                                 {getEmployeeInitials({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: '' } as any)}
                               </div>
-                              <div>
-                                <h4 className="font-semibold text-slate-900 dark:text-white line-clamp-1">
-                                  {od.employeeId?.first_name} {od.employeeId?.last_name}
-                                </h4>
-                                <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
-                                  <span>{od.employeeId?.emp_no}</span>
-                                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                                  {(od.employeeId as any)?.department?.name && (
-                                    <>
-                                      <span>•</span>
-                                      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                                      <span className="truncate max-w-[100px]">{(od.employeeId as any)?.department?.name}</span>
-                                    </>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                                  <h4 className="font-semibold text-slate-900 dark:text-white line-clamp-1" title={getEmployeeName({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no || od.emp_no || '' } as Employee)}>
+                                    {getEmployeeName({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no || od.emp_no || '' } as Employee)}
+                                  </h4>
+                                  {([getItemDivisionName(od), getItemDepartmentName(od)].filter(v => v && v !== 'N/A').length > 0) && (
+                                    <span className="text-xs text-slate-500 dark:text-slate-400">
+                                      {[getItemDivisionName(od), getItemDepartmentName(od)].filter(v => v && v !== 'N/A').join(' · ')}
+                                    </span>
                                   )}
+                                </div>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                  {od.employeeId?.emp_no || od.emp_no}
                                 </p>
+                                {(getItemDesignationName(od) && getItemDesignationName(od) !== 'N/A') && (
+                                  <p className="text-xs font-medium text-slate-600 dark:text-slate-300 mt-0.5">
+                                    {getItemDesignationName(od)}
+                                  </p>
+                                )}
                               </div>
                             </div>
                             <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(od.status)}`}>
