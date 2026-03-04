@@ -660,7 +660,7 @@ payRegisterSummarySchema.methods.recalculateTotals = function () {
       (record.isSplit === true && firstHalfStatus && secondHalfStatus);
 
     if (isActuallySplit) {
-      // Process first half
+      // Process first half (OD counts as present so totalPresentDays includes days/halves edited from absent to OD)
       const s1 = record.firstHalf?.status;
       if (s1 && ['present', 'absent', 'leave', 'od'].includes(s1)) {
         if (s1 === 'present' || s1 === 'od') totals.presentHalfDays++;
@@ -676,7 +676,7 @@ payRegisterSummarySchema.methods.recalculateTotals = function () {
         }
       }
 
-      // Process second half
+      // Process second half (OD counts as present)
       const s2 = record.secondHalf?.status;
       if (s2 && ['present', 'absent', 'leave', 'od'].includes(s2)) {
         if (s2 === 'present' || s2 === 'od') totals.presentHalfDays++;
@@ -692,10 +692,9 @@ payRegisterSummarySchema.methods.recalculateTotals = function () {
         }
       }
     } else {
-      // Process as full day
+      // Process as full day (OD counts as present; when edited from absent to OD, present days increase)
       const s = record.status || firstHalfStatus || secondHalfStatus;
       if (s && ['present', 'absent', 'leave', 'od'].includes(s)) {
-        // OD counts as Present
         if (s === 'present' || s === 'od') totals.presentDays++;
 
         if (s === 'absent') totals.absentDays++;
@@ -720,8 +719,8 @@ payRegisterSummarySchema.methods.recalculateTotals = function () {
   totals.totalLeaveDays = totals.totalPaidLeaveDays + totals.totalLopDays;
   totals.totalODDays = totals.odDays + totals.odHalfDays * 0.5;
 
-  // Calculate payable shifts = present (includes OD) + paid leaves + manual extra days
-  // NOTE: totalODDays is intentionally excluded because it's now subsumed in totalPresentDays
+  // totalPresentDays already includes OD (presentDays/presentHalfDays count both 'present' and 'od')
+  // Payable shifts = present (includes OD, including when edited from absent) + paid leaves + extra days
   totals.totalPayableShifts = totals.totalPresentDays + totals.totalPaidLeaveDays + (totals.extraDays || 0);
   // This is where we will also use the shift-based payable units if implemented here
   // But for now, let's keep it consistent with the service fix I just did

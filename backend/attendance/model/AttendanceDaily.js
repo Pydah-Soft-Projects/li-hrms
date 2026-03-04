@@ -528,15 +528,22 @@ attendanceDailySchema.pre('save', async function () {
       ? odPayableContribution - (odPayableContributionHourBased || 0)
       : odPayableContribution;
     const totalPayableWithOD = totalPayableFromShifts + Math.max(0, payableToAdd);
-    this.payableShifts = Math.round(totalPayableWithOD * 100) / 100;
-
-    if (hasPresentShift || totalPayableWithOD >= 0.95) {
-      this.status = 'PRESENT'; // e.g. half-day punch + half-day OD = 1.0 -> PRESENT
-    } else if (hasHalfDayShift || totalPayableWithOD >= 0.45) {
-      this.status = 'HALF_DAY'; // e.g. half-day OD only -> 0.5 -> HALF_DAY
+    const hasPunches = this.shifts.some(s => s.inTime || (s.outTime && s.outTime !== s.inTime));
+    // PARTIAL + OD: day has punches (incomplete) but OD approved for that day → treat as OD day for pay, keep PARTIAL so we don't double-count in monthly summary; punch/in-time remain as-is.
+    const wouldBePartialFromShifts = hasPunches && !hasPresentShift && !hasHalfDayShift && totalPayableFromShifts < 0.45;
+    if (wouldBePartialFromShifts && odPayableContribution > 0) {
+      this.status = 'PARTIAL';
+      this.payableShifts = Math.round(odPayableContribution * 100) / 100;
+      // totalWorkingHours, shifts (punch in/out), late/early etc. are already set above – unchanged
     } else {
-      const hasPunches = this.shifts.some(s => s.inTime || (s.outTime && s.outTime !== s.inTime));
-      this.status = hasPunches ? 'PARTIAL' : 'ABSENT';
+      this.payableShifts = Math.round(totalPayableWithOD * 100) / 100;
+      if (hasPresentShift || totalPayableWithOD >= 0.95) {
+        this.status = 'PRESENT'; // e.g. half-day punch + half-day OD = 1.0 -> PRESENT
+      } else if (hasHalfDayShift || totalPayableWithOD >= 0.45) {
+        this.status = 'HALF_DAY'; // e.g. half-day OD only -> 0.5 -> HALF_DAY
+      } else {
+        this.status = hasPunches ? 'PARTIAL' : 'ABSENT';
+      }
     }
   } else {
     // No shifts (OD-only or no punches): use OD contribution; half-day OD -> HALF_DAY, full-day OD -> PRESENT

@@ -193,10 +193,11 @@ exports.updatePayRegister = async (req, res) => {
       });
     }
 
-    // Update dailyRecords if provided
+    // Update dailyRecords if provided; recalc totals so any day/half marked OD (e.g. edited from absent) is included in present days
     if (dailyRecords && Array.isArray(dailyRecords)) {
       payRegister.dailyRecords = dailyRecords;
       payRegister.totals = calculateTotals(dailyRecords);
+      payRegister.recalculateTotals();
     }
 
     // Update status if provided
@@ -276,9 +277,9 @@ exports.updateDailyRecord = async (req, res) => {
     // Update daily record
     await updateDailyRecord(payRegister, date, updateData, req.user);
 
-    // Recalculate totals
+    // Recalculate totals so any day/half edited from absent to OD is included in totalPresentDays
     payRegister.totals = calculateTotals(payRegister.dailyRecords);
-    payRegister.recalculateTotals(); // Also use model method
+    payRegister.recalculateTotals();
 
     await payRegister.save();
 

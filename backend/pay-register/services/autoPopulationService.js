@@ -328,7 +328,8 @@ async function resolveConflicts(dateData) {
     }
   }
 
-  if (attendance && (attendance.status === 'PRESENT' || attendance.status === 'HALF_DAY' || attendance.status === 'PARTIAL')) {
+  // Only PRESENT and HALF_DAY count as present (align with attendance summary; PARTIAL is not counted as present)
+  if (attendance && (attendance.status === 'PRESENT' || attendance.status === 'HALF_DAY')) {
     if (attendance.status === 'HALF_DAY') {
       if (isNonWorking(firstHalf.status)) {
         firstHalf.status = 'present';

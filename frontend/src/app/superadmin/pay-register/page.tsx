@@ -7,6 +7,7 @@ import { api, apiRequest, Employee, Division } from '@/lib/api';
 import ArrearsPayrollSection from '@/components/Arrears/ArrearsPayrollSection';
 import * as XLSX from 'xlsx';
 import Swal from 'sweetalert2';
+import { Search } from 'lucide-react';
 
 
 
@@ -142,6 +143,7 @@ export default function PayRegisterPage() {
   const [payrollEndDate, setPayrollEndDate] = useState<string | null>(null);
   const [cycleStartDay, setCycleStartDay] = useState<number | null>(null);
   const [alignedToCycle, setAlignedToCycle] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     let pollInterval: any;
@@ -621,7 +623,7 @@ export default function PayRegisterPage() {
       (totals?.totalLopDays || 0));
 
   const getSummaryRows = () =>
-    payRegisters.map((pr) => {
+    getFilteredPayRegisters().map((pr) => {
       const totals = pr.totals || {};
       const present = totals.totalPresentDays || 0;
       const absent = totals.totalAbsentDays || 0;
@@ -779,10 +781,20 @@ export default function PayRegisterPage() {
     }
   };
 
-  // Show ALL employees in ALL tables - no filtering
+  // Filter by search: name, emp no, or department (client-side)
   const getFilteredPayRegisters = (): PayRegisterSummary[] => {
-    // Return all pay registers - don't filter by table type
-    return payRegisters;
+    const q = (searchQuery || '').trim().toLowerCase();
+    if (!q) return payRegisters;
+    return payRegisters.filter((pr) => {
+      const emp = pr.employeeId && typeof pr.employeeId === 'object' ? (pr.employeeId as Record<string, unknown>) : null;
+      const name = (emp?.employee_name != null ? String(emp.employee_name) : '').toLowerCase();
+      const empNo = (emp?.emp_no != null ? String(emp.emp_no) : (pr.emp_no != null ? String(pr.emp_no) : '')).toLowerCase();
+      const deptObj = emp?.department_id;
+      const dept = (typeof deptObj === 'object' && deptObj !== null && 'name' in deptObj && (deptObj as { name?: string }).name)
+        ? String((deptObj as { name: string }).name).toLowerCase()
+        : '';
+      return name.includes(q) || empNo.includes(q) || dept.includes(q);
+    });
   };
 
   const handleViewPayslip = (employee: Employee) => {
@@ -1216,7 +1228,7 @@ export default function PayRegisterPage() {
             </div>
 
             {/* Filters Group */}
-            <div className="flex flex-nowrap items-center gap-1.5 p-1 bg-slate-100/50 dark:bg-slate-800/40 rounded-xl border border-slate-200/60 dark:border-slate-700/60 backdrop-blur-sm">
+            <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100/50 dark:bg-slate-800/40 rounded-xl border border-slate-200/60 dark:border-slate-700/60 backdrop-blur-sm">
               {/* Division Filter */}
               <select
                 value={selectedDivision}
@@ -1260,6 +1272,18 @@ export default function PayRegisterPage() {
                 <option value="legacy">Engine: Legacy</option>
                 <option value="dynamic">Engine: Dynamic</option>
               </select>
+
+              {/* Search bar - filter employees by name, code, or department */}
+              <div className="relative flex-1 min-w-[140px] max-w-[220px]">
+                <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search by name, code, dept..."
+                  className="h-8 w-full pl-8 pr-2 text-[10px] sm:text-[11px] font-medium bg-white dark:bg-slate-800 border-0 rounded-lg focus:ring-2 focus:ring-blue-500/20 text-slate-700 dark:text-slate-300 placeholder:text-slate-400 dark:placeholder:text-slate-500 shadow-sm"
+                />
+              </div>
             </div>
 
             {/* Month/Year Navigation */}
@@ -1774,7 +1798,7 @@ export default function PayRegisterPage() {
                     {daysArray.map((day) => (
                       <th
                         key={day}
-                        className={'w-[calc((100%-180px-' + (activeTable === 'leaves' ? '320px' : activeTable === 'all' ? '160px' : '80px') + '/' + daysArray.length + ')] border-r border-slate-200 px-1 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'}
+                        className={'w-[calc((100%-180px-' + (activeTable === 'leaves' ? '320px' : activeTable === 'all' ? '480px' : '80px') + '/' + daysArray.length + ')] border-r border-slate-200 px-1 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'}
                       >
                         {parseInt(day.split('-')[2])}
                       </th>
@@ -1784,8 +1808,20 @@ export default function PayRegisterPage() {
                         <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-green-50 dark:bg-green-900/20" title="OD days are included in present days">
                           Present Days
                         </th>
-                        <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-700/50">
+                        <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-700/50">
                           Payable Shifts
+                        </th>
+                        <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-gray-100 dark:bg-slate-700/50">
+                          Week Offs
+                        </th>
+                        <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-purple-50 dark:bg-purple-900/20">
+                          Holidays
+                        </th>
+                        <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-green-50/80 dark:bg-green-900/30">
+                          Paid Leaves
+                        </th>
+                        <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-blue-50 dark:bg-blue-900/20" title="Payable Shifts + Week Offs + Holidays + Paid Leaves">
+                          Paid Days
                         </th>
                       </>
                     )}
@@ -1840,7 +1876,7 @@ export default function PayRegisterPage() {
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                   {getFilteredPayRegisters().length === 0 ? (
                     <tr>
-                      <td colSpan={daysArray.length + (activeTable === 'leaves' ? 4 : activeTable === 'all' ? 2 : 1)} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                      <td colSpan={daysArray.length + (activeTable === 'leaves' ? 4 : activeTable === 'all' ? 6 : 1)} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
                         No records found{activeTable !== 'all' ? ` for ${activeTable === 'shifts' ? 'shifts' : activeTable} table` : ''}
                       </td>
                     </tr>
@@ -2029,16 +2065,35 @@ export default function PayRegisterPage() {
                             );
                           })}
                           {/* Dynamic columns based on active tab */}
-                          {activeTable === 'all' && (
-                            <>
-                              <td className="border-r border-slate-200 bg-green-50 dark:bg-green-900/20 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:text-green-300" title="Includes OD days">
-                                {(pr.totals?.totalPresentDays ?? 0).toFixed(1)}
-                              </td>
-                              <td className="border-r-0 border-slate-200 bg-slate-50 dark:bg-slate-800 px-2 py-2 text-center text-[11px] font-bold text-slate-700 dark:text-slate-300 dark:bg-slate-700/50">
-                                {(pr.totals?.totalPayableShifts ?? 0).toFixed(1)}
-                              </td>
-                            </>
-                          )}
+                          {activeTable === 'all' && (() => {
+                            const payable = pr.totals?.totalPayableShifts ?? 0;
+                            const weekOffs = pr.totals?.totalWeeklyOffs ?? 0;
+                            const holidays = pr.totals?.totalHolidays ?? 0;
+                            const paidLeaves = pr.totals?.totalPaidLeaveDays ?? 0;
+                            const paidDays = payable + weekOffs + holidays + paidLeaves;
+                            return (
+                              <>
+                                <td className="border-r border-slate-200 bg-green-50 dark:bg-green-900/20 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:text-green-300" title="Includes OD days">
+                                  {(pr.totals?.totalPresentDays ?? 0).toFixed(1)}
+                                </td>
+                                <td className="border-r border-slate-200 bg-slate-50 dark:bg-slate-800 px-2 py-2 text-center text-[11px] font-bold text-slate-700 dark:text-slate-300 dark:bg-slate-700/50">
+                                  {payable.toFixed(1)}
+                                </td>
+                                <td className="border-r border-slate-200 bg-gray-50 dark:bg-slate-700/50 px-2 py-2 text-center text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                                  {weekOffs.toFixed(1)}
+                                </td>
+                                <td className="border-r border-slate-200 bg-purple-50 dark:bg-purple-900/20 px-2 py-2 text-center text-[11px] font-bold text-purple-700 dark:text-purple-300">
+                                  {holidays.toFixed(1)}
+                                </td>
+                                <td className="border-r border-slate-200 bg-green-50/80 dark:bg-green-900/30 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:text-green-400">
+                                  {paidLeaves.toFixed(1)}
+                                </td>
+                                <td className="border-r-0 border-slate-200 bg-blue-50 dark:bg-blue-900/20 px-2 py-2 text-center text-[11px] font-bold text-blue-700 dark:text-blue-300" title="Payable + Week Offs + Holidays + Paid Leaves">
+                                  {paidDays.toFixed(1)}
+                                </td>
+                              </>
+                            );
+                          })()}
                           {activeTable === 'present' && (
                             <td className="border-r-0 border-slate-200 bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:border-slate-700 dark:bg-green-900/20 dark:text-green-300">
                               {(pr.totals.totalPresentDays + pr.totals.totalODDays).toFixed(1)}
