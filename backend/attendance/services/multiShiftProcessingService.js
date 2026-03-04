@@ -569,12 +569,14 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                             const gapMinutes = Math.max(0, odInShiftOverlap - odInPunchOverlap);
                             addedOdMinutes += gapMinutes;
 
-                            // 4. Check for Penalty Waiver
+                            // 4. Check for Penalty Waiver (approved OD timings cover shift start/end)
                             if (pShift.isLateIn && odStart <= shiftStart && odEnd >= punchIn) {
                                 pShift.isLateIn = false;
+                                pShift.lateInMinutes = 0;
                             }
                             if (pShift.isEarlyOut && punchOut && odStart <= punchOut && odEnd >= shiftEnd) {
                                 pShift.isEarlyOut = false;
+                                pShift.earlyOutMinutes = 0;
                             }
                         }
                     }
