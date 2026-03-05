@@ -3507,6 +3507,8 @@ export const api = {
     method: 'PUT',
     body: JSON.stringify({ approved, comments, modifiedAmount }),
   }),
+  submitDeductionForApproval: async (id: string) => apiRequest<any>(`/manual-deductions/${id}/submit`, { method: 'PUT' }),
+  cancelDeduction: async (id: string) => apiRequest<any>(`/manual-deductions/${id}/cancel`, { method: 'PUT' }),
   revokeDeductionApproval: async (id: string, reason?: string) => apiRequest<any>(`/manual-deductions/${id}/revoke`, { method: 'PUT', body: JSON.stringify({ reason }) }),
   getDeductionStats: async () => apiRequest<any>('/manual-deductions/stats/summary', { method: 'GET' }),
   editDeduction: async (id: string, data: { startMonth?: string; endMonth?: string; monthlyAmount?: number; totalAmount?: number; reason?: string }) =>
