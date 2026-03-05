@@ -470,6 +470,7 @@ export default function LeavesPage() {
   const [clAnnualBalance, setClAnnualBalance] = useState<number | null>(null);
   const [cclBalance, setCclBalance] = useState<number | null>(null);
   const [clBalanceLoading, setClBalanceLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState<string>('');
 
   // Form state
   const [formData, setFormData] = useState<{
@@ -525,6 +526,37 @@ export default function LeavesPage() {
     odInfo: any;
   } | null>(null);
   const [checkingApprovedRecords, setCheckingApprovedRecords] = useState(false);
+
+  // Form validation for Apply button
+  const isFormValid = () => {
+    // 1. Common required fields
+    if (!formData.fromDate || !formData.toDate || !formData.purpose || !formData.contactNumber) {
+      return false;
+    }
+
+    // 2. Employee selection (required for non-employee roles)
+    if (currentUser?.role !== 'employee' && !selectedEmployee) {
+      return false;
+    }
+
+    // 3. Type-specific validation
+    if (applyType === 'leave') {
+      if (!formData.leaveType) return false;
+    } else {
+      // OD Validation
+      if (!formData.odType || !formData.placeVisited) return false;
+
+      // Hours-specific OD
+      if (formData.odType_extended === 'hours') {
+        if (!formData.odStartTime || !formData.odEndTime) return false;
+      }
+
+      // Photo Evidence & Location required for OD (typically mandatory in this system)
+      if (!evidenceFile || !locationData) return false;
+    }
+
+    return true;
+  };
 
   useEffect(() => {
     const user = auth.getUser();
@@ -1003,6 +1035,7 @@ export default function LeavesPage() {
     e.preventDefault();
     setError(null);
     setLoading(true);
+    setLoadingMessage('Initializing...');
 
     try {
       let employeeToApplyFor = selectedEmployee;
@@ -1112,6 +1145,7 @@ export default function LeavesPage() {
       }
 
       // 2. Prepare Payload
+      setLoadingMessage('Preparing application...');
       const contactNum = formData.contactNumber || employeeToApplyFor.phone_number || '';
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let payload: any = {
@@ -1148,6 +1182,7 @@ export default function LeavesPage() {
         }
 
         if (evidenceFile) {
+          setLoadingMessage('Uploading photo');
           const uploadRes = await api.uploadEvidence(evidenceFile);
           // API returns { success, url, key, filename } at top level (no .data wrapper)
           if (uploadRes.success && uploadRes.url) {
@@ -1169,6 +1204,7 @@ export default function LeavesPage() {
       }
 
       // 4. Submit
+      setLoadingMessage('Submitting Request');
       const response = applyType === 'leave'
         ? await api.applyLeave(payload)
         : await api.applyOD(payload);
@@ -1191,6 +1227,7 @@ export default function LeavesPage() {
       toast.error(err.message || 'An error occurred');
     } finally {
       setLoading(false);
+      setLoadingMessage('');
     }
   };
 
@@ -1250,6 +1287,7 @@ export default function LeavesPage() {
     setEvidenceFile(null);
     setEvidencePreview(null);
     setLocationData(null);
+    setLoadingMessage('');
     setError(null);
   };
 
@@ -3219,10 +3257,18 @@ export default function LeavesPage() {
                   </button>
                   <button
                     type="submit"
-                    disabled={loading}
-                    className={`flex-1 py-2 sm:py-2.5 text-sm font-bold text-white rounded-xl transition-opacity ${loading ? 'opacity-60 cursor-not-allowed' : ''} ${applyType === 'leave' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-purple-600 hover:bg-purple-700'}`}
+                    disabled={loading || !isFormValid()}
+                    className={`flex-1 py-2 sm:py-2.5 text-sm font-bold text-white rounded-xl transition-all ${(loading || !isFormValid())
+                      ? 'opacity-40 cursor-not-allowed grayscale'
+                      : 'opacity-100 hover:scale-[1.02] active:scale-95'
+                      } ${applyType === 'leave' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-purple-600 hover:bg-purple-700'}`}
                   >
-                    {loading ? 'Submitting...' : `Apply ${applyType === 'leave' ? 'Leave' : 'OD'}`}
+                    {loading ? (
+                      <div className="flex items-center justify-center gap-2">
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                        <span>{loadingMessage || 'Submitting...'}</span>
+                      </div>
+                    ) : `Apply ${applyType === 'leave' ? 'Leave' : 'OD'}`}
                   </button>
                 </div>
               </form>
