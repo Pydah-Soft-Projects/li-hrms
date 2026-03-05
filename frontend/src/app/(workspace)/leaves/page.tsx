@@ -36,7 +36,8 @@ import {
   Clock,
   Check,
   Circle,
-  Loader2
+  Loader2,
+  Trash2
 } from 'lucide-react';
 
 // Custom Stat Card
@@ -1661,6 +1662,39 @@ export default function LeavesPage() {
     }
   };
 
+  const handleDeleteRequest = async (id: string, type: 'leave' | 'od') => {
+    try {
+      const result = await Swal.fire({
+        title: `Delete ${type.toUpperCase()} Request?`,
+        text: `This will permanently delete this ${type} application. This action cannot be undone.`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#ef4444',
+        cancelButtonColor: '#64748b',
+        confirmButtonText: 'Yes, Delete',
+        cancelButtonText: 'Cancel',
+        reverseButtons: true
+      });
+
+      if (result.isConfirmed) {
+        setLoading(true);
+        const response = type === 'leave' ? await api.deleteLeave(id) : await api.deleteOD(id);
+        if (response.success) {
+          toast.success(`${type === 'leave' ? 'Leave' : 'OD'} application deleted`);
+          setShowDetailDialog(false);
+          setSelectedItem(null);
+          loadData();
+        } else {
+          toast.error(response.error || 'Failed to delete');
+        }
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to delete');
+    } finally {
+      setLoading(false);
+    }
+  };
+
 
   // Helper: get department name from item (top-level or nested on employeeId)
   const getItemDepartmentName = (item: any) =>
@@ -2345,15 +2379,29 @@ export default function LeavesPage() {
                             </span>
                           </td>
                           <td className="px-6 py-3.5 text-right">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openDetailDialog(leave, 'leave');
-                              }}
-                              className="text-sm text-blue-600 hover:text-blue-800 font-medium dark:text-blue-400 dark:hover:text-blue-300"
-                            >
-                              View
-                            </button>
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openDetailDialog(leave, 'leave');
+                                }}
+                                className="px-2 py-1 text-xs font-bold uppercase tracking-wider text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/30 rounded-lg transition-all"
+                              >
+                                View
+                              </button>
+                              {(isSuperAdmin || currentUser?.role === 'sub_admin' || currentUser?.role === 'employee') && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteRequest(leave._id, 'leave');
+                                  }}
+                                  className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-all group"
+                                  title="Delete Request"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))
@@ -2415,9 +2463,22 @@ export default function LeavesPage() {
                             </p>
                           </div>
                         </div>
-                        <span className={`inline-flex px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border ${getStatusColor(leave.status)} border-transparent`}>
-                          {leave.status?.replace('_', ' ')}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className={`inline-flex px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border ${getStatusColor(leave.status)} border-transparent`}>
+                            {leave.status?.replace('_', ' ')}
+                          </span>
+                          {(isSuperAdmin || currentUser?.role === 'sub_admin' || currentUser?.role === 'employee') && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteRequest(leave._id, 'leave');
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-red-500 bg-slate-50 dark:bg-slate-800 rounded-lg"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
                       </div>
 
                       <div className="flex items-center justify-between text-sm text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl">
@@ -2552,15 +2613,29 @@ export default function LeavesPage() {
                             </span>
                           </td>
                           <td className="px-6 py-3.5 text-right">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openDetailDialog(od, 'od');
-                              }}
-                              className="text-sm text-purple-600 hover:text-purple-800 font-medium dark:text-purple-400 dark:hover:text-purple-300"
-                            >
-                              View
-                            </button>
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openDetailDialog(od, 'od');
+                                }}
+                                className="px-2 py-1 text-xs font-bold uppercase tracking-wider text-purple-600 hover:bg-purple-50 dark:text-purple-400 dark:hover:bg-purple-900/30 rounded-lg transition-all"
+                              >
+                                View
+                              </button>
+                              {(isSuperAdmin || currentUser?.role === 'sub_admin' || currentUser?.role === 'employee') && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteRequest(od._id, 'od');
+                                  }}
+                                  className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-all group"
+                                  title="Delete OD"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))
@@ -2622,9 +2697,22 @@ export default function LeavesPage() {
                             </p>
                           </div>
                         </div>
-                        <span className={`inline-flex px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border ${getStatusColor(od.status)} border-transparent`}>
-                          {od.status?.replace('_', ' ')}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className={`inline-flex px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border ${getStatusColor(od.status)} border-transparent`}>
+                            {od.status?.replace('_', ' ')}
+                          </span>
+                          {(isSuperAdmin || currentUser?.role === 'sub_admin' || currentUser?.role === 'employee') && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteRequest(od._id, 'od');
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-red-500 bg-slate-50 dark:bg-slate-800 rounded-lg"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
                       </div>
 
                       {od.placeVisited && (
@@ -2727,9 +2815,23 @@ export default function LeavesPage() {
                                 )}
                               </div>
                             </div>
-                            <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(leave.status)}`}>
-                              {leave.status.replace('_', ' ')}
-                            </span>
+                            <div className="flex flex-col gap-1 items-end">
+                              <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(leave.status)}`}>
+                                {leave.status.replace('_', ' ')}
+                              </span>
+                              {(isSuperAdmin || currentUser?.role === 'sub_admin' || (leave.employeeId?._id === currentUser?.employeeRef || leave.appliedBy?._id === currentUser?._id || leave.appliedBy === currentUser?._id)) && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteRequest(leave._id, 'leave');
+                                  }}
+                                  className="p-1 text-slate-400 hover:text-red-500 transition-colors"
+                                  title="Delete Request"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
                           </div>
 
                           {/* Content */}
@@ -2826,9 +2928,23 @@ export default function LeavesPage() {
                                 )}
                               </div>
                             </div>
-                            <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(od.status)}`}>
-                              {od.status.replace('_', ' ')}
-                            </span>
+                            <div className="flex flex-col gap-1 items-end">
+                              <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(od.status)}`}>
+                                {od.status.replace('_', ' ')}
+                              </span>
+                              {(isSuperAdmin || currentUser?.role === 'sub_admin' || (od.employeeId?._id === currentUser?.employeeRef || od.appliedBy?._id === currentUser?._id || od.appliedBy === currentUser?._id)) && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteRequest(od._id, 'od');
+                                  }}
+                                  className="p-1 text-slate-400 hover:text-red-500 transition-colors"
+                                  title="Delete Request"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
                           </div>
 
                           {/* Content */}
@@ -4110,6 +4226,17 @@ export default function LeavesPage() {
                       className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-sm transition-colors"
                     >
                       Edit
+                    </button>
+                  )}
+
+                  {(isSuperAdmin || currentUser?.role === 'sub_admin' || (selectedItem.employeeId?._id === currentUser?.employeeRef || selectedItem.appliedBy?._id === currentUser?._id || selectedItem.appliedBy === currentUser?._id)) && (
+                    <button
+                      onClick={() => {
+                        handleDeleteRequest(selectedItem._id, detailType);
+                      }}
+                      className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg shadow-sm transition-colors"
+                    >
+                      Delete
                     </button>
                   )}
 
