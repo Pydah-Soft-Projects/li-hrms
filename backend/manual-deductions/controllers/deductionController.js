@@ -3,6 +3,53 @@ const DeductionService = require('../services/deductionService');
 
 const uid = (req) => req.user._id || req.user.userId || req.user.id;
 
+/**
+ * Bulk create direct deduction requests.
+ * Body: { items: [{ employee: employeeId, amount: number, reason: string }, ...] }
+ * Only items with amount > 0 are created. Returns created count and created records.
+ */
+exports.createDeductionsBulk = async (req, res) => {
+  try {
+    const { items } = req.body;
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ success: false, message: 'items array is required and must not be empty' });
+    }
+    const userId = uid(req);
+    const toCreate = items
+      .map((item) => ({
+        employee: item.employee,
+        amount: Number(item.amount ?? item.totalAmount ?? 0),
+        reason: (item.reason || item.remarks || 'Bulk deduction').trim(),
+      }))
+      .filter((item) => item.employee && item.amount > 0 && item.reason);
+    if (toCreate.length === 0) {
+      return res.status(400).json({ success: false, message: 'No valid items (employee, amount > 0, and reason required)' });
+    }
+    const created = [];
+    const errors = [];
+    for (let i = 0; i < toCreate.length; i++) {
+      try {
+        const deduction = await DeductionService.createDeductionRequest(
+          { type: 'direct', employee: toCreate[i].employee, totalAmount: toCreate[i].amount, reason: toCreate[i].reason },
+          userId
+        );
+        created.push(deduction);
+      } catch (err) {
+        errors.push({ index: i, employee: toCreate[i].employee, message: err.message });
+      }
+    }
+    return res.status(201).json({
+      success: true,
+      created: created.length,
+      failed: errors.length,
+      data: created,
+      errors: errors.length ? errors : undefined,
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 exports.createDeduction = async (req, res) => {
   try {
     const { type, employee, startMonth, endMonth, monthlyAmount, totalAmount, amount, reason, calculationBreakdown } = req.body;

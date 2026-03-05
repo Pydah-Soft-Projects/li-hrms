@@ -1,13 +1,13 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { format } from 'date-fns';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { api } from '@/lib/api';
 import DeductionForm from '@/components/ManualDeductions/DeductionForm';
 import Spinner from '@/components/Spinner';
-import { Plus, Search, Eye, CheckCircle, Clock, TrendingDown, XCircle, AlertCircle } from 'lucide-react';
+import { Plus, Search, Eye, CheckCircle, Clock, TrendingDown, XCircle, AlertCircle, Users, Loader2 } from 'lucide-react';
 
 const StatCard = ({ title, value, icon: Icon, bgClass, iconClass }: { title: string; value: number | string; icon: any; bgClass: string; iconClass: string }) => (
   <div className="rounded-3xl border border-slate-300 bg-slate-50/90 p-6 dark:border-slate-800 dark:bg-slate-900">
@@ -47,6 +47,12 @@ interface Deduction {
   createdAt: string;
 }
 
+interface BulkRow {
+  employee: { _id: string; emp_no?: string; employee_name?: string; first_name?: string; last_name?: string; department_id?: { _id: string; name?: string } | string; division_id?: { _id: string; name?: string } | string };
+  amount: number;
+  remarks: string;
+}
+
 export default function ManualDeductionsPage() {
   const [deductions, setDeductions] = useState<Deduction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -56,7 +62,88 @@ export default function ManualDeductionsPage() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
+  // Bulk create
+  const [divisions, setDivisions] = useState<any[]>([]);
+  const [departments, setDepartments] = useState<any[]>([]);
+  const [bulkDivisionId, setBulkDivisionId] = useState('');
+  const [bulkDepartmentId, setBulkDepartmentId] = useState('');
+  const [bulkRows, setBulkRows] = useState<BulkRow[]>([]);
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [bulkSectionOpen, setBulkSectionOpen] = useState(false);
+
   useEffect(() => { loadData(); }, []);
+
+  useEffect(() => {
+    api.getDivisions?.().then((r: any) => { if (r?.success && r?.data) setDivisions(r.data); if (Array.isArray(r)) setDivisions(r); }).catch(() => {});
+    api.getDepartments?.().then((r: any) => { if (r?.success && r?.data) setDepartments(r.data); if (Array.isArray(r)) setDepartments(r); }).catch(() => {});
+  }, []);
+
+  const filteredBulkDepartments = useMemo(() => {
+    if (!bulkDivisionId) return departments;
+    const div = divisions.find((d: any) => String(d._id) === bulkDivisionId);
+    const deptIds = (div?.departments ?? []).map((d: any) => (typeof d === 'string' ? d : d?._id));
+    if (deptIds.length === 0) return departments.filter((d: any) => String(d.division_id || d.division) === bulkDivisionId);
+    return departments.filter((d: any) => deptIds.includes(String(d._id)));
+  }, [bulkDivisionId, divisions, departments]);
+
+  const loadBulkEmployees = () => {
+    setBulkLoading(true);
+    const filters: any = { is_active: true, limit: 500 };
+    if (bulkDivisionId) filters.division_id = bulkDivisionId;
+    if (bulkDepartmentId) filters.department_id = bulkDepartmentId;
+    api.getEmployees(filters)
+      .then((r: any) => {
+        const list = (r?.data ?? r) || [];
+        const rows: BulkRow[] = list.map((emp: any) => ({
+          employee: emp,
+          amount: 0,
+          remarks: '',
+        }));
+        setBulkRows(rows);
+        toast.info(rows.length ? `Loaded ${rows.length} employees` : 'No employees match filters');
+      })
+      .catch((e: any) => toast.error(e?.message || 'Failed to load employees'))
+      .finally(() => setBulkLoading(false));
+  };
+
+  const updateBulkRow = (index: number, field: 'amount' | 'remarks', value: number | string) => {
+    setBulkRows((prev) => {
+      const next = [...prev];
+      if (next[index]) next[index] = { ...next[index], [field]: value };
+      return next;
+    });
+  };
+
+  const handleBulkSave = async () => {
+    const toCreate = bulkRows.filter((r) => Number(r.amount) > 0);
+    if (toCreate.length === 0) {
+      toast.warn('Enter amount > 0 for at least one employee');
+      return;
+    }
+    setBulkSaving(true);
+    try {
+      const res = await api.createDeductionsBulk(
+        toCreate.map((r) => ({
+          employee: r.employee._id,
+          amount: Number(r.amount),
+          reason: (r.remarks || 'Bulk deduction').trim(),
+        }))
+      );
+      const created = res?.created ?? 0;
+      const failed = res?.failed ?? 0;
+      if (created) {
+        toast.success(`${created} deduction request(s) created`);
+        loadData();
+        setBulkRows((prev) => prev.map((r) => (Number(r.amount) > 0 ? { ...r, amount: 0, remarks: '' } : r)));
+      }
+      if (failed) toast.error(`${failed} failed`);
+    } catch (e: any) {
+      toast.error(e?.message || 'Bulk create failed');
+    } finally {
+      setBulkSaving(false);
+    }
+  };
 
   const loadData = () => {
     setLoading(true);
@@ -121,6 +208,130 @@ export default function ManualDeductionsPage() {
         <StatCard title="Approved" value={stats.approved} icon={CheckCircle} bgClass="bg-emerald-500/10" iconClass="text-emerald-700 dark:text-emerald-400" />
         <StatCard title="Settled" value={stats.settled} icon={TrendingDown} bgClass="bg-violet-500/10" iconClass="text-violet-700 dark:text-violet-400" />
         <StatCard title="Rejected" value={stats.rejected} icon={XCircle} bgClass="bg-rose-500/10" iconClass="text-rose-700 dark:text-rose-400" />
+      </div>
+
+      {/* Bulk create section */}
+      <div className="mb-10 rounded-2xl border border-slate-300 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/50 overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setBulkSectionOpen((o) => !o)}
+          className="flex w-full items-center justify-between p-6 text-left"
+        >
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-200 dark:bg-slate-700">
+              <Users className="h-5 w-5 text-slate-700 dark:text-slate-300" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-slate-950 dark:text-white">Bulk create requests</h2>
+              <p className="text-sm text-slate-600 dark:text-slate-400">Filter employees, add amount and remarks, then save to create one deduction per row (amount &gt; 0)</p>
+            </div>
+          </div>
+          <span className="text-slate-500">{bulkSectionOpen ? '▼' : '▶'}</span>
+        </button>
+        {bulkSectionOpen && (
+          <div className="border-t border-slate-200 dark:border-slate-700 p-6 space-y-4">
+            <div className="flex flex-wrap items-end gap-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Division</label>
+                <select
+                  value={bulkDivisionId}
+                  onChange={(e) => { setBulkDivisionId(e.target.value); setBulkDepartmentId(''); }}
+                  className="rounded-lg border border-slate-300 bg-white dark:bg-slate-800 dark:border-slate-600 dark:text-white px-3 py-2 text-sm min-w-[180px]"
+                >
+                  <option value="">All divisions</option>
+                  {divisions.map((d: any) => (
+                    <option key={d._id} value={d._id}>{d.name || d.code || d._id}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Department</label>
+                <select
+                  value={bulkDepartmentId}
+                  onChange={(e) => setBulkDepartmentId(e.target.value)}
+                  className="rounded-lg border border-slate-300 bg-white dark:bg-slate-800 dark:border-slate-600 dark:text-white px-3 py-2 text-sm min-w-[180px]"
+                >
+                  <option value="">All departments</option>
+                  {filteredBulkDepartments.map((d: any) => (
+                    <option key={d._id} value={d._id}>{d.name || d.code || d._id}</option>
+                  ))}
+                </select>
+              </div>
+              <button
+                type="button"
+                onClick={loadBulkEmployees}
+                disabled={bulkLoading}
+                className="rounded-xl bg-slate-800 dark:bg-slate-700 text-white px-4 py-2 text-sm font-medium flex items-center gap-2 disabled:opacity-50"
+              >
+                {bulkLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Users className="h-4 w-4" />}
+                Load employees
+              </button>
+            </div>
+            {bulkRows.length > 0 && (
+              <>
+                <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-slate-100 dark:bg-slate-800/50 text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
+                        <th className="px-4 py-3 text-left">Employee</th>
+                        <th className="px-4 py-3 text-left">Code / Dept</th>
+                        <th className="px-4 py-3 text-right w-32">Amount (₹)</th>
+                        <th className="px-4 py-3 text-left min-w-[200px]">Remarks</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                      {bulkRows.map((row, idx) => (
+                        <tr key={row.employee._id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30">
+                          <td className="px-4 py-2 font-medium text-slate-950 dark:text-white">
+                            {row.employee.employee_name || [row.employee.first_name, row.employee.last_name].filter(Boolean).join(' ') || row.employee.emp_no || '—'}
+                          </td>
+                          <td className="px-4 py-2 text-slate-600 dark:text-slate-400">
+                            {row.employee.emp_no || '—'}
+                            {(row.employee.department_id as any)?.name && ` / ${(row.employee.department_id as any).name}`}
+                          </td>
+                          <td className="px-4 py-2 text-right">
+                            <input
+                              type="number"
+                              min={0}
+                              step={0.01}
+                              value={row.amount === 0 ? '' : row.amount}
+                              onChange={(e) => updateBulkRow(idx, 'amount', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
+                              className="w-full rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white px-2 py-1.5 text-right"
+                              placeholder="0"
+                            />
+                          </td>
+                          <td className="px-4 py-2">
+                            <input
+                              type="text"
+                              value={row.remarks}
+                              onChange={(e) => updateBulkRow(idx, 'remarks', e.target.value)}
+                              className="w-full rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white px-2 py-1.5"
+                              placeholder="Remarks"
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-slate-600 dark:text-slate-400">
+                    {bulkRows.filter((r) => Number(r.amount) > 0).length} row(s) with amount &gt; 0 will create deduction requests
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleBulkSave}
+                    disabled={bulkSaving || bulkRows.every((r) => Number(r.amount) <= 0)}
+                    className="rounded-xl bg-rose-600 hover:bg-rose-700 text-white px-6 py-2.5 text-sm font-bold uppercase flex items-center gap-2 disabled:opacity-50 disabled:pointer-events-none"
+                  >
+                    {bulkSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    Save (create requests)
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="rounded-2xl border border-slate-300 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/50 overflow-hidden">
