@@ -1590,8 +1590,8 @@ export default function LeavesPage() {
               <ClockIcon />
             </div>
             <div>
-              {loadingStats ? <div className="h-8 w-14 bg-slate-200 dark:bg-slate-600 rounded animate-pulse" /> : <div className="text-2xl font-bold text-yellow-600">{dashboardStats.totalPending}</div>}
-              <div className="text-sm text-slate-500">Pending Approvals</div>
+              <div className="text-2xl font-bold text-yellow-600">{totalPending}</div>
+              <div className="text-sm text-slate-500">Actions Required</div>
             </div>
           </div>
         </div>
@@ -1644,7 +1644,7 @@ export default function LeavesPage() {
           >
             <span className="flex items-center gap-2">
               <ClockIcon />
-              Pending Approvals ({loadingStats ? '…' : dashboardStats.totalPending})
+              Actions Required ({totalPending})
             </span>
           </button>
         </div>
