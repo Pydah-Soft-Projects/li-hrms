@@ -3486,7 +3486,7 @@ export const api = {
   },
 
   // Manual Deductions APIs (same flow as arrears, but applied as deduction)
-  getDeductions: async (filters?: { status?: string; employee?: string; department?: string }) => {
+  getManualDeductions: async (filters?: { status?: string; employee?: string; department?: string }) => {
     const params = new URLSearchParams();
     if (filters?.status) params.append('status', filters.status);
     if (filters?.employee) params.append('employee', filters.employee);

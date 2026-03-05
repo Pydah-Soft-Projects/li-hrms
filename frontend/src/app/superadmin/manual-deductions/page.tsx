@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { format } from 'date-fns';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -131,7 +131,7 @@ export function ManualDeductionsContent() {
           amount: Number(r.amount),
           reason: (r.remarks || 'Bulk deduction').trim(),
         }))
-      );
+      ) as { created?: number; failed?: number };
       const created = res?.created ?? 0;
       const failed = res?.failed ?? 0;
       if (created) {
@@ -149,7 +149,7 @@ export function ManualDeductionsContent() {
 
   const loadData = () => {
     setLoading(true);
-    api.getDeductions({})
+    api.getManualDeductions({})
       .then((r: any) => { if (r.success) setDeductions(r.data || []); else toast.error(r.message || 'Failed to load'); })
       .catch((e: any) => toast.error(e.message || 'Failed to load'))
       .finally(() => setLoading(false));
@@ -196,6 +196,15 @@ export function ManualDeductionsContent() {
     if (selectedSelectable.length === selectableFiltered.length) setSelectedIds((prev) => { const n = new Set(prev); selectableFiltered.forEach((d) => n.delete(d._id)); return n; });
     else setSelectedIds((prev) => { const n = new Set(prev); selectableFiltered.forEach((d) => n.add(d._id)); return n; });
   };
+  const selectAllRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const el = selectAllRef.current;
+    if (!el) return;
+    const some = selectedSelectable.length > 0;
+    const all = selectedSelectable.length === selectableFiltered.length && selectableFiltered.length > 0;
+    el.checked = all;
+    el.indeterminate = some && !all;
+  }, [selectedSelectable.length, selectableFiltered.length]);
   const handleBulkApprove = async () => {
     const ids = Array.from(selectedIds).filter((id) => {
       const d = deductions.find((x) => x._id === id);
@@ -207,7 +216,7 @@ export function ManualDeductionsContent() {
     }
     setBulkApproving(true);
     try {
-      const res = await api.bulkApproveDeductions(ids);
+      const res = await api.bulkApproveDeductions(ids) as { approved?: number; failed?: number };
       const approved = res?.approved ?? 0;
       const failed = res?.failed ?? 0;
       if (approved) {
@@ -393,15 +402,21 @@ export function ManualDeductionsContent() {
           </div>
           <div className="flex flex-wrap items-center gap-3">
             {selectableFiltered.length > 0 && (
-              <button
-                type="button"
-                onClick={handleBulkApprove}
-                disabled={bulkApproving || selectedSelectable.length === 0}
-                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 text-xs font-bold uppercase disabled:opacity-50 disabled:pointer-events-none"
-              >
-                {bulkApproving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
-                Bulk approve ({selectedSelectable.length} selected)
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={handleBulkApprove}
+                  disabled={bulkApproving || selectedSelectable.length === 0}
+                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 text-xs font-bold uppercase disabled:opacity-50 disabled:pointer-events-none"
+                  title={selectedSelectable.length === 0 ? 'Select one or more pending rows below' : `Approve ${selectedSelectable.length} selected`}
+                >
+                  {bulkApproving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+                  Bulk approve ({selectedSelectable.length} selected)
+                </button>
+                {selectedSelectable.length === 0 && (
+                  <span className="text-xs text-slate-500 dark:text-slate-400">Select pending row(s) above, then click Bulk approve</span>
+                )}
+              </>
             )}
             <div className="relative min-w-[200px]">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
@@ -432,10 +447,12 @@ export function ManualDeductionsContent() {
                   <th className="px-4 py-4 text-left w-10">
                     {selectableFiltered.length > 0 && (
                       <input
+                        ref={selectAllRef}
                         type="checkbox"
                         checked={selectedSelectable.length === selectableFiltered.length && selectableFiltered.length > 0}
                         onChange={toggleSelectAll}
                         className="rounded border-slate-300"
+                        title={selectedSelectable.length === 0 ? 'Select all pending' : selectedSelectable.length === selectableFiltered.length ? 'Deselect all' : 'Select all pending'}
                       />
                     )}
                   </th>
@@ -508,6 +525,7 @@ function DeductionDetailModal({ deductionId, onClose, onUpdate }: { deductionId:
   const [deduction, setDeduction] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [actionComment, setActionComment] = useState('');
 
   const refresh = () => {
     if (!deductionId) return;
@@ -525,15 +543,15 @@ function DeductionDetailModal({ deductionId, onClose, onUpdate }: { deductionId:
   const pendingStatuses = ['pending_hod', 'pending_hr', 'pending_admin'];
   const canAct = deduction && pendingStatuses.includes(deduction.status);
 
-  const handleAction = async (approved: boolean, comments?: string) => {
+  const handleAction = async (approved: boolean) => {
     if (!deductionId || actionLoading) return;
+    const comments = actionComment.trim() || undefined;
     setActionLoading(true);
     try {
       await api.processDeductionAction(deductionId, approved, comments);
-      toast.success(approved ? 'Approved' : 'Rejected');
+      toast.success(approved ? 'Deduction approved' : 'Deduction rejected');
       onUpdate();
-      refresh();
-      if (approved && deduction?.status === 'pending_admin') onClose();
+      onClose();
     } catch (e: any) {
       toast.error(e?.message || (approved ? 'Approve failed' : 'Reject failed'));
     } finally {
@@ -565,29 +583,37 @@ function DeductionDetailModal({ deductionId, onClose, onUpdate }: { deductionId:
               <p><span className="font-semibold text-slate-600 dark:text-slate-400">Remaining:</span> ₹{Number(deduction.remainingAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
               <p><span className="font-semibold text-slate-600 dark:text-slate-400">Status:</span> {getStatusLabel(deduction.status)}</p>
               <p><span className="font-semibold text-slate-600 dark:text-slate-400">Reason:</span> {deduction.reason || '—'}</p>
+
               {canAct && (
-                <div className="flex flex-wrap gap-3 pt-4 border-t border-slate-200 dark:border-slate-700">
-                  <button
-                    type="button"
-                    onClick={() => handleAction(true)}
-                    disabled={actionLoading}
-                    className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 text-sm font-semibold disabled:opacity-50"
-                  >
-                    {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
-                    Approve
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const comments = window.prompt('Rejection reason (optional):');
-                      if (comments !== null) handleAction(false, comments || undefined);
-                    }}
-                    disabled={actionLoading}
-                    className="inline-flex items-center gap-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white px-4 py-2.5 text-sm font-semibold disabled:opacity-50"
-                  >
-                    <XCircle className="h-4 w-4" />
-                    Reject
-                  </button>
+                <div className="pt-4 mt-4 border-t border-slate-200 dark:border-slate-700 space-y-3">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Actions</h3>
+                  <textarea
+                    value={actionComment}
+                    onChange={(e) => setActionComment(e.target.value)}
+                    placeholder="Comment (optional) — e.g. rejection reason"
+                    rows={2}
+                    className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white px-3 py-2 text-sm resize-none"
+                  />
+                  <div className="flex flex-wrap gap-3">
+                    <button
+                      type="button"
+                      onClick={() => handleAction(true)}
+                      disabled={actionLoading}
+                      className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 text-sm font-semibold disabled:opacity-50"
+                    >
+                      {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+                      Approve
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAction(false)}
+                      disabled={actionLoading}
+                      className="inline-flex items-center gap-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white px-5 py-2.5 text-sm font-semibold disabled:opacity-50"
+                    >
+                      <XCircle className="h-4 w-4" />
+                      Reject
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
