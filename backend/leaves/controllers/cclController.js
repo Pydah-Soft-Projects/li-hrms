@@ -406,7 +406,17 @@ exports.applyCCL = async (req, res) => {
             }).select('_id');
             hodScope = !!dept;
           }
-          if (!hodScope) {
+          // Allow if current user is the reporting manager of this employee (apply on behalf of reportee)
+          let isReportingManager = false;
+          const reportingManagers = employee.dynamicFields?.reporting_to || employee.dynamicFields?.reporting_to_ || [];
+          if (Array.isArray(reportingManagers) && reportingManagers.length > 0) {
+            const reportingManagerIds = reportingManagers.map(m => (m._id || m).toString());
+            const userStr = req.user._id?.toString();
+            const userEmployeeIdStr = (req.user.employeeId || req.user.employeeRef)?.toString();
+            isReportingManager = (userStr && reportingManagerIds.includes(userStr)) ||
+              (userEmployeeIdStr && reportingManagerIds.includes(userEmployeeIdStr));
+          }
+          if (!hodScope && !isReportingManager) {
             return res.status(403).json({
               success: false,
               error: 'Not authorized to apply CCL for this employee',
