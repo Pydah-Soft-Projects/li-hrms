@@ -2,7 +2,7 @@ const PayRegisterSummary = require('../model/PayRegisterSummary');
 const Employee = require('../../employees/model/Employee');
 const PayrollBatch = require('../../payroll/model/PayrollBatch');
 const { populatePayRegisterFromSources } = require('../services/autoPopulationService');
-const { calculateTotals } = require('../services/totalsCalculationService');
+const { calculateTotals, ensureTotalsRespectRoster } = require('../services/totalsCalculationService');
 const { updateDailyRecord } = require('../services/dailyRecordUpdateService');
 const { manualSyncPayRegister } = require('../services/autoSyncService');
 const { processSummaryBulkUpload } = require('../services/summaryUploadService');
@@ -37,10 +37,11 @@ exports.getPayRegister = async (req, res) => {
       .populate('lastEditedBy', 'name email role')
       .populate('editedBy', 'name email role');
 
-    // Recalculate totals to ensure accuracy
+    // Recalculate totals to ensure accuracy; week-offs and holidays from shift roster
     if (payRegister) {
       payRegister.totals = calculateTotals(payRegister.dailyRecords);
       payRegister.recalculateTotals(); // Also use model method for consistency
+      await ensureTotalsRespectRoster(payRegister.totals, payRegister.emp_no, payRegister.startDate, payRegister.endDate);
       await payRegister.save();
     }
 
@@ -65,6 +66,8 @@ exports.getPayRegister = async (req, res) => {
         monthNum
       );
 
+      let totals = calculateTotals(dailyRecords);
+      await ensureTotalsRespectRoster(totals, employee.emp_no, startDate, endDate);
       payRegister = await PayRegisterSummary.create({
         employeeId,
         emp_no: employee.emp_no,
@@ -76,7 +79,7 @@ exports.getPayRegister = async (req, res) => {
         startDate,
         endDate,
         dailyRecords,
-        totals: calculateTotals(dailyRecords),
+        totals,
         status: 'draft',
         lastAutoSyncedAt: new Date(),
       });
@@ -143,6 +146,9 @@ exports.createPayRegister = async (req, res) => {
       monthNum
     );
 
+    let totals = calculateTotals(dailyRecords);
+    await ensureTotalsRespectRoster(totals, employee.emp_no, startDate, endDate);
+
     const payRegister = await PayRegisterSummary.create({
       employeeId,
       emp_no: employee.emp_no,
@@ -154,7 +160,7 @@ exports.createPayRegister = async (req, res) => {
       startDate,
       endDate,
       dailyRecords,
-      totals: calculateTotals(dailyRecords),
+      totals,
       status: 'draft',
       lastAutoSyncedAt: new Date(),
     });
@@ -193,11 +199,12 @@ exports.updatePayRegister = async (req, res) => {
       });
     }
 
-    // Update dailyRecords if provided; recalc totals so any day/half marked OD (e.g. edited from absent) is included in present days
+    // Update dailyRecords if provided; recalc totals so any day/half marked OD (e.g. edited from absent) is included in present days; WO/HOL from roster
     if (dailyRecords && Array.isArray(dailyRecords)) {
       payRegister.dailyRecords = dailyRecords;
       payRegister.totals = calculateTotals(dailyRecords);
       payRegister.recalculateTotals();
+      await ensureTotalsRespectRoster(payRegister.totals, payRegister.emp_no, payRegister.startDate, payRegister.endDate);
     }
 
     // Update status if provided
@@ -277,9 +284,10 @@ exports.updateDailyRecord = async (req, res) => {
     // Update daily record
     await updateDailyRecord(payRegister, date, updateData, req.user);
 
-    // Recalculate totals so any day/half edited from absent to OD is included in totalPresentDays
+    // Recalculate totals so any day/half edited from absent to OD is included in totalPresentDays; WO/HOL from roster
     payRegister.totals = calculateTotals(payRegister.dailyRecords);
     payRegister.recalculateTotals();
+    await ensureTotalsRespectRoster(payRegister.totals, payRegister.emp_no, payRegister.startDate, payRegister.endDate);
 
     await payRegister.save();
 
