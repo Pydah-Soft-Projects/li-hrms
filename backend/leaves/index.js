@@ -160,6 +160,9 @@ router.get('/pending-approvals', authorize('manager', 'hod', 'hr', 'sub_admin', 
 // Get leave statistics
 router.get('/stats', leaveController.getLeaveStats);
 
+// Dashboard counts (global or filtered) for superadmin
+router.get('/dashboard-stats', authorize('employee', 'manager', 'hod', 'hr', 'sub_admin', 'super_admin'), applyScopeFilter, leaveController.getDashboardStats);
+
 // Get approved records for a date (for conflict checking)
 router.get('/approved-records', leaveController.getApprovedRecordsForDate);
 
