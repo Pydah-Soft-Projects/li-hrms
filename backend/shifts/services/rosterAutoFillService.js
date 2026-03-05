@@ -1,6 +1,8 @@
 /**
  * Roster Auto-Fill Service
- * Fills the next pay cycle roster from the previous cycle by weekday; respects holidays in target period.
+ * Fills the next pay cycle roster from the previous cycle by weekday.
+ * - Uses only non-holiday days from the previous cycle as templates (HOL in previous cycle is ignored).
+ * - Does NOT create HOL entries in the target roster; holidays are handled by Holiday config + attendance, not by roster status.
  */
 
 const PreScheduledShift = require('../model/PreScheduledShift');
@@ -48,6 +50,8 @@ async function getRosterByWeekday(startDate, endDate, filters = {}) {
     const empNo = String(r.employeeNumber || '').toUpperCase();
     const weekday = getWeekday(r.date);
     const key = `${empNo}|${weekday}`;
+    // Ignore holidays in the template; we want a working-day/WO pattern only.
+    if (r.status === 'HOL') continue;
     if (!map.has(key)) {
       map.set(key, {
         shiftId: r.shiftId || null,
@@ -187,38 +191,24 @@ async function autoFillNextCycleFromPrevious(options = {}) {
     };
   }
 
-  const holidayDatesByEmp = await getHolidayDatesForEmployees(empNos, nextRange.startDate, nextRange.endDate);
   const targetDays = getAllDatesInRange(nextRange.startDate, nextRange.endDate);
 
   const entries = [];
-  let holidaysRespected = 0;
 
   for (const empNo of empNos) {
-    const holSet = holidayDatesByEmp.get(empNo) || new Set();
     for (const dateStr of targetDays) {
-      if (holSet.has(dateStr)) {
-        entries.push({
-          employeeNumber: empNo,
-          date: dateStr,
-          shiftId: null,
-          status: 'HOL',
-          notes: 'Holiday',
-          scheduledBy,
-        });
-        holidaysRespected++;
-        continue;
-      }
       const weekday = getWeekday(dateStr);
       const key = `${empNo}|${weekday}`;
       const cell = rosterByWeekday.get(key);
       if (!cell) continue;
-      if (cell.status === 'WO' || cell.status === 'HOL') {
+      // Only propagate week-offs from template; holidays are not written into roster.
+      if (cell.status === 'WO') {
         entries.push({
           employeeNumber: empNo,
           date: dateStr,
           shiftId: null,
-          status: cell.status,
-          notes: cell.status === 'WO' ? 'Week Off' : 'Holiday',
+          status: 'WO',
+          notes: 'Week Off',
           scheduledBy,
         });
       } else if (cell.shiftId) {
@@ -244,9 +234,12 @@ async function autoFillNextCycleFromPrevious(options = {}) {
     };
   }
 
+  // Remove existing non-holiday roster entries in target cycle so we can
+  // paste the previous cycle pattern cleanly, but KEEP any existing holidays.
   await PreScheduledShift.deleteMany({
     employeeNumber: { $in: empNos },
     date: { $gte: nextRange.startDate, $lte: nextRange.endDate },
+    status: { $ne: 'HOL' },
   });
 
   const bulk = entries.map((e) => ({
@@ -270,10 +263,10 @@ async function autoFillNextCycleFromPrevious(options = {}) {
 
   return {
     filled: saved,
-    holidaysRespected,
+    holidaysRespected: 0,
     previousRange,
     nextRange,
-    message: `Filled ${saved} roster entries (${holidaysRespected} days as holiday).`,
+    message: `Filled ${saved} roster entries (holidays are handled via Holiday setup, not roster status).`,
   };
 }
 
