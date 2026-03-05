@@ -1,6 +1,6 @@
 const PayRegisterSummary = require('../model/PayRegisterSummary');
 const { populatePayRegisterFromSources } = require('./autoPopulationService');
-const { calculateTotals } = require('./totalsCalculationService');
+const { calculateTotals, ensureTotalsRespectRoster } = require('./totalsCalculationService');
 const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
 const { syncAttendanceFromMSSQL } = require('../../attendance/services/attendanceSyncService');
 
@@ -112,8 +112,9 @@ async function syncPayRegisterFromLeave(leave) {
       // Update dailyRecords
       payRegister.dailyRecords = dailyRecords;
 
-      // Recalculate totals
+      // Recalculate totals; week-offs and holidays from shift roster
       payRegister.totals = calculateTotals(dailyRecords);
+      await ensureTotalsRespectRoster(payRegister.totals, payRegister.emp_no, payRegister.startDate, payRegister.endDate);
 
       // Update sync tracking
       payRegister.lastAutoSyncedAt = new Date();
@@ -204,6 +205,7 @@ async function syncPayRegisterFromOD(od) {
 
       payRegister.dailyRecords = dailyRecords;
       payRegister.totals = calculateTotals(dailyRecords);
+      await ensureTotalsRespectRoster(payRegister.totals, payRegister.emp_no, payRegister.startDate, payRegister.endDate);
       payRegister.lastAutoSyncedAt = new Date();
       payRegister.lastAutoSyncedFrom.ods = new Date();
 
@@ -278,8 +280,9 @@ async function syncPayRegisterFromOT(ot) {
         dailyRecord.otHours = totalOTHours;
         dailyRecord.otIds = ots.map((o) => o._id);
 
-        // Recalculate totals
+        // Recalculate totals; week-offs and holidays from shift roster
         payRegister.totals = calculateTotals(payRegister.dailyRecords);
+        await ensureTotalsRespectRoster(payRegister.totals, payRegister.emp_no, payRegister.startDate, payRegister.endDate);
         payRegister.lastAutoSyncedAt = new Date();
         payRegister.lastAutoSyncedFrom.ot = new Date();
 
@@ -359,6 +362,7 @@ async function manualSyncPayRegister(employeeId, month) {
 
     payRegister.dailyRecords = dailyRecords;
     payRegister.totals = calculateTotals(dailyRecords);
+    await ensureTotalsRespectRoster(payRegister.totals, payRegister.emp_no, payRegister.startDate, payRegister.endDate);
     payRegister.lastAutoSyncedAt = new Date();
     payRegister.lastAutoSyncedFrom.attendance = new Date();
     payRegister.lastAutoSyncedFrom.leaves = new Date();
