@@ -516,7 +516,7 @@ exports.applyLeave = async (req, res) => {
               const userStr = req.user._id?.toString();
               const userEmployeeIdStr = (req.user.employeeId || req.user.employeeRef)?.toString();
               if ((userStr && reportingManagerIds.includes(userStr)) ||
-                  (userEmployeeIdStr && reportingManagerIds.includes(userEmployeeIdStr))) {
+                (userEmployeeIdStr && reportingManagerIds.includes(userEmployeeIdStr))) {
                 isInScope = true;
                 console.log(`[Apply Leave] ✅ User ${req.user._id} is reporting manager for employee ${empNo}`);
               }
@@ -1824,11 +1824,15 @@ exports.deleteLeave = async (req, res) => {
       });
     }
 
-    // Only admin can delete
-    if (!['sub_admin', 'super_admin'].includes(req.user.role)) {
+    // Authorization: Admin can delete any, employee can delete their own if pending
+    const isAdmin = ['sub_admin', 'super_admin'].includes(req.user.role);
+    const isOwner = leave.appliedBy?.toString() === req.user._id.toString() ||
+      (req.user.employeeRef && leave.employeeId?.toString() === req.user.employeeRef.toString());
+
+    if (!isAdmin && !isOwner) {
       return res.status(403).json({
         success: false,
-        error: 'Not authorized to delete leave applications',
+        error: 'Not authorized to delete this leave application',
       });
     }
 
