@@ -144,7 +144,7 @@ const getWorkflowSettings = async () => {
 // @access  Private
 exports.getODs = async (req, res) => {
   try {
-    const { status, employeeId, department, fromDate, toDate, page = 1, limit = 20 } = req.query;
+    const { status, employeeId, department, division, designation, fromDate, toDate, search, page = 1, limit = 20 } = req.query;
 
     // Multi-layered filter: Jurisdiction (Scope) AND Timing (Workflow)
     const scopeFilter = req.scopeFilter || { isActive: true };
@@ -161,8 +161,30 @@ exports.getODs = async (req, res) => {
     if (status) filter.status = status;
     if (employeeId) filter.employeeId = employeeId;
     if (department) filter.department = department;
+    if (division) filter.division_id = division;
+    if (designation) filter.designation = designation;
     if (fromDate) filter.fromDate = { $gte: new Date(fromDate) };
     if (toDate) filter.toDate = { ...filter.toDate, $lte: new Date(toDate) };
+
+    // Search: by emp_no or employee name (resolve employee ids)
+    if (search && String(search).trim()) {
+      const searchStr = String(search).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(searchStr, 'i');
+      const matchedEmployees = await Employee.find({
+        $or: [
+          { emp_no: regex },
+          { employee_name: regex },
+          { first_name: regex },
+          { last_name: regex }
+        ]
+      }).select('_id').lean();
+      const ids = matchedEmployees.map(e => e._id);
+      if (ids.length > 0) {
+        filter.employeeId = { $in: ids };
+      } else {
+        filter.employeeId = { $in: [] };
+      }
+    }
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
