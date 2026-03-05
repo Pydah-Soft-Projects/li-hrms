@@ -413,6 +413,7 @@ export default function LeavesPage() {
   // CL balance for selected month (when leave type is CL)
   const [clBalanceForMonth, setClBalanceForMonth] = useState<number | null>(null);
   const [clBalanceLoading, setClBalanceLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState<string>('');
 
   // Form state
   const [formData, setFormData] = useState<{
@@ -472,6 +473,37 @@ export default function LeavesPage() {
   const [selectedDivisionFilter, setSelectedDivisionFilter] = useState('');
   const [selectedDepartmentFilter, setSelectedDepartmentFilter] = useState('');
   const [selectedDesignationFilter, setSelectedDesignationFilter] = useState('');
+
+  // Form validation for Apply button
+  const isFormValid = () => {
+    // 1. Common required fields
+    if (!formData.fromDate || !formData.toDate || !formData.purpose || !formData.contactNumber) {
+      return false;
+    }
+
+    // 2. Employee selection (required for admin)
+    if (!selectedEmployee) {
+      return false;
+    }
+
+    // 3. Type-specific validation
+    if (applyType === 'leave') {
+      if (!formData.leaveType) return false;
+    } else {
+      // OD Validation
+      if (!formData.odType || !formData.placeVisited) return false;
+
+      // Hours-specific OD
+      if (formData.odType_extended === 'hours') {
+        if (!formData.odStartTime || !formData.odEndTime) return false;
+      }
+
+      // Photo Evidence & Location required for OD
+      if (!evidenceFile || !locationData) return false;
+    }
+
+    return true;
+  };
 
   const loadFilterData = async () => {
     try {
@@ -682,6 +714,8 @@ export default function LeavesPage() {
 
   const handleApply = async (e: React.FormEvent) => {
     e.preventDefault();
+    setLoading(true);
+    setLoadingMessage('Initializing...');
 
     // Validate employee selection
     if (!selectedEmployee) {
@@ -713,6 +747,7 @@ export default function LeavesPage() {
     }
 
     try {
+      setLoadingMessage('Preparing application...');
 
       // Validate hour-based OD
       if (applyType === 'od' && formData.odType_extended === 'hours') {
@@ -734,6 +769,7 @@ export default function LeavesPage() {
 
         // Lazy Upload
         try {
+          setLoadingMessage('Uploading photo');
           const uploadRes = await api.uploadEvidence(evidenceFile) as any;
           if (!uploadRes.success) throw new Error('Upload failed');
 
@@ -777,6 +813,7 @@ export default function LeavesPage() {
         }
       }
 
+      setLoadingMessage('Saving application to database...');
       let response;
       const contactNum = formData.contactNumber || selectedEmployee.phone_number || '';
 
@@ -842,6 +879,9 @@ export default function LeavesPage() {
       }
     } catch (err: any) {
       toast.error(err.message || 'Failed to apply');
+    } finally {
+      setLoading(false);
+      setLoadingMessage('');
     }
   };
 
@@ -900,6 +940,7 @@ export default function LeavesPage() {
     setEmployeeSearch('');
     setShowEmployeeDropdown(false);
     setEvidenceFile(null);
+    setLoadingMessage('');
     setLocationData(null);
   };
 
@@ -2309,12 +2350,21 @@ export default function LeavesPage() {
                 </button>
                 <button
                   type="submit"
-                  className={`flex-1 px-4 py-2.5 text-sm font-semibold text-white rounded-xl ${applyType === 'leave'
-                    ? 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600'
-                    : 'bg-gradient-to-r from-purple-500 to-red-500 hover:from-purple-600 hover:to-red-600'
+                  disabled={loading || !isFormValid()}
+                  className={`flex-1 px-4 py-2.5 text-sm font-semibold text-white rounded-xl transition-all ${(loading || !isFormValid())
+                    ? 'opacity-40 cursor-not-allowed grayscale'
+                    : 'opacity-100 hover:scale-[1.02] active:scale-95'
+                    } ${applyType === 'leave'
+                      ? 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600'
+                      : 'bg-gradient-to-r from-purple-500 to-red-500 hover:from-purple-600 hover:to-red-600'
                     }`}
                 >
-                  Apply {applyType === 'leave' ? 'Leave' : 'OD'}
+                  {loading ? (
+                    <div className="flex items-center justify-center gap-2">
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                      <span>{loadingMessage || 'Submitting...'}</span>
+                    </div>
+                  ) : `Apply ${applyType === 'leave' ? 'Leave' : 'OD'}`}
                 </button>
               </div>
             </form>
