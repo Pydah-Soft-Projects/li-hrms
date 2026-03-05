@@ -378,11 +378,11 @@ async function run() {
     }
   }
 
-  // Summary table: first 15 of compared set (main totals)
-  console.log('Sample (first 15 of compared) — O=Original, R=After Recalc, M=Manual');
+  // Summary table: all compared employees (O=Original, R=After Recalc, M=Manual)
+  console.log('ALL EMPLOYEES — O=Original, R=After Recalc, M=Manual');
   console.log('emp_no  | totalDaysInMonth | totalPresentDays | totalPayableShifts | totalLeaves | totalODs | WO | Hol');
   console.log('        | O   R   M        | O    R    M      | O     R     M       | O   R   M   | O  R  M  | ...');
-  for (let i = 0; i < Math.min(15, toProcess.length); i++) {
+  for (let i = 0; i < toProcess.length; i++) {
     const s = toProcess[i];
     const empNo = String(s.emp_no);
     const o = originalByEmp.get(empNo)?.totals;
@@ -403,7 +403,7 @@ async function run() {
   // Late-in (PRESENT-only)
   console.log('\n--- Late-in (PRESENT days only) — O=Original, R=After Recalc, M=Manual ---');
   console.log('emp_no  | lateInCount      | totalLateInMinutes');
-  for (let i = 0; i < Math.min(15, toProcess.length); i++) {
+  for (let i = 0; i < toProcess.length; i++) {
     const s = toProcess[i];
     const empNo = String(s.emp_no);
     const o = originalByEmp.get(empNo)?.totals;
@@ -414,7 +414,7 @@ async function run() {
   // Late-or-early = lateInCount + earlyOutCount, totalLateOrEarlyMinutes = totalLateIn + totalEarlyOut
   console.log('\n--- Late-or-early (= late-in + early-out) — O=Original, R=After Recalc, M=Manual ---');
   console.log('emp_no  | lateOrEarlyCount | totalLateOrEarlyMinutes');
-  for (let i = 0; i < Math.min(15, toProcess.length); i++) {
+  for (let i = 0; i < toProcess.length; i++) {
     const s = toProcess[i];
     const empNo = String(s.emp_no);
     const o = originalByEmp.get(empNo)?.totals;
@@ -425,7 +425,7 @@ async function run() {
   // Early-out (PRESENT-only)
   console.log('\n--- Early-out (PRESENT days only; not HALF_DAY/PARTIAL) — O=Original, R=After Recalc, M=Manual ---');
   console.log('emp_no  | earlyOutCount    | totalEarlyOutMinutes | totalEarlyOutDeductionDays | totalEarlyOutDeductionAmount');
-  for (let i = 0; i < Math.min(15, toProcess.length); i++) {
+  for (let i = 0; i < toProcess.length; i++) {
     const s = toProcess[i];
     const empNo = String(s.emp_no);
     const o = originalByEmp.get(empNo)?.totals;

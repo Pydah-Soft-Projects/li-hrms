@@ -105,6 +105,8 @@ interface MonthlyAttendanceData {
     year: number;
     totalLeaves: number;
     totalODs: number;
+    totalWeeklyOffs?: number;
+    totalHolidays?: number;
     totalPresentDays: number;
     totalDaysInMonth: number;
     totalPayableShifts: number;
@@ -1639,6 +1641,15 @@ export default function AttendancePage() {
                     <th className="border-r border-slate-200 bg-blue-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-blue-700 dark:border-slate-700 dark:bg-blue-900/20 w-[60px] min-w-[60px]">
                       Pres
                     </th>
+                    <th className="border-r border-slate-200 bg-amber-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-amber-700 dark:border-slate-700 dark:bg-amber-900/20 w-[60px] min-w-[60px]">
+                      Leaves
+                    </th>
+                    <th className="border-r border-slate-200 bg-orange-100 px-1 py-3 text-center text-[9px] font-bold uppercase text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 w-[60px] min-w-[60px]">
+                      WO
+                    </th>
+                    <th className="border-r border-slate-200 bg-red-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-red-700 dark:border-slate-700 dark:bg-red-900/20 w-[60px] min-w-[60px]">
+                      Hol
+                    </th>
                     <th className="border-r border-slate-200 bg-orange-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 w-[60px] min-w-[60px]">
                       OT
                     </th>
@@ -1706,6 +1717,15 @@ export default function AttendancePage() {
                           <td className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-blue-900/20 w-[60px] min-w-[60px]">
                             <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
                           </td>
+                          <td className="border-r border-slate-200 bg-amber-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-amber-900/20 w-[60px] min-w-[60px]">
+                            <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                          </td>
+                          <td className="border-r border-slate-200 bg-orange-100 px-2 py-2 text-center dark:border-slate-700 dark:bg-orange-900/20 w-[60px] min-w-[60px]">
+                            <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                          </td>
+                          <td className="border-r border-slate-200 bg-red-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-red-900/20 w-[60px] min-w-[60px]">
+                            <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                          </td>
                           <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-orange-900/20 w-[60px] min-w-[60px]">
                             <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
                           </td>
@@ -1713,6 +1733,9 @@ export default function AttendancePage() {
                             <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
                           </td>
                           <td className="border-r border-slate-200 bg-cyan-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-cyan-900/20 w-[80px] min-w-[80px]">
+                            <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                          </td>
+                          <td className="border-r border-slate-200 bg-rose-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-rose-900/20 w-[70px] min-w-[70px]">
                             <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
                           </td>
                           <td className="bg-green-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-green-900/20 w-[70px] min-w-[70px]">
@@ -1785,7 +1808,9 @@ export default function AttendancePage() {
                   }, 0);
                   const monthAbsent = dailyValues.filter((r: any) => r?.status === 'ABSENT').length;
                   const leaveRecords = dailyValues.filter((r: any) => r?.status === 'LEAVE' || r?.hasLeave);
-                  const totalLeaves = leaveRecords.length;
+                  const totalLeaves = item.summary?.totalLeaves ?? leaveRecords.length;
+                  const weekOffsCount = item.summary?.totalWeeklyOffs ?? dailyValues.filter((r: any) => r?.status === 'WEEK_OFF').length;
+                  const holidaysCount = item.summary?.totalHolidays ?? dailyValues.filter((r: any) => r?.status === 'HOLIDAY').length;
                   const lopCount = leaveRecords.filter((r: any) => {
                     const anyR = r as any;
                     return anyR?.leaveNature === 'lop' ||
