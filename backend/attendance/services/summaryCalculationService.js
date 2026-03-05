@@ -2,6 +2,7 @@ const AttendanceDaily = require('../model/AttendanceDaily');
 const Leave = require('../../leaves/model/Leave');
 const OD = require('../../leaves/model/OD');
 const MonthlyAttendanceSummary = require('../model/MonthlyAttendanceSummary');
+const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
 const Shift = require('../../shifts/model/Shift');
 const { createISTDate, extractISTComponents, getAllDatesInRange } = require('../../shared/utils/dateUtils');
 const dateCycleService = require('../../leaves/services/dateCycleService');
@@ -82,25 +83,37 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         $lte: endDateStr,
       },
     })
-      .select('date status shifts totalWorkingHours extraHours totalLateInMinutes totalEarlyOutMinutes payableShifts')
+      .select('date status shifts totalWorkingHours extraHours totalLateInMinutes totalEarlyOutMinutes payableShifts earlyOutDeduction')
       .populate('shifts.shiftId', 'payableShifts name')
       .lean();
     console.log('[OD-FLOW] calculateMonthlySummary loaded dailies', { emp_no: empNoNorm, period: `${startDateStr}..${endDateStr}`, count: attendanceRecords.length });
 
-    // 2. Total week-offs and holidays in period (so payroll can use: absent = monthDays - present - weeklyOffs - holidays - paidLeaves)
-    let totalWeeklyOffs = 0;
-    let totalHolidays = 0;
-    for (const record of attendanceRecords) {
-      if (record.status === 'WEEK_OFF') totalWeeklyOffs += 1;
-      else if (record.status === 'HOLIDAY') totalHolidays += 1;
+    // 2. Total week-offs and holidays in period from shift roster (source of truth).
+    //    This avoids depending on whether AttendanceDaily statuses were synced/overridden.
+    const rosterNonWorking = await PreScheduledShift.find({
+      employeeNumber: empNoNorm,
+      date: { $gte: startDateStr, $lte: endDateStr },
+      status: { $in: ['WO', 'HOL'] },
+    }).select('date status').lean();
+
+    const weekOffDates = new Set();
+    const holidayDates = new Set();
+    const nonWorkingRosterDates = new Set();
+    for (const row of rosterNonWorking) {
+      const dateKey = toNormalizedDateStr(row?.date);
+      if (!dateKey) continue;
+      nonWorkingRosterDates.add(dateKey);
+      if (row.status === 'WO') weekOffDates.add(dateKey);
+      if (row.status === 'HOL') holidayDates.add(dateKey);
     }
-    summary.totalWeeklyOffs = totalWeeklyOffs;
-    summary.totalHolidays = totalHolidays;
+    summary.totalWeeklyOffs = weekOffDates.size;
+    summary.totalHolidays = holidayDates.size;
 
     // 3. Calculate total present days: only PRESENT (1) and HALF_DAY (0.5). PARTIAL/ABSENT do not count as present (clearer picture).
     let totalPresentDays = 0;
     for (const record of attendanceRecords) {
-      if (record.status === 'WEEK_OFF' || record.status === 'HOLIDAY') continue;
+      const recordDate = toNormalizedDateStr(record.date);
+      if (record.status === 'WEEK_OFF' || record.status === 'HOLIDAY' || nonWorkingRosterDates.has(recordDate)) continue;
       if (record.status === 'PRESENT') {
         totalPresentDays += 1;
       } else if (record.status === 'HALF_DAY') {
@@ -113,7 +126,8 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     // 4. Total payable shifts = sum of each day's payableShifts. Exclude WEEK_OFF and HOLIDAY — they do not contribute payable shifts.
     let totalPayableShifts = 0;
     for (const record of attendanceRecords) {
-      if (record.status === 'WEEK_OFF' || record.status === 'HOLIDAY') continue;
+      const recordDate = toNormalizedDateStr(record.date);
+      if (record.status === 'WEEK_OFF' || record.status === 'HOLIDAY' || nonWorkingRosterDates.has(recordDate)) continue;
       let dayPayable = Number(record.payableShifts ?? 0);
       if (dayPayable === 0 && Array.isArray(record.shifts) && record.shifts.length > 0) {
         dayPayable = record.shifts.reduce((sum, s) => sum + (Number(s.payableShift) || 0), 0);
@@ -285,19 +299,69 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     summary.totalLateInMinutes = Math.round(totalLateInMinutes * 100) / 100;
     summary.lateInCount = lateInCount;
 
-    // 11. Calculate early-out deductions (PRESENT days only)
-    const { calculateMonthlyEarlyOutDeductions } = require('./earlyOutDeductionService');
-    const earlyOutDeductions = await calculateMonthlyEarlyOutDeductions(emp_no, year, monthNumber);
-    summary.totalEarlyOutMinutes = earlyOutDeductions.totalEarlyOutMinutes;
-    summary.totalEarlyOutDeductionDays = earlyOutDeductions.totalDeductionDays;
-    summary.totalEarlyOutDeductionAmount = earlyOutDeductions.totalDeductionAmount;
-    summary.earlyOutDeductionBreakdown = {
-      quarter_day: earlyOutDeductions.deductionBreakdown.quarter_day,
-      half_day: earlyOutDeductions.deductionBreakdown.half_day,
-      full_day: earlyOutDeductions.deductionBreakdown.full_day,
-      custom_amount: earlyOutDeductions.deductionBreakdown.custom_amount,
+    // 11. Calculate early-out metrics from AttendanceDaily only (PRESENT days in payroll period).
+    // This avoids calendar-month drift and keeps summary fully period-based.
+    let totalEarlyOutMinutes = 0;
+    let totalEarlyOutDeductionDays = 0;
+    let totalEarlyOutDeductionAmount = 0;
+    let earlyOutCount = 0;
+    const earlyOutDeductionBreakdown = {
+      quarter_day: 0,
+      half_day: 0,
+      full_day: 0,
+      custom_amount: 0,
     };
-    summary.earlyOutCount = earlyOutDeductions.earlyOutCount;
+
+    for (const record of attendanceRecords) {
+      if (record.status !== 'PRESENT') continue;
+
+      const shifts = Array.isArray(record.shifts) ? record.shifts : [];
+      let dayEarlyOut = 0;
+      if (shifts.length > 0) {
+        for (const s of shifts) {
+          if (s.earlyOutMinutes != null && s.earlyOutMinutes > 0) {
+            dayEarlyOut += Number(s.earlyOutMinutes);
+          }
+        }
+      } else {
+        dayEarlyOut = Number(record.totalEarlyOutMinutes) || 0;
+      }
+
+      if (dayEarlyOut > 0) {
+        totalEarlyOutMinutes += dayEarlyOut;
+        earlyOutCount += 1;
+      }
+
+      const deduction = record.earlyOutDeduction || null;
+      if (deduction && deduction.deductionApplied) {
+        const deductionDays = Number(deduction.deductionDays) || 0;
+        const deductionAmount = Number(deduction.deductionAmount) || 0;
+        const deductionType = deduction.deductionType || null;
+
+        if (deductionDays > 0) {
+          totalEarlyOutDeductionDays += deductionDays;
+          if (deductionType && earlyOutDeductionBreakdown[deductionType] !== undefined) {
+            earlyOutDeductionBreakdown[deductionType] += deductionDays;
+          }
+        }
+        if (deductionAmount > 0) {
+          totalEarlyOutDeductionAmount += deductionAmount;
+          // Existing summary semantics store custom amount totals in custom_amount bucket.
+          earlyOutDeductionBreakdown.custom_amount += deductionAmount;
+        }
+      }
+    }
+
+    summary.totalEarlyOutMinutes = Math.round(totalEarlyOutMinutes * 100) / 100;
+    summary.totalEarlyOutDeductionDays = Math.round(totalEarlyOutDeductionDays * 100) / 100;
+    summary.totalEarlyOutDeductionAmount = Math.round(totalEarlyOutDeductionAmount * 100) / 100;
+    summary.earlyOutDeductionBreakdown = {
+      quarter_day: Math.round(earlyOutDeductionBreakdown.quarter_day * 100) / 100,
+      half_day: Math.round(earlyOutDeductionBreakdown.half_day * 100) / 100,
+      full_day: Math.round(earlyOutDeductionBreakdown.full_day * 100) / 100,
+      custom_amount: Math.round(earlyOutDeductionBreakdown.custom_amount * 100) / 100,
+    };
+    summary.earlyOutCount = earlyOutCount;
 
     // Late-or-early = sum of late-in + early-out (clear, no double-meaning)
     summary.totalLateOrEarlyMinutes = Math.round((summary.totalLateInMinutes + summary.totalEarlyOutMinutes) * 100) / 100;

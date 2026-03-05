@@ -9,18 +9,13 @@
  *
  * 1) SPECIAL DEPARTMENTS (Hostel Dept, HOSTEL, MAINTENANCE, SECURITY):
  *    - If the day has punches (any shift with inTime) → do NOT touch the record.
- *    - If the day has no punches:
- *      - If status is HOLIDAY → set to ABSENT (remove holiday).
- *      - If the employee has approved leave on that day → we still set ABSENT
- *        so that the day is not marked holiday; leave is taken from Leave model
- *        and will show as leave in reports. So: remove holiday state only.
- *    Result: status = ABSENT, payableShifts = 0 (no punches case).
+ *    - If the day has no punches: set status = ABSENT, payableShifts = 0 (remove holiday).
  *
  * 2) ALL OTHER DEPARTMENTS:
  *    - Everyone gets status = HOLIDAY on that day.
- *    - If they have punches (worked on holiday): keep punches as-is, only set
- *      status = HOLIDAY so the day is marked holiday; they get holiday pay and
- *      can apply for CCL for another day.
+ *    - If they have punches (worked on holiday): keep punches and shift details as-is,
+ *      set status = HOLIDAY, add note "Worked on Holiday". Day does not count
+ *      toward present days or payable shifts.
  *
  * Run from backend:
  *   node scripts/set_jan26_attendance_daily_holiday_by_dept.js
@@ -39,7 +34,6 @@ const Department = require('../departments/model/Department');
 const TARGET_DATE = '2026-01-26';
 const DRY_RUN = process.env.DRY_RUN === '1' || process.env.DRY_RUN === 'true';
 
-// Special departments: by name (case-insensitive match on Department.name)
 const SPECIAL_DEPT_NAMES = [
   'Hostel Dept',
   'HOSTEL',
@@ -63,7 +57,6 @@ async function main() {
     await mongoose.connect(process.env.MONGODB_URI);
     console.log('Connected to MongoDB.\n');
 
-    // 1) Resolve special department IDs (match Department.name case-insensitive)
     const allDepts = await Department.find({}).select('_id name').lean();
     const specialDeptIds = new Set();
     for (const d of allDepts) {
@@ -74,7 +67,6 @@ async function main() {
     }
     console.log('Special department IDs:', [...specialDeptIds].join(', ') || '(none found)');
 
-    // 2) Employee -> department_id (active only)
     const employees = await Employee.find({ is_active: true, leftDate: null })
       .select('emp_no department_id')
       .lean();
@@ -89,7 +81,6 @@ async function main() {
     };
     console.log('Employees loaded:', empToDept.size, '\n');
 
-    // 3) All attendance dailies for TARGET_DATE
     const dailies = await AttendanceDaily.find({ date: TARGET_DATE }).lean();
     console.log('Attendance dailies on', TARGET_DATE + ':', dailies.length);
 
@@ -109,7 +100,6 @@ async function main() {
           specialSkippedPunches++;
           continue;
         }
-        // No punches: set ABSENT (remove holiday), payableShifts = 0
         updates.push({
           _id: daily._id,
           employeeNumber: empNo,
@@ -122,7 +112,6 @@ async function main() {
           otherAlreadyHoliday++;
           continue;
         }
-        // Other dept: set HOLIDAY (keep punches if any). If they have punches, add "Worked on Holiday" so they can apply for CCL.
         const setFields = { status: 'HOLIDAY' };
         if (punches) {
           const existingNotes = (daily.notes || '').trim();
