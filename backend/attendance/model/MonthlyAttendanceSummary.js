@@ -215,17 +215,17 @@ const monthlyAttendanceSummarySchema = new mongoose.Schema(
      * This is used by the frontend to highlight relevant cells when a summary value is clicked.
      */
     contributingDates: {
-      present: [String],
-      leaves: [String],
-      ods: [String],
-      weeklyOffs: [String],
-      holidays: [String],
-      payableShifts: [String],
-      otHours: [String],
-      extraHours: [String],
-      lateIn: [String],
-      earlyOut: [String],
-      permissions: [String],
+      present: [{ date: String, value: Number, label: String }],
+      leaves: [{ date: String, value: Number, label: String }],
+      ods: [{ date: String, value: Number, label: String }],
+      weeklyOffs: [{ date: String, value: Number, label: String }],
+      holidays: [{ date: String, value: Number, label: String }],
+      payableShifts: [{ date: String, value: Number, label: String }],
+      otHours: [{ date: String, value: Number, label: String }],
+      extraHours: [{ date: String, value: Number, label: String }],
+      lateIn: [{ date: String, value: Number, label: String }],
+      earlyOut: [{ date: String, value: Number, label: String }],
+      permissions: [{ date: String, value: Number, label: String }],
     },
 
     // Additional metadata
@@ -264,26 +264,27 @@ monthlyAttendanceSummarySchema.statics.getOrCreate = async function (employeeId,
   const lastDayOfMonth = new Date(nextMonthFirst.getTime() - 1000);
   const totalDaysInMonth = extractISTComponents(lastDayOfMonth).day;
 
-  let summary = await this.findOne({ employeeId, month: monthStr });
-
-  if (!summary) {
-    // New summary: use calendar month days as initial value; calculateMonthlySummary overwrites with pay-period length
-    summary = await this.create({
-      employeeId,
-      emp_no,
-      month: monthStr,
-      monthName,
-      year,
-      monthNumber,
-      totalDaysInMonth,
-    });
-  } else {
-    // Update month name only; totalDaysInMonth is set from pay period in calculateMonthlySummary (respects pay cycle)
-    summary.monthName = monthName;
-    await summary.save();
-  }
-
-  return summary;
+  // Atomically get or create
+  return await this.findOneAndUpdate(
+    { employeeId, month: monthStr },
+    {
+      $setOnInsert: {
+        emp_no,
+        year,
+        monthNumber,
+        totalDaysInMonth,
+      },
+      $set: {
+        monthName
+      }
+    },
+    {
+      upsert: true,
+      new: true,
+      runValidators: true,
+      setDefaultsOnInsert: true
+    }
+  );
 };
 
 module.exports = mongoose.models.MonthlyAttendanceSummary || mongoose.model('MonthlyAttendanceSummary', monthlyAttendanceSummarySchema);

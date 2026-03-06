@@ -151,8 +151,8 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     }
     summary.totalWeeklyOffs = weekOffDates.size;
     summary.totalHolidays = holidayDates.size;
-    contributingDates.weeklyOffs = Array.from(weekOffDates);
-    contributingDates.holidays = Array.from(holidayDates);
+    contributingDates.weeklyOffs = Array.from(weekOffDates).map(date => ({ date, value: 1, label: 'WO' }));
+    contributingDates.holidays = Array.from(holidayDates).map(date => ({ date, value: 1, label: 'HOL' }));
 
     // 4. Get approved leaves for this month (Using .lean() and projections)
     const approvedLeaves = await Leave.find({
@@ -165,7 +165,7 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         },
       ],
       isActive: true,
-    }).select('fromDate toDate isHalfDay').lean();
+    }).select('fromDate toDate isHalfDay leaveType leaveNature').lean();
 
     // 5. Get approved ODs for this month (Using .lean() and projections)
     const approvedODs = await OD.find({
@@ -223,10 +223,15 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       // 1. Leaves (Priority - if leave is taken, it counts as leave)
       if (day.leaves.length > 0) {
         const leaveContrib = day.leaves.some(l => !l.isHalfDay) ? 1 : 0.5;
-        day.leaves.forEach(() => { if (!contributingDates.leaves.includes(dStr)) contributingDates.leaves.push(dStr); });
+        const firstLeave = day.leaves[0];
+        if (!contributingDates.leaves.some(cd => cd.date === dStr)) {
+          contributingDates.leaves.push({
+            date: dStr,
+            value: leaveContrib,
+            label: firstLeave.leaveType || 'Leave'
+          });
+        }
         totalLeaveDays += leaveContrib;
-        // NOTE: Leaves usually count as "Absent" for Present metrics but contribute to Payable in some configs.
-        // However, for this summary, we track them separately in totalLeaves.
       }
 
       // 2. ODs & Attendance Merge (Half-Aware)
@@ -268,7 +273,9 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
             day.lateInWaved = true;
           }
         }
-        if (!contributingDates.ods.includes(dStr)) contributingDates.ods.push(dStr);
+        if (!contributingDates.ods.some(cd => cd.date === dStr)) {
+          contributingDates.ods.push({ date: dStr, value: odFirst + odSecond, label: 'OD' });
+        }
         totalODDays += (odFirst + odSecond);
       }
 
@@ -280,8 +287,12 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
 
       if (dayPresent > 0) {
         totalPresentDays += dayPresent;
-        if (!contributingDates.present.includes(dStr)) contributingDates.present.push(dStr);
-        if (!contributingDates.payableShifts.includes(dStr)) contributingDates.payableShifts.push(dStr);
+        if (!contributingDates.present.some(cd => cd.date === dStr)) {
+          contributingDates.present.push({ date: dStr, value: dayPresent, label: 'P' });
+        }
+        if (!contributingDates.payableShifts.some(cd => cd.date === dStr)) {
+          contributingDates.payableShifts.push({ date: dStr, value: dayPayable, label: 'Pay' });
+        }
         totalPayableShifts += dayPayable;
       }
 
@@ -297,7 +308,6 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         if (dayLateMin > 0 && !day.lateInWaved) {
           totalLateInMinutes += dayLateMin;
           lateInCount++;
-          contributingDates.lateIn.push(dStr);
         }
 
         // Early Out
@@ -308,7 +318,29 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         if (dayEarlyMin > 0 && !day.earlyOutWaved) {
           totalEarlyOutMinutes += dayEarlyMin;
           earlyOutCount++;
-          contributingDates.earlyOut.push(dStr);
+        }
+
+        // Combined Highlighting Contribution (Late + Early)
+        const isLate = dayLateMin > 0 && !day.lateInWaved;
+        const isEarly = dayEarlyMin > 0 && !day.earlyOutWaved;
+
+        if (isLate || isEarly) {
+          let countContribution = 0;
+          if (isLate) countContribution++;
+          if (isEarly) countContribution++;
+
+          contributingDates.lateIn.push({
+            date: dStr,
+            value: countContribution,
+            label: countContribution === 2 ? 'L+E' : (isLate ? 'Late' : 'Early')
+          });
+          // Also set in earlyOut for backwards compatibility/consistency if needed, 
+          // but clicking "Lates" (lateIn category) will show both now.
+          contributingDates.earlyOut.push({
+            date: dStr,
+            value: countContribution,
+            label: countContribution === 2 ? 'L+E' : (isLate ? 'Late' : 'Early')
+          });
         }
       }
     }
@@ -322,7 +354,6 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     summary.totalEarlyOutMinutes = Math.round(totalEarlyOutMinutes * 100) / 100;
     summary.earlyOutCount = earlyOutCount;
 
-    // OT, ExtraHours, Permissions (Standalone Metrics)
     // 7. Calculate total OT hours
     const OT = require('../../overtime/model/OT');
     const approvedOTs = await OT.find({
@@ -336,8 +367,8 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     for (const ot of approvedOTs) {
       totalOTHours += ot.otHours || 0;
       const otDate = toNormalizedDateStr(ot.date);
-      if (otDate && !contributingDates.otHours.includes(otDate)) {
-        contributingDates.otHours.push(otDate);
+      if (otDate && !contributingDates.otHours.some(cd => cd.date === otDate)) {
+        contributingDates.otHours.push({ date: otDate, value: ot.otHours, label: 'OT' });
       }
     }
     summary.totalOTHours = Math.round(totalOTHours * 100) / 100;
@@ -347,7 +378,10 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     for (const record of attendanceRecords) {
       if (record.extraHours > 0) {
         totalExtraHours += record.extraHours || 0;
-        contributingDates.extraHours.push(toNormalizedDateStr(record.date));
+        const recordDate = toNormalizedDateStr(record.date);
+        if (!contributingDates.extraHours.some(cd => cd.date === recordDate)) {
+          contributingDates.extraHours.push({ date: recordDate, value: record.extraHours, label: 'Extra' });
+        }
       }
     }
     summary.totalExtraHours = Math.round(totalExtraHours * 100) / 100;
@@ -365,14 +399,14 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     for (const permission of approvedPermissions) {
       totalPermissionHours += permission.permissionHours || 0;
       const permDate = toNormalizedDateStr(permission.date);
-      if (permDate && !contributingDates.permissions.includes(permDate)) {
-        contributingDates.permissions.push(permDate);
+      if (permDate && !contributingDates.permissions.some(cd => cd.date === permDate)) {
+        contributingDates.permissions.push({ date: permDate, value: permission.permissionHours, label: 'Perm' });
       }
     }
     summary.totalPermissionHours = Math.round(totalPermissionHours * 100) / 100;
-    summary.totalPermissionCount = approvedPermissions.length; // Count directly from approvedPermissions
+    summary.totalPermissionCount = approvedPermissions.length;
 
-    // Early Out Deductions Summary (existing logic projection)
+    // Early Out Deductions Summary
     let totalEarlyOutDeductionDays = 0;
     let totalEarlyOutDeductionAmount = 0;
     const earlyOutDeductionBreakdown = { quarter_day: 0, half_day: 0, full_day: 0, custom_amount: 0 };
