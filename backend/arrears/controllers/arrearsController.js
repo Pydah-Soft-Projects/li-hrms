@@ -1,23 +1,44 @@
 const ArrearsRequest = require('../model/ArrearsRequest');
 const ArrearsService = require('../services/arrearsService');
 
-// @desc    Create new arrears request
+// @desc    Create new arrears request (incremental: period + monthly amount; direct: amount + remarks only)
 // @route   POST /api/arrears
 // @access  Private
 exports.createArrears = async (req, res) => {
   try {
-    const { employee, startMonth, endMonth, monthlyAmount, totalAmount, reason, calculationBreakdown } = req.body;
+    const { type, employee, startMonth, endMonth, monthlyAmount, totalAmount, amount, reason, calculationBreakdown } = req.body;
 
-    // Validate required fields
-    if (!employee || !startMonth || !endMonth || !monthlyAmount || !totalAmount || !reason) {
+    if (!employee || !reason) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide all required fields'
+        message: 'Employee and reason/remarks are required'
       });
     }
 
+    const isDirect = (type || 'incremental').toLowerCase() === 'direct';
+    if (isDirect) {
+      const amt = totalAmount ?? amount;
+      if (amt == null || amt === '' || isNaN(Number(amt)) || Number(amt) <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Valid amount is required for direct arrears'
+        });
+      }
+    } else {
+      if (!startMonth || !endMonth || monthlyAmount == null || monthlyAmount === '' || totalAmount == null || totalAmount === '') {
+        return res.status(400).json({
+          success: false,
+          message: 'For incremental arrears provide startMonth, endMonth, monthlyAmount, and totalAmount'
+        });
+      }
+    }
+
+    const payload = isDirect
+      ? { type: 'direct', employee, totalAmount: Number(totalAmount ?? amount), reason }
+      : { type: 'incremental', employee, startMonth, endMonth, monthlyAmount: Number(monthlyAmount), totalAmount: Number(totalAmount), reason, calculationBreakdown };
+
     const arrears = await ArrearsService.createArrearsRequest(
-      { employee, startMonth, endMonth, monthlyAmount, totalAmount, reason, calculationBreakdown },
+      payload,
       req.user._id || req.user.userId || req.user.id
     );
 
@@ -849,7 +870,7 @@ exports.getArrearsForPayroll = async (req, res) => {
     // All approved/partially_settled arrears with remaining amount should be shown
 
     const arrears = await ArrearsRequest.find(query)
-      .populate('employee', 'emp_no employee_name first_name last_name department_id')
+      .populate('employee', 'emp_no employee_name first_name last_name department_id division_id')
       .populate('createdBy', 'name email')
       .sort({ createdAt: -1 });
 

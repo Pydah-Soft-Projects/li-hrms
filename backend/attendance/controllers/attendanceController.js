@@ -222,11 +222,21 @@ exports.getAttendanceDetail = async (req, res) => {
       date: date,
     }).sort({ timestamp: 1 });
 
+    // Check for OT request (pending or approved) for Convert button logic
+    const OT = require('../../overtime/model/OT');
+    const otRequest = await OT.findOne({
+      employeeId: allowedEmployee._id,
+      date: date,
+      status: { $in: ['pending', 'approved', 'manager_approved', 'hod_approved'] },
+      isActive: true,
+    }).select('status otHours').lean();
+
     res.status(200).json({
       success: true,
       data: {
         ...record.toObject(),
         rawLogs,
+        otRequest: otRequest ? { status: otRequest.status, otHours: otRequest.otHours } : null,
       },
     });
 
@@ -311,7 +321,7 @@ exports.getEmployeesWithAttendance = async (req, res) => {
  */
 exports.getMonthlyAttendance = async (req, res) => {
   try {
-    const { year, month, page = 1, limit = 20, search, divisionId, departmentId, designationId } = req.query;
+    const { year, month, page = 1, limit = 20, search, divisionId, departmentId, designationId, startDate, endDate } = req.query;
 
     if (!year || !month) {
       return res.status(400).json({
@@ -348,7 +358,7 @@ exports.getMonthlyAttendance = async (req, res) => {
     const totalEmployees = await Employee.countDocuments(filter);
 
     const { getMonthlyTableViewData } = require('../services/attendanceViewService');
-    const employeesWithAttendance = await getMonthlyTableViewData(employees, year, month);
+    const employeesWithAttendance = await getMonthlyTableViewData(employees, year, month, startDate, endDate);
 
     res.status(200).json({
       success: true,
@@ -362,6 +372,8 @@ exports.getMonthlyAttendance = async (req, res) => {
       month: parseInt(month),
       year: parseInt(year),
       daysInMonth: new Date(parseInt(year), parseInt(month), 0).getDate(),
+      startDate,
+      endDate
     });
 
   } catch (error) {
@@ -382,6 +394,15 @@ exports.updateOutTime = async (req, res) => {
   try {
     const { employeeNumber, date } = req.params;
     const { outTime, shiftRecordId } = req.body;
+
+    const AttendanceSettings = require('../model/AttendanceSettings');
+    const attSettings = await AttendanceSettings.getSettings();
+    if (attSettings?.featureFlags?.allowOutTimeEditing === false) {
+      return res.status(403).json({
+        success: false,
+        message: 'Out-time editing is disabled by settings.',
+      });
+    }
 
     // Restrict to HR/Superadmin
     if (!req.user || (req.user.role !== 'hr' && req.user.role !== 'super_admin' && req.user.role !== 'superadmin' && req.user.role !== 'admin')) {
@@ -967,7 +988,16 @@ exports.getRecentActivity = async (req, res) => {
 exports.updateInTime = async (req, res) => {
   try {
     const { employeeNumber, date } = req.params;
-    const { inTime } = req.body;
+    const { inTime, shiftRecordId } = req.body;
+
+    const AttendanceSettings = require('../model/AttendanceSettings');
+    const attSettings = await AttendanceSettings.getSettings();
+    if (attSettings?.featureFlags?.allowInTimeEditing === false) {
+      return res.status(403).json({
+        success: false,
+        message: 'In-time editing is disabled by settings.',
+      });
+    }
 
     // Validate inTime format (YYYY-MM-DDTHH:mm:ss.sssZ or similar ISO string)
     if (!inTime) {
@@ -992,17 +1022,26 @@ exports.updateInTime = async (req, res) => {
     }
 
     // Ensure we have shifts - if not, we must create a default one or fail?
-    // Since we are setting InTime, we likely want to start a shift.
     if (!attendanceRecord.shifts || attendanceRecord.shifts.length === 0) {
-      // Create a default shift entry
       attendanceRecord.shifts = [{
         shiftNumber: 1,
-        status: 'incomplete', // Will differ based on newInTime
+        status: 'incomplete',
         payableShift: 0
       }];
     }
 
-    const shiftSegment = attendanceRecord.shifts[0]; // Legacy endpoint targets first shift
+    let shiftSegment;
+    if (shiftRecordId) {
+      shiftSegment = attendanceRecord.shifts.id(shiftRecordId);
+      if (!shiftSegment) {
+        return res.status(404).json({
+          success: false,
+          message: 'Shift segment not found',
+        });
+      }
+    } else {
+      shiftSegment = attendanceRecord.shifts[0];
+    }
 
     // Parse new In Time
     const newInTime = new Date(inTime);

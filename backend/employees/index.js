@@ -12,6 +12,12 @@ router.use(protect);
 // Get employee settings
 router.get('/settings', employeeController.getSettings);
 
+// Update employee settings (dataSource, deleteTarget, auto_generate_employee_number)
+router.put('/settings', authorize('manager', 'super_admin', 'sub_admin'), employeeController.updateSettings);
+
+// Get next employee number (for UI when auto-generate is ON)
+router.get('/next-emp-no', employeeController.getNextEmpNo);
+
 // Get resolved allowance/deduction defaults for a department/gross salary (optional employee overrides via empNo)
 router.get('/components/defaults', employeeController.getAllowanceDeductionDefaults);
 
@@ -24,11 +30,17 @@ router.get('/', applyScopeFilter, employeeController.getAllEmployees);
 // Get single employee
 router.get('/:empNo', employeeController.getEmployee);
 
+// Employee history (Super Admin only)
+router.get('/:empNo/history', authorize('super_admin'), employeeController.getEmployeeHistory);
+
 // Create employee (Super Admin, Sub Admin, HR)
 router.post('/', authorize('manager', 'super_admin', 'sub_admin', 'hr'), upload.any(), employeeController.createEmployee);
 
 // Resend credentials (Super Admin)
 router.post('/:empNo/resend-credentials', authorize('super_admin'), employeeController.resendEmployeePassword);
+
+// Reset credentials (Super Admin)
+router.post('/:empNo/reset-credentials', authorize('super_admin'), employeeController.resetEmployeeCredentials);
 
 // Bulk resend credentials (Super Admin)
 router.post('/bulk-resend-credentials', authorize('super_admin'), employeeController.bulkResendCredentials);

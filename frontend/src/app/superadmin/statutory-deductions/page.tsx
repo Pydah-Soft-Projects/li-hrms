@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { api, type ProfessionTaxSlab } from '@/lib/api';
+import { api, type ProfessionTaxSlab, type StatutoryPF } from '@/lib/api';
 import { toast } from 'react-toastify';
 import { Save, Shield, Building2, Briefcase, Plus, Trash2 } from 'lucide-react';
 
@@ -12,12 +12,12 @@ const defaultEsi = {
   wageBasePercentOfBasic: 50,
   wageCeiling: 21000,
 };
-const defaultPf = {
+const defaultPf: StatutoryPF = {
   enabled: false,
   employeePercent: 12,
   employerPercent: 12,
   wageCeiling: 15000,
-  base: 'basic' as const,
+  base: 'basic',
 };
 const defaultPtSlabs: ProfessionTaxSlab[] = [
   { min: 0, max: 14999, amount: 0 },

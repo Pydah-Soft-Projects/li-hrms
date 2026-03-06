@@ -10,6 +10,7 @@ import { Save, Database, Trash2, CheckCircle2, AlertCircle, ChevronRight } from 
 const EmployeeSettings = () => {
     const [employeeDataSource, setEmployeeDataSource] = useState<string>('mongodb');
     const [employeeDeleteTarget, setEmployeeDeleteTarget] = useState<string>('both');
+    const [autoGenerateEmployeeNumber, setAutoGenerateEmployeeNumber] = useState(false);
     const [mssqlConnected, setMssqlConnected] = useState(false);
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -21,6 +22,7 @@ const EmployeeSettings = () => {
             if (res.success && res.data) {
                 setEmployeeDataSource(res.data.dataSource || 'mongodb');
                 setEmployeeDeleteTarget(res.data.deleteTarget || 'both');
+                setAutoGenerateEmployeeNumber(!!res.data.auto_generate_employee_number);
                 setMssqlConnected(res.data.mssqlConnected || false);
             }
         } catch (err) {
@@ -41,6 +43,7 @@ const EmployeeSettings = () => {
             const res = await api.updateEmployeeSettings({
                 dataSource: employeeDataSource,
                 deleteTarget: employeeDeleteTarget,
+                auto_generate_employee_number: autoGenerateEmployeeNumber,
             });
 
             if (res.success) {
@@ -120,6 +123,24 @@ const EmployeeSettings = () => {
                                     <option value="both">Both Database Targets</option>
                                 </select>
                                 <p className="text-[10px] text-gray-400">Determines which systems are affected when an employee is deleted.</p>
+                            </div>
+
+                            <div className="md:col-span-2 flex items-start gap-4 pt-2">
+                                <div className="flex h-10 items-center">
+                                    <button
+                                        type="button"
+                                        role="switch"
+                                        aria-checked={autoGenerateEmployeeNumber}
+                                        onClick={() => setAutoGenerateEmployeeNumber((v) => !v)}
+                                        className={`${autoGenerateEmployeeNumber ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-gray-700'} relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-0 transition-colors duration-200 ease-in-out focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2`}
+                                    >
+                                        <span className={`${autoGenerateEmployeeNumber ? 'translate-x-5' : 'translate-x-1'} pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out`} />
+                                    </button>
+                                </div>
+                                <div className="space-y-0.5">
+                                    <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest">Auto generate employee number</label>
+                                    <p className="text-[10px] text-gray-400">When ON, new employees (and bulk upload rows without a number) get the next number automatically. When OFF, employee number is required.</p>
+                                </div>
                             </div>
                         </div>
                     </section>

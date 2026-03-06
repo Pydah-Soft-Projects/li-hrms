@@ -66,6 +66,19 @@ const monthlyAttendanceSummarySchema = new mongoose.Schema(
       min: 0,
     },
 
+    // Total week-off days in the period (from roster / AttendanceDaily status WEEK_OFF)
+    totalWeeklyOffs: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    // Total holiday days in the period (from roster / AttendanceDaily status HOLIDAY)
+    totalHolidays: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
     // Total present days in this month
     totalPresentDays: {
       type: Number,
@@ -73,12 +86,12 @@ const monthlyAttendanceSummarySchema = new mongoose.Schema(
       min: 0,
     },
 
-    // Total days in the month (28/29/30/31)
+    // Total days in the pay period (respects pay cycle: e.g. 28–31 for calendar month, or 33 for 25 Jan–26 Feb)
     totalDaysInMonth: {
       type: Number,
       required: [true, 'Total days in month is required'],
       min: 28,
-      max: 31,
+      max: 35,
     },
 
     // Total payable shifts in this month
@@ -117,7 +130,7 @@ const monthlyAttendanceSummarySchema = new mongoose.Schema(
       min: 0,
     },
 
-    // NEW: Early-Out Deduction Fields
+    // NEW: Early-Out / Late-In Fields
     // Total early-out minutes in this month
     totalEarlyOutMinutes: {
       type: Number,
@@ -161,6 +174,31 @@ const monthlyAttendanceSummarySchema = new mongoose.Schema(
     },
     // Count of early-out instances
     earlyOutCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    // Total late-in minutes in this month (first shift only)
+    totalLateInMinutes: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    // Count of late-in instances (days with late-in on first shift)
+    lateInCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    // Combined late-in + early-out minutes (first shift only)
+    totalLateOrEarlyMinutes: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    // Count of days with either late-in or early-out (first shift only)
+    lateOrEarlyCount: {
       type: Number,
       default: 0,
       min: 0,
@@ -211,6 +249,7 @@ monthlyAttendanceSummarySchema.statics.getOrCreate = async function (employeeId,
   let summary = await this.findOne({ employeeId, month: monthStr });
 
   if (!summary) {
+    // New summary: use calendar month days as initial value; calculateMonthlySummary overwrites with pay-period length
     summary = await this.create({
       employeeId,
       emp_no,
@@ -221,9 +260,8 @@ monthlyAttendanceSummarySchema.statics.getOrCreate = async function (employeeId,
       totalDaysInMonth,
     });
   } else {
-    // Update month name and total days in case month/year changed
+    // Update month name only; totalDaysInMonth is set from pay period in calculateMonthlySummary (respects pay cycle)
     summary.monthName = monthName;
-    summary.totalDaysInMonth = totalDaysInMonth;
     await summary.save();
   }
 

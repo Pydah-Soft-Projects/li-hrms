@@ -94,6 +94,10 @@ app.use('/api/workspaces', workspaceRoutes);
 const leaveRoutes = require('./leaves/index.js');
 app.use('/api/leaves', leaveRoutes);
 
+// Resignation policy and requests
+const resignationRoutes = require('./resignations/index.js');
+app.use('/api/resignations', resignationRoutes);
+
 const loanRoutes = require('./loans/index.js');
 app.use('/api/loans', loanRoutes);
 
@@ -138,6 +142,10 @@ app.use('/api/pay-register', payRegisterRoutes);
 // Arrears routes
 const arrearsRoutes = require('./arrears/index.js');
 app.use('/api/arrears', arrearsRoutes);
+
+// Manual Deductions routes
+const manualDeductionsRoutes = require('./manual-deductions/index.js');
+app.use('/api/manual-deductions', manualDeductionsRoutes);
 
 // PayrollBatch routes
 const payrollBatchRoutes = require('./payroll/routes/payrollBatchRoutes.js');
@@ -197,7 +205,7 @@ const startServer = async () => {
     const { startSyncJob } = require('./attendance/services/attendanceSyncJob');
     await startSyncJob();
 
-    // Monthly leave accrual cron (00:10 IST on 1st of every month – CL/EL + CCL expiry)
+    // Monthly leave accrual cron (00:10 IST daily – runs EL/CCL leave register entries on payroll cycle end date)
     try {
       const { startMonthlyAccrualCron } = require('./leaves/jobs/monthlyAccrualCron');
       startMonthlyAccrualCron();

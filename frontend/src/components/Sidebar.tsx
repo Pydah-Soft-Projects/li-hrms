@@ -54,6 +54,7 @@ const navItems: NavItem[] = [
   { href: '/superadmin/dashboard', label: 'Dashboard', icon: LayoutDashboard, category: 'Main', moduleCode: 'DASHBOARD' },
   { href: '/superadmin/security/gate', label: 'Security Gate', icon: ShieldCheck, category: 'Main', moduleCode: 'SECURITY' },
   { href: '/superadmin/employees', label: 'Employees', icon: Users, category: 'Employee Management', moduleCode: 'EMPLOYEES' },
+  { href: '/superadmin/resignations', label: 'Resignations', icon: LogOut, category: 'Employee Management', moduleCode: 'RESIGNATION' },
   { href: '/superadmin/employees/form-settings', label: 'Form Settings', icon: FileCog, category: 'Employee Management', moduleCode: 'EMPLOYEES' },
   { href: '/superadmin/attendance', label: 'Attendance', icon: CalendarClock, category: 'Time & Attendance', moduleCode: 'ATTENDANCE' },
   { href: '/superadmin/ot-permissions', label: 'OT & Permissions', icon: Clock, category: 'Time & Attendance', moduleCode: 'OT_PERMISSIONS' },
@@ -79,6 +80,7 @@ const navItems: NavItem[] = [
   { href: '/superadmin/paysheet', label: 'Paysheet', icon: Table2, category: 'Finance & Payroll', moduleCode: 'PAYSLIPS' },
   { href: '/superadmin/payslips/second-salary', label: '2nd Salary Payslips', icon: Receipt, category: 'Finance & Payroll', moduleCode: 'PAYSLIPS' },
   { href: '/superadmin/arrears', label: 'Arrears', icon: Banknote, category: 'Finance & Payroll', moduleCode: 'ARREARS' },
+  { href: '/superadmin/manual-deductions', label: 'Manual Deductions', icon: Banknote, category: 'Finance & Payroll', moduleCode: 'MANUAL_DEDUCTIONS' },
   { href: '/superadmin/allowances-deductions', label: 'Allowances & Deductions', icon: Wallet, category: 'Finance & Payroll', moduleCode: 'ALLOWANCES_DEDUCTIONS' },
   { href: '/superadmin/loans', label: 'Loans & Salary Advance', icon: PiggyBank, category: 'Finance & Payroll', moduleCode: 'LOANS_SALARY_ADVANCE' },
   { href: '/superadmin/settings', label: 'General Settings', icon: Settings, category: 'Settings', moduleCode: 'GENERAL_SETTINGS' },
@@ -246,38 +248,36 @@ export default function Sidebar() {
           </nav>
 
           {/* User Section & Logout */}
-          <div className="border-t border-slate-200/60 dark:border-slate-800 p-4 space-y-2 bg-slate-50/50 dark:bg-black/20">
-            {/* Profile Link */}
-            <Link
-              href="/superadmin/profile"
-              onClick={() => setIsMobileOpen(false)}
-              className={`flex items-center gap-3 p-2 rounded-xl transition-all duration-200 hover:bg-white dark:hover:bg-slate-800 shadow-sm border border-transparent hover:border-slate-200 dark:hover:border-slate-700
-                ${(isCollapsed && !isMobileOpen) ? 'justify-center' : ''}`}
-              title={(isCollapsed && !isMobileOpen) ? 'Profile' : undefined}
-            >
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-bold text-xs flex-shrink-0 shadow-sm">
-                {user?.name?.[0]?.toUpperCase() || 'U'}
-              </div>
-              {(!isCollapsed || isMobileOpen) && (
-                <div className="shrink-0 max-w-[140px]">
-                  <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{user?.name || 'User'}</p>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{user ? getRoleLabel(user.role) : '...'}</p>
+          <div className="border-t border-slate-200/60 dark:border-slate-800 p-3 bg-white dark:bg-black">
+            <div className={`flex items-center gap-2 p-1.5 rounded-2xl bg-slate-50/80 dark:bg-slate-900/50 border border-slate-200/60 dark:border-slate-800 shadow-sm
+              ${isCollapsed && !isMobileOpen ? 'flex-col' : 'flex-row'}`}>
+              <Link
+                href="/superadmin/profile"
+                onClick={() => setIsMobileOpen(false)}
+                className={`flex-1 flex items-center gap-3 p-1 rounded-xl transition-all duration-200 hover:bg-white dark:hover:bg-slate-800
+                  ${(isCollapsed && !isMobileOpen) ? 'justify-center p-0' : ''}`}
+                title={(isCollapsed && !isMobileOpen) ? 'Profile' : undefined}
+              >
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white font-bold text-xs flex-shrink-0 shadow-sm transition-transform group-hover:scale-110">
+                  {user?.name?.[0]?.toUpperCase() || 'U'}
                 </div>
-              )}
-            </Link>
+                {(!isCollapsed || isMobileOpen) && (
+                  <div className="shrink-0 max-w-[100px]">
+                    <p className="text-[13px] font-semibold text-slate-900 dark:text-white truncate line-height-tight">{user?.name || 'User'}</p>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{user ? getRoleLabel(user.role) : '...'}</p>
+                  </div>
+                )}
+              </Link>
 
-            {/* Logout Button */}
-            <button
-              onClick={handleLogout}
-              className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-200 text-slate-500 dark:text-slate-400 hover:bg-red-50 dark:hover:bg-red-900/10 hover:text-red-600 dark:hover:text-red-400
-                ${(isCollapsed && !isMobileOpen) ? 'justify-center' : ''}`}
-              title={(isCollapsed && !isMobileOpen) ? 'Logout' : undefined}
-            >
-              <LogOut className="h-[18px] w-[18px] flex-shrink-0" />
-              {(!isCollapsed || isMobileOpen) && (
-                <span className="text-sm font-medium">Logout</span>
-              )}
-            </button>
+              <button
+                onClick={handleLogout}
+                className={`flex items-center justify-center p-2 rounded-xl transition-all duration-200 text-slate-500 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800 hover:text-red-600 dark:hover:text-red-400 border border-transparent hover:border-slate-200 dark:hover:border-slate-700 shadow-sm hover:shadow-md
+                  ${(isCollapsed && !isMobileOpen) ? 'w-full mt-1' : ''}`}
+                title="Logout"
+              >
+                <LogOut className="h-[18px] w-[18px] flex-shrink-0" />
+              </button>
+            </div>
           </div>
         </div>
       </aside>

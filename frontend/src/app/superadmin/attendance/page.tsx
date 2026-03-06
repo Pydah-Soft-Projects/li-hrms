@@ -5,6 +5,7 @@ import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
 import { format, parseISO } from 'date-fns';
 import { alertSuccess, alertError, alertConfirm, alertLoading } from '@/lib/customSwal';
+import * as XLSX from 'xlsx-js-style';
 
 interface AttendanceRecord {
   date: string;
@@ -105,9 +106,14 @@ interface MonthlyAttendanceData {
     year: number;
     totalLeaves: number;
     totalODs: number;
+    totalWeeklyOffs?: number;
+    totalHolidays?: number;
     totalPresentDays: number;
     totalDaysInMonth: number;
     totalPayableShifts: number;
+    // Late/Early metrics (combined)
+    lateOrEarlyCount?: number;
+    totalLateOrEarlyMinutes?: number;
     lastCalculatedAt: string;
     createdAt: string;
     updatedAt: string;
@@ -191,6 +197,8 @@ export default function AttendancePage() {
   const [selectedEmployeeForSummary, setSelectedEmployeeForSummary] = useState<Employee | null>(null);
   const [monthlySummary, setMonthlySummary] = useState<any>(null);
   const [loadingSummary, setLoadingSummary] = useState(false);
+  const [payrollCycleStartDay, setPayrollCycleStartDay] = useState(1);
+  const [cycleDates, setCycleDates] = useState({ startDate: '', endDate: '', label: '' });
 
   // Search state
   const [showSearch, setShowSearch] = useState(false);
@@ -215,13 +223,14 @@ export default function AttendancePage() {
 
   // OutTime dialog state
   const [showOutTimeDialog, setShowOutTimeDialog] = useState(false);
-  const [selectedRecordForOutTime, setSelectedRecordForOutTime] = useState<{ employee: Employee; date: string } | null>(null);
+  const [selectedRecordForOutTime, setSelectedRecordForOutTime] = useState<{ employee: Employee; date: string; shiftRecordId?: string } | null>(null);
   const [outTimeValue, setOutTimeValue] = useState('');
   const [updatingOutTime, setUpdatingOutTime] = useState(false);
 
   // OT conversion state
   const [convertingToOT, setConvertingToOT] = useState(false);
   const [hasExistingOT, setHasExistingOT] = useState(false);
+  const [otRequestStatus, setOtRequestStatus] = useState<string | null>(null);
 
   // Shift selection and out-time state
   const [availableShifts, setAvailableShifts] = useState<any[]>([]);
@@ -243,12 +252,60 @@ export default function AttendancePage() {
   const [revokingLeave, setRevokingLeave] = useState(false);
   const [updatingLeave, setUpdatingLeave] = useState(false);
 
+  // Attendance feature flags (from settings) – control visibility of Edit In/Out and Upload
+  const [attendanceFeatureFlags, setAttendanceFeatureFlags] = useState<{
+    allowInTimeEditing: boolean;
+    allowOutTimeEditing: boolean;
+    allowAttendanceUpload: boolean;
+    allowShiftChange: boolean;
+  }>({ allowInTimeEditing: true, allowOutTimeEditing: true, allowAttendanceUpload: true, allowShiftChange: true });
+
+  const [exportingExcel, setExportingExcel] = useState(false);
+
+  // In Time dialog state
+  const [showInTimeDialog, setShowInTimeDialog] = useState(false);
+  const [selectedRecordForInTime, setSelectedRecordForInTime] = useState<{ employee: Employee; date: string; shiftRecordId?: string } | null>(null);
+  const [inTimeDialogValue, setInTimeDialogValue] = useState('');
+  const [updatingInTime, setUpdatingInTime] = useState(false);
+
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth() + 1;
 
   useEffect(() => {
     loadDivisions();
     loadDepartments();
+    loadSettings();
+  }, []);
+
+  const loadSettings = async () => {
+    try {
+      const response = await api.getSetting('payroll_cycle_start_day');
+      if (response.success && response.data) {
+        setPayrollCycleStartDay(parseInt(response.data.value, 10) || 1);
+      }
+    } catch (err) {
+      console.error('Error loading payroll settings:', err);
+    }
+  };
+
+  useEffect(() => {
+    const loadFlags = async () => {
+      try {
+        const res = await api.getAttendanceSettings();
+        if (res?.data?.featureFlags) {
+          const ff = res.data.featureFlags;
+          setAttendanceFeatureFlags({
+            allowInTimeEditing: ff.allowInTimeEditing !== false,
+            allowOutTimeEditing: ff.allowOutTimeEditing !== false,
+            allowAttendanceUpload: ff.allowAttendanceUpload !== false,
+            allowShiftChange: ff.allowShiftChange !== false,
+          });
+        }
+      } catch {
+        // keep defaults
+      }
+    };
+    loadFlags();
   }, []);
 
   useEffect(() => {
@@ -261,10 +318,38 @@ export default function AttendancePage() {
   }, [selectedDepartment]);
 
   useEffect(() => {
+    if (payrollCycleStartDay) {
+      let startYear = year;
+      let startMonth = month;
+
+      if (payrollCycleStartDay > 1) {
+        startMonth = month - 1;
+        if (startMonth === 0) {
+          startMonth = 12;
+          startYear = year - 1;
+        }
+      }
+
+      const endDateObj = new Date(year, month - 1, payrollCycleStartDay - 1);
+      const endYear = endDateObj.getFullYear();
+      const endMonth = endDateObj.getMonth() + 1;
+      const endDay = endDateObj.getDate();
+
+      const start = `${startYear}-${String(startMonth).padStart(2, '0')}-${String(payrollCycleStartDay).padStart(2, '0')}`;
+      const end = `${endYear}-${String(endMonth).padStart(2, '0')}-${String(endDay).padStart(2, '0')}`;
+
+      setCycleDates({ startDate: start, endDate: end, label: '' });
+    }
+  }, [year, month, payrollCycleStartDay]);
+
+  useEffect(() => {
+    // wait for cycle dates
+    if (!cycleDates.startDate) return;
+
     // Reset page when filters change
     setPage(1);
     loadMonthlyAttendance(true);
-  }, [year, month, selectedDivision, selectedDepartment, selectedDesignation]); // Removed tableType dependency
+  }, [year, month, selectedDivision, selectedDepartment, selectedDesignation, cycleDates.startDate]); // Removed tableType dependency
 
   // Handle Load More when page changes
   useEffect(() => {
@@ -396,7 +481,9 @@ export default function AttendancePage() {
         search: searchQuery,
         divisionId: selectedDivision,
         departmentId: selectedDepartment,
-        designationId: selectedDesignation
+        designationId: selectedDesignation,
+        startDate: cycleDates.startDate,
+        endDate: cycleDates.endDate
       });
 
       if (response.success) {
@@ -437,7 +524,10 @@ export default function AttendancePage() {
     try {
       setLoadingAttendance(true);
       setError('');
-      const response = await api.getMonthlyAttendance(year, month);
+      const response = await api.getMonthlyAttendance(year, month, {
+        startDate: cycleDates.startDate,
+        endDate: cycleDates.endDate
+      });
       if (response.success) {
         const normalizedData = normalizeAttendanceData(response.data || []);
 
@@ -766,6 +856,8 @@ export default function AttendancePage() {
     setSelectedDate(date);
     setSelectedEmployee(employee);
     setHasExistingOT(false);
+    setOtRequestStatus(null);
+    setOtRequestStatus(null);
     setEditingShift(false);
     setEditingOutTime(false);
     setEditingInTime(false);
@@ -787,19 +879,27 @@ export default function AttendancePage() {
       const employeeData = monthlyData.find(item => item.employee._id === employee._id);
       const dayRecord = employeeData?.dailyAttendance[date];
 
-      // Check if OT already exists for this date
+      // Check if OT already exists (pending or approved) - hide Convert button
       try {
         const otResponse = await api.getOTRequests({
           employeeId: employee._id,
           employeeNumber: employee.emp_no,
           date: date,
-          status: 'approved',
         });
-        if (otResponse.success && otResponse.data && otResponse.data.length > 0) {
+        const existing = (otResponse.data || []).filter((ot: any) =>
+          ['pending', 'approved', 'manager_approved', 'hod_approved'].includes(ot?.status)
+        );
+        if (existing.length > 0) {
           setHasExistingOT(true);
+          setOtRequestStatus(existing[0]?.status || null);
+        } else {
+          setHasExistingOT(false);
+          setOtRequestStatus(null);
         }
       } catch (otErr) {
         console.error('Error checking existing OT:', otErr);
+        setHasExistingOT(false);
+        setOtRequestStatus(null);
       }
 
       // If we have the record with leave/OD info, use it directly
@@ -860,24 +960,13 @@ export default function AttendancePage() {
       });
 
       if (response.success) {
-        setSuccess(response.message || 'Extra hours converted to OT successfully!');
+        setSuccess(response.message || 'OT conversion requested. Pending management approval.');
         setHasExistingOT(true);
+        setOtRequestStatus('pending');
 
-        // Update attendance detail - clear extra hours, add OT hours
-        setAttendanceDetail({
-          ...attendanceDetail,
-          extraHours: 0,
-          otHours: (attendanceDetail.otHours || 0) + attendanceDetail.extraHours,
-        });
-
+        // Keep extraHours visible until OT is approved
         // Reload monthly attendance to refresh the view
         await loadMonthlyAttendance();
-
-        // Close dialog after a short delay
-        setTimeout(() => {
-          setShowDetailDialog(false);
-          setSuccess('');
-        }, 2000);
       } else {
         setError(response.message || 'Failed to convert extra hours to OT');
       }
@@ -1063,7 +1152,362 @@ export default function AttendancePage() {
     }
   };
 
+  const handleExportAttendance = async () => {
+    try {
+      setExportingExcel(true);
+      setError('');
+      // Fetch all attendance for current filters (high limit to get all)
+      const response = await api.getMonthlyAttendance(year, month, {
+        page: 1,
+        limit: 50000,
+        search: searchQuery,
+        divisionId: selectedDivision,
+        departmentId: selectedDepartment,
+        designationId: selectedDesignation,
+        startDate: cycleDates.startDate,
+        endDate: cycleDates.endDate
+      });
+      if (!response.success || !response.data?.length) {
+        toast.warn('No attendance data to export');
+        return;
+      }
+      const data = normalizeAttendanceData(response.data || []);
+      const monthStr = `${year}-${String(month).padStart(2, '0')}`;
+      const monthLabel = `${monthNames[month - 1]} ${year}`;
 
+      const getDeptName = (emp: Employee) => {
+        if (emp.department && typeof emp.department === 'object') return emp.department.name;
+        if (emp.department_id && typeof emp.department_id === 'object') return (emp.department_id as any).name;
+        return '';
+      };
+      const getDivisionName = (emp: Employee) => {
+        const anyEmp = emp as any;
+        if (anyEmp.division && typeof anyEmp.division === 'object') return anyEmp.division.name;
+        if (anyEmp.division_id && typeof anyEmp.division_id === 'object') return anyEmp.division_id.name;
+        return '';
+      };
+      const getDesignationName = (emp: Employee) => {
+        if (emp.designation && typeof emp.designation === 'object') return emp.designation.name;
+        if (emp.designation_id && typeof emp.designation_id === 'object') return (emp.designation_id as any).name;
+        return 'Staff';
+      };
+
+      const wb = XLSX.utils.book_new();
+
+      // Sheet 1: Summaries (all summary columns + partials count)
+      let totalPartials = 0;
+      const summaryRows: Record<string, unknown>[] = data.map((item) => {
+        const dailyAttendance = (item.dailyAttendance && typeof item.dailyAttendance === 'object') ? item.dailyAttendance : {};
+        const dailyValues = Object.values(dailyAttendance || {});
+        const partialsCount = dailyValues.filter((r: any) => r?.status === 'PARTIAL').length;
+        totalPartials += partialsCount;
+        const leaveRecords = dailyValues.filter((r: any) => r?.status === 'LEAVE' || r?.hasLeave);
+        const totalLeaves = item.summary?.totalLeaves ?? leaveRecords.length;
+        const lopCount = leaveRecords.filter((r: any) => {
+          const anyR = r as any;
+          return anyR?.leaveNature === 'lop' || anyR?.leaveInfo?.leaveType?.toLowerCase().includes('lop') || anyR?.leaveInfo?.leaveType?.toLowerCase().includes('loss of pay');
+        }).length;
+        const paidLeaves = totalLeaves - lopCount;
+        const totalODs = dailyValues.filter((r: any) => r?.status === 'OD' || r?.hasOD).length;
+        const weekOffs = item.summary?.totalWeeklyOffs ?? dailyValues.filter((r: any) => r?.status === 'WEEK_OFF').length;
+        const holidays = item.summary?.totalHolidays ?? dailyValues.filter((r: any) => r?.status === 'HOLIDAY').length;
+        const monthPresent = dailyValues.reduce((sum, r: any) => {
+          if (r?.status === 'PRESENT') return sum + 1;
+          if (r?.status === 'HALF_DAY') return sum + 0.5;
+          return sum;
+        }, 0);
+        const monthAbsent = dailyValues.filter((r: any) => r?.status === 'ABSENT').length;
+        const otHours = dailyValues.reduce((sum, r: any) => sum + (r?.otHours || 0), 0);
+        const payableShifts = item.payableShifts ?? item.summary?.totalPayableShifts ?? 0;
+        return {
+          'Emp No': item.employee?.emp_no || '',
+          'Employee Name': item.employee?.employee_name || '',
+          Designation: item.employee ? getDesignationName(item.employee) : '',
+          Department: item.employee ? getDeptName(item.employee) : '',
+          Division: item.employee ? getDivisionName(item.employee) : '',
+          Present: monthPresent,
+          Absent: monthAbsent,
+          Partials: partialsCount,
+          Leaves: totalLeaves,
+          'Paid Leaves': paidLeaves,
+          LOP: lopCount,
+          'Week Offs': weekOffs,
+          Holidays: holidays,
+          OD: totalODs,
+          'OT Hours': otHours.toFixed(1),
+          'Payable Shifts': payableShifts,
+          'Late/Early Count': item.summary?.lateOrEarlyCount ?? 0
+        };
+      });
+      const summaryHeaders = Object.keys(summaryRows[0] || {});
+      const summaryAoa = [
+        ['Attendance Summary', monthLabel, '', '', '', '', '', '', '', '', '', '', '', '', `Total Partials: ${totalPartials}`],
+        ['● = Late In', '◆ = Early Out', '', '', '', '', '', '', '', '', '', '', '', '', ''],
+        summaryHeaders,
+        ...summaryRows.map(r => Object.values(r))
+      ];
+      const wsSummary = XLSX.utils.aoa_to_sheet(summaryAoa);
+      // Colour the legend row: A2 = Late (amber), B2 = Early (blue)
+      if (wsSummary['A2']) { wsSummary['A2'].s = wsSummary['A2'].s || {}; wsSummary['A2'].s.fill = { fgColor: { rgb: 'FEF3C7' }, patternType: 'solid' as const }; }
+      if (wsSummary['B2']) { wsSummary['B2'].s = wsSummary['B2'].s || {}; wsSummary['B2'].s.fill = { fgColor: { rgb: 'DBEAFE' }, patternType: 'solid' as const }; }
+      XLSX.utils.book_append_sheet(wb, wsSummary, 'Summaries');
+
+      // Build days array from cycle (same as UI)
+      const daysArrayExport: string[] = [];
+      if (cycleDates.startDate && cycleDates.endDate) {
+        let current = new Date(cycleDates.startDate);
+        const end = new Date(cycleDates.endDate);
+        let count = 0;
+        while (current <= end && count <= 35) {
+          daysArrayExport.push(`${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}-${String(current.getDate()).padStart(2, '0')}`);
+          current.setDate(current.getDate() + 1);
+          count++;
+        }
+      }
+      if (daysArrayExport.length === 0) {
+        // Fallback: collect from first employee's dailyAttendance
+        const firstKeys = Object.keys((data[0]?.dailyAttendance as Record<string, unknown>) || {});
+        daysArrayExport.push(...firstKeys.sort());
+      }
+
+      // Helper: get status with late-in (●) and early-out (◆) indicators, and flags for styling
+      const getStatusWithLateEarly = (r: any): { text: string; isLate: boolean; isEarly: boolean } => {
+        if (!r) return { text: 'A', isLate: false, isEarly: false };
+        const isLate = (r.lateInMinutes != null && r.lateInMinutes > 0) || (r.isLateIn && (r.lateInMinutes ?? 0) > 0) ||
+          (r.shifts && r.shifts.some((s: any) => s.lateInMinutes != null && s.lateInMinutes > 0));
+        const isEarly = (r.earlyOutMinutes != null && r.earlyOutMinutes > 0) || (r.isEarlyOut && (r.earlyOutMinutes ?? 0) > 0) ||
+          (r.shifts && r.shifts.some((s: any) => s.earlyOutMinutes != null && s.earlyOutMinutes > 0));
+        const suffix = (isLate ? '●' : '') + (isEarly ? '◆' : '');
+        let text = '-';
+        if (r.status === 'PRESENT') text = 'P' + suffix;
+        else if (r.status === 'HALF_DAY') text = 'HD' + suffix;
+        else if (r.status === 'PARTIAL') text = 'PT' + suffix;
+        else if (r.status === 'LEAVE' || r.hasLeave) text = 'L';
+        else if (r.status === 'OD' || r.hasOD) text = 'OD';
+        else if (r.status === 'HOLIDAY') text = 'H';
+        else if (r.status === 'WEEK_OFF') text = 'WO';
+        else if (r.status === 'ABSENT') text = 'A';
+        return { text, isLate, isEarly };
+      };
+
+      const applyCellFill = (ws: any, row: number, col: number, color: string) => {
+        const ref = XLSX.utils.encode_cell({ r: row, c: col });
+        if (!ws[ref]) return;
+        ws[ref].s = ws[ref].s || {};
+        ws[ref].s.fill = { fgColor: { rgb: color }, patternType: 'solid' as const };
+      };
+
+      // Sheet 2: Complete (day columns + Pres, Leaves, WO, Hol, OT, etc.)
+      const completeHeaders = ['Emp No', 'Employee Name', 'Designation', 'Department', 'Division', ...daysArrayExport.map(d => format(parseISO(d), 'dd')), 'Pres', 'Leaves', 'WO', 'Hol', 'Partials', 'OD', 'OT', 'Pay Shifts'];
+      const completeLateEarlyFlags: { isLate: boolean; isEarly: boolean }[][] = [];
+      const completeRows: (string | number)[][] = data.map((item) => {
+        const dailyAttendance = (item.dailyAttendance && typeof item.dailyAttendance === 'object') ? item.dailyAttendance : {};
+        const dailyValues = Object.values(dailyAttendance || {});
+        const dayResults = daysArrayExport.map(d => getStatusWithLateEarly((dailyAttendance as Record<string, any>)[d]));
+        completeLateEarlyFlags.push(dayResults.map(d => ({ isLate: d.isLate, isEarly: d.isEarly })));
+        const dayCells = dayResults.map(d => d.text);
+        const monthPresent = dailyValues.reduce((sum, r: any) => { if (r?.status === 'PRESENT') return sum + 1; if (r?.status === 'HALF_DAY') return sum + 0.5; return sum; }, 0);
+        const totalLeaves = item.summary?.totalLeaves ?? dailyValues.filter((r: any) => r?.status === 'LEAVE' || r?.hasLeave).length;
+        const wo = item.summary?.totalWeeklyOffs ?? dailyValues.filter((r: any) => r?.status === 'WEEK_OFF').length;
+        const hol = item.summary?.totalHolidays ?? dailyValues.filter((r: any) => r?.status === 'HOLIDAY').length;
+        const partials = dailyValues.filter((r: any) => r?.status === 'PARTIAL').length;
+        const ods = dailyValues.filter((r: any) => r?.status === 'OD' || r?.hasOD).length;
+        const ot = dailyValues.reduce((sum, r: any) => sum + (r?.otHours || 0), 0);
+        const ps = item.payableShifts ?? item.summary?.totalPayableShifts ?? 0;
+        return [
+          item.employee?.emp_no || '',
+          item.employee?.employee_name || '',
+          item.employee ? getDesignationName(item.employee) : '',
+          item.employee ? getDeptName(item.employee) : '',
+          item.employee ? getDivisionName(item.employee) : '',
+          ...dayCells,
+          monthPresent,
+          totalLeaves,
+          wo,
+          hol,
+          partials,
+          ods,
+          ot.toFixed(1),
+          ps
+        ];
+      });
+      const wsComplete = XLSX.utils.aoa_to_sheet([completeHeaders, ...completeRows]);
+      // Apply colours: amber for late-in, blue for early-out, purple for both
+      completeLateEarlyFlags.forEach((rowFlags, rowIdx) => {
+        rowFlags.forEach((flags, colIdx) => {
+          if (flags.isLate && flags.isEarly) applyCellFill(wsComplete, rowIdx + 1, 5 + colIdx, 'EDE9FE'); // purple
+          else if (flags.isLate) applyCellFill(wsComplete, rowIdx + 1, 5 + colIdx, 'FEF3C7'); // amber
+          else if (flags.isEarly) applyCellFill(wsComplete, rowIdx + 1, 5 + colIdx, 'DBEAFE'); // blue
+        });
+      });
+      XLSX.utils.book_append_sheet(wb, wsComplete, 'Complete');
+
+      // Sheet 3: Pres/Abs (with late/early indicators and colours)
+      const paHeaders = ['Emp No', 'Employee Name', 'Designation', 'Department', 'Division', ...daysArrayExport.map(d => format(parseISO(d), 'dd')), 'Present', 'Absent'];
+      const paLateEarlyFlags: { isLate: boolean; isEarly: boolean }[][] = [];
+      const paRows: (string | number)[][] = data.map((item) => {
+        const dailyAttendance = (item.dailyAttendance && typeof item.dailyAttendance === 'object') ? item.dailyAttendance : {};
+        const dailyValues = Object.values(dailyAttendance || {});
+        const dayResults = daysArrayExport.map(d => getStatusWithLateEarly((dailyAttendance as Record<string, any>)[d]));
+        paLateEarlyFlags.push(dayResults.map(d => ({ isLate: d.isLate, isEarly: d.isEarly })));
+        const dayCells = dayResults.map(d => d.text);
+        const monthPresent = dailyValues.reduce((sum, r: any) => { if (r?.status === 'PRESENT') return sum + 1; if (r?.status === 'HALF_DAY') return sum + 0.5; return sum; }, 0);
+        const monthAbsent = dailyValues.filter((r: any) => r?.status === 'ABSENT').length;
+        return [
+          item.employee?.emp_no || '',
+          item.employee?.employee_name || '',
+          item.employee ? getDesignationName(item.employee) : '',
+          item.employee ? getDeptName(item.employee) : '',
+          item.employee ? getDivisionName(item.employee) : '',
+          ...dayCells,
+          monthPresent,
+          monthAbsent
+        ];
+      });
+      const wsPA = XLSX.utils.aoa_to_sheet([paHeaders, ...paRows]);
+      paLateEarlyFlags.forEach((rowFlags, rowIdx) => {
+        rowFlags.forEach((flags, colIdx) => {
+          if (flags.isLate && flags.isEarly) applyCellFill(wsPA, rowIdx + 1, 5 + colIdx, 'EDE9FE');
+          else if (flags.isLate) applyCellFill(wsPA, rowIdx + 1, 5 + colIdx, 'FEF3C7');
+          else if (flags.isEarly) applyCellFill(wsPA, rowIdx + 1, 5 + colIdx, 'DBEAFE');
+        });
+      });
+      XLSX.utils.book_append_sheet(wb, wsPA, 'Pres-Abs');
+
+      // Sheet 4: In/Out
+      const formatTimeShort = (t: string) => {
+        if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(t)) return t.slice(0, 5);
+        try { const d = new Date(t); return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }); } catch { return t; }
+      };
+      const ioHeaders = ['Emp No', 'Employee Name', 'Designation', 'Department', 'Division', ...daysArrayExport.map(d => format(parseISO(d), 'dd')), 'Days Present'];
+      const ioLateEarlyFlags: { isLate: boolean; isEarly: boolean }[][] = [];
+      const ioRows: (string | number)[][] = data.map((item) => {
+        const dailyAttendance = (item.dailyAttendance && typeof item.dailyAttendance === 'object') ? item.dailyAttendance : {};
+        const dailyValues = Object.values(dailyAttendance || {});
+        const dayCells: string[] = [];
+        const rowFlags: { isLate: boolean; isEarly: boolean }[] = [];
+        daysArrayExport.forEach(d => {
+          const r = (dailyAttendance as Record<string, any>)[d];
+          if (!r) { dayCells.push('-'); rowFlags.push({ isLate: false, isEarly: false }); return; }
+          const inT = r.inTime ? formatTimeShort(r.inTime) : '-';
+          const outT = r.outTime ? formatTimeShort(r.outTime) : '-';
+          const isLate = (r.lateInMinutes != null && r.lateInMinutes > 0) || (r.isLateIn && (r.lateInMinutes ?? 0) > 0) ||
+            (r.shifts && r.shifts.some((s: any) => s.lateInMinutes != null && s.lateInMinutes > 0));
+          const isEarly = (r.earlyOutMinutes != null && r.earlyOutMinutes > 0) || (r.isEarlyOut && (r.earlyOutMinutes ?? 0) > 0) ||
+            (r.shifts && r.shifts.some((s: any) => s.earlyOutMinutes != null && s.earlyOutMinutes > 0));
+          rowFlags.push({ isLate, isEarly });
+          const suffix = (isLate ? ' ●' : '') + (isEarly ? ' ◆' : '');
+          dayCells.push(`${inT}/${outT}${suffix}`);
+        });
+        ioLateEarlyFlags.push(rowFlags);
+        const daysPresent = dailyValues.reduce((sum, r: any) => { if (r?.status === 'PRESENT' || r?.status === 'PARTIAL') return sum + 1; if (r?.status === 'HALF_DAY') return sum + 0.5; return sum; }, 0);
+        return [
+          item.employee?.emp_no || '',
+          item.employee?.employee_name || '',
+          item.employee ? getDesignationName(item.employee) : '',
+          item.employee ? getDeptName(item.employee) : '',
+          item.employee ? getDivisionName(item.employee) : '',
+          ...dayCells,
+          daysPresent
+        ];
+      });
+      const wsIO = XLSX.utils.aoa_to_sheet([ioHeaders, ...ioRows]);
+      ioLateEarlyFlags.forEach((rowFlags, rowIdx) => {
+        rowFlags.forEach((flags, colIdx) => {
+          if (flags.isLate && flags.isEarly) applyCellFill(wsIO, rowIdx + 1, 5 + colIdx, 'EDE9FE');
+          else if (flags.isLate) applyCellFill(wsIO, rowIdx + 1, 5 + colIdx, 'FEF3C7');
+          else if (flags.isEarly) applyCellFill(wsIO, rowIdx + 1, 5 + colIdx, 'DBEAFE');
+        });
+      });
+      XLSX.utils.book_append_sheet(wb, wsIO, 'In-Out');
+
+      // Sheet 5: Leaves
+      const lvHeaders = ['Emp No', 'Employee Name', 'Designation', 'Department', 'Division', ...daysArrayExport.map(d => format(parseISO(d), 'dd')), 'Leaves', 'Paid', 'LOP'];
+      const lvRows: (string | number)[][] = data.map((item) => {
+        const dailyAttendance = (item.dailyAttendance && typeof item.dailyAttendance === 'object') ? item.dailyAttendance : {};
+        const dailyValues = Object.values(dailyAttendance || {});
+        const leaveRecords = dailyValues.filter((r: any) => r?.status === 'LEAVE' || r?.hasLeave);
+        const totalLeaves = item.summary?.totalLeaves ?? leaveRecords.length;
+        const lopCount = leaveRecords.filter((r: any) => { const anyR = r as any; return anyR?.leaveNature === 'lop' || anyR?.leaveInfo?.leaveType?.toLowerCase().includes('lop'); }).length;
+        const paidLeaves = totalLeaves - lopCount;
+        const dayCells = daysArrayExport.map(d => {
+          const r = (dailyAttendance as Record<string, any>)[d];
+          if (r?.status === 'LEAVE' || r?.hasLeave) return 'L';
+          return '-';
+        });
+        return [
+          item.employee?.emp_no || '',
+          item.employee?.employee_name || '',
+          item.employee ? getDesignationName(item.employee) : '',
+          item.employee ? getDeptName(item.employee) : '',
+          item.employee ? getDivisionName(item.employee) : '',
+          ...dayCells,
+          totalLeaves,
+          paidLeaves,
+          lopCount
+        ];
+      });
+      const wsLeaves = XLSX.utils.aoa_to_sheet([lvHeaders, ...lvRows]);
+      XLSX.utils.book_append_sheet(wb, wsLeaves, 'Leaves');
+
+      // Sheet 6: OD
+      const odHeaders = ['Emp No', 'Employee Name', 'Designation', 'Department', 'Division', ...daysArrayExport.map(d => format(parseISO(d), 'dd')), 'OD Count'];
+      const odRows: (string | number)[][] = data.map((item) => {
+        const dailyAttendance = (item.dailyAttendance && typeof item.dailyAttendance === 'object') ? item.dailyAttendance : {};
+        const dailyValues = Object.values(dailyAttendance || {});
+        const totalODs = dailyValues.filter((r: any) => r?.status === 'OD' || r?.hasOD).length;
+        const dayCells = daysArrayExport.map(d => {
+          const r = (dailyAttendance as Record<string, any>)[d];
+          if (r?.status === 'OD' || r?.hasOD) return 'OD';
+          return '-';
+        });
+        return [
+          item.employee?.emp_no || '',
+          item.employee?.employee_name || '',
+          item.employee ? getDesignationName(item.employee) : '',
+          item.employee ? getDeptName(item.employee) : '',
+          item.employee ? getDivisionName(item.employee) : '',
+          ...dayCells,
+          totalODs
+        ];
+      });
+      const wsOD = XLSX.utils.aoa_to_sheet([odHeaders, ...odRows]);
+      XLSX.utils.book_append_sheet(wb, wsOD, 'OD');
+
+      // Sheet 7: OT
+      const otHeaders = ['Emp No', 'Employee Name', 'Designation', 'Department', 'Division', ...daysArrayExport.map(d => format(parseISO(d), 'dd')), 'OT Hrs', 'Extra Hrs'];
+      const otRows: (string | number)[][] = data.map((item) => {
+        const dailyAttendance = (item.dailyAttendance && typeof item.dailyAttendance === 'object') ? item.dailyAttendance : {};
+        const dailyValues = Object.values(dailyAttendance || {});
+        const otHrs = dailyValues.reduce((sum, r: any) => sum + (r?.otHours || 0), 0);
+        const extraHrs = dailyValues.reduce((sum, r: any) => sum + (r?.extraHours || 0), 0);
+        const dayCells = daysArrayExport.map(d => {
+          const r = (dailyAttendance as Record<string, any>)[d];
+          return r?.otHours ? String(r.otHours) : (r?.extraHours ? String(r.extraHours) : '-');
+        });
+        return [
+          item.employee?.emp_no || '',
+          item.employee?.employee_name || '',
+          item.employee ? getDesignationName(item.employee) : '',
+          item.employee ? getDeptName(item.employee) : '',
+          item.employee ? getDivisionName(item.employee) : '',
+          ...dayCells,
+          otHrs.toFixed(1),
+          extraHrs.toFixed(1)
+        ];
+      });
+      const wsOT = XLSX.utils.aoa_to_sheet([otHeaders, ...otRows]);
+      XLSX.utils.book_append_sheet(wb, wsOT, 'OT');
+
+      XLSX.writeFile(wb, `attendance_${monthStr}.xlsx`);
+      toast.success(`Exported ${data.length} employees to attendance_${monthStr}.xlsx`);
+    } catch (err: any) {
+      console.error('Export error:', err);
+      toast.error(err?.message || 'Failed to export attendance');
+    } finally {
+      setExportingExcel(false);
+    }
+  };
 
   const handleUpdateOutTime = async () => {
     if (!selectedRecordForOutTime || !outTimeValue) {
@@ -1076,16 +1520,22 @@ export default function AttendancePage() {
       setError('');
       setSuccess('');
 
-      // Format datetime for API - Convert local input to UTC
-      const [hours, mins] = outTimeValue.split(':').map(Number);
-      const date = new Date(selectedRecordForOutTime.date);
-      date.setHours(hours, mins, 0, 0);
-      const isoString = date.toISOString();
+      // Support datetime-local (YYYY-MM-DDTHH:mm) for overnight: use full date from input. Else time-only on record date.
+      let isoString: string;
+      if (outTimeValue.includes('T')) {
+        isoString = new Date(outTimeValue).toISOString();
+      } else {
+        const [hours, mins] = outTimeValue.split(':').map(Number);
+        const date = new Date(selectedRecordForOutTime.date);
+        date.setHours(hours, mins, 0, 0);
+        isoString = date.toISOString();
+      }
 
       const response = await api.updateAttendanceOutTime(
         selectedRecordForOutTime.employee.emp_no,
         selectedRecordForOutTime.date,
-        isoString
+        isoString,
+        selectedRecordForOutTime.shiftRecordId
       );
 
       if (response.success) {
@@ -1119,6 +1569,50 @@ export default function AttendancePage() {
       setError(err.message || 'An error occurred while updating out time');
     } finally {
       setUpdatingOutTime(false);
+    }
+  };
+
+  const handleUpdateInTime = async () => {
+    if (!selectedRecordForInTime || !inTimeDialogValue) {
+      alert('Please enter in time');
+      return;
+    }
+    try {
+      setUpdatingInTime(true);
+      setError('');
+      setSuccess('');
+      let isoString: string;
+      if (inTimeDialogValue.includes('T')) {
+        isoString = new Date(inTimeDialogValue).toISOString();
+      } else {
+        const [hours, mins] = inTimeDialogValue.split(':').map(Number);
+        const d = new Date(selectedRecordForInTime.date);
+        d.setHours(hours, mins, 0, 0);
+        isoString = d.toISOString();
+      }
+      const response = await api.updateAttendanceInTime(
+        selectedRecordForInTime.employee.emp_no,
+        selectedRecordForInTime.date,
+        isoString,
+        selectedRecordForInTime.shiftRecordId
+      );
+      if (response.success) {
+        setSuccess('In time updated successfully.');
+        setShowInTimeDialog(false);
+        setSelectedRecordForInTime(null);
+        setInTimeDialogValue('');
+        await loadMonthlyAttendance();
+        if (selectedEmployee && selectedDate && selectedRecordForInTime.employee.emp_no === selectedEmployee.emp_no && selectedRecordForInTime.date === selectedDate) {
+          const updatedResponse = await api.getAttendanceDetail(selectedEmployee.emp_no, selectedDate);
+          if (updatedResponse.success) setAttendanceDetail(updatedResponse.data);
+        }
+      } else {
+        setError(response.message || 'Failed to update in time');
+      }
+    } catch (err: any) {
+      setError(err.message || 'An error occurred while updating in time');
+    } finally {
+      setUpdatingInTime(false);
     }
   };
 
@@ -1201,17 +1695,31 @@ export default function AttendancePage() {
 
 
 
-  const formatHours = (decimalHours: number | null | undefined): string => {
-    if (decimalHours === null || decimalHours === undefined || isNaN(decimalHours)) return '-';
-    const isNegative = decimalHours < 0;
-    const absoluteHours = Math.abs(decimalHours);
-    const hours = Math.floor(absoluteHours);
-    const minutes = Math.round((absoluteHours - hours) * 60);
-    return `${isNegative ? '-' : ''}${hours}:${minutes.toString().padStart(2, '0')}`;
+  const formatHours = (hours: number | null | undefined) => {
+    if (hours === null || hours === undefined || Number.isNaN(hours)) return '-';
+    const totalMinutes = Math.round(hours * 60);
+    const h = Math.floor(totalMinutes / 60);
+    const m = totalMinutes % 60;
+    return `${h}:${String(m).padStart(2, '0')}`;
   };
 
   const daysInMonth = getDaysInMonth();
-  const daysArray = useMemo(() => Array.from({ length: daysInMonth }, (_, i) => i + 1), [daysInMonth]);
+  const daysArray = useMemo(() => {
+    if (!cycleDates.startDate || !cycleDates.endDate) return [];
+
+    const dates = [];
+    let current = new Date(cycleDates.startDate);
+    const end = new Date(cycleDates.endDate);
+
+    let count = 0;
+    while (current <= end && count <= 35) {
+      const dateStr = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}-${String(current.getDate()).padStart(2, '0')}`;
+      dates.push(dateStr);
+      current.setDate(current.getDate() + 1);
+      count++;
+    }
+    return dates;
+  }, [cycleDates.startDate, cycleDates.endDate]);
 
   // Virtualized row component
 
@@ -1407,18 +1915,34 @@ export default function AttendancePage() {
                 <span className="hidden md:inline text-xs font-semibold">Sync</span>
               </button>
 
+              {attendanceFeatureFlags.allowAttendanceUpload && (
+                <button
+                  onClick={() => setShowUploadDialog(true)}
+                  title="Upload Excel"
+                  className="h-9 flex items-center px-4 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 text-xs font-bold text-white shadow-lg shadow-green-500/25 hover:shadow-green-500/40 hover:-translate-y-0.5 transition-all active:scale-95"
+                >
+                  <svg className="mr-2 h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                  </svg>
+                  Upload
+                </button>
+              )}
+
               <button
-                onClick={() => setShowUploadDialog(true)}
-                title="Upload Excel"
-                className="h-9 flex items-center px-4 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 text-xs font-bold text-white shadow-lg shadow-green-500/25 hover:shadow-green-500/40 hover:-translate-y-0.5 transition-all active:scale-95"
+                onClick={handleExportAttendance}
+                disabled={exportingExcel}
+                title="Export filtered attendance to Excel"
+                className="h-9 flex items-center px-4 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-blue-600 hover:border-blue-200 transition-all shadow-sm active:scale-95 disabled:opacity-50 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-blue-400"
               >
-                <svg className="mr-2 h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                </svg>
-                Upload
+                {exportingExcel ? (
+                  <div className="mr-2 h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-400 border-t-transparent" />
+                ) : (
+                  <svg className="mr-2 h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                )}
+                {exportingExcel ? 'Exporting...' : 'Export'}
               </button>
-
-
             </div>
           </div>
         </div>
@@ -1440,10 +1964,12 @@ export default function AttendancePage() {
               { label: 'A', name: 'Absent', color: 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700' },
               { label: '!', name: 'Conflict', color: 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-800' },
               { label: '✎', name: 'Edited', color: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/10 dark:text-indigo-400 dark:border-indigo-800' },
-            ].map((item) => (
-              <div key={item.label} className="flex items-center gap-2 group cursor-help">
-                <div className={`w-6 h-6 flex items-center justify-center rounded text-[10px] font-bold border shadow-sm transition-all duration-200 group-hover:scale-110 group-hover:shadow-md ${item.color}`}>
-                  {item.label}
+              { label: '●', name: 'Late', color: 'bg-amber-500', dotOnly: true },
+              { label: '●', name: 'Early out', color: 'bg-blue-500', dotOnly: true },
+            ].map((item, idx) => (
+              <div key={`${item.label}-${item.name}-${idx}`} className="flex items-center gap-2 group cursor-help">
+                <div className={`flex items-center justify-center rounded text-[10px] font-bold border shadow-sm transition-all duration-200 group-hover:scale-110 group-hover:shadow-md ${(item as any).dotOnly ? 'w-5 h-5 border-transparent' : 'w-6 h-6'} ${(item as any).dotOnly ? '' : item.color}`}>
+                  {(item as any).dotOnly ? <span className={`inline-block h-2 w-2 rounded-full ${item.color}`} /> : item.label}
                 </div>
                 <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">{item.name}</span>
               </div>
@@ -1473,15 +1999,16 @@ export default function AttendancePage() {
                 <th className="sticky left-0 z-30 border-r border-slate-200 bg-slate-100 px-3 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 w-[200px] min-w-[200px]">
                   Employee
                 </th>
-                {daysArray.map((day) => {
-                  const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                  const dayName = format(parseISO(dateStr), 'EEE');
+                {daysArray.map((dateStr) => {
+                  const dateObj = parseISO(dateStr);
+                  const dayNum = dateObj.getDate();
+                  const dayName = format(dateObj, 'EEE');
                   return (
                     <th
-                      key={day}
+                      key={dateStr}
                       className="border-r border-slate-200 bg-slate-50 px-1 py-2 text-center text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 w-[35px] min-w-[35px]"
                     >
-                      <div className="text-[10px] font-bold">{day}</div>
+                      <div className="text-[10px] font-bold">{dayNum}</div>
                       <div className="text-[8px] font-medium uppercase tracking-tighter opacity-70">{dayName}</div>
                     </th>
                   );
@@ -1490,6 +2017,15 @@ export default function AttendancePage() {
                   <>
                     <th className="border-r border-slate-200 bg-blue-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-blue-700 dark:border-slate-700 dark:bg-blue-900/20 w-[60px] min-w-[60px]">
                       Pres
+                    </th>
+                    <th className="border-r border-slate-200 bg-amber-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-amber-700 dark:border-slate-700 dark:bg-amber-900/20 w-[60px] min-w-[60px]">
+                      Leaves
+                    </th>
+                    <th className="border-r border-slate-200 bg-orange-100 px-1 py-3 text-center text-[9px] font-bold uppercase text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 w-[60px] min-w-[60px]">
+                      WO
+                    </th>
+                    <th className="border-r border-slate-200 bg-red-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-red-700 dark:border-slate-700 dark:bg-red-900/20 w-[60px] min-w-[60px]">
+                      Hol
                     </th>
                     <th className="border-r border-slate-200 bg-orange-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 w-[60px] min-w-[60px]">
                       OT
@@ -1500,6 +2036,9 @@ export default function AttendancePage() {
                     <th className="border-r border-slate-200 bg-cyan-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-cyan-700 dark:border-slate-700 dark:bg-cyan-900/20 w-[80px] min-w-[80px]">
                       Perms
                     </th>
+                  <th className="border-r border-slate-200 bg-rose-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-rose-700 dark:border-slate-700 dark:bg-rose-900/20 w-[70px] min-w-[70px]">
+                    Lates+
+                  </th>
                     <th className="bg-green-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-green-700 dark:border-slate-700 dark:bg-green-900/20 w-[70px] min-w-[70px]">
                       Payable
                     </th>
@@ -1542,9 +2081,9 @@ export default function AttendancePage() {
                         <div className="h-4 w-32 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
                         <div className="mt-1 h-3 w-24 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
                       </td>
-                      {daysArray.map((day) => (
+                      {daysArray.map((dateStr) => (
                         <td
-                          key={day}
+                          key={dateStr}
                           className="border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700 w-[35px] min-w-[35px]"
                         >
                           <div className="h-8 w-full animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
@@ -1555,6 +2094,15 @@ export default function AttendancePage() {
                           <td className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-blue-900/20 w-[60px] min-w-[60px]">
                             <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
                           </td>
+                          <td className="border-r border-slate-200 bg-amber-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-amber-900/20 w-[60px] min-w-[60px]">
+                            <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                          </td>
+                          <td className="border-r border-slate-200 bg-orange-100 px-2 py-2 text-center dark:border-slate-700 dark:bg-orange-900/20 w-[60px] min-w-[60px]">
+                            <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                          </td>
+                          <td className="border-r border-slate-200 bg-red-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-red-900/20 w-[60px] min-w-[60px]">
+                            <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                          </td>
                           <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-orange-900/20 w-[60px] min-w-[60px]">
                             <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
                           </td>
@@ -1562,6 +2110,9 @@ export default function AttendancePage() {
                             <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
                           </td>
                           <td className="border-r border-slate-200 bg-cyan-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-cyan-900/20 w-[80px] min-w-[80px]">
+                            <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                          </td>
+                          <td className="border-r border-slate-200 bg-rose-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-rose-900/20 w-[70px] min-w-[70px]">
                             <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
                           </td>
                           <td className="bg-green-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-green-900/20 w-[70px] min-w-[70px]">
@@ -1599,7 +2150,7 @@ export default function AttendancePage() {
                 </>
               ) : filteredMonthlyData.length === 0 ? (
                 <tr>
-                  <td colSpan={daysArray.length + 8} className="p-8 text-center text-slate-500 min-h-[400px]">
+                  <td colSpan={daysArray.length + (tableType === 'complete' ? 11 : 8)} className="p-8 text-center text-slate-500 min-h-[400px]">
                     No employees found matching the selected filters.
                   </td>
                 </tr>
@@ -1634,7 +2185,9 @@ export default function AttendancePage() {
                   }, 0);
                   const monthAbsent = dailyValues.filter((r: any) => r?.status === 'ABSENT').length;
                   const leaveRecords = dailyValues.filter((r: any) => r?.status === 'LEAVE' || r?.hasLeave);
-                  const totalLeaves = leaveRecords.length;
+                  const totalLeaves = item.summary?.totalLeaves ?? leaveRecords.length;
+                  const weekOffsCount = item.summary?.totalWeeklyOffs ?? dailyValues.filter((r: any) => r?.status === 'WEEK_OFF').length;
+                  const holidaysCount = item.summary?.totalHolidays ?? dailyValues.filter((r: any) => r?.status === 'HOLIDAY').length;
                   const lopCount = leaveRecords.filter((r: any) => {
                     const anyR = r as any;
                     return anyR?.leaveNature === 'lop' ||
@@ -1689,8 +2242,7 @@ export default function AttendancePage() {
                           </div>
                         </div>
                       </td>
-                      {daysArray.map((day) => {
-                        const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                      {daysArray.map((dateStr) => {
                         const record = dailyAttendance[dateStr] || null;
                         const shifts = (record as any)?.shifts || [];
                         const isMultiShift = shifts.length > 1;
@@ -1713,16 +2265,30 @@ export default function AttendancePage() {
                         }
 
                         const hasData = record && record.status !== '-';
+                        const isLate = hasData && (
+                          (record && (record as any).lateInMinutes != null && (record as any).lateInMinutes > 0) ||
+                          (shifts && shifts.some((s: any) => s.lateInMinutes != null && s.lateInMinutes > 0))
+                        );
+                        const isEarlyOut = hasData && (
+                          (record && (record as any).earlyOutMinutes != null && (record as any).earlyOutMinutes > 0) ||
+                          (shifts && shifts.some((s: any) => s.earlyOutMinutes != null && s.earlyOutMinutes > 0))
+                        );
 
                         return (
                           <td
-                            key={day}
+                            key={dateStr}
                             onClick={() => hasData && item.employee && handleDateClick(item.employee, dateStr)}
                             className={`border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700 w-[35px] min-w-[35px] align-middle relative ${hasData ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800' : ''
                               } ${getStatusColor(record)} ${getCellBackgroundColor(record)}`}
                           >
                             {record && record.isEdited && (
                               <span className="absolute top-0.5 right-0.5 h-1.5 w-1.5 rounded-full bg-orange-500 animate-pulse z-20" title="Edited Manually"></span>
+                            )}
+                            {(isLate || isEarlyOut) && (
+                              <div className="absolute bottom-0.5 left-0 right-0 flex justify-center gap-0.5 z-10" title={`${isLate ? 'Late in' : ''}${isLate && isEarlyOut ? ' • ' : ''}${isEarlyOut ? 'Early out' : ''}`}>
+                                {isLate && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" title="Late" />}
+                                {isEarlyOut && <span className="h-1.5 w-1.5 rounded-full bg-blue-500 shrink-0" title="Early out" />}
+                              </div>
                             )}
                             <div className="flex flex-col items-center justify-center w-full h-full">
                               {hasData ? (
@@ -1769,8 +2335,8 @@ export default function AttendancePage() {
                                   )}
                                   {tableType === 'ot' && (
                                     <div className="text-[8px] font-medium leading-tight">
-                                      <div className="text-orange-600">{formatHours(record?.otHours)}</div>
-                                      <div className="text-purple-600">{formatHours(record?.extraHours)}</div>
+                                      <div className="text-orange-600">{record?.otHours ? formatHours(record.otHours) : '-'}</div>
+                                      <div className="text-purple-600">{record?.extraHours ? formatHours(record.extraHours) : '-'}</div>
                                     </div>
                                   )}
                                   {record?.source?.includes('manual') && (
@@ -1789,6 +2355,15 @@ export default function AttendancePage() {
                           <td className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center text-[11px] font-bold text-blue-700 dark:border-slate-700 dark:bg-blue-900/20 dark:text-blue-300 w-[60px] min-w-[60px]">
                             {daysPresent}
                           </td>
+                          <td className="border-r border-slate-200 bg-amber-50 px-2 py-2 text-center text-[11px] font-bold text-amber-700 dark:border-slate-700 dark:bg-amber-900/20 dark:text-amber-300 w-[60px] min-w-[60px]">
+                            {totalLeaves}
+                          </td>
+                          <td className="border-r border-slate-200 bg-orange-100 px-2 py-2 text-center text-[11px] font-bold text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 dark:text-orange-300 w-[60px] min-w-[60px]">
+                            {weekOffsCount}
+                          </td>
+                          <td className="border-r border-slate-200 bg-red-50 px-2 py-2 text-center text-[11px] font-bold text-red-700 dark:border-slate-700 dark:bg-red-900/20 dark:text-red-300 w-[60px] min-w-[60px]">
+                            {holidaysCount}
+                          </td>
                           <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 dark:text-orange-300 w-[60px] min-w-[60px]">
                             {formatHours(dailyValues.reduce((sum, record: any) => sum + (record?.otHours || 0), 0))}
                           </td>
@@ -1797,6 +2372,9 @@ export default function AttendancePage() {
                           </td>
                           <td className="border-r border-slate-200 bg-cyan-50 px-2 py-2 text-center text-[11px] font-bold text-cyan-700 dark:border-slate-700 dark:bg-cyan-900/20 dark:text-cyan-300 w-[80px] min-w-[80px]">
                             {dailyValues.reduce((sum, record: any) => sum + (record?.permissionCount || 0), 0)}
+                          </td>
+                          <td className="border-r border-slate-200 bg-rose-50 px-2 py-2 text-center text-[11px] font-bold text-rose-700 dark:border-slate-700 dark:bg-rose-900/20 dark:text-rose-300 w-[70px] min-w-[70px]">
+                            {item.summary?.lateOrEarlyCount ?? 0}
                           </td>
                           <td className="bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:border-slate-700 dark:bg-green-900/20 dark:text-green-300 w-[70px] min-w-[70px]">
                             {payableShifts.toFixed(2)}
@@ -1825,10 +2403,10 @@ export default function AttendancePage() {
                       {tableType === 'ot' && (
                         <>
                           <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 w-[60px] min-w-[60px]">
-                            {dailyValues.reduce((sum, record: any) => sum + (record?.otHours || 0), 0).toFixed(1)}
+                            {formatHours(dailyValues.reduce((sum, record: any) => sum + (record?.otHours || 0), 0))}
                           </td>
                           <td className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center text-[11px] font-bold text-purple-700 w-[60px] min-w-[60px]">
-                            {dailyValues.reduce((sum, record: any) => sum + (record?.extraHours || 0), 0).toFixed(1)}
+                            {formatHours(dailyValues.reduce((sum, record: any) => sum + (record?.extraHours || 0), 0))}
                           </td>
                         </>
                       )}
@@ -1936,7 +2514,7 @@ export default function AttendancePage() {
 
                 <div>
                   <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                    Out Time *
+                    Out Time (date + time) *
                   </label>
                   <input
                     type="datetime-local"
@@ -1946,7 +2524,7 @@ export default function AttendancePage() {
                     required
                   />
                   <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    Enter the logout time. Shift will be automatically assigned based on in-time and out-time.
+                    Enter the logout date and time. For overnight shifts, select the <strong>next calendar day</strong> as the date.
                   </p>
                 </div>
 
@@ -1963,6 +2541,68 @@ export default function AttendancePage() {
                       setShowOutTimeDialog(false);
                       setSelectedRecordForOutTime(null);
                       setOutTimeValue('');
+                    }}
+                    className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showInTimeDialog && selectedRecordForInTime && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Enter In Time</h3>
+                <button
+                  onClick={() => {
+                    setShowInTimeDialog(false);
+                    setSelectedRecordForInTime(null);
+                    setInTimeDialogValue('');
+                  }}
+                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800"
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="space-y-4">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800">
+                  <div className="text-sm font-medium text-slate-900 dark:text-white">
+                    {selectedRecordForInTime?.employee?.employee_name}
+                  </div>
+                  <div className="text-xs text-slate-600 dark:text-slate-400">
+                    {selectedRecordForInTime?.employee?.emp_no} • {selectedRecordForInTime?.date}
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-300">In Time (date + time) *</label>
+                  <input
+                    type="datetime-local"
+                    value={inTimeDialogValue}
+                    onChange={(e) => setInTimeDialogValue(e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                    required
+                  />
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Enter the check-in date and time.</p>
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleUpdateInTime}
+                    disabled={!inTimeDialogValue || updatingInTime}
+                    className="flex-1 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-500/30 transition-all hover:from-blue-600 hover:to-indigo-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {updatingInTime ? 'Updating...' : 'Update In Time'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowInTimeDialog(false);
+                      setSelectedRecordForInTime(null);
+                      setInTimeDialogValue('');
                     }}
                     className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
                   >
@@ -2024,13 +2664,13 @@ export default function AttendancePage() {
                     <div>
                       <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Total Hours</label>
                       <div className="mt-1 text-sm font-bold text-slate-900 dark:text-white">
-                        {formatHours(attendanceDetail.totalWorkingHours || attendanceDetail.totalHours || 0)} hrs
+                        {formatHours(attendanceDetail.totalWorkingHours ?? attendanceDetail.totalHours ?? 0)} hrs
                       </div>
                     </div>
                     <div>
                       <label className="text-xs font-medium text-slate-500 dark:text-slate-400">OT Hours</label>
                       <div className="mt-1 text-sm font-bold text-orange-600 dark:text-orange-400">
-                        {formatHours(attendanceDetail.totalOTHours || attendanceDetail.otHours || 0)} hrs
+                        {formatHours(attendanceDetail.totalOTHours ?? attendanceDetail.otHours ?? 0)} hrs
                       </div>
                     </div>
                     {(attendanceDetail.extraHours && attendanceDetail.extraHours > 0) ? (
@@ -2045,7 +2685,7 @@ export default function AttendancePage() {
                         <div>
                           <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Expected</label>
                           <div className="mt-1 text-sm font-bold text-slate-700 dark:text-slate-300">
-                            {formatHours(attendanceDetail.expectedHours)} hrs
+                            {attendanceDetail.expectedHours ?? '-'} hrs
                           </div>
                         </div>
                       )
@@ -2066,8 +2706,12 @@ export default function AttendancePage() {
                   )}
                   {hasExistingOT && (
                     <div className="mt-3 text-right">
-                      <span className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-1 text-[10px] font-bold text-green-700 uppercase tracking-wider dark:bg-green-900/30 dark:text-green-400">
-                        OT Converted
+                      <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${
+                        otRequestStatus === 'approved'
+                          ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                          : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                      }`}>
+                        {otRequestStatus === 'approved' ? 'OT Converted' : 'Pending approval'}
                       </span>
                     </div>
                   )}
@@ -2098,40 +2742,53 @@ export default function AttendancePage() {
                           </div>
 
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                            {/* Shift Selection */}
+                            {/* Shift Selection - read-only or change when allowShiftChange */}
                             <div className="flex flex-col gap-1.5">
                               <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Configured Shift</label>
-                              <div className="flex items-center gap-3">
-                                {!isEditingThisShift ? (
-                                  <>
-                                    <div className="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate" title={shiftName}>{shiftName}</div>
-                                    <button
-                                      onClick={() => {
-                                        setEditingShift(true);
-                                        setSelectedShiftRecordId(shift._id);
-                                        setSelectedShiftId(shiftIdVal);
-                                      }}
-                                      className="rounded-lg bg-blue-50 px-2.5 py-1 text-[10px] font-bold text-blue-600 hover:bg-blue-100 transition-colors dark:bg-blue-900/20 dark:text-blue-400"
-                                    >
-                                      Change
-                                    </button>
-                                  </>
-                                ) : (
-                                  <div className="flex flex-col gap-2 w-full">
+                              <div className="flex items-center gap-3 flex-wrap">
+                                <div className="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate" title={shiftName}>{shiftName}</div>
+                                {attendanceFeatureFlags.allowShiftChange && selectedEmployee && selectedDate && !isEditingThisShift && (
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      setSelectedShiftRecordId(shift._id);
+                                      setEditingShift(true);
+                                      if (availableShifts.length === 0 && selectedEmployee) {
+                                        await loadAvailableShifts(selectedEmployee.emp_no, selectedDate || attendanceDetail.date);
+                                      }
+                                    }}
+                                    className="text-xs font-semibold text-violet-600 hover:text-violet-700 dark:text-violet-400 dark:hover:text-violet-300"
+                                  >
+                                    Change shift
+                                  </button>
+                                )}
+                                {isEditingThisShift && (
+                                  <div className="mt-2 flex flex-wrap items-center gap-2">
                                     <select
-                                      value={selectedShiftId || ''}
+                                      value={selectedShiftId}
                                       onChange={(e) => setSelectedShiftId(e.target.value)}
-                                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                      className="h-8 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm min-w-[140px] focus:ring-2 focus:ring-violet-500/50"
                                     >
-                                      <option value="">Select Shift</option>
-                                      {availableShifts.map((s) => (
-                                        <option key={s._id} value={s._id}>{s.name} ({s.startTime}-{s.endTime})</option>
+                                      <option value="">Select shift</option>
+                                      {availableShifts.map((s: any) => (
+                                        <option key={s._id} value={s._id}>{s.name}</option>
                                       ))}
                                     </select>
-                                    <div className="flex gap-2">
-                                      <button onClick={handleAssignShift} className="flex-1 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-green-700">Save</button>
-                                      <button onClick={() => { setEditingShift(false); setSelectedShiftRecordId(null); }} className="flex-1 rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-300 dark:bg-slate-700 dark:text-white dark:hover:bg-slate-600">Cancel</button>
-                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={handleAssignShift}
+                                      disabled={savingShift || !selectedShiftId}
+                                      className="h-8 px-3 rounded-lg bg-violet-600 text-white text-xs font-medium hover:bg-violet-700 disabled:opacity-50"
+                                    >
+                                      {savingShift ? 'Saving…' : 'Assign'}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => { setEditingShift(false); setSelectedShiftId(''); setSelectedShiftRecordId(null); }}
+                                      className="h-8 px-3 rounded-lg border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300 text-xs font-medium hover:bg-slate-50 dark:hover:bg-slate-800"
+                                    >
+                                      Cancel
+                                    </button>
                                   </div>
                                 )}
                               </div>
@@ -2145,41 +2802,7 @@ export default function AttendancePage() {
                               </div>
                               <div className="flex flex-col gap-1">
                                 <label className="text-[10px] font-black uppercase tracking-widest text-rose-600/70">Check-Out</label>
-                                {!isEditingThisOutTime ? (
-                                  <div className="flex items-center gap-2">
-                                    <div className="text-sm font-black text-slate-800 dark:text-white">{formatTime(shift.outTime, true, selectedDate || '')}</div>
-                                    <button
-                                      onClick={() => {
-                                        setEditingOutTime(true);
-                                        setSelectedShiftRecordId(shift._id);
-                                        if (shift.outTime) {
-                                          const d = new Date(shift.outTime);
-                                          setOutTimeInput(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
-                                        } else {
-                                          setOutTimeInput('');
-                                        }
-                                      }}
-                                      className="rounded-lg bg-slate-100 p-1 text-slate-400 hover:bg-blue-50 hover:text-blue-600 transition-all dark:bg-slate-800"
-                                    >
-                                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                                      </svg>
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <div className="flex flex-col gap-2">
-                                    <input
-                                      type="time"
-                                      value={outTimeInput}
-                                      onChange={(e) => setOutTimeInput(e.target.value)}
-                                      className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800"
-                                    />
-                                    <div className="flex gap-1.5">
-                                      <button onClick={handleSaveOutTime} className="flex-1 rounded-md bg-green-600 px-2 py-1 text-[10px] font-bold text-white shadow-sm">Save</button>
-                                      <button onClick={() => { setEditingOutTime(false); setSelectedShiftRecordId(null); }} className="flex-1 rounded-md bg-slate-200 px-2 py-1 text-[10px] font-bold text-slate-700 dark:bg-slate-700 dark:text-white">Cancel</button>
-                                    </div>
-                                  </div>
-                                )}
+                                <div className="text-sm font-black text-slate-800 dark:text-white">{formatTime(shift.outTime, true, selectedDate || '')}</div>
                               </div>
                             </div>
                           </div>
@@ -2203,6 +2826,56 @@ export default function AttendancePage() {
                               <span className={`text-[10px] font-black uppercase ${shift.status === 'PRESENT' ? 'text-green-600' : 'text-slate-500'}`}>{shift.status || '-'}</span>
                             </div>
                           </div>
+                          {selectedEmployee && selectedDate && (attendanceFeatureFlags.allowInTimeEditing || attendanceFeatureFlags.allowOutTimeEditing) && (
+                            <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap gap-3">
+                              {attendanceFeatureFlags.allowInTimeEditing && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const inTime = shift.inTime ? new Date(shift.inTime) : null;
+                                    const baseDate = selectedDate || attendanceDetail.date;
+                                    const defaultDateTime = inTime
+                                      ? `${inTime.getFullYear()}-${String(inTime.getMonth() + 1).padStart(2, '0')}-${String(inTime.getDate()).padStart(2, '0')}T${String(inTime.getHours()).padStart(2, '0')}:${String(inTime.getMinutes()).padStart(2, '0')}`
+                                      : `${baseDate}T09:00`;
+                                    setInTimeDialogValue(defaultDateTime);
+                                    setSelectedRecordForInTime({
+                                      employee: selectedEmployee,
+                                      date: baseDate,
+                                      shiftRecordId: shift._id,
+                                    });
+                                    setShowInTimeDialog(true);
+                                    setShowDetailDialog(false);
+                                  }}
+                                  className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300"
+                                >
+                                  Edit In Time
+                                </button>
+                              )}
+                              {attendanceFeatureFlags.allowOutTimeEditing && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const outTime = shift.outTime ? new Date(shift.outTime) : null;
+                                    const baseDate = selectedDate || attendanceDetail.date;
+                                    const defaultDateTime = outTime
+                                      ? `${outTime.getFullYear()}-${String(outTime.getMonth() + 1).padStart(2, '0')}-${String(outTime.getDate()).padStart(2, '0')}T${String(outTime.getHours()).padStart(2, '0')}:${String(outTime.getMinutes()).padStart(2, '0')}`
+                                      : `${baseDate}T18:00`;
+                                    setOutTimeValue(defaultDateTime);
+                                    setSelectedRecordForOutTime({
+                                      employee: selectedEmployee,
+                                      date: baseDate,
+                                      shiftRecordId: shift._id,
+                                    });
+                                    setShowOutTimeDialog(true);
+                                    setShowDetailDialog(false);
+                                  }}
+                                  className="text-xs font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                                >
+                                  Edit Out Time
+                                </button>
+                              )}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -2218,30 +2891,6 @@ export default function AttendancePage() {
                       </div>
                       <h5 className="mt-4 text-sm font-bold text-slate-900 dark:text-white">No attendance records today</h5>
                       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Employee was marked as absent for this date.</p>
-                      <div className="mt-6 flex justify-center gap-3">
-                        {!editingInTime ? (
-                          <button
-                            onClick={() => {
-                              setEditingInTime(true);
-                              setInTimeInput('09:00'); // Default suggestion
-                            }}
-                            className="rounded-xl bg-blue-600 px-6 py-2.5 text-xs font-bold text-white shadow-lg shadow-blue-500/25 transition-all hover:bg-blue-700 active:scale-95"
-                          >
-                            Mark as Present
-                          </button>
-                        ) : (
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="time"
-                              value={inTimeInput}
-                              onChange={(e) => setInTimeInput(e.target.value)}
-                              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm ring-1 ring-slate-200"
-                            />
-                            <button onClick={handleSaveInTime} className="rounded-lg bg-green-600 px-4 py-1.5 text-xs font-bold text-white shadow-sm">Save</button>
-                            <button onClick={() => setEditingInTime(false)} className="rounded-lg bg-slate-500 px-4 py-1.5 text-xs font-bold text-white shadow-sm">Cancel</button>
-                          </div>
-                        )}
-                      </div>
                     </div>
                   ) : null
                 )}

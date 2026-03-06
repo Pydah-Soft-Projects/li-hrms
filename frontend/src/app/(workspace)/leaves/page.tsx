@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import dynamic from 'next/dynamic';
 import { api } from '@/lib/api';
 import { auth } from '@/lib/auth';
 import {
@@ -13,6 +14,9 @@ import Swal from 'sweetalert2';
 import 'react-toastify/dist/ReactToastify.css';
 
 import LocationPhotoCapture from '@/components/LocationPhotoCapture';
+import EmployeeSelect from '@/components/EmployeeSelect';
+
+const LocationMap = dynamic(() => import('@/components/LocationMap'), { ssr: false });
 import {
   Calendar,
   Briefcase,
@@ -32,7 +36,8 @@ import {
   Clock,
   Check,
   Circle,
-  Loader2
+  Loader2,
+  Trash2
 } from 'lucide-react';
 
 // Custom Stat Card
@@ -373,9 +378,27 @@ const getRequestedDays = (fromDate: string, toDate: string, isHalfDay: boolean):
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
 };
 
+// Min/max date strings from leave or OD policy (allowBackdated, maxBackdatedDays, allowFutureDated, maxAdvanceDays)
+const getPolicyDateBounds = (policy: { allowBackdated?: boolean; maxBackdatedDays?: number; allowFutureDated?: boolean; maxAdvanceDays?: number }) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  let minDate = new Date(today);
+  let maxDate = new Date(today);
+  if (policy.allowBackdated && (policy.maxBackdatedDays ?? 0) > 0) {
+    minDate.setDate(minDate.getDate() - (policy.maxBackdatedDays ?? 0));
+  }
+  if (policy.allowFutureDated && (policy.maxAdvanceDays ?? 0) > 0) {
+    maxDate.setDate(maxDate.getDate() + (policy.maxAdvanceDays ?? 0));
+  }
+  return {
+    minDate: minDate.toISOString().split('T')[0],
+    maxDate: maxDate.toISOString().split('T')[0],
+  };
+};
+
 export default function LeavesPage() {
   const { getModuleConfig, hasPermission, activeWorkspace } = useWorkspace();
-  const [activeTab, setActiveTab] = useState<'leaves' | 'od' | 'pending'>('leaves');
+  const [activeTab, setActiveTab] = useState<'leaves' | 'od' | 'pending' | 'in_progress'>('leaves');
   const [leaves, setLeaves] = useState<LeaveApplication[]>([]);
   const [ods, setODs] = useState<ODApplication[]>([]);
   const [pendingLeaves, setPendingLeaves] = useState<LeaveApplication[]>([]);
@@ -409,6 +432,7 @@ export default function LeavesPage() {
   const [applyType, setApplyType] = useState<'leave' | 'od'>('leave');
   const [showDetailDialog, setShowDetailDialog] = useState(false);
   const [isChangeHistoryExpanded, setIsChangeHistoryExpanded] = useState(false);
+  const [isBreakdownExpanded, setIsBreakdownExpanded] = useState(false);
   const [selectedItem, setSelectedItem] = useState<LeaveApplication | ODApplication | null>(null);
   const [detailType, setDetailType] = useState<'leave' | 'od'>('leave');
   const [actionComment, setActionComment] = useState('');
@@ -425,6 +449,15 @@ export default function LeavesPage() {
   const [leaveTypes, setLeaveTypes] = useState<any[]>([]);
   const [odTypes, setODTypes] = useState<any[]>([]);
 
+  // Leave / OD policy (backdated & future-date bounds)
+  const defaultPolicy = { allowBackdated: false, maxBackdatedDays: 0, allowFutureDated: true, maxAdvanceDays: 90 };
+  const [leavePolicy, setLeavePolicy] = useState<typeof defaultPolicy>(defaultPolicy);
+  const [odPolicy, setODPolicy] = useState<typeof defaultPolicy>({ ...defaultPolicy, allowBackdated: true, maxBackdatedDays: 30 });
+  const [leaveWorkflowAllowHigherAuthority, setLeaveWorkflowAllowHigherAuthority] = useState(false);
+  const [leaveWorkflowRoleOrder, setLeaveWorkflowRoleOrder] = useState<string[]>([]);
+  const [odWorkflowAllowHigherAuthority, setODWorkflowAllowHigherAuthority] = useState(false);
+  const [odWorkflowRoleOrder, setODWorkflowRoleOrder] = useState<string[]>([]);
+
   // Employees for "Apply For" selection
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [defaultEmployees, setDefaultEmployees] = useState<Employee[]>([]); // Store initial loaded employees
@@ -434,9 +467,12 @@ export default function LeavesPage() {
   const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
 
-  // CL balance for selected month (when leave type is CL) – used to cap selectable days
+  // CL balances for selected month/year (when leave type is CL)
   const [clBalanceForMonth, setClBalanceForMonth] = useState<number | null>(null);
+  const [clAnnualBalance, setClAnnualBalance] = useState<number | null>(null);
+  const [cclBalance, setCclBalance] = useState<number | null>(null);
   const [clBalanceLoading, setClBalanceLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState<string>('');
 
   // Form state
   const [formData, setFormData] = useState<{
@@ -474,7 +510,9 @@ export default function LeavesPage() {
     status: '',
     leaveType: '',
     startDate: '',
-    endDate: ''
+    endDate: '',
+    division: '',
+    department: ''
   });
 
   // Evidence State
@@ -490,6 +528,37 @@ export default function LeavesPage() {
     odInfo: any;
   } | null>(null);
   const [checkingApprovedRecords, setCheckingApprovedRecords] = useState(false);
+
+  // Form validation for Apply button
+  const isFormValid = () => {
+    // 1. Common required fields
+    if (!formData.fromDate || !formData.toDate || !formData.purpose || !formData.contactNumber) {
+      return false;
+    }
+
+    // 2. Employee selection (required for non-employee roles)
+    if (currentUser?.role !== 'employee' && !selectedEmployee) {
+      return false;
+    }
+
+    // 3. Type-specific validation
+    if (applyType === 'leave') {
+      if (!formData.leaveType) return false;
+    } else {
+      // OD Validation
+      if (!formData.odType || !formData.placeVisited) return false;
+
+      // Hours-specific OD
+      if (formData.odType_extended === 'hours') {
+        if (!formData.odStartTime || !formData.odEndTime) return false;
+      }
+
+      // Photo Evidence & Location required for OD (typically mandatory in this system)
+      if (!evidenceFile || !locationData) return false;
+    }
+
+    return true;
+  };
 
   useEffect(() => {
     const user = auth.getUser();
@@ -614,7 +683,7 @@ export default function LeavesPage() {
         return;
       }
 
-      // Check both leave and od settings for workspace permissions
+      // Check both leave and od settings for workspace permissions (and workflow options for approve/reject visibility)
       const [leaveSettingsRes, odSettingsRes] = await Promise.all([
         api.getLeaveSettings('leave'),
         api.getLeaveSettings('od'),
@@ -623,143 +692,44 @@ export default function LeavesPage() {
       console.log('[Workspace Leaves] Leave settings response:', leaveSettingsRes);
       console.log('[Workspace Leaves] OD settings response:', odSettingsRes);
 
-      const workspaceIdStr = String(workspaceId);
-
-      // Check Leave permissions from leave settings
-      let leavePermissionsFromLeave = null;
-      if (leaveSettingsRes.success && leaveSettingsRes.data?.settings?.workspacePermissions) {
-        const allPermissions = leaveSettingsRes.data.settings.workspacePermissions;
-        console.log('[Workspace Leaves] Leave settings permissions:', JSON.stringify(allPermissions, null, 2));
-        for (const key in allPermissions) {
-          if (String(key) === workspaceIdStr) {
-            leavePermissionsFromLeave = allPermissions[key];
-            console.log('[Workspace Leaves] Found leave permissions in leave settings:', JSON.stringify(leavePermissionsFromLeave, null, 2));
-            break;
-          }
-        }
+      // Apply workflow "allow higher authority" and role order so Pending tab shows Approve/Reject when setting is on
+      if (leaveSettingsRes.success && leaveSettingsRes.data?.workflow) {
+        const wf = leaveSettingsRes.data.workflow as { allowHigherAuthorityToApproveLowerLevels?: boolean; steps?: { stepOrder: number; approverRole: string }[] };
+        setLeaveWorkflowAllowHigherAuthority(Boolean(wf.allowHigherAuthorityToApproveLowerLevels));
+        const steps = (wf.steps || []).slice().sort((a: any, b: any) => (a.stepOrder ?? 999) - (b.stepOrder ?? 999));
+        setLeaveWorkflowRoleOrder(steps.map((st: any) => String(st.approverRole || '').toLowerCase()).filter(Boolean));
+      }
+      if (odSettingsRes.success && odSettingsRes.data?.workflow) {
+        const wf = odSettingsRes.data.workflow as { allowHigherAuthorityToApproveLowerLevels?: boolean; steps?: { stepOrder: number; approverRole: string }[] };
+        setODWorkflowAllowHigherAuthority(Boolean(wf.allowHigherAuthorityToApproveLowerLevels));
+        const steps = (wf.steps || []).slice().sort((a: any, b: any) => (a.stepOrder ?? 999) - (b.stepOrder ?? 999));
+        setODWorkflowRoleOrder(steps.map((st: any) => String(st.approverRole || '').toLowerCase()).filter(Boolean));
       }
 
-      // Check OD permissions from od settings
-      let odPermissionsFromOD = null;
-      if (odSettingsRes.success && odSettingsRes.data?.settings?.workspacePermissions) {
-        const allPermissions = odSettingsRes.data.settings.workspacePermissions;
-        console.log('[Workspace Leaves] OD settings permissions:', JSON.stringify(allPermissions, null, 2));
-        for (const key in allPermissions) {
-          if (String(key) === workspaceIdStr) {
-            odPermissionsFromOD = allPermissions[key];
-            console.log('[Workspace Leaves] Found OD permissions in OD settings:', JSON.stringify(odPermissionsFromOD, null, 2));
-            break;
-          }
-        }
-      }
-
-      // Process Leave permissions
+      // Do not use workspace permissions from settings; role-based only
       let leaveSelf = false;
       let leaveOthers = false;
-
-      if (leavePermissionsFromLeave) {
-        console.log('[Workspace Leaves] Processing leave permissions, type:', typeof leavePermissionsFromLeave, 'has leave prop:', !!leavePermissionsFromLeave.leave);
-        if (typeof leavePermissionsFromLeave === 'boolean') {
-          // Old format
-          console.log('[Workspace Leaves] Using old boolean format for leave');
-          leaveSelf = false;
-          leaveOthers = leavePermissionsFromLeave;
-        } else if (leavePermissionsFromLeave.leave) {
-          // New format with separate leave/od - structure: { leave: { canApplyForSelf, canApplyForOthers } }
-          console.log('[Workspace Leaves] Using new nested format for leave:', leavePermissionsFromLeave.leave);
-          leaveSelf = leavePermissionsFromLeave.leave.canApplyForSelf || false;
-          leaveOthers = leavePermissionsFromLeave.leave.canApplyForOthers || false;
-        } else {
-          // Legacy object format (but check if it has OD data, if so, this is for OD not leave)
-          if (!leavePermissionsFromLeave.od) {
-            console.log('[Workspace Leaves] Using legacy object format for leave');
-            leaveSelf = leavePermissionsFromLeave.canApplyForSelf || false;
-            leaveOthers = leavePermissionsFromLeave.canApplyForOthers || false;
-          } else {
-            console.log('[Workspace Leaves] Leave permissions object contains OD data, skipping');
-          }
-        }
-      } else {
-        console.log('[Workspace Leaves] No leave permissions found');
-      }
-
-
-      // Override based on Role (Strict Role-Based Access)
-      if (currentUser) {
-        if (currentUser.role === 'employee') {
-          leaveSelf = true; // Employees can always apply for themselves
-          leaveOthers = false;
-        } else if (['manager', 'hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser.role)) {
-          leaveOthers = true;
-          leaveSelf = true; // Admins/Managers/HODs should also be able to apply
-        }
-      }
-
-      console.log('[Workspace Leaves] Parsed leave permissions:', { self: leaveSelf, others: leaveOthers });
-      setCanApplyLeaveForSelf(leaveSelf);
-      setCanApplyLeaveForOthers(leaveOthers);
-
-      // Process OD permissions - check OD settings first, then fallback to leave settings
       let odSelf = false;
       let odOthers = false;
-
-      // First try OD settings
-      if (odPermissionsFromOD) {
-        console.log('[Workspace Leaves] Processing OD permissions from OD settings, type:', typeof odPermissionsFromOD, 'has od prop:', !!odPermissionsFromOD.od);
-        if (typeof odPermissionsFromOD === 'boolean') {
-          // Old format
-          console.log('[Workspace Leaves] Using old boolean format for OD');
-          odSelf = false;
-          odOthers = odPermissionsFromOD;
-        } else if (odPermissionsFromOD.od) {
-          // New format with separate leave/od - structure: { od: { canApplyForSelf, canApplyForOthers } }
-          console.log('[Workspace Leaves] Using new nested format for OD:', odPermissionsFromOD.od);
-          odSelf = odPermissionsFromOD.od.canApplyForSelf || false;
-          odOthers = odPermissionsFromOD.od.canApplyForOthers || false;
-        } else {
-          // Legacy object format
-          console.log('[Workspace Leaves] Using legacy object format for OD');
-          odSelf = odPermissionsFromOD.canApplyForSelf || false;
-          odOthers = odPermissionsFromOD.canApplyForOthers || false;
-        }
-      }
-      // If not found in OD settings, check leave settings (might have OD permissions stored there)
-      else if (leavePermissionsFromLeave && typeof leavePermissionsFromLeave === 'object' && leavePermissionsFromLeave.od) {
-        console.log('[Workspace Leaves] Found OD permissions in leave settings, using them');
-        odSelf = leavePermissionsFromLeave.od.canApplyForSelf || false;
-        odOthers = leavePermissionsFromLeave.od.canApplyForOthers || false;
-      }
-      // Final fallback: use leave permissions if no OD-specific permissions found
-      else if (leavePermissionsFromLeave && typeof leavePermissionsFromLeave !== 'boolean' && !leavePermissionsFromLeave.leave && !leavePermissionsFromLeave.od) {
-        // Use leave permissions as fallback for OD (legacy behavior)
-        console.log('[Workspace Leaves] Using leave permissions as fallback for OD');
-        odSelf = leavePermissionsFromLeave.canApplyForSelf || false;
-        odOthers = leavePermissionsFromLeave.canApplyForOthers || false;
-      } else {
-        console.log('[Workspace Leaves] No OD permissions found');
-      }
-
-
-      // Override OD based on Role
       if (currentUser) {
         if (currentUser.role === 'employee') {
-          odSelf = true; // Employees can always apply for OD
+          leaveSelf = true;
+          leaveOthers = false;
+          odSelf = true;
           odOthers = false;
         } else if (['manager', 'hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser.role)) {
-          odOthers = true;
+          leaveSelf = true;
+          leaveOthers = true;
           odSelf = true;
+          odOthers = true;
         }
       }
-
-      console.log('[Workspace Leaves] Parsed OD permissions:', { self: odSelf, others: odOthers });
+      setCanApplyLeaveForSelf(leaveSelf);
+      setCanApplyLeaveForOthers(leaveOthers);
       setCanApplyODForSelf(odSelf);
       setCanApplyODForOthers(odOthers);
-
-      // Set combined permissions (for backward compatibility)
       setCanApplyForSelf(leaveSelf || odSelf);
       setCanApplyForOthers(leaveOthers || odOthers);
-
-      console.log('[Workspace Leaves] Final permissions - Leave:', { self: leaveSelf, others: leaveOthers }, 'OD:', { self: odSelf, others: odOthers });
     } catch (err) {
       console.error('[Workspace Leaves] Failed to check workspace permission:', err);
       setCanApplyLeaveForSelf(false);
@@ -891,10 +861,46 @@ export default function LeavesPage() {
         fetchedLeaveTypes = leaveSettingsRes.data.types.filter((t: any) => t.isActive !== false);
       }
 
+      // Store leave policy settings
+      if (leaveSettingsRes.success && leaveSettingsRes.data?.settings) {
+        const s = leaveSettingsRes.data.settings;
+        setLeavePolicy({
+          allowBackdated: s.allowBackdated ?? false,
+          maxBackdatedDays: s.maxBackdatedDays ?? 0,
+          allowFutureDated: s.allowFutureDated ?? true,
+          maxAdvanceDays: s.maxAdvanceDays ?? 90,
+        });
+      }
+      // Leave workflow: allow higher authority to approve lower levels
+      if (leaveSettingsRes.success && leaveSettingsRes.data?.workflow) {
+        const wf = leaveSettingsRes.data.workflow as { allowHigherAuthorityToApproveLowerLevels?: boolean; steps?: { stepOrder: number; approverRole: string }[] };
+        setLeaveWorkflowAllowHigherAuthority(Boolean(wf.allowHigherAuthorityToApproveLowerLevels));
+        const steps = (wf.steps || []).slice().sort((a: any, b: any) => (a.stepOrder ?? 999) - (b.stepOrder ?? 999));
+        setLeaveWorkflowRoleOrder(steps.map((st: any) => String(st.approverRole || '').toLowerCase()).filter(Boolean));
+      }
+
       // Extract OD types from settings (field is 'types' not 'odTypes')
       let fetchedODTypes: any[] = [];
       if (odSettingsRes.success && odSettingsRes.data?.types) {
         fetchedODTypes = odSettingsRes.data.types.filter((t: any) => t.isActive !== false);
+      }
+
+      // Store OD policy settings
+      if (odSettingsRes.success && odSettingsRes.data?.settings) {
+        const s = odSettingsRes.data.settings;
+        setODPolicy({
+          allowBackdated: s.allowBackdated ?? true,
+          maxBackdatedDays: s.maxBackdatedDays ?? 30,
+          allowFutureDated: s.allowFutureDated ?? true,
+          maxAdvanceDays: s.maxAdvanceDays ?? 90,
+        });
+      }
+      // OD workflow: allow higher authority to approve lower levels
+      if (odSettingsRes.success && odSettingsRes.data?.workflow) {
+        const wf = odSettingsRes.data.workflow as { allowHigherAuthorityToApproveLowerLevels?: boolean; steps?: { stepOrder: number; approverRole: string }[] };
+        setODWorkflowAllowHigherAuthority(Boolean(wf.allowHigherAuthorityToApproveLowerLevels));
+        const steps = (wf.steps || []).slice().sort((a: any, b: any) => (a.stepOrder ?? 999) - (b.stepOrder ?? 999));
+        setODWorkflowRoleOrder(steps.map((st: any) => String(st.approverRole || '').toLowerCase()).filter(Boolean));
       }
 
       // Use fetched types or defaults
@@ -1031,6 +1037,7 @@ export default function LeavesPage() {
     e.preventDefault();
     setError(null);
     setLoading(true);
+    setLoadingMessage('Initializing...');
 
     try {
       let employeeToApplyFor = selectedEmployee;
@@ -1062,6 +1069,23 @@ export default function LeavesPage() {
       }
 
       // 1. Validation
+      const policy = applyType === 'leave' ? leavePolicy : odPolicy;
+      const { minDate: policyMin, maxDate: policyMax } = getPolicyDateBounds(policy);
+      if (formData.fromDate && (formData.fromDate < policyMin || formData.fromDate > policyMax)) {
+        toast.error(
+          applyType === 'leave'
+            ? `From date must be within the allowed range (${policyMin} to ${policyMax}) as per leave settings.`
+            : `Date must be within the allowed range (${policyMin} to ${policyMax}) as per OD settings.`
+        );
+        setLoading(false);
+        return;
+      }
+      if (formData.toDate && (formData.toDate < policyMin || formData.toDate > policyMax)) {
+        toast.error(`To date must be within the allowed range (${policyMin} to ${policyMax}) as per ${applyType === 'leave' ? 'leave' : 'OD'} settings.`);
+        setLoading(false);
+        return;
+      }
+
       if (applyType === 'leave') {
         if (!formData.leaveType || !formData.fromDate || !formData.toDate || !formData.purpose) {
           toast.error('Please fill all required fields');
@@ -1083,7 +1107,7 @@ export default function LeavesPage() {
           }
           const requestedDays = getRequestedDays(formData.fromDate, formData.toDate, formData.isHalfDay);
           if (requestedDays > clBalanceForMonth) {
-            toast.error(`Casual Leave balance for this month is ${clBalanceForMonth} day(s). You selected ${requestedDays} day(s). Please reduce the date range.`);
+            toast.error(`CL allowed for this pay period is ${clBalanceForMonth} day(s). You selected ${requestedDays} day(s). Please reduce the date range.`);
             setLoading(false);
             return;
           }
@@ -1123,6 +1147,7 @@ export default function LeavesPage() {
       }
 
       // 2. Prepare Payload
+      setLoadingMessage('Preparing application...');
       const contactNum = formData.contactNumber || employeeToApplyFor.phone_number || '';
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let payload: any = {
@@ -1150,22 +1175,30 @@ export default function LeavesPage() {
         }
       }
 
-      // 3. Evidence Upload
+      // 3. Evidence Upload (mandatory for OD)
       if (applyType === 'od') {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const odSettings = getModuleConfig('OD')?.settings as any;
-        if (odSettings?.requirePhotoEvidence && !evidenceFile) {
-          toast.error('Photo evidence is required');
+        if (!evidenceFile) {
+          toast.error('Photo evidence is required for OD applications');
           setLoading(false);
           return;
         }
 
         if (evidenceFile) {
+          // Check file size (20MB limit)
+          const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
+          if (evidenceFile.size > MAX_FILE_SIZE) {
+            toast.error('The selected photo is too large. please upload a photo smaller than 20MB.');
+            setLoading(false);
+            return;
+          }
+
+          setLoadingMessage('Uploading photo');
           const uploadRes = await api.uploadEvidence(evidenceFile);
-          if (uploadRes.success && uploadRes.data) {
+          // API returns { success, url, key, filename } at top level (no .data wrapper)
+          if (uploadRes.success && uploadRes.url) {
             payload.photoEvidence = {
-              url: uploadRes.data.url,
-              key: uploadRes.data.key,
+              url: uploadRes.url,
+              key: uploadRes.key,
               exifLocation: (evidenceFile as any).exifLocation
             };
           } else {
@@ -1181,6 +1214,7 @@ export default function LeavesPage() {
       }
 
       // 4. Submit
+      setLoadingMessage('Submitting Request');
       const response = applyType === 'leave'
         ? await api.applyLeave(payload)
         : await api.applyOD(payload);
@@ -1203,6 +1237,7 @@ export default function LeavesPage() {
       toast.error(err.message || 'An error occurred');
     } finally {
       setLoading(false);
+      setLoadingMessage('');
     }
   };
 
@@ -1262,6 +1297,7 @@ export default function LeavesPage() {
     setEvidenceFile(null);
     setEvidencePreview(null);
     setLocationData(null);
+    setLoadingMessage('');
     setError(null);
   };
 
@@ -1335,7 +1371,7 @@ export default function LeavesPage() {
     checkApprovedRecords();
   }, [selectedEmployee, formData.fromDate, formData.toDate]);
 
-  // Fetch CL balance for selected month when leave type is CL (Casual Leave)
+  // Fetch CL balance for the pay-cycle period that contains the selected from date (not calendar month).
   const isCLSelected = applyType === 'leave' && (formData.leaveType === 'CL' || formData.leaveType?.toUpperCase() === 'CL');
   const targetEmployeeForBalance = selectedEmployee || (employees.length > 0 ? employees[0] : null) ||
     (currentUser?.role === 'employee' ? { _id: (currentUser as any).id, emp_no: (currentUser as any).emp_no || (currentUser as any).employeeId } : null);
@@ -1350,17 +1386,18 @@ export default function LeavesPage() {
       setClBalanceForMonth(null);
       return;
     }
-    const from = parseDateOnly(formData.fromDate);
-    const month = from.getMonth() + 1;
-    const year = from.getFullYear();
 
     let cancelled = false;
     setClBalanceLoading(true);
     setClBalanceForMonth(null);
 
+    // Determine pay-cycle period from the selected date: send baseDate (not calendar month/year)
+    // so the backend resolves the correct period (e.g. 26 Jan–25 Feb for 31 Jan when cycle is 26–25).
+    const raw = formData.fromDate?.includes('T') ? formData.fromDate.split('T')[0] : (formData.fromDate || '');
+    const baseDateForApi = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : toISODate(formData.fromDate) || raw;
     const registerParams = hasValidEmployeeId
-      ? { employeeId: String(targetEmployeeId), month, year, balanceAsOf: true }
-      : { empNo: String(targetEmpNo), month, year, balanceAsOf: true };
+      ? { employeeId: String(targetEmployeeId), baseDate: baseDateForApi, balanceAsOf: true }
+      : { empNo: String(targetEmpNo), baseDate: baseDateForApi, balanceAsOf: true };
     api.getLeaveRegister(registerParams)
       .then((res: any) => {
         if (cancelled) return;
@@ -1368,12 +1405,17 @@ export default function LeavesPage() {
         if (Array.isArray(data) && data.length > 0 && data[0].casualLeave) {
           const cl = data[0].casualLeave;
           const balance = Number(cl.balance);
-          // Policy: 1 CL per month from first 12, plus any extra balance; cap by allowedRemaining
-          const allowed = cl.allowedRemaining != null ? Number(cl.allowedRemaining) : balance;
-          const cap = Number.isFinite(allowed) ? Math.max(0, allowed) : (Number.isFinite(balance) ? balance : 0);
-          setClBalanceForMonth(cap);
+          const allowedRaw = cl.allowedRemaining != null ? Number(cl.allowedRemaining) : balance;
+          const clCap = Number.isFinite(allowedRaw) ? Math.max(0, allowedRaw) : (Number.isFinite(balance) ? balance : 0);
+          setClBalanceForMonth(clCap);
+          setClAnnualBalance(Number.isFinite(balance) ? Math.max(0, balance) : null);
+          const cclRaw = data[0].compensatoryOff?.balance;
+          const cclVal = Number(cclRaw);
+          setCclBalance(Number.isFinite(cclVal) ? Math.max(0, cclVal) : 0);
         } else {
           setClBalanceForMonth(0);
+          setClAnnualBalance(null);
+          setCclBalance(null);
         }
       })
       .catch(() => {
@@ -1433,7 +1475,7 @@ export default function LeavesPage() {
       setSplitSaving(false);
       setActionComment('');
 
-      let enrichedItem: LeaveApplication | ODApplication = item;
+      let enrichedItem = item;
       if (type === 'leave') {
         const response = await api.getLeave(item._id);
         if (response?.success && response.data) {
@@ -1443,23 +1485,41 @@ export default function LeavesPage() {
         setSplitDrafts(initialSplits);
         const leaveItem = enrichedItem as LeaveApplication;
         setSplitMode((leaveItem.splits && leaveItem.splits.length > 0) || false);
+      } else {
+        const response = await api.getOD(item._id);
+        if (response?.success && response.data) {
+          enrichedItem = response.data;
+        }
       }
 
       setSelectedItem(enrichedItem);
       setDetailType(type);
       setShowDetailDialog(true);
+      setIsChangeHistoryExpanded(false);
+      setIsBreakdownExpanded(false);
 
-      // Check if revocation is possible: only by the approver of the last step, within 3 hours
+      // Check if revocation is possible: 
+      // 1. By the original actor who performed the last step
+      // 2. By Super Admin or HR
+      // 3. Within 48 hours window
+      const authUser = auth.getUser() as any;
       const wf = (enrichedItem as any).workflow;
       const chain = wf?.approvalChain || [];
-      const approvedSteps = chain.filter((s: any) => s.status === 'approved');
-      const lastApproved = approvedSteps[approvedSteps.length - 1];
-      const userId = (auth.getUser() as any)?._id;
-      if (lastApproved && userId) {
-        const approverId = (lastApproved.actionBy?._id || lastApproved.actionBy)?.toString?.() || String(lastApproved.actionBy);
-        const approvedAt = lastApproved.updatedAt || (enrichedItem as any).approvals?.[lastApproved.role || lastApproved.stepRole]?.approvedAt;
-        const hoursSince = approvedAt ? (Date.now() - new Date(approvedAt).getTime()) / (1000 * 60 * 60) : 999;
-        setCanRevoke(approverId === userId && hoursSince <= 3);
+      const actionSteps = chain.filter((s: any) => s.status === 'approved' || s.status === 'rejected');
+      const lastAction = actionSteps[actionSteps.length - 1];
+      const userId = authUser?._id || authUser?.id;
+      const userRole = authUser?.role;
+
+      if (lastAction && userId) {
+        const actorId = (lastAction.actionBy?._id || lastAction.actionBy)?.toString?.() || String(lastAction.actionBy);
+        const performedAt = lastAction.updatedAt || (enrichedItem as any).approvals?.[lastAction.role || lastAction.stepRole]?.approvedAt;
+        const hoursSince = performedAt ? (Date.now() - new Date(performedAt).getTime()) / (1000 * 60 * 60) : 999;
+
+        const isOriginalActor = actorId === userId;
+        const isHigherAuthority = ['super_admin', 'hr'].includes(userRole || '');
+        const isWithinWindow = hoursSince <= 48; // Extended window
+
+        setCanRevoke((isOriginalActor || isHigherAuthority) && isWithinWindow);
       } else {
         setCanRevoke(false);
       }
@@ -1612,16 +1672,74 @@ export default function LeavesPage() {
     }
   };
 
+  const handleDeleteRequest = async (id: string, type: 'leave' | 'od') => {
+    try {
+      const result = await Swal.fire({
+        title: `Delete ${type.toUpperCase()} Request?`,
+        text: `This will permanently delete this ${type} application. This action cannot be undone.`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#ef4444',
+        cancelButtonColor: '#64748b',
+        confirmButtonText: 'Yes, Delete',
+        cancelButtonText: 'Cancel',
+        reverseButtons: true
+      });
+
+      if (result.isConfirmed) {
+        setLoading(true);
+        const response = type === 'leave' ? await api.deleteLeave(id) : await api.deleteOD(id);
+        if (response.success) {
+          toast.success(`${type === 'leave' ? 'Leave' : 'OD'} application deleted`);
+          setShowDetailDialog(false);
+          setSelectedItem(null);
+          loadData();
+        } else {
+          toast.error(response.error || 'Failed to delete');
+        }
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to delete');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+
+  // Helper: get department name from item (top-level or nested on employeeId)
+  const getItemDepartmentName = (item: any) =>
+    item?.department?.name || (item?.employeeId as any)?.department?.name || (item?.department_name) || '';
+
+  // Helper: get division name from item (top-level or nested)
+  const getItemDivisionName = (item: any) =>
+    item?.division_name || (item?.employeeId as any)?.department?.division?.name || (item?.division_id as any)?.name || '';
+
+  // Helper: get designation name from item (top-level or nested on employeeId)
+  const getItemDesignationName = (item: any) =>
+    item?.designation?.name || (item?.employeeId as any)?.designation?.name || item?.designation_name || '';
 
   // Filter logic
   const filterData = (data: any[]) => {
     return data.filter(item => {
-      // 1. Employee Search
-      const searchContent = leaveFilters.employeeNumber.toLowerCase();
+      // 1. Search: name (all variants), emp_no, department, division
+      const searchContent = (leaveFilters.employeeNumber || '').trim().toLowerCase();
+      const itemDept = getItemDepartmentName(item);
+      const itemDiv = getItemDivisionName(item);
+      const fullName = [
+        item.employeeId?.employee_name,
+        item.employee_name,
+        [item.employeeId?.first_name, item.employeeId?.last_name].filter(Boolean).join(' ')
+      ].filter(Boolean).join(' ');
       const matchesSearch = !searchContent ||
         (item.employeeId?.employee_name?.toLowerCase().includes(searchContent)) ||
         (item.employee_name?.toLowerCase().includes(searchContent)) ||
-        (item.emp_no?.toLowerCase().includes(searchContent));
+        (item.employeeId?.first_name?.toLowerCase().includes(searchContent)) ||
+        (item.employeeId?.last_name?.toLowerCase().includes(searchContent)) ||
+        (fullName.toLowerCase().includes(searchContent)) ||
+        (item.emp_no?.toLowerCase().includes(searchContent)) ||
+        (item.employeeId?.emp_no?.toLowerCase().includes(searchContent)) ||
+        (itemDept?.toLowerCase().includes(searchContent)) ||
+        (itemDiv?.toLowerCase().includes(searchContent));
 
       // 2. Status Filter
       const matchesStatus = !leaveFilters.status || item.status === leaveFilters.status;
@@ -1630,7 +1748,13 @@ export default function LeavesPage() {
       const type = item.leaveType || item.odType;
       const matchesType = !leaveFilters.leaveType || (type && type === leaveFilters.leaveType);
 
-      // 4. Date Range Filter
+      // 4. Division Filter
+      const matchesDivision = !leaveFilters.division || (getItemDivisionName(item) === leaveFilters.division);
+
+      // 5. Department Filter
+      const matchesDepartment = !leaveFilters.department || (getItemDepartmentName(item) === leaveFilters.department);
+
+      // 6. Date Range Filter
       let matchesDate = true;
       if (leaveFilters.startDate || leaveFilters.endDate) {
         const itemDate = new Date(item.fromDate).getTime(); // Using fromDate as reference
@@ -1639,7 +1763,7 @@ export default function LeavesPage() {
         matchesDate = itemDate >= start && itemDate <= end;
       }
 
-      return matchesSearch && matchesStatus && matchesType && matchesDate;
+      return matchesSearch && matchesStatus && matchesType && matchesDivision && matchesDepartment && matchesDate;
     });
   };
 
@@ -1648,24 +1772,84 @@ export default function LeavesPage() {
   const filteredPendingLeaves = useMemo(() => filterData(pendingLeaves), [pendingLeaves, leaveFilters]);
   const filteredPendingODs = useMemo(() => filterData(pendingODs), [pendingODs, leaveFilters]);
 
-  const stats = useMemo(() => {
-    const calc = (items: any[]) => ({
-      total: items.length,
-      approved: items.filter(i => i.status === 'approved').length,
-      pending: items.filter(i => ['pending', 'hod_approved', 'manager_approved'].includes(i.status)).length,
-      rejected: items.filter(i => ['rejected', 'hod_rejected', 'hr_rejected', 'cancelled'].includes(i.status)).length,
+  const inProgressLeaves = useMemo(() => {
+    const pendingIds = new Set(pendingLeaves.map(p => p._id));
+    const userId = currentUser?.id || currentUser?._id;
+    return leaves.filter(i => {
+      if (['approved', 'rejected', 'cancelled'].includes(i.status) || pendingIds.has(i._id)) return false;
+      // Only show if user has already acted on it (approved or rejected step in chain)
+      const chain = (i as any).workflow?.approvalChain || [];
+      return chain.some((s: any) =>
+        (s.status === 'approved' || s.status === 'rejected') &&
+        ((s.actionBy?._id || s.actionBy)?.toString() === String(userId))
+      );
     });
+  }, [leaves, pendingLeaves, currentUser]);
+
+  const inProgressODs = useMemo(() => {
+    const pendingIds = new Set(pendingODs.map(p => p._id));
+    const userId = currentUser?.id || currentUser?._id;
+    return ods.filter(i => {
+      if (['approved', 'rejected', 'cancelled'].includes(i.status) || pendingIds.has(i._id)) return false;
+      // Only show if user has already acted on it
+      const chain = (i as any).workflow?.approvalChain || [];
+      return chain.some((s: any) =>
+        (s.status === 'approved' || s.status === 'rejected') &&
+        ((s.actionBy?._id || s.actionBy)?.toString() === String(userId))
+      );
+    });
+  }, [ods, pendingODs, currentUser]);
+
+  const filteredInProgressLeaves = useMemo(() => filterData(inProgressLeaves), [inProgressLeaves, leaveFilters]);
+  const filteredInProgressODs = useMemo(() => filterData(inProgressODs), [inProgressODs, leaveFilters]);
+
+  const stats = useMemo(() => {
+    const calc = (items: any[], pendingList: any[]) => {
+      const pendingIds = new Set(pendingList.map(p => p._id));
+      const userId = currentUser?.id || currentUser?._id;
+
+      const inProgress = items.filter(i => {
+        if (['approved', 'rejected', 'cancelled'].includes(i.status) || pendingIds.has(i._id)) return false;
+        const chain = (i as any).workflow?.approvalChain || [];
+        return chain.some((s: any) =>
+          (s.status === 'approved' || s.status === 'rejected') &&
+          ((s.actionBy?._id || s.actionBy)?.toString() === String(userId))
+        );
+      });
+
+      return {
+        total: items.length,
+        approved: items.filter(i => i.status === 'approved').length,
+        myActions: pendingList.length,
+        inProgress: inProgress.length,
+        totalPending: pendingList.length + inProgress.length,
+        rejected: items.filter(i => ['rejected', 'hod_rejected', 'hr_rejected', 'cancelled'].includes(i.status)).length,
+      };
+    };
+
+    const leavesStats = calc(leaves, pendingLeaves);
+    const odsStats = calc(ods, pendingODs);
 
     return {
-      leaves: calc(leaves),
-      ods: calc(ods),
-      totalPending: pendingLeaves.length + pendingODs.length
+      leaves: leavesStats,
+      ods: odsStats,
+      totalMyActions: pendingLeaves.length + pendingODs.length,
+      totalInProgress: leavesStats.inProgress + odsStats.inProgress
     };
   }, [leaves, ods, pendingLeaves, pendingODs]);
 
-  const totalPending = stats.totalPending;
+  const totalMyActions = stats.totalMyActions;
+  const totalInProgress = stats.totalInProgress;
 
-  const canPerformAction = (item: LeaveApplication | ODApplication) => {
+  // Build role order from the leave/OD's stored workflow (dynamic per record)
+  const getRoleOrderFromItem = (item: LeaveApplication | ODApplication): string[] => {
+    const chain = (item as any).workflow?.approvalChain;
+    if (!chain || !Array.isArray(chain) || chain.length === 0) return [];
+    const sorted = chain.slice().sort((a: any, b: any) => (a.stepOrder ?? 999) - (b.stepOrder ?? 999));
+    return sorted.map((s: any) => String(s.role || s.stepRole || '').toLowerCase()).filter(Boolean);
+  };
+
+  const canPerformAction = (item: LeaveApplication | ODApplication, source?: 'leave' | 'od') => {
     if (!currentUser) return false;
     if (currentUser.role === 'employee') return false;
 
@@ -1674,13 +1858,38 @@ export default function LeavesPage() {
       return !['approved', 'rejected', 'cancelled'].includes(item.status);
     }
 
+    const isOD = source === 'od' || ((item as any).odType !== undefined);
+    const allowHigher = isOD ? odWorkflowAllowHigherAuthority : leaveWorkflowAllowHigherAuthority;
+    // Use workflow order stored on the leave/OD (dynamic); fallback to global settings order if missing
+    const itemRoleOrder = getRoleOrderFromItem(item);
+    const globalRoleOrder = isOD ? odWorkflowRoleOrder : leaveWorkflowRoleOrder;
+    const roleOrder = itemRoleOrder.length > 0 ? itemRoleOrder : globalRoleOrder;
+
     // Strict check: nextApproverRole must match user.role (current step = user's turn)
     const nextRole = String((item as any).workflow?.nextApproverRole || (item as any).workflow?.nextApprover || '').toLowerCase().trim();
     const userRole = String(currentUser.role || '').toLowerCase().trim();
     if (nextRole) {
       if (userRole === nextRole) return true;
       if (nextRole === 'final_authority' && userRole === 'hr') return true;
-      if (nextRole === 'reporting_manager' && ['manager', 'hod'].includes(userRole)) return true;
+      // Reporting manager step: allow if user is in workflow.reportingManagerIds (e.g. HR who is RM for this employee)
+      if (nextRole === 'reporting_manager') {
+        if (['manager', 'hod'].includes(userRole)) return true;
+        const reportingManagerIds = (item as any).workflow?.reportingManagerIds as string[] | undefined;
+        const userId = String((currentUser as any).id ?? (currentUser as any)._id ?? '').trim();
+        if (reportingManagerIds?.length && userId && reportingManagerIds.some((id: string) => String(id).trim() === userId)) return true;
+      }
+      // Setting: allow higher authority to approve lower levels (using this leave's workflow order)
+      if (allowHigher && roleOrder.length > 0) {
+        const nextIdx = roleOrder.indexOf(nextRole);
+        let userIdx = roleOrder.indexOf(userRole);
+        if (userIdx === -1 && (userRole === 'hr' || userRole === 'super_admin')) userIdx = roleOrder.length;
+        if (userIdx === -1 && userRole === 'manager') {
+          const reportingIdx = roleOrder.indexOf('reporting_manager');
+          const hrIdx = roleOrder.indexOf('hr');
+          userIdx = reportingIdx >= 0 ? reportingIdx : (hrIdx >= 0 ? hrIdx : roleOrder.length);
+        }
+        if (nextIdx >= 0 && userIdx >= 0 && userIdx >= nextIdx) return true;
+      }
       return false;
     }
 
@@ -1715,6 +1924,33 @@ export default function LeavesPage() {
       showDepartment: true // Always show department for non-HODs as per requirement
     };
   }, [leaves, ods, activeTab, currentUser]);
+
+  // Unique division and department names for filter dropdowns (from all lists)
+  const filterDivisionOptions = useMemo(() => {
+    const collected = new Set<string>();
+    const addFrom = (list: any[]) => list.forEach(item => {
+      const n = item?.division_name || (item?.employeeId as any)?.department?.division?.name || (item?.division_id as any)?.name;
+      if (n) collected.add(n);
+    });
+    addFrom(leaves);
+    addFrom(ods);
+    addFrom(pendingLeaves);
+    addFrom(pendingODs);
+    return Array.from(collected).sort();
+  }, [leaves, ods, pendingLeaves, pendingODs]);
+
+  const filterDepartmentOptions = useMemo(() => {
+    const collected = new Set<string>();
+    const addFrom = (list: any[]) => list.forEach(item => {
+      const n = item?.department?.name || (item?.employeeId as any)?.department?.name || item?.department_name;
+      if (n) collected.add(n);
+    });
+    addFrom(leaves);
+    addFrom(ods);
+    addFrom(pendingLeaves);
+    addFrom(pendingODs);
+    return Array.from(collected).sort();
+  }, [leaves, ods, pendingLeaves, pendingODs]);
 
 
 
@@ -1784,7 +2020,7 @@ export default function LeavesPage() {
           />
           <StatCard
             title="Pending Leaves"
-            value={stats.leaves.pending}
+            value={stats.leaves.totalPending}
             icon={Clock3}
             bgClass="bg-amber-500/10"
             iconClass="text-amber-600 dark:text-amber-400"
@@ -1811,7 +2047,7 @@ export default function LeavesPage() {
           />
           <StatCard
             title="Pending ODs"
-            value={stats.ods.pending}
+            value={stats.ods.totalPending}
             icon={Clock}
             bgClass="bg-violet-500/10"
             iconClass="text-violet-600 dark:text-violet-400"
@@ -1850,7 +2086,7 @@ export default function LeavesPage() {
                   <div className="w-2 h-2 rounded-full bg-amber-500"></div>
                   <span className="text-xs text-slate-600 dark:text-slate-400">Pending</span>
                 </div>
-                <span className="text-sm font-bold text-slate-900 dark:text-white">{stats.leaves.pending}</span>
+                <span className="text-sm font-bold text-slate-900 dark:text-white">{stats.leaves.totalPending}</span>
               </div>
               <div className="flex justify-between items-center">
                 <div className="flex items-center gap-1.5">
@@ -1881,7 +2117,7 @@ export default function LeavesPage() {
                   <div className="w-2 h-2 rounded-full bg-violet-500"></div>
                   <span className="text-xs text-slate-600 dark:text-slate-400">Pending</span>
                 </div>
-                <span className="text-sm font-bold text-slate-900 dark:text-white">{stats.ods.pending}</span>
+                <span className="text-sm font-bold text-slate-900 dark:text-white">{stats.ods.totalPending}</span>
               </div>
               <div className="flex justify-between items-center">
                 <div className="flex items-center gap-1.5">
@@ -1960,6 +2196,40 @@ export default function LeavesPage() {
                   </select>
                 </div>
 
+                {/* Division Filter - when we have divisions and user is not HOD */}
+                {currentUser?.role !== 'hod' && filterDivisionOptions.length > 0 && (
+                  <div className="relative">
+                    <Filter className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                    <select
+                      value={leaveFilters.division}
+                      onChange={(e) => setLeaveFilters(prev => ({ ...prev, division: e.target.value }))}
+                      className="h-10 pl-9 pr-8 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all appearance-none cursor-pointer w-full"
+                    >
+                      <option value="">All Divisions</option>
+                      {filterDivisionOptions.map(name => (
+                        <option key={name} value={name}>{name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Department Filter */}
+                {currentUser?.role !== 'hod' && filterDepartmentOptions.length > 0 && (
+                  <div className="relative">
+                    <Filter className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                    <select
+                      value={leaveFilters.department}
+                      onChange={(e) => setLeaveFilters(prev => ({ ...prev, department: e.target.value }))}
+                      className="h-10 pl-9 pr-8 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all appearance-none cursor-pointer w-full"
+                    >
+                      <option value="">All Departments</option>
+                      {filterDepartmentOptions.map(name => (
+                        <option key={name} value={name}>{name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
                 {/* Date Range */}
                 <div className="col-span-2 flex items-center flex-nowrap gap-2 px-0 py-0 bg-transparent border-0 md:px-3 md:py-1.5 md:rounded-xl md:bg-slate-100 md:dark:bg-slate-800 md:border md:border-slate-200 md:dark:border-slate-700">
                   <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
@@ -1988,7 +2258,8 @@ export default function LeavesPage() {
             {[
               { id: 'leaves', label: 'Leaves', icon: Calendar, count: leaves.length, activeColor: 'blue' },
               { id: 'od', label: 'On Duty', icon: Briefcase, count: ods.length, activeColor: 'purple' },
-              { id: 'pending', label: 'Pending', icon: Clock3, count: totalPending, activeColor: 'orange' }
+              { id: 'pending', label: 'Actions Required', icon: Clock3, count: totalMyActions, activeColor: 'orange' },
+              { id: 'in_progress', label: 'In Progress', icon: Clock, count: totalInProgress, activeColor: 'blue' }
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -2118,15 +2389,29 @@ export default function LeavesPage() {
                             </span>
                           </td>
                           <td className="px-6 py-3.5 text-right">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openDetailDialog(leave, 'leave');
-                              }}
-                              className="text-sm text-blue-600 hover:text-blue-800 font-medium dark:text-blue-400 dark:hover:text-blue-300"
-                            >
-                              View
-                            </button>
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openDetailDialog(leave, 'leave');
+                                }}
+                                className="px-2 py-1 text-xs font-bold uppercase tracking-wider text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-900/30 rounded-lg transition-all"
+                              >
+                                View
+                              </button>
+                              {(isSuperAdmin || currentUser?.role === 'sub_admin' || currentUser?.role === 'employee') && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteRequest(leave._id, 'leave');
+                                  }}
+                                  className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-all group"
+                                  title="Delete Request"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))
@@ -2171,20 +2456,39 @@ export default function LeavesPage() {
                               {getEmployeeInitials({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: '' } as any)}
                             </div>
                           )}
-                          <div>
+                          <div className="min-w-0">
                             {currentUser?.role !== 'employee' && (
-                              <h4 className="font-bold text-slate-900 dark:text-white text-sm">
-                                {leave.employeeId?.employee_name || leave.emp_no}
-                              </h4>
+                              <>
+                                <h4 className="font-bold text-slate-900 dark:text-white text-sm">
+                                  {getEmployeeName({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no || leave.emp_no || '' } as Employee)}
+                                </h4>
+                                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                  {leave.employeeId?.emp_no || leave.emp_no}
+                                  {(leave.employeeId as any)?.department?.name && ` • ${(leave.employeeId as any).department.name}`}
+                                </p>
+                              </>
                             )}
                             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                               {leave.leaveType?.replace('_', ' ')}
                             </p>
                           </div>
                         </div>
-                        <span className={`inline-flex px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border ${getStatusColor(leave.status)} border-transparent`}>
-                          {leave.status?.replace('_', ' ')}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className={`inline-flex px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border ${getStatusColor(leave.status)} border-transparent`}>
+                            {leave.status?.replace('_', ' ')}
+                          </span>
+                          {(isSuperAdmin || currentUser?.role === 'sub_admin' || currentUser?.role === 'employee') && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteRequest(leave._id, 'leave');
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-red-500 bg-slate-50 dark:bg-slate-800 rounded-lg"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
                       </div>
 
                       <div className="flex items-center justify-between text-sm text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl">
@@ -2319,15 +2623,29 @@ export default function LeavesPage() {
                             </span>
                           </td>
                           <td className="px-6 py-3.5 text-right">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openDetailDialog(od, 'od');
-                              }}
-                              className="text-sm text-purple-600 hover:text-purple-800 font-medium dark:text-purple-400 dark:hover:text-purple-300"
-                            >
-                              View
-                            </button>
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openDetailDialog(od, 'od');
+                                }}
+                                className="px-2 py-1 text-xs font-bold uppercase tracking-wider text-purple-600 hover:bg-purple-50 dark:text-purple-400 dark:hover:bg-purple-900/30 rounded-lg transition-all"
+                              >
+                                View
+                              </button>
+                              {(isSuperAdmin || currentUser?.role === 'sub_admin' || currentUser?.role === 'employee') && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteRequest(od._id, 'od');
+                                  }}
+                                  className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-all group"
+                                  title="Delete OD"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5 transition-transform group-hover:scale-110" />
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))
@@ -2372,20 +2690,39 @@ export default function LeavesPage() {
                               {getEmployeeInitials({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: '' } as any)}
                             </div>
                           )}
-                          <div>
+                          <div className="min-w-0">
                             {currentUser?.role !== 'employee' && (
-                              <h4 className="font-bold text-slate-900 dark:text-white text-sm">
-                                {od.employeeId?.employee_name || od.emp_no}
-                              </h4>
+                              <>
+                                <h4 className="font-bold text-slate-900 dark:text-white text-sm">
+                                  {getEmployeeName({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no || od.emp_no || '' } as Employee)}
+                                </h4>
+                                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                  {od.employeeId?.emp_no || od.emp_no}
+                                  {(od.employeeId as any)?.department?.name && ` • ${(od.employeeId as any).department.name}`}
+                                </p>
+                              </>
                             )}
                             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                               {od.odType?.replace('_', ' ')}
                             </p>
                           </div>
                         </div>
-                        <span className={`inline-flex px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border ${getStatusColor(od.status)} border-transparent`}>
-                          {od.status?.replace('_', ' ')}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className={`inline-flex px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border ${getStatusColor(od.status)} border-transparent`}>
+                            {od.status?.replace('_', ' ')}
+                          </span>
+                          {(isSuperAdmin || currentUser?.role === 'sub_admin' || currentUser?.role === 'employee') && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteRequest(od._id, 'od');
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-red-500 bg-slate-50 dark:bg-slate-800 rounded-lg"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
                       </div>
 
                       {od.placeVisited && (
@@ -2450,8 +2787,8 @@ export default function LeavesPage() {
                 {filteredPendingLeaves.length > 0 && (
                   <div className="space-y-4">
                     <div className="flex items-center justify-between px-2">
-                      <h3 className="text-xs font-black text-slate-500 uppercase tracking-wider flex items-center gap-2">
-                        <Calendar className="w-3.5 h-3.5" />
+                      <h3 className="inline-flex items-center gap-2 rounded-xl bg-blue-500/15 px-4 py-2.5 text-sm font-black uppercase tracking-wider text-blue-700 dark:bg-blue-400/20 dark:text-blue-300 border border-blue-200/60 dark:border-blue-500/30">
+                        <Calendar className="w-4 h-4" />
                         Pending Leaves ({filteredPendingLeaves.length})
                       </h3>
                     </div>
@@ -2461,32 +2798,50 @@ export default function LeavesPage() {
                           {/* Status Strip */}
                           <div className="absolute top-0 left-0 w-1 h-full bg-blue-500/80 rounded-l-2xl group-hover:w-1.5 transition-all" />
 
-                          {/* Header */}
+                          {/* Header: name, division & department beside name (no labels), emp no, designation under name */}
                           <div className="flex items-start justify-between gap-3 mb-4">
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-3 min-w-0 flex-1">
                               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600 font-bold dark:bg-blue-900/30 dark:text-blue-400">
                                 {getEmployeeInitials({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: '' } as any)}
                               </div>
-                              <div>
-                                <h4 className="font-semibold text-slate-900 dark:text-white line-clamp-1">
-                                  {leave.employeeId?.first_name} {leave.employeeId?.last_name}
-                                </h4>
-                                <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
-                                  <span>{leave.employeeId?.emp_no}</span>
-                                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                                  {(leave.employeeId as any)?.department?.name && (
-                                    <>
-                                      <span>•</span>
-                                      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                                      <span className="truncate max-w-[100px]">{(leave.employeeId as any)?.department?.name}</span>
-                                    </>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                                  <h4 className="font-semibold text-slate-900 dark:text-white line-clamp-1" title={getEmployeeName({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no || leave.emp_no || '' } as Employee)}>
+                                    {getEmployeeName({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no || leave.emp_no || '' } as Employee)}
+                                  </h4>
+                                  {([getItemDivisionName(leave), getItemDepartmentName(leave)].filter(v => v && v !== 'N/A').length > 0) && (
+                                    <span className="text-xs text-slate-500 dark:text-slate-400">
+                                      {[getItemDivisionName(leave), getItemDepartmentName(leave)].filter(v => v && v !== 'N/A').join(' · ')}
+                                    </span>
                                   )}
+                                </div>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                  {leave.employeeId?.emp_no || leave.emp_no}
                                 </p>
+                                {(getItemDesignationName(leave) && getItemDesignationName(leave) !== 'N/A') && (
+                                  <p className="text-xs font-medium text-slate-600 dark:text-slate-300 mt-0.5">
+                                    {getItemDesignationName(leave)}
+                                  </p>
+                                )}
                               </div>
                             </div>
-                            <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(leave.status)}`}>
-                              {leave.status.replace('_', ' ')}
-                            </span>
+                            <div className="flex flex-col gap-1 items-end">
+                              <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(leave.status)}`}>
+                                {leave.status.replace('_', ' ')}
+                              </span>
+                              {(isSuperAdmin || currentUser?.role === 'sub_admin' || (leave.employeeId?._id === currentUser?.employeeRef || leave.appliedBy?._id === currentUser?._id || leave.appliedBy === currentUser?._id)) && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteRequest(leave._id, 'leave');
+                                  }}
+                                  className="p-1 text-slate-400 hover:text-red-500 transition-colors"
+                                  title="Delete Request"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
                           </div>
 
                           {/* Content */}
@@ -2517,7 +2872,7 @@ export default function LeavesPage() {
 
                           {/* Actions */}
 
-                          {canPerformAction(leave) && (hasManagePermission || hasManagePermission) && (
+                          {canPerformAction(leave, 'leave') && (hasManagePermission || hasManagePermission) && (
                             <div className="flex items-center gap-2 mt-auto">
                               {hasManagePermission && (
                                 <button
@@ -2548,40 +2903,58 @@ export default function LeavesPage() {
                 {/* Pending ODs */}
                 {filteredPendingODs.length > 0 && (
                   <div>
-                    <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-2">
-                      <Briefcase />
+                    <h3 className="inline-flex items-center gap-2 rounded-xl bg-purple-500/15 px-4 py-2.5 text-sm font-black uppercase tracking-wider text-purple-700 dark:bg-purple-400/20 dark:text-purple-300 mb-3 border border-purple-200/60 dark:border-purple-500/30">
+                      <Briefcase className="w-4 h-4" />
                       Pending ODs ({filteredPendingODs.length})
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                       {filteredPendingODs.map((od) => (
                         <div key={od._id} className="group relative flex flex-col justify-between rounded-xl border border-slate-200 border-l-4 border-l-purple-500 bg-white p-5 shadow-sm transition-all hover:shadow-md dark:border-slate-700 dark:bg-slate-800">
 
-                          {/* Header */}
+                          {/* Header: name, division & department beside name (no labels), emp no, designation under name */}
                           <div className="flex items-start justify-between gap-3 mb-4">
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-3 min-w-0 flex-1">
                               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-purple-100 text-purple-600 font-bold dark:bg-purple-900/30 dark:text-purple-400">
                                 {getEmployeeInitials({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: '' } as any)}
                               </div>
-                              <div>
-                                <h4 className="font-semibold text-slate-900 dark:text-white line-clamp-1">
-                                  {od.employeeId?.first_name} {od.employeeId?.last_name}
-                                </h4>
-                                <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
-                                  <span>{od.employeeId?.emp_no}</span>
-                                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                                  {(od.employeeId as any)?.department?.name && (
-                                    <>
-                                      <span>•</span>
-                                      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                                      <span className="truncate max-w-[100px]">{(od.employeeId as any)?.department?.name}</span>
-                                    </>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                                  <h4 className="font-semibold text-slate-900 dark:text-white line-clamp-1" title={getEmployeeName({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no || od.emp_no || '' } as Employee)}>
+                                    {getEmployeeName({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no || od.emp_no || '' } as Employee)}
+                                  </h4>
+                                  {([getItemDivisionName(od), getItemDepartmentName(od)].filter(v => v && v !== 'N/A').length > 0) && (
+                                    <span className="text-xs text-slate-500 dark:text-slate-400">
+                                      {[getItemDivisionName(od), getItemDepartmentName(od)].filter(v => v && v !== 'N/A').join(' · ')}
+                                    </span>
                                   )}
+                                </div>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                  {od.employeeId?.emp_no || od.emp_no}
                                 </p>
+                                {(getItemDesignationName(od) && getItemDesignationName(od) !== 'N/A') && (
+                                  <p className="text-xs font-medium text-slate-600 dark:text-slate-300 mt-0.5">
+                                    {getItemDesignationName(od)}
+                                  </p>
+                                )}
                               </div>
                             </div>
-                            <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(od.status)}`}>
-                              {od.status.replace('_', ' ')}
-                            </span>
+                            <div className="flex flex-col gap-1 items-end">
+                              <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(od.status)}`}>
+                                {od.status.replace('_', ' ')}
+                              </span>
+                              {(isSuperAdmin || currentUser?.role === 'sub_admin' || (od.employeeId?._id === currentUser?.employeeRef || od.appliedBy?._id === currentUser?._id || od.appliedBy === currentUser?._id)) && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteRequest(od._id, 'od');
+                                  }}
+                                  className="p-1 text-slate-400 hover:text-red-500 transition-colors"
+                                  title="Delete Request"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
                           </div>
 
                           {/* Content */}
@@ -2611,7 +2984,7 @@ export default function LeavesPage() {
                           </div>
 
                           {/* Actions */}
-                          {canPerformAction(od) && (hasManagePermission || hasManagePermission) && (
+                          {canPerformAction(od, 'od') && (hasManagePermission || hasManagePermission) && (
                             <div className="flex items-center gap-2 mt-auto">
                               {hasManagePermission && (
                                 <button
@@ -2639,15 +3012,166 @@ export default function LeavesPage() {
                   </div>
                 )}
 
-                {totalPending === 0 && (
+                {totalMyActions === 0 && (
                   <div className="text-center py-12 text-slate-500">
                     No pending approvals
                   </div>
                 )}
               </>)}
             </div>
-          )
-          }
+          )}
+
+
+          {activeTab === 'in_progress' && (
+            <div className="p-4 space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-500">
+              {loading ? (
+                <div className="space-y-4">
+                  <div className="h-5 w-40 bg-slate-200 dark:bg-slate-700 rounded animate-pulse mb-4"></div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                    {[...Array(3)].map((_, i) => (
+                      <div key={i} className="h-56 rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900 animate-pulse">
+                        <div className="flex justify-between mb-4">
+                          <div className="flex gap-3">
+                            <div className="h-10 w-10 rounded-full bg-slate-200 dark:bg-slate-700"></div>
+                            <div className="space-y-2">
+                              <div className="h-4 w-32 bg-slate-200 dark:bg-slate-700 rounded"></div>
+                              <div className="h-3 w-20 bg-slate-200 dark:bg-slate-700 rounded"></div>
+                            </div>
+                          </div>
+                          <div className="h-6 w-20 bg-slate-200 dark:bg-slate-700 rounded-full"></div>
+                        </div>
+                        <div className="space-y-3">
+                          <div className="h-4 w-full bg-slate-200 dark:bg-slate-700 rounded"></div>
+                          <div className="h-4 w-3/4 bg-slate-200 dark:bg-slate-700 rounded"></div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (<>
+                {/* In Progress Leaves */}
+                {filteredInProgressLeaves.length > 0 && (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between px-2">
+                      <h3 className="inline-flex items-center gap-2 rounded-xl bg-blue-500/15 px-4 py-2.5 text-sm font-black uppercase tracking-wider text-blue-700 dark:bg-blue-400/20 dark:text-blue-300 border border-blue-200/60 dark:border-blue-500/30">
+                        <Calendar className="w-4 h-4" />
+                        In Progress Leaves ({filteredInProgressLeaves.length})
+                      </h3>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                      {filteredInProgressLeaves.map((leave) => (
+                        <div key={leave._id} onClick={() => openDetailDialog(leave, 'leave')} className="cursor-pointer group relative flex flex-col justify-between rounded-2xl border border-slate-200/60 bg-white p-5 shadow-sm transition-all hover:shadow-md hover:border-blue-200/60 dark:border-slate-800 dark:bg-slate-900">
+                          {/* Status Strip */}
+                          <div className="absolute top-0 left-0 w-1 h-full bg-blue-500/80 rounded-l-2xl group-hover:w-1.5 transition-all" />
+
+                          {/* Header */}
+                          <div className="flex items-start justify-between gap-3 mb-4">
+                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600 font-bold dark:bg-blue-900/30 dark:text-blue-400">
+                                {getEmployeeInitials({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: '' } as any)}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                                  <h4 className="font-semibold text-slate-900 dark:text-white line-clamp-1">
+                                    {getEmployeeName({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no || leave.emp_no || '' } as Employee)}
+                                  </h4>
+                                </div>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                  {leave.employeeId?.emp_no || leave.emp_no}
+                                </p>
+                              </div>
+                            </div>
+                            <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(leave.status)}`}>
+                              {leave.status.replace('_', ' ')}
+                            </span>
+                          </div>
+
+                          {/* Content */}
+                          <div className="mb-0 space-y-2.5">
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-slate-500 dark:text-slate-400">Type</span>
+                              <span className="font-medium text-slate-700 dark:text-slate-300">{leave.leaveType}</span>
+                            </div>
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-slate-500 dark:text-slate-400">Duration</span>
+                              <span className="font-medium text-slate-700 dark:text-slate-300">{leave.numberOfDays} Day{leave.numberOfDays !== 1 ? 's' : ''}</span>
+                            </div>
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-slate-500 dark:text-slate-400">Dates</span>
+                              <span className="font-medium text-slate-700 dark:text-slate-300 text-right">
+                                {formatDate(leave.fromDate)}
+                                {leave.fromDate !== leave.toDate && ` - ${formatDate(leave.toDate)}`}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* In Progress ODs */}
+                {filteredInProgressODs.length > 0 && (
+                  <div className="space-y-4">
+                    <h3 className="inline-flex items-center gap-2 rounded-xl bg-purple-500/15 px-4 py-2.5 text-sm font-black uppercase tracking-wider text-purple-700 dark:bg-purple-400/20 dark:text-purple-300 mb-0 border border-purple-200/60 dark:border-purple-500/30">
+                      <Briefcase className="w-4 h-4" />
+                      In Progress ODs ({filteredInProgressODs.length})
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                      {filteredInProgressODs.map((od) => (
+                        <div key={od._id} onClick={() => openDetailDialog(od, 'od')} className="cursor-pointer group relative flex flex-col justify-between rounded-xl border border-slate-200 border-l-4 border-l-purple-500 bg-white p-5 shadow-sm transition-all hover:shadow-md dark:border-slate-700 dark:bg-slate-800">
+                          {/* Header */}
+                          <div className="flex items-start justify-between gap-3 mb-4">
+                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-purple-100 text-purple-600 font-bold dark:bg-purple-900/30 dark:text-purple-400">
+                                {getEmployeeInitials({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: '' } as any)}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <h4 className="font-semibold text-slate-900 dark:text-white line-clamp-1">
+                                  {getEmployeeName({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no || od.emp_no || '' } as Employee)}
+                                </h4>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                  {od.employeeId?.emp_no || od.emp_no}
+                                </p>
+                              </div>
+                            </div>
+                            <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(od.status)}`}>
+                              {od.status.replace('_', ' ')}
+                            </span>
+                          </div>
+
+                          {/* Content */}
+                          <div className="mb-0 space-y-2.5">
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-slate-500 dark:text-slate-400">Type</span>
+                              <span className="font-medium text-slate-700 dark:text-slate-300">{od.odType}</span>
+                            </div>
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-slate-500 dark:text-slate-400">Duration</span>
+                              <span className="font-medium text-slate-700 dark:text-slate-300">{od.numberOfDays} Day{od.numberOfDays !== 1 ? 's' : ''}</span>
+                            </div>
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="text-slate-500 dark:text-slate-400">Dates</span>
+                              <span className="font-medium text-slate-700 dark:text-slate-300 text-right">
+                                {formatDate(od.fromDate)}
+                                {od.fromDate !== od.toDate && ` - ${formatDate(od.toDate)}`}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {totalInProgress === 0 && (
+                  <div className="text-center py-12 text-slate-500">
+                    No in-progress requests
+                  </div>
+                )}
+              </>)}
+            </div>
+          )}
 
 
         </div >
@@ -2668,7 +3192,7 @@ export default function LeavesPage() {
                 >
                   <div className="flex items-center justify-center px-2 gap-1">
                     <Calendar className="w-4 h-4" />
-                    Leave Request
+                    Leave
                   </div>
                 </button>
                 <button
@@ -2686,7 +3210,7 @@ export default function LeavesPage() {
                 </button>
               </div>
 
-              <div className="mb-6 sm:mb-8">
+              <div className="mb-6 sm:mb-8 hidden sm:block">
                 <h2 className="text-lg sm:text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300">
                   New {applyType === 'leave' ? 'Leave' : 'OD'} Application
                 </h2>
@@ -2701,110 +3225,18 @@ export default function LeavesPage() {
                       Apply For Employee *
                     </label>
                     <div className="relative">
-                      {selectedEmployee ? (
-                        <div className="flex items-center justify-between p-3 rounded-xl border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white font-semibold">
-                              {getEmployeeInitials(selectedEmployee!)}
-                            </div>
-                            <div>
-                              <div className="font-medium text-slate-900 dark:text-white">
-                                {getEmployeeName(selectedEmployee!)}
-                              </div>
-                              <div className="text-xs text-slate-500 dark:text-slate-400">
-                                {selectedEmployee!.emp_no}
-                              </div>
-                              <div className="flex flex-wrap gap-1.5 mt-1">
-                                {selectedEmployee!.department?.name && (
-                                  <span className="px-1.5 py-0.5 text-[10px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-800 dark:text-blue-300 rounded">
-                                    {selectedEmployee!.department.name}
-                                  </span>
-                                )}
-                                {selectedEmployee.designation?.name && (
-                                  <span className="px-1.5 py-0.5 text-[10px] font-medium bg-green-100 text-green-700 dark:bg-green-800 dark:text-green-300 rounded">
-                                    {selectedEmployee.designation.name}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedEmployee(null);
-                              setFormData(prev => ({ ...prev, contactNumber: '' }));
-                            }}
-                            className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                          >
-                            <X />
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="relative">
-                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <Search />
-                          </div>
-                          <input
-                            type="text"
-                            value={employeeSearch}
-                            onChange={(e) => {
-                              setEmployeeSearch(e.target.value);
-                              setShowEmployeeDropdown(true);
-                            }}
-                            onFocus={() => setShowEmployeeDropdown(true)}
-                            placeholder="Search by name, emp no, or department..."
-                            className="w-full pl-10 pr-4 py-2 sm:py-2.5 rounded-xl border border-slate-200 bg-white text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20"
-                            onBlur={() => {
-                              // Delay hiding to allow click event on options to fire
-                              setTimeout(() => setShowEmployeeDropdown(false), 200);
-                            }}
-                          />
-
-                          {/* Employee Dropdown */}
-                          {showEmployeeDropdown && (
-                            <div className="absolute z-10 w-full mt-1 max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-800">
-                              {isSearching ? (
-                                <div className="p-4 flex flex-col items-center justify-center text-slate-500 gap-2">
-                                  <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
-                                  <span className="text-xs">Searching employees...</span>
-                                </div>
-                              ) : filteredEmployees.length === 0 ? (
-                                <div className="p-4 text-center text-sm text-slate-500">
-                                  {employeeSearch
-                                    ? 'No employees found'
-                                    : 'Type to search employees'}
-                                </div>
-                              ) : (
-                                filteredEmployees.slice(0, 10).map((emp, idx) => (
-                                  <button
-                                    key={emp._id || emp.emp_no || `emp-${idx}`}
-                                    type="button"
-                                    onClick={() => handleSelectEmployee(emp)}
-                                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-700 text-left transition-colors border-b border-slate-100 dark:border-slate-700 last:border-0"
-                                  >
-                                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-slate-400 to-slate-500 flex items-center justify-center text-white text-sm font-medium">
-                                      {getEmployeeInitials(emp)}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                      <div className="font-medium text-slate-900 dark:text-white truncate">
-                                        {getEmployeeName(emp)}
-                                      </div>
-                                      <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                                        {emp.emp_no} • {emp.department?.name || 'No Department'} • {emp.designation?.name || 'No Designation'}
-                                      </div>
-                                    </div>
-                                  </button>
-                                ))
-                              )}
-                              {filteredEmployees.length > 10 && (
-                                <div className="px-4 py-2 text-center text-xs text-slate-500 bg-slate-50 dark:bg-slate-900">
-                                  Showing 10 of {filteredEmployees.length} results. Type more to filter.
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      )}
+                      <EmployeeSelect
+                        value={selectedEmployee?._id || selectedEmployee?.emp_no || ''}
+                        onChange={(emp) => {
+                          if (!emp) {
+                            setSelectedEmployee(null);
+                            setFormData(prev => ({ ...prev, contactNumber: '' }));
+                          } else {
+                            handleSelectEmployee(emp);
+                          }
+                        }}
+                        placeholder="Search by name, emp no, or department..."
+                      />
                     </div>
                   </div>
                 )}
@@ -2844,23 +3276,50 @@ export default function LeavesPage() {
                   )}
                 </div>
 
-                {/* CL balance for month – show when Casual Leave selected, cap selectable days */}
+                {/* CL summary for month/year – show when Casual Leave selected */}
                 {isCLSelected && (
-                  <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-3">
+                  <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-3 space-y-1.5">
                     {!formData.fromDate || !canFetchCLBalance ? (
                       <p className="text-sm text-slate-500 dark:text-slate-400">
-                        {currentUser?.role === 'employee' ? 'Select from date to see CL balance for that month.' : 'Select employee and from date to see CL balance for that month.'}
+                        {currentUser?.role === 'employee'
+                          ? 'Select from date to see your CL balance and monthly limit for that month.'
+                          : 'Select employee and from date to see CL balance and monthly limit for that month.'}
                       </p>
                     ) : clBalanceLoading ? (
                       <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
                         <Loader2 className="w-4 h-4 animate-spin" />
-                        Loading CL balance...
+                        Loading CL balance and monthly limit...
                       </div>
                     ) : clBalanceForMonth !== null ? (
-                      <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
-                        <span className="text-green-600 dark:text-green-400">CL balance for this month: {clBalanceForMonth} day{clBalanceForMonth !== 1 ? 's' : ''}.</span>
-                        {' '}You can apply for up to <strong>{clBalanceForMonth}</strong> day{clBalanceForMonth !== 1 ? 's' : ''} only.
-                      </p>
+                      <>
+                        <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
+                          {clAnnualBalance !== null && (
+                            <>
+                              <span className="text-slate-600 dark:text-slate-300">
+                                Yearly CL balance (remaining):{' '}
+                              </span>
+                              <span className="font-semibold">
+                                {clAnnualBalance} day{clAnnualBalance !== 1 ? 's' : ''}.
+                              </span>
+                            </>
+                          )}
+                        </p>
+                        <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
+                          <span className="text-green-600 dark:text-green-400">
+                            CL allowed this pay period: <strong>{clBalanceForMonth}</strong> day{clBalanceForMonth !== 1 ? 's' : ''} (2 per period, pending CL locks).
+                          </span>
+                        </p>
+                        <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                          You can apply for up to <strong>{clBalanceForMonth}</strong> CL day{clBalanceForMonth !== 1 ? 's' : ''} in this pay cycle. Compensatory (CCL) is in addition.
+                        </p>
+                        <p className="text-sm text-slate-700 dark:text-slate-300">
+                          Compensatory off (CCL):{' '}
+                          <span className="font-semibold">
+                            {cclBalance ?? 0} day{(cclBalance ?? 0) !== 1 ? 's' : ''}.
+                          </span>{' '}
+                          CCL is added on top of the 2 CL per period when you use it.
+                        </p>
+                      </>
                     ) : (
                       <p className="text-sm text-amber-600 dark:text-amber-400">
                         Could not load CL balance. You must have a valid balance to apply for CL; try again or select employee/from date again.
@@ -2908,32 +3367,43 @@ export default function LeavesPage() {
                   </div>
                 )}
 
-                {/* Date Selection Logic */}
+                {/* Date Selection Logic - min/max from workspace leave/OD settings */}
                 {((applyType === 'leave' && formData.isHalfDay) || applyType === 'od') ? (
                   /* Single Date Input for Half Day / Specific Hours / Any OD */
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">{applyType === 'od' ? 'Date *' : 'Date *'}</label>
-                    <input
-                      type="date"
-                      min={new Date().toISOString().split('T')[0]}
-                      value={formData.fromDate} // Use fromDate as the single source of truth
-                      onChange={(e) => setFormData({ ...formData, fromDate: e.target.value, toDate: e.target.value })}
-                      required
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                    />
-                  </div>
+                  (() => {
+                    const policy = applyType === 'leave' ? leavePolicy : odPolicy;
+                    const { minDate: singleMin, maxDate: singleMax } = getPolicyDateBounds(policy);
+                    return (
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">{applyType === 'od' ? 'Date *' : 'Date *'}</label>
+                        <input
+                          type="date"
+                          min={singleMin}
+                          max={singleMax}
+                          value={formData.fromDate}
+                          onChange={(e) => setFormData({ ...formData, fromDate: e.target.value, toDate: e.target.value })}
+                          required
+                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                        />
+                      </div>
+                    );
+                  })()
                 ) : (
                   /* Two Date Inputs for Full Day */
                   (() => {
-                    const fromMin = new Date().toISOString().split('T')[0];
+                    const policy = applyType === 'leave' ? leavePolicy : odPolicy;
+                    const { minDate: fromMin, maxDate: policyMax } = getPolicyDateBounds(policy);
                     const isCLFullDay = isCLSelected && !formData.isHalfDay && formData.fromDate && clBalanceForMonth !== null && clBalanceForMonth >= 0;
                     const maxToDateISO = isCLFullDay && formData.fromDate
                       ? (() => {
-                          const d = new Date(formData.fromDate);
-                          d.setDate(d.getDate() + Math.max(0, Math.floor(clBalanceForMonth!) - 1));
-                          return d.toISOString().split('T')[0];
-                        })()
+                        const d = new Date(formData.fromDate);
+                        d.setDate(d.getDate() + Math.max(0, Math.floor(clBalanceForMonth!) - 1));
+                        return d.toISOString().split('T')[0];
+                      })()
                       : undefined;
+                    const toMax = maxToDateISO
+                      ? (policyMax && maxToDateISO > policyMax ? policyMax : maxToDateISO)
+                      : policyMax;
                     return (
                       <div className="grid grid-cols-2 gap-4">
                         <div>
@@ -2941,6 +3411,7 @@ export default function LeavesPage() {
                           <input
                             type="date"
                             min={fromMin}
+                            max={policyMax}
                             value={formData.fromDate}
                             onChange={(e) => setFormData({ ...formData, fromDate: e.target.value })}
                             required
@@ -2952,21 +3423,22 @@ export default function LeavesPage() {
                           <input
                             type="date"
                             min={formData.fromDate || fromMin}
-                            max={maxToDateISO}
+                            max={toMax}
                             value={formData.toDate}
                             onChange={(e) => {
                               let toDate = e.target.value;
                               if (maxToDateISO && toDate > maxToDateISO) {
                                 toDate = maxToDateISO;
-                                toast.info(`CL balance allows up to ${clBalanceForMonth} days; To date capped.`);
+                                toast.info(`CL allowed for this period: up to ${clBalanceForMonth} days; To date capped.`);
                               }
+                              if (policyMax && toDate > policyMax) toDate = policyMax;
                               setFormData({ ...formData, toDate });
                             }}
                             required
                             className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                           />
                           {isCLFullDay && maxToDateISO && formData.toDate > maxToDateISO && (
-                            <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">Max {clBalanceForMonth} days for CL this month.</p>
+                            <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">Max {clBalanceForMonth} days for CL in this pay period.</p>
                           )}
                         </div>
                       </div>
@@ -3088,7 +3560,7 @@ export default function LeavesPage() {
                       />
                     </div>
                     <LocationPhotoCapture
-                      required={(getModuleConfig('OD')?.settings as any)?.requirePhotoEvidence || false}
+                      required
                       label="Photo Evidence"
                       onCapture={(loc, photo) => {
                         setEvidenceFile(photo.file);
@@ -3125,20 +3597,29 @@ export default function LeavesPage() {
                   />
                 </div>
 
-                {/* Actions */}
-                <div className="flex gap-3 pt-2">
+                {/* Actions - Sticky Bottom */}
+                <div className="sticky bottom-0 z-10 -mx-5 -mb-5 p-5 sm:-mx-8 sm:-mb-8 sm:p-8 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-t border-slate-100 dark:border-slate-800 flex gap-3 mt-6">
                   <button
                     type="button"
                     onClick={() => setShowApplyDialog(false)}
-                    className="flex-1 py-2 sm:py-2.5 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                    className="flex-1 py-2.5 sm:py-3 text-sm font-bold text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 active:scale-95 transition-all"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className={`flex-1 py-2 sm:py-2.5 text-sm font-bold text-white rounded-xl ${applyType === 'leave' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-purple-600 hover:bg-purple-700'}`}
+                    disabled={loading || !isFormValid()}
+                    className={`flex-1 py-2.5 sm:py-3 text-sm font-bold text-white rounded-xl transition-all ${(loading || !isFormValid())
+                      ? 'opacity-40 cursor-not-allowed grayscale'
+                      : 'opacity-100 hover:scale-[1.02] active:scale-95 shadow-lg shadow-blue-500/20'
+                      } ${applyType === 'leave' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-purple-600 hover:bg-purple-700 shadow-purple-500/20'}`}
                   >
-                    Apply {applyType === 'leave' ? 'Leave' : 'OD'}
+                    {loading ? (
+                      <div className="flex items-center justify-center gap-2">
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                        <span>{loadingMessage || 'Submitting...'}</span>
+                      </div>
+                    ) : `Apply ${applyType === 'leave' ? 'Leave' : 'OD'}`}
                   </button>
                 </div>
               </form>
@@ -3270,9 +3751,91 @@ export default function LeavesPage() {
                     )}
                   </div>
 
+                  {/* Photo Evidence & Location (OD view) - photo, address, Google Maps link */}
+                  {detailType === 'od' && ((selectedItem as any).photoEvidence || (selectedItem as any).geoLocation) && (
+                    <div className="rounded-xl bg-slate-50 dark:bg-slate-900/50 p-4 sm:p-5 border border-slate-200 dark:border-slate-700">
+                      <p className="text-xs uppercase font-bold text-slate-400 mb-3 tracking-wider">Evidence & Location</p>
+                      <div className="space-y-4">
+                        {(selectedItem as any).photoEvidence && (
+                          <div className="flex items-start gap-3">
+                            <a
+                              href={(selectedItem as any).photoEvidence.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="relative group block shrink-0"
+                            >
+                              <img
+                                src={(selectedItem as any).photoEvidence.url}
+                                alt="Evidence"
+                                className="w-20 h-20 rounded-lg object-cover border border-slate-200 dark:border-slate-600 shadow-sm transition-transform group-hover:scale-105"
+                              />
+                              <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/20 transition-colors rounded-lg">
+                                <svg className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                              </div>
+                            </a>
+                            <div>
+                              <p className="text-sm font-medium text-slate-900 dark:text-white">Photo Evidence</p>
+                              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Captured at application time</p>
+                            </div>
+                          </div>
+                        )}
+                        {(selectedItem as any).geoLocation && (
+                          <div className="p-3 rounded-lg bg-white dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700">
+                            <div className="flex items-center gap-2 mb-2">
+                              <svg className="w-4 h-4 text-red-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                              <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Location</span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                              <div>
+                                <span className="text-slate-500">Lat:</span>
+                                <span className="ml-1 font-mono text-slate-700 dark:text-slate-300">{(selectedItem as any).geoLocation.latitude?.toFixed(6)}</span>
+                              </div>
+                              <div>
+                                <span className="text-slate-500">Lon:</span>
+                                <span className="ml-1 font-mono text-slate-700 dark:text-slate-300">{(selectedItem as any).geoLocation.longitude?.toFixed(6)}</span>
+                              </div>
+                              {(selectedItem as any).geoLocation.address && (
+                                <div className="col-span-2 pt-2 border-t border-slate-100 dark:border-slate-700 mt-1">
+                                  <span className="block text-slate-500 mb-0.5">Address</span>
+                                  <p className="text-slate-700 dark:text-slate-300 leading-tight text-xs">{(selectedItem as any).geoLocation.address}</p>
+                                </div>
+                              )}
+                              <div className="col-span-2 mt-1">
+                                <a
+                                  href={`https://www.google.com/maps?q=${(selectedItem as any).geoLocation.latitude},${(selectedItem as any).geoLocation.longitude}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1 font-medium text-xs"
+                                >
+                                  View on Google Maps
+                                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                                </a>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        {/* Leaflet map view */}
+                        {(() => {
+                          const geo = (selectedItem as any).geoLocation;
+                          const exif = (selectedItem as any).photoEvidence?.exifLocation;
+                          const lat = geo?.latitude ?? exif?.latitude;
+                          const lng = geo?.longitude ?? exif?.longitude;
+                          const address = geo?.address ?? null;
+                          if (lat == null || lng == null) return null;
+                          return (
+                            <div className="mt-2">
+                              <span className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Map</span>
+                              <LocationMap latitude={lat} longitude={lng} address={address} height="180px" />
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Approval Steps - Timeline / Progress */}
                   {((selectedItem as any).workflow?.approvalChain?.length > 0) && (
-                    <div className="bg-slate-50 dark:bg-slate-900/50 p-4 sm:p-6 rounded-xl">
+                    <div className="bg-slate-50 dark:bg-slate-900/50 p-4 sm:p-6 rounded-xl overflow-hidden scrollbar-hide">
                       <p className="text-xs uppercase font-bold text-slate-400 mb-4 tracking-wider">Approval Timeline</p>
                       {/* Progress bar */}
                       <div className="mb-6">
@@ -3325,22 +3888,121 @@ export default function LeavesPage() {
                     </div>
                   )}
 
-                  {/* Split Breakdown (Spacious) */}
-                  {detailType === 'leave' && (selectedItem as LeaveApplication)?.splits && (selectedItem as LeaveApplication).splits!.length > 0 && (
-                    <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+                  {/* Change History Section */}
+                  {selectedItem.changeHistory && selectedItem.changeHistory.length > 0 && (
+                    <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm">
                       <button
                         onClick={() => setIsChangeHistoryExpanded(!isChangeHistoryExpanded)}
-                        className="w-full flex items-center justify-between px-4 py-2.5 bg-slate-50 dark:bg-slate-700/30 text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider"
+                        className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-900/50 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors"
                       >
-                        <span>Breakdown ({((selectedItem as LeaveApplication).splitSummary as LeaveSplitSummary)?.approvedDays ?? 0}/{(selectedItem as LeaveApplication).numberOfDays} Approved)</span>
-                        <span>{isChangeHistoryExpanded ? 'Hide' : 'Show'}</span>
+                        <span className="text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-widest">
+                          Edit History ({selectedItem.changeHistory.length})
+                        </span>
+                        <svg
+                          className={`w-4 h-4 text-slate-500 transition-transform duration-300 ${isChangeHistoryExpanded ? 'rotate-180' : ''}`}
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
                       </button>
                       {isChangeHistoryExpanded && (
+                        <div className="p-4 space-y-4 bg-white dark:bg-slate-900 max-h-[300px] overflow-y-auto">
+                          {selectedItem.changeHistory.map((change: any, idx: number) => {
+                            const formatValue = (value: any) => {
+                              if (value === null || value === undefined) return 'N/A';
+                              const str = String(value);
+                              if (str.includes('T') || (str.includes('-') && str.length > 10)) {
+                                try {
+                                  const date = new Date(str);
+                                  if (!isNaN(date.getTime())) {
+                                    return date.toLocaleDateString('en-IN', {
+                                      day: '2-digit',
+                                      month: 'short',
+                                      year: 'numeric',
+                                    });
+                                  }
+                                } catch (e) { }
+                              }
+                              return str;
+                            };
+
+                            const fieldName = change.field.replace(/([A-Z])/g, ' $1').trim().toUpperCase();
+                            const oldValue = formatValue(change.originalValue);
+                            const newValue = formatValue(change.newValue);
+
+                            return (
+                              <div key={idx} className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 hover:shadow-sm transition-shadow">
+                                <div className="flex items-start justify-between mb-2">
+                                  <span className="px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider">
+                                    {fieldName}
+                                  </span>
+                                  <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                                    {new Date(change.modifiedAt).toLocaleString('en-IN', {
+                                      day: '2-digit',
+                                      month: '2-digit',
+                                      year: '2-digit',
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                    })}
+                                  </span>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2 text-xs mb-2">
+                                  <span className="text-slate-400 line-through truncate max-w-[120px]">{oldValue}</span>
+                                  <svg className="w-3 h-3 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
+                                  <span className="text-green-600 dark:text-green-400 font-bold truncate max-w-[120px]">{newValue}</span>
+                                </div>
+                                {change.modifiedByName && (
+                                  <div className="text-[10px] text-slate-500 flex items-center gap-1.5">
+                                    <span className="w-1 h-1 rounded-full bg-slate-300"></span>
+                                    <span>By {change.modifiedByName}</span>
+                                    {change.modifiedByRole && <span className="px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 text-[9px] uppercase font-bold">{change.modifiedByRole}</span>}
+                                  </div>
+                                )}
+                                {change.reason && (
+                                  <p className="mt-2 text-[10px] text-slate-500 italic leading-relaxed border-t border-slate-100 dark:border-slate-700 pt-2">
+                                    Reason: {change.reason}
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Split Breakdown (Spacious) */}
+                  {detailType === 'leave' && (selectedItem as LeaveApplication)?.splits && (selectedItem as LeaveApplication).splits!.length > 0 && (
+                    <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden shadow-sm">
+                      <button
+                        onClick={() => setIsBreakdownExpanded(!isBreakdownExpanded)}
+                        className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-700/30 text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-widest"
+                      >
+                        <span>Breakdown ({((selectedItem as LeaveApplication).splitSummary as LeaveSplitSummary)?.approvedDays ?? 0}/{(selectedItem as LeaveApplication).numberOfDays} Approved)</span>
+                        <svg
+                          className={`w-4 h-4 text-slate-500 transition-transform duration-300 ${isBreakdownExpanded ? 'rotate-180' : ''}`}
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </button>
+                      {isBreakdownExpanded && (
                         <div className="divide-y divide-slate-100 dark:divide-slate-700 max-h-40 overflow-y-auto">
                           {(selectedItem as LeaveApplication).splits!.map((split, idx) => (
-                            <div key={idx} className="flex justify-between px-4 py-2.5 text-xs font-medium">
-                              <span>{formatDate(split.date)} {split.isHalfDay && '(Half)'}</span>
-                              <span className={split.status === 'approved' ? 'text-green-600' : 'text-red-600'}>{split.status}</span>
+                            <div key={idx} className="flex justify-between px-4 py-2.5 text-xs font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                              <div className="flex items-center gap-2">
+                                <span className="text-slate-700 dark:text-slate-300">{formatDate(split.date)}</span>
+                                {split.isHalfDay && (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 uppercase font-black">
+                                    {split.halfDayType === 'first_half' ? '1st' : '2nd'}
+                                  </span>
+                                )}
+                              </div>
+                              <span className={`capitalize font-bold ${split.status === 'approved' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{split.status}</span>
                             </div>
                           ))}
                         </div>
@@ -3348,29 +4010,195 @@ export default function LeavesPage() {
                     </div>
                   )}
 
+                  {/* Interactive Split Editor (For Approvers) */}
+                  {detailType === 'leave' && !['rejected', 'cancelled'].includes(selectedItem.status) && (
+                    <div className="rounded-2xl bg-slate-50 dark:bg-slate-900/50 p-6 border border-slate-200 dark:border-slate-700 space-y-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Split & Decision</p>
+                          <p className="text-[10px] text-slate-500 font-medium uppercase tracking-tight mt-1">Manage individual day approvals</p>
+                        </div>
+                        <label className="flex items-center gap-3 cursor-pointer group">
+                          <input
+                            type="checkbox"
+                            checked={splitMode}
+                            onChange={(e) => {
+                              const enable = e.target.checked;
+                              setSplitMode(enable);
+                              if (enable && splitDrafts.length === 0 && detailType === 'leave' && selectedItem) {
+                                setSplitDrafts(buildInitialSplits(selectedItem as LeaveApplication));
+                              }
+                              if (!enable) {
+                                setSplitWarnings([]);
+                                setSplitErrors([]);
+                              }
+                            }}
+                            className="w-5 h-5 rounded-lg border-2 border-slate-300 text-blue-600 focus:ring-blue-500 transition-all group-hover:border-blue-400"
+                          />
+                          <span className="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider">Enable Split</span>
+                        </label>
+                      </div>
+
+                      {splitMode && (
+                        <div className="animate-in fade-in slide-in-from-top-2 duration-300 space-y-4">
+                          <div className="flex flex-wrap gap-3 p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 shadow-sm">
+                            <div className="flex flex-col">
+                              <span className="text-[9px] uppercase font-black text-slate-400">Total</span>
+                              <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{(selectedItem as LeaveApplication).numberOfDays}d</span>
+                            </div>
+                            <div className="w-px h-6 bg-slate-100 dark:bg-slate-700" />
+                            <div className="flex flex-col">
+                              <span className="text-[9px] uppercase font-black text-green-500">Approved</span>
+                              <span className="text-xs font-bold text-green-600 dark:text-green-400">{splitDrafts.filter(s => s.status === 'approved').reduce((sum, s) => sum + (s.isHalfDay ? 0.5 : 1), 0)}d</span>
+                            </div>
+                            <div className="w-px h-6 bg-slate-100 dark:bg-slate-700" />
+                            <div className="flex flex-col">
+                              <span className="text-[9px] uppercase font-black text-red-500">Rejected</span>
+                              <span className="text-xs font-bold text-red-600 dark:text-red-400">{splitDrafts.filter(s => s.status === 'rejected').reduce((sum, s) => sum + (s.isHalfDay ? 0.5 : 1), 0)}d</span>
+                            </div>
+                          </div>
+
+                          {splitErrors.length > 0 && (
+                            <div className="rounded-xl border border-red-200 bg-red-50/50 px-4 py-3 text-[11px] font-bold text-red-600 animate-pulse">
+                              {splitErrors.map((msg, idx) => (
+                                <div key={idx} className="flex items-center gap-2">
+                                  <div className="w-1 h-1 rounded-full bg-red-500" />
+                                  {msg}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          <div className="space-y-2 max-h-[280px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-700">
+                            {splitDrafts.map((split, idx) => (
+                              <div key={`${split.date}-${idx}`} className="group flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 dark:border-slate-700 p-3 bg-white dark:bg-slate-800 hover:border-blue-400/50 transition-all">
+                                <div className="flex items-center gap-3">
+                                  <div className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider">{formatDate(split.date)}</div>
+                                  <label className="flex items-center gap-2 text-[10px] font-black uppercase text-slate-500 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={split.isHalfDay || false}
+                                      onChange={(e) => updateSplitDraft(idx, { isHalfDay: e.target.checked })}
+                                      className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                    />
+                                    Half
+                                  </label>
+                                  {split.isHalfDay && (
+                                    <select
+                                      value={split.halfDayType || 'first_half'}
+                                      onChange={(e) => updateSplitDraft(idx, { halfDayType: e.target.value as any })}
+                                      className="text-[10px] font-bold h-7 rounded-lg border border-slate-200 bg-slate-50 px-2 dark:border-slate-700 dark:bg-slate-900 dark:text-white outline-none focus:border-blue-400"
+                                    >
+                                      <option value="first_half">1st Half</option>
+                                      <option value="second_half">2nd Half</option>
+                                    </select>
+                                  )}
+                                </div>
+
+                                <div className="flex items-center gap-2 ml-auto">
+                                  <select
+                                    value={split.leaveType}
+                                    onChange={(e) => updateSplitDraft(idx, { leaveType: e.target.value })}
+                                    className="text-[10px] font-bold h-8 rounded-lg border border-slate-200 bg-white px-2 dark:border-slate-700 dark:bg-slate-900 dark:text-white outline-none focus:border-blue-400"
+                                  >
+                                    <option value="">Select Type</option>
+                                    {leaveTypes.map((lt) => (
+                                      <option key={lt.code} value={lt.code}>
+                                        {lt.name || lt.code}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <select
+                                    value={split.status}
+                                    onChange={(e) => updateSplitDraft(idx, { status: e.target.value as 'approved' | 'rejected' })}
+                                    className={`text-[10px] font-black h-8 rounded-lg border px-2 outline-none uppercase tracking-wider ${split.status === 'approved'
+                                      ? 'border-green-200 bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800'
+                                      : 'border-red-200 bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800'
+                                      }`}
+                                  >
+                                    <option value="approved">Approve</option>
+                                    <option value="rejected">Reject</option>
+                                  </select>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+
+                          <div className="flex gap-2 pt-2">
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                setSplitSaving(true);
+                                await validateSplitsForLeave();
+                                setSplitSaving(false);
+                              }}
+                              className="flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 transition-colors"
+                            >
+                              {splitSaving ? 'Validating...' : 'Validate'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                setSplitSaving(true);
+                                const saved = await saveSplits();
+                                if (saved) {
+                                  toast.success('Splits updated');
+                                  const res = await api.getLeave((selectedItem as LeaveApplication)._id);
+                                  if (res?.success) {
+                                    setSelectedItem(res.data);
+                                    setSplitDrafts(buildInitialSplits(res.data));
+                                  }
+                                }
+                                setSplitSaving(false);
+                              }}
+                              className="flex-[2] py-2 text-[10px] font-black uppercase tracking-widest rounded-xl bg-blue-600 text-white shadow-lg shadow-blue-500/20 hover:bg-blue-700 transition-all active:scale-[0.98]"
+                            >
+                              {splitSaving ? 'Saving...' : 'Apply Splits'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* Revoke / Edit Actions */}
                   <div className="flex flex-col gap-3">
-                    {/* Revoke - only visible to approver of last step, within 3hr */}
-                    {canRevoke && currentUser?.role !== 'employee' && (selectedItem.status === 'approved' || selectedItem.status === 'hod_approved' || selectedItem.status === 'manager_approved' || selectedItem.status === 'hr_approved') && (
-                      <div className="flex gap-3">
-                        <input
-                          value={revokeReason}
-                          onChange={(e) => setRevokeReason(e.target.value)}
-                          className="flex-1 text-xs border border-orange-200 rounded-lg px-3 py-2 outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500"
-                          placeholder="Reason for revoking this approved request..."
-                        />
-                        <button
-                          onClick={async () => {
-                            if (!revokeReason) return toast.error('Reason required');
-                            try {
-                              const res = detailType === 'leave' ? await api.revokeLeaveApproval(selectedItem._id, revokeReason) : await api.revokeODApproval(selectedItem._id, revokeReason);
-                              if (res.success) { setShowDetailDialog(false); loadData(); toast.success('Revoked'); }
-                            } catch (e) { toast.error('Failed to revoke'); }
-                          }}
-                          className="px-4 py-2 bg-orange-500 text-white text-xs font-bold rounded-lg hover:bg-orange-600 transition-colors shadow-sm"
-                        >
-                          Revoke
-                        </button>
+                    {/* Revoke - visible if canRevoke is true (actor or admin, within 48hr) */}
+                    {canRevoke && currentUser?.role !== 'employee' && (
+                      <div className="flex flex-col gap-3 p-4 bg-orange-50 dark:bg-orange-900/20 border border-orange-100 dark:border-orange-800/50 rounded-xl">
+                        <div className="flex items-center gap-2 mb-1">
+                          <RotateCw className="w-4 h-4 text-orange-500" />
+                          <span className="text-xs font-bold text-orange-700 dark:text-orange-400 uppercase tracking-wider">Revoke Action</span>
+                        </div>
+                        <p className="text-[10px] text-orange-600 dark:text-orange-500 leading-relaxed mb-1">
+                          You can revert the last approval or rejection. This will return the request to its previous state.
+                        </p>
+                        <div className="flex gap-2">
+                          <input
+                            value={revokeReason}
+                            onChange={(e) => setRevokeReason(e.target.value)}
+                            className="flex-1 text-xs border border-orange-200 dark:border-orange-800 rounded-lg px-3 py-2 outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500 dark:bg-slate-900 dark:text-white"
+                            placeholder="Reason for revoking..."
+                          />
+                          <button
+                            onClick={async () => {
+                              if (!revokeReason) return toast.error('Reason required');
+                              try {
+                                const res = detailType === 'leave' ? await api.revokeLeaveApproval(selectedItem._id, revokeReason) : await api.revokeODApproval(selectedItem._id, revokeReason);
+                                if (res.success) {
+                                  setShowDetailDialog(false);
+                                  loadData();
+                                  toast.success('Action revoked and status reverted');
+                                } else {
+                                  toast.error(res.error || 'Failed to revoke');
+                                }
+                              } catch (e) { toast.error('An error occurred during revocation'); }
+                            }}
+                            className="px-4 py-2 bg-orange-500 text-white text-xs font-bold rounded-lg hover:bg-orange-600 transition-colors shadow-sm"
+                          >
+                            Revoke
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -3379,7 +4207,7 @@ export default function LeavesPage() {
                 {/* Footer Actions - Sticky Bottom */}
                 {/* Footer Actions - Sticky Bottom */}
                 <div className="p-4 bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row gap-3 justify-end items-stretch sm:items-center">
-                  {!['approved', 'rejected', 'cancelled'].includes(selectedItem.status) && canPerformAction(selectedItem) && (
+                  {!['approved', 'rejected', 'cancelled'].includes(selectedItem.status) && canPerformAction(selectedItem, detailType) && (
                     <>
                       <textarea
                         value={actionComment}
@@ -3395,6 +4223,33 @@ export default function LeavesPage() {
                         </div>
                       )}
                     </>
+                  )}
+
+                  {['manager', 'hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser?.role || '') && !['rejected', 'cancelled'].includes(selectedItem.status) && (
+                    <button
+                      onClick={() => {
+                        setEditFormData({
+                          ...selectedItem,
+                          fromDate: formatDateForInput(selectedItem.fromDate),
+                          toDate: formatDateForInput(selectedItem.toDate),
+                        });
+                        setShowEditDialog(true);
+                      }}
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-sm transition-colors"
+                    >
+                      Edit
+                    </button>
+                  )}
+
+                  {(isSuperAdmin || currentUser?.role === 'sub_admin' || (selectedItem.employeeId?._id === currentUser?.employeeRef || selectedItem.appliedBy?._id === currentUser?._id || selectedItem.appliedBy === currentUser?._id)) && (
+                    <button
+                      onClick={() => {
+                        handleDeleteRequest(selectedItem._id, detailType);
+                      }}
+                      className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg shadow-sm transition-colors"
+                    >
+                      Delete
+                    </button>
                   )}
 
                   <button
@@ -3491,8 +4346,7 @@ export default function LeavesPage() {
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
                     {detailType === 'leave' ? 'Leave Type' : 'OD Type'} *
                   </label>
-                  <input
-                    type="text"
+                  <select
                     value={detailType === 'leave' ? editFormData.leaveType : editFormData.odType}
                     onChange={(e) => setEditFormData({
                       ...editFormData,
@@ -3500,7 +4354,12 @@ export default function LeavesPage() {
                     })}
                     required
                     className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                  />
+                  >
+                    <option value="">Select {detailType === 'leave' ? 'Leave' : 'OD'} Type</option>
+                    {(detailType === 'leave' ? leaveTypes : odTypes).map((t: any) => (
+                      <option key={t.code} value={t.code}>{t.name}</option>
+                    ))}
+                  </select>
                 </div>
 
                 {/* Dates */}

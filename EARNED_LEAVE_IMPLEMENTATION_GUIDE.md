@@ -44,8 +44,8 @@ This implementation provides a **comprehensive, flexible Earned Leave system** t
 ### 1. **Flexible Financial Year**
 ```javascript
 // Options:
-- Calendar Year: January 1 - December 31
-- Custom Financial Year: Any start month/day (e.g., April 1)
+// - Calendar Year: January 1 - December 31
+// - Custom Financial Year: Any start month/day (e.g., April 1)
 ```
 
 ### 2. **Multiple EL Earning Methods**
@@ -53,7 +53,8 @@ This implementation provides a **comprehensive, flexible Earned Leave system** t
 #### **Attendance-Based** (Indian Labor Law Standard)
 ```javascript
 // Example: 20 days = 1 EL
-minDaysForFirstEL: 20
+// minDaysForEL acts as a global minimum attendance threshold before any EL is earned.
+minDaysForEL: 20
 daysPerEL: 20
 maxELPerMonth: 2
 ```
@@ -78,20 +79,33 @@ maxELPerYear: 12
 ```javascript
 // Per leave type configuration:
 carryForward: {
-    casualLeave: {
-        enabled: true,
-        maxMonths: 12,
-        expiryMonths: 12,
-        carryForwardToNextYear: true
-    },
-    earnedLeave: {
-        enabled: true,
-        maxMonths: 24,
-        expiryMonths: 60,
-        carryForwardToNextYear: true
-    }
+  casualLeave: {
+    enabled: true,
+    // maxMonths: upper limit of months of leave that can be carried forward
+    maxMonths: 12,
+    // expiryMonths: months after carry-forward within which balance must be used
+    expiryMonths: 12,
+    // carryForwardToNextYear: enables/disables carry-forward for this leave type
+    carryForwardToNextYear: true
+  },
+  earnedLeave: {
+    enabled: true,
+    maxMonths: 24,
+    expiryMonths: 60,
+    carryForwardToNextYear: true
+  }
 }
 ```
+
+#### Carry Forward Semantics
+
+- **maxMonths**: Caps how much leave (expressed as months of entitlement or converted to days)
+  can be moved into the next cycle. For example, if 1 month ≈ 1 EL day, `maxMonths: 12`
+  means at most 12 days can be carried.
+- **expiryMonths**: Defines the lifetime of carried balances. If `expiryMonths: 12`, any
+  carried amount that remains unused 12 months after carry-forward will expire.
+- **carryForwardToNextYear**: Enables or disables carry-forward for that leave type. When
+  `false`, unused balance at year-end is expired regardless of `maxMonths`.
 
 ### 4. **Compliance Settings**
 ```javascript
@@ -112,22 +126,22 @@ compliance: {
 ### **Standard Indian Labor Law Setup**
 ```json
 {
-    "financialYear": {
-        "startMonth": 4,
-        "startDay": 1,
-        "useCalendarYear": false
-    },
-    "earnedLeave": {
-        "earningType": "attendance_based",
-        "attendanceRules": {
-            "minDaysForFirstEL": 20,
-            "daysPerEL": 20,
-            "maxELPerMonth": 2,
-            "maxELPerYear": 12,
-            "considerPresentDays": true,
-            "considerHolidays": true
-        }
+  "financialYear": {
+    "startMonth": 4,
+    "startDay": 1,
+    "useCalendarYear": false
+  },
+  "earnedLeave": {
+    "earningType": "attendance_based",
+    "attendanceRules": {
+      "minDaysForEL": 20,
+      "daysPerEL": 20,
+      "maxELPerMonth": 2,
+      "maxELPerYear": 12,
+      "considerPresentDays": true,
+      "considerHolidays": true
     }
+  }
 }
 ```
 
@@ -168,27 +182,33 @@ GET    /api/leaves/earned/history/:id     // Get EL history
 ### **Attendance-Based EL Formula**
 ```javascript
 // Step 1: Count attendance days
-attendanceDays = presentDays + weeklyOffs (if enabled) + holidays (if enabled)
+attendanceDays = presentDays + weeklyOffs (if enabled) + holidays (if enabled);
 
-// Step 2: Check minimum threshold
-if (attendanceDays >= minDaysForFirstEL) {
-    // Step 3: Calculate EL
-    elEarned = Math.floor(attendanceDays / daysPerEL);
-    
-    // Step 4: Apply monthly maximum
-    elEarned = Math.min(elEarned, maxELPerMonth);
+// Step 2: Check minimum threshold (global minimum days before any EL is earned)
+if (attendanceDays >= minDaysForEL) {
+  // Step 3: Calculate EL
+  elEarned = Math.floor(attendanceDays / daysPerEL);
+
+  // Step 4: Apply monthly maximum
+  elEarned = Math.min(elEarned, maxELPerMonth);
+} else {
+  elEarned = 0;
 }
 ```
 
 ### **Carry Forward Calculation**
 ```javascript
 // For each leave type:
-carryForwardAmount = previousYearBalance - usedInYear;
-if (carryForwardAmount > 0 && carryForwardEnabled) {
-    // Apply expiry rules
-    if (monthsElapsed > expiryMonths) {
-        carryForwardAmount = 0; // Expired
-    }
+// usedInYear should represent the portion of leave consumed that is attributable
+// to the previous year's carried balance.
+const usedFromPrevious = Math.min(previousYearBalance, usedInYear);
+let carryForwardAmount = Math.max(0, previousYearBalance - usedFromPrevious);
+
+if (carryForwardEnabled) {
+  // Apply expiry rules after computing a non-negative carryForwardAmount
+  if (monthsElapsed > expiryMonths) {
+    carryForwardAmount = 0; // Expired
+  }
 }
 ```
 
@@ -261,11 +281,15 @@ autoUpdate: {
 ### **Unit Testing**
 ```javascript
 // Test EL calculations
+// NOTE: This test assumes appropriate setup: imports for calculateEarnedLeave,
+// mock attendance data, mock employee records, and any required test helpers
+// (e.g., attendance service and employee repository mocks) in the surrounding
+// describe/test harness.
 describe('Earned Leave Service', () => {
-    test('should calculate 1 EL for 20 attendance days', async () => {
-        const result = await calculateEarnedLeave(empId, 6, 2024);
-        expect(result.elEarned).toBe(1);
-    });
+  test('should calculate 1 EL for 20 attendance days', async () => {
+    const result = await calculateEarnedLeave(empId, 6, 2024);
+    expect(result.elEarned).toBe(1);
+  });
 });
 ```
 

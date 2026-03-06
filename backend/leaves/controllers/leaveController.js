@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const Leave = require('../model/Leave');
 const LeaveSettings = require('../model/LeaveSettings');
 const Employee = require('../../employees/model/Employee');
+const EmployeeHistory = require('../../employees/model/EmployeeHistory');
 const User = require('../../users/model/User');
 const Settings = require('../../settings/model/Settings');
 const { isHRMSConnected, getEmployeeByIdMSSQL } = require('../../employees/config/sqlHelper');
@@ -10,13 +11,15 @@ const {
   updateLeaveForAttendance,
   getLeaveConflicts
 } = require('../services/leaveConflictService');
-const leaveRegisterService = require('../services/leaveRegisterService');
 const {
   buildWorkflowVisibilityFilter,
   getEmployeeIdsInScope,
   checkJurisdiction
 } = require('../../shared/middleware/dataScopeMiddleware');
 const Department = require('../../departments/model/Department');
+const OD = require('../model/OD');
+const leaveRegisterService = require('../services/leaveRegisterService');
+const dateCycleService = require('../services/dateCycleService');
 
 /**
  * Get employee settings from database
@@ -150,16 +153,38 @@ const getWorkflowSettings = async () => {
 // @access  Private
 exports.getLeaves = async (req, res) => {
   try {
-    const { status, employeeId, department, fromDate, toDate, page = 1, limit = 20 } = req.query;
+    const { status, employeeId, department, division, designation, fromDate, toDate, search, page = 1, limit = 20 } = req.query;
 
     // Multi-layered filter: Jurisdiction (Scope) AND Timing (Workflow)
     const scopeFilter = req.scopeFilter || { isActive: true };
     const workflowFilter = buildWorkflowVisibilityFilter(req.user);
 
+    // Include leaves whose document has division/department in scope OR whose employeeId is in scope.
+    // Also: for scoped roles (HOD/Manager/HR), show ALL requests from in-scope employees regardless of workflow stage,
+    // so they can track and manage team requests even when pending at reporting_manager or other stages.
+    let jurisdictionFilter = scopeFilter;
+    let visibilityFilter = workflowFilter;
+    const scopedEmployeeIds = await getEmployeeIdsInScope(req.user);
+    if (Array.isArray(scopedEmployeeIds) && scopedEmployeeIds.length > 0) {
+      jurisdictionFilter = {
+        $or: [
+          scopeFilter,
+          { employeeId: { $in: scopedEmployeeIds } }
+        ]
+      };
+      // Scoped roles see all requests from in-scope employees (bypass workflow stage restriction)
+      visibilityFilter = {
+        $or: [
+          workflowFilter,
+          { employeeId: { $in: scopedEmployeeIds } }
+        ]
+      };
+    }
+
     const filter = {
       $and: [
-        scopeFilter,
-        workflowFilter,
+        jurisdictionFilter,
+        visibilityFilter,
         { isActive: true }
       ]
     };
@@ -167,8 +192,30 @@ exports.getLeaves = async (req, res) => {
     if (status) filter.status = status;
     if (employeeId) filter.employeeId = employeeId;
     if (department) filter.department = department;
+    if (division) filter.division_id = division;
+    if (designation) filter.designation = designation;
     if (fromDate) filter.fromDate = { $gte: new Date(fromDate) };
     if (toDate) filter.toDate = { ...filter.toDate, $lte: new Date(toDate) };
+
+    // Search: by emp_no or employee name (resolve employee ids)
+    if (search && String(search).trim()) {
+      const searchStr = String(search).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(searchStr, 'i');
+      const matchedEmployees = await Employee.find({
+        $or: [
+          { emp_no: regex },
+          { employee_name: regex },
+          { first_name: regex },
+          { last_name: regex }
+        ]
+      }).select('_id').lean();
+      const ids = matchedEmployees.map(e => e._id);
+      if (ids.length > 0) {
+        filter.employeeId = { $in: ids };
+      } else {
+        filter.employeeId = { $in: [] };
+      }
+    }
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
@@ -330,17 +377,55 @@ exports.applyLeave = async (req, res) => {
       employeeId, // Legacy - for backward compatibility
     } = req.body;
 
-    // Validate Date (Must be today or future)
+    // Validate dates against leave policy settings
+    const leaveSettings = await LeaveSettings.getActiveSettings('leave');
+    const leavePolicy = leaveSettings?.settings || {
+      allowBackdated: false,
+      maxBackdatedDays: 7,
+      allowFutureDated: true,
+      maxAdvanceDays: 90,
+    };
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const checkFromDate = new Date(fromDate);
     checkFromDate.setHours(0, 0, 0, 0);
 
-    if (checkFromDate < today) {
-      return res.status(400).json({
-        success: false,
-        error: 'Applications are restricted to current or future dates only.'
-      });
+    // Super admin bypasses date restrictions
+    const isSuperAdmin = req.user?.role === 'super_admin';
+
+    if (!isSuperAdmin) {
+      if (checkFromDate < today) {
+        // Past date – check if backdating is allowed
+        if (!leavePolicy.allowBackdated) {
+          return res.status(400).json({
+            success: false,
+            error: 'Backdated leave applications are not allowed.',
+          });
+        }
+        const diffDays = Math.floor((today - checkFromDate) / (1000 * 60 * 60 * 24));
+        if (diffDays > leavePolicy.maxBackdatedDays) {
+          return res.status(400).json({
+            success: false,
+            error: `Leave can only be backdated up to ${leavePolicy.maxBackdatedDays} day(s). The selected date is ${diffDays} day(s) ago.`,
+          });
+        }
+      } else if (checkFromDate > today) {
+        // Future date – check if future-dated applications are allowed
+        if (!leavePolicy.allowFutureDated) {
+          return res.status(400).json({
+            success: false,
+            error: 'Future-dated leave applications are not allowed.',
+          });
+        }
+        const diffDays = Math.floor((checkFromDate - today) / (1000 * 60 * 60 * 24));
+        if (diffDays > leavePolicy.maxAdvanceDays) {
+          return res.status(400).json({
+            success: false,
+            error: `Leave can only be applied up to ${leavePolicy.maxAdvanceDays} day(s) in advance. The selected date is ${diffDays} day(s) away.`,
+          });
+        }
+      }
     }
 
     // Get employee - either from request body (HR applying for someone) or from user
@@ -417,8 +502,11 @@ exports.applyLeave = async (req, res) => {
       if (['manager', 'hod'].includes(req.user.role) && employee) {
         // 1. Allow Self Application
         // Check if the target employee is the manager themselves
-        const isSelf = (req.user.employeeId && req.user.employeeId.toString() === employee._id.toString()) ||
-          (req.user.employeeRef && req.user.employeeRef.toString() === employee._id.toString());
+        // Some deployments store employeeId as the Mongo _id, others as emp_no.
+        const isSelf =
+          (req.user.employeeRef && req.user.employeeRef.toString() === employee._id.toString()) ||
+          (req.user.employeeId && req.user.employeeId.toString() === employee._id.toString()) ||
+          (req.user.employeeId && employee.emp_no && String(req.user.employeeId).trim() === String(employee.emp_no).trim());
 
         if (!isSelf) {
           // For non-employee roles, use User model (ensure full User with divisionMapping)
@@ -439,6 +527,21 @@ exports.applyLeave = async (req, res) => {
                 'divisionHODs.division': empDivId
               }).select('_id');
               isInScope = !!dept;
+            }
+          }
+
+          // Allow if current user is the reporting manager of this employee (apply on behalf of reportee)
+          if (!isInScope && employee) {
+            const reportingManagers = employee.dynamicFields?.reporting_to || employee.dynamicFields?.reporting_to_ || [];
+            if (Array.isArray(reportingManagers) && reportingManagers.length > 0) {
+              const reportingManagerIds = reportingManagers.map(m => (m._id || m).toString());
+              const userStr = req.user._id?.toString();
+              const userEmployeeIdStr = (req.user.employeeId || req.user.employeeRef)?.toString();
+              if ((userStr && reportingManagerIds.includes(userStr)) ||
+                (userEmployeeIdStr && reportingManagerIds.includes(userEmployeeIdStr))) {
+                isInScope = true;
+                console.log(`[Apply Leave] ✅ User ${req.user._id} is reporting manager for employee ${empNo}`);
+              }
             }
           }
 
@@ -519,6 +622,13 @@ exports.applyLeave = async (req, res) => {
       });
     }
 
+    // Populate division, department, designation so we have names for snapshot (avoids saving 'N/A')
+    await employee.populate([
+      { path: 'division_id', select: 'name' },
+      { path: 'department_id', select: 'name' },
+      { path: 'designation_id', select: 'name' },
+    ]);
+
     // Get workflow settings
     const workflowSettings = await getWorkflowSettings();
 
@@ -589,7 +699,95 @@ exports.applyLeave = async (req, res) => {
       }
     }
 
+    // HARD ENFORCEMENT for Casual Leave (CL) against payroll-cycle monthly limit (including pending locks)
+    if (leaveType === 'CL') {
+      try {
+        // Resolve period from leave start date (date-only); support YYYY-MM-DD and DD-MM-YYYY
+        const fromDateStr = String(fromDate || '').trim();
+        let fromForPeriod = from;
+        const isoMatch = fromDateStr.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+        const dmyMatch = fromDateStr.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+        if (isoMatch) {
+          fromForPeriod = new Date(Date.UTC(parseInt(isoMatch[1], 10), parseInt(isoMatch[2], 10) - 1, parseInt(isoMatch[3], 10), 12, 0, 0));
+        } else if (dmyMatch) {
+          const y = parseInt(dmyMatch[3], 10), m = parseInt(dmyMatch[2], 10) - 1, d = parseInt(dmyMatch[1], 10);
+          if (m >= 0 && m <= 11 && d >= 1 && d <= 31) fromForPeriod = new Date(Date.UTC(y, m, d, 12, 0, 0));
+        }
+        const periodInfo = await dateCycleService.getPeriodInfo(fromForPeriod);
+
+        // Use payroll-cycle month/year derived from fromDate, not calendar month
+        const registerResult = await leaveRegisterService.getLeaveRegister(
+          {
+            employeeId: employee._id,
+            leaveType: 'CL',
+            balanceAsOf: true,
+          },
+          periodInfo.payrollCycle.month,
+          periodInfo.payrollCycle.year
+        );
+
+        // leaveRegisterService.getLeaveRegister returns the array directly, not { data: array }
+        const registerList = Array.isArray(registerResult) ? registerResult : (registerResult?.data || []);
+        const clEntry = registerList.find(e => e.casualLeave) || null;
+        const allowedRemaining = clEntry?.casualLeave?.allowedRemaining ?? null;
+
+        if (allowedRemaining !== null && allowedRemaining !== undefined) {
+          if (numberOfDays > allowedRemaining) {
+            return res.status(400).json({
+              success: false,
+              error: `Casual Leave monthly limit exceeded for this payroll cycle. Remaining allowed days: ${allowedRemaining}, requested: ${numberOfDays}.`,
+            });
+          }
+        }
+      } catch (err) {
+        console.error('[Apply Leave] Error enforcing CL monthly payroll-cycle limit:', err);
+      }
+    }
+
     // CL balance is validated on the frontend only; backend does not enforce balance check here.
+
+    // Enforce minGapBetweenLeaves from leave settings (gap between approved leaves and this request)
+    const minGap = leavePolicy.minGapBetweenLeaves;
+    if (minGap != null && minGap > 0) {
+      const Leave = require('../model/Leave');
+      const approvedLeaves = await Leave.find({
+        employeeId: employee._id,
+        status: 'approved',
+        isActive: true,
+      }).select('fromDate toDate').lean();
+
+      const fromDay = new Date(from);
+      fromDay.setHours(0, 0, 0, 0);
+      const toDay = new Date(to);
+      toDay.setHours(23, 59, 59, 999);
+
+      for (const existing of approvedLeaves) {
+        const exFrom = new Date(existing.fromDate);
+        exFrom.setHours(0, 0, 0, 0);
+        const exTo = new Date(existing.toDate);
+        exTo.setHours(23, 59, 59, 999);
+
+        if (exTo < fromDay) {
+          const gapMs = fromDay - exTo;
+          const gapDays = Math.floor(gapMs / (1000 * 60 * 60 * 24));
+          if (gapDays < minGap) {
+            return res.status(400).json({
+              success: false,
+              error: `There must be at least ${minGap} day(s) between leaves. Your last approved leave ends ${gapDays} day(s) before the selected start date.`,
+            });
+          }
+        } else if (exFrom > toDay) {
+          const gapMs = exFrom - toDay;
+          const gapDays = Math.floor(gapMs / (1000 * 60 * 60 * 24));
+          if (gapDays < minGap) {
+            return res.status(400).json({
+              success: false,
+              error: `There must be at least ${minGap} day(s) between leaves. Your next approved leave starts ${gapDays} day(s) after the selected end date.`,
+            });
+          }
+        }
+      }
+    }
 
     // Validate against OD conflicts (with half-day support) - Only check APPROVED records for creation
     const { validateLeaveRequest } = require('../../shared/services/conflictValidationService');
@@ -695,10 +893,10 @@ exports.applyLeave = async (req, res) => {
       contactNumber,
       emergencyContact,
       division_id: employee.division_id?._id || employee.division_id, // Save division at time of application
-      division_name: employee.division_id?.name || 'N/A',
+      division_name: employee.division_id?.name || '',
       department: employee.department_id?._id || employee.department_id || employee.department, // Support both field names
       department_id: employee.department_id?._id || employee.department_id,
-      department_name: employee.department_id?.name || 'N/A',
+      department_name: employee.department_id?.name || '',
       designation: employee.designation_id || employee.designation, // Support both field names
       appliedBy: req.user._id,
       appliedAt: new Date(),
@@ -708,6 +906,28 @@ exports.applyLeave = async (req, res) => {
     });
 
     await leave.save();
+
+    // Employee history: leave applied
+    try {
+      await EmployeeHistory.create({
+        emp_no: employee.emp_no,
+        event: 'leave_applied',
+        performedBy: req.user._id,
+        performedByName: req.user.name,
+        performedByRole: req.user.role,
+        details: {
+          leaveId: leave._id,
+          fromDate: leave.fromDate,
+          toDate: leave.toDate,
+          numberOfDays: leave.numberOfDays,
+          isHalfDay: leave.isHalfDay,
+          halfDayType: leave.halfDayType,
+        },
+        comments: remarks || 'Leave applied',
+      });
+    } catch (err) {
+      console.error('Failed to log leave applied history:', err.message);
+    }
 
     // Populate for response
     await leave.populate([
@@ -750,7 +970,7 @@ exports.updateLeave = async (req, res) => {
     const isSuperAdmin = req.user.role === 'super_admin';
     const isFinalApproved = leave.status === 'approved';
 
-    if (isFinalApproved && !isSuperAdmin) {
+    if (isFinalApproved && !['super_admin', 'manager', 'hod'].includes(req.user.role)) {
       return res.status(400).json({
         success: false,
         error: 'Final approved leave cannot be edited',
@@ -759,7 +979,7 @@ exports.updateLeave = async (req, res) => {
 
     // Check ownership or admin permission
     const isOwner = leave.appliedBy.toString() === req.user._id.toString();
-    const isAdmin = ['hr', 'sub_admin', 'super_admin'].includes(req.user.role);
+    const isAdmin = ['hr', 'sub_admin', 'super_admin', 'manager', 'hod'].includes(req.user.role);
 
     if (!isOwner && !isAdmin) {
       return res.status(403).json({
@@ -919,7 +1139,7 @@ exports.cancelLeave = async (req, res) => {
 
     // Check ownership or admin permission
     const isOwner = leave.appliedBy.toString() === req.user._id.toString();
-    const isAdmin = ['hr', 'sub_admin', 'super_admin'].includes(req.user.role);
+    const isAdmin = ['hr', 'sub_admin', 'super_admin', 'manager', 'hod'].includes(req.user.role);
 
     if (!isOwner && !isAdmin) {
       return res.status(403).json({
@@ -965,11 +1185,16 @@ exports.cancelLeave = async (req, res) => {
 // @desc    Get pending approvals for current user
 // @route   GET /api/leaves/pending-approvals
 // @access  Private
+// Query: page, limit, search, leaveType, fromDate, toDate, department, division
 // Data scope: Show leaves to ALL workflow participants (roles in approvalChain) with division/department scope.
-// Approve/Reject buttons shown only when nextApproverRole === user.role (enforced in frontend via canPerformAction).
 exports.getPendingApprovals = async (req, res) => {
   try {
     const userRole = req.user.role;
+    const { page = 1, limit = 20, search, leaveType, fromDate, toDate, department, division, designation } = req.query;
+    const pageNum = Math.max(1, parseInt(page, 10));
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10)));
+    const skip = (pageNum - 1) * limitNum;
+
     // Base filter: Active AND Not Applied by Me (Self-requests go to "My Leaves")
     let filter = {
       isActive: true,
@@ -980,47 +1205,85 @@ exports.getPendingApprovals = async (req, res) => {
     if (['sub_admin', 'super_admin'].includes(userRole)) {
       filter.status = { $nin: ['approved', 'rejected', 'cancelled'] };
     }
-    // 2, 3, 4: Scoped Roles (HOD, HR, Manager) - show to ALL whose role is in the workflow
+    // 2, 3, 4: Scoped Roles (HOD, HR, Manager)
     else if (['hod', 'hr', 'manager'].includes(userRole)) {
-      // User's role must appear in the approval chain (they're a workflow participant)
       const roleVariants = [userRole];
       if (userRole === 'hr') roleVariants.push('final_authority');
-
       filter['$or'] = [
-        { 'workflow.approvalChain': { $elemMatch: { role: { $in: roleVariants } } } },
+        { 'workflow.approvalChain': { $elemMatch: { role: { $in: roleVariants }, status: 'pending' } } },
         { 'workflow.reportingManagerIds': req.user._id.toString() }
       ];
-
-      // Division/Department scope: only leaves for employees in user's scope
       const employeeIds = await getEmployeeIdsInScope(req.user);
-
       if (employeeIds.length > 0) {
         filter.employeeId = { $in: employeeIds };
       } else {
-        console.warn(`[GetPendingApprovals] User ${req.user._id} (${userRole}) has no employees in scope.`);
         filter.employeeId = { $in: [] };
       }
-
       filter.status = { $nin: ['approved', 'rejected', 'cancelled'] };
     }
-    // 5. Generic / Custom Role or Reporting Manager without admin role
     else {
       filter['$or'] = [
-        { 'workflow.approvalChain': { $elemMatch: { role: userRole } } },
+        { 'workflow.approvalChain': { $elemMatch: { role: userRole, status: 'pending' } } },
         { 'workflow.reportingManagerIds': req.user._id.toString() }
       ];
       filter.status = { $nin: ['approved', 'rejected', 'cancelled'] };
     }
 
-    const leaves = await Leave.find(filter)
-      .populate('employeeId', 'employee_name emp_no')
-      .populate('department', 'name')
-      .populate('designation', 'name')
-      .sort({ appliedAt: -1 });
+    // Apply query filters
+    if (leaveType) filter.leaveType = leaveType;
+    if (fromDate) {
+      filter.fromDate = filter.fromDate || {};
+      filter.fromDate.$gte = new Date(fromDate);
+    }
+    if (toDate) {
+      filter.toDate = filter.toDate || {};
+      filter.toDate.$lte = new Date(toDate);
+    }
+    if (department) filter.department = department;
+    if (division) filter.division_id = division;
+    if (designation) filter.designation = designation;
+
+    // Search: by emp_no or employee name (resolve employee ids first)
+    if (search && String(search).trim()) {
+      const searchStr = String(search).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(searchStr, 'i');
+      const matchedEmployees = await Employee.find({
+        $or: [
+          { emp_no: regex },
+          { employee_name: regex },
+          { first_name: regex },
+          { last_name: regex }
+        ]
+      }).select('_id').lean();
+      const ids = matchedEmployees.map(e => e._id);
+      if (ids.length > 0) {
+        const scopeIds = filter.employeeId && filter.employeeId.$in ? filter.employeeId.$in : null;
+        filter.employeeId = scopeIds
+          ? { $in: scopeIds.filter(id => ids.some(i => i.toString() === id.toString())) }
+          : { $in: ids };
+      } else {
+        filter.employeeId = { $in: [] };
+      }
+    }
+
+    const [leaves, total] = await Promise.all([
+      Leave.find(filter)
+        .populate('employeeId', 'employee_name emp_no first_name last_name')
+        .populate('department', 'name')
+        .populate('designation', 'name')
+        .sort({ appliedAt: -1 })
+        .skip(skip)
+        .limit(limitNum)
+        .lean(),
+      Leave.countDocuments(filter)
+    ]);
 
     res.status(200).json({
       success: true,
       count: leaves.length,
+      total,
+      page: pageNum,
+      totalPages: Math.ceil(total / limitNum) || 1,
       data: leaves,
     });
   } catch (error) {
@@ -1143,6 +1406,35 @@ exports.processLeaveAction = async (req, res) => {
     // 3. Admin Override (Super Admins and Sub Admins can generally approve any step)
     if (['sub_admin', 'super_admin'].includes(userRole)) {
       canProcess = true;
+    }
+
+    // 4. Setting: Allow higher authority to approve lower levels (e.g. HR can act when current step is HOD)
+    if (!canProcess && leave.workflow && leave.workflow.approvalChain && leave.workflow.approvalChain.length > 0) {
+      const workflowSettings = await getWorkflowSettings();
+      const allowHigher = workflowSettings?.workflow?.allowHigherAuthorityToApproveLowerLevels === true;
+      if (allowHigher) {
+        // Build role order from approval chain (by stepOrder or array order)
+        const chain = leave.workflow.approvalChain.slice().sort((a, b) => (a.stepOrder ?? 999) - (b.stepOrder ?? 999));
+        const roleOrder = chain.map(s => (s.role || s.stepRole || '').toLowerCase()).filter(Boolean);
+        const requiredIdx = roleOrder.indexOf(requiredRole.toLowerCase());
+        let userIdx = roleOrder.indexOf(userRole.toLowerCase());
+        if (userIdx === -1 && (userRole === 'hr' || userRole === 'super_admin')) {
+          const finalRole = (leave.workflow.finalAuthority || 'hr').toLowerCase();
+          userIdx = roleOrder.indexOf(finalRole) !== -1 ? roleOrder.length : roleOrder.indexOf('hr') !== -1 ? roleOrder.length : -1;
+        }
+        if (requiredIdx >= 0 && userIdx >= 0 && userIdx >= requiredIdx) {
+          canProcess = true;
+          // For scoped roles (manager, hr), still enforce jurisdiction
+          if (['manager', 'hr'].includes(userRole)) {
+            const fullUser = req.scopedUser || await User.findById(req.user.userId || req.user._id);
+            canProcess = checkJurisdiction(fullUser, leave);
+          } else if (requiredRole === 'hod' && userRole === 'hod') {
+            // Already handled above with division mapping
+          } else if (requiredRole === 'hod' && userRole !== 'hod') {
+            // Higher role acting on HOD step: no extra scope check beyond jurisdiction for manager/hr
+          }
+        }
+      }
     }
 
     if (!canProcess) {
@@ -1322,10 +1614,51 @@ exports.processLeaveAction = async (req, res) => {
     // When leave is finally approved, record a DEBIT in the leave register
     if (action === 'approve' && leave.status === 'approved') {
       try {
-        await leaveRegisterService.addLeaveDebit(leave);
+        await leaveRegisterService.addLeaveDebit(leave, req.user._id);
       } catch (err) {
         console.error('Leave register debit failed (leave already approved):', err);
       }
+    }
+
+    // Employee history: leave final decision
+    try {
+      if (action === 'approve' && leave.status === 'approved') {
+        await EmployeeHistory.create({
+          emp_no: leave.emp_no,
+          event: 'leave_approved',
+          performedBy: req.user._id,
+          performedByName: req.user.name,
+          performedByRole: userRole,
+          details: {
+            leaveId: leave._id,
+            fromDate: leave.fromDate,
+            toDate: leave.toDate,
+            numberOfDays: leave.numberOfDays,
+          },
+          comments: comments && comments.trim()
+            ? comments
+            : 'Leave fully approved; employee will be marked on leave for these dates',
+        });
+      } else if (action === 'reject' && leave.status === 'rejected') {
+        await EmployeeHistory.create({
+          emp_no: leave.emp_no,
+          event: 'leave_rejected',
+          performedBy: req.user._id,
+          performedByName: req.user.name,
+          performedByRole: userRole,
+          details: {
+            leaveId: leave._id,
+            fromDate: leave.fromDate,
+            toDate: leave.toDate,
+            numberOfDays: leave.numberOfDays,
+          },
+          comments: comments && comments.trim()
+            ? comments
+            : 'Leave rejected',
+        });
+      }
+    } catch (err) {
+      console.error('Failed to log leave approval/rejection history:', err.message);
     }
 
     await leave.populate([
@@ -1369,11 +1702,15 @@ exports.revokeLeaveApproval = async (req, res) => {
       });
     }
 
-    const allowedStatuses = ['approved', 'hod_approved', 'manager_approved', 'hr_approved'];
+    const allowedStatuses = [
+      'approved', 'rejected',
+      'hod_approved', 'manager_approved', 'hr_approved',
+      'hod_rejected', 'manager_rejected', 'hr_rejected'
+    ];
     if (!allowedStatuses.includes(leave.status)) {
       return res.status(400).json({
         success: false,
-        error: 'Only approved or partially approved leaves can be revoked',
+        error: 'Only approved or rejected leaves can be revoked',
       });
     }
 
@@ -1385,46 +1722,69 @@ exports.revokeLeaveApproval = async (req, res) => {
       });
     }
 
-    const approvedSteps = chain
+    // Find the last action taken (either approval or rejection)
+    const actionSteps = chain
       .map((s, i) => ({ step: s, index: i }))
-      .filter(({ step }) => step.status === 'approved');
-    const lastApproved = approvedSteps[approvedSteps.length - 1];
-    if (!lastApproved) {
+      .filter(({ step }) => step.status === 'approved' || step.status === 'rejected');
+
+    const lastAction = actionSteps[actionSteps.length - 1];
+    if (!lastAction) {
       return res.status(400).json({
         success: false,
-        error: 'No approved step found to revoke',
+        error: 'No action found to revoke',
       });
     }
 
-    const lastStep = lastApproved.step;
-    const stepIndex = lastApproved.index;
-    const approvedAt = lastStep.updatedAt || leave.approvals?.[lastStep.role]?.approvedAt || leave.approvals?.[lastStep.stepRole]?.approvedAt;
-    if (!approvedAt) {
+    const lastStep = lastAction.step;
+    const stepIndex = lastAction.index;
+    const updatedAt = lastStep.updatedAt || leave.approvals?.[lastStep.role]?.approvedAt || leave.approvals?.[lastStep.stepRole]?.approvedAt;
+
+    if (!updatedAt) {
       return res.status(400).json({
         success: false,
-        error: 'No approval timestamp found for this step',
+        error: 'No timestamp found for the last action',
       });
     }
 
-    const hoursSinceApproval = (new Date() - new Date(approvedAt)) / (1000 * 60 * 60);
-    const revocationWindow = 3;
-    if (hoursSinceApproval > revocationWindow) {
+    const hoursSinceAction = (new Date() - new Date(updatedAt)) / (1000 * 60 * 60);
+    const revocationWindow = 48; // Extended to 48 hours as per plan
+    if (hoursSinceAction > revocationWindow) {
       return res.status(400).json({
         success: false,
-        error: `Approval can only be revoked within ${revocationWindow} hours. ${hoursSinceApproval.toFixed(1)} hours have passed.`,
+        error: `Action can only be revoked within ${revocationWindow} hours. ${hoursSinceAction.toFixed(1)} hours have passed.`,
       });
     }
 
     const approverId = (lastStep.actionBy?._id || lastStep.actionBy)?.toString();
     const userId = (req.user._id || req.user.userId)?.toString();
-    if (approverId !== userId) {
+    const userRole = req.user.role;
+
+    // Authorization: Original actor OR Super Admin OR HR
+    const isOriginalActor = approverId === userId;
+    const isHigherAuthority = ['super_admin', 'hr'].includes(userRole);
+
+    if (!isOriginalActor && !isHigherAuthority) {
       return res.status(403).json({
         success: false,
-        error: 'Only the person who approved this step can revoke it',
+        error: 'Only the person who performed the action or a higher authority can revoke it',
       });
     }
 
+    // If revoking a final approval, reverse the leave register debit
+    if (lastStep.status === 'approved' && leave.status === 'approved') {
+      try {
+        const leaveRegisterService = require('../services/leaveRegisterService');
+        await leaveRegisterService.reverseLeaveDebit(leave, req.user._id);
+      } catch (err) {
+        console.error('Failed to reverse leave register debit during revocation:', err);
+        // We continue anyway, but log the error
+      }
+    }
+
     const stepRole = lastStep.role || lastStep.stepRole;
+    const originalStatus = lastStep.status;
+
+    // Reset the step to pending
     lastStep.status = 'pending';
     lastStep.actionBy = undefined;
     lastStep.actionByName = undefined;
@@ -1432,6 +1792,12 @@ exports.revokeLeaveApproval = async (req, res) => {
     lastStep.comments = undefined;
     lastStep.updatedAt = undefined;
     lastStep.isCurrent = true;
+
+    // Also reset if there were any following steps marked as current or pending (safety)
+    for (let i = stepIndex + 1; i < chain.length; i++) {
+      chain[i].isCurrent = false;
+      chain[i].status = 'pending';
+    }
 
     if (leave.approvals && leave.approvals[stepRole]) {
       leave.approvals[stepRole] = { status: null, approvedBy: null, approvedAt: null, comments: null };
@@ -1443,6 +1809,7 @@ exports.revokeLeaveApproval = async (req, res) => {
     leave.workflow.currentStep = stepRole;
     leave.workflow.isCompleted = false;
 
+    // Recalculate overall status based on previous step
     if (stepIndex === 0) {
       leave.status = 'pending';
     } else {
@@ -1455,8 +1822,8 @@ exports.revokeLeaveApproval = async (req, res) => {
       action: 'revoked',
       actionBy: req.user._id,
       actionByName: req.user.name,
-      actionByRole: req.user.role,
-      comments: reason || `Approval revoked by ${req.user.name}`,
+      actionByRole: userRole,
+      comments: reason || `Action (${originalStatus}) revoked by ${req.user.name}`,
       timestamp: new Date(),
     });
 
@@ -1466,14 +1833,14 @@ exports.revokeLeaveApproval = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'Leave approval revoked successfully',
+      message: `Leave ${originalStatus} revoked successfully`,
       data: leave,
     });
   } catch (error) {
-    console.error('Error revoking leave approval:', error);
+    console.error('Error revoking leave action:', error);
     res.status(500).json({
       success: false,
-      error: error.message || 'Failed to revoke leave approval',
+      error: error.message || 'Failed to revoke leave action',
     });
   }
 };
@@ -1492,11 +1859,15 @@ exports.deleteLeave = async (req, res) => {
       });
     }
 
-    // Only admin can delete
-    if (!['sub_admin', 'super_admin'].includes(req.user.role)) {
+    // Authorization: Admin can delete any, employee can delete their own if pending
+    const isAdmin = ['sub_admin', 'super_admin'].includes(req.user.role);
+    const isOwner = leave.appliedBy?.toString() === req.user._id.toString() ||
+      (req.user.employeeRef && leave.employeeId?.toString() === req.user.employeeRef.toString());
+
+    if (!isAdmin && !isOwner) {
       return res.status(403).json({
         success: false,
-        error: 'Not authorized to delete leave applications',
+        error: 'Not authorized to delete this leave application',
       });
     }
 
@@ -1600,6 +1971,117 @@ exports.getLeaveStats = async (req, res) => {
     res.status(500).json({
       success: false,
       error: error.message || 'Failed to fetch leave statistics',
+    });
+  }
+};
+
+// @desc    Get dashboard counts for superadmin (all or filtered)
+// @route   GET /api/leaves/dashboard-stats
+// @access  Private (same as getLeaves - applyScopeFilter)
+// Query: search, division, department, designation. When absent = global counts; when present = filtered counts.
+exports.getDashboardStats = async (req, res) => {
+  try {
+    const { search, division, department, designation } = req.query;
+
+    const scopeFilter = req.scopeFilter || { isActive: true };
+    const workflowFilter = buildWorkflowVisibilityFilter(req.user);
+
+    // Same jurisdiction and visibility as getLeaves/getODs
+    let jurisdictionFilter = scopeFilter;
+    let visibilityFilter = workflowFilter;
+    const scopedEmployeeIds = await getEmployeeIdsInScope(req.user);
+    if (Array.isArray(scopedEmployeeIds) && scopedEmployeeIds.length > 0) {
+      jurisdictionFilter = {
+        $or: [
+          scopeFilter,
+          { employeeId: { $in: scopedEmployeeIds } }
+        ]
+      };
+      visibilityFilter = {
+        $or: [
+          workflowFilter,
+          { employeeId: { $in: scopedEmployeeIds } }
+        ]
+      };
+    }
+
+    const baseFilter = {
+      $and: [
+        jurisdictionFilter,
+        visibilityFilter,
+        { isActive: true }
+      ]
+    };
+
+    const leaveFilter = { ...baseFilter };
+    const odFilter = { ...baseFilter };
+
+    if (department) {
+      leaveFilter.department = department;
+      odFilter.department = department;
+    }
+    if (division) {
+      leaveFilter.division_id = division;
+      odFilter.division_id = division;
+    }
+    if (designation) {
+      leaveFilter.designation = designation;
+      odFilter.designation = designation;
+    }
+
+    if (search && String(search).trim()) {
+      const searchStr = String(search).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(searchStr, 'i');
+      const matchedEmployees = await Employee.find({
+        $or: [
+          { emp_no: regex },
+          { employee_name: regex },
+          { first_name: regex },
+          { last_name: regex }
+        ]
+      }).select('_id').lean();
+      const ids = matchedEmployees.map(e => e._id);
+      const idFilter = ids.length > 0 ? { $in: ids } : { $in: [] };
+      leaveFilter.employeeId = idFilter;
+      odFilter.employeeId = idFilter;
+    }
+
+    const pendingStatusFilter = { status: { $nin: ['approved', 'rejected', 'cancelled'] } };
+
+    const [
+      totalLeaves,
+      totalApprovedLeaves,
+      totalPendingLeaves,
+      totalODs,
+      totalApprovedODs,
+      totalPendingODs
+    ] = await Promise.all([
+      Leave.countDocuments(leaveFilter),
+      Leave.countDocuments({ ...leaveFilter, status: 'approved' }),
+      Leave.countDocuments({ ...leaveFilter, ...pendingStatusFilter }),
+      OD.countDocuments(odFilter),
+      OD.countDocuments({ ...odFilter, status: 'approved' }),
+      OD.countDocuments({ ...odFilter, ...pendingStatusFilter })
+    ]);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        totalLeaves,
+        totalODs,
+        totalPendingLeaves,
+        totalPendingODs,
+        totalApprovedLeaves,
+        totalApprovedODs,
+        totalPending: totalPendingLeaves + totalPendingODs,
+        totalApproved: totalApprovedLeaves + totalApprovedODs
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching dashboard stats:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to fetch dashboard stats'
     });
   }
 };

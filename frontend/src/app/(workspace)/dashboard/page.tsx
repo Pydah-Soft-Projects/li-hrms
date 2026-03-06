@@ -5,7 +5,6 @@ import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { api } from '@/lib/api';
 import Link from 'next/link';
-import RecentActivityFeed from '@/components/attendance/RecentActivityFeed';
 import {
   Users,
   Clock,
@@ -490,21 +489,17 @@ function EmployeeDashboard({ stats }: { stats: DashboardStats }) {
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8">
-        <div className="lg:col-span-1 p-4 md:p-8 rounded-2xl md:rounded-3xl bg-bg-surface/50 border border-border-base backdrop-blur-md shadow-sm h-fit">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
+        <div className="md:col-span-2 lg:col-span-3 p-4 md:p-8 rounded-2xl md:rounded-3xl bg-bg-surface/50 border border-border-base backdrop-blur-md shadow-sm h-fit">
           <h2 className="text-base md:text-xl font-black text-text-primary mb-4 md:mb-6 flex items-center gap-2 md:gap-3">
             <span className="w-1.5 md:w-2 h-4 md:h-6 bg-indigo-500 rounded-full" />
             My Portal
           </h2>
-          <div className="grid grid-cols-1 gap-2 md:gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 md:gap-4">
             <QuickLink href="/leaves" label="Apply Absence" desc="Leave or OD request" icon={<Calendar />} color="indigo" />
             <QuickLink href="/attendance" label="Time Card" desc="Review daily logs" icon={<Clock />} color="blue" />
             <QuickLink href="/payslips" label="Earnings" desc="View monthly payslips" icon={<FileText />} color="teal" />
           </div>
-        </div>
-
-        <div className="lg:col-span-2 h-[500px] overflow-hidden">
-          <RecentActivityFeed />
         </div>
       </div>
     </div>

@@ -132,7 +132,7 @@ const ArrearsDialog = ({ open, onClose, employeeId, month, onSave }) => {
                     <TableRow key={ar._id}>
                       <TableCell>
                         <Typography variant="body2">
-                          {ar.startMonth} to {ar.endMonth}
+                          {ar.type === 'direct' ? '—' : `${ar.startMonth || '—'} to ${ar.endMonth || '—'}`}
                         </Typography>
                       </TableCell>
                       <TableCell>
@@ -185,7 +185,7 @@ const ArrearsDialog = ({ open, onClose, employeeId, month, onSave }) => {
                     ar.settlementHistory?.map((s, idx) => (
                       <Box key={`${ar._id}-${idx}`} sx={{ mb: 1, p: 1, backgroundColor: '#f9f9f9', borderRadius: 1 }}>
                         <Typography variant="body2">
-                          <strong>{ar.startMonth} to {ar.endMonth}:</strong> ₹{s.amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })} settled on {format(new Date(s.settledAt), 'dd MMM yyyy')}
+                          <strong>{ar.type === 'direct' ? 'Direct' : `${ar.startMonth} to ${ar.endMonth}`}:</strong> ₹{s.amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })} settled on {format(new Date(s.settledAt), 'dd MMM yyyy')}
                         </Typography>
                       </Box>
                     ))

@@ -12,9 +12,9 @@ This document summarizes the critical fixes implemented based on the code review
 - `backend/attendance/controllers/realtimeLogController.js`
 - `.env.example` (added configuration template)
 
-### 2. ✅ Race Condition: Async Function Without Async Operations
-**Issue**: `filterRedundantLogs` was marked as async but performed no async operations
-**Fix**: Removed `async` keyword and updated all calls to remove `await`
+### 2. ✅ Code Smell: Unnecessary async/await Usage
+**Issue**: `filterRedundantLogs` was marked as `async` even though it contained no asynchronous operations, leading to unnecessary Promise wrapping and confusing semantics.
+**Fix**: Removed the `async` keyword from `filterRedundantLogs` and updated all callers to stop using `await`, keeping the flow purely synchronous.
 **Files**:
 - `backend/attendance/services/attendanceSyncService.js`
 - `backend/attendance/controllers/realtimeLogController.js`
@@ -27,14 +27,16 @@ This document summarizes the critical fixes implemented based on the code review
 
 ## Medium Priority Fixes Completed
 
-### 4. ✅ Date Mutation: Potential Memory Leak
-**Issue**: Date objects could be mutated when minDate and maxDate were the same reference
-**Fix**: Ensured proper date cloning with separate instances
+### 4. ✅ Date Mutation: Shared Object Reference
+**Issue**: `minDate` and `maxDate` were created as references to the same `Date` instance, so mutating one would inadvertently mutate the other, causing subtle logic bugs.
+**Fix**: Ensured proper cloning by creating separate `Date` instances for `minDate` and `maxDate` wherever they are used.
 **Files**: `backend/attendance/services/attendanceSyncService.js`
 
 ### 5. ✅ Logic Error: Financial Year Calculation
 **Issue**: Incorrect calculation for multi-year financial year scenarios
-**Fix**: Proper formula: `(targetYear - fyStartYear) * 12 + targetMonthNum - 4 + 1`
+**Fix**: Replaced the magic number `4` (April) with a named constant `FINANCIAL_YEAR_START_MONTH` and used the formula  
+`monthsSinceStart = (targetYear - fyStartYear) * 12 + targetMonthNum - FINANCIAL_YEAR_START_MONTH + 1`.
+This assumes an Indian-style financial year starting in April; the constant is configurable if the organization uses a different fiscal calendar.
 **Files**: `backend/leaves/services/leaveRegisterService.js`
 
 ### 6. ✅ Input Validation: Missing Log Structure Validation

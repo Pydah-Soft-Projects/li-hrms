@@ -12,6 +12,7 @@ const deductionService = require('./deductionService');
 const loanAdvanceService = require('./loanAdvanceService');
 const ArrearsIntegrationService = require('./arrearsIntegrationService');
 const ArrearsPayrollIntegrationService = require('../../arrears/services/arrearsPayrollIntegrationService');
+const DeductionIntegrationService = require('./deductionIntegrationService');
 const PayrollBatchService = require('./payrollBatchService');
 const PayrollBatch = require('../model/PayrollBatch');
 const {
@@ -371,6 +372,7 @@ async function calculatePayroll(employeeId, month, userId) {
         absentDays: totalAbsentDays,
         enableAbsentDeduction: absentSettings.enableAbsentDeduction,
         lopDaysPerAbsent: absentSettings.lopDaysPerAbsent,
+        employee,
       }
     );
     console.log('Attendance Deduction Result:', JSON.stringify(attendanceDeductionResult, null, 2));
@@ -393,7 +395,8 @@ async function calculatePayroll(employeeId, month, userId) {
       month,
       departmentId.toString(),
       basicPayResult.perDayBasicPay,
-      employee.division_id?.toString() || null
+      employee.division_id?.toString() || null,
+      { employee }
     );
     console.log('Permission Deduction Result:', JSON.stringify(permissionDeductionResult, null, 2));
     console.log(`Permission Deduction Amount: ${permissionDeductionResult.permissionDeduction}`);
@@ -1153,7 +1156,8 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
       month,
       departmentId,
       perDaySalary,
-      employee.division_id // Pass division ID for granular rules
+      employee.division_id, // Pass division ID for granular rules
+      { employee }
     );
 
     let totalAttendanceDeduction = attendanceDeductionResult.attendanceDeduction || 0;
@@ -1220,6 +1224,7 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
         grossSalary: grossAmountSalary,
         earnedSalary,
         dearnessAllowance: 0,
+        employee,
       });
       if (statutoryResult.breakdown && statutoryResult.breakdown.length > 0) {
         totalDeductions += statutoryResult.totalEmployeeShare;
@@ -1442,6 +1447,22 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
       }
     }
 
+    // Process manual deductions (reduce net pay)
+    const deductionSettlements = options.deductionSettlements || [];
+    if (deductionSettlements.length > 0) {
+      try {
+        await DeductionIntegrationService.addDeductionsToPayroll(
+          payrollRecord,
+          deductionSettlements,
+          employeeId
+        );
+        const dedAmount = payrollRecord.manualDeductionsAmount || 0;
+        console.log(`\n--- Manual Deductions applied: ₹${dedAmount} ---`);
+      } catch (deductionError) {
+        console.error('Error processing manual deductions:', deductionError);
+      }
+    }
+
     // Final Net Salary Round-Off
     const exactNetValue = payrollRecord.get('netSalary') || 0;
     const roundedNetValue = Math.ceil(exactNetValue);
@@ -1551,6 +1572,10 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
         arrearsAmount: payrollRecord.arrearsAmount || 0,
         arrearsSettlements: payrollRecord.arrearsSettlements || [],
       },
+      manualDeductions: {
+        manualDeductionsAmount: payrollRecord.manualDeductionsAmount || 0,
+        deductionSettlements: payrollRecord.deductionSettlements || [],
+      },
       netSalary: finalNet,
       roundOff: finalRoundOff,
       status: payrollRecord.status,
@@ -1576,38 +1601,46 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
       }
     }
 
+    // Process manual deduction settlements after payroll is saved
+    if (deductionSettlements && deductionSettlements.length > 0) {
+      try {
+        console.log('\n--- Processing Manual Deduction Settlement Records ---');
+        await DeductionIntegrationService.processDeductionSettlements(
+          employeeId,
+          month,
+          deductionSettlements,
+          userId,
+          payrollRecord._id.toString()
+        );
+        console.log('✓ Manual deduction settlements processed successfully');
+      } catch (settlementError) {
+        console.error('Error processing deduction settlements:', settlementError);
+      }
+    }
+
     let batchId = null;
-    // Update Payroll Batch
+    // Create or find batch and add this payroll record (same as dynamic engine — batches right after record save)
+    const deptId = employee?.department_id?._id ?? employee?.department_id;
+    const divId = employee?.division_id?._id ?? employee?.division_id;
     try {
-      if (employee && employee.department_id) {
-        // console.log(`\n--- Updating Payroll Batch for Department: ${employee.department_id} ---`); // Optional logging
+      if (employee && deptId && divId) {
         let batch = await PayrollBatch.findOne({
-          department: employee.department_id,
-          division: employee.division_id, // Strict Scope
+          department: deptId,
+          division: divId,
           month: month
         });
 
         if (!batch) {
-          console.log('Batch does not exist, creating new batch...');
-          // Create batch if not exists
-          batch = await PayrollBatchService.createBatch(
-            employee.department_id,
-            employee.division_id, // Pass Division ID
-            month,
-            userId
-          );
+          batch = await PayrollBatchService.createBatch(deptId, divId, month, userId);
         }
 
-        // Add payroll to batch
         if (batch) {
           await PayrollBatchService.addPayrollToBatch(batch._id, payrollRecord._id);
           batchId = batch._id;
-          // console.log(`✓ Added payroll record to batch: ${batch.batchNumber}`);
         }
       }
     } catch (batchError) {
       console.error('Error updating payroll batch:', batchError);
-      // Don't fail the calculation, just log error
     }
 
     return { success: true, payrollRecord, batchId, payslip };

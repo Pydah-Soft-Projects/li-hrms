@@ -11,19 +11,21 @@ interface ArrearsForPayrollResponse {
 
 interface ArrearsForPayroll {
   _id: string;
+  type?: 'incremental' | 'direct';
   employee: {
     _id: string;
     emp_no: string;
     first_name: string;
     last_name: string;
     department_id: string | { _id: string; name: string };
+    division_id?: string | { _id: string; name: string };
   };
   totalAmount: number;
   settledAmount: number;
   isFullySettled: boolean;
   status: string;
-  startMonth: string;
-  endMonth: string;
+  startMonth?: string;
+  endMonth?: string;
   reason: string;
   monthlyAmount: number;
   remainingAmount?: number;
@@ -32,13 +34,15 @@ interface ArrearsForPayroll {
 interface ArrearsPayrollSectionProps {
   month: number;
   year: number;
+  divisionId?: string;
   departmentId?: string;
-  onArrearsSelected: (arrears: Array<{ id: string; amount: number }>) => void;
+  onArrearsSelected: (arrears: Array<{ id: string; amount: number; employeeId?: string }>) => void;
 }
 
 export const ArrearsPayrollSection: React.FC<ArrearsPayrollSectionProps> = ({
   month,
   year,
+  divisionId,
   departmentId,
   onArrearsSelected,
 }) => {
@@ -51,11 +55,12 @@ export const ArrearsPayrollSection: React.FC<ArrearsPayrollSectionProps> = ({
   }, [month, year]);
 
   const filteredArrears = arrears.filter(arr => {
-    if (!departmentId) return true;
-    const empDeptId = typeof arr.employee.department_id === 'object'
-      ? arr.employee.department_id._id
-      : arr.employee.department_id;
-    return empDeptId === departmentId;
+    const emp = arr.employee as { department_id?: string | { _id: string }; division_id?: string | { _id: string } };
+    const empDivId = typeof emp?.division_id === 'object' ? emp?.division_id?._id : emp?.division_id;
+    const empDeptId = typeof emp?.department_id === 'object' ? emp?.department_id?._id : emp?.department_id;
+    if (divisionId && empDivId !== divisionId) return false;
+    if (departmentId && empDeptId !== departmentId) return false;
+    return true;
   });
 
   const fetchArrears = async () => {
@@ -164,7 +169,7 @@ export const ArrearsPayrollSection: React.FC<ArrearsPayrollSectionProps> = ({
 
   // Check based on FILTERED list
   if (filteredArrears.length === 0) {
-    return <div className="p-4 text-gray-500">No pending arrears found for the selected period{departmentId ? ' and department' : ''}.</div>;
+    return <div className="p-4 text-gray-500">No pending arrears found for the selected period{(divisionId || departmentId) ? ' matching the selected filter' : ''}.</div>;
   }
 
   return (
@@ -222,7 +227,7 @@ export const ArrearsPayrollSection: React.FC<ArrearsPayrollSectionProps> = ({
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm text-gray-900 dark:text-white">
-                      {new Date(arr.startMonth).toLocaleDateString()} - {new Date(arr.endMonth).toLocaleDateString()}
+                      {arr.type === 'direct' ? '—' : `${arr.startMonth ? new Date(arr.startMonth).toLocaleDateString() : '—'} - ${arr.endMonth ? new Date(arr.endMonth).toLocaleDateString() : '—'}`}
                     </div>
                     <div className="text-sm text-gray-500 dark:text-gray-400">
                       {arr.reason}

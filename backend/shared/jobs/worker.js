@@ -401,24 +401,27 @@ const startWorkers = () => {
         try {
             const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
 
-            // Get today's date in YYYY-MM-DD (IST)
-            const { dateStr: today } = extractISTComponents(new Date());
-
             let syncedCount = 0;
             let removedCount = 0;
 
             for (const entry of entries) {
-                // Only process future or current dates
-                if (!entry.date || entry.date < today) continue;
+                if (!entry.date) continue;
 
                 const empNo = String(entry.employeeNumber || '').toUpperCase();
 
                 if (entry.status === 'WO' || entry.status === 'HOL') {
-                    // Update or Create AttendanceDaily via .save() to trigger hooks
+                    // Create or update AttendanceDaily for this WO/HOL day (only for saved roster entries)
                     let dailyRecord = await AttendanceDaily.findOne({
                         employeeNumber: empNo,
                         date: entry.date
                     });
+
+                    // Skip only this (employee, date) day if it has punches (e.g. OD, CCL). Other WO/HOL days for same employee still synced.
+                    const hasPunches = dailyRecord && (
+                        (dailyRecord.totalWorkingHours > 0) ||
+                        (dailyRecord.shifts && dailyRecord.shifts.length > 0 && dailyRecord.shifts.some(s => s && s.inTime))
+                    );
+                    if (hasPunches) continue;
 
                     const updateFields = {
                         status: entry.status === 'WO' ? 'WEEK_OFF' : 'HOLIDAY',
@@ -439,8 +442,9 @@ const startWorkers = () => {
                         Object.keys(updateFields).forEach(key => {
                             dailyRecord[key] = updateFields[key];
                         });
-                        if (!dailyRecord.source.includes('roster-sync')) {
-                            dailyRecord.source.push('roster-sync');
+                        if (!dailyRecord.source || !dailyRecord.source.includes('roster-sync')) {
+                            dailyRecord.source = dailyRecord.source || [];
+                            if (!dailyRecord.source.includes('roster-sync')) dailyRecord.source.push('roster-sync');
                         }
                     }
 

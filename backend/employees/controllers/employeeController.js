@@ -32,6 +32,8 @@ const {
 } = require('../config/sqlHelper');
 const { generatePassword, sendCredentials } = require('../../shared/services/passwordNotificationService');
 const s3UploadService = require('../../shared/services/s3UploadService');
+const { getNextEmpNo } = require('../services/empNoService');
+const EmployeeHistory = require('../model/EmployeeHistory');
 
 // ============== Helper Functions ==============
 
@@ -108,16 +110,23 @@ const processQualifications = async (req, settings) => {
  */
 const getEmployeeSettings = async () => {
   try {
-    const dataSourceSetting = await Settings.findOne({ key: 'employee_data_source' });
-    const deleteTargetSetting = await Settings.findOne({ key: 'employee_delete_target' });
+    const [dataSourceSetting, deleteTargetSetting, autoGenSetting] = await Promise.all([
+      Settings.findOne({ key: 'employee_data_source' }),
+      Settings.findOne({ key: 'employee_delete_target' }),
+      Settings.findOne({ key: 'auto_generate_employee_number' }),
+    ]);
+
+    const autoGenerateEmployeeNumber = autoGenSetting?.value === true
+      || autoGenSetting?.value === 'true';
 
     return {
       dataSource: dataSourceSetting?.value || 'mongodb', // 'mongodb' | 'mssql' | 'both'
       deleteTarget: deleteTargetSetting?.value || 'both', // 'mongodb' | 'mssql' | 'both'
+      auto_generate_employee_number: autoGenerateEmployeeNumber,
     };
   } catch (error) {
     console.error('Error getting employee settings:', error);
-    return { dataSource: 'mongodb', deleteTarget: 'both' };
+    return { dataSource: 'mongodb', deleteTarget: 'both', auto_generate_employee_number: false };
   }
 };
 
@@ -393,9 +402,12 @@ exports.getAllEmployees = async (req, res) => {
       ];
     }
 
-    // By default, exclude employees who have left (unless includeLeft=true)
+    // By default, show only currently active: no leftDate or leftDate on/after today (resigned but still in notice period)
     if (includeLeft !== 'true') {
-      filters.leftDate = null;
+      const startOfToday = new Date();
+      startOfToday.setUTCHours(0, 0, 0, 0);
+      filters.$and = filters.$and || [];
+      filters.$and.push({ $or: [{ leftDate: null }, { leftDate: { $gte: startOfToday } }] });
     }
 
     console.log('[Employee Controller] Scope filters:', filters);
@@ -585,11 +597,16 @@ exports.createEmployee = async (req, res) => {
   try {
     const { passwordMode, notificationChannels, ...employeeData } = req.body;
 
-    // Validate required fields
-    if (!employeeData.emp_no) {
+    const settings = await getEmployeeSettings();
+    const autoGenerate = settings.auto_generate_employee_number === true;
+    const empNoBlank = employeeData.emp_no == null || String(employeeData.emp_no || '').trim() === '';
+
+    if (autoGenerate && empNoBlank) {
+      employeeData.emp_no = await getNextEmpNo();
+    } else if (!autoGenerate && empNoBlank) {
       return res.status(400).json({
         success: false,
-        message: 'Employee number (emp_no) is required',
+        message: 'Employee number (emp_no) is required when auto-generate is off',
       });
     }
 
@@ -1208,6 +1225,92 @@ exports.updateEmployee = async (req, res) => {
         : 0;
     }
 
+    // Employee history: profile updated (human-readable previous/current for changed fields)
+    try {
+      const before = existingEmployee.toObject();
+      const after = updatedEmployeeDoc ? updatedEmployeeDoc.toObject() : null;
+      if (after) {
+        const skipFields = new Set(['__v', 'getQualifications', 'allData', 'created_at', 'updated_at', 'password', 'plain_password']);
+        const requestedFields = Object.keys(employeeData || {}).filter((f) => !skipFields.has(f));
+        const rawChanges = requestedFields
+          .map((field) => ({
+            field,
+            previous: before[field],
+            current: after[field],
+          }))
+          .filter((c) => {
+            const prev = c.previous;
+            const curr = c.current;
+            if (prev === undefined && curr === undefined) return false;
+            try {
+              return JSON.stringify(prev) !== JSON.stringify(curr);
+            } catch {
+              return prev !== curr;
+            }
+          });
+
+        // Resolve refs and complex values to human-readable strings for display
+        const toDisplay = async (value, field) => {
+          if (value === undefined || value === null) return '—';
+          if (field === 'division_id') {
+            const id = value?._id || value;
+            if (!id) return '—';
+            const doc = await Division.findById(id).select('name').lean();
+            return doc ? doc.name : String(id);
+          }
+          if (field === 'department_id') {
+            const id = value?._id || value;
+            if (!id) return '—';
+            const doc = await Department.findById(id).select('name').lean();
+            return doc ? doc.name : String(id);
+          }
+          if (field === 'designation_id') {
+            const id = value?._id || value;
+            if (!id) return '—';
+            const doc = await Designation.findById(id).select('name').lean();
+            return doc ? doc.name : String(id);
+          }
+          if (field === 'qualifications') {
+            const arr = Array.isArray(value) ? value : [];
+            return arr.length ? `${arr.length} row(s)` : '—';
+          }
+          if (field === 'dynamicFields') {
+            const obj = value && typeof value === 'object' ? value : {};
+            const keys = Object.keys(obj).filter((k) => !k.startsWith('_'));
+            return keys.length ? `${keys.length} field(s)` : '—';
+          }
+          if (value instanceof Date) return value.toLocaleDateString('en-IN', { year: 'numeric', month: 'short', day: 'numeric' });
+          if (typeof value === 'object') return '[updated]';
+          return String(value);
+        };
+
+        const changes = [];
+        for (const c of rawChanges) {
+          changes.push({
+            field: c.field,
+            previous: await toDisplay(c.previous, c.field),
+            current: await toDisplay(c.current, c.field),
+          });
+        }
+
+        if (changes.length > 0) {
+          await EmployeeHistory.create({
+            emp_no: existingEmployee.emp_no,
+            event: 'employee_updated',
+            performedBy: req.user._id,
+            performedByName: req.user.name,
+            performedByRole: req.user.role,
+            details: {
+              changes,
+            },
+            comments: 'Employee profile updated',
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Failed to log employee update history:', err.message);
+    }
+
     res.status(200).json({
       success: true,
       message: results.mssql
@@ -1347,6 +1450,67 @@ exports.getSettings = async (req, res) => {
 };
 
 /**
+ * @desc    Update employee settings (dataSource, deleteTarget, auto_generate_employee_number)
+ * @route   PUT /api/employees/settings
+ * @access  Private (Super Admin, Sub Admin, Manager)
+ */
+exports.updateSettings = async (req, res) => {
+  try {
+    const { dataSource, deleteTarget, auto_generate_employee_number } = req.body;
+
+    const updates = [
+      dataSource != null && { key: 'employee_data_source', value: dataSource },
+      deleteTarget != null && { key: 'employee_delete_target', value: deleteTarget },
+      auto_generate_employee_number != null && { key: 'auto_generate_employee_number', value: !!auto_generate_employee_number },
+    ].filter(Boolean);
+
+    for (const { key, value } of updates) {
+      await Settings.findOneAndUpdate(
+        { key },
+        { key, value, category: 'employee' },
+        { new: true, upsert: true }
+      );
+    }
+
+    const settings = await getEmployeeSettings();
+    res.status(200).json({
+      success: true,
+      message: 'Employee settings updated',
+      data: settings,
+    });
+  } catch (error) {
+    console.error('Error updating employee settings:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error updating employee settings',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * @desc    Get next employee number (for UI when auto-generate is ON)
+ * @route   GET /api/employees/next-emp-no
+ * @access  Private
+ */
+exports.getNextEmpNo = async (req, res) => {
+  try {
+    const nextEmpNo = await getNextEmpNo();
+    res.status(200).json({
+      success: true,
+      data: { nextEmpNo },
+    });
+  } catch (error) {
+    console.error('Error getting next employee number:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error getting next employee number',
+      error: error.message,
+    });
+  }
+};
+
+/**
  * @desc    Get resolved allowance/deduction components for a department/gross salary (with optional employee overrides)
  * @route   GET /api/employees/components/defaults
  * @access  Private
@@ -1386,12 +1550,31 @@ exports.setLeftDate = async (req, res) => {
       });
     }
 
-    // Update left date and deactivate
+    // Update left date and deactivate immediately for manual operation
     employee.leftDate = leftDateObj;
     employee.leftReason = leftReason || null;
-    employee.is_active = false; // Deactivate when left date is set
+    employee.is_active = false; // Manual left-date API keeps behaviour: deactivate now
 
     await employee.save();
+
+    // Employee history: left date set manually
+    try {
+      await EmployeeHistory.create({
+        emp_no: employee.emp_no,
+        event: 'left_date_set',
+        performedBy: req.user._id,
+        performedByName: req.user.name,
+        performedByRole: req.user.role,
+        details: {
+          leftDate: employee.leftDate,
+          leftReason: employee.leftReason,
+          source: 'manual_api',
+        },
+        comments: leftReason || 'Left date set manually',
+      });
+    } catch (err) {
+      console.error('Failed to log left date set history:', err.message);
+    }
 
     res.status(200).json({
       success: true,
@@ -1439,6 +1622,23 @@ exports.removeLeftDate = async (req, res) => {
 
     await employee.save();
 
+    // Employee history: left date cleared / reactivation
+    try {
+      await EmployeeHistory.create({
+        emp_no: employee.emp_no,
+        event: 'left_date_cleared',
+        performedBy: req.user._id,
+        performedByName: req.user.name,
+        performedByRole: req.user.role,
+        details: {
+          source: 'manual_api',
+        },
+        comments: 'Employee reactivated; left date cleared',
+      });
+    } catch (err) {
+      console.error('Failed to log left date cleared history:', err.message);
+    }
+
     res.status(200).json({
       success: true,
       message: 'Employee reactivated successfully',
@@ -1455,6 +1655,42 @@ exports.removeLeftDate = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error removing left date',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * @desc    Get employee history timeline
+ * @route   GET /api/employees/:empNo/history
+ * @access  Private (Super Admin only for now)
+ */
+exports.getEmployeeHistory = async (req, res) => {
+  try {
+    const { empNo } = req.params;
+    const empNoUpper = String(empNo || '').toUpperCase();
+
+    if (!empNoUpper) {
+      return res.status(400).json({
+        success: false,
+        message: 'Employee number is required',
+      });
+    }
+
+    const history = await EmployeeHistory.find({ emp_no: empNoUpper })
+      .sort({ timestamp: -1 })
+      .limit(200)
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      data: history,
+    });
+  } catch (error) {
+    console.error('Error fetching employee history:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching employee history',
       error: error.message,
     });
   }
@@ -1544,6 +1780,23 @@ exports.resendEmployeePassword = async (req, res) => {
       false
     );
 
+    // Employee history: credentials resent
+    try {
+      await EmployeeHistory.create({
+        emp_no: employee.emp_no,
+        event: 'credentials_resent',
+        performedBy: req.user._id,
+        performedByName: req.user.name,
+        performedByRole: req.user.role,
+        details: {
+          channels: notificationChannels,
+        },
+        comments: 'Login credentials resent to employee',
+      });
+    } catch (err) {
+      console.error('Failed to log credentials resent history:', err.message);
+    }
+
     res.status(200).json({
       success: true,
       message: 'Credentials resent successfully',
@@ -1552,6 +1805,71 @@ exports.resendEmployeePassword = async (req, res) => {
   } catch (error) {
     console.error('Error resending credentials:', error);
     res.status(500).json({ success: false, message: 'Error resending credentials', error: error.message });
+  }
+};
+
+/**
+ * @desc    Reset employee credentials (generate new and send via config matrix)
+ * @route   POST /api/employees/:empNo/reset-credentials
+ * @access  Private (Super Admin)
+ */
+exports.resetEmployeeCredentials = async (req, res) => {
+  try {
+    const { empNo } = req.params;
+
+    const employee = await Employee.findOne({ emp_no: empNo.toUpperCase() })
+      .select('+plain_password emp_no employee_name email phone_number');
+
+    if (!employee) {
+      return res.status(404).json({ success: false, message: 'Employee not found' });
+    }
+
+    console.log(`[EmployeeController] Resetting credentials for ${empNo}. Using config matrix delivery strategy.`);
+
+    const { passwordMode, customPassword } = req.body;
+
+    let passwordToSend;
+    if (customPassword && customPassword.trim().length > 0) {
+      passwordToSend = customPassword.trim();
+    } else {
+      passwordToSend = await generatePassword(employee, passwordMode || null);
+    }
+    employee.password = passwordToSend;
+    employee.plain_password = passwordToSend;
+    await employee.save();
+
+    const notificationResults = await sendCredentials(
+      employee,
+      passwordToSend,
+      null,
+      true
+    );
+
+    // Employee history: credentials reset
+    try {
+      await EmployeeHistory.create({
+        emp_no: employee.emp_no,
+        event: 'password_reset',
+        performedBy: req.user._id,
+        performedByName: req.user.name,
+        performedByRole: req.user.role,
+        details: {
+          mode: 'manual_reset',
+        },
+        comments: 'Login credentials reset and sent to employee',
+      });
+    } catch (err) {
+      console.error('Failed to log credentials reset history:', err.message);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Credentials reset and sent successfully',
+      notificationResults
+    });
+  } catch (error) {
+    console.error('Error resetting credentials:', error);
+    res.status(500).json({ success: false, message: 'Error resetting credentials', error: error.message });
   }
 };
 
@@ -1581,6 +1899,23 @@ exports.bulkExportEmployeePasswords = async (req, res) => {
         phone: emp.phone_number,
         password: newPassword
       });
+
+      // Employee history: credentials exported / reset as part of bulk operation
+      try {
+        await EmployeeHistory.create({
+          emp_no: emp.emp_no,
+          event: 'password_reset',
+          performedBy: req.user._id,
+          performedByName: req.user.name,
+          performedByRole: req.user.role,
+          details: {
+            mode: 'bulk_export',
+          },
+          comments: 'Password reset as part of bulk export operation',
+        });
+      } catch (err) {
+        console.error('Failed to log bulk password reset history:', err.message);
+      }
     }
 
     // Convert to CSV for response
@@ -1680,6 +2015,24 @@ exports.bulkResendCredentials = async (req, res) => {
           notificationChannels,
           false
         );
+
+        // Employee history: credentials resent (bulk)
+        try {
+          await EmployeeHistory.create({
+            emp_no: employee.emp_no,
+            event: 'credentials_resent',
+            performedBy: req.user._id,
+            performedByName: req.user.name,
+            performedByRole: req.user.role,
+            details: {
+              channels: notificationChannels,
+              mode: 'bulk',
+            },
+            comments: 'Login credentials resent (bulk operation)',
+          });
+        } catch (err) {
+          console.error('Failed to log bulk credentials resent history:', err.message);
+        }
 
         results.successCount++;
       } catch (err) {

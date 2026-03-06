@@ -1,5 +1,6 @@
 const User = require('../model/User');
 const Employee = require('../../employees/model/Employee');
+const EmployeeHistory = require('../../employees/model/EmployeeHistory');
 const Department = require('../../departments/model/Department');
 const Division = require('../../departments/model/Division');
 const jwt = require('jsonwebtoken');
@@ -65,12 +66,16 @@ exports.registerUser = async (req, res) => {
       });
     }
 
-    // Validate role-specific requirements
-    if (role === 'hod' && (!department || !division)) {
-      return res.status(400).json({
-        success: false,
-        message: 'HOD must be assigned to a department AND a division (via divisionMapping or division+department)',
-      });
+    // Validate role-specific requirements: HOD must have at least one division and one department (via divisionMapping or division+department)
+    if (role === 'hod') {
+      const hasMapping = divisionMapping && Array.isArray(divisionMapping) && divisionMapping.length > 0;
+      const hasDeptsInMapping = hasMapping && divisionMapping.some(m => (m.departments || []).length > 0);
+      if (!hasDeptsInMapping && !(division && department)) {
+        return res.status(400).json({
+          success: false,
+          message: 'HOD must be assigned to at least one division and one department (via divisionMapping or division+department)',
+        });
+      }
     }
 
     const userRoles = roles && roles.length > 0 ? roles : [role];
@@ -104,20 +109,23 @@ exports.registerUser = async (req, res) => {
     // Create user
     const user = await User.create(userData);
 
-    // Valid HOD Sync: Update Department with HOD ID for specific Division
-    if (role === 'hod' && department && req.body.division) {
-      const dept = await Department.findById(department);
-      if (dept) {
-        // Remove existing HOD for this division if any
-        const existingIndex = dept.divisionHODs.findIndex(dh => dh.division.toString() === req.body.division);
-        if (existingIndex > -1) {
-          dept.divisionHODs.splice(existingIndex, 1);
+    // HOD Sync: Update every department in divisionMapping with this user as HOD for the respective division
+    if (role === 'hod' && finalDivisionMapping.length > 0) {
+      for (const mapping of finalDivisionMapping) {
+        const divId = mapping.division?._id || mapping.division;
+        const deptIds = mapping.departments || [];
+        if (!divId) continue;
+        const divStr = divId.toString();
+        for (const deptId of deptIds) {
+          const id = deptId?._id || deptId;
+          const dept = await Department.findById(id);
+          if (dept) {
+            const idx = dept.divisionHODs.findIndex(dh => (dh.division?.toString() || dh.division) === divStr);
+            if (idx > -1) dept.divisionHODs[idx].hod = user._id;
+            else dept.divisionHODs.push({ division: divId, hod: user._id });
+            await dept.save();
+          }
         }
-        dept.divisionHODs.push({
-          division: req.body.division,
-          hod: user._id
-        });
-        await dept.save();
       }
     }
 
@@ -307,15 +315,42 @@ exports.createUserFromEmployee = async (req, res) => {
       createdBy: req.user?._id,
     });
 
+    // Employee history: user created / promoted (from employee to role)
+    try {
+      await EmployeeHistory.create({
+        emp_no: employee.emp_no,
+        event: 'user_promoted',
+        performedBy: req.user._id,
+        performedByName: req.user.name,
+        performedByRole: req.user.role,
+        details: {
+          userId: user._id,
+          newRole: user.role,
+          newRoles: user.roles,
+        },
+        comments: `User account created from employee and promoted to role: ${user.role}`,
+      });
+    } catch (err) {
+      console.error('Failed to log user promotion history:', err.message);
+    }
+
     const deptIdsFromMapping = finalDivisionMapping.flatMap(m => m.departments || []);
-    if (role === 'hod' && deptIdsFromMapping.length > 0) {
-      const divId = finalDivisionMapping[0]?.division?._id || finalDivisionMapping[0]?.division;
-      const dept = await Department.findById(deptIdsFromMapping[0]);
-      if (dept) {
-        const idx = dept.divisionHODs.findIndex(dh => (dh.division?.toString() || dh.division) === (divId?.toString() || divId));
-        if (idx > -1) dept.divisionHODs[idx].hod = user._id;
-        else dept.divisionHODs.push({ division: divId, hod: user._id });
-        await dept.save();
+    if (role === 'hod' && finalDivisionMapping.length > 0) {
+      for (const mapping of finalDivisionMapping) {
+        const divId = mapping.division?._id || mapping.division;
+        const deptIds = mapping.departments || [];
+        if (!divId) continue;
+        const divStr = divId.toString();
+        for (const deptId of deptIds) {
+          const id = deptId?._id || deptId;
+          const dept = await Department.findById(id);
+          if (dept) {
+            const idx = dept.divisionHODs.findIndex(dh => (dh.division?.toString() || dh.division) === divStr);
+            if (idx > -1) dept.divisionHODs[idx].hod = user._id;
+            else dept.divisionHODs.push({ division: divId, hod: user._id });
+            await dept.save();
+          }
+        }
       }
     }
     if (role === 'hr' && deptIdsFromMapping.length > 0) {
@@ -501,6 +536,11 @@ exports.updateUser = async (req, res) => {
       });
     }
 
+    // Track original values for history
+    const originalRole = user.role;
+    const originalRoles = Array.isArray(user.roles) ? [...user.roles] : [];
+    const originalIsActive = user.isActive;
+
     // Track if role changed for workspace update
     const roleChanged = role && role !== user.role;
 
@@ -544,6 +584,11 @@ exports.updateUser = async (req, res) => {
         { _id: { $in: removedDeptIds }, hr: user._id },
         { $unset: { hr: "" } }
       );
+      // Remove this user from divisionHODs in departments no longer in mapping
+      await Department.updateMany(
+        { _id: { $in: removedDeptIds } },
+        { $pull: { divisionHODs: { hod: user._id } } }
+      );
     }
 
     const managerDivId = user.divisionMapping?.[0]?.division?._id || user.divisionMapping?.[0]?.division;
@@ -554,16 +599,22 @@ exports.updateUser = async (req, res) => {
       await Division.updateMany({ manager: user._id }, { $unset: { manager: "" } });
     }
 
+    // HOD: sync all (division, department) in divisionMapping to each department's divisionHODs
     if (user.role === 'hod' && user.divisionMapping?.length > 0) {
-      const divId = user.divisionMapping[0].division?._id || user.divisionMapping[0].division;
-      const deptId = (user.divisionMapping[0].departments || [])[0]?._id || (user.divisionMapping[0].departments || [])[0];
-      if (divId && deptId) {
-        const dept = await Department.findById(deptId);
-        if (dept) {
-          const idx = dept.divisionHODs.findIndex(dh => (dh.division?.toString() || dh.division) === (divId?.toString() || divId));
-          if (idx > -1) dept.divisionHODs[idx].hod = user._id;
-          else dept.divisionHODs.push({ division: divId, hod: user._id });
-          await dept.save();
+      for (const mapping of user.divisionMapping) {
+        const divId = mapping.division?._id || mapping.division;
+        const deptIds = mapping.departments || [];
+        if (!divId) continue;
+        const divStr = divId.toString();
+        for (const deptId of deptIds) {
+          const id = deptId?._id || deptId;
+          const dept = await Department.findById(id);
+          if (dept) {
+            const idx = dept.divisionHODs.findIndex(dh => (dh.division?.toString() || dh.division) === divStr);
+            if (idx > -1) dept.divisionHODs[idx].hod = user._id;
+            else dept.divisionHODs.push({ division: divId, hod: user._id });
+            await dept.save();
+          }
         }
       }
     }
@@ -580,6 +631,62 @@ exports.updateUser = async (req, res) => {
       .populate('divisionMapping.division', 'name code')
       .populate('divisionMapping.departments', 'name code')
       .select('-password');
+
+    // Employee history: role / status changes
+    try {
+      // Resolve employee number if linked
+      let empNoForHistory = user.employeeId;
+      if (!empNoForHistory && user.employeeRef) {
+        const empDoc = await Employee.findById(user.employeeRef).select('emp_no');
+        empNoForHistory = empDoc?.emp_no;
+      }
+
+      if (empNoForHistory) {
+        // Role change (promotion/demotion)
+        if (role !== undefined && originalRole !== role) {
+          const isPromotion = originalRole === 'employee' && role !== 'employee';
+          const event = isPromotion ? 'user_promoted' : 'user_demoted';
+          const comments = isPromotion
+            ? `Promoted from ${originalRole || 'employee'} to ${role}`
+            : `Role changed from ${originalRole || 'employee'} to ${role}`;
+
+          await EmployeeHistory.create({
+            emp_no: empNoForHistory,
+            event,
+            performedBy: req.user._id,
+            performedByName: req.user.name,
+            performedByRole: req.user.role,
+            details: {
+              userId: user._id,
+              previousRole: originalRole,
+              previousRoles: originalRoles,
+              newRole: user.role,
+              newRoles: user.roles,
+            },
+            comments,
+          });
+        }
+
+        // Activation / deactivation via updateUser
+        if (isActive !== undefined && originalIsActive !== isActive) {
+          await EmployeeHistory.create({
+            emp_no: empNoForHistory,
+            event: isActive ? 'user_activated' : 'user_deactivated',
+            performedBy: req.user._id,
+            performedByName: req.user.name,
+            performedByRole: req.user.role,
+            details: {
+              userId: user._id,
+            },
+            comments: isActive
+              ? 'User account activated (access restored)'
+              : 'User account temporarily deactivated',
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Failed to log user update history:', err.message);
+    }
 
     res.status(200).json({
       success: true,
@@ -651,6 +758,33 @@ exports.resetPassword = async (req, res) => {
       response.newPassword = password;
     }
 
+    // Employee history: user password reset
+    try {
+      // Resolve employee number if linked
+      let empNoForHistory = user.employeeId;
+      if (!empNoForHistory && user.employeeRef) {
+        const empDoc = await Employee.findById(user.employeeRef).select('emp_no');
+        empNoForHistory = empDoc?.emp_no;
+      }
+
+      if (empNoForHistory) {
+        await EmployeeHistory.create({
+          emp_no: empNoForHistory,
+          event: 'password_reset',
+          performedBy: req.user._id,
+          performedByName: req.user.name,
+          performedByRole: req.user.role,
+          details: {
+            userId: user._id,
+            autoGenerate: !!autoGenerate,
+          },
+          comments: 'User password reset by administrator',
+        });
+      }
+    } catch (err) {
+      console.error('Failed to log user password reset history:', err.message);
+    }
+
     res.status(200).json(response);
   } catch (error) {
     console.error('Error resetting password:', error);
@@ -683,8 +817,37 @@ exports.toggleUserStatus = async (req, res) => {
       });
     }
 
+    const originalIsActive = user.isActive;
+
     user.isActive = !user.isActive;
     await user.save();
+
+    // Employee history: toggle active status (temporary deactivation / activation)
+    try {
+      let empNoForHistory = user.employeeId;
+      if (!empNoForHistory && user.employeeRef) {
+        const empDoc = await Employee.findById(user.employeeRef).select('emp_no');
+        empNoForHistory = empDoc?.emp_no;
+      }
+
+      if (empNoForHistory && originalIsActive !== user.isActive) {
+        await EmployeeHistory.create({
+          emp_no: empNoForHistory,
+          event: user.isActive ? 'user_activated' : 'user_deactivated',
+          performedBy: req.user._id,
+          performedByName: req.user.name,
+          performedByRole: req.user.role,
+          details: {
+            userId: user._id,
+          },
+          comments: user.isActive
+            ? 'User account activated (access restored)'
+            : 'User account temporarily deactivated',
+        });
+      }
+    } catch (err) {
+      console.error('Failed to log user toggle-status history:', err.message);
+    }
 
     res.status(200).json({
       success: true,
@@ -740,6 +903,27 @@ exports.deleteUser = async (req, res) => {
     }
 
     await user.deleteOne();
+
+    // Employee history: user deleted (treated as demoted / access removed)
+    try {
+      if (empNo) {
+        await EmployeeHistory.create({
+          emp_no: empNo,
+          event: 'user_deleted',
+          performedBy: req.user._id,
+          performedByName: req.user.name,
+          performedByRole: req.user.role,
+          details: {
+            userId: user._id,
+            previousRole: user.role,
+            previousRoles: user.roles,
+          },
+          comments: 'User account deleted; access removed (demoted back to employee record only)',
+        });
+      }
+    } catch (err) {
+      console.error('Failed to log user deletion history:', err.message);
+    }
 
     res.status(200).json({
       success: true,
@@ -835,32 +1019,56 @@ exports.getUserStats = async (req, res) => {
 // @desc    Update user's own profile
 // @route   PUT /api/users/profile
 // @access  Private
+// When profilePhoto is provided: if user has employeeRef, store on Employee; else store on User.
 exports.updateProfile = async (req, res) => {
   try {
     const userId = req.user.userId;
-    const { name, phone } = req.body;
+    const { name, phone, profilePhoto } = req.body;
 
     const updateData = {};
     if (name) updateData.name = name;
     if (phone !== undefined) updateData.phone = phone;
 
-    const user = await User.findByIdAndUpdate(
-      userId,
-      updateData,
-      { new: true, runValidators: true }
-    ).select('-password');
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found',
+    const userDoc = await User.findById(userId).select('-password');
+    if (userDoc) {
+      if (profilePhoto !== undefined) {
+        const photoUrl = profilePhoto && String(profilePhoto).trim() ? String(profilePhoto).trim() : null;
+        if (userDoc.employeeRef) {
+          await Employee.findByIdAndUpdate(userDoc.employeeRef, { profilePhoto: photoUrl });
+        } else {
+          updateData.profilePhoto = photoUrl;
+        }
+      }
+      const user = await User.findByIdAndUpdate(
+        userId,
+        updateData,
+        { new: true, runValidators: true }
+      ).select('-password');
+      return res.status(200).json({
+        success: true,
+        message: 'Profile updated successfully',
+        data: user,
       });
     }
 
-    res.status(200).json({
-      success: true,
-      message: 'Profile updated successfully',
-      data: user,
+    const employeeDoc = await Employee.findById(userId).select('-password');
+    if (employeeDoc) {
+      if (name) await Employee.findByIdAndUpdate(userId, { employee_name: name });
+      if (profilePhoto !== undefined) {
+        const photoUrl = profilePhoto && String(profilePhoto).trim() ? String(profilePhoto).trim() : null;
+        await Employee.findByIdAndUpdate(userId, { profilePhoto: photoUrl });
+      }
+      const employee = await Employee.findById(userId).select('-password');
+      return res.status(200).json({
+        success: true,
+        message: 'Profile updated successfully',
+        data: { ...employee.toObject(), name: employee.employee_name },
+      });
+    }
+
+    return res.status(404).json({
+      success: false,
+      message: 'User not found',
     });
   } catch (error) {
     console.error('Error updating profile:', error);

@@ -2,10 +2,12 @@ const PayRegisterSummary = require('../model/PayRegisterSummary');
 const Employee = require('../../employees/model/Employee');
 const PayrollBatch = require('../../payroll/model/PayrollBatch');
 const { populatePayRegisterFromSources } = require('../services/autoPopulationService');
-const { calculateTotals } = require('../services/totalsCalculationService');
+const { calculateTotals, ensureTotalsRespectRoster } = require('../services/totalsCalculationService');
 const { updateDailyRecord } = require('../services/dailyRecordUpdateService');
+const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
 const { manualSyncPayRegister } = require('../services/autoSyncService');
 const { processSummaryBulkUpload } = require('../services/summaryUploadService');
+const XLSX = require('xlsx');
 
 /**
  * Pay Register Controller
@@ -37,10 +39,21 @@ exports.getPayRegister = async (req, res) => {
       .populate('lastEditedBy', 'name email role')
       .populate('editedBy', 'name email role');
 
-    // Recalculate totals to ensure accuracy
+    // Recalculate totals to ensure accuracy; week-offs and holidays from shift roster
     if (payRegister) {
       payRegister.totals = calculateTotals(payRegister.dailyRecords);
       payRegister.recalculateTotals(); // Also use model method for consistency
+      let startDate = payRegister.startDate;
+      let endDate = payRegister.endDate;
+      if (!startDate || !endDate) {
+        const [y, m] = payRegister.month.split('-').map(Number);
+        const range = await getPayrollDateRange(y, m);
+        startDate = range.startDate;
+        endDate = range.endDate;
+        payRegister.startDate = startDate;
+        payRegister.endDate = endDate;
+      }
+      await ensureTotalsRespectRoster(payRegister.totals, payRegister.emp_no, startDate, endDate);
       await payRegister.save();
     }
 
@@ -65,6 +78,8 @@ exports.getPayRegister = async (req, res) => {
         monthNum
       );
 
+      let totals = calculateTotals(dailyRecords);
+      await ensureTotalsRespectRoster(totals, employee.emp_no, startDate, endDate);
       payRegister = await PayRegisterSummary.create({
         employeeId,
         emp_no: employee.emp_no,
@@ -76,7 +91,7 @@ exports.getPayRegister = async (req, res) => {
         startDate,
         endDate,
         dailyRecords,
-        totals: calculateTotals(dailyRecords),
+        totals,
         status: 'draft',
         lastAutoSyncedAt: new Date(),
       });
@@ -143,6 +158,9 @@ exports.createPayRegister = async (req, res) => {
       monthNum
     );
 
+    let totals = calculateTotals(dailyRecords);
+    await ensureTotalsRespectRoster(totals, employee.emp_no, startDate, endDate);
+
     const payRegister = await PayRegisterSummary.create({
       employeeId,
       emp_no: employee.emp_no,
@@ -154,7 +172,7 @@ exports.createPayRegister = async (req, res) => {
       startDate,
       endDate,
       dailyRecords,
-      totals: calculateTotals(dailyRecords),
+      totals,
       status: 'draft',
       lastAutoSyncedAt: new Date(),
     });
@@ -193,10 +211,22 @@ exports.updatePayRegister = async (req, res) => {
       });
     }
 
-    // Update dailyRecords if provided
+    // Update dailyRecords if provided; recalc totals so any day/half marked OD (e.g. edited from absent) is included in present days; WO/HOL from roster
     if (dailyRecords && Array.isArray(dailyRecords)) {
       payRegister.dailyRecords = dailyRecords;
       payRegister.totals = calculateTotals(dailyRecords);
+      payRegister.recalculateTotals();
+      let startDate = payRegister.startDate;
+      let endDate = payRegister.endDate;
+      if (!startDate || !endDate) {
+        const [y, m] = month.split('-').map(Number);
+        const range = await getPayrollDateRange(y, m);
+        startDate = range.startDate;
+        endDate = range.endDate;
+        payRegister.startDate = startDate;
+        payRegister.endDate = endDate;
+      }
+      await ensureTotalsRespectRoster(payRegister.totals, payRegister.emp_no, startDate, endDate);
     }
 
     // Update status if provided
@@ -254,7 +284,6 @@ exports.updateDailyRecord = async (req, res) => {
     }
 
     const [year, monthNum] = month.split('-').map(Number);
-    const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
     const { startDate, endDate } = await getPayrollDateRange(year, monthNum);
 
     // Validate date is within the payroll cycle
@@ -276,9 +305,14 @@ exports.updateDailyRecord = async (req, res) => {
     // Update daily record
     await updateDailyRecord(payRegister, date, updateData, req.user);
 
-    // Recalculate totals
+    // Recalculate totals so any day/half edited from absent to OD is included in totalPresentDays; WO/HOL from roster
     payRegister.totals = calculateTotals(payRegister.dailyRecords);
-    payRegister.recalculateTotals(); // Also use model method
+    payRegister.recalculateTotals();
+    await ensureTotalsRespectRoster(payRegister.totals, payRegister.emp_no, startDate, endDate);
+    if (!payRegister.startDate || !payRegister.endDate) {
+      payRegister.startDate = startDate;
+      payRegister.endDate = endDate;
+    }
 
     await payRegister.save();
 
@@ -602,4 +636,92 @@ exports.uploadSummaryBulk = async (req, res) => {
     });
   }
 };
+// @desc    Export monthly summary as Excel
+// @route   GET /api/pay-register/export-summary/:month
+// @access  Private (exclude employee)
+exports.exportSummaryExcel = async (req, res) => {
+  try {
+    const { month } = req.params;
+    const { departmentId, divisionId } = req.query;
 
+    // Validate month format
+    if (!/^\d{4}-\d{2}$/.test(month)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Month must be in YYYY-MM format',
+      });
+    }
+
+    const [year, monthNum] = month.split('-').map(Number);
+    const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
+    const { startDate, endDate, totalDays } = await getPayrollDateRange(year, monthNum);
+
+    const rangeStart = new Date(startDate + 'T00:00:00.000Z');
+    const rangeEnd = new Date(endDate + 'T23:59:59.999Z');
+
+    let employeeQuery = {
+      $or: [
+        { is_active: true, leftDate: null },
+        { leftDate: { $gte: rangeStart, $lte: rangeEnd } }
+      ]
+    };
+
+    if (departmentId) employeeQuery.department_id = departmentId;
+    if (divisionId) employeeQuery.division_id = divisionId;
+
+    const employees = await Employee.find(employeeQuery)
+      .select('_id employee_name emp_no department_id designation_id division_id')
+      .populate('department_id', 'name')
+      .populate('division_id', 'name')
+      .populate('designation_id', 'name')
+      .sort({ emp_no: 1 });
+
+    const employeeIds = employees.map(e => e._id);
+
+    const payRegisters = await PayRegisterSummary.find({
+      employeeId: { $in: employeeIds },
+      month
+    }).lean();
+
+    const prMap = new Map(payRegisters.map(pr => [pr.employeeId.toString(), pr]));
+
+    const rows = employees.map(emp => {
+      const pr = prMap.get(emp._id.toString());
+      const totals = pr?.totals || {};
+
+      return {
+        'Employee Code': emp.emp_no,
+        'Employee Name': emp.employee_name,
+        'Division': emp.division_id?.name || 'N/A',
+        'Department': emp.department_id?.name || 'N/A',
+        'Designation': emp.designation_id?.name || 'N/A',
+        'Total OD': totals.totalODDays || 0,
+        'Total Present': totals.totalPresentDays || 0,
+        'Paid Leaves': totals.totalPaidLeaveDays || 0,
+        'LOP Count': totals.totalLopDays || 0,
+        'Total Absent': totals.totalAbsentDays || 0,
+        'Holiday Count': (totals.totalWeeklyOffs || 0) + (totals.totalHolidays || 0),
+        'Late Count': totals.lateCount || 0,
+        'OT Hours': totals.totalOTHours || 0,
+        'Extra Days': totals.extraDays || 0,
+      };
+    });
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wb, ws, 'Monthly Summary');
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+    const filename = `PayRegister_Summary_${month}.xlsx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.send(buf);
+
+  } catch (error) {
+    console.error('Error exporting summary Excel:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to export summary Excel',
+    });
+  }
+};

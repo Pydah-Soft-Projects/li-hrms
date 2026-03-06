@@ -224,15 +224,18 @@ export default function DepartmentsPage() {
     setError('');
 
     try {
-      const data = {
+      const divisions = divisionId ? [divisionId] : [];
+      const data: Record<string, unknown> = {
         name,
         code: code || undefined,
         description: description || undefined,
         hod: hodId || undefined,
-        divisions: divisionId ? [divisionId] : [],
+        divisions,
       };
-
-      const response = await api.createDepartment(data);
+      if (divisionId && hodId) {
+        data.divisionHODs = [{ division: divisionId, hod: hodId }];
+      }
+      const response = await api.createDepartment(data as any);
 
       if (response.success) {
         setShowCreateDialog(false);
@@ -253,15 +256,18 @@ export default function DepartmentsPage() {
     setError('');
 
     try {
-      const data = {
+      const divisions = divisionId ? [divisionId] : [];
+      const data: Record<string, unknown> = {
         name,
         code: code || undefined,
         description: description || undefined,
         hod: hodId || undefined,
-        divisions: divisionId ? [divisionId] : [],
+        divisions,
       };
-
-      const response = await api.updateDepartment(showEditDialog._id, data);
+      if (divisionId && hodId) {
+        data.divisionHODs = [{ division: divisionId, hod: hodId }];
+      }
+      const response = await api.updateDepartment(showEditDialog._id, data as any);
 
       if (response.success) {
         setShowEditDialog(null);

@@ -11,6 +11,7 @@ const {
   checkJurisdiction
 } = require('../../shared/middleware/dataScopeMiddleware');
 const Department = require('../../departments/model/Department');
+const EmployeeHistory = require('../../employees/model/EmployeeHistory');
 
 /**
  * Get employee settings from database
@@ -118,6 +119,12 @@ const getWorkflowSettings = async () => {
   // Return default workflow if no settings found
   if (!settings) {
     return {
+      settings: {
+        allowBackdated: false,
+        maxBackdatedDays: 0,
+        allowFutureDated: true,
+        maxAdvanceDays: 365,
+      },
       workflow: {
         isEnabled: true,
         steps: [
@@ -137,16 +144,38 @@ const getWorkflowSettings = async () => {
 // @access  Private
 exports.getODs = async (req, res) => {
   try {
-    const { status, employeeId, department, fromDate, toDate, page = 1, limit = 20 } = req.query;
+    const { status, employeeId, department, division, designation, fromDate, toDate, search, page = 1, limit = 20 } = req.query;
 
     // Multi-layered filter: Jurisdiction (Scope) AND Timing (Workflow)
     const scopeFilter = req.scopeFilter || { isActive: true };
     const workflowFilter = buildWorkflowVisibilityFilter(req.user);
 
+    // Include ODs whose document has division/department in scope OR whose employeeId is in scope.
+    // Also: for scoped roles (HOD/Manager/HR), show ALL requests from in-scope employees regardless of workflow stage,
+    // so they can track and manage team requests even when pending at reporting_manager or other stages.
+    let jurisdictionFilter = scopeFilter;
+    let visibilityFilter = workflowFilter;
+    const scopedEmployeeIds = await getEmployeeIdsInScope(req.user);
+    if (Array.isArray(scopedEmployeeIds) && scopedEmployeeIds.length > 0) {
+      jurisdictionFilter = {
+        $or: [
+          scopeFilter,
+          { employeeId: { $in: scopedEmployeeIds } }
+        ]
+      };
+      // Scoped roles see all requests from in-scope employees (bypass workflow stage restriction)
+      visibilityFilter = {
+        $or: [
+          workflowFilter,
+          { employeeId: { $in: scopedEmployeeIds } }
+        ]
+      };
+    }
+
     const filter = {
       $and: [
-        scopeFilter,
-        workflowFilter,
+        jurisdictionFilter,
+        visibilityFilter,
         { isActive: true }
       ]
     };
@@ -154,8 +183,30 @@ exports.getODs = async (req, res) => {
     if (status) filter.status = status;
     if (employeeId) filter.employeeId = employeeId;
     if (department) filter.department = department;
+    if (division) filter.division_id = division;
+    if (designation) filter.designation = designation;
     if (fromDate) filter.fromDate = { $gte: new Date(fromDate) };
     if (toDate) filter.toDate = { ...filter.toDate, $lte: new Date(toDate) };
+
+    // Search: by emp_no or employee name (resolve employee ids)
+    if (search && String(search).trim()) {
+      const searchStr = String(search).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(searchStr, 'i');
+      const matchedEmployees = await Employee.find({
+        $or: [
+          { emp_no: regex },
+          { employee_name: regex },
+          { first_name: regex },
+          { last_name: regex }
+        ]
+      }).select('_id').lean();
+      const ids = matchedEmployees.map(e => e._id);
+      if (ids.length > 0) {
+        filter.employeeId = { $in: ids };
+      } else {
+        filter.employeeId = { $in: [] };
+      }
+    }
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
@@ -305,17 +356,60 @@ exports.applyOD = async (req, res) => {
       geoLocation, // ADDED
     } = req.body;
 
-    // Validate Date (Must be today or future)
+    // Photo evidence is mandatory for OD
+    if (!photoEvidence || !photoEvidence.url) {
+      return res.status(400).json({
+        success: false,
+        error: 'Photo evidence is required for OD applications.',
+      });
+    }
+
+    // Get settings
+    const workflowSettings = await getWorkflowSettings();
+    const settings = workflowSettings.settings || {};
+
+    // Validate Date
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const checkFromDate = new Date(fromDate);
     checkFromDate.setHours(0, 0, 0, 0);
 
-    if (checkFromDate < today) {
-      return res.status(400).json({
-        success: false,
-        error: 'OD applications are restricted to current or future dates only.'
-      });
+    const diffTime = checkFromDate - today;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    // 1. Backdate validation
+    if (diffDays < 0) {
+      if (!settings.allowBackdated) {
+        return res.status(400).json({
+          success: false,
+          error: 'Backdated OD applications are not allowed.'
+        });
+      }
+
+      const backdateDays = Math.abs(diffDays);
+      if (settings.maxBackdatedDays !== null && settings.maxBackdatedDays !== undefined && backdateDays > settings.maxBackdatedDays) {
+        return res.status(400).json({
+          success: false,
+          error: `OD application can only be backdated up to ${settings.maxBackdatedDays} days.`
+        });
+      }
+    }
+    // 2. Future date validation
+    else if (diffDays > 0) {
+      if (!settings.allowFutureDated) {
+        return res.status(400).json({
+          success: false,
+          error: 'Future dated OD applications are not allowed.'
+        });
+      }
+
+      const advanceDays = diffDays;
+      if (settings.maxAdvanceDays !== null && settings.maxAdvanceDays !== undefined && advanceDays > settings.maxAdvanceDays) {
+        return res.status(400).json({
+          success: false,
+          error: `OD application can only be applied up to ${settings.maxAdvanceDays} days in advance.`
+        });
+      }
     }
 
     // Get employee
@@ -375,7 +469,14 @@ exports.applyOD = async (req, res) => {
         const scopeUser = await User.findById(req.user._id).select('role divisionMapping').lean();
         const userForScope = scopeUser || req.user;
         let scopedEmployeeIds = await getEmployeeIdsInScope(userForScope);
-        let isInScope = scopedEmployeeIds.some(id => id.toString() === targetEmployee._id.toString());
+
+        // Self-application safety: some deployments store employeeId as emp_no instead of ObjectId
+        const isSelfScoped =
+          (req.user.employeeRef && req.user.employeeRef.toString() === targetEmployee._id.toString()) ||
+          (req.user.employeeId && req.user.employeeId.toString() === targetEmployee._id.toString()) ||
+          (req.user.employeeId && targetEmployee.emp_no && String(req.user.employeeId).trim() === String(targetEmployee.emp_no).trim());
+
+        let isInScope = isSelfScoped || scopedEmployeeIds.some(id => id.toString() === targetEmployee._id.toString());
 
         if (!isInScope && req.user.role === 'hod') {
           const empDeptId = (targetEmployee.department_id?._id || targetEmployee.department_id)?.toString();
@@ -387,6 +488,21 @@ exports.applyOD = async (req, res) => {
               'divisionHODs.division': empDivId
             }).select('_id');
             isInScope = !!dept;
+          }
+        }
+
+        // Allow if current user is the reporting manager of this employee (apply on behalf of reportee)
+        if (!isInScope && targetEmployee) {
+          const reportingManagers = targetEmployee.dynamicFields?.reporting_to || targetEmployee.dynamicFields?.reporting_to_ || [];
+          if (Array.isArray(reportingManagers) && reportingManagers.length > 0) {
+            const reportingManagerIds = reportingManagers.map(m => (m._id || m).toString());
+            const userStr = req.user._id?.toString();
+            const userEmployeeIdStr = (req.user.employeeId || req.user.employeeRef)?.toString();
+            if ((userStr && reportingManagerIds.includes(userStr)) ||
+              (userEmployeeIdStr && reportingManagerIds.includes(userEmployeeIdStr))) {
+              isInScope = true;
+              console.log(`[Apply OD] ✅ User ${req.user._id} is reporting manager for employee ${empNo}`);
+            }
           }
         }
 
@@ -511,6 +627,13 @@ exports.applyOD = async (req, res) => {
       });
     }
 
+    // Populate division, department, designation so we have names for snapshot (avoids saving 'N/A')
+    await employee.populate([
+      { path: 'division_id', select: 'name' },
+      { path: 'department_id', select: 'name' },
+      { path: 'designation_id', select: 'name' },
+    ]);
+
     // Calculate number of days
     const from = new Date(fromDate);
     const to = new Date(toDate);
@@ -585,9 +708,6 @@ exports.applyOD = async (req, res) => {
 
     // Store warnings to include in success response
     const warnings = validation.warnings || [];
-
-    // Get workflow settings
-    const workflowSettings = await getWorkflowSettings();
 
     // Initialize Workflow (Dynamic)
     const approvalSteps = [];
@@ -668,10 +788,10 @@ exports.applyOD = async (req, res) => {
       expectedOutcome,
       travelDetails,
       division_id: employee.division_id?._id || employee.division_id, // Save division at time of application
-      division_name: employee.division_id?.name || 'N/A',
+      division_name: employee.division_id?.name || '',
       department: employee.department_id?._id || employee.department_id || employee.department, // Support both field names
       department_id: employee.department_id?._id || employee.department_id,
-      department_name: employee.department_id?.name || 'N/A',
+      department_name: employee.department_id?.name || '',
       designation: employee.designation_id || employee.designation, // Support both field names
       appliedBy: req.user._id,
       appliedAt: new Date(),
@@ -691,6 +811,28 @@ exports.applyOD = async (req, res) => {
     });
 
     await od.save();
+
+    // Employee history: OD applied/assigned
+    try {
+      await EmployeeHistory.create({
+        emp_no: employee.emp_no,
+        event: 'od_applied',
+        performedBy: req.user._id,
+        performedByName: req.user.name,
+        performedByRole: req.user.role,
+        details: {
+          odId: od._id,
+          fromDate: od.fromDate,
+          toDate: od.toDate,
+          numberOfDays: od.numberOfDays,
+          odType: od.odType,
+          odType_extended: od.odType_extended,
+        },
+        comments: remarks || (isAssigned ? 'OD assigned by manager' : 'OD applied'),
+      });
+    } catch (err) {
+      console.error('Failed to log OD applied history:', err.message);
+    }
 
     // Populate for response
     await od.populate([
@@ -733,7 +875,7 @@ exports.updateOD = async (req, res) => {
     const isSuperAdmin = req.user.role === 'super_admin';
     const isFinalApproved = od.status === 'approved';
 
-    if (isFinalApproved && !isSuperAdmin) {
+    if (isFinalApproved && !['super_admin', 'manager', 'hod'].includes(req.user.role)) {
       return res.status(400).json({
         success: false,
         error: 'Final approved OD cannot be edited',
@@ -743,7 +885,7 @@ exports.updateOD = async (req, res) => {
     // Check ownership or admin permission
     const isOwner = od.appliedBy.toString() === req.user._id.toString();
     const isAssigner = od.assignedBy?.toString() === req.user._id.toString();
-    const isAdmin = ['hr', 'sub_admin', 'super_admin'].includes(req.user.role);
+    const isAdmin = ['hr', 'sub_admin', 'super_admin', 'manager', 'hod'].includes(req.user.role);
 
     if (!isOwner && !isAssigner && !isAdmin) {
       return res.status(403).json({
@@ -905,40 +1047,79 @@ exports.updateOD = async (req, res) => {
 
     await od.save();
 
-    // NEW: If OD is hour-based and approved, update AttendanceDaily
-    if (od.status === 'approved' && od.odType_extended === 'hours' && od.durationHours) {
+    // When OD is approved (e.g. Super Admin set status via updateOD), update AttendanceDaily for each day in range and recalc monthly summary
+    if (od.status === 'approved') {
       try {
+        console.log('[OD-FLOW] updateOD: OD is approved', { odId: od._id?.toString(), emp_no: od.emp_no, odType_extended: od.odType_extended });
         const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
         const formatDate = (date) => {
           const d = new Date(date);
-          return `${d.getFullYear()} -${String(d.getMonth() + 1).padStart(2, '0')} -${String(d.getDate()).padStart(2, '0')} `;
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
         };
-
-        // Get the attendance record for the OD date
-        const attendanceDate = formatDate(od.fromDate);
-        const attendance = await AttendanceDaily.findOne({
-          employeeNumber: String(od.emp_no || '').toUpperCase(),
-          date: attendanceDate,
-        });
-
-        if (attendance) {
-          // Update attendance record with OD hours
-          attendance.odHours = od.durationHours || 0;
-          attendance.odDetails = {
-            odStartTime: od.odStartTime,
-            odEndTime: od.odEndTime,
-            durationHours: od.durationHours,
-            odType: od.odType_extended,
-            odId: od._id,
-            approvedAt: od.approvedAt || new Date(),
-            approvedBy: od.approvedBy || req.user._id,
-          };
-          await attendance.save();
-          console.log(`✅ OD hours updated in AttendanceDaily for ${od.emp_no} on ${attendanceDate} `);
+        const dateFrom = formatDate(od.fromDate);
+        const dateTo = formatDate(od.toDate);
+        const empNoUpper = (od.emp_no != null ? String(od.emp_no).trim() : '').toUpperCase();
+        if (empNoUpper) {
+          const datesToUpdate = [];
+          let d = new Date(dateFrom + 'T12:00:00');
+          const end = new Date(dateTo + 'T12:00:00');
+          while (d <= end) {
+            datesToUpdate.push(formatDate(d));
+            d.setDate(d.getDate() + 1);
+          }
+          const empNoVariants = [...new Set([empNoUpper, String(od.emp_no)].filter(Boolean))];
+          // Only touch AttendanceDaily for hour-based OD. Half-day / full-day contribute only at monthly summary.
+          for (const attendanceDate of datesToUpdate) {
+            if (od.odType_extended === 'hours' && od.durationHours) {
+              const attendance = await AttendanceDaily.findOne({
+                date: attendanceDate,
+                employeeNumber: empNoVariants.length ? { $in: empNoVariants } : empNoUpper,
+              });
+              if (attendance) {
+                attendance.odHours = od.durationHours || 0;
+                attendance.odDetails = {
+                  odStartTime: od.odStartTime,
+                  odEndTime: od.odEndTime,
+                  durationHours: od.durationHours,
+                  odType: od.odType_extended,
+                  odId: od._id,
+                  approvedAt: od.approvedAt || new Date(),
+                  approvedBy: od.approvedBy || req.user._id,
+                };
+                await attendance.save();
+                console.log(`✅ [updateOD] AttendanceDaily updated (hour-based OD) for ${od.emp_no} on ${attendanceDate}`);
+              } else {
+                const newDaily = new AttendanceDaily({
+                  employeeNumber: empNoUpper,
+                  date: attendanceDate,
+                  shifts: [],
+                  odHours: od.durationHours || 0,
+                  odDetails: {
+                    odStartTime: od.odStartTime,
+                    odEndTime: od.odEndTime,
+                    durationHours: od.durationHours,
+                    odType: od.odType_extended,
+                    odId: od._id,
+                    approvedAt: od.approvedAt || new Date(),
+                    approvedBy: od.approvedBy || req.user._id,
+                  },
+                });
+                await newDaily.save();
+                console.log(`✅ [updateOD] AttendanceDaily created (hour-based OD) for ${od.emp_no} on ${attendanceDate}`);
+              }
+            }
+            // Half-day / full-day: no daily create/update; recalc below adds 0.5/1 to monthly summary for OD-only days
+          }
+          // Explicit recalc so monthly summary reflects OD immediately (same as processODAction)
+          console.log('[OD-FLOW] updateOD: calling recalculateOnAttendanceUpdate for', datesToUpdate.length, 'dates', datesToUpdate);
+          const { recalculateOnAttendanceUpdate } = require('../../attendance/services/summaryCalculationService');
+          for (const attendanceDate of datesToUpdate) {
+            await recalculateOnAttendanceUpdate(empNoUpper, attendanceDate);
+          }
+          console.log('[OD-FLOW] updateOD: recalc done');
         }
       } catch (error) {
-        console.error('Error updating OD hours in AttendanceDaily:', error);
-        // Don't throw - OD is already updated, just log the error
+        console.error('Error updating AttendanceDaily / recalc on OD approval (updateOD):', error);
       }
     }
 
@@ -989,7 +1170,7 @@ exports.cancelOD = async (req, res) => {
 
     const isOwner = od.appliedBy.toString() === req.user._id.toString();
     const isAssigner = od.assignedBy?.toString() === req.user._id.toString();
-    const isAdmin = ['hr', 'sub_admin', 'super_admin'].includes(req.user.role);
+    const isAdmin = ['hr', 'sub_admin', 'super_admin', 'manager', 'hod'].includes(req.user.role);
 
     if (!isOwner && !isAssigner && !isAdmin) {
       return res.status(403).json({
@@ -1035,56 +1216,100 @@ exports.cancelOD = async (req, res) => {
 // @desc    Get pending approvals for current user
 // @route   GET /api/od/pending-approvals
 // @access  Private
-// Data scope: Show ODs to ALL workflow participants (roles in approvalChain) with division/department scope.
-// Approve/Reject buttons shown only when nextApproverRole === user.role (enforced in frontend via canPerformAction).
+// Query: page, limit, search, odType, fromDate, toDate, department, division
 exports.getPendingApprovals = async (req, res) => {
   try {
     const userRole = req.user.role;
-    // Base filter: Active AND Not Applied by Me (Self-requests go to "My ODs")
+    const { page = 1, limit = 20, search, odType, fromDate, toDate, department, division, designation } = req.query;
+    const pageNum = Math.max(1, parseInt(page, 10));
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10)));
+    const skip = (pageNum - 1) * limitNum;
+
     let filter = {
       isActive: true,
       appliedBy: { $ne: req.user._id }
     };
 
-    // 1. Super Admin / Sub Admin: View all non-final ODs
     if (['sub_admin', 'super_admin'].includes(userRole)) {
       filter.status = { $nin: ['approved', 'rejected', 'cancelled'] };
     }
-    // 2. Scoped Roles (HOD, HR, Manager) - show to ALL whose role is in the workflow
     else if (['hod', 'hr', 'manager'].includes(userRole)) {
       const roleVariants = [userRole];
       if (userRole === 'hr') roleVariants.push('final_authority');
-
       filter['$or'] = [
-        { 'workflow.approvalChain': { $elemMatch: { role: { $in: roleVariants } } } },
+        { 'workflow.approvalChain': { $elemMatch: { role: { $in: roleVariants }, status: 'pending' } } },
         { 'workflow.reportingManagerIds': req.user._id.toString() }
       ];
-
       const employeeIds = await getEmployeeIdsInScope(req.user);
       if (employeeIds.length > 0) {
         filter.employeeId = { $in: employeeIds };
       } else {
-        console.warn(`[GetPendingODApprovals] User ${req.user._id} (${userRole}) has no employees in scope.`);
         filter.employeeId = { $in: [] };
       }
       filter.status = { $nin: ['approved', 'rejected', 'cancelled'] };
     }
     else {
-      // Check if user is a reporting manager even if they don't have an admin role
-      filter['workflow.reportingManagerIds'] = req.user._id.toString();
+      filter['$or'] = [
+        { 'workflow.approvalChain': { $elemMatch: { role: userRole, status: 'pending' } } },
+        { 'workflow.reportingManagerIds': req.user._id.toString() }
+      ];
       filter.status = { $nin: ['approved', 'rejected', 'cancelled'] };
     }
 
-    const ods = await OD.find(filter)
-      .populate('employeeId', 'employee_name emp_no')
-      .populate('department', 'name')
-      .populate('designation', 'name')
-      .populate('assignedBy', 'name email')
-      .sort({ appliedAt: -1 });
+    if (odType) filter.odType = odType;
+    if (fromDate) {
+      filter.fromDate = filter.fromDate || {};
+      filter.fromDate.$gte = new Date(fromDate);
+    }
+    if (toDate) {
+      filter.toDate = filter.toDate || {};
+      filter.toDate.$lte = new Date(toDate);
+    }
+    if (department) filter.department = department;
+    if (division) filter.division_id = division;
+    if (designation) filter.designation = designation;
+
+    if (search && String(search).trim()) {
+      const searchStr = String(search).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(searchStr, 'i');
+      const matchedEmployees = await Employee.find({
+        $or: [
+          { emp_no: regex },
+          { employee_name: regex },
+          { first_name: regex },
+          { last_name: regex }
+        ]
+      }).select('_id').lean();
+      const ids = matchedEmployees.map(e => e._id);
+      if (ids.length > 0) {
+        const scopeIds = filter.employeeId && filter.employeeId.$in ? filter.employeeId.$in : null;
+        filter.employeeId = scopeIds
+          ? { $in: scopeIds.filter(id => ids.some(i => i.toString() === id.toString())) }
+          : { $in: ids };
+      } else {
+        filter.employeeId = { $in: [] };
+      }
+    }
+
+    const [ods, total] = await Promise.all([
+      OD.find(filter)
+        .populate('employeeId', 'employee_name emp_no first_name last_name')
+        .populate('department', 'name')
+        .populate('designation', 'name')
+        .populate('assignedBy', 'name email')
+        .sort({ appliedAt: -1 })
+        .skip(skip)
+        .limit(limitNum)
+        .lean(),
+      OD.countDocuments(filter)
+    ]);
 
     res.status(200).json({
       success: true,
       count: ods.length,
+      total,
+      page: pageNum,
+      totalPages: Math.ceil(total / limitNum) || 1,
       data: ods,
     });
   } catch (error) {
@@ -1168,6 +1393,25 @@ exports.processODAction = async (req, res) => {
     } else if (isRoleMatch) {
       // 2. If roles match, enforce Jurisdictional Check
       canProcess = checkJurisdiction(fullUser, od);
+    }
+
+    // 3. Setting: Allow higher authority to approve lower levels
+    if (!canProcess && od.workflow && od.workflow.approvalChain && od.workflow.approvalChain.length > 0) {
+      const workflowSettings = await getWorkflowSettings();
+      const allowHigher = workflowSettings?.workflow?.allowHigherAuthorityToApproveLowerLevels === true;
+      if (allowHigher) {
+        const chain = od.workflow.approvalChain.slice().sort((a, b) => (a.stepOrder ?? 999) - (b.stepOrder ?? 999));
+        const roleOrder = chain.map(s => (s.role || s.stepRole || '').toLowerCase()).filter(Boolean);
+        const requiredIdx = roleOrder.indexOf(requiredRole.toLowerCase());
+        let userIdx = roleOrder.indexOf(userRole.toLowerCase());
+        if (userIdx === -1 && (userRole === 'hr' || userRole === 'super_admin')) userIdx = roleOrder.length;
+        if (requiredIdx >= 0 && userIdx >= 0 && userIdx >= requiredIdx) {
+          canProcess = true;
+          if (['manager', 'hr'].includes(userRole)) {
+            canProcess = checkJurisdiction(fullUser, od);
+          }
+        }
+      }
     }
 
     if (!canProcess) {
@@ -1293,40 +1537,135 @@ exports.processODAction = async (req, res) => {
     od.workflow.history.push(historyEntry);
     await od.save();
 
-    // NEW: If OD is fully approved and has hours, store in AttendanceDaily
-    if (action === 'approve' && od.status === 'approved' && od.odType_extended === 'hours') {
+    // Employee history: OD final decision
+    try {
+      if (action === 'approve' && od.status === 'approved') {
+        await EmployeeHistory.create({
+          emp_no: od.emp_no,
+          event: 'od_approved',
+          performedBy: req.user._id,
+          performedByName: req.user.name,
+          performedByRole: userRole,
+          details: {
+            odId: od._id,
+            fromDate: od.fromDate,
+            toDate: od.toDate,
+            numberOfDays: od.numberOfDays,
+            odType: od.odType,
+            odType_extended: od.odType_extended,
+          },
+          comments: comments && comments.trim()
+            ? comments
+            : 'OD fully approved; employee will be on official duty for these dates',
+        });
+      } else if (action === 'reject' && od.status === 'rejected') {
+        await EmployeeHistory.create({
+          emp_no: od.emp_no,
+          event: 'od_rejected',
+          performedBy: req.user._id,
+          performedByName: req.user.name,
+          performedByRole: userRole,
+          details: {
+            odId: od._id,
+            fromDate: od.fromDate,
+            toDate: od.toDate,
+            numberOfDays: od.numberOfDays,
+          },
+          comments: comments && comments.trim()
+            ? comments
+            : 'OD rejected',
+        });
+      }
+    } catch (err) {
+      console.error('Failed to log OD approval/rejection history:', err.message);
+    }
+
+    // When OD is fully approved, update or create AttendanceDaily for each day in OD range so totalWorkingHours/status/payableShifts reflect OD
+    if (action === 'approve' && od.status === 'approved') {
       try {
+        console.log('[OD-FLOW] processODAction: OD fully approved', { odId: od._id?.toString(), emp_no: od.emp_no, odType_extended: od.odType_extended, fromDate: od.fromDate, toDate: od.toDate });
         const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
         const formatDate = (date) => {
           const d = new Date(date);
-          return `${d.getFullYear()} -${String(d.getMonth() + 1).padStart(2, '0')} -${String(d.getDate()).padStart(2, '0')} `;
+          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
         };
+        const dateFrom = formatDate(od.fromDate);
+        const dateTo = formatDate(od.toDate);
+        const empNoRaw = od.emp_no != null ? String(od.emp_no).trim() : '';
+        const empNoUpper = empNoRaw.toUpperCase();
+        if (!empNoUpper) {
+          console.log('[OD-FLOW] processODAction: skip (no emp_no)');
+          return;
+        }
 
-        // Get the attendance record for the OD date
-        const attendanceDate = formatDate(od.fromDate);
-        const attendance = await AttendanceDaily.findOne({
-          employeeNumber: String(od.emp_no || '').toUpperCase(),
-          date: attendanceDate,
-        });
+        const datesToUpdate = [];
+        let d = new Date(dateFrom + 'T12:00:00');
+        const end = new Date(dateTo + 'T12:00:00');
+        while (d <= end) {
+          datesToUpdate.push(formatDate(d));
+          d.setDate(d.getDate() + 1);
+        }
+        console.log('[OD-FLOW] processODAction: datesToUpdate', datesToUpdate, 'hourBased=', od.odType_extended === 'hours');
 
-        if (attendance) {
-          // Update attendance record with OD hours
-          attendance.odHours = od.durationHours || 0;
-          attendance.odDetails = {
-            odStartTime: od.odStartTime,
-            odEndTime: od.odEndTime,
-            durationHours: od.durationHours,
-            odType: od.odType_extended,
-            odId: od._id,
-            approvedAt: new Date(),
-            approvedBy: req.user._id,
-          };
-          await attendance.save();
-          console.log(`✅ OD hours stored in AttendanceDaily for ${od.emp_no} on ${attendanceDate} `);
+        // Only touch AttendanceDaily for hour-based OD. Half-day and full-day OD contribute only at monthly summary (no daily create/update).
+        for (const attendanceDate of datesToUpdate) {
+          const empNoVariants = [...new Set([empNoUpper, empNoRaw, String(od.emp_no)].filter(Boolean))];
+          const attendance = await AttendanceDaily.findOne({
+            date: attendanceDate,
+            employeeNumber: empNoVariants.length ? { $in: empNoVariants } : empNoUpper,
+          });
+
+          if (od.odType_extended === 'hours') {
+            if (attendance) {
+              attendance.odHours = od.durationHours || 0;
+              attendance.odDetails = {
+                odStartTime: od.odStartTime,
+                odEndTime: od.odEndTime,
+                durationHours: od.durationHours,
+                odType: od.odType_extended,
+                odId: od._id,
+                approvedAt: new Date(),
+                approvedBy: req.user._id,
+              };
+              await attendance.save();
+              console.log(`✅ AttendanceDaily updated (hour-based OD) for ${od.emp_no} on ${attendanceDate}`);
+            } else {
+              const newDaily = new AttendanceDaily({
+                employeeNumber: empNoUpper,
+                date: attendanceDate,
+                shifts: [],
+                odHours: od.durationHours || 0,
+                odDetails: {
+                  odStartTime: od.odStartTime,
+                  odEndTime: od.odEndTime,
+                  durationHours: od.durationHours,
+                  odType: od.odType_extended,
+                  odId: od._id,
+                  approvedAt: new Date(),
+                  approvedBy: req.user._id,
+                },
+              });
+              await newDaily.save();
+              console.log(`✅ AttendanceDaily created (hour-based OD) for ${od.emp_no} on ${attendanceDate}`);
+            }
+          }
+          // Half-day / full-day: do not create or update daily; recalc below will add 0.5/1 to monthly summary for OD-only days
+        }
+
+        // Explicitly recalc monthly summary so it reflects hour-based OD (shift/day -> PRESENT)
+        // Post-save on each daily runs async (setImmediate); this ensures summary is updated in this request
+        try {
+          console.log('[OD-FLOW] processODAction: calling recalculateOnAttendanceUpdate for', datesToUpdate.length, 'dates');
+          const { recalculateOnAttendanceUpdate } = require('../../attendance/services/summaryCalculationService');
+          for (const attendanceDate of datesToUpdate) {
+            await recalculateOnAttendanceUpdate(empNoUpper, attendanceDate);
+          }
+          console.log('[OD-FLOW] processODAction: recalc done for all dates');
+        } catch (recalcErr) {
+          console.error('Error recalculating monthly summary after OD approval:', recalcErr);
         }
       } catch (error) {
-        console.error('Error storing OD hours in AttendanceDaily:', error);
-        // Don't throw - OD is already approved, just log the error
+        console.error('Error updating AttendanceDaily on OD approval:', error);
       }
     }
 
@@ -1364,97 +1703,134 @@ exports.revokeODApproval = async (req, res) => {
       });
     }
 
-    // Check if OD is approved
-    if (od.status !== 'approved' && od.status !== 'hod_approved' && od.status !== 'hr_approved') {
+    const allowedStatuses = [
+      'approved', 'rejected',
+      'hod_approved', 'manager_approved', 'hr_approved',
+      'hod_rejected', 'manager_rejected', 'hr_rejected'
+    ];
+    if (!allowedStatuses.includes(od.status)) {
       return res.status(400).json({
         success: false,
-        error: 'Only approved or partially approved ODs can be revoked',
+        error: 'Only approved or rejected ODs can be revoked',
       });
     }
 
-    // Check revocation window (2-3 hours)
-    const approvalTime = od.approvals.hr?.approvedAt || od.approvals.hod?.approvedAt;
-    if (!approvalTime) {
+    const chain = od.workflow?.approvalChain || [];
+    if (chain.length === 0) {
       return res.status(400).json({
         success: false,
-        error: 'No approval timestamp found',
+        error: 'No approval chain found',
       });
     }
 
-    const hoursSinceApproval = (new Date() - new Date(approvalTime)) / (1000 * 60 * 60);
-    const revocationWindow = 3; // 3 hours window
+    // Find the last action taken (either approval or rejection)
+    const actionSteps = chain
+      .map((s, i) => ({ step: s, index: i }))
+      .filter(({ step }) => step.status === 'approved' || step.status === 'rejected');
 
-    if (hoursSinceApproval > revocationWindow) {
+    const lastAction = actionSteps[actionSteps.length - 1];
+    if (!lastAction) {
       return res.status(400).json({
         success: false,
-        error: `Approval can only be revoked within ${revocationWindow} hours.${hoursSinceApproval.toFixed(1)} hours have passed.`,
+        error: 'No action found to revoke',
       });
     }
 
-    // Check authorization
+    const lastStep = lastAction.step;
+    const stepIndex = lastAction.index;
+    const updatedAt = lastStep.updatedAt || od.approvals?.[lastStep.role]?.approvedAt || od.approvals?.[lastStep.stepRole]?.approvedAt;
+
+    if (!updatedAt) {
+      return res.status(400).json({
+        success: false,
+        error: 'No timestamp found for the last action',
+      });
+    }
+
+    const hoursSinceAction = (new Date() - new Date(updatedAt)) / (1000 * 60 * 60);
+    const revocationWindow = 48; // Extended to 48 hours
+    if (hoursSinceAction > revocationWindow) {
+      return res.status(400).json({
+        success: false,
+        error: `Action can only be revoked within ${revocationWindow} hours. ${hoursSinceAction.toFixed(1)} hours have passed.`,
+      });
+    }
+
+    const approverId = (lastStep.actionBy?._id || lastStep.actionBy)?.toString();
+    const userId = (req.user._id || req.user.userId)?.toString();
     const userRole = req.user.role;
-    const isApprover =
-      (od.approvals.hod?.approvedBy?.toString() === req.user._id.toString()) ||
-      (od.approvals.hr?.approvedBy?.toString() === req.user._id.toString());
-    const isAdmin = ['hr', 'sub_admin', 'super_admin'].includes(userRole);
 
-    if (!isApprover && !isAdmin) {
+    // Authorization: Original actor OR Super Admin OR HR
+    const isOriginalActor = approverId === userId;
+    const isHigherAuthority = ['super_admin', 'hr'].includes(userRole);
+
+    if (!isOriginalActor && !isHigherAuthority) {
       return res.status(403).json({
         success: false,
-        error: 'Not authorized to revoke this approval',
+        error: 'Only the person who performed the action or a higher authority can revoke it',
       });
     }
 
-    // Revoke approval - revert to previous status
-    if (od.status === 'approved') {
-      // If fully approved, revert to hr_approved or hod_approved
-      if (od.approvals.hr?.status === 'approved') {
-        od.status = 'hr_approved';
-        od.approvals.hr.status = null;
-        od.approvals.hr.approvedBy = null;
-        od.approvals.hr.approvedAt = null;
-        od.workflow.currentStep = 'hr';
-        od.workflow.nextApprover = 'hr';
-      }
-    } else if (od.status === 'hr_approved') {
-      od.status = 'hod_approved';
-      od.approvals.hr.status = null;
-      od.approvals.hr.approvedBy = null;
-      od.approvals.hr.approvedAt = null;
-      od.workflow.currentStep = 'hr';
-      od.workflow.nextApprover = 'hr';
-    } else if (od.status === 'hod_approved') {
-      od.status = 'pending';
-      od.approvals.hod.status = null;
-      od.approvals.hod.approvedBy = null;
-      od.approvals.hod.approvedAt = null;
-      od.workflow.currentStep = 'hod';
-      od.workflow.nextApprover = 'hod';
+    const stepRole = lastStep.role || lastStep.stepRole;
+    const originalStatus = lastStep.status;
+
+    // Reset the step to pending
+    lastStep.status = 'pending';
+    lastStep.actionBy = undefined;
+    lastStep.actionByName = undefined;
+    lastStep.actionByRole = undefined;
+    lastStep.comments = undefined;
+    lastStep.updatedAt = undefined;
+    lastStep.isCurrent = true;
+
+    // Also reset any subsequent steps (safety)
+    for (let i = stepIndex + 1; i < chain.length; i++) {
+      chain[i].isCurrent = false;
+      chain[i].status = 'pending';
     }
 
-    // Add to timeline (only once)
+    if (od.approvals && od.approvals[stepRole]) {
+      od.approvals[stepRole] = { status: null, approvedBy: null, approvedAt: null, comments: null };
+    }
+
+    od.workflow.currentStepRole = stepRole;
+    od.workflow.nextApprover = stepRole;
+    od.workflow.nextApproverRole = stepRole;
+    od.workflow.currentStep = stepRole;
+    od.workflow.isCompleted = false;
+
+    // Recalculate status
+    if (stepIndex === 0) {
+      od.status = 'pending';
+    } else {
+      const prevRole = chain[stepIndex - 1]?.role || chain[stepIndex - 1]?.stepRole;
+      od.status = prevRole ? `${prevRole}_approved` : 'pending';
+    }
+
     od.workflow.history.push({
-      step: userRole,
+      step: stepRole,
       action: 'revoked',
       actionBy: req.user._id,
       actionByName: req.user.name,
       actionByRole: userRole,
-      comments: reason || `Approval revoked by ${req.user.name} `,
+      comments: reason || `Action (${originalStatus}) revoked by ${req.user.name}`,
       timestamp: new Date(),
     });
 
+    od.markModified('workflow');
+    od.markModified('approvals');
     await od.save();
 
     res.status(200).json({
       success: true,
-      message: 'OD approval revoked successfully',
+      message: `OD ${originalStatus} revoked successfully`,
       data: od,
     });
   } catch (error) {
-    console.error('Error revoking OD approval:', error);
+    console.error('Error revoking OD action:', error);
     res.status(500).json({
       success: false,
-      error: error.message || 'Failed to revoke OD approval',
+      error: error.message || 'Failed to revoke OD action',
     });
   }
 };
@@ -1473,10 +1849,15 @@ exports.deleteOD = async (req, res) => {
       });
     }
 
-    if (!['sub_admin', 'super_admin'].includes(req.user.role)) {
+    // Authorization: Admin can delete any, employee can delete their own if pending
+    const isAdmin = ['sub_admin', 'super_admin'].includes(req.user.role);
+    const isOwner = od.appliedBy?.toString() === req.user._id.toString() ||
+      (req.user.employeeRef && od.employeeId?.toString() === req.user.employeeRef.toString());
+
+    if (!isAdmin && !isOwner) {
       return res.status(403).json({
         success: false,
-        error: 'Not authorized to delete OD applications',
+        error: 'Not authorized to delete this OD application',
       });
     }
 

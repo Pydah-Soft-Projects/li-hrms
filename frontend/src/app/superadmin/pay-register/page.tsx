@@ -3,10 +3,13 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from "next/navigation";
 import Link from 'next/link';
+import { parseFile } from '@/lib/bulkUpload';
 import { api, apiRequest, Employee, Division } from '@/lib/api';
 import ArrearsPayrollSection from '@/components/Arrears/ArrearsPayrollSection';
+import DeductionsPayrollSection from '@/components/ManualDeductions/DeductionsPayrollSection';
 import * as XLSX from 'xlsx';
 import Swal from 'sweetalert2';
+import { Search } from 'lucide-react';
 
 
 
@@ -96,7 +99,7 @@ interface Shift {
   payableShifts: number;
 }
 
-type TableType = 'present' | 'absent' | 'leaves' | 'od' | 'ot' | 'extraHours' | 'shifts';
+type TableType = 'all' | 'present' | 'absent' | 'leaves' | 'od' | 'ot' | 'extraHours' | 'shifts';
 
 export default function PayRegisterPage() {
   const router = useRouter();
@@ -106,7 +109,7 @@ export default function PayRegisterPage() {
   const [saving, setSaving] = useState<Record<string, boolean>>({});
   const [syncing, setSyncing] = useState(false);
   const [shifts, setShifts] = useState<Shift[]>([]);
-  const [activeTable, setActiveTable] = useState<TableType>('present');
+  const [activeTable, setActiveTable] = useState<TableType>('all');
   const [departments, setDepartments] = useState<any[]>([]);
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [selectedDivision, setSelectedDivision] = useState<string>('');
@@ -138,8 +141,12 @@ export default function PayRegisterPage() {
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [selectedArrears, setSelectedArrears] = useState<Array<{ id: string, amount: number, employeeId?: string }>>([]);
+  const [selectedDeductions, setSelectedDeductions] = useState<Array<{ id: string, amount: number, employeeId?: string }>>([]);
   const [payrollStartDate, setPayrollStartDate] = useState<string | null>(null);
   const [payrollEndDate, setPayrollEndDate] = useState<string | null>(null);
+  const [cycleStartDay, setCycleStartDay] = useState<number | null>(null);
+  const [alignedToCycle, setAlignedToCycle] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     let pollInterval: any;
@@ -192,6 +199,38 @@ export default function PayRegisterPage() {
       if (pollInterval) clearInterval(pollInterval);
     };
   }, [calculatingJobId]);
+
+  // Load payroll cycle start day, then align initial selectedMonth/Year
+  useEffect(() => {
+    api.getSetting('payroll_cycle_start_day')
+      .then((res) => {
+        if (res.success && res.data) {
+          setCycleStartDay(Number(res.data.value) || 1);
+        } else {
+          setCycleStartDay(1);
+        }
+      })
+      .catch(() => setCycleStartDay(1));
+  }, []);
+
+  useEffect(() => {
+    if (alignedToCycle || cycleStartDay == null) return;
+    const today = new Date();
+    let effYear = today.getFullYear();
+    let effMonth = today.getMonth() + 1;
+    if (cycleStartDay > 1 && today.getDate() >= cycleStartDay) {
+      // After cycle start: treat current payroll month as the one whose END is next calendar month
+      if (effMonth === 12) {
+        effMonth = 1;
+        effYear += 1;
+      } else {
+        effMonth += 1;
+      }
+    }
+    setSelectedYear(effYear);
+    setSelectedMonth(effMonth);
+    setAlignedToCycle(true);
+  }, [cycleStartDay, alignedToCycle]);
 
   const normalizeHalfDay = (
     half?: Partial<DailyRecord['firstHalf']>,
@@ -491,6 +530,88 @@ export default function PayRegisterPage() {
     }
   };
 
+  const handleDownloadSummary = async () => {
+    try {
+      setLoading(true);
+      const params = {
+        month: monthStr,
+        departmentId: selectedDepartment && selectedDepartment !== '' ? selectedDepartment : undefined,
+        divisionId: selectedDivision && selectedDivision !== '' ? selectedDivision : undefined,
+      };
+      const blob = await api.exportPayRegisterSummary(params);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Pay_Register_Summary_${monthStr}${params.departmentId ? `_${params.departmentId}` : ''}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      Swal.fire({
+        icon: 'success',
+        title: 'Success',
+        text: 'Summary exported successfully',
+        timer: 2000,
+        showConfirmButton: false,
+        toast: true,
+        position: 'top-end'
+      });
+    } catch (err: any) {
+      console.error('Error exporting summary:', err);
+      Swal.fire({
+        icon: 'error',
+        title: 'Export Failed',
+        text: err.message || 'Failed to export summary',
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUploadSummaryFile = async (file: File) => {
+    try {
+      setUploadingSummary(true);
+
+      const result = await parseFile(file);
+      if (!result.success) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Parse Error',
+          text: result.errors.join(', ') || 'Failed to parse Excel file',
+        });
+        return;
+      }
+
+      const response = await api.uploadPayRegisterSummary(monthStr, result.data);
+      if (response.success) {
+        setUploadResults(response.data);
+        await loadPayRegisters();
+        Swal.fire({
+          icon: 'success',
+          title: 'Upload Complete',
+          text: `Successfully processed summary data.`,
+        });
+        setShowUploadModal(false);
+      } else {
+        Swal.fire({
+          icon: 'error',
+          title: 'Upload Failed',
+          text: response.message || 'Failed to upload summary',
+        });
+      }
+    } catch (err: any) {
+      console.error('Error uploading summary:', err);
+      Swal.fire({
+        icon: 'error',
+        title: 'Upload Error',
+        text: err.message || 'An error occurred during upload',
+      });
+    } finally {
+      setUploadingSummary(false);
+    }
+  };
+
   const handleSaveDate = async () => {
     if (!editingRecord) return;
 
@@ -587,7 +708,7 @@ export default function PayRegisterPage() {
       (totals?.totalLopDays || 0));
 
   const getSummaryRows = () =>
-    payRegisters.map((pr) => {
+    getFilteredPayRegisters().map((pr) => {
       const totals = pr.totals || {};
       const present = totals.totalPresentDays || 0;
       const absent = totals.totalAbsentDays || 0;
@@ -602,16 +723,13 @@ export default function PayRegisterPage() {
       const lateCount = totals.lateCount || 0;
       const holidayAndWeekoffs = (totals.totalWeeklyOffs || 0) + (totals.totalHolidays || 0);
 
-      // User Definition:
-      // Paid Days = Present + Paid Leaves + Holidays + Weekoffs
-      const totalPaidDays = present + paidLeave + holidays + weeklyOffs;
-
       const monthDays = pr.totalDaysInMonth || daysArray.length || daysInMonth;
 
       // User Definition:
       // Counted Days = Present + Absent + Holidays + Weekoffs + Total Leaves
       const countedDays = present + absent + holidays + weeklyOffs + leave;
       const matchesMonth = Math.abs(countedDays - monthDays) < 0.001;
+      const payableShifts = totals.totalPayableShifts ?? 0;
       return {
         pr,
         present,
@@ -622,7 +740,7 @@ export default function PayRegisterPage() {
         extra,
         weeklyOffs,
         holidays,
-        totalPaidDays,
+        payableShifts,
         lop,
         paidLeave,
         lateCount,
@@ -652,6 +770,17 @@ export default function PayRegisterPage() {
     }
   };
 
+  /** Primary status for a daily record (full day or first half when split) for coloring in "All" view */
+  const getPrimaryStatus = (record: DailyRecord): string => {
+    if (record.status && ['present', 'absent', 'leave', 'od', 'holiday', 'week_off'].includes(record.status))
+      return record.status;
+    const s1 = record.firstHalf?.status;
+    const s2 = record.secondHalf?.status;
+    if (s1 && ['present', 'absent', 'leave', 'od', 'holiday', 'week_off'].includes(s1)) return s1;
+    if (s2 && ['present', 'absent', 'leave', 'od', 'holiday', 'week_off'].includes(s2)) return s2;
+    return 'absent';
+  };
+
   const getStatusDisplay = (record: DailyRecord | null): string => {
     if (!record) return '-';
     if (record.isSplit) {
@@ -674,6 +803,10 @@ export default function PayRegisterPage() {
 
     if (record.isManuallyEdited) {
       return 'bg-amber-100 dark:bg-amber-900/30 ring-inset ring-1 ring-amber-300 dark:ring-amber-700';
+    }
+
+    if (tableType === 'all') {
+      return getStatusColor(getPrimaryStatus(record));
     }
 
     if (tableType === 'present') {
@@ -713,6 +846,8 @@ export default function PayRegisterPage() {
     if (!record) return false;
 
     switch (tableType) {
+      case 'all':
+        return true;
       case 'present':
         return record.status === 'present' || record.firstHalf.status === 'present' || record.secondHalf.status === 'present';
       case 'absent':
@@ -731,10 +866,20 @@ export default function PayRegisterPage() {
     }
   };
 
-  // Show ALL employees in ALL tables - no filtering
+  // Filter by search: name, emp no, or department (client-side)
   const getFilteredPayRegisters = (): PayRegisterSummary[] => {
-    // Return all pay registers - don't filter by table type
-    return payRegisters;
+    const q = (searchQuery || '').trim().toLowerCase();
+    if (!q) return payRegisters;
+    return payRegisters.filter((pr) => {
+      const emp = pr.employeeId && typeof pr.employeeId === 'object' ? (pr.employeeId as unknown as Record<string, unknown>) : null;
+      const name = (emp?.employee_name != null ? String(emp.employee_name) : '').toLowerCase();
+      const empNo = (emp?.emp_no != null ? String(emp.emp_no) : (pr.emp_no != null ? String(pr.emp_no) : '')).toLowerCase();
+      const deptObj = emp?.department_id;
+      const dept = (typeof deptObj === 'object' && deptObj !== null && 'name' in deptObj && (deptObj as { name?: string }).name)
+        ? String((deptObj as { name: string }).name).toLowerCase()
+        : '';
+      return name.includes(q) || empNo.includes(q) || dept.includes(q);
+    });
   };
 
   const handleViewPayslip = (employee: Employee) => {
@@ -757,15 +902,12 @@ export default function PayRegisterPage() {
         position: 'top-end'
       });
 
-      // Filter arrears for this specific employee
-      // Note: ArrearsPayrollSection component stores arrears with employee info
-      // We need to filter selectedArrears to only include those for this employee
-      const employeeArrears = selectedArrears.filter((arrear) => {
-        // Filter arrears strictly for this employee
-        return arrear.employeeId === employeeId;
-      });
+      // Filter arrears and deductions for this specific employee (compare as string to avoid ObjectId mismatch)
+      const empIdStr = String(employeeId);
+      const employeeArrears = selectedArrears.filter((a) => a.employeeId != null && String(a.employeeId) === empIdStr);
+      const employeeDeductions = selectedDeductions.filter((d) => d.employeeId != null && String(d.employeeId) === empIdStr);
 
-      const response = await api.calculatePayroll(employeeId, monthStr, params, employeeArrears);
+      const response = await api.calculatePayroll(empIdStr, monthStr, params, employeeArrears, employeeDeductions);
 
       if (response && response.data && response.data.batchId) {
         Swal.fire({
@@ -872,6 +1014,7 @@ export default function PayRegisterPage() {
         month: monthStr,
         departmentId: targetDeptId,
         divisionId: targetDivId,
+        strategy: payrollStrategy,
         employeeIds,
       });
       const url = window.URL.createObjectURL(blob);
@@ -1056,6 +1199,10 @@ export default function PayRegisterPage() {
     setSelectedArrears(arrears);
   };
 
+  const handleDeductionsSelected = (deductions: Array<{ id: string, amount: number, employeeId?: string }>) => {
+    setSelectedDeductions(deductions);
+  };
+
   const processPayroll = async () => {
     try {
       if (!selectedEmployee) {
@@ -1167,7 +1314,7 @@ export default function PayRegisterPage() {
             </div>
 
             {/* Filters Group */}
-            <div className="flex flex-nowrap items-center gap-1.5 p-1 bg-slate-100/50 dark:bg-slate-800/40 rounded-xl border border-slate-200/60 dark:border-slate-700/60 backdrop-blur-sm">
+            <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100/50 dark:bg-slate-800/40 rounded-xl border border-slate-200/60 dark:border-slate-700/60 backdrop-blur-sm">
               {/* Division Filter */}
               <select
                 value={selectedDivision}
@@ -1211,6 +1358,18 @@ export default function PayRegisterPage() {
                 <option value="legacy">Engine: Legacy</option>
                 <option value="dynamic">Engine: Dynamic</option>
               </select>
+
+              {/* Search bar - filter employees by name, code, or department */}
+              <div className="relative flex-1 min-w-[140px] max-w-[220px]">
+                <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search by name, code, dept..."
+                  className="h-8 w-full pl-8 pr-2 text-[10px] sm:text-[11px] font-medium bg-white dark:bg-slate-800 border-0 rounded-lg focus:ring-2 focus:ring-blue-500/20 text-slate-700 dark:text-slate-300 placeholder:text-slate-400 dark:placeholder:text-slate-500 shadow-sm"
+                />
+              </div>
             </div>
 
             {/* Month/Year Navigation */}
@@ -1255,6 +1414,15 @@ export default function PayRegisterPage() {
 
           <div className="flex flex-nowrap items-center gap-3 shrink-0">
             <button
+              onClick={() => setShowUploadModal(true)}
+              className="h-9 px-4 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-sm transition-all"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+              </svg>
+              Upload Summary
+            </button>
+            <button
               onClick={handleSyncAll}
               disabled={syncing}
               className="h-9 px-4 flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-sm disabled:opacity-50 transition-all"
@@ -1265,55 +1433,68 @@ export default function PayRegisterPage() {
               {syncing ? 'Syncing...' : 'Sync All'}
             </button>
 
-            <button
-              onClick={() => setShowUploadModal(true)}
-              className="h-9 px-4 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-sm transition-all"
-            >
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-              </svg>
-              Upload Summary
-            </button>
-
             {(() => {
+              const exportExcelButton = (
+                <button
+                  key="export-excel"
+                  onClick={async () => {
+                    await downloadPayrollExcel();
+                  }}
+                  disabled={exportingExcel || payRegisters.length === 0}
+                  className="h-9 px-4 flex items-center gap-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold rounded-xl shadow-sm disabled:opacity-50 transition-all"
+                >
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  {exportingExcel ? 'Exporting...' : 'Export Excel'}
+                </button>
+              );
 
               if (selectedDepartment) {
                 const batchInfo = departmentBatchStatus.get(selectedDepartment);
                 const status = batchInfo?.status || 'pending';
                 const permissionGranted = batchInfo?.permissionGranted || false;
 
-                if (status === 'freeze' || status === 'complete') return null;
+                if (status === 'freeze' || status === 'complete') {
+                  return exportExcelButton;
+                }
 
                 if (status === 'approved' && !permissionGranted) {
                   return (
-                    <button
-                      onClick={() => {
-                        if (batchInfo?.batchId) {
-                          setPendingBatchId(batchInfo.batchId);
-                          setShowPermissionModal(true);
-                        } else {
-                          Swal.fire({
-                            icon: 'error',
-                            title: 'Error',
-                            text: "Batch ID not found",
-                          });
-                        }
-                      }}
-                      className="h-9 px-4 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold rounded-xl shadow-sm transition-all"
-                    >
-                      Permission Required
-                    </button>
+                    <>
+                      <button
+                        onClick={() => {
+                          if (batchInfo?.batchId) {
+                            setPendingBatchId(batchInfo.batchId);
+                            setShowPermissionModal(true);
+                          } else {
+                            Swal.fire({
+                              icon: 'error',
+                              title: 'Error',
+                              text: "Batch ID not found",
+                            });
+                          }
+                        }}
+                        className="h-9 px-4 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold rounded-xl shadow-sm transition-all"
+                      >
+                        Permission Required
+                      </button>
+                      {exportExcelButton}
+                    </>
                   );
                 }
 
                 return (
-                  <button
-                    onClick={handleCalculatePayrollForAll}
-                    disabled={bulkCalculating || exportingExcel}
-                    className="h-9 px-4 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-xl shadow-sm disabled:opacity-50 transition-all"
-                  >
-                    {bulkCalculating ? 'Calculating...' : 'Recalculate Payroll'}
-                  </button>
+                  <>
+                    <button
+                      onClick={handleCalculatePayrollForAll}
+                      disabled={bulkCalculating || exportingExcel}
+                      className="h-9 px-4 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-xl shadow-sm disabled:opacity-50 transition-all"
+                    >
+                      {bulkCalculating ? 'Calculating...' : 'Recalculate Payroll'}
+                    </button>
+                    {exportExcelButton}
+                  </>
                 );
               }
 
@@ -1326,19 +1507,7 @@ export default function PayRegisterPage() {
                   >
                     {bulkCalculating ? 'Calculating...' : 'Calculate Payroll'}
                   </button>
-
-                  <button
-                    onClick={async () => {
-                      await downloadPayrollExcel();
-                    }}
-                    disabled={exportingExcel || payRegisters.length === 0}
-                    className="h-9 px-4 flex items-center gap-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold rounded-xl shadow-sm disabled:opacity-50 transition-all"
-                  >
-                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    {exportingExcel ? 'Exporting...' : 'Export Excel'}
-                  </button>
+                  {exportExcelButton}
                 </>
               );
             })()}
@@ -1389,243 +1558,6 @@ export default function PayRegisterPage() {
                   style={{ width: `${calculationProgress.percentage}%` }}
                 ></div>
               </div>
-            </div>
-          </div>
-        )}
-
-        {/* Bulk Summary Upload Modal */}
-        {showUploadModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
-            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl max-w-xl w-full p-6 border border-slate-200 dark:border-slate-700">
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl font-bold text-slate-900 dark:text-white">Bulk Summary Upload</h3>
-                <button
-                  onClick={() => {
-                    setShowUploadModal(false);
-                    setUploadResults(null);
-                  }}
-                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-                >
-                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              {!uploadResults ? (
-                <>
-                  <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800">
-                    <p className="text-sm text-blue-700 dark:text-blue-300 flex items-start gap-2">
-                      <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      Upload an Excel file with monthly totals. The system will match employees by code and distribute counts across working days.
-                    </p>
-                  </div>
-
-                  <div className="flex flex-col items-center justify-center border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-10 hover:border-blue-500 transition-colors bg-slate-50 dark:bg-slate-900/50 mb-6">
-                    <input
-                      type="file"
-                      id="summaryExcel"
-                      className="hidden"
-                      accept=".xlsx, .xls"
-                      onChange={async (e) => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-
-                        setUploadingSummary(true);
-                        try {
-                          const reader = new FileReader();
-                          reader.onload = async (evt) => {
-                            try {
-                              const bstr = evt.target?.result;
-                              const wb = XLSX.read(bstr, { type: 'binary' });
-                              const wsname = wb.SheetNames[0];
-                              const ws = wb.Sheets[wsname];
-                              const data = XLSX.utils.sheet_to_json(ws);
-
-                              const uploadMonthStr = monthStr;
-                              const response = await apiRequest<{ success: number; failed: number; total: number; errors: string[] }>(
-                                `/pay-register/upload-summary/${uploadMonthStr}`,
-                                {
-                                  method: 'POST',
-                                  body: JSON.stringify({ data })
-                                }
-                              );
-
-                              if (response.success && response.data) {
-                                setUploadResults(response.data);
-                                Swal.fire({
-                                  icon: 'success',
-                                  title: 'Uploaded',
-                                  text: "Upload processed successfully!",
-                                  timer: 2000,
-                                  showConfirmButton: false,
-                                  toast: true,
-                                  position: 'top-end'
-                                });
-                                loadPayRegisters(); // Refresh table
-                              } else {
-                                Swal.fire({
-                                  icon: 'error',
-                                  title: 'Upload Failed',
-                                  text: response.error || "Failed to process upload",
-                                });
-                              }
-                            } catch (err: any) {
-                              Swal.fire({
-                                icon: 'error',
-                                title: 'Error',
-                                text: err.message || "Error parsing file",
-                              });
-                            } finally {
-                              setUploadingSummary(false);
-                            }
-                          };
-                          reader.readAsBinaryString(file);
-                        } catch (err) {
-                          setUploadingSummary(false);
-                        }
-                      }}
-                    />
-                    <label htmlFor="summaryExcel" className="cursor-pointer flex flex-col items-center gap-3">
-                      <div className="h-12 w-12 flex items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">
-                        {uploadingSummary ? (
-                          <svg className="w-6 h-6 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
-                        ) : (
-                          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                          </svg>
-                        )}
-                      </div>
-                      <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                        {uploadingSummary ? "Processing file..." : "Click to select Excel file"}
-                      </span>
-                    </label>
-                  </div>
-
-                  <div className="flex justify-between items-center">
-                    <button
-                      onClick={async () => {
-                        setDownloadingTemplate(true);
-                        try {
-                          // Fetch ALL employees for this month/division/dept by passing limit: -1
-                          const targetDeptId = selectedDepartment && selectedDepartment.trim() !== '' ? selectedDepartment : undefined;
-                          const targetDivId = selectedDivision && selectedDivision.trim() !== '' ? selectedDivision : undefined;
-
-                          const response = await api.getEmployeesWithPayRegister(monthStr, targetDeptId, targetDivId, undefined, 1, -1);
-
-                          if (response.success) {
-                            const allEmployees = response.data || [];
-                            const headers = ["Employee Code", "Employee Name", "Department", "Division", "Total Present", "Total Absent", "Paid Leaves", "LOP Count", "Total OD", "Total Extra Days", "Total OT Hours", "Holidays", "Lates"];
-                            const sampleData = allEmployees.map((pr: any) => ({
-                              "Employee Code": typeof pr.employeeId === 'object' ? pr.employeeId.emp_no : pr.emp_no,
-                              "Employee Name": typeof pr.employeeId === 'object' ? pr.employeeId.employee_name : '',
-                              "Department": (typeof pr.employeeId === 'object' && pr.employeeId.department_id) ? (pr.employeeId.department_id as any).name : '',
-                              "Division": (typeof pr.employeeId === 'object' && pr.employeeId.division_id) ? (pr.employeeId.division_id as any).name : '',
-                              "Total Present": 0,
-                              "Total Absent": 0,
-                              "Paid Leaves": 0,
-                              "LOP Count": 0,
-                              "Total OD": 0,
-                              "Total Extra Days": 0,
-                              "Total OT Hours": 0,
-                              "Holidays": 0,
-                              "Lates": 0
-                            }));
-
-                            const ws = XLSX.utils.json_to_sheet(sampleData);
-                            const wb = XLSX.utils.book_new();
-                            XLSX.utils.book_append_sheet(wb, ws, "Attendance Summary");
-                            XLSX.writeFile(wb, `Payroll_Summary_Template_${monthStr}.xlsx`);
-                            Swal.fire({
-                              icon: 'success',
-                              title: 'Template Ready',
-                              text: `Template downloaded with ${allEmployees.length} employees`,
-                              timer: 2000,
-                              showConfirmButton: false,
-                              toast: true,
-                              position: 'top-end'
-                            });
-                          } else {
-                            Swal.fire({
-                              icon: 'error',
-                              title: 'Fetch Failed',
-                              text: response.message || "Failed to fetch employees for template",
-                            });
-                          }
-                        } catch (err: any) {
-                          console.error('Error downloading template:', err);
-                          Swal.fire({
-                            icon: 'error',
-                            title: 'Generation Failed',
-                            text: err.message || 'Error generating template',
-                          });
-                        } finally {
-                          setDownloadingTemplate(false);
-                        }
-                      }}
-                      disabled={downloadingTemplate}
-                      className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
-                    >
-                      <svg className={`w-4 h-4 ${downloadingTemplate ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        {downloadingTemplate ? (
-                          <>
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </>
-                        ) : (
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                        )}
-                      </svg>
-                      {downloadingTemplate ? "Generating..." : "Download Template"}
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <div className="animate-fade-in">
-                  <div className="grid grid-cols-3 gap-4 mb-6">
-                    <div className="bg-slate-50 dark:bg-slate-900 p-4 rounded-lg text-center border border-slate-200 dark:border-slate-700">
-                      <div className="text-2xl font-bold text-slate-800 dark:text-white">{uploadResults.total}</div>
-                      <div className="text-xs text-slate-500 uppercase">Total Rows</div>
-                    </div>
-                    <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg text-center border border-green-100 dark:border-green-800">
-                      <div className="text-2xl font-bold text-green-600">{uploadResults.success}</div>
-                      <div className="text-xs text-green-500 uppercase tracking-wider">Success</div>
-                    </div>
-                    <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg text-center border border-red-100 dark:border-red-800">
-                      <div className="text-2xl font-bold text-red-600">{uploadResults.failed}</div>
-                      <div className="text-xs text-red-500 uppercase tracking-wider">Failed</div>
-                    </div>
-                  </div>
-
-                  {uploadResults.errors.length > 0 && (
-                    <div className="mb-6">
-                      <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Error Details:</h4>
-                      <div className="max-h-40 overflow-y-auto bg-slate-50 dark:bg-slate-900 p-3 rounded-lg border border-slate-200 dark:border-slate-700">
-                        <ul className="space-y-1">
-                          {uploadResults.errors.map((err, i) => (
-                            <li key={i} className="text-xs text-red-500">• {err}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    </div>
-                  )}
-
-                  <button
-                    onClick={() => {
-                      setShowUploadModal(false);
-                      setUploadResults(null);
-                    }}
-                    className="w-full py-3 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold transition-all shadow-lg"
-                  >
-                    Done
-                  </button>
-                </div>
-              )}
             </div>
           </div>
         )}
@@ -1704,7 +1636,8 @@ export default function PayRegisterPage() {
                     'Total Extra Days',
                     'Lates',
                     'Holidays & Weekoffs',
-                    'Paid Days',
+                    'Present Days',
+                    'Payable Shifts',
                     'Month Days',
                     'Counted Days',
                   ].map((label) => (
@@ -1724,7 +1657,7 @@ export default function PayRegisterPage() {
                       <div className="h-4 w-32 rounded bg-slate-200 dark:bg-slate-700" />
                       <div className="mt-1 h-3 w-24 rounded bg-slate-200 dark:bg-slate-700" />
                     </td>
-                    {Array.from({ length: 13 }).map((_, j) => (
+                    {Array.from({ length: 14 }).map((_, j) => (
                       <td key={j} className="px-2 py-2 text-center">
                         <div className="h-4 w-8 mx-auto rounded bg-slate-200 dark:bg-slate-700" />
                       </td>
@@ -1759,7 +1692,8 @@ export default function PayRegisterPage() {
                     'Total Extra Days',
                     'Lates',
                     'Holidays & Weekoffs',
-                    'Paid Days',
+                    'Present Days',
+                    'Payable Shifts',
                     'Month Days',
                     'Counted Days',
                   ].map((label) => (
@@ -1812,7 +1746,8 @@ export default function PayRegisterPage() {
                       <td className="text-center px-2 py-2">{row.extra.toFixed(1)}</td>
                       <td className="text-center px-2 py-2 font-bold text-amber-600 dark:text-amber-400">{row.lateCount}</td>
                       <td className="text-center px-2 py-2">{row.holidayAndWeekoffs.toFixed(1)}</td>
-                      <td className="text-center px-2 py-2 font-bold text-blue-600 dark:text-blue-400">{row.totalPaidDays.toFixed(1)}</td>
+                      <td className="text-center px-2 py-2 font-medium text-green-600 dark:text-green-400" title="Includes OD days">{row.present.toFixed(1)}</td>
+                      <td className="text-center px-2 py-2 font-bold text-slate-700 dark:text-slate-300">{row.payableShifts.toFixed(1)}</td>
                       <td className="text-center px-2 py-2">{row.monthDays}</td>
                       <td
                         className={`text-center px-2 py-2 font-semibold ${row.matchesMonth
@@ -1856,11 +1791,35 @@ export default function PayRegisterPage() {
       )
       }
 
+      {/* Export button below summary table (similar to attendance page) */}
+      {!loading && payRegisters.length > 0 && (
+        <div className="flex justify-end mb-4">
+          <button
+            onClick={async () => {
+              await downloadPayrollExcel();
+            }}
+            disabled={exportingExcel || payRegisters.length === 0}
+            title="Export payroll to Excel"
+            className="h-9 flex items-center px-4 rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-blue-600 hover:border-blue-200 transition-all shadow-sm active:scale-95 disabled:opacity-50 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-blue-400"
+          >
+            {exportingExcel ? (
+              <div className="mr-2 h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-400 border-t-transparent" />
+            ) : (
+              <svg className="mr-2 h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            )}
+            {exportingExcel ? 'Exporting...' : 'Export'}
+          </button>
+        </div>
+      )}
+
       {/* Table Tabs */}
       <div className="bg-white dark:bg-slate-800 rounded-lg shadow mb-8">
         <div className="border-b border-slate-200 dark:border-slate-700">
           <nav className="flex -mb-px">
             {[
+              { id: 'all' as TableType, label: 'All', color: 'slate' },
               { id: 'present' as TableType, label: 'Present', color: 'green' },
               { id: 'absent' as TableType, label: 'Absent', color: 'red' },
               { id: 'leaves' as TableType, label: 'Leaves', color: 'yellow' },
@@ -1871,6 +1830,7 @@ export default function PayRegisterPage() {
             ].map((tab) => {
               // Count employees with data in this table type
               const count = payRegisters.filter(pr => {
+                if (tab.id === 'all') return true;
                 if (!pr.dailyRecords || pr.dailyRecords.length === 0) return false;
                 switch (tab.id) {
                   case 'present':
@@ -1956,11 +1916,33 @@ export default function PayRegisterPage() {
                     {daysArray.map((day) => (
                       <th
                         key={day}
-                        className={'w-[calc((100%-180px-' + (activeTable === 'leaves' ? '320px' : '80px') + '/' + daysArray.length + ')] border-r border-slate-200 px-1 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'}
+                        className={'w-[calc((100%-180px-' + (activeTable === 'leaves' ? '320px' : activeTable === 'all' ? '480px' : '80px') + '/' + daysArray.length + ')] border-r border-slate-200 px-1 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'}
                       >
                         {parseInt(day.split('-')[2])}
                       </th>
                     ))}
+                    {activeTable === 'all' && (
+                      <>
+                        <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-green-50 dark:bg-green-900/20" title="OD days are included in present days">
+                          Present Days
+                        </th>
+                        <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-700/50">
+                          Payable Shifts
+                        </th>
+                        <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-gray-100 dark:bg-slate-700/50">
+                          Week Offs
+                        </th>
+                        <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-purple-50 dark:bg-purple-900/20">
+                          Holidays
+                        </th>
+                        <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-green-50/80 dark:bg-green-900/30">
+                          Paid Leaves
+                        </th>
+                        <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-blue-50 dark:bg-blue-900/20" title="Payable Shifts + Week Offs + Holidays + Paid Leaves">
+                          Paid Days
+                        </th>
+                      </>
+                    )}
                     {activeTable === 'present' && (
                       <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-green-50 dark:bg-green-900/20">
                         Total Present Days
@@ -2012,8 +1994,8 @@ export default function PayRegisterPage() {
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                   {getFilteredPayRegisters().length === 0 ? (
                     <tr>
-                      <td colSpan={daysArray.length + (activeTable === 'leaves' ? 4 : 1)} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
-                        No records found for {activeTable === 'shifts' ? 'shifts' : activeTable} table
+                      <td colSpan={daysArray.length + (activeTable === 'leaves' ? 4 : activeTable === 'all' ? 6 : 1)} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                        No records found{activeTable !== 'all' ? ` for ${activeTable === 'shifts' ? 'shifts' : activeTable} table` : ''}
                       </td>
                     </tr>
                   ) : (
@@ -2175,10 +2157,17 @@ export default function PayRegisterPage() {
                                             {record.firstHalf.status.charAt(0).toUpperCase()}/{record.secondHalf.status.charAt(0).toUpperCase()}
                                           </div>
                                         )}
-                                        {record.otHours > 0 && (activeTable === 'ot' || activeTable === 'extraHours') && (
+                                        {activeTable === 'all' && (record.isLate || record.isEarlyOut) && (
+                                          <div className="text-[7px] font-medium text-amber-600 dark:text-amber-400 mt-0.5" title={[record.isLate && 'Late', record.isEarlyOut && 'Early out'].filter(Boolean).join(', ')}>
+                                            {record.isLate && 'L'}
+                                            {record.isLate && record.isEarlyOut && ' '}
+                                            {record.isEarlyOut && 'E'}
+                                          </div>
+                                        )}
+                                        {record.otHours > 0 && (activeTable === 'ot' || activeTable === 'extraHours' || activeTable === 'all') && (
                                           <div className="text-[8px] font-semibold text-blue-600 dark:text-blue-300">{record.otHours}h</div>
                                         )}
-                                        {record.shiftName && (
+                                        {record.shiftName && activeTable === 'all' && (
                                           <div className="text-[8px] opacity-75 truncate" title={record.shiftName}>{record.shiftName.substring(0, 3)}</div>
                                         )}
                                       </>
@@ -2194,6 +2183,35 @@ export default function PayRegisterPage() {
                             );
                           })}
                           {/* Dynamic columns based on active tab */}
+                          {activeTable === 'all' && (() => {
+                            const payable = pr.totals?.totalPayableShifts ?? 0;
+                            const weekOffs = pr.totals?.totalWeeklyOffs ?? 0;
+                            const holidays = pr.totals?.totalHolidays ?? 0;
+                            const paidLeaves = pr.totals?.totalPaidLeaveDays ?? 0;
+                            const paidDays = payable + weekOffs + holidays + paidLeaves;
+                            return (
+                              <>
+                                <td className="border-r border-slate-200 bg-green-50 dark:bg-green-900/20 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:text-green-300" title="Includes OD days">
+                                  {(pr.totals?.totalPresentDays ?? 0).toFixed(1)}
+                                </td>
+                                <td className="border-r border-slate-200 bg-slate-50 dark:bg-slate-800 px-2 py-2 text-center text-[11px] font-bold text-slate-700 dark:text-slate-300 dark:bg-slate-700/50">
+                                  {payable.toFixed(1)}
+                                </td>
+                                <td className="border-r border-slate-200 bg-gray-50 dark:bg-slate-700/50 px-2 py-2 text-center text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                                  {weekOffs.toFixed(1)}
+                                </td>
+                                <td className="border-r border-slate-200 bg-purple-50 dark:bg-purple-900/20 px-2 py-2 text-center text-[11px] font-bold text-purple-700 dark:text-purple-300">
+                                  {holidays.toFixed(1)}
+                                </td>
+                                <td className="border-r border-slate-200 bg-green-50/80 dark:bg-green-900/30 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:text-green-400">
+                                  {paidLeaves.toFixed(1)}
+                                </td>
+                                <td className="border-r-0 border-slate-200 bg-blue-50 dark:bg-blue-900/20 px-2 py-2 text-center text-[11px] font-bold text-blue-700 dark:text-blue-300" title="Payable + Week Offs + Holidays + Paid Leaves">
+                                  {paidDays.toFixed(1)}
+                                </td>
+                              </>
+                            );
+                          })()}
                           {activeTable === 'present' && (
                             <td className="border-r-0 border-slate-200 bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:border-slate-700 dark:bg-green-900/20 dark:text-green-300">
                               {(pr.totals.totalPresentDays + pr.totals.totalODDays).toFixed(1)}
@@ -2568,15 +2586,16 @@ export default function PayRegisterPage() {
                   {!isHalfDayMode && (
                     <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
                       <h3 className="text-lg font-semibold mb-3 text-slate-900 dark:text-white">
-                        {activeTable === 'present' ? 'Present Status' :
-                          activeTable === 'absent' ? 'Absent Status' :
-                            activeTable === 'leaves' ? 'Leave Details' :
-                              activeTable === 'od' ? 'OD Details' :
-                                activeTable === 'ot' || activeTable === 'extraHours' ? 'OT Hours' :
-                                  'Full Day'}
+                        {activeTable === 'all' ? 'Day Status' :
+                          activeTable === 'present' ? 'Present Status' :
+                            activeTable === 'absent' ? 'Absent Status' :
+                              activeTable === 'leaves' ? 'Leave Details' :
+                                activeTable === 'od' ? 'OD Details' :
+                                  activeTable === 'ot' || activeTable === 'extraHours' ? 'OT Hours' :
+                                    'Full Day'}
                       </h3>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {(activeTable === 'present' || activeTable === 'absent' || activeTable === 'leaves' || activeTable === 'od') && (
+                        {(activeTable === 'all' || activeTable === 'present' || activeTable === 'absent' || activeTable === 'leaves' || activeTable === 'od') && (
                           <div>
                             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
                               Status
@@ -2815,10 +2834,92 @@ export default function PayRegisterPage() {
         <ArrearsPayrollSection
           month={month}
           year={year}
-          departmentId={selectedDepartment}
+          divisionId={selectedDivision || undefined}
+          departmentId={selectedDepartment || undefined}
           onArrearsSelected={handleArrearsSelected}
         />
       </div>
+
+      {/* Manual Deductions Section */}
+      <div className="mt-6 bg-white dark:bg-slate-800 rounded-lg shadow p-6">
+        <h2 className="text-xl font-semibold mb-4 text-slate-900 dark:text-white">Manual Deductions for Payroll</h2>
+        <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+          Approved manual deductions that will be deducted from net pay. Select amount per deduction to include in this month.
+        </p>
+        <DeductionsPayrollSection
+          month={monthStr}
+          year={year}
+          divisionId={selectedDivision || undefined}
+          departmentId={selectedDepartment || undefined}
+          onDeductionsSelected={handleDeductionsSelected}
+        />
+      </div>
+
+      {/* Summary Upload Modal */}
+      {showUploadModal && (
+        <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowUploadModal(false)} />
+          <div className="relative z-[1200] w-full max-w-lg overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950">
+            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 dark:border-slate-700">
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">Bulk Upload Summary</h2>
+              <button onClick={() => setShowUploadModal(false)} className="text-slate-400 hover:text-slate-600">
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-slate-600 dark:text-slate-400">
+                You can download the summary Excel file based on your current filters, update the data, and upload it back.
+              </p>
+
+              <div className="grid grid-cols-1 gap-4">
+                {/* Download Button */}
+                <button
+                  onClick={handleDownloadSummary}
+                  className="flex flex-col items-center justify-center p-6 rounded-2xl border-2 border-dashed border-blue-200 bg-blue-50/50 hover:bg-blue-50 hover:border-blue-400 transition-all group"
+                >
+                  <div className="mb-3 p-3 rounded-full bg-blue-100 text-blue-600 group-hover:scale-110 transition-transform">
+                    <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                  </div>
+                  <span className="font-semibold text-blue-900 dark:text-blue-300">Download Summary Excel</span>
+                  <span className="text-xs text-blue-600 dark:text-blue-400 mt-1">Based on current filters</span>
+                </button>
+
+                {/* Upload Button */}
+                <label className="flex flex-col items-center justify-center p-6 rounded-2xl border-2 border-dashed border-indigo-200 bg-indigo-50/50 hover:bg-indigo-50 hover:border-indigo-400 transition-all group cursor-pointer">
+                  <input
+                    type="file"
+                    className="hidden"
+                    accept=".xlsx, .xls"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleUploadSummaryFile(file);
+                    }}
+                    disabled={uploadingSummary}
+                  />
+                  <div className="mb-3 p-3 rounded-full bg-indigo-100 text-indigo-600 group-hover:scale-110 transition-transform">
+                    {uploadingSummary ? (
+                      <div className="h-6 w-6 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" />
+                    ) : (
+                      <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                      </svg>
+                    )}
+                  </div>
+                  <span className="font-semibold text-indigo-900 dark:text-indigo-300">
+                    {uploadingSummary ? 'Uploading...' : 'Upload Summary Excel'}
+                  </span>
+                  <span className="text-xs text-indigo-600 dark:text-indigo-400 mt-1">Excel file only (.xlsx, .xls)</span>
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

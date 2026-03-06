@@ -1,10 +1,10 @@
 'use client';
 
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import dynamic from 'next/dynamic';
 import { api } from '@/lib/api';
 import { toast } from 'react-hot-toast';
 import { format, parseISO } from 'date-fns';
-import * as XLSX from 'xlsx';
 
 import { Holiday, HolidayGroup, Shift, Employee } from '@/lib/api';
 import {
@@ -12,7 +12,8 @@ import {
   Save,
   Download,
   Settings2,
-  CheckCircle2
+  CheckCircle2,
+  Copy
 } from 'lucide-react';
 
 import {
@@ -29,13 +30,30 @@ import {
   shiftLabel
 } from './utils';
 
-// Import Modular Components
 import RosterFilters from './components/RosterFilters';
 import SearchSection from './components/SearchSection';
 import QuickAssignSection from './components/QuickAssignSection';
-import RosterGrid from './components/RosterGrid';
-import AssignmentsView from './components/AssignmentsView';
-import WeekOffModal from './components/WeekOffModal';
+
+// Heavy components: load on demand to keep initial bundle smaller
+const RosterGrid = dynamic(() => import('./components/RosterGrid'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex items-center justify-center py-24">
+      <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
+    </div>
+  ),
+});
+
+const AssignmentsView = dynamic(() => import('./components/AssignmentsView'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex items-center justify-center py-24">
+      <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
+    </div>
+  ),
+});
+
+const WeekOffModal = dynamic(() => import('./components/WeekOffModal'), { ssr: false });
 
 const ROSTER_LIMIT = 50;
 
@@ -50,9 +68,12 @@ export default function RosterPage() {
   const [selectedDept, setSelectedDept] = useState<string>('');
   const [selectedShiftForAssign, setSelectedShiftForAssign] = useState<string>('');
   const [roster, setRoster] = useState<RosterState>(new Map());
+  /** Keys of modified cells: `${empNo}|${date}` — only these are sent on save to avoid updating whole roster */
+  const [dirtyKeys, setDirtyKeys] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savingProgress, setSavingProgress] = useState<number | null>(null);
+  const [autoFillLoading, setAutoFillLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'roster' | 'assigned'>('roster');
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [holidayGroups, setHolidayGroups] = useState<HolidayGroup[]>([]);
@@ -75,12 +96,32 @@ export default function RosterPage() {
   const [cycleStartDay, setCycleStartDay] = useState<number>(1);
   const [cycleDates, setCycleDates] = useState<{ startDate: string; endDate: string; label: string } | null>(null);
 
+  const [alignedToCycle, setAlignedToCycle] = useState(false);
+
   // Fetch payroll cycle setting on mount
   useEffect(() => {
     api.getSetting('payroll_cycle_start_day').then((res) => {
       if (res.success && res.data) setCycleStartDay(Number(res.data.value) || 1);
     }).catch(() => { });
   }, []);
+
+  // After we know the cycle start day, adjust initial month so that the pay cycle contains today
+  useEffect(() => {
+    if (alignedToCycle || !cycleStartDay) return;
+    const today = new Date();
+    let y = today.getFullYear();
+    let m = today.getMonth() + 1;
+    if (cycleStartDay > 1 && today.getDate() >= cycleStartDay) {
+      if (m === 12) {
+        m = 1;
+        y += 1;
+      } else {
+        m += 1;
+      }
+    }
+    setMonth(formatMonthInput(new Date(y, m - 1, 1)));
+    setAlignedToCycle(true);
+  }, [cycleStartDay, alignedToCycle]);
 
   // Recalculate cycle dates when month or cycleStartDay changes
   useEffect(() => {
@@ -208,6 +249,7 @@ export default function RosterPage() {
         };
       });
       setRoster(map);
+      setDirtyKeys(new Set());
     } catch (err) {
       console.error('Error loading roster data:', err);
       toast.error('Failed to load roster');
@@ -224,6 +266,7 @@ export default function RosterPage() {
       next.set(empNo, row);
       return next;
     });
+    setDirtyKeys(prev => new Set(prev).add(`${empNo}|${date}`));
   }, []);
 
   const applyEmployeeAllDays = useCallback((empNo: string, shiftId: string | null, status?: 'WO' | 'HOL') => {
@@ -238,11 +281,17 @@ export default function RosterPage() {
       next.set(empNo, row);
       return next;
     });
+    setDirtyKeys(prev => {
+      const next = new Set(prev);
+      days.forEach(d => next.add(`${empNo}|${d}`));
+      return next;
+    });
   }, [days]);
 
   const applyAssignDays = useCallback((shiftId: string | null, status?: 'WO' | 'HOL') => {
     const activeDays = Object.keys(shiftAssignDays).filter(d => shiftAssignDays[d]);
     if (activeDays.length === 0) return;
+    const activeDates = days.filter(d => activeDays.includes(weekdays[new Date(d).getDay()]));
     setRoster(prev => {
       const next = new Map(prev);
       employees.forEach(emp => {
@@ -259,6 +308,11 @@ export default function RosterPage() {
       });
       return next;
     });
+    setDirtyKeys(prev => {
+      const next = new Set(prev);
+      employees.forEach(emp => activeDates.forEach(d => next.add(`${emp.emp_no}|${d}`)));
+      return next;
+    });
   }, [days, shiftAssignDays, weekdays, employees]);
 
   const handleAssignAll = useCallback(() => {
@@ -270,6 +324,7 @@ export default function RosterPage() {
   const applyWeekOffs = useCallback(() => {
     const activeDays = Object.keys(weekOffDays).filter(d => weekOffDays[d]);
     if (activeDays.length === 0) return;
+    const activeDates = days.filter(d => activeDays.includes(weekdays[new Date(d).getDay()]));
     setRoster(prev => {
       const next = new Map(prev);
       employees.forEach(emp => {
@@ -282,6 +337,11 @@ export default function RosterPage() {
       });
       return next;
     });
+    setDirtyKeys(prev => {
+      const next = new Set(prev);
+      employees.forEach(emp => activeDates.forEach(d => next.add(`${emp.emp_no}|${d}`)));
+      return next;
+    });
     setShowWeekOff(false);
     toast.success('Assigned week offs');
   }, [days, weekOffDays, weekdays, employees]);
@@ -291,9 +351,13 @@ export default function RosterPage() {
     setSavingProgress(0);
     try {
       const entries: { employeeNumber: string; date: string; shiftId: string | null; status: string }[] = [];
-      roster.forEach((row, empNo) => {
-        Object.entries(row).forEach(([date, cell]) => {
-          if (cell.shiftId || cell.status) {
+      if (dirtyKeys.size > 0) {
+        dirtyKeys.forEach(key => {
+          const [empNo, date] = key.split('|');
+          const row = roster.get(empNo);
+          if (!row) return;
+          const cell = row[date];
+          if (cell?.shiftId || cell?.status) {
             entries.push({
               employeeNumber: empNo,
               date,
@@ -302,7 +366,13 @@ export default function RosterPage() {
             });
           }
         });
-      });
+      }
+      if (entries.length === 0) {
+        toast.success(dirtyKeys.size === 0 ? 'No changes to save' : 'No valid entries to save');
+        setSaving(false);
+        setSavingProgress(null);
+        return;
+      }
       const batchSize = 100;
       for (let i = 0; i < entries.length; i += batchSize) {
         const batch = entries.slice(i, i + batchSize);
@@ -313,9 +383,10 @@ export default function RosterPage() {
           startDate: cycleDates?.startDate,
           endDate: cycleDates?.endDate
         });
-        setSavingProgress(Math.round(((i + batchSize) / entries.length) * 100));
+        setSavingProgress(Math.min(100, Math.round(((i + batchSize) / entries.length) * 100)));
       }
-      toast.success('Roster saved successfully');
+      setDirtyKeys(new Set());
+      toast.success(`Roster saved: ${entries.length} entries updated`);
     } catch (err) {
       console.error('Error saving roster:', err);
       toast.error('Failed to save roster');
@@ -368,10 +439,12 @@ export default function RosterPage() {
     try {
       const divisionName = selectedDivision ? (divisions.find(d => d._id === selectedDivision)?.name || 'Division') : 'All';
       const deptName = selectedDept ? (departments.find(d => d._id === selectedDept)?.name || 'Dept') : 'All';
-      const [allEmpsRes, allRosterRes] = await Promise.all([
+      const [allEmpsRes, allRosterRes, xlsxMod] = await Promise.all([
         api.getEmployees({ limit: 10000, department_id: selectedDept || undefined, division_id: selectedDivision || undefined }),
-        api.getRoster(month, { departmentId: selectedDept || undefined, divisionId: selectedDivision || undefined })
+        api.getRoster(month, { departmentId: selectedDept || undefined, divisionId: selectedDivision || undefined }),
+        import('xlsx'),
       ]);
+      const XLSX: typeof import('xlsx') = (xlsxMod as any).default ?? xlsxMod;
       const allEmps = (allEmpsRes.data || []) as { emp_no: string; employee_name?: string; division?: { name: string }; department?: { name: string } }[];
       const allRosterData = allRosterRes.data as { entries: { employeeNumber: string; date: string; shiftId?: string; status?: string }[] } | null;
       const allEntries = allRosterData?.entries || [];
@@ -407,6 +480,33 @@ export default function RosterPage() {
     return employees.filter(emp => (emp.employee_name || '').toLowerCase().includes(term) || (emp.emp_no || '').toLowerCase().includes(term));
   }, [employees, debouncedSearch]);
 
+  const handleAutoFillNextCycle = useCallback(async () => {
+    const [y, m] = month.split('-').map(Number);
+    const nextMonth = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
+    const nextLabel = new Date(nextMonth + '-01').toLocaleString('default', { month: 'long', year: 'numeric' });
+    if (!confirm(`This will fill the next pay cycle (${nextLabel}) from the previous cycle by weekday. Holidays in the target period will be set to HOL. Continue?`)) return;
+    setAutoFillLoading(true);
+    try {
+      const res = await api.autoFillNextCycleRoster({
+        targetMonth: nextMonth,
+        departmentId: selectedDept || undefined,
+        divisionId: selectedDivision || undefined,
+      });
+      const data = res?.data;
+      if (res?.success && data) {
+        toast.success(`${data.filled} entries filled; ${data.holidaysRespected} days as holiday.`);
+        setMonth(nextMonth);
+        setPage(1);
+      } else {
+        toast.error((res as any)?.message || 'Auto-fill failed');
+      }
+    } catch (err: any) {
+      toast.error(err?.message || 'Auto-fill failed');
+    } finally {
+      setAutoFillLoading(false);
+    }
+  }, [month, selectedDept, selectedDivision]);
+
   return (
     <div className="relative min-h-screen">
       <div className="relative z-10 w-auto -mt-4 sm:-mt-5 lg:-mt-6 -mx-4 sm:-mx-5 lg:-mx-6 pb-6 space-y-0.5">
@@ -441,7 +541,8 @@ export default function RosterPage() {
             cycleDates={cycleDates}
           />
           <SearchSection onSearchChange={setSearchTerm} />
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            <button onClick={handleAutoFillNextCycle} disabled={autoFillLoading} className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-amber-600 border border-amber-700 text-white text-[10px] font-black uppercase tracking-widest hover:bg-amber-700 transition-all shadow-md disabled:opacity-50" title="Fill next pay cycle from previous (by weekday); holidays respected"><Copy size={14} />{autoFillLoading ? 'Filling...' : 'Auto-fill next cycle'}</button>
             <button onClick={handleExportExcel} className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-green-600 border border-green-700 text-white text-[10px] font-black uppercase tracking-widest hover:bg-green-700 transition-all shadow-md"><Download size={14} />Export</button>
             <button onClick={() => setShowWeekOff(true)} className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-white text-[10px] font-black uppercase tracking-widest transition-all shadow-md dark:bg-slate-800/80"><Settings2 size={14} />Assign Offs</button>
             <button onClick={saveRoster} disabled={saving} className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white text-[11px] font-black uppercase tracking-widest shadow-lg shadow-blue-500/20 disabled:opacity-50 transition-all"><Save size={16} />{saving ? `...${savingProgress}%` : 'Save Roster'}</button>

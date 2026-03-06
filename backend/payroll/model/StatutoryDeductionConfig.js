@@ -52,49 +52,52 @@ const statutoryDeductionConfigSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 statutoryDeductionConfigSchema.statics.get = async function () {
-  let doc = await this.findOne({});
-  if (!doc) {
-    doc = await this.create({
-      esi: { enabled: false, employeePercent: 0.75, employerPercent: 3.25, wageBasePercentOfBasic: 50, wageCeiling: 21000 },
-      pf: { enabled: false, employeePercent: 12, employerPercent: 12, wageCeiling: 15000, base: 'basic' },
-      professionTax: {
-        enabled: false,
-        state: '',
-        slabs: [
-          { min: 0, max: 14999, amount: 0 },
-          { min: 15000, max: 19999, amount: 150 },
-          { min: 20000, max: null, amount: 200 },
-        ],
-      },
-    });
-  }
+  const defaults = {
+    esi: { enabled: false, employeePercent: 0.75, employerPercent: 3.25, wageBasePercentOfBasic: 50, wageCeiling: 21000 },
+    pf: { enabled: false, employeePercent: 12, employerPercent: 12, wageCeiling: 15000, base: 'basic' },
+    professionTax: {
+      enabled: false,
+      state: '',
+      slabs: [
+        { min: 0, max: 14999, amount: 0 },
+        { min: 15000, max: 19999, amount: 150 },
+        { min: 20000, max: null, amount: 200 },
+      ],
+    },
+  };
+  const doc = await this.findOneAndUpdate(
+    {},
+    { $setOnInsert: defaults, $set: {} },
+    { new: true, upsert: true }
+  );
   return doc;
 };
 
 statutoryDeductionConfigSchema.statics.upsert = async function (payload) {
-  let doc = await this.findOne({});
-  if (!doc) {
-    doc = new this({});
-  }
+  const update = {};
   if (payload.esi && typeof payload.esi === 'object') {
-    doc.esi = { ...doc.esi.toObject?.() || doc.esi, ...payload.esi };
+    update.esi = payload.esi;
   }
   if (payload.pf && typeof payload.pf === 'object') {
-    doc.pf = { ...doc.pf.toObject?.() || doc.pf, ...payload.pf };
+    update.pf = payload.pf;
   }
   if (payload.professionTax && typeof payload.professionTax === 'object') {
-    const merged = { ...doc.professionTax.toObject?.() || doc.professionTax, ...payload.professionTax };
+    const merged = { ...payload.professionTax };
     if (Array.isArray(payload.professionTax.slabs)) {
       merged.slabs = payload.professionTax.slabs.map((s) => ({
         min: typeof s.min === 'number' ? s.min : 0,
-        max: s.max == null || s.max === undefined || s.max === '' ? null : Number(s.max),
+        max: s.max == null || s.max === '' ? null : Number(s.max),
         amount: typeof s.amount === 'number' ? s.amount : 0,
       }));
     }
-    doc.professionTax = merged;
+    update.professionTax = merged;
   }
-  doc.updatedAt = new Date();
-  await doc.save();
+  update.updatedAt = new Date();
+  const doc = await this.findOneAndUpdate(
+    {},
+    { $set: update },
+    { new: true, upsert: true }
+  );
   return doc;
 };
 

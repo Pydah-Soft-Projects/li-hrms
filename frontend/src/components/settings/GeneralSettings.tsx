@@ -10,19 +10,22 @@ import { Save, Clock, ChevronRight } from 'lucide-react';
 const GeneralSettings = () => {
   const [lateInGrace, setLateInGrace] = useState<number>(15);
   const [earlyOutGrace, setEarlyOutGrace] = useState<number>(15);
+  const [allowEmployeeBulkProcess, setAllowEmployeeBulkProcess] = useState<boolean>(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const loadSettings = async () => {
     try {
       setLoading(true);
-      const [resLate, resEarly] = await Promise.all([
+      const [resLate, resEarly, resBulk] = await Promise.all([
         api.getSetting('late_in_grace_time'),
         api.getSetting('early_out_grace_time'),
+        api.getSetting('allow_employee_bulk_process'),
       ]);
 
       if (resLate.success && resLate.data) setLateInGrace(Number(resLate.data.value));
       if (resEarly.success && resEarly.data) setEarlyOutGrace(Number(resEarly.data.value));
+      if (resBulk.success && resBulk.data) setAllowEmployeeBulkProcess(!!resBulk.data.value);
     } catch (err) {
       console.error('Failed to load general settings', err);
       toast.error('Failed to load settings');
@@ -38,7 +41,7 @@ const GeneralSettings = () => {
   const handleSave = async () => {
     try {
       setSaving(true);
-      const [resLate, resEarly] = await Promise.all([
+      const [resLate, resEarly, resBulk] = await Promise.all([
         api.upsertSetting({
           key: 'late_in_grace_time',
           value: lateInGrace,
@@ -50,10 +53,16 @@ const GeneralSettings = () => {
           value: earlyOutGrace,
           category: 'general',
           description: 'Global Early Out Grace Period (Minutes)'
+        }),
+        api.upsertSetting({
+          key: 'allow_employee_bulk_process',
+          value: allowEmployeeBulkProcess,
+          category: 'employee',
+          description: 'Allow bulk upload / bulk process for employees'
         })
       ]);
 
-      if (resLate.success && resEarly.success) {
+      if (resLate.success && resEarly.success && resBulk.success) {
         toast.success('General settings saved successfully');
       } else {
         toast.error('Failed to save general settings');
@@ -119,6 +128,32 @@ const GeneralSettings = () => {
                   <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-bold text-gray-400 uppercase">Mins</span>
                 </div>
                 <p className="text-[10px] text-gray-400">Minutes allowed before shift end time before marked early exit.</p>
+              </div>
+            </div>
+          </section>
+
+          <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden p-4 sm:p-6 lg:p-8">
+            <div className="px-8 py-6 border-b border-gray-100 dark:border-gray-800">
+              <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Employee Bulk Process</h3>
+            </div>
+            <div className="p-8">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <label htmlFor="allowEmployeeBulkProcess" className="block text-sm font-medium text-gray-900 dark:text-white">
+                    Allow bulk process for employees
+                  </label>
+                  <p className="text-[10px] text-gray-400 mt-1">When ON, the Import (bulk upload) option is shown on the Employees page. When OFF, bulk upload is hidden.</p>
+                </div>
+                <button
+                  id="allowEmployeeBulkProcess"
+                  type="button"
+                  role="switch"
+                  aria-checked={allowEmployeeBulkProcess}
+                  onClick={() => setAllowEmployeeBulkProcess((v) => !v)}
+                  className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${allowEmployeeBulkProcess ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-gray-700'}`}
+                >
+                  <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition ${allowEmployeeBulkProcess ? 'translate-x-5' : 'translate-x-1'}`} />
+                </button>
               </div>
             </div>
           </section>

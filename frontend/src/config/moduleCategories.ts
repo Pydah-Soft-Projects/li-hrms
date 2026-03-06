@@ -14,6 +14,7 @@ export const MODULE_CATEGORIES = [
         icon: '👥',
         modules: [
             { code: 'EMPLOYEES', label: 'Employees', href: '/employees', verifiable: true },
+            { code: 'RESIGNATION', label: 'Resignations', href: '/resignations' },
             { code: 'PROFILE', label: 'My Profile', href: '/profile' }
         ]
     },
@@ -26,7 +27,6 @@ export const MODULE_CATEGORIES = [
             { code: 'CCL', label: 'CCL (Compensatory)', href: '/ccl' },
             { code: 'OT_PERMISSIONS', label: 'OT & Permissions', href: '/ot-permissions' },
             { code: 'SHIFT_ROSTER', label: 'Shift Roster', href: '/shift-roster' },
-            { code: 'LEAVE_REGISTER', label: 'Leave Register', href: '/leaves/register' },
             { code: 'CONFUSED_SHIFTS', label: 'Confused Shifts', href: '/confused-shifts' },
             { code: 'SHIFTS', label: 'Shifts', href: '/shifts' },
             { code: 'HOLIDAY_CALENDAR', label: 'Holiday Calendar', href: '/holidays' },
@@ -51,7 +51,8 @@ export const MODULE_CATEGORIES = [
             { code: 'PAY_REGISTER', label: 'Pay Register', href: '/pay-register' },
             { code: 'PAYSLIPS', label: 'Payslips', href: '/payslips' },
             { code: 'ALLOWANCES_DEDUCTIONS', label: 'Allowances & Deductions', href: '/allowances-deductions' },
-            { code: 'LOANS', label: 'Loans & Salary Advance', href: '/loans' }
+            { code: 'LOANS', label: 'Loans & Salary Advance', href: '/loans' },
+            { code: 'MANUAL_DEDUCTIONS', label: 'Manual Deductions', href: '/manual-deductions' }
         ]
     },
     {

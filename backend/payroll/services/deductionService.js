@@ -27,8 +27,10 @@ async function getResolvedPermissionDeductionRules(departmentId, divisionId = nu
     const globalSettings = await PermissionDeductionSettings.getActiveSettings();
 
     resolved = {
+      freeAllowedPerMonth: deptSettings?.permissions?.deductionRules?.freeAllowedPerMonth ?? globalSettings?.deductionRules?.freeAllowedPerMonth ?? null,
       countThreshold: deptSettings?.permissions?.deductionRules?.countThreshold ?? globalSettings?.deductionRules?.countThreshold ?? null,
       deductionType: deptSettings?.permissions?.deductionRules?.deductionType ?? globalSettings?.deductionRules?.deductionType ?? null,
+      deductionDays: deptSettings?.permissions?.deductionRules?.deductionDays ?? globalSettings?.deductionRules?.deductionDays ?? null,
       deductionAmount: deptSettings?.permissions?.deductionRules?.deductionAmount ?? globalSettings?.deductionRules?.deductionAmount ?? null,
       minimumDuration: deptSettings?.permissions?.deductionRules?.minimumDuration ?? globalSettings?.deductionRules?.minimumDuration ?? null,
       calculationMode: deptSettings?.permissions?.deductionRules?.calculationMode ?? globalSettings?.deductionRules?.calculationMode ?? null,
@@ -40,8 +42,10 @@ async function getResolvedPermissionDeductionRules(departmentId, divisionId = nu
   } catch (error) {
     console.error('Error getting resolved permission deduction rules:', error);
     return {
+      freeAllowedPerMonth: null,
       countThreshold: null,
       deductionType: null,
+      deductionDays: null,
       deductionAmount: null,
       minimumDuration: null,
       calculationMode: null,
@@ -65,8 +69,10 @@ async function getResolvedAttendanceDeductionRules(departmentId, divisionId = nu
     const globalSettings = await AttendanceDeductionSettings.getActiveSettings();
 
     resolved = {
+      freeAllowedPerMonth: deptSettings?.attendance?.deductionRules?.freeAllowedPerMonth ?? globalSettings?.deductionRules?.freeAllowedPerMonth ?? null,
       combinedCountThreshold: deptSettings?.attendance?.deductionRules?.combinedCountThreshold ?? globalSettings?.deductionRules?.combinedCountThreshold ?? null,
       deductionType: deptSettings?.attendance?.deductionRules?.deductionType ?? globalSettings?.deductionRules?.deductionType ?? null,
+      deductionDays: deptSettings?.attendance?.deductionRules?.deductionDays ?? globalSettings?.deductionRules?.deductionDays ?? null,
       deductionAmount: deptSettings?.attendance?.deductionRules?.deductionAmount ?? globalSettings?.deductionRules?.deductionAmount ?? null,
       minimumDuration: deptSettings?.attendance?.deductionRules?.minimumDuration ?? globalSettings?.deductionRules?.minimumDuration ?? null,
       calculationMode: deptSettings?.attendance?.deductionRules?.calculationMode ?? globalSettings?.deductionRules?.calculationMode ?? null,
@@ -78,8 +84,10 @@ async function getResolvedAttendanceDeductionRules(departmentId, divisionId = nu
   } catch (error) {
     console.error('Error getting resolved attendance deduction rules:', error);
     return {
+      freeAllowedPerMonth: null,
       combinedCountThreshold: null,
       deductionType: null,
+      deductionDays: null,
       deductionAmount: null,
       minimumDuration: null,
       calculationMode: null,
@@ -91,13 +99,15 @@ async function getResolvedAttendanceDeductionRules(departmentId, divisionId = nu
  * Calculate days to deduct based on deduction type
  * @param {Number} multiplier - Multiplier from calculation
  * @param {Number} remainder - Remainder from calculation
- * @param {String} deductionType - 'half_day', 'full_day', or 'custom_amount'
+ * @param {Number} threshold - Count threshold
+ * @param {String} deductionType - 'half_day', 'full_day', 'custom_days', or 'custom_amount'
+ * @param {Number} deductionDays - Custom days per unit if type is 'custom_days'
  * @param {Number} customAmount - Custom amount if type is 'custom_amount'
  * @param {Number} perDayBasicPay - Per day basic pay for custom amount conversion
  * @param {String} calculationMode - 'proportional' or 'floor'
  * @returns {Number} Days to deduct
  */
-function calculateDaysToDeduct(multiplier, remainder, threshold, deductionType, customAmount, perDayBasicPay, calculationMode) {
+function calculateDaysToDeduct(multiplier, remainder, threshold, deductionType, deductionDays, customAmount, perDayBasicPay, calculationMode) {
   let days = 0;
 
   if (deductionType === 'half_day') {
@@ -110,8 +120,12 @@ function calculateDaysToDeduct(multiplier, remainder, threshold, deductionType, 
     if (calculationMode === 'proportional' && remainder > 0 && threshold > 0) {
       days += (remainder / threshold) * 1;
     }
+  } else if (deductionType === 'custom_days' && deductionDays != null && deductionDays > 0) {
+    days = multiplier * deductionDays;
+    if (calculationMode === 'proportional' && remainder > 0 && threshold > 0) {
+      days += (remainder / threshold) * deductionDays;
+    }
   } else if (deductionType === 'custom_amount' && customAmount && perDayBasicPay > 0) {
-    // Convert custom amount to days
     const amountPerThreshold = customAmount;
     days = (multiplier * amountPerThreshold) / perDayBasicPay;
     if (calculationMode === 'proportional' && remainder > 0 && threshold > 0) {
@@ -123,16 +137,40 @@ function calculateDaysToDeduct(multiplier, remainder, threshold, deductionType, 
 }
 
 /**
- * Calculate attendance deduction (late-ins + early-outs)
+ * Calculate attendance deduction (late-ins + early-outs + absent extra).
+ * Respects employee flags: applyAttendanceDeduction (master), deductLateIn, deductEarlyOut, deductAbsent (default true = apply).
  * @param {String} employeeId - Employee ID
  * @param {String} month - Month in YYYY-MM format
  * @param {String} departmentId - Department ID
  * @param {Number} perDayBasicPay - Per day basic pay
- * @param {Object} [options] - Optional: { absentDays, enableAbsentDeduction, lopDaysPerAbsent }. When enableAbsentDeduction is true, adds (absentDays * (lopDaysPerAbsent - 1)) to deduction (absent already not in paid days; only X-1 extra).
+ * @param {String|null} divisionId - Division ID for rules
+ * @param {Object} [options] - Optional: { absentDays, enableAbsentDeduction, lopDaysPerAbsent, employee }. employee: { applyAttendanceDeduction, deductLateIn, deductEarlyOut, deductAbsent }.
  * @returns {Object} Attendance deduction result
  */
 async function calculateAttendanceDeduction(employeeId, month, departmentId, perDayBasicPay, divisionId = null, options = {}) {
   try {
+    const employee = options && options.employee != null ? options.employee : null;
+    const applyAttendanceDeduction = employee == null || (employee && employee.applyAttendanceDeduction !== false);
+    if (!applyAttendanceDeduction) {
+      return {
+        attendanceDeduction: 0,
+        breakdown: {
+          lateInsCount: 0,
+          earlyOutsCount: 0,
+          combinedCount: 0,
+          freeAllowedPerMonth: 0,
+          effectiveCount: 0,
+          daysDeducted: 0,
+          lateEarlyDaysDeducted: 0,
+          absentExtraDays: 0,
+          absentDays: 0,
+          lopDaysPerAbsent: null,
+          deductionType: null,
+          calculationMode: null,
+        },
+      };
+    }
+
     // 1. Fetch counts FIRST (so we can return them even if no deduction rules apply)
     const PayRegisterSummary = require('../../pay-register/model/PayRegisterSummary');
     // Using lean() to bypass strict mode filtering if fields are missing from schema but present in DB
@@ -182,15 +220,21 @@ async function calculateAttendanceDeduction(employeeId, month, departmentId, per
       }
     }
 
+    const deductLateIn = employee == null || employee.deductLateIn !== false;
+    const deductEarlyOut = employee == null || employee.deductEarlyOut !== false;
+    const deductAbsent = employee == null || employee.deductAbsent !== false;
+    if (!deductLateIn) lateInsCount = 0;
+    if (!deductEarlyOut) earlyOutsCount = 0;
+
     console.log(`[Deduction] Employee ${employeeId} - Lates: ${lateInsCount}, Early: ${earlyOutsCount} (Source: ${source})`);
 
     // 2. Fetch Rules and Calculate Deduction
     const rules = await getResolvedAttendanceDeductionRules(departmentId, divisionId);
 
-    // If no rules configured, still apply absent extra if enabled
+    // If no rules configured, still apply absent extra if enabled (and employee.deductAbsent)
     if (!rules.combinedCountThreshold || !rules.deductionType || !rules.calculationMode) {
       const absentDaysNoRules = Number(options.absentDays) || 0;
-      const enableAbsentNoRules = options.enableAbsentDeduction === true;
+      const enableAbsentNoRules = deductAbsent && options.enableAbsentDeduction === true;
       const lopPerAbsentNoRules = Math.max(0, Number(options.lopDaysPerAbsent) || 1);
       let absentExtraNoRules = 0;
       if (enableAbsentNoRules && absentDaysNoRules > 0 && lopPerAbsentNoRules > 1) {
@@ -199,12 +243,16 @@ async function calculateAttendanceDeduction(employeeId, month, departmentId, per
       const totalDeductedNoRules = absentExtraNoRules;
       const amountNoRules = totalDeductedNoRules * perDayBasicPay;
       console.log('[Deduction] No valid late/early rules. Absent extra days:', absentExtraNoRules);
+      const combined = lateInsCount + earlyOutsCount;
+      const freeAllowed = rules.freeAllowedPerMonth != null ? Number(rules.freeAllowedPerMonth) : 0;
       return {
         attendanceDeduction: Math.round(amountNoRules * 100) / 100,
         breakdown: {
           lateInsCount,
           earlyOutsCount,
-          combinedCount: lateInsCount + earlyOutsCount,
+          combinedCount: combined,
+          freeAllowedPerMonth: freeAllowed,
+          effectiveCount: Math.max(0, combined - freeAllowed),
           daysDeducted: totalDeductedNoRules,
           lateEarlyDaysDeducted: 0,
           absentExtraDays: absentExtraNoRules,
@@ -217,30 +265,33 @@ async function calculateAttendanceDeduction(employeeId, month, departmentId, per
     }
 
     const combinedCount = lateInsCount + earlyOutsCount;
+    const freeAllowed = rules.freeAllowedPerMonth != null ? Number(rules.freeAllowedPerMonth) : 0;
+    const effectiveCount = Math.max(0, combinedCount - freeAllowed);
     let daysDeducted = 0;
 
-    if (combinedCount >= rules.combinedCountThreshold) {
-      const multiplier = Math.floor(combinedCount / rules.combinedCountThreshold);
-      const remainder = combinedCount % rules.combinedCountThreshold;
+    if (effectiveCount >= rules.combinedCountThreshold) {
+      const multiplier = Math.floor(effectiveCount / rules.combinedCountThreshold);
+      const remainder = effectiveCount % rules.combinedCountThreshold;
 
       daysDeducted = calculateDaysToDeduct(
         multiplier,
         remainder,
         rules.combinedCountThreshold,
         rules.deductionType,
+        rules.deductionDays,
         rules.deductionAmount,
         perDayBasicPay,
         rules.calculationMode
       );
-      console.log(`[Deduction] Calculated deduction: ${daysDeducted} days based on ${combinedCount} combined lates/early.`);
+      console.log(`[Deduction] Calculated deduction: ${daysDeducted} days (combined: ${combinedCount}, free: ${freeAllowed}, effective: ${effectiveCount}).`);
     } else {
-      console.log(`[Deduction] Combined count ${combinedCount} is below threshold ${rules.combinedCountThreshold}`);
+      console.log(`[Deduction] Effective count ${effectiveCount} is below threshold ${rules.combinedCountThreshold}`);
     }
 
-    // Absent extra: when enable_absent_deduction is true, deduct (absentDays * (lopDaysPerAbsent - 1)) days. Absent is already not in paid days (1 day unpaid); settings say treat as X LOP so we add (X-1) extra deduction days.
+    // Absent extra: when enable_absent_deduction && employee.deductAbsent, deduct (absentDays * (lopDaysPerAbsent - 1)) days.
     let absentExtraDays = 0;
     const absentDays = Number(options.absentDays) || 0;
-    const enableAbsentDeduction = options.enableAbsentDeduction === true;
+    const enableAbsentDeduction = deductAbsent && options.enableAbsentDeduction === true;
     const lopDaysPerAbsent = Math.max(0, Number(options.lopDaysPerAbsent) || 1);
     if (enableAbsentDeduction && absentDays > 0 && lopDaysPerAbsent > 1) {
       absentExtraDays = absentDays * (lopDaysPerAbsent - 1);
@@ -256,6 +307,8 @@ async function calculateAttendanceDeduction(employeeId, month, departmentId, per
         lateInsCount,
         earlyOutsCount,
         combinedCount,
+        freeAllowedPerMonth: freeAllowed,
+        effectiveCount,
         daysDeducted: totalDaysDeducted,
         lateEarlyDaysDeducted: daysDeducted,
         absentExtraDays,
@@ -273,6 +326,8 @@ async function calculateAttendanceDeduction(employeeId, month, departmentId, per
         lateInsCount: 0,
         earlyOutsCount: 0,
         combinedCount: 0,
+        freeAllowedPerMonth: 0,
+        effectiveCount: 0,
         daysDeducted: 0,
         lateEarlyDaysDeducted: 0,
         absentExtraDays: 0,
@@ -286,15 +341,33 @@ async function calculateAttendanceDeduction(employeeId, month, departmentId, per
 }
 
 /**
- * Calculate permission deduction
+ * Calculate permission deduction.
+ * Respects employee.deductPermission (default true = apply). When false, returns 0.
  * @param {String} employeeId - Employee ID
  * @param {String} month - Month in YYYY-MM format
  * @param {String} departmentId - Department ID
  * @param {Number} perDayBasicPay - Per day basic pay
+ * @param {String|null} divisionId - Division ID
+ * @param {Object} [options] - Optional: { employee }. If employee.deductPermission === false, return 0.
  * @returns {Object} Permission deduction result
  */
-async function calculatePermissionDeduction(employeeId, month, departmentId, perDayBasicPay, divisionId = null) {
+async function calculatePermissionDeduction(employeeId, month, departmentId, perDayBasicPay, divisionId = null, options = {}) {
   try {
+    const employee = options && options.employee != null ? options.employee : null;
+    const deductPermission = employee == null || (employee && employee.deductPermission !== false);
+    if (!deductPermission) {
+      return {
+        permissionDeduction: 0,
+        breakdown: {
+          permissionCount: 0,
+          eligiblePermissionCount: 0,
+          daysDeducted: 0,
+          deductionType: null,
+          calculationMode: null,
+        },
+      };
+    }
+
     const rules = await getResolvedPermissionDeductionRules(departmentId, divisionId);
 
     // If no rules configured, return zero
@@ -335,18 +408,21 @@ async function calculatePermissionDeduction(employeeId, month, departmentId, per
 
     const eligiblePermissionCount = eligiblePermissions.length;
     const totalPermissionCount = permissions.length;
+    const freeAllowed = rules.freeAllowedPerMonth != null ? Number(rules.freeAllowedPerMonth) : 0;
+    const effectiveCount = Math.max(0, eligiblePermissionCount - freeAllowed);
 
     let daysDeducted = 0;
 
-    if (eligiblePermissionCount >= rules.countThreshold) {
-      const multiplier = Math.floor(eligiblePermissionCount / rules.countThreshold);
-      const remainder = eligiblePermissionCount % rules.countThreshold;
+    if (effectiveCount >= rules.countThreshold) {
+      const multiplier = Math.floor(effectiveCount / rules.countThreshold);
+      const remainder = effectiveCount % rules.countThreshold;
 
       daysDeducted = calculateDaysToDeduct(
         multiplier,
         remainder,
         rules.countThreshold,
         rules.deductionType,
+        rules.deductionDays,
         rules.deductionAmount,
         perDayBasicPay,
         rules.calculationMode
@@ -360,6 +436,8 @@ async function calculatePermissionDeduction(employeeId, month, departmentId, per
       breakdown: {
         permissionCount: totalPermissionCount,
         eligiblePermissionCount,
+        freeAllowedPerMonth: freeAllowed,
+        effectiveCount,
         daysDeducted,
         deductionType: rules.deductionType,
         calculationMode: rules.calculationMode,
@@ -372,6 +450,8 @@ async function calculatePermissionDeduction(employeeId, month, departmentId, per
       breakdown: {
         permissionCount: 0,
         eligiblePermissionCount: 0,
+        freeAllowedPerMonth: 0,
+        effectiveCount: 0,
         daysDeducted: 0,
         deductionType: null,
         calculationMode: null,
@@ -658,7 +738,7 @@ function getResolvedDeductionRule(deductionMaster, departmentId, divisionId = nu
  * @param {Object} rule - Resolved rule
  * @param {Number} basicPay - Basic pay
  * @param {Number} grossSalary - Gross salary (for percentage base = 'gross')
- * @param {Object} attendanceData - Attendance data for proration { presentDays, paidLeaveDays, odDays, monthDays }
+ * @param {Object} attendanceData - Attendance data for proration { presentDays, paidLeaveDays, odDays, monthDays } or from dynamic payroll { totalPaidDays, totalDaysInMonth } (from output column)
  * @returns {Number} Deduction amount
  */
 function calculateDeductionAmount(rule, basicPay, grossSalary = null, attendanceData = null) {
@@ -671,15 +751,16 @@ function calculateDeductionAmount(rule, basicPay, grossSalary = null, attendance
   if (rule.type === 'fixed') {
     amount = rule.amount || 0;
 
-    // Prorate based on present days if enabled. Present days already include OD; do not add OD again.
+    // Prorate: use totalPaidDays/totalDaysInMonth from dynamic payroll output column when provided; else present + paid leave + OD.
     if (rule.basedOnPresentDays && attendanceData) {
-      const { presentDays = 0, paidLeaveDays = 0, monthDays = 30 } = attendanceData;
-      const totalPaidDays = presentDays + paidLeaveDays;
+      const { presentDays = 0, paidLeaveDays = 0, odDays = 0, monthDays = 30, totalPaidDays: fromColumn, totalDaysInMonth: totalDaysFromColumn } = attendanceData;
+      const totalPaidDays = typeof fromColumn === 'number' && fromColumn >= 0 ? fromColumn : (presentDays + paidLeaveDays + odDays);
+      const totalDays = (typeof totalDaysFromColumn === 'number' && totalDaysFromColumn > 0) ? totalDaysFromColumn : monthDays;
 
-      if (monthDays > 0) {
-        const perDayAmount = amount / monthDays;
+      if (totalDays > 0) {
+        const perDayAmount = amount / totalDays;
         amount = perDayAmount * totalPaidDays;
-        console.log(`[Deduction] Prorated ${rule.name || 'deduction'}: ${rule.amount} / ${monthDays} * ${totalPaidDays} = ${amount}`);
+        console.log(`[Deduction] Prorated ${rule.name || 'deduction'}: ${rule.amount} / ${totalDays} * ${totalPaidDays} = ${amount}`);
       }
     }
   } else if (rule.type === 'percentage') {

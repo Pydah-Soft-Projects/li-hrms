@@ -99,6 +99,14 @@ const attendanceDailySchema = new mongoose.Schema(
         type: Number,
         default: 0, // 0, 0.5, 1
       },
+      expectedHours: {
+        type: Number,
+        default: null, // From shift.duration for OT/extra calculation
+      },
+      extraHours: {
+        type: Number,
+        default: 0, // workingHours - expectedHours when > 0
+      },
     }],
     // Aggregate fields for multi-shift
     totalShifts: {
@@ -161,7 +169,7 @@ const attendanceDailySchema = new mongoose.Schema(
     }],
     source: {
       type: [String],
-      enum: ['mssql', 'excel', 'manual', 'biometric-realtime'],
+      enum: ['mssql', 'excel', 'manual', 'biometric-realtime', 'roster-sync'],
       default: [],
     },
     lastSyncedAt: {
@@ -276,7 +284,7 @@ attendanceDailySchema.index({ shiftId: 1, date: 1 }, { background: true });
 // Handles overnight shifts where out-time is before in-time (next day scenario)
 // Method to calculate total hours - REMOVED (Legacy)
 
-// Pre-save hook to calculate aggregates from shifts array
+// Pre-save hook to calculate aggregates from shifts array + OD enrichment
 attendanceDailySchema.pre('save', async function () {
   // Fetch roster status once for both shifts-based and legacy logic (HOL/WO, remarks)
   let rosterStatus = null;
@@ -291,8 +299,187 @@ attendanceDailySchema.pre('save', async function () {
     console.error('[AttendanceDaily Model] Error fetching roster status:', err);
   }
 
+  /**
+   * Determine which half of the shift was worked based on punch times vs shift midpoint.
+   * Used for half-day OD: only count OD in present days when OD is for the opposite half.
+   * @param {Array} shifts - this.shifts with inTime, outTime, shiftStartTime, shiftEndTime
+   * @param {string} dateStr - this.date (YYYY-MM-DD)
+   * @returns {'first_half'|'second_half'|null} - null if both halves worked (full day) or cannot determine
+   */
+  const getWorkedHalfFromShifts = (shifts, dateStr) => {
+    if (!shifts || shifts.length === 0) return null;
+    const shift = shifts.find(s => s.shiftStartTime && s.shiftEndTime && s.inTime);
+    if (!shift) return null;
+    const [startH, startM] = (shift.shiftStartTime || '').split(':').map(Number);
+    const [endH, endM] = (shift.shiftEndTime || '').split(':').map(Number);
+    const shiftStartMins = (startH || 0) * 60 + (startM || 0);
+    let shiftEndMins = (endH || 0) * 60 + (endM || 0);
+    if (shiftEndMins <= shiftStartMins) shiftEndMins += 24 * 60; // overnight
+    const durationMins = shiftEndMins - shiftStartMins;
+    const midOffset = durationMins / 2;
+
+    const inDate = new Date(shift.inTime);
+    const inMins = inDate.getHours() * 60 + inDate.getMinutes();
+    let inOffset = inMins - shiftStartMins;
+    if (inOffset < 0) inOffset += 24 * 60;
+    if (inOffset > durationMins) inOffset -= 24 * 60; // wrap for overnight
+    const outDate = shift.outTime ? new Date(shift.outTime) : null;
+    let outOffset = null;
+    if (outDate) {
+      let outMins = outDate.getHours() * 60 + outDate.getMinutes();
+      if (shiftEndMins > 24 * 60 && outMins < shiftStartMins) outMins += 24 * 60;
+      outOffset = outMins - shiftStartMins;
+      if (outOffset < 0) outOffset += 24 * 60;
+    }
+
+    const workedBeforeMid = inOffset < midOffset;
+    const workedAfterMid = outOffset == null ? false : outOffset >= midOffset;
+    if (workedBeforeMid && workedAfterMid) return null; // full day
+    if (workedBeforeMid) return 'first_half';
+    return 'second_half';
+  };
+
+  // OD enrichment: add approved OD contribution to totalWorkingHours, payableShifts, status
+  let odPayableContribution = 0;
+  let odPayableContributionHourBased = 0; // when we apply at shift level, don't add this again to daily payable
+  let odHoursContribution = 0;
+  let odDetailsFromOD = null;
+  let approvedODs = [];
+  try {
+    const OD = require('../../leaves/model/OD');
+    const dayStart = new Date(`${this.date}T00:00:00+05:30`);
+    const dayEnd = new Date(`${this.date}T23:59:59.999+05:30`);
+    approvedODs = await OD.find({
+      emp_no: this.employeeNumber,
+      status: 'approved',
+      isActive: true,
+      fromDate: { $lte: dayEnd },
+      toDate: { $gte: dayStart },
+    }).select('odType_extended isHalfDay halfDayType durationHours odStartTime odEndTime').lean();
+
+    for (const od of approvedODs || []) {
+      if (!odDetailsFromOD) {
+        odDetailsFromOD = {
+          odStartTime: od.odStartTime,
+          odEndTime: od.odEndTime,
+          durationHours: od.durationHours,
+          odType: od.odType_extended || (od.isHalfDay ? 'half_day' : 'full_day'),
+        };
+      }
+      if (od.odType_extended === 'hours') {
+        odHoursContribution += Number(od.durationHours) || 0;
+        const hourPay = Math.min(1, ((Number(od.durationHours) || 0) / 8));
+        odPayableContribution += hourPay;
+        odPayableContributionHourBased += hourPay;
+      } else if (od.odType_extended === 'half_day' || od.isHalfDay) {
+        // Half-day OD: only add 0.5 when OD is for the opposite half of what was worked.
+        // If punches are in first half and OD is for second half (or vice versa), day becomes full (1.0).
+        const workedHalf = this.shifts && this.shifts.length > 0 ? getWorkedHalfFromShifts(this.shifts, this.date) : null;
+        const odHalf = od.halfDayType || null;
+        if (workedHalf && odHalf) {
+          if (workedHalf !== odHalf) {
+            odPayableContribution += 0.5; // OD covers the other half
+          }
+          // else: same half → don't add (employee was present for that half)
+        } else if (workedHalf === null && this.shifts && this.shifts.length > 0) {
+          // Full day worked (both halves) → do not add OD; day is already complete
+        } else {
+          odPayableContribution += 0.5; // No punches or no half info: treat as OD-only half day
+        }
+      } else {
+        odPayableContribution += 1;
+      }
+    }
+    odPayableContribution = Math.round(odPayableContribution * 100) / 100;
+    odPayableContributionHourBased = Math.round(odPayableContributionHourBased * 100) / 100;
+    odHoursContribution = Math.round(odHoursContribution * 100) / 100;
+  } catch (err) {
+    console.error('[AttendanceDaily Model] Error fetching OD for enrichment:', err);
+  }
+
+  // Update each shift in shifts array with OD gap-fill (hour-based OD with start/end times) so segment view is correct
+  let appliedShiftLevelOD = false;
+  const timeStrToMins = (t) => {
+    if (!t || typeof t !== 'string') return 0;
+    const [h, m] = t.split(':').map(Number);
+    return (h || 0) * 60 + (m || 0);
+  };
+  const timeStrToDate = (timeStr, dateStr, nextDay) => {
+    if (!timeStr || !dateStr) return null;
+    let d = dateStr;
+    if (nextDay) {
+      const x = new Date(dateStr + 'T12:00:00+05:30');
+      x.setDate(x.getDate() + 1);
+      d = extractISTComponents(x).dateStr;
+    }
+    const [h, m] = timeStr.split(':').map(Number);
+    const hs = String(h ?? 0).padStart(2, '0');
+    const ms = String(m ?? 0).padStart(2, '0');
+    return new Date(`${d}T${hs}:${ms}:00+05:30`);
+  };
+  const getOverlapMinutes = (startA, endA, startB, endB) => {
+    if (!startA || !endA || !startB || !endB) return 0;
+    const start = Math.max(startA.getTime(), startB.getTime());
+    const end = Math.min(endA.getTime(), endB.getTime());
+    return Math.max(0, (end - start) / (1000 * 60));
+  };
+
+  if (this.shifts && this.shifts.length > 0 && approvedODs && approvedODs.length > 0) {
+    const hourBasedODs = approvedODs.filter((od) => od.odType_extended === 'hours' && od.odStartTime && od.odEndTime);
+    if (hourBasedODs.length > 0) {
+      appliedShiftLevelOD = true;
+      for (const shift of this.shifts) {
+        if (!shift.shiftStartTime || !shift.shiftEndTime) continue;
+        const punchIn = shift.inTime ? new Date(shift.inTime) : null;
+        const punchOut = shift.outTime ? new Date(shift.outTime) : null;
+        const isOvernight = timeStrToMins(shift.shiftEndTime) <= timeStrToMins(shift.shiftStartTime);
+        const shiftStartDate = timeStrToDate(shift.shiftStartTime, this.date, false);
+        const shiftEndDate = timeStrToDate(shift.shiftEndTime, this.date, isOvernight);
+        let addedOdMinutes = 0;
+        for (const od of hourBasedODs) {
+          const odEndNextDay = timeStrToMins(od.odEndTime) <= timeStrToMins(od.odStartTime);
+          const odStart = timeStrToDate(od.odStartTime, this.date, false);
+          const odEnd = timeStrToDate(od.odEndTime, this.date, odEndNextDay);
+          const odInShiftOverlap = getOverlapMinutes(shiftStartDate, shiftEndDate, odStart, odEnd);
+          let odInPunchOverlap = 0;
+          if (punchIn && punchOut) {
+            odInPunchOverlap = getOverlapMinutes(punchIn, punchOut, odStart, odEnd);
+          }
+          addedOdMinutes += Math.max(0, odInShiftOverlap - odInPunchOverlap);
+          // Waive early-out when approved OD end covers shift end (OD covers time after punch-out)
+          if (shift.isEarlyOut && punchOut && odStart <= punchOut && odEnd >= shiftEndDate) {
+            shift.isEarlyOut = false;
+            shift.earlyOutMinutes = 0;
+          }
+          // Waive late-in when approved OD start is at or before shift start (OD covers time before punch-in)
+          if (shift.isLateIn && punchIn && odStart <= shiftStartDate && odEnd >= punchIn) {
+            shift.isLateIn = false;
+            shift.lateInMinutes = 0;
+          }
+        }
+        const addedOdHours = Math.round((addedOdMinutes / 60) * 100) / 100;
+        shift.odHours = addedOdHours;
+        shift.workingHours = Math.round(((Number(shift.punchHours) || 0) + addedOdHours) * 100) / 100;
+        const expectedHours = Number(shift.expectedHours) || 8;
+        const statusDuration = (Number(shift.punchHours) || 0) + addedOdHours;
+        const basePayable = 1;
+        // When hour-based OD contributes hours and total (punch + OD) satisfies shift duration: mark PRESENT, full payable, early-out already waived above
+        if (statusDuration >= expectedHours * 0.75) {
+          shift.status = 'PRESENT';
+          shift.payableShift = basePayable;
+        } else if (statusDuration >= expectedHours * 0.4) {
+          shift.status = 'HALF_DAY';
+          shift.payableShift = basePayable * 0.5;
+        } else {
+          shift.status = shift.inTime && (shift.outTime || addedOdHours > 0) ? 'HALF_DAY' : 'ABSENT';
+          shift.payableShift = statusDuration >= expectedHours * 0.4 ? basePayable * 0.5 : 0;
+        }
+      }
+    }
+  }
+
   if (this.shifts && this.shifts.length > 0) {
-    // 1. Calculate Aggregate Totals
+    // 1. Calculate Aggregate Totals (shift.workingHours already includes OD when appliedShiftLevelOD)
     let totalWorking = 0;
     let totalOT = 0;
     let totalExtra = 0;
@@ -314,57 +501,92 @@ attendanceDailySchema.pre('save', async function () {
       totalExpected += shift.expectedHours || 8;
     });
 
-    this.totalWorkingHours = Math.round(totalWorking * 100) / 100;
+    this.totalWorkingHours = appliedShiftLevelOD
+      ? Math.round(totalWorking * 100) / 100
+      : Math.round((totalWorking + odHoursContribution) * 100) / 100;
     this.totalOTHours = Math.round(totalOT * 100) / 100;
     this.extraHours = Math.round(totalExtra * 100) / 100;
     this.totalLateInMinutes = totalLateIn;
     this.totalEarlyOutMinutes = totalEarlyOut;
-    this.totalExpectedHours = totalExpected; // Placeholder or calculate if possible
+    this.totalExpectedHours = totalExpected;
+    if (appliedShiftLevelOD) {
+      this.odHours = Math.round(this.shifts.reduce((s, sh) => s + (Number(sh.odHours) || 0), 0) * 100) / 100;
+      if (odDetailsFromOD) this.odDetails = { ...(this.odDetails || {}), ...odDetailsFromOD };
+    } else if (odHoursContribution > 0) {
+      this.odHours = (Number(this.odHours) || 0) + odHoursContribution;
+      if (odDetailsFromOD) this.odDetails = { ...(this.odDetails || {}), ...odDetailsFromOD };
+    }
 
-    // 2. Status Determination
-    // Logic:
-    // - PRESENT: If any shift is 'PRESENT' OR the sum of payable units is >= 1.0
-    // - HALF_DAY: If any shift is 'HALF_DAY' OR the sum of payable units is >= 0.5
-    // - ABSENT/PARTIAL: Fallback
+    // 2. Status Determination (includes OD contribution: cumulative punch + OD)
+    // Half-day OD: if day already had HALF_DAY from punches (0.5), adding half-day OD (0.5) -> total 1.0 -> PRESENT.
+    // If day had no half-day from punches, half-day OD alone -> 0.5 payable -> HALF_DAY. Monthly summary is updated in post-save.
     const hasPresentShift = this.shifts.some(s => s.status === 'complete' || s.status === 'PRESENT');
     const hasHalfDayShift = this.shifts.some(s => s.status === 'HALF_DAY');
-    const totalPayable = this.shifts.reduce((acc, s) => acc + (s.payableShift || 0), 0);
-    this.payableShifts = totalPayable;
-
-    if (hasPresentShift || totalPayable >= 0.95) { // 0.95 to account for floating point
-      this.status = 'PRESENT';
-    } else if (hasHalfDayShift || totalPayable >= 0.45) { // 0.45 to account for floating point
-      this.status = 'HALF_DAY';
+    const totalPayableFromShifts = this.shifts.reduce((acc, s) => acc + (s.payableShift || 0), 0);
+    // When OD was applied at shift level, hour-based payable is already in shift.payableShift; add only half/full-day OD
+    const payableToAdd = appliedShiftLevelOD
+      ? odPayableContribution - (odPayableContributionHourBased || 0)
+      : odPayableContribution;
+    const totalPayableWithOD = totalPayableFromShifts + Math.max(0, payableToAdd);
+    const hasPunches = this.shifts.some(s => s.inTime || (s.outTime && s.outTime !== s.inTime));
+    // PARTIAL + OD: day has punches (incomplete) but OD approved for that day → treat as OD day for pay, keep PARTIAL so we don't double-count in monthly summary; punch/in-time remain as-is.
+    const wouldBePartialFromShifts = hasPunches && !hasPresentShift && !hasHalfDayShift && totalPayableFromShifts < 0.45;
+    if (wouldBePartialFromShifts && odPayableContribution > 0) {
+      this.status = 'PARTIAL';
+      this.payableShifts = Math.round(odPayableContribution * 100) / 100;
+      // totalWorkingHours, shifts (punch in/out), late/early etc. are already set above – unchanged
     } else {
-      // Check if there are any punches at all to distinguish between ABSENT and PARTIAL
-      const hasPunches = this.shifts.some(s => s.inTime || (s.outTime && s.outTime !== s.inTime));
-      this.status = hasPunches ? 'PARTIAL' : 'ABSENT';
-    }
-  } else {
-    // Legacy/No-Shift Logic (likely unused now but good for safety)
-    if (this.totalWorkingHours > 0) {
-      this.status = 'PRESENT'; // Simplified fallback
-    } else {
-      // No punches - use roster status if available, else default to ABSENT
-      this.payableShifts = 0;
-      if (rosterStatus === 'HOL') {
-        this.status = 'HOLIDAY';
-      } else if (rosterStatus === 'WO') {
-        this.status = 'WEEK_OFF';
+      this.payableShifts = Math.round(totalPayableWithOD * 100) / 100;
+      if (hasPresentShift || totalPayableWithOD >= 0.95) {
+        this.status = 'PRESENT'; // e.g. half-day punch + half-day OD = 1.0 -> PRESENT
+      } else if (hasHalfDayShift || totalPayableWithOD >= 0.45) {
+        this.status = 'HALF_DAY'; // e.g. half-day OD only -> 0.5 -> HALF_DAY
       } else {
-        this.status = 'ABSENT';
+        this.status = hasPunches ? 'PARTIAL' : 'ABSENT';
       }
     }
+    // Roster overrides: if roster has HOL or WO, day is holiday/week-off only; keep punches and shift details but do not count toward present/payable
+    if (rosterStatus === 'HOL' || rosterStatus === 'WO') {
+      this.status = rosterStatus === 'HOL' ? 'HOLIDAY' : 'WEEK_OFF';
+      this.payableShifts = 0;
+      if (this.totalWorkingHours > 0) {
+        const dayLabel = rosterStatus === 'HOL' ? 'Holiday' : 'Week Off';
+        const remark = `Worked on ${dayLabel}`;
+        if (!this.notes) this.notes = remark;
+        else if (!this.notes.includes(remark)) this.notes = `${this.notes} | ${remark}`;
+      }
+    }
+  } else {
+    // No shifts (OD-only or no punches): use OD contribution; half-day OD -> HALF_DAY, full-day OD -> PRESENT
+    if (odPayableContribution > 0 || odHoursContribution > 0) {
+      this.payableShifts = Math.round(odPayableContribution * 100) / 100;
+      this.totalWorkingHours = Math.round(((Number(this.totalWorkingHours) || 0) + odHoursContribution) * 100) / 100;
+      if (odHoursContribution > 0) {
+        this.odHours = odHoursContribution;
+        if (odDetailsFromOD) this.odDetails = odDetailsFromOD;
+      }
+      if (this.payableShifts >= 0.95) this.status = 'PRESENT';   // full-day OD or multiple OD
+      else if (this.payableShifts >= 0.45) this.status = 'HALF_DAY'; // half-day OD
+      else this.status = 'PARTIAL';
+    } else if (this.totalWorkingHours > 0) {
+      this.status = 'PRESENT'; // Simplified fallback
+    } else {
+      this.payableShifts = 0;
+      if (rosterStatus === 'HOL') this.status = 'HOLIDAY';
+      else if (rosterStatus === 'WO') this.status = 'WEEK_OFF';
+      else this.status = 'ABSENT';
+    }
+    // Roster overrides: holiday/week-off take precedence; do not count toward present/payable
+    if (rosterStatus === 'HOL' || rosterStatus === 'WO') {
+      this.status = rosterStatus === 'HOL' ? 'HOLIDAY' : 'WEEK_OFF';
+      this.payableShifts = 0;
+    }
     // Special Requirement: If worked on Holiday/Week-Off (have punches on HOL/WO day), add remark
-    // Checked via totalWorkingHours now
     if ((rosterStatus === 'HOL' || rosterStatus === 'WO') && (this.totalWorkingHours > 0)) {
       const dayLabel = rosterStatus === 'HOL' ? 'Holiday' : 'Week Off';
       const remark = `Worked on ${dayLabel}`;
-      if (!this.notes) {
-        this.notes = remark;
-      } else if (!this.notes.includes(remark)) {
-        this.notes = `${this.notes} | ${remark}`;
-      }
+      if (!this.notes) this.notes = remark;
+      else if (!this.notes.includes(remark)) this.notes = `${this.notes} | ${remark}`;
     }
   }
 
@@ -408,69 +630,60 @@ attendanceDailySchema.pre('save', async function () {
   }
 });
 
-// Post-save hook to recalculate monthly summary and detect extra hours
-attendanceDailySchema.post('save', async function () {
-  try {
-    const { recalculateOnAttendanceUpdate } = require('../services/summaryCalculationService');
-    const { detectExtraHours } = require('../services/extraHoursService');
+// Post-save hook: always run monthly summary recalculation when daily is saved (including when OD approval updates status/payable).
+// Ensures half-day OD + half-day punch -> PRESENT and half-day OD only -> HALF_DAY are reflected in monthly summary.
+attendanceDailySchema.post('save', function () {
+  const employeeNumber = (this.employeeNumber && String(this.employeeNumber).trim()) ? String(this.employeeNumber).toUpperCase() : this.employeeNumber;
+  const date = this.date;
+  const shifts = this.shifts;
 
-    // If shifts array was modified, we need to recalculate the entire month
-    if (this.isModified('shifts')) {
-      const { year, month: monthNumber } = extractISTComponents(this.date);
-
-      const Employee = require('../../employees/model/Employee');
-      const employee = await Employee.findOne({ emp_no: this.employeeNumber, is_active: { $ne: false } });
-
-      if (employee) {
-        const { calculateMonthlySummary } = require('../services/summaryCalculationService');
-        await calculateMonthlySummary(employee._id, employee.emp_no, year, monthNumber);
-      }
-    } else {
-      // Regular update - just recalculate for that date's month
-      await recalculateOnAttendanceUpdate(this.employeeNumber, this.date);
-    }
-
-    // Detect extra hours if shifts were modified
-    if (this.isModified('shifts')) {
-      if (this.shifts && this.shifts.length > 0) {
-        // Only detect if we have shifts
-        await detectExtraHours(this.employeeNumber, this.date);
-      }
-    }
-  } catch (error) {
-    // Don't throw - this is a background operation
-    console.error('Error in post-save hook:', error);
-  }
-});
-
-/**
- * Handle findOneAndUpdate to trigger summary recalculation
- * Since findOneAndUpdate bypasses 'save' hooks, we need this explicit hook
- */
-attendanceDailySchema.post('findOneAndUpdate', async function () {
-  try {
-    const query = this.getQuery();
-    const update = this.getUpdate();
-
-    // We only trigger if shifts were updated (sync/multi-shift) OR status was updated
-    const isShiftsUpdate = update.$set?.shifts || update.shifts;
-    const isStatusUpdate = update.$set?.status || update.status;
-    const isManualOverride = update.$set?.isEdited || update.isEdited;
-
-    if (query.employeeNumber && query.date && (isShiftsUpdate || isStatusUpdate || isManualOverride)) {
+  setImmediate(async () => {
+    try {
+      console.log('[OD-FLOW] AttendanceDaily post-save: triggering recalculateOnAttendanceUpdate', { employeeNumber, date });
       const { recalculateOnAttendanceUpdate } = require('../services/summaryCalculationService');
       const { detectExtraHours } = require('../services/extraHoursService');
 
-      console.log(`[AttendanceDaily Hook] Triggering recalculation for ${query.employeeNumber} on ${query.date} (findOneAndUpdate)`);
+      // Always update monthly summary so present days and payable shifts reflect latest daily (e.g. after OD approval)
+      await recalculateOnAttendanceUpdate(employeeNumber, date);
 
-      // Recalculate summary (handles monthly summary update)
-      await recalculateOnAttendanceUpdate(query.employeeNumber, query.date);
-
-      // Detect extra hours (only if it was a shifts update)
-      if (isShiftsUpdate) {
-        await detectExtraHours(query.employeeNumber, query.date);
+      if (shifts && shifts.length > 0) {
+        await detectExtraHours(employeeNumber, date);
       }
+    } catch (error) {
+      console.error('[AttendanceDaily] Background summary recalc failed:', error);
     }
+  });
+});
+
+/**
+ * Handle findOneAndUpdate to trigger summary recalculation (runs in background).
+ * findOneAndUpdate bypasses 'save' hooks, so we need this hook when updates go through updateOne/findOneAndUpdate.
+ */
+attendanceDailySchema.post('findOneAndUpdate', async function (result) {
+  try {
+    const query = this.getQuery ? this.getQuery() : {};
+    const update = this.getUpdate ? this.getUpdate() : {};
+    const isShiftsUpdate = update.$set?.shifts || update.shifts;
+    const isStatusUpdate = update.$set?.status || update.status;
+    const isManualOverride = update.$set?.isEdited || update.isEdited;
+    if (!isShiftsUpdate && !isStatusUpdate && !isManualOverride) return;
+
+    const employeeNumber = (result && result.employeeNumber) || query.employeeNumber;
+    const date = (result && result.date) || query.date;
+    if (!employeeNumber || !date) return;
+
+    setImmediate(async () => {
+      try {
+        const { recalculateOnAttendanceUpdate } = require('../services/summaryCalculationService');
+        const { detectExtraHours } = require('../services/extraHoursService');
+        await recalculateOnAttendanceUpdate(employeeNumber, date);
+        if (isShiftsUpdate) {
+          await detectExtraHours(employeeNumber, date);
+        }
+      } catch (err) {
+        console.error('[AttendanceDaily findOneAndUpdate hook] Background summary recalc failed:', err);
+      }
+    });
   } catch (error) {
     console.error('Error in post-findOneAndUpdate hook:', error);
   }

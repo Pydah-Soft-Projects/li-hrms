@@ -229,4 +229,101 @@ describe('Deduction Service - Based on Present Days', () => {
       expect(result).toBe(3500);
     });
   });
+
+  describe('Free limit & effective count (permission/attendance deduction)', () => {
+    const perDayBasicPay = 1000;
+
+    test('effectiveCount = total - freeAllowed: 5 permissions, free 3 → effective 2', () => {
+      const total = 5;
+      const freeAllowed = 3;
+      const effectiveCount = Math.max(0, total - freeAllowed);
+      expect(effectiveCount).toBe(2);
+    });
+
+    test('effectiveCount = total - freeAllowed: 3 permissions, free 3 → effective 0', () => {
+      const total = 3;
+      const freeAllowed = 3;
+      const effectiveCount = Math.max(0, total - freeAllowed);
+      expect(effectiveCount).toBe(0);
+    });
+
+    test('effectiveCount never negative when total < freeAllowed', () => {
+      const total = 2;
+      const freeAllowed = 5;
+      const effectiveCount = Math.max(0, total - freeAllowed);
+      expect(effectiveCount).toBe(0);
+    });
+
+    test('threshold applied on effectiveCount: 6 effective, threshold 3, full_day floor → 2 days', () => {
+      const effectiveCount = 6;
+      const threshold = 3;
+      const multiplier = Math.floor(effectiveCount / threshold);
+      const remainder = effectiveCount % threshold;
+      const days = deductionService.calculateDaysToDeduct(
+        multiplier,
+        remainder,
+        threshold,
+        'full_day',
+        null,
+        null,
+        perDayBasicPay,
+        'floor'
+      );
+      expect(days).toBe(2);
+    });
+
+    test('threshold applied on effectiveCount: 3 effective, threshold 3, full_day floor → 1 day', () => {
+      const effectiveCount = 3;
+      const threshold = 3;
+      const multiplier = Math.floor(effectiveCount / threshold);
+      const remainder = effectiveCount % threshold;
+      const days = deductionService.calculateDaysToDeduct(
+        multiplier,
+        remainder,
+        threshold,
+        'full_day',
+        null,
+        null,
+        perDayBasicPay,
+        'floor'
+      );
+      expect(days).toBe(1);
+    });
+
+    test('2 effective, threshold 3, full_day proportional → 0.67 days', () => {
+      const effectiveCount = 2;
+      const threshold = 3;
+      const multiplier = Math.floor(effectiveCount / threshold);
+      const remainder = effectiveCount % threshold;
+      const days = deductionService.calculateDaysToDeduct(
+        multiplier,
+        remainder,
+        threshold,
+        'full_day',
+        null,
+        null,
+        perDayBasicPay,
+        'proportional'
+      );
+      expect(days).toBe(0.67);
+    });
+
+    test('custom_days 1.5 per unit: 3 effective, threshold 3, floor → 1.5 days', () => {
+      const effectiveCount = 3;
+      const threshold = 3;
+      const multiplier = Math.floor(effectiveCount / threshold);
+      const remainder = effectiveCount % threshold;
+      const days = deductionService.calculateDaysToDeduct(
+        multiplier,
+        remainder,
+        threshold,
+        'custom_days',
+        1.5,
+        null,
+        perDayBasicPay,
+        'floor'
+      );
+      expect(days).toBe(1.5);
+    });
+  });
 });

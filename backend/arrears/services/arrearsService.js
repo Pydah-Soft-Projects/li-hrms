@@ -11,23 +11,45 @@ class ArrearsService {
    */
   static async createArrearsRequest(data, userId) {
     try {
+      const type = (data.type || 'incremental').toLowerCase();
+      if (!['incremental', 'direct'].includes(type)) {
+        throw new Error('Invalid type. Use incremental or direct');
+      }
+
       // Validate employee exists
       const employee = await Employee.findById(data.employee);
       if (!employee) {
         throw new Error('Employee not found');
       }
 
-      // Validate months format
+      if (type === 'direct') {
+        // Direct arrears: only amount and remarks required
+        const amount = Number(data.totalAmount ?? data.amount);
+        const reason = (data.reason || '').trim();
+        if (!reason) throw new Error('Remarks are required for direct arrears');
+        if (!Number.isFinite(amount) || amount <= 0) throw new Error('Valid amount is required for direct arrears');
+
+        const arrears = new ArrearsRequest({
+          type: 'direct',
+          employee: data.employee,
+          totalAmount: amount,
+          remainingAmount: amount,
+          reason,
+          createdBy: userId,
+          status: 'draft',
+        });
+        await arrears.save();
+        return arrears.populate('employee createdBy');
+      }
+
+      // Incremental arrears: validate months and total
       if (!this.isValidMonthFormat(data.startMonth) || !this.isValidMonthFormat(data.endMonth)) {
         throw new Error('Invalid month format. Use YYYY-MM');
       }
-
-      // Validate start month is before or equal to end month
       if (data.startMonth > data.endMonth) {
         throw new Error('Start month must be before or equal to end month');
       }
 
-      // Calculate total amount based on breakdown if provided, else legacy calculation
       let calculatedTotal = 0;
       if (data.calculationBreakdown && Array.isArray(data.calculationBreakdown) && data.calculationBreakdown.length > 0) {
         calculatedTotal = data.calculationBreakdown.reduce((sum, item) => sum + item.proratedAmount, 0);
@@ -35,17 +57,16 @@ class ArrearsService {
         const monthCount = this.getMonthDifference(data.startMonth, data.endMonth);
         calculatedTotal = data.monthlyAmount * monthCount;
       }
-
-      // Validate total amount matches calculation (allow small precision difference)
       if (Math.abs(data.totalAmount - calculatedTotal) > 0.05) {
         throw new Error(`Total amount mismatch. Calculated: ${calculatedTotal.toFixed(2)}, Provided: ${data.totalAmount}`);
       }
 
       const arrears = new ArrearsRequest({
         ...data,
+        type: 'incremental',
         createdBy: userId,
         remainingAmount: data.totalAmount,
-        status: 'draft'
+        status: 'draft',
       });
 
       await arrears.save();

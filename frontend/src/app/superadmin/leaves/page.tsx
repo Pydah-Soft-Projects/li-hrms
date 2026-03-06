@@ -1,14 +1,18 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { api } from '@/lib/api';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import dynamic from 'next/dynamic';
+import { api, Department, Division, Designation } from '@/lib/api';
 import { auth } from '@/lib/auth';
 import { toast, ToastContainer } from 'react-toastify';
 import Swal from 'sweetalert2';
 import 'react-toastify/dist/ReactToastify.css';
 import Spinner from '@/components/Spinner';
 import LocationPhotoCapture from '@/components/LocationPhotoCapture';
-import { Loader2 } from 'lucide-react';
+import EmployeeSelect from '@/components/EmployeeSelect';
+import { Loader2, Calendar, Briefcase, X, Clock as Clock3 } from 'lucide-react';
+
+const LocationMap = dynamic(() => import('@/components/LocationMap'), { ssr: false });
 
 
 // Icons
@@ -365,7 +369,26 @@ export default function LeavesPage() {
   const [ods, setODs] = useState<ODApplication[]>([]);
   const [pendingLeaves, setPendingLeaves] = useState<LeaveApplication[]>([]);
   const [pendingODs, setPendingODs] = useState<ODApplication[]>([]);
+  const [pendingLeavesTotal, setPendingLeavesTotal] = useState(0);
+  const [pendingODsTotal, setPendingODsTotal] = useState(0);
+  const [pendingLeavesPage, setPendingLeavesPage] = useState(1);
+  const [pendingODsPage, setPendingODsPage] = useState(1);
+  const [pendingLimit, setPendingLimit] = useState(20);
+  const [loadingPending, setLoadingPending] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  // Pagination for Leaves and OD tabs (all requests list)
+  const PER_PAGE_OPTIONS = [10, 20, 50, 100];
+  const [leavesLimit, setLeavesLimit] = useState(20);
+  const [odsLimit, setODsLimit] = useState(20);
+  const [leavesPage, setLeavesPage] = useState(1);
+  const [leavesTotal, setLeavesTotal] = useState(0);
+  const [odsPage, setODsPage] = useState(1);
+  const [odsTotal, setODsTotal] = useState(0);
+
+  // Dashboard stats (global when no filter, filtered when filter present)
+  const [dashboardStats, setDashboardStats] = useState({ totalLeaves: 0, totalODs: 0, totalPending: 0, totalApproved: 0 });
+  const [loadingStats, setLoadingStats] = useState(true);
 
   // Dialog states
   const [showApplyDialog, setShowApplyDialog] = useState(false);
@@ -385,6 +408,15 @@ export default function LeavesPage() {
   const [leaveTypes, setLeaveTypes] = useState<any[]>([]);
   const [odTypes, setODTypes] = useState<any[]>([]);
 
+  // Leave / OD policy (backdated & future-date bounds)
+  const defaultPolicy = { allowBackdated: false, maxBackdatedDays: 0, allowFutureDated: true, maxAdvanceDays: 90 };
+  const [leavePolicy, setLeavePolicy] = useState<typeof defaultPolicy>(defaultPolicy);
+  const [odPolicy, setODPolicy] = useState<typeof defaultPolicy>({ ...defaultPolicy, allowBackdated: true, maxBackdatedDays: 30 });
+  const [leaveWorkflowAllowHigherAuthority, setLeaveWorkflowAllowHigherAuthority] = useState(false);
+  const [leaveWorkflowRoleOrder, setLeaveWorkflowRoleOrder] = useState<string[]>([]);
+  const [odWorkflowAllowHigherAuthority, setODWorkflowAllowHigherAuthority] = useState(false);
+  const [odWorkflowRoleOrder, setODWorkflowRoleOrder] = useState<string[]>([]);
+
   // Employees for "Apply For" selection
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [employeeSearch, setEmployeeSearch] = useState('');
@@ -394,6 +426,7 @@ export default function LeavesPage() {
   // CL balance for selected month (when leave type is CL)
   const [clBalanceForMonth, setClBalanceForMonth] = useState<number | null>(null);
   const [clBalanceLoading, setClBalanceLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState<string>('');
 
   // Form state
   const [formData, setFormData] = useState<{
@@ -444,30 +477,224 @@ export default function LeavesPage() {
     capturedAt: Date;
   } | null>(null);
 
+  // Filter Dropdown States
+  const [searchTerm, setSearchTerm] = useState('');
+  const [divisions, setDivisions] = useState<Division[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [designations, setDesignations] = useState<Designation[]>([]);
+
+  const [selectedDivisionFilter, setSelectedDivisionFilter] = useState('');
+  const [selectedDepartmentFilter, setSelectedDepartmentFilter] = useState('');
+  const [selectedDesignationFilter, setSelectedDesignationFilter] = useState('');
+
+  // Form validation for Apply button
+  const isFormValid = () => {
+    // 1. Common required fields
+    if (!formData.fromDate || !formData.toDate || !formData.purpose || !formData.contactNumber) {
+      return false;
+    }
+
+    // 2. Employee selection (required for admin)
+    if (!selectedEmployee) {
+      return false;
+    }
+
+    // 3. Type-specific validation
+    if (applyType === 'leave') {
+      if (!formData.leaveType) return false;
+    } else {
+      // OD Validation
+      if (!formData.odType || !formData.placeVisited) return false;
+
+      // Hours-specific OD
+      if (formData.odType_extended === 'hours') {
+        if (!formData.odStartTime || !formData.odEndTime) return false;
+      }
+
+      // Photo Evidence & Location required for OD
+      if (!evidenceFile || !locationData) return false;
+    }
+
+    return true;
+  };
+
+  const loadFilterData = async () => {
+    try {
+      const [divRes, deptRes, desigRes] = await Promise.all([
+        api.getDivisions(),
+        api.getDepartments(),
+        api.getAllDesignations()
+      ]);
+
+      if (divRes.success && divRes.data) setDivisions(divRes.data);
+      if (deptRes.success && deptRes.data) setDepartments(deptRes.data as any[]);
+      if (desigRes.success && desigRes.data) setDesignations(desigRes.data);
+    } catch (err) {
+      console.error('Failed to load filter options:', err);
+    }
+  };
+
+  // Filtered departments based on selected division
+  const filteredDepartments = useMemo(() => {
+    if (!selectedDivisionFilter) return departments;
+    const div = divisions.find(d => String(d._id) === selectedDivisionFilter);
+    if (!div || !div.departments) return departments;
+    return departments.filter(dept =>
+      (div.departments || []).some(d =>
+        (typeof d === 'string' ? d : String((d as any)._id)) === String(dept._id)
+      )
+    );
+  }, [selectedDivisionFilter, divisions, departments]);
+
   useEffect(() => {
     loadData();
     loadTypes();
     loadEmployees();
+    loadFilterData();
+    loadDashboardStats();
   }, []);
+
+  useEffect(() => {
+    loadDashboardStats();
+  }, [searchTerm, selectedDivisionFilter, selectedDepartmentFilter, selectedDesignationFilter]);
+
+  useEffect(() => {
+    if (activeTab !== 'pending') return;
+    setPendingLeavesPage(1);
+    setPendingODsPage(1);
+    loadPendingData(1, 1);
+  }, [activeTab, selectedDivisionFilter, selectedDepartmentFilter, selectedDesignationFilter, searchTerm]);
+
+  // Shared filters for Leaves and OD tabs (used for API calls)
+  const getLeavesODFilters = () => ({
+    search: searchTerm?.trim() || undefined,
+    department: selectedDepartmentFilter || undefined,
+    division: selectedDivisionFilter || undefined,
+    designation: selectedDesignationFilter || undefined,
+  });
+
+  const hasActiveFilter = !!(searchTerm?.trim() || selectedDivisionFilter || selectedDepartmentFilter || selectedDesignationFilter);
+
+  const loadDashboardStats = async () => {
+    setLoadingStats(true);
+    try {
+      const filters = hasActiveFilter ? getLeavesODFilters() : undefined;
+      const res = await api.getLeaveDashboardStats(filters);
+      const data = (res as any)?.data;
+      if ((res as any)?.success && data) {
+        setDashboardStats({
+          totalLeaves: data.totalLeaves ?? 0,
+          totalODs: data.totalODs ?? 0,
+          totalPending: data.totalPending ?? 0,
+          totalApproved: data.totalApproved ?? 0,
+        });
+      }
+    } catch {
+      // non-blocking
+    } finally {
+      setLoadingStats(false);
+    }
+  };
 
   const loadData = async () => {
     setLoading(true);
+    const filters = getLeavesODFilters();
     try {
-      const [leavesRes, odsRes, pendingLeavesRes, pendingODsRes] = await Promise.all([
-        api.getLeaves({ limit: 50 }),
-        api.getODs({ limit: 50 }),
-        api.getPendingLeaveApprovals(),
-        api.getPendingODApprovals(),
+      const [leavesRes, odsRes] = await Promise.all([
+        api.getLeaves({ ...filters, page: 1, limit: leavesLimit }),
+        api.getODs({ ...filters, page: 1, limit: odsLimit }),
       ]);
-
-      if (leavesRes.success) setLeaves(leavesRes.data || []);
-      if (odsRes.success) setODs(odsRes.data || []);
-      if (pendingLeavesRes.success) setPendingLeaves(pendingLeavesRes.data || []);
-      if (pendingODsRes.success) setPendingODs(pendingODsRes.data || []);
+      if (leavesRes.success) {
+        setLeaves(leavesRes.data || []);
+        setLeavesTotal((leavesRes as any).total ?? 0);
+        setLeavesPage(1);
+      }
+      if (odsRes.success) {
+        setODs(odsRes.data || []);
+        setODsTotal((odsRes as any).total ?? 0);
+        setODsPage(1);
+      }
     } catch (err: any) {
       toast.error(err.message || 'Failed to load data');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadLeavesData = async (page: number, limitOverride?: number) => {
+    const limit = limitOverride ?? leavesLimit;
+    setLoading(true);
+    try {
+      const res = await api.getLeaves({ ...getLeavesODFilters(), page, limit });
+      if (res.success) {
+        setLeaves(res.data || []);
+        setLeavesTotal((res as any).total ?? 0);
+        setLeavesPage(page);
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to load leaves');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadODsData = async (page: number, limitOverride?: number) => {
+    const limit = limitOverride ?? odsLimit;
+    setLoading(true);
+    try {
+      const res = await api.getODs({ ...getLeavesODFilters(), page, limit });
+      if (res.success) {
+        setODs(res.data || []);
+        setODsTotal((res as any).total ?? 0);
+        setODsPage(page);
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to load OD requests');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // When filters/search change, refetch leaves and OD with page 1 (skip initial mount to avoid double fetch)
+  const filtersLoadedOnce = useRef(false);
+  useEffect(() => {
+    if (!filtersLoadedOnce.current) {
+      filtersLoadedOnce.current = true;
+      return;
+    }
+    loadData();
+  }, [searchTerm, selectedDivisionFilter, selectedDepartmentFilter, selectedDesignationFilter]);
+
+  const getPendingFilters = () => ({
+    search: searchTerm?.trim() || undefined,
+    department: selectedDepartmentFilter || undefined,
+    division: selectedDivisionFilter || undefined,
+    designation: selectedDesignationFilter || undefined,
+  });
+
+  const loadPendingData = async (leavePage = pendingLeavesPage, odPage = pendingODsPage, limitOverride?: number) => {
+    if (activeTab !== 'pending') return;
+    const limit = limitOverride ?? pendingLimit;
+    if (limitOverride != null) setPendingLimit(limitOverride);
+    setLoadingPending(true);
+    const filters = getPendingFilters();
+    try {
+      const [leavesRes, odsRes] = await Promise.all([
+        api.getPendingLeaveApprovals({ ...filters, page: leavePage, limit }),
+        api.getPendingODApprovals({ ...filters, page: odPage, limit }),
+      ]);
+      if (leavesRes.success) {
+        setPendingLeaves(leavesRes.data || []);
+        setPendingLeavesTotal((leavesRes as any).total ?? (leavesRes.data?.length ?? 0));
+      }
+      if (odsRes.success) {
+        setPendingODs(odsRes.data || []);
+        setPendingODsTotal((odsRes as any).total ?? (odsRes.data?.length ?? 0));
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to load pending approvals');
+    } finally {
+      setLoadingPending(false);
     }
   };
 
@@ -485,10 +712,44 @@ export default function LeavesPage() {
         fetchedLeaveTypes = leaveSettingsRes.data.types.filter((t: any) => t.isActive !== false);
       }
 
+      // Store leave policy settings
+      if (leaveSettingsRes.success && leaveSettingsRes.data?.settings) {
+        const s = leaveSettingsRes.data.settings;
+        setLeavePolicy({
+          allowBackdated: s.allowBackdated ?? false,
+          maxBackdatedDays: s.maxBackdatedDays ?? 0,
+          allowFutureDated: s.allowFutureDated ?? true,
+          maxAdvanceDays: s.maxAdvanceDays ?? 90,
+        });
+      }
+      if (leaveSettingsRes.success && leaveSettingsRes.data?.workflow) {
+        const wf = leaveSettingsRes.data.workflow as { allowHigherAuthorityToApproveLowerLevels?: boolean; steps?: { stepOrder: number; approverRole: string }[] };
+        setLeaveWorkflowAllowHigherAuthority(Boolean(wf.allowHigherAuthorityToApproveLowerLevels));
+        const steps = (wf.steps || []).slice().sort((a: any, b: any) => (a.stepOrder ?? 999) - (b.stepOrder ?? 999));
+        setLeaveWorkflowRoleOrder(steps.map((st: any) => String(st.approverRole || '').toLowerCase()).filter(Boolean));
+      }
+
       // Extract OD types from settings (field is 'types' not 'odTypes')
       let fetchedODTypes: any[] = [];
       if (odSettingsRes.success && odSettingsRes.data?.types) {
         fetchedODTypes = odSettingsRes.data.types.filter((t: any) => t.isActive !== false);
+      }
+
+      // Store OD policy settings
+      if (odSettingsRes.success && odSettingsRes.data?.settings) {
+        const s = odSettingsRes.data.settings;
+        setODPolicy({
+          allowBackdated: s.allowBackdated ?? true,
+          maxBackdatedDays: s.maxBackdatedDays ?? 30,
+          allowFutureDated: s.allowFutureDated ?? true,
+          maxAdvanceDays: s.maxAdvanceDays ?? 90,
+        });
+      }
+      if (odSettingsRes.success && odSettingsRes.data?.workflow) {
+        const wf = odSettingsRes.data.workflow as { allowHigherAuthorityToApproveLowerLevels?: boolean; steps?: { stepOrder: number; approverRole: string }[] };
+        setODWorkflowAllowHigherAuthority(Boolean(wf.allowHigherAuthorityToApproveLowerLevels));
+        const steps = (wf.steps || []).slice().sort((a: any, b: any) => (a.stepOrder ?? 999) - (b.stepOrder ?? 999));
+        setODWorkflowRoleOrder(steps.map((st: any) => String(st.approverRole || '').toLowerCase()).filter(Boolean));
       }
 
       // Use fetched types or defaults
@@ -557,6 +818,8 @@ export default function LeavesPage() {
 
   const handleApply = async (e: React.FormEvent) => {
     e.preventDefault();
+    setLoading(true);
+    setLoadingMessage('Initializing...');
 
     // Validate employee selection
     if (!selectedEmployee) {
@@ -588,6 +851,7 @@ export default function LeavesPage() {
     }
 
     try {
+      setLoadingMessage('Preparing application...');
 
       // Validate hour-based OD
       if (applyType === 'od' && formData.odType_extended === 'hours') {
@@ -609,6 +873,7 @@ export default function LeavesPage() {
 
         // Lazy Upload
         try {
+          setLoadingMessage('Uploading photo');
           const uploadRes = await api.uploadEvidence(evidenceFile) as any;
           if (!uploadRes.success) throw new Error('Upload failed');
 
@@ -652,6 +917,7 @@ export default function LeavesPage() {
         }
       }
 
+      setLoadingMessage('Saving application to database...');
       let response;
       const contactNum = formData.contactNumber || selectedEmployee.phone_number || '';
 
@@ -717,6 +983,9 @@ export default function LeavesPage() {
       }
     } catch (err: any) {
       toast.error(err.message || 'Failed to apply');
+    } finally {
+      setLoading(false);
+      setLoadingMessage('');
     }
   };
 
@@ -738,6 +1007,8 @@ export default function LeavesPage() {
           showConfirmButton: false,
         });
         loadData();
+        loadDashboardStats();
+        if (activeTab === 'pending') loadPendingData(pendingLeavesPage, pendingODsPage);
       } else {
         Swal.fire({
           icon: 'error',
@@ -774,6 +1045,7 @@ export default function LeavesPage() {
     setEmployeeSearch('');
     setShowEmployeeDropdown(false);
     setEvidenceFile(null);
+    setLoadingMessage('');
     setLocationData(null);
   };
 
@@ -869,19 +1141,27 @@ export default function LeavesPage() {
       setClBalanceForMonth(null);
       return;
     }
-    const from = parseDateOnly(formData.fromDate);
-    const month = from.getMonth() + 1;
-    const year = from.getFullYear();
+    // Determine pay-cycle period from the selected date: send baseDate (not calendar month/year)
+    // so the backend resolves the correct period (e.g. 26 Jan–25 Feb for 31 Jan when cycle is 26–25).
+    const raw = formData.fromDate?.includes('T') ? formData.fromDate.split('T')[0] : (formData.fromDate || '');
+    const baseDateForApi = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : toISODate(formData.fromDate) || raw;
     let cancelled = false;
     setClBalanceLoading(true);
     setClBalanceForMonth(null);
-    api.getLeaveRegister({ employeeId: String(targetEmployeeId), month, year })
+    api.getLeaveRegister({
+      employeeId: String(targetEmployeeId),
+      baseDate: baseDateForApi,
+      balanceAsOf: true,
+    })
       .then((res: any) => {
         if (cancelled) return;
         const data = res?.data;
         if (Array.isArray(data) && data.length > 0 && data[0].casualLeave) {
-          const balance = Number(data[0].casualLeave.balance);
-          setClBalanceForMonth(Number.isFinite(balance) ? balance : 0);
+          const cl = data[0].casualLeave;
+          const balance = Number(cl.balance);
+          const allowedRaw = cl.allowedRemaining != null ? Number(cl.allowedRemaining) : balance;
+          const clCap = Number.isFinite(allowedRaw) ? Math.max(0, allowedRaw) : (Number.isFinite(balance) ? balance : 0);
+          setClBalanceForMonth(clCap);
         } else {
           setClBalanceForMonth(0);
         }
@@ -939,10 +1219,20 @@ export default function LeavesPage() {
   const [canRevoke, setCanRevoke] = useState(false);
   const [revokeReason, setRevokeReason] = useState('');
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [isSubAdmin, setIsSubAdmin] = useState(false);
+  const [isHR, setIsHR] = useState(false);
+  const [isManager, setIsManager] = useState(false);
+  const [isHOD, setIsHOD] = useState(false);
 
   useEffect(() => {
     const user = auth.getUser();
-    setIsSuperAdmin(user?.role === 'super_admin');
+    if (user) {
+      setIsSuperAdmin(user.role === 'super_admin');
+      setIsSubAdmin(user.role === 'sub_admin');
+      setIsHR(user.role === 'hr');
+      setIsManager(user.role === 'manager');
+      setIsHOD(user.role === 'hod');
+    }
   }, []);
 
   const buildInitialSplits = (leave: LeaveApplication) => {
@@ -1165,25 +1455,83 @@ export default function LeavesPage() {
     }
   };
 
-  const totalPending = pendingLeaves.length + pendingODs.length;
+  const totalPending = pendingLeavesTotal + pendingODsTotal;
 
-  const canPerformAction = (item: LeaveApplication | ODApplication) => {
+  const applyFilters = (item: LeaveApplication | ODApplication) => {
+    if (searchTerm) {
+      const lowerSearch = searchTerm.toLowerCase();
+      const empName = item.employeeId?.employee_name || item.employeeId?.first_name || '';
+      const empNo = item.emp_no || item.employeeId?.emp_no || '';
+      if (!empName.toLowerCase().includes(lowerSearch) && !empNo.toLowerCase().includes(lowerSearch)) {
+        return false;
+      }
+    }
+
+    const emp = item.employeeId as any;
+    if (selectedDivisionFilter) {
+      const divId = typeof emp?.division === 'object' ? emp?.division?._id : (emp?.division_id || emp?.division);
+      if (String(divId) !== String(selectedDivisionFilter)) return false;
+    }
+    if (selectedDepartmentFilter) {
+      const deptId = typeof emp?.department === 'object' ? emp?.department?._id : (emp?.department_id || emp?.department);
+      if (String(deptId) !== String(selectedDepartmentFilter)) return false;
+    }
+    if (selectedDesignationFilter) {
+      const desigId = typeof emp?.designation === 'object' ? emp?.designation?._id : (emp?.designation_id || emp?.designation);
+      if (String(desigId) !== String(selectedDesignationFilter)) return false;
+    }
+
+    return true;
+  };
+
+  const getRoleOrderFromItem = (item: LeaveApplication | ODApplication): string[] => {
+    const chain = (item as any).workflow?.approvalChain;
+    if (!chain || !Array.isArray(chain) || chain.length === 0) return [];
+    const sorted = chain.slice().sort((a: any, b: any) => (a.stepOrder ?? 999) - (b.stepOrder ?? 999));
+    return sorted.map((s: any) => String(s.role || s.stepRole || '').toLowerCase()).filter(Boolean);
+  };
+
+  const canPerformAction = (item: LeaveApplication | ODApplication, source?: 'leave' | 'od') => {
     const user = auth.getUser() as any;
     if (!user || user.role === 'employee') return false;
     if (['super_admin', 'sub_admin'].includes(user.role)) return !['approved', 'rejected', 'cancelled'].includes(item.status);
-    // Strict: nextApproverRole must match user.role (current step = user's turn)
+    const isOD = source === 'od' || ((item as any).odType !== undefined);
+    const allowHigher = isOD ? odWorkflowAllowHigherAuthority : leaveWorkflowAllowHigherAuthority;
+    const itemRoleOrder = getRoleOrderFromItem(item);
+    const globalRoleOrder = isOD ? odWorkflowRoleOrder : leaveWorkflowRoleOrder;
+    const roleOrder = itemRoleOrder.length > 0 ? itemRoleOrder : globalRoleOrder;
     const next = String((item as any).workflow?.nextApproverRole || (item as any).workflow?.nextApprover || '').toLowerCase();
     const role = String(user.role || '').toLowerCase();
-    return next && (role === next || (next === 'final_authority' && role === 'hr') || (next === 'reporting_manager' && ['manager', 'hod'].includes(role)));
+    if (!next) return false;
+    if (role === next || (next === 'final_authority' && role === 'hr') || (next === 'reporting_manager' && ['manager', 'hod'].includes(role))) return true;
+    if (allowHigher && roleOrder.length > 0) {
+      const nextIdx = roleOrder.indexOf(next);
+      let userIdx = roleOrder.indexOf(role);
+      if (userIdx === -1 && (role === 'hr' || role === 'super_admin')) userIdx = roleOrder.length;
+      if (userIdx === -1 && role === 'manager') {
+        const reportingIdx = roleOrder.indexOf('reporting_manager');
+        const hrIdx = roleOrder.indexOf('hr');
+        userIdx = reportingIdx >= 0 ? reportingIdx : (hrIdx >= 0 ? hrIdx : roleOrder.length);
+      }
+      if (nextIdx >= 0 && userIdx >= 0 && userIdx >= nextIdx) return true;
+    }
+    return false;
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <Spinner />
-      </div>
-    );
-  }
+  // Skeleton for table rows (used when loading)
+  const TableSkeletonRows = ({ rows = 8, cols = 7 }: { rows?: number; cols?: number }) => (
+    <>
+      {Array.from({ length: rows }).map((_, i) => (
+        <tr key={i} className="animate-pulse">
+          {Array.from({ length: cols }).map((_, j) => (
+            <td key={j} className="px-4 py-3">
+              <div className="h-4 bg-slate-200 dark:bg-slate-600 rounded w-full max-w-[120px]" style={{ width: j === 0 ? '80%' : j === cols - 1 ? '60%' : undefined }} />
+            </td>
+          ))}
+        </tr>
+      ))}
+    </>
+  );
 
   return (
     <div className="max-w-[1920px] mx-auto">
@@ -1228,7 +1576,7 @@ export default function LeavesPage() {
               <CalendarIcon />
             </div>
             <div>
-              <div className="text-2xl font-bold text-slate-900 dark:text-white">{leaves.length}</div>
+              {loadingStats ? <div className="h-8 w-14 bg-slate-200 dark:bg-slate-600 rounded animate-pulse" /> : <div className="text-2xl font-bold text-slate-900 dark:text-white">{dashboardStats.totalLeaves}</div>}
               <div className="text-sm text-slate-500">Total Leaves</div>
             </div>
           </div>
@@ -1239,7 +1587,7 @@ export default function LeavesPage() {
               <BriefcaseIcon />
             </div>
             <div>
-              <div className="text-2xl font-bold text-slate-900 dark:text-white">{ods.length}</div>
+              {loadingStats ? <div className="h-8 w-14 bg-slate-200 dark:bg-slate-600 rounded animate-pulse" /> : <div className="text-2xl font-bold text-slate-900 dark:text-white">{dashboardStats.totalODs}</div>}
               <div className="text-sm text-slate-500">Total ODs</div>
             </div>
           </div>
@@ -1251,7 +1599,7 @@ export default function LeavesPage() {
             </div>
             <div>
               <div className="text-2xl font-bold text-yellow-600">{totalPending}</div>
-              <div className="text-sm text-slate-500">Pending Approvals</div>
+              <div className="text-sm text-slate-500">Actions Required</div>
             </div>
           </div>
         </div>
@@ -1261,9 +1609,7 @@ export default function LeavesPage() {
               <CheckIcon />
             </div>
             <div>
-              <div className="text-2xl font-bold text-green-600">
-                {leaves.filter(l => l.status === 'approved').length + ods.filter(o => o.status === 'approved').length}
-              </div>
+              {loadingStats ? <div className="h-8 w-14 bg-slate-200 dark:bg-slate-600 rounded animate-pulse" /> : <div className="text-2xl font-bold text-green-600">{dashboardStats.totalApproved}</div>}
               <div className="text-sm text-slate-500">Approved</div>
             </div>
           </div>
@@ -1282,7 +1628,7 @@ export default function LeavesPage() {
           >
             <span className="flex items-center gap-2">
               <CalendarIcon />
-              Leaves ({leaves.length})
+              Leaves ({loadingStats ? '…' : dashboardStats.totalLeaves})
             </span>
           </button>
           <button
@@ -1294,7 +1640,7 @@ export default function LeavesPage() {
           >
             <span className="flex items-center gap-2">
               <BriefcaseIcon />
-              On Duty ({ods.length})
+              On Duty ({loadingStats ? '…' : dashboardStats.totalODs})
             </span>
           </button>
           <button
@@ -1306,16 +1652,113 @@ export default function LeavesPage() {
           >
             <span className="flex items-center gap-2">
               <ClockIcon />
-              Pending Approvals ({totalPending})
+              Actions Required ({totalPending})
             </span>
           </button>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="mb-6 flex flex-wrap gap-4 items-center">
+        <select
+          value={selectedDivisionFilter}
+          onChange={(e) => {
+            setSelectedDivisionFilter(e.target.value);
+            setSelectedDepartmentFilter('');
+          }}
+          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+        >
+          <option value="">All Divisions</option>
+          {divisions.map((div) => (
+            <option key={div._id} value={div._id}>{div.name}</option>
+          ))}
+        </select>
+
+        <select
+          value={selectedDepartmentFilter}
+          onChange={(e) => setSelectedDepartmentFilter(e.target.value)}
+          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+        >
+          <option value="">All Departments</option>
+          {filteredDepartments.map((dept) => (
+            <option key={dept._id} value={dept._id}>{dept.name}</option>
+          ))}
+        </select>
+
+        <select
+          value={selectedDesignationFilter}
+          onChange={(e) => setSelectedDesignationFilter(e.target.value)}
+          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+        >
+          <option value="">All Designations</option>
+          {designations.map((desig) => (
+            <option key={desig._id} value={desig._id}>{desig.name}</option>
+          ))}
+        </select>
+
+        <div className="relative flex-grow max-w-sm">
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+            <SearchIcon />
+          </div>
+          <input
+            type="text"
+            placeholder="Search employees..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="block w-full rounded-lg border border-slate-300 bg-white pl-10 pr-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+          />
         </div>
       </div>
 
       {/* Content */}
       <div className="rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-800 overflow-hidden">
         {activeTab === 'leaves' && (
-          <div className="overflow-x-auto">
+          <>
+            {/* Pagination at top for Leaves */}
+            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50">
+              <span className="text-sm text-slate-600 dark:text-slate-400">
+                {!loading && leavesTotal > 0 ? `${leavesTotal} total` : loading ? 'Loading…' : 'No records'}
+                {!loading && leavesTotal > 0 && ` · Page ${leavesPage} of ${Math.ceil(leavesTotal / leavesLimit) || 1}`}
+              </span>
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="text-xs text-slate-500 dark:text-slate-400">Per page</span>
+                <select
+                  value={leavesLimit}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setLeavesLimit(val);
+                    loadLeavesData(1, val);
+                  }}
+                  disabled={loading}
+                  className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-700 dark:text-slate-300 disabled:opacity-50"
+                >
+                  {PER_PAGE_OPTIONS.map((n) => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
+                {leavesTotal > leavesLimit && (
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      disabled={leavesPage <= 1 || loading}
+                      onClick={() => loadLeavesData(leavesPage - 1)}
+                      className="px-3 py-1.5 text-sm font-medium rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-700"
+                    >
+                      Previous
+                    </button>
+                    <button
+                      type="button"
+                      disabled={leavesPage >= Math.ceil(leavesTotal / leavesLimit) || loading}
+                      onClick={() => loadLeavesData(leavesPage + 1)}
+                      className="px-3 py-1.5 text-sm font-medium rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-700"
+                    >
+                      Next
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-slate-50 dark:bg-slate-900">
                 <tr>
@@ -1329,7 +1772,7 @@ export default function LeavesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                {leaves.map((leave) => (
+                {loading ? <TableSkeletonRows rows={10} cols={7} /> : leaves.map((leave) => (
                   <tr
                     key={leave._id}
                     className="hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer transition-colors"
@@ -1363,7 +1806,7 @@ export default function LeavesPage() {
                     </td>
                   </tr>
                 ))}
-                {leaves.length === 0 && (
+                {!loading && leaves.length === 0 && (
                   <tr>
                     <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
                       No leave applications found
@@ -1373,10 +1816,56 @@ export default function LeavesPage() {
               </tbody>
             </table>
           </div>
+        </>
         )}
 
         {activeTab === 'od' && (
-          <div className="overflow-x-auto">
+          <>
+            {/* Pagination at top for OD */}
+            <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50">
+              <span className="text-sm text-slate-600 dark:text-slate-400">
+                {!loading && odsTotal > 0 ? `${odsTotal} total` : loading ? 'Loading…' : 'No records'}
+                {!loading && odsTotal > 0 && ` · Page ${odsPage} of ${Math.ceil(odsTotal / odsLimit) || 1}`}
+              </span>
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="text-xs text-slate-500 dark:text-slate-400">Per page</span>
+                <select
+                  value={odsLimit}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setODsLimit(val);
+                    loadODsData(1, val);
+                  }}
+                  disabled={loading}
+                  className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm text-slate-700 dark:text-slate-300 disabled:opacity-50"
+                >
+                  {PER_PAGE_OPTIONS.map((n) => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
+                {odsTotal > odsLimit && (
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      disabled={odsPage <= 1 || loading}
+                      onClick={() => loadODsData(odsPage - 1)}
+                      className="px-3 py-1.5 text-sm font-medium rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-700"
+                    >
+                      Previous
+                    </button>
+                    <button
+                      type="button"
+                      disabled={odsPage >= Math.ceil(odsTotal / odsLimit) || loading}
+                      onClick={() => loadODsData(odsPage + 1)}
+                      className="px-3 py-1.5 text-sm font-medium rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-700"
+                    >
+                      Next
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-slate-50 dark:bg-slate-900">
                 <tr>
@@ -1390,7 +1879,7 @@ export default function LeavesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                {ods.map((od) => (
+                {loading ? <TableSkeletonRows rows={10} cols={7} /> : ods.map((od) => (
                   <tr
                     key={od._id}
                     className="hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer transition-colors"
@@ -1424,7 +1913,7 @@ export default function LeavesPage() {
                     </td>
                   </tr>
                 ))}
-                {ods.length === 0 && (
+                {!loading && ods.length === 0 && (
                   <tr>
                     <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
                       No OD applications found
@@ -1434,112 +1923,226 @@ export default function LeavesPage() {
               </tbody>
             </table>
           </div>
+        </>
         )}
 
         {activeTab === 'pending' && (
-          <div className="p-4 space-y-4">
+          <div className="p-4 space-y-6">
+            {/* Pending: Per page & summary */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <span className="text-sm text-slate-600 dark:text-slate-400">
+                {!loadingPending ? `${pendingLeavesTotal + pendingODsTotal} total pending` : 'Loading…'}
+              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-500 dark:text-slate-400">Per page</span>
+                <select
+                  value={pendingLimit}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setPendingLimit(val);
+                    setPendingLeavesPage(1);
+                    setPendingODsPage(1);
+                    loadPendingData(1, 1, val);
+                  }}
+                  disabled={loadingPending}
+                  className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm disabled:opacity-50"
+                >
+                  {PER_PAGE_OPTIONS.map((n) => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
             {/* Pending Leaves */}
-            {pendingLeaves.length > 0 && (
-              <div>
-                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-2">
-                  <CalendarIcon />
-                  Pending Leaves ({pendingLeaves.length})
-                </h3>
-                <div className="space-y-3">
-                  {pendingLeaves.map((leave) => (
-                    <div key={leave._id} className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-900/50">
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            <span className="font-medium text-slate-900 dark:text-white">
-                              {leave.employeeId?.first_name} {leave.employeeId?.last_name}
-                            </span>
-                            <span className="text-xs text-slate-500">({leave.employeeId?.emp_no})</span>
-                            <span className={`px-2 py-0.5 text-xs font-medium rounded ${getStatusColor(leave.status)}`}>
-                              {leave.status.replace('_', ' ')}
-                            </span>
-                          </div>
-                          <div className="text-sm text-slate-600 dark:text-slate-400 space-y-1">
-                            <div><strong>Type:</strong> {leave.leaveType} | <strong>Days:</strong> {leave.numberOfDays}</div>
-                            <div><strong>From:</strong> {formatDate(leave.fromDate)} <strong>To:</strong> {formatDate(leave.toDate)}</div>
-                            <div><strong>Reason:</strong> {leave.purpose}</div>
-                          </div>
-                        </div>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => handleAction(leave._id, 'leave', 'approve')}
-                            className="px-3 py-1.5 text-sm font-medium text-green-700 bg-green-100 rounded-lg hover:bg-green-200 flex items-center gap-1"
-                          >
-                            <CheckIcon /> Approve
-                          </button>
-                          <button
-                            onClick={() => handleAction(leave._id, 'leave', 'reject')}
-                            className="px-3 py-1.5 text-sm font-medium text-red-700 bg-red-100 rounded-lg hover:bg-red-200 flex items-center gap-1"
-                          >
-                            <XIcon /> Reject
-                          </button>
-                        </div>
+            <div>
+              <h3 className="inline-flex items-center gap-2 rounded-xl bg-blue-500/15 px-4 py-2.5 text-sm font-black uppercase tracking-wider text-blue-700 dark:bg-blue-400/20 dark:text-blue-300 mb-3 border border-blue-200/60 dark:border-blue-500/30">
+                <CalendarIcon />
+                Pending Leaves ({loadingPending ? '…' : pendingLeavesTotal})
+              </h3>
+
+              {/* Desktop: Table */}
+              <div className="hidden md:block overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700">
+                    <tr>
+                      <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-300">Employee</th>
+                      <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-300">Type</th>
+                      <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-300">Dates</th>
+                      <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-300">Days</th>
+                      <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-300">Status</th>
+                      <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-300 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                    {loadingPending ? <TableSkeletonRows rows={6} cols={6} /> : (
+                      <>
+                    {pendingLeaves.length === 0 && (
+                      <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-500">No pending leaves</td></tr>
+                    )}
+                    {pendingLeaves.map((leave) => (
+                      <tr key={leave._id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                        <td className="px-4 py-3">
+                          <div className="font-medium text-slate-900 dark:text-white">{getEmployeeName({ employee_name: leave.employeeId?.employee_name ?? '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no ?? leave.emp_no ?? '' } as Employee)}</div>
+                          <div className="text-xs text-slate-500">{leave.employeeId?.emp_no ?? leave.emp_no}</div>
+                        </td>
+                        <td className="px-4 py-3">{leave.leaveType}</td>
+                        <td className="px-4 py-3">{formatDate(leave.fromDate)} – {formatDate(leave.toDate)}</td>
+                        <td className="px-4 py-3">{leave.numberOfDays}</td>
+                        <td className="px-4 py-3"><span className={`px-2 py-0.5 text-xs font-medium rounded ${getStatusColor(leave.status)}`}>{leave.status.replace('_', ' ')}</span></td>
+                        <td className="px-4 py-3 text-right">
+                          <button onClick={() => handleAction(leave._id, 'leave', 'approve')} className="px-2 py-1 text-xs font-medium text-green-700 bg-green-100 rounded hover:bg-green-200 mr-1">Approve</button>
+                          <button onClick={() => handleAction(leave._id, 'leave', 'reject')} className="px-2 py-1 text-xs font-medium text-red-700 bg-red-100 rounded hover:bg-red-200">Reject</button>
+                        </td>
+                      </tr>
+                    ))}
+                      </>
+                    )}
+                  </tbody>
+                </table>
+                {pendingLeavesTotal > pendingLimit && (
+                  <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50">
+                    <span className="text-xs text-slate-600 dark:text-slate-400">Page {pendingLeavesPage} of {Math.ceil(pendingLeavesTotal / pendingLimit) || 1}</span>
+                    <div className="flex gap-2">
+                      <button disabled={pendingLeavesPage <= 1} onClick={() => { const prev = pendingLeavesPage - 1; setPendingLeavesPage(prev); loadPendingData(prev, pendingODsPage); }} className="px-3 py-1 text-xs font-medium rounded border border-slate-300 dark:border-slate-600 disabled:opacity-50">Prev</button>
+                      <button disabled={pendingLeavesPage >= Math.ceil(pendingLeavesTotal / pendingLimit)} onClick={() => { const next = pendingLeavesPage + 1; setPendingLeavesPage(next); loadPendingData(next, pendingODsPage); }} className="px-3 py-1 text-xs font-medium rounded border border-slate-300 dark:border-slate-600 disabled:opacity-50">Next</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Mobile: Cards */}
+              <div className="md:hidden space-y-3">
+                {loadingPending && (
+                  <>
+                    {[1, 2, 3].map((i) => (
+                      <div key={i} className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-900/50 animate-pulse">
+                        <div className="h-4 bg-slate-200 dark:bg-slate-600 rounded w-3/4 mb-2" />
+                        <div className="h-3 bg-slate-200 dark:bg-slate-600 rounded w-1/2 mb-2" />
+                        <div className="h-3 bg-slate-200 dark:bg-slate-600 rounded w-1/3" />
+                      </div>
+                    ))}
+                  </>
+                )}
+                {!loadingPending && pendingLeaves.length === 0 && <div className="text-center py-6 text-slate-500 text-sm">No pending leaves</div>}
+                {!loadingPending && pendingLeaves.map((leave) => (
+                  <div key={leave._id} className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-900/50">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-slate-900 dark:text-white">{getEmployeeName({ employee_name: leave.employeeId?.employee_name ?? '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no ?? leave.emp_no ?? '' } as Employee)}</div>
+                        <div className="text-xs text-slate-500">({leave.employeeId?.emp_no ?? leave.emp_no}) · {leave.leaveType} · {leave.numberOfDays}d</div>
+                        <div className="text-xs text-slate-600 dark:text-slate-400 mt-1">{formatDate(leave.fromDate)} – {formatDate(leave.toDate)}</div>
+                        <span className={`inline-block mt-2 px-2 py-0.5 text-xs font-medium rounded ${getStatusColor(leave.status)}`}>{leave.status?.replace('_', ' ') ?? 'pending'}</span>
+                      </div>
+                      <div className="flex flex-col gap-1 shrink-0">
+                        <button onClick={() => handleAction(leave._id, 'leave', 'approve')} className="px-2 py-1 text-xs font-medium text-green-700 bg-green-100 rounded">Approve</button>
+                        <button onClick={() => handleAction(leave._id, 'leave', 'reject')} className="px-2 py-1 text-xs font-medium text-red-700 bg-red-100 rounded">Reject</button>
                       </div>
                     </div>
-                  ))}
-                </div>
+                  </div>
+                ))}
+                {!loadingPending && pendingLeavesTotal > pendingLimit && (
+                  <div className="flex items-center justify-between pt-2">
+                    <span className="text-xs text-slate-500">Page {pendingLeavesPage} of {Math.ceil(pendingLeavesTotal / pendingLimit) || 1}</span>
+                    <div className="flex gap-2">
+                      <button disabled={pendingLeavesPage <= 1} onClick={() => { const prev = pendingLeavesPage - 1; setPendingLeavesPage(prev); loadPendingData(prev, pendingODsPage); }} className="px-2 py-1 text-xs rounded border border-slate-300 disabled:opacity-50">Prev</button>
+                      <button disabled={pendingLeavesPage >= Math.ceil(pendingLeavesTotal / pendingLimit)} onClick={() => { const next = pendingLeavesPage + 1; setPendingLeavesPage(next); loadPendingData(next, pendingODsPage); }} className="px-2 py-1 text-xs rounded border border-slate-300 disabled:opacity-50">Next</button>
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
+            </div>
 
             {/* Pending ODs */}
-            {pendingODs.length > 0 && (
-              <div>
-                <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-2">
-                  <BriefcaseIcon />
-                  Pending ODs ({pendingODs.length})
-                </h3>
-                <div className="space-y-3">
-                  {pendingODs.map((od) => (
-                    <div key={od._id} className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-900/50">
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            <span className="font-medium text-slate-900 dark:text-white">
-                              {od.employeeId?.first_name} {od.employeeId?.last_name}
-                            </span>
-                            <span className="text-xs text-slate-500">({od.employeeId?.emp_no})</span>
-                            <span className={`px-2 py-0.5 text-xs font-medium rounded ${getStatusColor(od.status)}`}>
-                              {od.status.replace('_', ' ')}
-                            </span>
-                          </div>
-                          <div className="text-sm text-slate-600 dark:text-slate-400 space-y-1">
-                            <div><strong>Type:</strong> {od.odType} | <strong>Days:</strong> {od.numberOfDays}</div>
-                            <div><strong>Place:</strong> {od.placeVisited}</div>
-                            <div><strong>From:</strong> {formatDate(od.fromDate)} <strong>To:</strong> {formatDate(od.toDate)}</div>
-                            <div><strong>Purpose:</strong> {od.purpose}</div>
-                          </div>
-                        </div>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => handleAction(od._id, 'od', 'approve')}
-                            className="px-3 py-1.5 text-sm font-medium text-green-700 bg-green-100 rounded-lg hover:bg-green-200 flex items-center gap-1"
-                          >
-                            <CheckIcon /> Approve
-                          </button>
-                          <button
-                            onClick={() => handleAction(od._id, 'od', 'reject')}
-                            className="px-3 py-1.5 text-sm font-medium text-red-700 bg-red-100 rounded-lg hover:bg-red-200 flex items-center gap-1"
-                          >
-                            <XIcon /> Reject
-                          </button>
-                        </div>
+            <div>
+              <h3 className="inline-flex items-center gap-2 rounded-xl bg-purple-500/15 px-4 py-2.5 text-sm font-black uppercase tracking-wider text-purple-700 dark:bg-purple-400/20 dark:text-purple-300 mb-3 border border-purple-200/60 dark:border-purple-500/30">
+                <BriefcaseIcon />
+                Pending ODs ({loadingPending ? '…' : pendingODsTotal})
+              </h3>
+
+              {/* Desktop: Table */}
+              <div className="hidden md:block overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700">
+                    <tr>
+                      <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-300">Employee</th>
+                      <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-300">Type</th>
+                      <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-300">Place</th>
+                      <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-300">Dates</th>
+                      <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-300">Days</th>
+                      <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-300">Status</th>
+                      <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-300 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                    {loadingPending ? <TableSkeletonRows rows={6} cols={7} /> : (
+                      <>
+                    {pendingODs.length === 0 && (
+                      <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-500">No pending ODs</td></tr>
+                    )}
+                    {pendingODs.map((od) => (
+                      <tr key={od._id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                        <td className="px-4 py-3">
+                          <div className="font-medium text-slate-900 dark:text-white">{getEmployeeName({ employee_name: od.employeeId?.employee_name ?? '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no ?? od.emp_no ?? '' } as Employee)}</div>
+                          <div className="text-xs text-slate-500">{od.employeeId?.emp_no ?? od.emp_no}</div>
+                        </td>
+                        <td className="px-4 py-3">{od.odType}</td>
+                        <td className="px-4 py-3 max-w-[120px] truncate" title={od.placeVisited}>{od.placeVisited || '–'}</td>
+                        <td className="px-4 py-3">{formatDate(od.fromDate)} – {formatDate(od.toDate)}</td>
+                        <td className="px-4 py-3">{od.numberOfDays}</td>
+                        <td className="px-4 py-3"><span className={`px-2 py-0.5 text-xs font-medium rounded ${getStatusColor(od.status)}`}>{od.status?.replace('_', ' ') ?? 'pending'}</span></td>
+                        <td className="px-4 py-3 text-right">
+                          <button onClick={() => handleAction(od._id, 'od', 'approve')} className="px-2 py-1 text-xs font-medium text-green-700 bg-green-100 rounded hover:bg-green-200 mr-1">Approve</button>
+                          <button onClick={() => handleAction(od._id, 'od', 'reject')} className="px-2 py-1 text-xs font-medium text-red-700 bg-red-100 rounded hover:bg-red-200">Reject</button>
+                        </td>
+                      </tr>
+                    ))}
+                      </>
+                    )}
+                  </tbody>
+                </table>
+                {pendingODsTotal > pendingLimit && (
+                  <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50">
+                    <span className="text-xs text-slate-600 dark:text-slate-400">Page {pendingODsPage} of {Math.ceil(pendingODsTotal / pendingLimit) || 1}</span>
+                    <div className="flex gap-2">
+                      <button disabled={pendingODsPage <= 1} onClick={() => { const prev = pendingODsPage - 1; setPendingODsPage(prev); loadPendingData(pendingLeavesPage, prev); }} className="px-3 py-1 text-xs font-medium rounded border border-slate-300 dark:border-slate-600 disabled:opacity-50">Prev</button>
+                      <button disabled={pendingODsPage >= Math.ceil(pendingODsTotal / pendingLimit)} onClick={() => { const next = pendingODsPage + 1; setPendingODsPage(next); loadPendingData(pendingLeavesPage, next); }} className="px-3 py-1 text-xs font-medium rounded border border-slate-300 dark:border-slate-600 disabled:opacity-50">Next</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Mobile: Cards */}
+              <div className="md:hidden space-y-3">
+                {!loadingPending && pendingODs.length === 0 && <div className="text-center py-6 text-slate-500 text-sm">No pending ODs</div>}
+                {pendingODs.map((od) => (
+                  <div key={od._id} className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-900/50">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-slate-900 dark:text-white">{getEmployeeName({ employee_name: od.employeeId?.employee_name ?? '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no ?? od.emp_no ?? '' } as Employee)}</div>
+                        <div className="text-xs text-slate-500">({od.employeeId?.emp_no ?? od.emp_no}) · {od.odType} · {od.numberOfDays}d</div>
+                        <div className="text-xs text-slate-600 dark:text-slate-400 mt-1">{formatDate(od.fromDate)} – {formatDate(od.toDate)}</div>
+                        {od.placeVisited && <div className="text-xs text-slate-500 mt-0.5 truncate">{od.placeVisited}</div>}
+                        <span className={`inline-block mt-2 px-2 py-0.5 text-xs font-medium rounded ${getStatusColor(od.status)}`}>{od.status?.replace('_', ' ') ?? 'pending'}</span>
+                      </div>
+                      <div className="flex flex-col gap-1 shrink-0">
+                        <button onClick={() => handleAction(od._id, 'od', 'approve')} className="px-2 py-1 text-xs font-medium text-green-700 bg-green-100 rounded">Approve</button>
+                        <button onClick={() => handleAction(od._id, 'od', 'reject')} className="px-2 py-1 text-xs font-medium text-red-700 bg-red-100 rounded">Reject</button>
                       </div>
                     </div>
-                  ))}
-                </div>
+                  </div>
+                ))}
+                {pendingODsTotal > pendingLimit && (
+                  <div className="flex items-center justify-between pt-2">
+                    <span className="text-xs text-slate-500">Page {pendingODsPage} of {Math.ceil(pendingODsTotal / pendingLimit) || 1}</span>
+                    <div className="flex gap-2">
+                      <button disabled={pendingODsPage <= 1} onClick={() => { const prev = pendingODsPage - 1; setPendingODsPage(prev); loadPendingData(pendingLeavesPage, prev); }} className="px-2 py-1 text-xs rounded border border-slate-300 disabled:opacity-50">Prev</button>
+                      <button disabled={pendingODsPage >= Math.ceil(pendingODsTotal / pendingLimit)} onClick={() => { const next = pendingODsPage + 1; setPendingODsPage(next); loadPendingData(pendingLeavesPage, next); }} className="px-2 py-1 text-xs rounded border border-slate-300 disabled:opacity-50">Next</button>
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
-
-            {totalPending === 0 && (
-              <div className="text-center py-12 text-slate-500">
-                No pending approvals
-              </div>
-            )}
+            </div>
           </div>
         )}
 
@@ -1590,99 +2193,18 @@ export default function LeavesPage() {
                   Apply For Employee *
                 </label>
                 <div className="relative">
-                  {selectedEmployee ? (
-                    <div className="flex items-center justify-between p-3 rounded-xl border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white font-semibold">
-                          {getEmployeeInitials(selectedEmployee)}
-                        </div>
-                        <div>
-                          <div className="font-medium text-slate-900 dark:text-white">
-                            {getEmployeeName(selectedEmployee)}
-                          </div>
-                          <div className="text-xs text-slate-500 dark:text-slate-400">
-                            {selectedEmployee.emp_no}
-                          </div>
-                          <div className="flex flex-wrap gap-1.5 mt-1">
-                            {selectedEmployee.department?.name && (
-                              <span className="px-1.5 py-0.5 text-[10px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-800 dark:text-blue-300 rounded">
-                                {selectedEmployee.department.name}
-                              </span>
-                            )}
-                            {selectedEmployee.designation?.name && (
-                              <span className="px-1.5 py-0.5 text-[10px] font-medium bg-green-100 text-green-700 dark:bg-green-800 dark:text-green-300 rounded">
-                                {selectedEmployee.designation.name}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedEmployee(null);
-                          setFormData(prev => ({ ...prev, contactNumber: '' }));
-                        }}
-                        className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                      >
-                        <XIcon />
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <SearchIcon />
-                      </div>
-                      <input
-                        type="text"
-                        value={employeeSearch}
-                        onChange={(e) => {
-                          setEmployeeSearch(e.target.value);
-                          setShowEmployeeDropdown(true);
-                        }}
-                        onFocus={() => setShowEmployeeDropdown(true)}
-                        placeholder="Search by name, emp no, or department..."
-                        className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20"
-                      />
-
-                      {/* Employee Dropdown */}
-                      {showEmployeeDropdown && (
-                        <div className="absolute z-10 w-full mt-1 max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-800">
-                          {filteredEmployees.length === 0 ? (
-                            <div className="p-4 text-center text-sm text-slate-500">
-                              {employeeSearch ? 'No employees found' : 'Type to search employees'}
-                            </div>
-                          ) : (
-                            filteredEmployees.slice(0, 10).map((emp, idx) => (
-                              <button
-                                key={emp._id || emp.emp_no || `emp-${idx}`}
-                                type="button"
-                                onClick={() => handleSelectEmployee(emp)}
-                                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-700 text-left transition-colors border-b border-slate-100 dark:border-slate-700 last:border-0"
-                              >
-                                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-slate-400 to-slate-500 flex items-center justify-center text-white text-sm font-medium">
-                                  {getEmployeeInitials(emp)}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="font-medium text-slate-900 dark:text-white truncate">
-                                    {getEmployeeName(emp)}
-                                  </div>
-                                  <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                                    {emp.emp_no} • {emp.department?.name || 'No Department'} • {emp.designation?.name || 'No Designation'}
-                                  </div>
-                                </div>
-                              </button>
-                            ))
-                          )}
-                          {filteredEmployees.length > 10 && (
-                            <div className="px-4 py-2 text-center text-xs text-slate-500 bg-slate-50 dark:bg-slate-900">
-                              Showing 10 of {filteredEmployees.length} results. Type more to filter.
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  <EmployeeSelect
+                    value={selectedEmployee?._id || selectedEmployee?.emp_no || ''}
+                    onChange={(emp) => {
+                      if (!emp) {
+                        setSelectedEmployee(null);
+                        setFormData(prev => ({ ...prev, contactNumber: '' }));
+                      } else {
+                        handleSelectEmployee(emp);
+                      }
+                    }}
+                    placeholder="Search by name, emp no, or department..."
+                  />
                 </div>
               </div>
 
@@ -1853,70 +2375,70 @@ export default function LeavesPage() {
                 </div>
               )}
               {/* Date Selection Logic */}
-              {((applyType === 'leave' && formData.isHalfDay) || applyType === 'od') ? (
-                /* Single Date Input for Half Day / Specific Hours / Any OD */
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">{applyType === 'od' ? 'Date *' : 'Date *'}</label>
-                  <input
-                    type="date"
-                    min={new Date().toISOString().split('T')[0]}
-                    value={formData.fromDate} // Use fromDate as the single source of truth
-                    onChange={(e) => setFormData({ ...formData, fromDate: e.target.value, toDate: e.target.value })}
-                    required
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                  />
-                </div>
-              ) : (
-                /* Two Date Inputs for Full Day */
-                (() => {
-                  const fromMin = new Date().toISOString().split('T')[0];
-                  const isCLFullDay = isCLSelected && !formData.isHalfDay && formData.fromDate && clBalanceForMonth !== null && clBalanceForMonth >= 0;
-                  const maxToDateISO = isCLFullDay && formData.fromDate
-                    ? (() => {
-                        const d = new Date(formData.fromDate);
-                        d.setDate(d.getDate() + Math.max(0, Math.floor(clBalanceForMonth!) - 1));
-                        return d.toISOString().split('T')[0];
-                      })()
-                    : undefined;
-                  return (
-                    <div className="grid grid-cols-2 gap-4">
+              {(() => {
+                const policy = applyType === 'od' ? odPolicy : leavePolicy;
+                const todayStr = new Date().toISOString().split('T')[0];
+                const minDate = policy.allowBackdated && policy.maxBackdatedDays > 0
+                  ? new Date(Date.now() - policy.maxBackdatedDays * 86400000).toISOString().split('T')[0]
+                  : todayStr;
+                const maxDate = policy.allowFutureDated && policy.maxAdvanceDays > 0
+                  ? new Date(Date.now() + policy.maxAdvanceDays * 86400000).toISOString().split('T')[0]
+                  : undefined;
+                const hint = policy.allowBackdated && policy.maxBackdatedDays > 0
+                  ? `Backdating allowed up to ${policy.maxBackdatedDays} day(s)`
+                  : policy.allowFutureDated && policy.maxAdvanceDays > 0
+                    ? `Up to ${policy.maxAdvanceDays} day(s) in advance`
+                    : null;
+                return (
+                  <>
+                    {((applyType === 'leave' && formData.isHalfDay) || applyType === 'od') ? (
+                      /* Single Date Input for Half Day / Specific Hours / Any OD */
                       <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">From Date *</label>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Date *</label>
                         <input
                           type="date"
-                          min={fromMin}
+                          min={minDate}
+                          max={maxDate}
                           value={formData.fromDate}
-                          onChange={(e) => setFormData({ ...formData, fromDate: e.target.value })}
+                          onChange={(e) => setFormData({ ...formData, fromDate: e.target.value, toDate: e.target.value })}
                           required
                           className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                         />
+                        {hint && <p className="mt-1 text-xs text-indigo-500 dark:text-indigo-400">{hint}</p>}
                       </div>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">To Date *</label>
-                        <input
-                          type="date"
-                          min={formData.fromDate || fromMin}
-                          max={maxToDateISO}
-                          value={formData.toDate}
-                          onChange={(e) => {
-                            let toDate = e.target.value;
-                            if (maxToDateISO && toDate > maxToDateISO) {
-                              toDate = maxToDateISO;
-                              toast.info(`CL balance allows up to ${clBalanceForMonth} days; To date capped.`);
-                            }
-                            setFormData({ ...formData, toDate });
-                          }}
-                          required
-                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                        />
-                        {isCLFullDay && maxToDateISO && formData.toDate > maxToDateISO && (
-                          <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">Max {clBalanceForMonth} days for CL this month.</p>
-                        )}
+                    ) : (
+                      /* Two Date Inputs for Full Day */
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">From Date *</label>
+                          <input
+                            type="date"
+                            min={minDate}
+                            max={maxDate}
+                            value={formData.fromDate}
+                            onChange={(e) => setFormData({ ...formData, fromDate: e.target.value })}
+                            required
+                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">To Date *</label>
+                          <input
+                            type="date"
+                            min={formData.fromDate || minDate}
+                            max={maxDate}
+                            value={formData.toDate}
+                            onChange={(e) => setFormData({ ...formData, toDate: e.target.value })}
+                            required
+                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                          />
+                        </div>
+                        {hint && <p className="col-span-2 text-xs text-indigo-500 dark:text-indigo-400">{hint}</p>}
                       </div>
-                    </div>
-                  );
-                })()
-              )}
+                    )}
+                  </>
+                );
+              })()}
 
               {/* Approved Records Info */}
               {approvedRecordsInfo && (approvedRecordsInfo.hasLeave || approvedRecordsInfo.hasOD) && (
@@ -2047,10 +2569,11 @@ export default function LeavesPage() {
                 />
               </div>
 
-              {/* Photo Evidence (OD Only) */}
+              {/* Photo Evidence (OD Only - mandatory) */}
               {applyType === 'od' && (
                 <div className="pt-2 border-t border-slate-100 dark:border-slate-700/50">
                   <LocationPhotoCapture
+                    required
                     label="Live Photo Evidence"
                     onCapture={(loc, photo) => {
                       setEvidenceFile(photo.file);
@@ -2076,12 +2599,21 @@ export default function LeavesPage() {
                 </button>
                 <button
                   type="submit"
-                  className={`flex-1 px-4 py-2.5 text-sm font-semibold text-white rounded-xl ${applyType === 'leave'
-                    ? 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600'
-                    : 'bg-gradient-to-r from-purple-500 to-red-500 hover:from-purple-600 hover:to-red-600'
+                  disabled={loading || !isFormValid()}
+                  className={`flex-1 px-4 py-2.5 text-sm font-semibold text-white rounded-xl transition-all ${(loading || !isFormValid())
+                    ? 'opacity-40 cursor-not-allowed grayscale'
+                    : 'opacity-100 hover:scale-[1.02] active:scale-95'
+                    } ${applyType === 'leave'
+                      ? 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600'
+                      : 'bg-gradient-to-r from-purple-500 to-red-500 hover:from-purple-600 hover:to-red-600'
                     }`}
                 >
-                  Apply {applyType === 'leave' ? 'Leave' : 'OD'}
+                  {loading ? (
+                    <div className="flex items-center justify-center gap-2">
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                      <span>{loadingMessage || 'Submitting...'}</span>
+                    </div>
+                  ) : `Apply ${applyType === 'leave' ? 'Leave' : 'OD'}`}
                 </button>
               </div>
             </form>
@@ -2089,143 +2621,101 @@ export default function LeavesPage() {
         </div>
       )}
 
-      {/* Detail Dialog */}
+      {/* Detail Dialog - styled like workspace */}
       {showDetailDialog && selectedItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => {
+          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => {
             setShowDetailDialog(false);
             setSelectedItem(null);
             setIsChangeHistoryExpanded(false);
           }} />
-          <div className="relative z-50 w-full max-w-3xl max-h-[95vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-800">
+          <div className="relative z-50 w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-3xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-white/20 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-300">
             {/* Header */}
-            <div className={`px-6 py-4 border-b border-slate-200 dark:border-slate-700 ${detailType === 'leave'
-              ? 'bg-gradient-to-r from-blue-100 to-indigo-100'
-              : 'bg-gradient-to-r from-purple-100 to-red-100'
+            <div className={`shrink-0 px-6 py-4 sm:px-8 sm:py-6 border-b border-white/10 ${detailType === 'leave'
+              ? 'bg-gradient-to-r from-blue-600 to-blue-500'
+              : 'bg-gradient-to-r from-purple-600 to-purple-500'
               }`}>
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                  {detailType === 'leave' ? (
-                    <>
-                      <CalendarIcon />
-                      Leave Details
-                    </>
-                  ) : (
-                    <>
-                      <BriefcaseIcon />
-                      OD Details
-                    </>
-                  )}
-                </h2>
+              <div className="flex items-center justify-between text-white">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-white/20 flex items-center justify-center backdrop-blur-md">
+                    {detailType === 'leave' ? <Calendar className="w-5 h-5" /> : <Briefcase className="w-5 h-5" />}
+                  </div>
+                  <div>
+                    <h2 className="text-base sm:text-lg font-black uppercase tracking-wider">
+                      {detailType === 'leave' ? 'Leave Details' : 'OD Details'}
+                    </h2>
+                    <p className="text-white/70 text-[10px] font-bold uppercase tracking-widest">Superadmin</p>
+                  </div>
+                </div>
                 <button
                   onClick={() => {
                     setShowDetailDialog(false);
                     setSelectedItem(null);
                     setIsChangeHistoryExpanded(false);
                   }}
-                  className="p-2 text-white/80 hover:text-white hover:bg-white/20 rounded-lg transition-colors"
+                  className="h-8 w-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
                 >
-                  <XIcon />
+                  <X className="w-4 h-4" />
                 </button>
               </div>
             </div>
 
-            <div className="p-8 space-y-6">
-              {/* Status Badge & Meta Info */}
-              <div className="flex flex-wrap items-center justify-between gap-4 pb-6 border-b border-slate-200 dark:border-slate-700">
-                <div className="flex items-center gap-3">
-                  <span className={`px-5 py-2.5 text-sm font-bold rounded-2xl capitalize shadow-sm ${getStatusColor(selectedItem.status)}`}>
-                    {selectedItem.status?.replace('_', ' ') || 'Unknown'}
-                  </span>
-                  <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <span>Created: {formatDate((selectedItem as any).createdAt || selectedItem.appliedAt)}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Employee Info Card */}
-              <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-100 to-slate-100 dark:from-slate-800 dark:to-slate-900 p-6 shadow-lg border border-slate-200 dark:border-slate-700">
-                <div className="flex items-center gap-5">
-                  <div className={`w-16 h-16 rounded-2xl flex items-center justify-center text-white font-bold text-xl flex-shrink-0 shadow-lg ${detailType === 'leave'
-                    ? 'bg-gradient-to-br from-blue-500 to-indigo-600'
-                    : 'bg-gradient-to-br from-purple-500 to-red-600'
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 space-y-6 sm:space-y-8">
+              {/* Top Section: Employee & Status */}
+              <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-6">
+                <div className="flex items-center gap-4">
+                  <div className={`w-16 h-16 rounded-2xl flex items-center justify-center text-white font-black text-2xl shadow-xl ${detailType === 'leave'
+                    ? 'bg-blue-600 shadow-blue-500/20'
+                    : 'bg-purple-600 shadow-purple-500/20'
                     }`}>
                     {(selectedItem.employeeId?.employee_name?.[0] || selectedItem.emp_no?.[0] || 'E').toUpperCase()}
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-bold text-xl text-slate-900 dark:text-white mb-1">
-                      {selectedItem.employeeId?.employee_name || `${selectedItem.employeeId?.first_name || ''} ${selectedItem.employeeId?.last_name || ''}`.trim() || selectedItem.emp_no}
+                  <div>
+                    <h3 className="font-black text-slate-900 dark:text-white text-xl">
+                      {selectedItem.employeeId?.employee_name || `${(selectedItem.employeeId as any)?.first_name || ''} ${(selectedItem.employeeId as any)?.last_name || ''}`.trim() || selectedItem.emp_no}
                     </h3>
-                    <p className="text-sm font-medium text-slate-600 dark:text-slate-400 mb-3">
+                    <p className="text-sm text-slate-500 font-bold uppercase tracking-tight">
                       {selectedItem.employeeId?.emp_no || selectedItem.emp_no}
                     </p>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex gap-2 mt-2">
                       {selectedItem.department?.name && (
-                        <span className="px-3 py-1.5 text-xs font-semibold bg-white/80 dark:bg-slate-700/80 text-blue-700 dark:text-blue-300 rounded-xl shadow-sm inline-flex items-center gap-1.5 backdrop-blur-sm">
-                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                          </svg>
+                        <span className="px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700">
                           {selectedItem.department.name}
                         </span>
                       )}
                       {selectedItem.designation?.name && (
-                        <span className="px-3 py-1.5 text-xs font-semibold bg-white/80 dark:bg-slate-700/80 text-green-700 dark:text-green-300 rounded-xl shadow-sm inline-flex items-center gap-1.5 backdrop-blur-sm">
-                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                          </svg>
+                        <span className="px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700">
                           {selectedItem.designation.name}
                         </span>
                       )}
                     </div>
                   </div>
                 </div>
+                <div className="flex flex-row sm:flex-col items-center sm:items-end gap-2 w-full sm:w-auto justify-between sm:justify-start">
+                  <span className={`px-4 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-widest border ${getStatusColor(selectedItem.status)}`}>
+                    {selectedItem.status?.replace('_', ' ') || 'Unknown'}
+                  </span>
+                  <div className="flex items-center gap-1.5 text-slate-400 font-bold text-[10px] uppercase tracking-wider">
+                    <Clock3 className="w-3.5 h-3.5" />
+                    Applied {formatDate((selectedItem as any).createdAt || selectedItem.appliedAt)}
+                  </div>
+                </div>
               </div>
 
-              {/* Details Grid - Modern Cards */}
-              <div className="grid grid-cols-2 gap-4">
-                {/* Leave/OD Type */}
-                <div className="group relative overflow-hidden rounded-2xl bg-white dark:bg-slate-800 p-5 shadow-md hover:shadow-lg transition-all duration-300 border border-slate-200 dark:border-slate-700">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${detailType === 'leave'
-                      ? 'bg-blue-100 dark:bg-blue-900/30'
-                      : 'bg-purple-100 dark:bg-purple-900/30'
-                      }`}>
-                      {detailType === 'leave' ? (
-                        <CalendarIcon />
-                      ) : (
-                        <BriefcaseIcon />
-                      )}
-                    </div>
-                    <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                      {detailType === 'leave' ? 'Leave Type' : 'OD Type'}
-                    </p>
-                  </div>
-                  <p className="text-lg font-bold text-slate-900 dark:text-white capitalize ml-14">
-                    {(detailType === 'leave'
-                      ? (selectedItem as LeaveApplication).leaveType
-                      : (selectedItem as ODApplication).odType
-                    )?.replace('_', ' ') || '-'}
+              {/* Stats Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-slate-50 dark:bg-slate-700/30 p-4 sm:p-6 rounded-xl">
+                <div className="space-y-1">
+                  <p className="text-xs uppercase font-bold text-slate-400 tracking-wider">Type</p>
+                  <p className="text-sm font-bold text-slate-900 dark:text-white truncate" title={detailType === 'leave' ? (selectedItem as LeaveApplication).leaveType : (selectedItem as ODApplication).odType}>
+                    {((detailType === 'leave' ? (selectedItem as LeaveApplication).leaveType : (selectedItem as ODApplication).odType) || '-').replace('_', ' ')}
                   </p>
                 </div>
-
-                {/* Duration */}
-                <div className="group relative overflow-hidden rounded-2xl bg-white dark:bg-slate-800 p-5 shadow-md hover:shadow-lg transition-all duration-300 border border-slate-200 dark:border-slate-700">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-amber-100 dark:bg-amber-900/30">
-                      <svg className="w-5 h-5 text-amber-600 dark:text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    </div>
-                    <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                      Duration
-                    </p>
-                  </div>
-                  <div className="ml-14">
-                    {detailType === 'od' && (selectedItem as any).odType_extended === 'hours' ? (
-                      (() => {
+                <div className="space-y-1">
+                  <p className="text-xs uppercase font-bold text-slate-400 tracking-wider">Duration</p>
+                  <p className="text-sm font-bold text-slate-900 dark:text-white">
+                    {detailType === 'od' && (selectedItem as any).odType_extended === 'hours'
+                      ? (() => {
                         const odItem = selectedItem as any;
                         const start = odItem.odStartTime || odItem.od_start_time || '';
                         const end = odItem.odEndTime || odItem.od_end_time || '';
@@ -2235,149 +2725,56 @@ export default function LeavesPage() {
                             const [eh, em] = end.split(':').map(Number);
                             const sMin = sh * 60 + sm;
                             const eMin = eh * 60 + em;
-                            if (isNaN(sMin) || isNaN(eMin) || eMin <= sMin) {
-                              return <p className="text-lg font-bold text-slate-900 dark:text-white">Invalid times</p>;
+                            if (!isNaN(sMin) && !isNaN(eMin) && eMin > sMin) {
+                              const durationMin = eMin - sMin;
+                              const hours = Math.floor(durationMin / 60);
+                              const mins = durationMin % 60;
+                              return `${hours}h ${mins}m`;
                             }
-                            const durationMin = eMin - sMin;
-                            const hours = Math.floor(durationMin / 60);
-                            const mins = durationMin % 60;
-                            // Also show fractional days if available
-                            const days = (odItem.numberOfDays !== undefined && odItem.numberOfDays !== null) ? odItem.numberOfDays : (durationMin / 60 / 8);
-                            return (
-                              <div>
-                                <p className="text-lg font-bold text-slate-900 dark:text-white">{hours}h {mins}m</p>
-                                <p className="text-sm font-normal text-slate-600 dark:text-slate-400">{start} - {end}</p>
-                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Hour-based OD</p>
-                              </div>
-                            );
-                          } catch (e) {
-                            return <p className="text-lg font-bold text-slate-900 dark:text-white">Invalid times</p>;
-                          }
+                          } catch (_) { }
                         }
-                        return <p className="text-lg font-bold text-slate-900 dark:text-white">{selectedItem.numberOfDays} day{selectedItem.numberOfDays !== 1 ? 's' : ''}</p>;
+                        return `${selectedItem.numberOfDays}d`;
                       })()
-                    ) : (
-                      <p className="text-lg font-bold text-slate-900 dark:text-white">
-                        {selectedItem.numberOfDays} day{selectedItem.numberOfDays !== 1 ? 's' : ''}
-                        {selectedItem.isHalfDay && (
-                          <span className="text-sm font-normal text-slate-600 dark:text-slate-400 ml-1">
-                            ({selectedItem.halfDayType?.replace('_', ' ')})
-                          </span>
-                        )}
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {/* From Date */}
-                <div className="group relative overflow-hidden rounded-2xl bg-white dark:bg-slate-800 p-5 shadow-md hover:shadow-lg transition-all duration-300 border border-slate-200 dark:border-slate-700">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-green-100 dark:bg-green-900/30">
-                      <svg className="w-5 h-5 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                    </div>
-                    <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                      From
-                    </p>
-                  </div>
-                  <p className="text-lg font-bold text-slate-900 dark:text-white ml-14">
-                    {formatDate(selectedItem.fromDate)}
+                      : `${selectedItem.numberOfDays}d${selectedItem.isHalfDay ? ` (${(selectedItem.halfDayType || 'first half').replace('_', ' ')})` : ''}`}
                   </p>
                 </div>
-
-                {/* To Date */}
-                <div className="group relative overflow-hidden rounded-2xl bg-white dark:bg-slate-800 p-5 shadow-md hover:shadow-lg transition-all duration-300 border border-slate-200 dark:border-slate-700">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-red-100 dark:bg-red-900/30">
-                      <svg className="w-5 h-5 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                    </div>
-                    <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                      To
-                    </p>
-                  </div>
-                  <p className="text-lg font-bold text-slate-900 dark:text-white ml-14">
-                    {formatDate(selectedItem.toDate)}
-                  </p>
+                <div className="space-y-1">
+                  <p className="text-xs uppercase font-bold text-slate-400 tracking-wider">From</p>
+                  <p className="text-sm font-bold text-slate-900 dark:text-white">{formatDate(selectedItem.fromDate)}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs uppercase font-bold text-slate-400 tracking-wider">To</p>
+                  <p className="text-sm font-bold text-slate-900 dark:text-white">{formatDate(selectedItem.toDate)}</p>
                 </div>
               </div>
 
-              {/* Purpose / Reason */}
-              <div className="rounded-2xl bg-white dark:bg-slate-800 p-6 shadow-md border border-slate-200 dark:border-slate-700">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-indigo-100 dark:bg-indigo-900/30">
-                    <svg className="w-5 h-5 text-indigo-600 dark:text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                  </div>
-                  <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                    Purpose / Reason
+              {/* Details Content */}
+              <div className="space-y-6">
+                <div className="bg-slate-50 dark:bg-slate-900/50 p-4 sm:p-6 rounded-xl">
+                  <p className="text-xs uppercase font-bold text-slate-400 mb-2 tracking-wider">Purpose / Reason</p>
+                  <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+                    {selectedItem.purpose || 'No purpose specified'}
                   </p>
                 </div>
-                <p className="text-base text-slate-700 dark:text-slate-300 leading-relaxed ml-14">
-                  {selectedItem.purpose || 'Not specified'}
-                </p>
+                {detailType === 'od' && (selectedItem as ODApplication).placeVisited && (
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 text-sm text-slate-700 dark:text-slate-300 px-2 mt-2">
+                    <span className="font-bold text-xs uppercase text-slate-400 tracking-wider sm:min-w-20">Location:</span>
+                    <span className="font-medium break-words">{(selectedItem as ODApplication).placeVisited}</span>
+                  </div>
+                )}
+                {selectedItem.contactNumber && (
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 text-sm text-slate-700 dark:text-slate-300 px-2 mt-2">
+                    <span className="font-bold text-xs uppercase text-slate-400 tracking-wider sm:min-w-20">Contact:</span>
+                    <span className="font-medium text-slate-900 dark:text-white break-all">{selectedItem.contactNumber}</span>
+                  </div>
+                )}
               </div>
-
-              {/* OD Specific - Place Visited */}
-              {detailType === 'od' && (selectedItem as ODApplication).placeVisited && (
-                <div className="rounded-2xl bg-white dark:bg-slate-800 p-6 shadow-md border border-slate-200 dark:border-slate-700">
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-purple-100 dark:bg-purple-900/30">
-                      <svg className="w-5 h-5 text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                      </svg>
-                    </div>
-                    <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                      Place Visited
-                    </p>
-                  </div>
-                  <p className="text-base text-slate-700 dark:text-slate-300 ml-14">
-                    {(selectedItem as ODApplication).placeVisited}
-                  </p>
-                </div>
-              )}
-
-              {/* Contact Number */}
-              {selectedItem.contactNumber && (
-                <div className="rounded-2xl bg-white dark:bg-slate-800 p-6 shadow-md border border-slate-200 dark:border-slate-700">
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-green-100 dark:bg-green-900/30">
-                      <svg className="w-5 h-5 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                      </svg>
-                    </div>
-                    <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                      Contact Number
-                    </p>
-                  </div>
-                  <p className="text-base font-medium text-slate-700 dark:text-slate-300 ml-14">
-                    {selectedItem.contactNumber}
-                  </p>
-                </div>
-              )}
-
 
               {/* Photo Evidence & Location */}
               {detailType === 'od' && ((selectedItem as any).photoEvidence || (selectedItem as any).geoLocation) && (
-                <div className="rounded-2xl bg-white dark:bg-slate-800 p-6 shadow-md border border-slate-200 dark:border-slate-700">
-                  {/* Header */}
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-sky-100 dark:bg-sky-900/30">
-                      <svg className="w-5 h-5 text-sky-600 dark:text-sky-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                      </svg>
-                    </div>
-                    <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                      Evidence & Location
-                    </p>
-                  </div>
-
-                  <div className="ml-14 space-y-4">
+                <div className="rounded-xl bg-slate-50 dark:bg-slate-900/50 p-4 sm:p-5 border border-slate-200 dark:border-slate-700">
+                  <p className="text-xs uppercase font-bold text-slate-400 mb-3 tracking-wider">Evidence & Location</p>
+                  <div className="space-y-4">
                     {/* Photo */}
                     {(selectedItem as any).photoEvidence && (
                       <div className="flex items-start gap-4">
@@ -2403,28 +2800,25 @@ export default function LeavesPage() {
                       </div>
                     )}
 
-                    {/* Location */}
                     {(selectedItem as any).geoLocation && (
-                      <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800">
+                      <div className="p-3 rounded-lg bg-white dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700">
                         <div className="flex items-center gap-2 mb-2">
-                          <svg className="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                          <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Location Data</span>
+                          <svg className="w-4 h-4 text-red-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                          <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Location</span>
                         </div>
-                        <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
                           <div>
-                            <span className="text-slate-500">Latitude:</span>
+                            <span className="text-slate-500">Lat:</span>
                             <span className="ml-1 font-mono text-slate-700 dark:text-slate-300">{(selectedItem as any).geoLocation.latitude?.toFixed(6)}</span>
                           </div>
                           <div>
-                            <span className="text-slate-500">Longitude:</span>
+                            <span className="text-slate-500">Lon:</span>
                             <span className="ml-1 font-mono text-slate-700 dark:text-slate-300">{(selectedItem as any).geoLocation.longitude?.toFixed(6)}</span>
                           </div>
                           {(selectedItem as any).geoLocation.address && (
-                            <div className="col-span-2 pt-2 border-t border-slate-100 dark:border-slate-800 mt-1">
-                              <span className="block text-slate-500 mb-0.5">Address:</span>
-                              <p className="text-slate-700 dark:text-slate-300 leading-tight">
-                                {(selectedItem as any).geoLocation.address}
-                              </p>
+                            <div className="col-span-2 pt-2 border-t border-slate-100 dark:border-slate-700 mt-1">
+                              <span className="block text-slate-500 mb-0.5">Address</span>
+                              <p className="text-slate-700 dark:text-slate-300 leading-tight text-xs">{(selectedItem as any).geoLocation.address}</p>
                             </div>
                           )}
                           <div className="col-span-2 mt-1">
@@ -2432,7 +2826,7 @@ export default function LeavesPage() {
                               href={`https://www.google.com/maps?q=${(selectedItem as any).geoLocation.latitude},${(selectedItem as any).geoLocation.longitude}`}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 font-medium"
+                              className="text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1 font-medium text-xs"
                             >
                               View on Google Maps
                               <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
@@ -2441,23 +2835,33 @@ export default function LeavesPage() {
                         </div>
                       </div>
                     )}
+                    {(() => {
+                      const geo = (selectedItem as any).geoLocation;
+                      const exif = (selectedItem as any).photoEvidence?.exifLocation;
+                      const lat = geo?.latitude ?? exif?.latitude;
+                      const lng = geo?.longitude ?? exif?.longitude;
+                      const address = geo?.address ?? null;
+                      if (lat == null || lng == null) return null;
+                      return (
+                        <div className="mt-2">
+                          <span className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Map</span>
+                          <LocationMap latitude={lat} longitude={lng} address={address} height="180px" />
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               )}
 
               {/* Split Breakdown (read-only) */}
               {detailType === 'leave' && (selectedItem as LeaveApplication)?.splits && (selectedItem as LeaveApplication).splits!.length > 0 && (
-                <div className="rounded-2xl bg-white dark:bg-slate-800 p-6 shadow-md border border-slate-200 dark:border-slate-700">
-                  <div className="flex items-center justify-between mb-3">
-                    <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                      Approved Breakdown
+                <div className="bg-slate-50 dark:bg-slate-900/50 p-4 sm:p-6 rounded-xl border border-slate-200 dark:border-slate-700">
+                  <p className="text-xs uppercase font-bold text-slate-400 mb-4 tracking-wider">Approved Breakdown</p>
+                  {(selectedItem as LeaveApplication).splitSummary && (
+                    <p className="text-[10px] font-bold text-slate-500 uppercase mb-2">
+                      Approved {((selectedItem as LeaveApplication).splitSummary as LeaveSplitSummary)?.approvedDays ?? 0} / {(selectedItem as LeaveApplication).numberOfDays}
                     </p>
-                    {(selectedItem as LeaveApplication).splitSummary && (
-                      <span className="text-xs text-slate-500 dark:text-slate-400">
-                        Approved {((selectedItem as LeaveApplication).splitSummary as LeaveSplitSummary)?.approvedDays ?? 0} / {(selectedItem as LeaveApplication).numberOfDays}
-                      </span>
-                    )}
-                  </div>
+                  )}
                   <div className="space-y-2">
                     {(selectedItem as LeaveApplication).splits!.map((split, idx) => (
                       <div key={split._id || `${split.date}-${idx}`} className="flex items-center justify-between text-sm px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-900/40">
@@ -2745,8 +3149,8 @@ export default function LeavesPage() {
                 if (!chain || !Array.isArray(chain) || chain.length === 0) return null;
                 const approvedCount = chain.filter((s: any) => s.status === 'approved').length;
                 return (
-                  <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
-                    <p className="text-xs text-slate-500 uppercase font-semibold mb-4">Approval Timeline</p>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 p-4 sm:p-6 rounded-xl border border-slate-200 dark:border-slate-700">
+                    <p className="text-xs uppercase font-bold text-slate-400 mb-4 tracking-wider">Approval Timeline</p>
                     {/* Progress bar */}
                     <div className="mb-6">
                       <div className="flex justify-between text-[10px] font-bold text-slate-500 uppercase mb-1">
@@ -2800,7 +3204,7 @@ export default function LeavesPage() {
               })()}
 
               {/* Action Section */}
-              <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-4">
+              <div className="space-y-4">
                 {/* Revoke Button - only for approver of last step, within 3 hours */}
                 {canRevoke && (selectedItem.status === 'approved' || selectedItem.status === 'hod_approved' || selectedItem.status === 'manager_approved' || selectedItem.status === 'hr_approved') && (
                   <div className="p-3 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800">
@@ -2855,8 +3259,8 @@ export default function LeavesPage() {
                   </div>
                 )}
 
-                {/* Edit Button (for Super Admin/HR - not final approved) */}
-                {(selectedItem.status !== 'approved' || isSuperAdmin) && (
+                {/* Edit Button (for Super Admin/HR/Manager/HOD - allow approved edits) */}
+                {(selectedItem.status !== 'approved' || isSuperAdmin || isSubAdmin || isHR || isManager || isHOD) && (
                   <button
                     onClick={() => {
                       const odItem = selectedItem as any;
@@ -2886,7 +3290,7 @@ export default function LeavesPage() {
                 )}
 
                 {/* Approval Actions - only show to current approver */}
-                {!['approved', 'rejected', 'cancelled'].includes(selectedItem.status) && canPerformAction(selectedItem) && (
+                {!['approved', 'rejected', 'cancelled'].includes(selectedItem.status) && canPerformAction(selectedItem, detailType) && (
                   <>
                     <p className="text-xs text-slate-500 uppercase font-semibold">Take Action</p>
 
@@ -2918,16 +3322,19 @@ export default function LeavesPage() {
                 )}
               </div>
 
-              {/* Close Button */}
-              <button
-                onClick={() => {
-                  setShowDetailDialog(false);
-                  setSelectedItem(null);
-                  setIsChangeHistoryExpanded(false);
-                }}
-                className="w-full px-4 py-3 text-sm font-medium text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600"
-              >
-              </button>
+              {/* Footer */}
+              <div className="p-4 bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row gap-3 justify-end items-stretch sm:items-center">
+                <button
+                  onClick={() => {
+                    setShowDetailDialog(false);
+                    setSelectedItem(null);
+                    setIsChangeHistoryExpanded(false);
+                  }}
+                  className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-lg transition-colors shadow-sm dark:bg-slate-800 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700"
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -3008,8 +3415,7 @@ export default function LeavesPage() {
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
                     {detailType === 'leave' ? 'Leave Type' : 'OD Type'} *
                   </label>
-                  <input
-                    type="text"
+                  <select
                     value={detailType === 'leave' ? editFormData.leaveType : editFormData.odType}
                     onChange={(e) => setEditFormData({
                       ...editFormData,
@@ -3017,7 +3423,12 @@ export default function LeavesPage() {
                     })}
                     required
                     className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                  />
+                  >
+                    <option value="">Select {detailType === 'leave' ? 'Leave' : 'OD'} Type</option>
+                    {(detailType === 'leave' ? leaveTypes : odTypes).map((t: any) => (
+                      <option key={t.code} value={t.code}>{t.name}</option>
+                    ))}
+                  </select>
                 </div>
 
                 {/* Dates */}

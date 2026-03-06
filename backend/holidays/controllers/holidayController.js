@@ -7,17 +7,28 @@ const Employee = require('../../employees/model/Employee');
 const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
 const cacheService = require('../../shared/services/cacheService');
 
+// Normalize to YYYY-MM-DD from a Date or date string (avoids timezone shifting calendar day)
+function toDateString(d) {
+    const x = new Date(d);
+    const y = x.getUTCFullYear();
+    const m = String(x.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(x.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+}
+
 // Helper to sync holiday to shift roster
 async function syncHolidayToRoster(holiday) {
     try {
         const { date, endDate, scope, applicableTo, targetGroupIds, groupId, name } = holiday;
-        const dates = [];
-        let current = new Date(date);
-        const stop = endDate ? new Date(endDate) : new Date(date);
+        const startStr = toDateString(date);
+        const endStr = endDate ? toDateString(endDate) : startStr;
 
+        const dates = [];
+        let current = new Date(startStr + 'T12:00:00Z');
+        const stop = new Date(endStr + 'T12:00:00Z');
         while (current <= stop) {
-            dates.push(current.toISOString().split('T')[0]);
-            current.setDate(current.getDate() + 1);
+            dates.push(toDateString(current));
+            current.setUTCDate(current.getUTCDate() + 1);
         }
 
         // 1. Identify Target Employees
@@ -27,18 +38,18 @@ async function syncHolidayToRoster(holiday) {
             if (!group) return;
 
             const mappingConditions = group.divisionMapping.map(m => ({
-                division: m.division,
-                ...(m.departments.length > 0 ? { department: { $in: m.departments } } : {})
+                division_id: m.division,
+                ...(m.departments && m.departments.length > 0 ? { department_id: { $in: m.departments } } : {})
             }));
             empFilter.$or = mappingConditions;
         } else if (applicableTo === 'SPECIFIC_GROUPS') {
             const groups = await HolidayGroup.find({ _id: { $in: targetGroupIds } });
             const allMappings = [];
             for (const g of groups) {
-                g.divisionMapping.forEach(m => {
+                (g.divisionMapping || []).forEach(m => {
                     allMappings.push({
-                        division: m.division,
-                        ...(m.departments.length > 0 ? { department: { $in: m.departments } } : {})
+                        division_id: m.division,
+                        ...(m.departments && m.departments.length > 0 ? { department_id: { $in: m.departments } } : {})
                     });
                 });
             }

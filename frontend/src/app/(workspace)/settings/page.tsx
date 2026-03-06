@@ -42,7 +42,8 @@ import {
 
   Menu,
 
-  X
+  X,
+  LogOut
 
 } from 'lucide-react';
 
@@ -73,6 +74,7 @@ import FeatureControlSettings from '@/components/settings/FeatureControlSettings
 import GeneralSettings from '@/components/settings/GeneralSettings';
 
 import AttendanceDeductionsSettings from '@/components/settings/AttendanceDeductionsSettings';
+import ResignationSettings from '@/components/settings/ResignationSettings';
 
 
 
@@ -89,6 +91,7 @@ type TabType =
   | 'od'
 
   | 'ccl'
+  | 'resignation'
 
   | 'shift'
 
@@ -203,6 +206,7 @@ const SettingsPage = () => {
       case 'od': return <LeaveSettings type="od" />;
 
       case 'ccl': return <LeaveSettings type="ccl" />;
+      case 'resignation': return <ResignationSettings />;
 
       case 'shift': return <ShiftSettings />;
 

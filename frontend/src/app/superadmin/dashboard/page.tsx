@@ -57,10 +57,36 @@ const DashboardCard = ({ title, value, description, change, statusBadge }: Dashb
   </div>
 );
 
+const DEFAULT_STATS: DashboardStats = {
+  totalEmployees: 0,
+  activeEmployees: 0,
+  totalDepartments: 0,
+  totalUsers: 0,
+  todayPresent: 0,
+  todayAbsent: 0,
+  todayOnLeave: 0,
+  todayODs: 0,
+  yesterdayPresent: 0,
+  yesterdayAbsent: 0,
+  yesterdayOnLeave: 0,
+  yesterdayODs: 0,
+  pendingLeaves: 0,
+  pendingODs: 0,
+  pendingPermissions: 0,
+  monthlyPresent: 0,
+  monthlyAbsent: 0,
+  monthlyLeaves: 0,
+  attendanceRate: 0,
+  leaveUtilization: 0,
+  departmentLeaveDistribution: {},
+  departmentODDistribution: {},
+};
+
 export default function SuperAdminDashboard() {
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [stats, setStats] = useState<DashboardStats>(DEFAULT_STATS);
   const [currentDate] = useState(new Date());
+  const [connectionError, setConnectionError] = useState<string | null>(null);
 
   useEffect(() => {
     loadDashboardData();
@@ -69,13 +95,21 @@ export default function SuperAdminDashboard() {
   const loadDashboardData = async () => {
     try {
       setLoading(true);
-      // Superadmin uses analytics endpoint for full stats (todayAbsent, yesterdayPresent, etc.)
+      setConnectionError(null);
       const res = await api.getDashboardAnalytics();
       if (res.success && res.data) {
         setStats(res.data);
+      } else {
+        setStats(DEFAULT_STATS);
+        const msg = (res as { message?: string }).message || '';
+        const isNetworkError = msg.includes('connect to server') || msg.includes('network') || msg.includes('Failed to fetch');
+        if (isNetworkError || !res.success) {
+          setConnectionError(msg || 'Could not load dashboard. Ensure the backend is running (e.g. port 5000).');
+        }
       }
     } catch (err) {
-      console.error('Error loading dashboard data:', err);
+      setStats(DEFAULT_STATS);
+      setConnectionError(err instanceof Error ? err.message : 'Failed to load dashboard data.');
     } finally {
       setLoading(false);
     }
@@ -209,6 +243,27 @@ export default function SuperAdminDashboard() {
   return (
     <div className="relative min-h-screen">
       <div className="relative z-10 mx-auto max-w-[1920px] ">
+        {connectionError && (
+          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20 px-4 py-3 flex items-center justify-between gap-3">
+            <p className="text-sm text-amber-800 dark:text-amber-200">{connectionError}</p>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => { setConnectionError(null); loadDashboardData(); }}
+                className="rounded-lg bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 text-xs font-medium"
+              >
+                Retry
+              </button>
+              <button
+                type="button"
+                onClick={() => setConnectionError(null)}
+                className="rounded-lg border border-amber-300 dark:border-amber-700 px-3 py-1.5 text-xs font-medium text-amber-800 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-900/30"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        )}
         {/* Header */}
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div>

@@ -81,6 +81,13 @@ interface LeavePolicySettings {
             elApplicableAfter: boolean;
         };
     };
+    annualCLReset?: {
+        enabled: boolean;
+        resetToBalance: number;
+        addCarryForward: boolean;
+        resetMonth: number;
+        resetDay: number;
+    };
     autoUpdate: {
         enabled: boolean;
         updateFrequency: 'daily' | 'weekly' | 'monthly';
@@ -94,7 +101,7 @@ export default function LeavePolicySettingsPage() {
     const [saving, setSaving] = useState(false);
     const [settings, setSettings] = useState<LeavePolicySettings | null>(null);
     const [previewData, setPreviewData] = useState<any>(null);
-    const [activeTab, setActiveTab] = useState<'basic' | 'earning' | 'carryforward' | 'encashment' | 'compliance'>('basic');
+    const [activeTab, setActiveTab] = useState<'basic' | 'earning' | 'carryforward' | 'annualreset' | 'encashment' | 'compliance'>('basic');
 
     useEffect(() => {
         loadSettings();
@@ -121,7 +128,8 @@ export default function LeavePolicySettingsPage() {
             alert('Leave policy settings saved successfully!');
         } catch (error) {
             console.error('Error saving settings:', error);
-            alert('Error saving settings: ' + error.message);
+            const message = error instanceof Error ? error.message : String(error);
+            alert('Error saving settings: ' + message);
         } finally {
             setSaving(false);
         }
@@ -144,16 +152,19 @@ export default function LeavePolicySettingsPage() {
     };
 
     const previewELCalculation = async () => {
+        const employeeId = user?.employeeId ?? user?.id;
+        if (!employeeId) return;
         try {
             const res = await api.previewELCalculation({
-                employeeId: user._id,
+                employeeId,
                 month: new Date().getMonth() + 1,
                 year: new Date().getFullYear()
             });
             setPreviewData(res.data);
         } catch (error) {
             console.error('Error in preview:', error);
-            alert('Error in EL calculation preview: ' + error.message);
+            const msg = error instanceof Error ? error.message : String(error);
+            alert('Error in EL calculation preview: ' + msg);
         }
     };
 
@@ -165,7 +176,8 @@ export default function LeavePolicySettingsPage() {
                 alert('Settings reset to defaults successfully!');
             } catch (error) {
                 console.error('Error resetting settings:', error);
-                alert('Error resetting settings: ' + error.message);
+                const msg = error instanceof Error ? error.message : String(error);
+                alert('Error resetting settings: ' + msg);
             }
         }
     };
@@ -229,17 +241,17 @@ export default function LeavePolicySettingsPage() {
             {/* Tabs */}
             <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 mb-6">
                 <div className="flex flex-wrap border-b border-slate-200 dark:border-slate-700">
-                    {[
+                    {([
                         { id: 'basic', label: 'Financial Year', icon: Calendar },
                         { id: 'earning', label: 'EL Earning Rules', icon: Calculator },
                         { id: 'carryforward', label: 'Carry Forward', icon: RefreshCw },
                         { id: 'annualreset', label: 'Annual CL Reset', icon: AlertTriangle },
                         { id: 'encashment', label: 'Encashment', icon: Settings },
                         { id: 'compliance', label: 'Compliance', icon: AlertTriangle }
-                    ].map(tab => (
+                    ] as const).map(tab => (
                         <button
                             key={tab.id}
-                            onClick={() => setActiveTab(tab.id as any)}
+                            onClick={() => setActiveTab(tab.id)}
                             className={`flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors ${
                                 activeTab === tab.id
                                     ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50 dark:bg-blue-900/20'
@@ -486,7 +498,7 @@ export default function LeavePolicySettingsPage() {
                                 <label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
                                     <input
                                         type="checkbox"
-                                        checked={settings.annualCLReset.enabled}
+                                        checked={settings.annualCLReset?.enabled ?? false}
                                         onChange={(e) => updateSettings('annualCLReset.enabled', '', e.target.checked)}
                                         className="mr-2"
                                     />
@@ -503,7 +515,7 @@ export default function LeavePolicySettingsPage() {
                                     type="number"
                                     min="0"
                                     max="365"
-                                    value={settings.annualCLReset.resetToBalance}
+                                    value={settings.annualCLReset?.resetToBalance ?? 12}
                                     onChange={(e) => updateSettings('annualCLReset.resetToBalance', '', parseInt(e.target.value))}
                                     className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-sm"
                                 />
@@ -514,7 +526,7 @@ export default function LeavePolicySettingsPage() {
                                 <label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
                                     <input
                                         type="checkbox"
-                                        checked={settings.annualCLReset.addCarryForward}
+                                        checked={settings.annualCLReset?.addCarryForward ?? false}
                                         onChange={(e) => updateSettings('annualCLReset.addCarryForward', '', e.target.checked)}
                                         className="mr-2"
                                     />
@@ -528,7 +540,7 @@ export default function LeavePolicySettingsPage() {
                                     Reset Month
                                 </label>
                                 <select
-                                    value={settings.annualCLReset.resetMonth}
+                                    value={settings.annualCLReset?.resetMonth ?? 1}
                                     onChange={(e) => updateSettings('annualCLReset.resetMonth', '', parseInt(e.target.value))}
                                     className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-sm"
                                 >
@@ -547,7 +559,7 @@ export default function LeavePolicySettingsPage() {
                                     type="number"
                                     min="1"
                                     max="31"
-                                    value={settings.annualCLReset.resetDay}
+                                    value={settings.annualCLReset?.resetDay ?? 1}
                                     onChange={(e) => updateSettings('annualCLReset.resetDay', '', parseInt(e.target.value))}
                                     className="w-full p-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-sm"
                                 />

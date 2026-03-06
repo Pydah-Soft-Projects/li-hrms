@@ -11,6 +11,8 @@ const PayRegisterSummary = require('../../pay-register/model/PayRegisterSummary'
 const MonthlyAttendanceSummary = require('../../attendance/model/MonthlyAttendanceSummary');
 const PayrollConfiguration = require('../model/PayrollConfiguration');
 const outputColumnService = require('../services/outputColumnService');
+const ArrearsPayrollIntegrationService = require('../../arrears/services/arrearsPayrollIntegrationService');
+const DeductionPayrollIntegrationService = require('../../manual-deductions/services/deductionPayrollIntegrationService');
 /**
  * Payroll Controller
  * Handles payroll calculation, retrieval, and processing
@@ -195,6 +197,10 @@ async function buildPayslipData(employeeId, month) {
     arrears: {
       arrearsAmount: payrollRecord.arrearsAmount || 0,
       arrearsSettlements: payrollRecord.arrearsSettlements || [],
+    },
+    manualDeductions: {
+      manualDeductionsAmount: payrollRecord.manualDeductionsAmount || 0,
+      deductionSettlements: payrollRecord.deductionSettlements || [],
     },
     netSalary: payrollRecord.netSalary,
     totalPayableShifts: payrollRecord.totalPayableShifts,
@@ -451,17 +457,18 @@ exports.calculatePayroll = async (req, res) => {
           employeeId,
           month,
           req.user._id,
-          { source: 'payregister', arrearsSettlements: req.body.arrears || [] }
+          { source: 'payregister', arrearsSettlements: req.body.arrears || [], deductionSettlements: req.body.deductions || [] }
         );
         result = { payrollRecord: result.payrollRecord, batchId: result.batchId, payslip: result.payslip };
       } else {
-        const options = { source: 'payregister', arrearsSettlements: req.body.arrears || [] };
+        const options = { source: 'payregister', arrearsSettlements: req.body.arrears || [], deductionSettlements: req.body.deductions || [] };
         result = await payrollCalculationService.calculatePayrollNew(employeeId, month, req.user._id, options);
       }
     } else {
       const options = {
         source: useLegacy ? 'all' : 'payregister',
         arrearsSettlements: req.body.arrears || [],
+        deductionSettlements: req.body.deductions || [],
       };
       result = await payrollCalculationService.calculatePayrollNew(employeeId, month, req.user._id, options);
     }
@@ -516,7 +523,7 @@ exports.calculatePayroll = async (req, res) => {
  */
 exports.exportPayrollExcel = async (req, res) => {
   try {
-    const { month, departmentId, divisionId, status, search, employeeIds } = req.query;
+    const { month, departmentId, divisionId, status, search, employeeIds, strategy } = req.query;
 
     if (!month || !/^\d{4}-\d{2}$/.test(month)) {
       return res.status(400).json({
@@ -552,6 +559,99 @@ exports.exportPayrollExcel = async (req, res) => {
 
       const emps = await Employee.find(employeeQuery).select('_id');
       targetEmployeeIds = emps.map((e) => e._id.toString());
+    }
+
+    const config = await PayrollConfiguration.get();
+    const useDynamicExport = String(strategy || '').toLowerCase() === 'dynamic';
+    const rawColumns = Array.isArray(config?.outputColumns) ? config.outputColumns : [];
+    const hasOutputColumns = rawColumns.length > 0;
+
+    // When strategy=dynamic and we have output columns, use the same data source as the paysheet:
+    // compute payslips via the dynamic engine (no PayrollRecord required). Export will match display.
+    if (useDynamicExport && hasOutputColumns) {
+      if (targetEmployeeIds.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'No employees in scope. Apply filters or select employees to export.',
+        });
+      }
+      const userId = req.user?._id?.toString() || req.user?.id;
+      const payslips = [];
+      for (const empId of targetEmployeeIds) {
+        try {
+          // Fetch pending arrears and manual deductions so export reflects same values as pay register calculation
+          let arrearsSettlements = [];
+          let deductionSettlements = [];
+          try {
+            const pendingArrears = await ArrearsPayrollIntegrationService.getPendingArrearsForPayroll(empId);
+            if (pendingArrears && pendingArrears.length > 0) {
+              arrearsSettlements = pendingArrears.map((ar) => ({ arrearId: ar.id, amount: ar.remainingAmount || 0 }));
+            }
+            const pendingDeductions = await DeductionPayrollIntegrationService.getPendingDeductionsForPayroll(empId);
+            if (pendingDeductions && pendingDeductions.length > 0) {
+              deductionSettlements = pendingDeductions.map((d) => ({ deductionId: d.id, amount: d.remainingAmount || 0 }));
+            }
+          } catch (fetchErr) {
+            console.error(`Error fetching arrears/deductions for export (employee ${empId}):`, fetchErr.message);
+          }
+          const result = await payrollCalculationFromOutputColumnsService.calculatePayrollFromOutputColumns(
+            empId,
+            month,
+            userId,
+            { source: 'payregister', arrearsSettlements, deductionSettlements }
+          );
+          if (result?.payslip) {
+            const slip = result.payslip;
+            payslips.push(slip && typeof slip.toObject === 'function' ? slip.toObject() : slip);
+          }
+        } catch (err) {
+          console.error(`Error calculating payroll for export (employee ${empId}):`, err.message);
+        }
+      }
+      if (payslips.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'No payslip data available to export. Ensure pay register is filled and try again.',
+        });
+      }
+      const allAllowanceNames = new Set();
+      const allDeductionNames = new Set();
+      const allStatutoryCodes = new Set();
+      payslips.forEach((p) => {
+        (p.earnings?.allowances || []).forEach((a) => { if (a && a.name) allAllowanceNames.add(a.name); });
+        (p.deductions?.otherDeductions || []).forEach((d) => { if (d && d.name) allDeductionNames.add(d.name); });
+        (p.deductions?.statutoryDeductions || []).forEach((s) => {
+          if (s && (s.code || s.name)) allStatutoryCodes.add(String(s.code || s.name).trim());
+        });
+      });
+      const outputColumns = rawColumns.map((c, i) => {
+        const doc = c && typeof c.toObject === 'function' ? c.toObject() : (c && typeof c === 'object' ? { ...c } : {});
+        return {
+          header: doc.header != null && String(doc.header).trim() ? String(doc.header).trim() : `Column ${i}`,
+          source: doc.source === 'formula' ? 'formula' : 'field',
+          field: doc.field != null ? String(doc.field) : '',
+          formula: doc.formula != null ? String(doc.formula) : '',
+          order: typeof doc.order === 'number' ? doc.order : i,
+        };
+      });
+      const expandedColumns = outputColumnService.expandOutputColumnsWithBreakdown(
+        outputColumns,
+        allAllowanceNames,
+        allDeductionNames,
+        allStatutoryCodes
+      );
+      const rows = payslips.map((payslip, index) => {
+        const rowData = outputColumnService.buildRowFromOutputColumns(payslip, expandedColumns, index + 1);
+        return { 'S.No': index + 1, ...rowData };
+      });
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(rows);
+      XLSX.utils.book_append_sheet(wb, ws, 'Payslips');
+      const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+      const filename = `payslips_${month}${departmentId ? `_dept_${departmentId}` : ''}.xlsx`;
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      return res.send(buf);
     }
 
     const query = { month };
@@ -721,9 +821,10 @@ exports.exportPayrollExcel = async (req, res) => {
       });
     }
 
-    // Step 2: Collect ALL unique allowances and deductions across all employees
+    // Step 2: Collect ALL unique allowances, deductions, and statutory codes across all employees
     const allAllowanceNames = new Set();
     const allDeductionNames = new Set();
+    const allStatutoryCodes = new Set();
 
     payslips.forEach(payslip => {
       if (Array.isArray(payslip.earnings?.allowances)) {
@@ -736,18 +837,31 @@ exports.exportPayrollExcel = async (req, res) => {
           if (deduction.name) allDeductionNames.add(deduction.name);
         });
       }
+      if (Array.isArray(payslip.deductions?.statutoryDeductions)) {
+        payslip.deductions.statutoryDeductions.forEach(s => {
+          if (s && (s.code || s.name)) allStatutoryCodes.add(String(s.code || s.name).trim());
+        });
+      }
     });
 
-    console.log(`\n📊 Excel Export: Found ${allAllowanceNames.size} unique allowances and ${allDeductionNames.size} unique deductions for ${payslips.length} employees`);
+    console.log(`\n📊 Excel Export: Found ${allAllowanceNames.size} unique allowances, ${allDeductionNames.size} deductions, ${allStatutoryCodes.size} statutory for ${payslips.length} employees`);
     console.log(`Allowances: ${Array.from(allAllowanceNames).join(', ')}`);
-    console.log(`Deductions: ${Array.from(allDeductionNames).join(', ')}\n`);
+    console.log(`Deductions: ${Array.from(allDeductionNames).join(', ')}`);
+    console.log(`Statutory: ${Array.from(allStatutoryCodes).join(', ')}\n`);
 
-    // Step 3: Build rows – use configured output columns if set, else default normalized columns
+    // Step 3: Build rows – when caller sends strategy=dynamic, export using dynamic output columns
+    //         (from PayrollConfiguration.outputColumns) with breakdown columns before each cumulative.
+    // config, useDynamicExport, hasOutputColumns already declared above (dynamic path returns early).
     let rows;
-    const config = await PayrollConfiguration.get();
-    if (config && config.enabled && Array.isArray(config.outputColumns) && config.outputColumns.length > 0) {
+    if (useDynamicExport && hasOutputColumns) {
+      const expandedColumns = outputColumnService.expandOutputColumnsWithBreakdown(
+        config.outputColumns,
+        allAllowanceNames,
+        allDeductionNames,
+        allStatutoryCodes
+      );
       rows = payslips.map((payslip, index) =>
-        outputColumnService.buildRowFromOutputColumns(payslip, config.outputColumns, index + 1)
+        outputColumnService.buildRowFromOutputColumns(payslip, expandedColumns, index + 1)
       );
     } else {
       rows = payslips.map((payslip, index) =>
@@ -778,17 +892,48 @@ exports.exportPayrollExcel = async (req, res) => {
 };
 
 /**
+ * Build payslip-shaped object from a PayrollRecord (with populated employeeId) for outputColumnService.
+ */
+function recordToPayslip(record) {
+  const emp = record.employeeId || {};
+  const toObj = (x) => (x && typeof x.toObject === 'function' ? x.toObject() : x);
+  const empObj = toObj(emp);
+  return {
+    employee: {
+      emp_no: record.emp_no || empObj?.emp_no || '',
+      name: empObj?.employee_name || [empObj?.first_name, empObj?.last_name].filter(Boolean).join(' ') || 'N/A',
+      designation: empObj?.designation_id?.name || empObj?.designation_id || '',
+      department: empObj?.department_id?.name || empObj?.department_id || 'N/A',
+      division: empObj?.division_id?.name || empObj?.division_id || 'N/A',
+    },
+    attendance: record.attendance && typeof record.attendance.toObject === 'function' ? record.attendance.toObject() : (record.attendance || {}),
+    earnings: record.earnings && typeof record.earnings.toObject === 'function' ? record.earnings.toObject() : (record.earnings || {}),
+    deductions: record.deductions && typeof record.deductions.toObject === 'function' ? record.deductions.toObject() : (record.deductions || {}),
+    loanAdvance: record.loanAdvance && typeof record.loanAdvance.toObject === 'function' ? record.loanAdvance.toObject() : (record.loanAdvance || {}),
+    arrears: record.arrears && typeof record.arrears === 'object'
+      ? (record.arrears.toObject ? record.arrears.toObject() : { ...record.arrears })
+      : { arrearsAmount: Number(record.arrearsAmount) || 0, arrearsSettlements: record.arrearsSettlements || [] },
+    manualDeductions: record.manualDeductions && typeof record.manualDeductions === 'object'
+      ? (record.manualDeductions.toObject ? record.manualDeductions.toObject() : { ...record.manualDeductions })
+      : { manualDeductionsAmount: Number(record.manualDeductionsAmount) || 0 },
+    manualDeductionsAmount: Number(record.manualDeductionsAmount) || 0,
+    arrearsAmount: Number(record.arrearsAmount) || 0,
+    netSalary: Number(record.netSalary) || 0,
+    roundOff: Number(record.roundOff) || 0,
+  };
+}
+
+/**
  * @desc    Get paysheet data (headers + rows) for table display – uses same output columns as Excel export.
- *          Field values and formula inputs come from: DB (PayrollRecord) → controller builds payslip
- *          from records + PayRegisterSummary/attendance → outputColumnService builds each row from
- *          payslip + config (fields from payslip, formulas from context derived from payslip).
+ *          source=existing: return existing PayrollRecords for the month (no calculation). Filters applied on data.
+ *          No source or source=calculate: run dynamic/legacy calculation for scope and return fresh data.
  * @route   GET /api/payroll/paysheet
- * @query   month (YYYY-MM), departmentId?, divisionId?, status?, search?, employeeIds?
+ * @query   month (YYYY-MM), departmentId?, divisionId?, status?, search?, employeeIds?, source? (existing | calculate)
  * @access  Private
  */
 exports.getPaysheetData = async (req, res) => {
   try {
-    const { month, departmentId, divisionId, status, search, employeeIds } = req.query;
+    const { month, departmentId, divisionId, status, search, employeeIds, source } = req.query;
 
     if (!month || !/^\d{4}-\d{2}$/.test(month)) {
       return res.status(400).json({
@@ -797,6 +942,111 @@ exports.getPaysheetData = async (req, res) => {
       });
     }
 
+    const config = await PayrollConfiguration.get();
+    const rawColumns = Array.isArray(config?.outputColumns) ? config.outputColumns : [];
+    const outputColumns = rawColumns.map((c, i) => {
+      const doc = c && typeof c.toObject === 'function' ? c.toObject() : (c && typeof c === 'object' ? { ...c } : {});
+      return {
+        header: doc.header != null && String(doc.header).trim() ? String(doc.header).trim() : `Column ${i}`,
+        source: doc.source === 'formula' ? 'formula' : 'field',
+        field: doc.field != null ? String(doc.field) : '',
+        formula: doc.formula != null ? String(doc.formula) : '',
+        order: typeof doc.order === 'number' ? doc.order : i,
+      };
+    });
+
+    const useExisting = String(source || '').toLowerCase() === 'existing';
+
+    if (useExisting && outputColumns.length > 0) {
+      // Return existing PayrollRecords only – no calculation. Filters applied on records.
+      // Respect resignation: same as pay register – include only active employees or those who left in this payroll month.
+      const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
+      const [yearNum, monthNum] = month.split('-').map(Number);
+      const { startDate: rangeStartStr, endDate: rangeEndStr } = await getPayrollDateRange(yearNum, monthNum);
+      const payrollRangeStart = new Date(rangeStartStr + 'T00:00:00.000Z');
+      const payrollRangeEnd = new Date(rangeEndStr + 'T23:59:59.999Z');
+
+      const records = await PayrollRecord.find({ month })
+        .populate({
+          path: 'employeeId',
+          select: 'employee_name emp_no first_name last_name department_id division_id designation_id leftDate',
+          populate: [
+            { path: 'department_id', select: 'name' },
+            { path: 'division_id', select: 'name' },
+            { path: 'designation_id', select: 'name' },
+          ],
+        })
+        .sort({ emp_no: 1 })
+        .lean();
+
+      let filtered = records;
+      // Filter by department, division, search
+      if (departmentId || divisionId || search) {
+        filtered = filtered.filter((r) => {
+          const emp = r.employeeId;
+          if (!emp) return false;
+          if (departmentId && (emp.department_id?._id?.toString() || emp.department_id?.toString()) !== departmentId) return false;
+          if (divisionId && (emp.division_id?._id?.toString() || emp.division_id?.toString()) !== divisionId) return false;
+          if (search) {
+            const term = String(search).toLowerCase();
+            const name = (emp.employee_name || [emp.first_name, emp.last_name].filter(Boolean).join(' ') || '').toLowerCase();
+            const no = (emp.emp_no || r.emp_no || '').toLowerCase();
+            if (!name.includes(term) && !no.includes(term)) return false;
+          }
+          return true;
+        });
+      }
+      // Respect resignation: exclude employees who left before this payroll month
+      filtered = filtered.filter((r) => {
+        const emp = r.employeeId;
+        if (!emp) return false;
+        const left = emp.leftDate;
+        if (!left) return true;
+        const leftDate = left instanceof Date ? left : new Date(left);
+        return leftDate >= payrollRangeStart && leftDate <= payrollRangeEnd;
+      });
+
+      const payslips = filtered.map((r) => recordToPayslip(r));
+      if (payslips.length === 0) {
+        return res.status(200).json({
+          success: true,
+          data: { headers: ['S.No', ...outputColumns.map((c) => c.header || 'Column')], rows: [] },
+          message: 'No existing payroll records for this month. Use "Load paysheet" to calculate.',
+        });
+      }
+
+      const allAllowanceNames = new Set();
+      const allDeductionNames = new Set();
+      const allStatutoryCodes = new Set();
+      payslips.forEach((p) => {
+        (p.earnings?.allowances || []).forEach((a) => { if (a && a.name) allAllowanceNames.add(a.name); });
+        (p.deductions?.otherDeductions || []).forEach((d) => { if (d && d.name) allDeductionNames.add(d.name); });
+        (p.deductions?.statutoryDeductions || []).forEach((s) => {
+          if (s && (s.code || s.name)) allStatutoryCodes.add(String(s.code || s.name).trim());
+        });
+      });
+      const expandedColumns = outputColumnService.expandOutputColumnsWithBreakdown(
+        outputColumns,
+        allAllowanceNames,
+        allDeductionNames,
+        allStatutoryCodes
+      );
+      const rows = payslips.map((payslip, index) => {
+        const rowData = outputColumnService.buildRowFromOutputColumns(payslip, expandedColumns, index + 1);
+        return { 'S.No': index + 1, ...rowData };
+      });
+      const headers = rows.length > 0
+        ? ['S.No', ...Object.keys(rows[0]).filter((k) => k !== 'S.No')]
+        : ['S.No', ...expandedColumns.map((c) => c.header || 'Column')];
+
+      return res.status(200).json({
+        success: true,
+        data: { headers, rows },
+        source: 'existing',
+      });
+    }
+
+    // Calculate path: resolve employee list and run calculation
     let targetEmployeeIds = [];
     if (employeeIds) {
       targetEmployeeIds = String(employeeIds)
@@ -809,7 +1059,23 @@ exports.getPaysheetData = async (req, res) => {
       if (divisionId) employeeQuery.division_id = divisionId;
       if (status === 'active') employeeQuery.is_active = true;
       else if (status === 'inactive') employeeQuery.is_active = false;
-      if (search) {
+      // Respect resignation (same as pay register): only active or left in this payroll month; skip when status=inactive
+      if (status !== 'inactive') {
+        const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
+        const [y, m] = month.split('-').map(Number);
+        const { startDate: startStr, endDate: endStr } = await getPayrollDateRange(y, m);
+        const rangeStart = new Date(startStr + 'T00:00:00.000Z');
+        const rangeEnd = new Date(endStr + 'T23:59:59.999Z');
+        const resignationOr = { $or: [ { is_active: true, leftDate: null }, { leftDate: { $gte: rangeStart, $lte: rangeEnd } } ] };
+        if (search) {
+          employeeQuery.$and = [
+            { $or: [ { employee_name: { $regex: search, $options: 'i' } }, { emp_no: { $regex: search, $options: 'i' } } ] },
+            resignationOr,
+          ];
+        } else {
+          Object.assign(employeeQuery, resignationOr);
+        }
+      } else if (search) {
         employeeQuery.$or = [
           { employee_name: { $regex: search, $options: 'i' } },
           { emp_no: { $regex: search, $options: 'i' } },
@@ -828,14 +1094,11 @@ exports.getPaysheetData = async (req, res) => {
     }
 
     const userId = req.user?._id?.toString() || req.user?.id;
-    const config = await PayrollConfiguration.get();
-    const outputColumns = Array.isArray(config?.outputColumns) ? config.outputColumns : [];
-    const sortedColumns = [...outputColumns].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-
     let rows = [];
     let headers = [];
 
-    if (sortedColumns.length > 0) {
+    if (outputColumns.length > 0) {
+      const payslips = [];
       for (let index = 0; index < targetEmployeeIds.length; index++) {
         const empId = targetEmployeeIds[index];
         try {
@@ -845,15 +1108,39 @@ exports.getPaysheetData = async (req, res) => {
             userId,
             { source: 'payregister', arrearsSettlements: [] }
           );
-          if (result?.row) {
-            const rowData = { 'S.No': index + 1, ...result.row };
-            rows.push(rowData);
+          if (result?.payslip) {
+            const slip = result.payslip;
+            payslips.push(slip && typeof slip.toObject === 'function' ? slip.toObject() : slip);
           }
         } catch (err) {
           console.error(`Error calculating payroll for paysheet (employee ${empId}):`, err.message);
         }
       }
-      headers = ['S.No', ...sortedColumns.map((c) => c.header || 'Column')];
+      if (payslips.length > 0) {
+        const allAllowanceNames = new Set();
+        const allDeductionNames = new Set();
+        const allStatutoryCodes = new Set();
+        payslips.forEach((p) => {
+          (p.earnings?.allowances || []).forEach((a) => { if (a && a.name) allAllowanceNames.add(a.name); });
+          (p.deductions?.otherDeductions || []).forEach((d) => { if (d && d.name) allDeductionNames.add(d.name); });
+          (p.deductions?.statutoryDeductions || []).forEach((s) => {
+            if (s && (s.code || s.name)) allStatutoryCodes.add(String(s.code || s.name).trim());
+          });
+        });
+        const expandedColumns = outputColumnService.expandOutputColumnsWithBreakdown(
+          outputColumns,
+          allAllowanceNames,
+          allDeductionNames,
+          allStatutoryCodes
+        );
+        rows = payslips.map((payslip, index) => {
+          const rowData = outputColumnService.buildRowFromOutputColumns(payslip, expandedColumns, index + 1);
+          return { 'S.No': index + 1, ...rowData };
+        });
+        headers = rows.length > 0
+          ? ['S.No', ...Object.keys(rows[0]).filter((k) => k !== 'S.No')]
+          : ['S.No', ...expandedColumns.map((c) => c.header || 'Column')];
+      }
     } else {
       const payslips = [];
       for (const empId of targetEmployeeIds) {
@@ -1697,10 +1984,28 @@ exports.calculatePayrollBulk = async (req, res) => {
 };
 
 /**
- * @desc    Get attendance data for a range of months for an employee
+ * @desc    Get attendance data for a range of months for an employee (for incremental arrears proration).
+ * Uses Pay Register Summary (attendance source) first; falls back to PayrollRecord if no pay register for that month.
  * @route   GET /api/payroll/attendance-range
  * @access  Private
  */
+function getMonthsInRange(startMonth, endMonth) {
+  const [startYear, startM] = startMonth.split('-').map(Number);
+  const [endYear, endM] = endMonth.split('-').map(Number);
+  const months = [];
+  let y = startYear;
+  let m = startM;
+  while (y < endYear || (y === endYear && m <= endM)) {
+    months.push(`${y}-${String(m).padStart(2, '0')}`);
+    m += 1;
+    if (m > 12) {
+      m = 1;
+      y += 1;
+    }
+  }
+  return months;
+}
+
 exports.getAttendanceDataRange = async (req, res) => {
   try {
     const { employeeId, startMonth, endMonth } = req.query;
@@ -1712,16 +2017,56 @@ exports.getAttendanceDataRange = async (req, res) => {
       });
     }
 
-    // Fetch payroll records for the range
-    // Since month is "YYYY-MM", string comparison works for range
-    const records = await PayrollRecord.find({
+    const months = getMonthsInRange(startMonth, endMonth);
+    if (months.length === 0) {
+      return res.status(200).json({ success: true, data: [] });
+    }
+
+    // Primary: Pay Register Summary (attendance / pay register – exists as soon as register is filled)
+    const payRegisters = await PayRegisterSummary.find({
       employeeId,
-      month: { $gte: startMonth, $lte: endMonth }
-    }).select('month totalDaysInMonth attendance.totalPaidDays');
+      month: { $in: months }
+    }).select('month totalDaysInMonth totals.totalPayableShifts totals.totalPresentDays totals.totalPaidLeaveDays totals.totalWeeklyOffs totals.totalHolidays').lean();
+
+    // Fallback: PayrollRecord (only exists after payroll run for that month)
+    const payrollRecords = await PayrollRecord.find({
+      employeeId,
+      month: { $in: months }
+    }).select('month totalDaysInMonth attendance.totalPaidDays').lean();
+
+    const byMonthPR = Object.fromEntries((payRegisters || []).map((r) => [r.month, r]));
+    const byMonthPayroll = Object.fromEntries((payrollRecords || []).map((r) => [r.month, r]));
+
+    const data = months.map((month) => {
+      const pr = byMonthPR[month];
+      const payroll = byMonthPayroll[month];
+      let totalDaysInMonth = 0;
+      let totalPaidDays = 0;
+
+      if (pr) {
+        totalDaysInMonth = Number(pr.totalDaysInMonth) || 0;
+        const tot = pr.totals || {};
+        const payable = tot.totalPayableShifts;
+        totalPaidDays = Number.isFinite(payable) ? payable : (Number(tot.totalPresentDays) || 0) + (Number(tot.totalPaidLeaveDays) || 0) + (Number(tot.totalWeeklyOffs) || 0) + (Number(tot.totalHolidays) || 0);
+      } else if (payroll) {
+        totalDaysInMonth = Number(payroll.totalDaysInMonth) || 0;
+        totalPaidDays = Number(payroll.attendance?.totalPaidDays) || 0;
+      }
+      if (totalDaysInMonth <= 0) {
+        const [y, m] = month.split('-').map(Number);
+        totalDaysInMonth = new Date(y, m, 0).getDate();
+      }
+
+      return {
+        month,
+        totalDaysInMonth: Number(totalDaysInMonth),
+        attendance: { totalPaidDays: Number(totalPaidDays) }
+      };
+    });
 
     res.status(200).json({
       success: true,
-      data: records
+      data
     });
   } catch (error) {
     console.error('Error fetching attendance data range:', error);

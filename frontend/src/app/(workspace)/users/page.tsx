@@ -377,14 +377,13 @@ export default function UsersPage() {
         }
       }
 
-      // Force HOD to use 'department' scope and ensure divisionMapping is correct
+      // Force HOD to use 'department' scope; keep full divisionMapping (allows multiple departments)
       if (formData.role === 'hod') {
         payload.dataScope = 'department';
-        (payload as any).department = formData.department || null;
-        (payload as any).division = formData.division || null;
-
-        // HOD MUST have a specific mapping
-        if (formData.division && formData.department) {
+        (payload as any).department = formData.department || (formData.divisionMapping?.[0]?.departments?.[0] && (typeof formData.divisionMapping[0].departments[0] === 'string' ? formData.divisionMapping[0].departments[0] : (formData.divisionMapping[0].departments[0] as any)?._id)) || null;
+        (payload as any).division = formData.division || (formData.divisionMapping?.[0]?.division && (typeof formData.divisionMapping[0].division === 'string' ? formData.divisionMapping[0].division : (formData.divisionMapping[0].division as any)?._id)) || null;
+        // Only set single division+department when divisionMapping was not already provided (e.g. from division mapping UI with multiple departments)
+        if ((!payload.divisionMapping || payload.divisionMapping.length === 0) && formData.division && formData.department) {
           payload.divisionMapping = [{
             division: formData.division,
             departments: [formData.department]
@@ -457,24 +456,25 @@ export default function UsersPage() {
               departments: depts
             }] as any;
           } else if (employeeFormData.role === 'hod' && employeeFormData.division && (employeeFormData.departments || []).length > 0) {
+            const deptIds = (employeeFormData.departments || []).map((d: any) => typeof d === 'string' ? d : d?._id);
             payload.divisionMapping = [{
               division: employeeFormData.division,
-              departments: [employeeFormData.departments![0]]
+              departments: deptIds
             }] as any;
           }
         }
       }
 
-      // HOD specific override for employee upgrade
+      // HOD: keep full divisionMapping (multiple departments); fallback to single only when mapping empty
       if (employeeFormData.role === 'hod') {
         payload.dataScope = 'department';
-        payload.department = employeeFormData.department || (employeeFormData.departments || [])[0] || null;
-        (payload as any).division = employeeFormData.division || null;
-
-        if (employeeFormData.division && (employeeFormData.department || (employeeFormData.departments || []).length > 0)) {
+        payload.department = employeeFormData.department || (employeeFormData.departments || [])[0] || (employeeFormData.divisionMapping?.[0]?.departments?.[0] && (typeof employeeFormData.divisionMapping[0].departments[0] === 'string' ? employeeFormData.divisionMapping[0].departments[0] : (employeeFormData.divisionMapping[0].departments[0] as any)?._id)) || null;
+        (payload as any).division = employeeFormData.division || (employeeFormData.divisionMapping?.[0]?.division && (typeof employeeFormData.divisionMapping[0].division === 'string' ? employeeFormData.divisionMapping[0].division : (employeeFormData.divisionMapping[0].division as any)?._id)) || null;
+        if ((!payload.divisionMapping || payload.divisionMapping.length === 0) && employeeFormData.division && (employeeFormData.department || (employeeFormData.departments || []).length > 0)) {
+          const deptIds = (employeeFormData.departments || []).map((d: any) => typeof d === 'string' ? d : d?._id);
           payload.divisionMapping = [{
             division: employeeFormData.division,
-            departments: [employeeFormData.department || employeeFormData.departments![0]]
+            departments: deptIds.length > 0 ? deptIds : [employeeFormData.department]
           }] as any;
         }
       }
@@ -541,13 +541,12 @@ export default function UsersPage() {
         }
       }
 
-      // HOD specific override for update
+      // HOD: keep full divisionMapping (allows multiple departments); fallback to single only when mapping empty
       if (formData.role === 'hod') {
         payload.dataScope = 'department';
-        (payload as any).department = formData.department || null;
-        (payload as any).division = formData.division || null;
-
-        if (formData.division && formData.department) {
+        (payload as any).department = formData.department || (formData.divisionMapping?.[0]?.departments?.[0] && (typeof formData.divisionMapping[0].departments[0] === 'string' ? formData.divisionMapping[0].departments[0] : (formData.divisionMapping[0].departments[0] as any)?._id)) || null;
+        (payload as any).division = formData.division || (formData.divisionMapping?.[0]?.division && (typeof formData.divisionMapping[0].division === 'string' ? formData.divisionMapping[0].division : (formData.divisionMapping[0].division as any)?._id)) || null;
+        if ((!payload.divisionMapping || payload.divisionMapping.length === 0) && formData.division && formData.department) {
           payload.divisionMapping = [{
             division: formData.division,
             departments: [formData.department]
@@ -846,15 +845,6 @@ export default function UsersPage() {
         }
       }
 
-      // If HOD, restrict to single choice
-      if (prev.role === 'hod') {
-        if (deptId !== null) {
-          newMapping = [{ division: divisionId, departments: [deptId] }];
-        } else {
-          newMapping = [{ division: divisionId, departments: [] }];
-        }
-      }
-
       return {
         ...prev,
         divisionMapping: newMapping,
@@ -975,104 +965,79 @@ export default function UsersPage() {
       );
     }
 
-    // Specialized UI for HOD Role
+    // HOD: use full division mapping (multiple divisions, multiple departments per division)
     if (data.role === 'hod') {
-      const selectedDivisionId = data.division || (data.divisionMapping?.[0]?.division
-        ? (typeof data.divisionMapping[0].division === 'string'
-          ? data.divisionMapping[0].division
-          : data.divisionMapping[0].division._id)
-        : '');
-
-      const getDeptId = (dept: string | Department | undefined) => {
-        if (!dept) return '';
-        return typeof dept === 'string' ? dept : dept._id;
-      };
-      const selectedDepartmentId = data.department || getDeptId(data.divisionMapping?.[0]?.departments?.[0]) || '';
-
-      const handleDivisionChange = (divId: string) => {
-        const newMapping = divId ? [{ division: divId, departments: [] }] : [];
-        setData({
-          ...data,
-          division: divId,
-          department: '', // Reset department when division changes
-          divisionMapping: newMapping,
-          allowedDivisions: divId ? [divId] : [],
-          dataScope: 'department' // Implicitly set datascope
-        });
-      };
-
-      const handleDepartmentChange = (deptId: string) => {
-        if (!selectedDivisionId) return;
-        const newMapping = [{ division: selectedDivisionId, departments: deptId ? [deptId] : [] }];
-        setData({
-          ...data,
-          department: deptId,
-          divisionMapping: newMapping
-        });
-      };
-
-      // Filter departments based on selected division
-      // Check if department has the division ID in its divisions array (which can be objects or strings)
-      const filteredDepartments = departments.filter(d =>
-        d.divisions?.some((div: any) => {
-          const dId = typeof div === 'string' ? div : div._id;
-          return dId === selectedDivisionId;
-        })
-      );
-
       return (
         <div className="border-t border-slate-200 dark:border-slate-700 pt-4 space-y-4">
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 dark:bg-amber-900/10 dark:border-amber-800">
-            <h3 className="flex items-center gap-2 text-sm font-bold text-amber-800 dark:text-amber-400 mb-4">
+            <h3 className="flex items-center gap-2 text-sm font-bold text-amber-800 dark:text-amber-400 mb-2">
               <span className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-800/50">
                 <Users className="h-4 w-4" />
               </span>
-              HOD Assignment
+              HOD – Division & Department Assignment
             </h3>
+            <p className="text-xs text-amber-700 dark:text-amber-500 mb-4">
+              Select one or more divisions and the departments this HOD will head. One HOD can be assigned to multiple departments.
+            </p>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
-                  Select Division *
-                </label>
-                <select
-                  value={selectedDivisionId}
-                  onChange={(e) => handleDivisionChange(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm focus:border-amber-500 focus:ring-amber-500 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
-                >
-                  <option value="">-- Choose Division --</option>
-                  {divisions.map(d => (
-                    <option key={d._id} value={d._id}>{d.name}</option>
-                  ))}
-                </select>
-              </div>
+            <div className="space-y-4">
+              {divisions.map((div) => {
+                const isSelected = data.divisionMapping?.some((m: any) => {
+                  const mDivId = typeof m.division === 'string' ? m.division : m.division?._id;
+                  return mDivId === div._id;
+                });
+                const mapping = data.divisionMapping?.find((m: any) => {
+                  const mDivId = typeof m.division === 'string' ? m.division : m.division?._id;
+                  return mDivId === div._id;
+                });
 
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
-                  Select Department *
-                </label>
-                <select
-                  value={selectedDepartmentId}
-                  onChange={(e) => handleDepartmentChange(e.target.value)}
-                  disabled={!selectedDivisionId}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm focus:border-amber-500 focus:ring-amber-500 disabled:opacity-50 disabled:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-white dark:disabled:bg-slate-900"
-                >
-                  <option value="">-- Choose Department --</option>
-                  {filteredDepartments.map(d => (
-                    <option key={d._id} value={d._id}>{d.name}</option>
-                  ))}
-                </select>
-                {selectedDivisionId && filteredDepartments.length === 0 && (
-                  <p className="mt-1 text-xs text-red-500">No departments linked to this division.</p>
-                )}
-              </div>
-            </div>
+                return (
+                  <div key={div._id} className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 overflow-hidden">
+                    <div
+                      className={`flex items-center justify-between p-3 cursor-pointer ${isSelected ? 'bg-amber-50 dark:bg-amber-900/20' : ''}`}
+                      onClick={() => toggleDivisionMapping(div._id, null, asEmployee)}
+                    >
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          readOnly
+                          className="rounded border-slate-300 text-amber-600"
+                        />
+                        <span className="text-sm font-medium dark:text-white">{div.name}</span>
+                      </div>
+                      {isSelected && (
+                        <span className="text-[10px] font-bold uppercase text-amber-600 dark:text-amber-400">
+                          {mapping?.departments?.length === 0 ? 'All Departments' : `${mapping?.departments?.length} Dept(s)`}
+                        </span>
+                      )}
+                    </div>
 
-            <div className="mt-3 flex items-start gap-2 rounded-lg bg-amber-100/50 p-2 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-400">
-              <Info className="h-4 w-4 shrink-0 mt-0.5" />
-              <p>
-                This user will be assigned as the Head of Department for the selected Department within the selected Division.
-              </p>
+                    {isSelected && (
+                      <div className="p-3 border-t border-slate-100 dark:border-slate-700 grid grid-cols-2 gap-2">
+                        {departments.filter(dept => dept.divisions?.some((d: any) => (typeof d === 'string' ? d : d._id) === div._id)).map(dept => {
+                          const deptId = dept._id;
+                          const isDeptSelected = (mapping?.departments || []).some((d: any) => (typeof d === 'string' ? d : d?._id) === deptId);
+                          return (
+                            <label key={dept._id} className="flex items-center gap-2 p-1.5 rounded hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={isDeptSelected}
+                                onChange={() => toggleDivisionMapping(div._id, dept._id, asEmployee)}
+                                className="rounded border-slate-300 text-amber-600 scale-75"
+                              />
+                              <span className="text-[11px] text-slate-600 dark:text-slate-400 truncate">{dept.name}</span>
+                            </label>
+                          );
+                        })}
+                        {departments.filter(dept => dept.divisions?.some((d: any) => (typeof d === 'string' ? d : d._id) === div._id)).length === 0 && (
+                          <div className="col-span-2 text-center py-2 text-[10px] text-slate-400">No departments linked to this division</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>

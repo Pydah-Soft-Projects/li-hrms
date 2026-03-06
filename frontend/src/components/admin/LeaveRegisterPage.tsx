@@ -15,7 +15,9 @@ interface Employee {
     clBalance: number;
     elBalance: number;
     compensatoryOffBalance: number;
+    monthlyCLLimit: number;
     presentMonthAllowedLeaves: number;
+    pendingCLThisMonth: number;
     cumulativeLeaves: number;
 }
 
@@ -74,32 +76,122 @@ export default function LeaveRegisterPage() {
         reason: ''
     });
     const [showEmployeeDetailModal, setShowEmployeeDetailModal] = useState(false);
-    const [selectedEmployeeDetail, setSelectedEmployeeDetail] = useState(null);
+    const [selectedEmployeeDetail, setSelectedEmployeeDetail] = useState<EmployeeDetail | null>(null);
     const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
     const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+    const [periodStart, setPeriodStart] = useState<string | null>(null);
+    const [periodEnd, setPeriodEnd] = useState<string | null>(null);
+    const [elEnabled, setElEnabled] = useState<boolean | null>(null);
+
+    // Navigate between payroll months (pay cycles) similar to Pay Register / Shift Roster
+    const handlePrevPeriod = () => {
+        setSelectedMonth((prev) => {
+            if (prev === 1) {
+                setSelectedYear((y) => y - 1);
+                return 12;
+            }
+            return prev - 1;
+        });
+    };
+
+    const handleNextPeriod = () => {
+        setSelectedMonth((prev) => {
+            if (prev === 12) {
+                setSelectedYear((y) => y + 1);
+                return 1;
+            }
+            return prev + 1;
+        });
+    };
+
+    const periodLabel = useMemo(() => {
+        if (!periodStart || !periodEnd) return '';
+        const start = new Date(periodStart);
+        const end = new Date(periodEnd);
+        if (isNaN(start.getTime()) || isNaN(end.getTime())) return '';
+
+        // Detect pure calendar month: 1st to last day of same month/year
+        const endOfStartMonth = new Date(start.getFullYear(), start.getMonth() + 1, 0);
+        const isCalendarMonth =
+            start.getDate() === 1 &&
+            end.getDate() === endOfStartMonth.getDate() &&
+            start.getMonth() === end.getMonth() &&
+            start.getFullYear() === end.getFullYear();
+
+        if (isCalendarMonth) {
+            return start.toLocaleString('default', { month: 'long', year: 'numeric' });
+        }
+
+        const startLabel = `${start.getDate()} ${start.toLocaleString('default', { month: 'short' })}`;
+        const endLabel = `${end.getDate()} ${end.toLocaleString('default', { month: 'short', year: 'numeric' })}`;
+        return `${startLabel} - ${endLabel}`;
+    }, [periodStart, periodEnd]);
+
+    const [initializedWithToday, setInitializedWithToday] = useState(false);
 
     useEffect(() => {
         fetchLeaveRegister();
     }, [selectedMonth, selectedYear]);
 
+    // Load leave policy to know if Earned Leave is enabled; controls visibility of EL calculation button
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await api.getLeaveSettings('leave');
+                if (!cancelled && res?.success && res.data?.settings?.earnedLeave) {
+                    const enabled = res.data.settings.earnedLeave.enabled;
+                    setElEnabled(enabled !== false);
+                }
+            } catch {
+                if (!cancelled) setElEnabled(null);
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
     const fetchLeaveRegister = async () => {
         try {
             setLoading(true);
-            const data = await api.getLeaveRegister({
-                month: selectedMonth,
-                year: selectedYear
-            });
+            // Ask backend for balance-as-of view so that CL Month Limit
+            // and Month limit are computed using payroll-cycle month logic
+            // (including locking of pending CL within that cycle).
+            // On first load, drive the pay cycle from today's date (baseDate),
+            // so that the initial period is the cycle containing "now".
+            const todayIso = new Date().toISOString().split('T')[0];
+            const params: any = {
+                balanceAsOf: true
+            };
+            if (!initializedWithToday) {
+                params.baseDate = todayIso;
+            } else {
+                params.month = selectedMonth;
+                params.year = selectedYear;
+            }
+
+            const data = await api.getLeaveRegister(params);
             
             if (data.success) {
-                // Backend returns groupByEmployeeMonthly: { employee, casualLeave, earnedLeave, compensatoryOff, totalPaidBalance, monthlyAllowedLimit }
+                if ((data as any).startDate) setPeriodStart((data as any).startDate);
+                if ((data as any).endDate) setPeriodEnd((data as any).endDate);
+                if (!initializedWithToday && (data as any).startDate && (data as any).endDate) {
+                    // After first successful load based on today's date, mark as initialized
+                    setInitializedWithToday(true);
+                }
+                // Backend returns groupByEmployeeMonthly: { employee, casualLeave, earnedLeave, compensatoryOff, totalPaidBalance, monthlyCLLimit, monthlyAllowedLimit }
                 const formattedEmployees = (data.data || []).map((emp: any) => {
                     const employee = emp.employee || {};
                     const employeeId = employee.id || emp.employeeId?._id || emp.employeeId?.id || emp.employeeId;
                     const casualLeave = emp.casualLeave || {};
                     const earnedLeave = emp.earnedLeave || {};
+                    const backendMonthlyCLLimit = typeof emp.monthlyCLLimit === 'number'
+                        ? emp.monthlyCLLimit
+                        : 0;
                     const backendMonthlyLimit = typeof emp.monthlyAllowedLimit === 'number'
                         ? emp.monthlyAllowedLimit
-                        : (casualLeave.balance || 0) + (earnedLeave.balance || 0) + ((emp.compensatoryOff && emp.compensatoryOff.balance) || 0);
+                        : backendMonthlyCLLimit + ((emp.compensatoryOff && emp.compensatoryOff.balance) || 0);
                     return {
                         employeeId,
                         empNo: employee.empNo ?? emp.empNo,
@@ -110,8 +202,10 @@ export default function LeaveRegisterPage() {
                         clBalance: casualLeave.balance ?? 0,
                         elBalance: earnedLeave.balance ?? 0,
                         compensatoryOffBalance: (emp.compensatoryOff?.balance) ?? 0,
-                        // Use backend-calculated monthly allowed limit (CL + CCL + optional EL)
+                        monthlyCLLimit: backendMonthlyCLLimit,
+                        // Use backend-calculated monthly allowed limit (CL limit + CCL)
                         presentMonthAllowedLeaves: backendMonthlyLimit,
+                        pendingCLThisMonth: emp.pendingCLThisMonth ?? 0,
                         cumulativeLeaves: emp.totalPaidBalance ?? 0
                     };
                 });
@@ -187,6 +281,25 @@ export default function LeaveRegisterPage() {
         }
     };
 
+    const handleCalculateELForPeriod = async () => {
+        try {
+            const result = await api.updateAllEL({
+                month: selectedMonth,
+                year: selectedYear
+            });
+            if (result.success) {
+                toast.success(result.message || 'Earned leave calculated for current payroll period');
+                // Refresh register so EL credits and balances are visible
+                fetchLeaveRegister();
+            } else {
+                toast.error(result.message || 'Failed to calculate earned leave');
+            }
+        } catch (error) {
+            console.error('Error triggering EL calculation:', error);
+            toast.error('Error triggering earned leave calculation');
+        }
+    };
+
     const exportToExcel = () => {
         // TODO: Implement Excel export
         toast.success('Export feature coming soon!');
@@ -219,15 +332,33 @@ export default function LeaveRegisterPage() {
             <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Leave Register</h1>
-                    <p className="text-gray-500 dark:text-gray-400 mt-0.5">Complete leave ledger for all employees</p>
+                    <p className="text-gray-500 dark:text-gray-400 mt-0.5">
+                        Complete leave ledger for all employees
+                    </p>
+                    {periodStart && periodEnd && (
+                        <p className="text-[11px] font-medium text-gray-500 dark:text-gray-400 mt-0.5">
+                            Period: {new Date(periodStart).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} -{' '}
+                            {new Date(periodEnd).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </p>
+                    )}
                 </div>
-                <button
-                    onClick={exportToExcel}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium"
-                >
-                    <Download className="w-4 h-4" />
-                    Export
-                </button>
+                <div className="flex items-center gap-3">
+                    {elEnabled && (
+                        <button
+                            onClick={handleCalculateELForPeriod}
+                            className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors text-sm font-medium"
+                        >
+                            <span>Calculate EL for this payroll</span>
+                        </button>
+                    )}
+                    <button
+                        onClick={exportToExcel}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm font-medium"
+                    >
+                        <Download className="w-4 h-4" />
+                        Export
+                    </button>
+                </div>
             </div>
 
             {/* Filters */}
@@ -236,7 +367,14 @@ export default function LeaveRegisterPage() {
                     <Filter className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                     <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Filters</span>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-2">
+                {periodStart && periodEnd && (
+                    <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                        Pay cycle for selected month:&nbsp;
+                        {new Date(periodStart).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} -{' '}
+                        {new Date(periodEnd).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </p>
+                )}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
                     <div className="relative">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 w-4 h-4" />
                         <input
@@ -247,19 +385,28 @@ export default function LeaveRegisterPage() {
                             className="pl-10 pr-4 py-2.5 w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                         />
                     </div>
-                    <div className="flex items-center gap-2">
-                        <Calendar className="w-4 h-4 text-gray-500 dark:text-gray-400 shrink-0" />
-                        <select
-                            value={selectedMonth}
-                            onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
-                            className="flex-1 min-w-0 px-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                        >
-                            {[...Array(12)].map((_, i) => (
-                                <option key={i} value={i + 1}>
-                                    {new Date(0, i).toLocaleString('default', { month: 'long' })}
-                                </option>
-                            ))}
-                        </select>
+                    <div className="flex items-center justify-end">
+                        <div className="inline-flex items-center rounded-full border border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-800/40 px-2 py-1 text-xs font-medium text-gray-700 dark:text-gray-200">
+                            <button
+                                type="button"
+                                onClick={handlePrevPeriod}
+                                className="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700"
+                                aria-label="Previous period"
+                            >
+                                ‹
+                            </button>
+                            <span className="mx-3 whitespace-nowrap uppercase tracking-wide">
+                                {periodLabel || `${selectedMonth}/${selectedYear}`}
+                            </span>
+                            <button
+                                type="button"
+                                onClick={handleNextPeriod}
+                                className="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700"
+                                aria-label="Next period"
+                            >
+                                ›
+                            </button>
+                        </div>
                     </div>
                     <div className="flex items-center gap-2">
                         <Calendar className="w-4 h-4 text-gray-500 dark:text-gray-400 shrink-0" />
@@ -304,6 +451,12 @@ export default function LeaveRegisterPage() {
                                     Comp Off
                                 </th>
                                 <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                    CL Month Limit
+                                </th>
+                                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                                    Locked CL (Pending)
+                                </th>
+                                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                                     Month limit
                                 </th>
                                 <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -346,6 +499,12 @@ export default function LeaveRegisterPage() {
                                         }`}>
                                             {employee.compensatoryOffBalance}
                                         </span>
+                                    </td>
+                                    <td className="px-4 py-3 text-center text-sm text-gray-900 dark:text-gray-100 font-medium">
+                                        {employee.monthlyCLLimit}
+                                    </td>
+                                    <td className="px-4 py-3 text-center text-sm text-amber-700 dark:text-amber-300 font-medium">
+                                        {employee.pendingCLThisMonth}
                                     </td>
                                     <td className="px-4 py-3 text-center text-sm text-gray-900 dark:text-gray-100 font-medium">
                                         {employee.presentMonthAllowedLeaves}

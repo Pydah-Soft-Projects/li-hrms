@@ -17,6 +17,7 @@ interface UserProfile {
   isActive: boolean;
   createdAt: string;
   lastLogin?: string;
+  profilePhoto?: string | null;
 }
 
 export default function ProfilePage() {
@@ -243,10 +244,39 @@ export default function ProfilePage() {
               {/* Profile Header with Gradient */}
               <div className="h-24 bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-600" />
 
-              {/* Avatar */}
+              {/* Avatar with optional profile photo upload */}
               <div className="relative flex justify-center -mt-12">
-                <div className="w-24 h-24 rounded-full bg-white border-4 border-white shadow-lg flex items-center justify-center text-3xl font-bold text-blue-600">
-                  {user.name?.[0]?.toUpperCase() || 'U'}
+                <div className="w-24 h-24 rounded-full bg-white border-4 border-white shadow-lg overflow-hidden relative group">
+                  {user.profilePhoto ? (
+                    <img src={user.profilePhoto} alt={user.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-3xl font-bold text-blue-600">
+                      {user.name?.[0]?.toUpperCase() || 'U'}
+                    </div>
+                  )}
+                  <label className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                    <span className="text-white text-xs font-medium text-center">Change photo</span>
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/jpg"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        try {
+                          const res = await api.uploadProfile(file) as { success?: boolean; url?: string };
+                          if (res?.success && res?.url) {
+                            await api.updateProfile({ profilePhoto: res.url });
+                            setUser(prev => prev ? { ...prev, profilePhoto: res.url } : null);
+                            setToast({ type: 'success', message: 'Profile photo updated' });
+                          }
+                        } catch (err) {
+                          setToast({ type: 'error', message: 'Failed to upload photo' });
+                        }
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
                 </div>
               </div>
 

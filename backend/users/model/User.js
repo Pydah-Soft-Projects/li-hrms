@@ -14,7 +14,7 @@ const userSchema = new mongoose.Schema(
     password: {
       type: String,
       required: [true, 'Password is required'],
-      minlength: [6, 'Password must be at least 6 characters'],
+      minlength: [5, 'Password must be at least 5 characters'],
       select: false, // Don't return password by default
     },
     name: {
@@ -89,6 +89,12 @@ const userSchema = new mongoose.Schema(
     isActive: {
       type: Boolean,
       default: true,
+    },
+    // Profile photo URL (S3). Used when user has no linked employee (employeeRef).
+    profilePhoto: {
+      type: String,
+      trim: true,
+      default: null,
     },
     lastLogin: {
       type: Date,
