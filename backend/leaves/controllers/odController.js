@@ -150,10 +150,32 @@ exports.getODs = async (req, res) => {
     const scopeFilter = req.scopeFilter || { isActive: true };
     const workflowFilter = buildWorkflowVisibilityFilter(req.user);
 
+    // Include ODs whose document has division/department in scope OR whose employeeId is in scope.
+    // Also: for scoped roles (HOD/Manager/HR), show ALL requests from in-scope employees regardless of workflow stage,
+    // so they can track and manage team requests even when pending at reporting_manager or other stages.
+    let jurisdictionFilter = scopeFilter;
+    let visibilityFilter = workflowFilter;
+    const scopedEmployeeIds = await getEmployeeIdsInScope(req.user);
+    if (Array.isArray(scopedEmployeeIds) && scopedEmployeeIds.length > 0) {
+      jurisdictionFilter = {
+        $or: [
+          scopeFilter,
+          { employeeId: { $in: scopedEmployeeIds } }
+        ]
+      };
+      // Scoped roles see all requests from in-scope employees (bypass workflow stage restriction)
+      visibilityFilter = {
+        $or: [
+          workflowFilter,
+          { employeeId: { $in: scopedEmployeeIds } }
+        ]
+      };
+    }
+
     const filter = {
       $and: [
-        scopeFilter,
-        workflowFilter,
+        jurisdictionFilter,
+        visibilityFilter,
         { isActive: true }
       ]
     };

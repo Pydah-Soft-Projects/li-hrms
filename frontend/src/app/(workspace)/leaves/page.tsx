@@ -1107,7 +1107,7 @@ export default function LeavesPage() {
           }
           const requestedDays = getRequestedDays(formData.fromDate, formData.toDate, formData.isHalfDay);
           if (requestedDays > clBalanceForMonth) {
-            toast.error(`Casual Leave balance for this month is ${clBalanceForMonth} day(s). You selected ${requestedDays} day(s). Please reduce the date range.`);
+            toast.error(`CL allowed for this pay period is ${clBalanceForMonth} day(s). You selected ${requestedDays} day(s). Please reduce the date range.`);
             setLoading(false);
             return;
           }
@@ -1363,7 +1363,7 @@ export default function LeavesPage() {
     checkApprovedRecords();
   }, [selectedEmployee, formData.fromDate, formData.toDate]);
 
-  // Fetch CL balance for selected month when leave type is CL (Casual Leave)
+  // Fetch CL balance for the pay-cycle period that contains the selected from date (not calendar month).
   const isCLSelected = applyType === 'leave' && (formData.leaveType === 'CL' || formData.leaveType?.toUpperCase() === 'CL');
   const targetEmployeeForBalance = selectedEmployee || (employees.length > 0 ? employees[0] : null) ||
     (currentUser?.role === 'employee' ? { _id: (currentUser as any).id, emp_no: (currentUser as any).emp_no || (currentUser as any).employeeId } : null);
@@ -1383,11 +1383,13 @@ export default function LeavesPage() {
     setClBalanceLoading(true);
     setClBalanceForMonth(null);
 
-    // For CL, always resolve monthly limit based on the selected start date's payroll cycle,
-    // not the simple calendar month. Backend will map baseDate -> payroll month/year.
+    // Determine pay-cycle period from the selected date: send baseDate (not calendar month/year)
+    // so the backend resolves the correct period (e.g. 26 Jan–25 Feb for 31 Jan when cycle is 26–25).
+    const raw = formData.fromDate?.includes('T') ? formData.fromDate.split('T')[0] : (formData.fromDate || '');
+    const baseDateForApi = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : toISODate(formData.fromDate) || raw;
     const registerParams = hasValidEmployeeId
-      ? { employeeId: String(targetEmployeeId), baseDate: formData.fromDate, balanceAsOf: true }
-      : { empNo: String(targetEmpNo), baseDate: formData.fromDate, balanceAsOf: true };
+      ? { employeeId: String(targetEmployeeId), baseDate: baseDateForApi, balanceAsOf: true }
+      : { empNo: String(targetEmpNo), baseDate: baseDateForApi, balanceAsOf: true };
     api.getLeaveRegister(registerParams)
       .then((res: any) => {
         if (cancelled) return;
@@ -3296,16 +3298,18 @@ export default function LeavesPage() {
                         </p>
                         <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
                           <span className="text-green-600 dark:text-green-400">
-                            CL limit for this month: {clBalanceForMonth} day{clBalanceForMonth !== 1 ? 's' : ''}.
-                          </span>{' '}
-                          You can apply for up to <strong>{clBalanceForMonth}</strong> CL day{clBalanceForMonth !== 1 ? 's' : ''} in this month.
+                            CL allowed this pay period: <strong>{clBalanceForMonth}</strong> day{clBalanceForMonth !== 1 ? 's' : ''} (2 per period, pending CL locks).
+                          </span>
+                        </p>
+                        <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                          You can apply for up to <strong>{clBalanceForMonth}</strong> CL day{clBalanceForMonth !== 1 ? 's' : ''} in this pay cycle. Compensatory (CCL) is in addition.
                         </p>
                         <p className="text-sm text-slate-700 dark:text-slate-300">
-                          Compensatory off balance:{' '}
+                          Compensatory off (CCL):{' '}
                           <span className="font-semibold">
                             {cclBalance ?? 0} day{(cclBalance ?? 0) !== 1 ? 's' : ''}.
                           </span>{' '}
-                          When you choose CCL type, you can use up to your CCL balance in addition to your CL limit.
+                          CCL is added on top of the 2 CL per period when you use it.
                         </p>
                       </>
                     ) : (
@@ -3417,7 +3421,7 @@ export default function LeavesPage() {
                               let toDate = e.target.value;
                               if (maxToDateISO && toDate > maxToDateISO) {
                                 toDate = maxToDateISO;
-                                toast.info(`CL balance allows up to ${clBalanceForMonth} days; To date capped.`);
+                                toast.info(`CL allowed for this period: up to ${clBalanceForMonth} days; To date capped.`);
                               }
                               if (policyMax && toDate > policyMax) toDate = policyMax;
                               setFormData({ ...formData, toDate });
@@ -3426,7 +3430,7 @@ export default function LeavesPage() {
                             className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 sm:py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                           />
                           {isCLFullDay && maxToDateISO && formData.toDate > maxToDateISO && (
-                            <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">Max {clBalanceForMonth} days for CL this month.</p>
+                            <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">Max {clBalanceForMonth} days for CL in this pay period.</p>
                           )}
                         </div>
                       </div>

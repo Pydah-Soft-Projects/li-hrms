@@ -1,13 +1,18 @@
 /**
  * Monthly leave accrual cron (IST).
- * Goal: run CL + EL accruals (and CCL expiry) at the END of each payroll cycle,
- * so that EL is available when payroll runs.
+ * Creates leave register entries and EL-related data at the END of each payroll cycle.
+ *
+ * Goal: run EL accruals (and CCL expiry) so that:
+ * - Leave register has CREDIT transactions for the completed cycle (month, year).
+ * - EL is available when payroll runs for that period.
  *
  * Strategy:
  * - Schedule a light job every day at 00:10 IST.
  * - For each run, resolve today's payroll cycle via dateCycleService.
  * - Only when today is the LAST DAY of that payroll cycle do we trigger
- *   accrualEngine.postMonthlyAccruals for that cycle's (month, year).
+ *   accrualEngine.postMonthlyAccruals(month, year) for that cycle.
+ * - That posts EL credits (and CCL expiry) to the leave register for the cycle
+ *   that just ended, so "next month" views and payroll see correct balances.
  */
 
 const cron = require('node-cron');

@@ -109,32 +109,41 @@ async function manualCalculateTotals(employeeId, emp_no, startDateStr, endDateSt
     totalPayableShiftsFromDailies += dayPay;
   }
 
-  let totalLeaveDays = 0;
+  // Leave: each calendar day in period counted once (no double-count for overlapping leaves)
+  const leaveDaysInPeriod = new Map();
   for (const leave of leaves) {
     const leaveStart = createISTDate(extractISTComponents(leave.fromDate).dateStr, '00:00');
     const leaveEnd = createISTDate(extractISTComponents(leave.toDate).dateStr, '23:59');
+    const contrib = leave.isHalfDay ? 0.5 : 1;
     let currentDate = new Date(leaveStart);
     while (currentDate <= leaveEnd) {
-      if (currentDate >= payrollStart && currentDate <= payrollEnd) {
-        totalLeaveDays += leave.isHalfDay ? 0.5 : 1;
+      const dayStr = toNormalizedDateStr(currentDate);
+      if (dayStr >= startDateStr && dayStr <= endDateStr) {
+        const existing = leaveDaysInPeriod.get(dayStr) || 0;
+        leaveDaysInPeriod.set(dayStr, Math.max(existing, contrib));
       }
       currentDate.setDate(currentDate.getDate() + 1);
     }
   }
+  const totalLeaveDays = Array.from(leaveDaysInPeriod.values()).reduce((s, c) => s + c, 0);
 
-  let totalODDays = 0;
+  const odDaysInPeriod = new Map();
   for (const od of ods) {
     if (od.odType_extended === 'hours') continue;
     const odStart = createISTDate(extractISTComponents(od.fromDate).dateStr, '00:00');
     const odEnd = createISTDate(extractISTComponents(od.toDate).dateStr, '23:59');
+    const contrib = od.isHalfDay ? 0.5 : 1;
     let currentDate = new Date(odStart);
     while (currentDate <= odEnd) {
-      if (currentDate >= payrollStart && currentDate <= payrollEnd) {
-        totalODDays += od.isHalfDay ? 0.5 : 1;
+      const dayStr = toNormalizedDateStr(currentDate);
+      if (dayStr >= startDateStr && dayStr <= endDateStr) {
+        const existing = odDaysInPeriod.get(dayStr) || 0;
+        odDaysInPeriod.set(dayStr, Math.max(existing, contrib));
       }
       currentDate.setDate(currentDate.getDate() + 1);
     }
   }
+  const totalODDays = Array.from(odDaysInPeriod.values()).reduce((s, c) => s + c, 0);
 
   const datesWithAttendance = new Set(dailies.map((r) => toNormalizedDateStr(r.date)));
   let odOnlyPresentDays = 0;
