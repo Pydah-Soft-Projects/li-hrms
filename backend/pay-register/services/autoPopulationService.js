@@ -278,7 +278,7 @@ async function fetchShiftData(emp_no, startDate, endDate) {
  * Resolve conflicts and determine status for a date
  */
 async function resolveConflicts(dateData) {
-  const { attendance, leave, od, shift } = dateData;
+  const { attendance, leave, od, shift, lateInMinutes, earlyOutMinutes } = dateData;
   const isHoliday = shift?.status === 'HOL';
   const isWeekOff = shift?.status === 'WO';
 
@@ -331,10 +331,15 @@ async function resolveConflicts(dateData) {
   // Only PRESENT and HALF_DAY count as present (align with attendance summary; PARTIAL is not counted as present)
   if (attendance && (attendance.status === 'PRESENT' || attendance.status === 'HALF_DAY')) {
     if (attendance.status === 'HALF_DAY') {
-      if (isNonWorking(firstHalf.status)) {
-        firstHalf.status = 'present';
-      } else if (isNonWorking(secondHalf.status)) {
-        secondHalf.status = 'present';
+      const eo = Number(earlyOutMinutes) || 0;
+      const li = Number(lateInMinutes) || 0;
+
+      if (eo > 120) {
+        if (isNonWorking(firstHalf.status)) firstHalf.status = 'present';
+      } else if (li > 120) {
+        if (isNonWorking(secondHalf.status)) secondHalf.status = 'present';
+      } else {
+        if (isNonWorking(firstHalf.status)) firstHalf.status = 'present'; // Default
       }
     } else {
       if (isNonWorking(firstHalf.status)) {
@@ -384,11 +389,28 @@ async function populatePayRegisterFromSources(employeeId, emp_no, year, monthNum
       payableShifts: attendance.shiftId.payableShifts || 1,
     } : null);
 
+    // Late/early-out: use only the first segment (first shift) when employee has multiple shifts
+    const firstShift = Array.isArray(attendance?.shifts) && attendance.shifts.length > 0 ? attendance.shifts[0] : null;
+    let isLate = firstShift
+      ? Boolean(firstShift.isLateIn || (typeof firstShift.lateInMinutes === 'number' && firstShift.lateInMinutes > 0))
+      : Boolean(attendance?.isLateIn || (typeof attendance?.totalLateInMinutes === 'number' && attendance.totalLateInMinutes > 0));
+    let isEarlyOut = firstShift
+      ? Boolean(firstShift.isEarlyOut || (typeof firstShift.earlyOutMinutes === 'number' && firstShift.earlyOutMinutes > 0))
+      : Boolean(attendance?.isEarlyOut || (typeof attendance?.totalEarlyOutMinutes === 'number' && attendance.totalEarlyOutMinutes > 0));
+    let lateInMinutes = firstShift
+      ? (typeof firstShift.lateInMinutes === 'number' ? firstShift.lateInMinutes : 0)
+      : (typeof attendance?.totalLateInMinutes === 'number' ? attendance.totalLateInMinutes : 0);
+    let earlyOutMinutes = firstShift
+      ? (typeof firstShift.earlyOutMinutes === 'number' ? firstShift.earlyOutMinutes : 0)
+      : (typeof attendance?.totalEarlyOutMinutes === 'number' ? attendance.totalEarlyOutMinutes : 0);
+
     const { firstHalf, secondHalf } = await resolveConflicts({
       attendance,
       leave,
       od,
       shift,
+      lateInMinutes,
+      earlyOutMinutes,
     });
 
     const isSplit = firstHalf.status !== secondHalf.status;
@@ -396,20 +418,15 @@ async function populatePayRegisterFromSources(employeeId, emp_no, year, monthNum
     const leaveType = isSplit ? null : (firstHalf.leaveType || null);
     const isOD = isSplit ? false : (firstHalf.isOD || false);
 
-    // Late/early-out: use only the first segment (first shift) when employee has multiple shifts
-    const firstShift = Array.isArray(attendance?.shifts) && attendance.shifts.length > 0 ? attendance.shifts[0] : null;
-    const isLate = firstShift
-      ? Boolean(firstShift.isLateIn || (typeof firstShift.lateInMinutes === 'number' && firstShift.lateInMinutes > 0))
-      : Boolean(attendance?.isLateIn || (typeof attendance?.totalLateInMinutes === 'number' && attendance.totalLateInMinutes > 0));
-    const isEarlyOut = firstShift
-      ? Boolean(firstShift.isEarlyOut || (typeof firstShift.earlyOutMinutes === 'number' && firstShift.earlyOutMinutes > 0))
-      : Boolean(attendance?.isEarlyOut || (typeof attendance?.totalEarlyOutMinutes === 'number' && attendance.totalEarlyOutMinutes > 0));
-    const lateInMinutes = firstShift
-      ? (typeof firstShift.lateInMinutes === 'number' ? firstShift.lateInMinutes : 0)
-      : (typeof attendance?.totalLateInMinutes === 'number' ? attendance.totalLateInMinutes : 0);
-    const earlyOutMinutes = firstShift
-      ? (typeof firstShift.earlyOutMinutes === 'number' ? firstShift.earlyOutMinutes : 0)
-      : (typeof attendance?.totalEarlyOutMinutes === 'number' ? attendance.totalEarlyOutMinutes : 0);
+    // Apply OD/Leave Waiver Logic: If OD or Leave covers the half, waive Lates/Early Outs respectively
+    if (firstHalf.isOD || firstHalf.status === 'od' || firstHalf.status === 'leave') {
+      isLate = false;
+      lateInMinutes = 0;
+    }
+    if (secondHalf.isOD || secondHalf.status === 'od' || secondHalf.status === 'leave') {
+      isEarlyOut = false;
+      earlyOutMinutes = 0;
+    }
 
     const dailyRecord = {
       date,

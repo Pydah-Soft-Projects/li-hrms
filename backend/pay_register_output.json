@@ -1,0 +1,299 @@
+{
+  "monthlySummary": {
+    "present": 23,
+    "paidLeaves": 2,
+    "ods": 8.5,
+    "lates": 0,
+    "earlyOuts": 0,
+    "payableShifts": 23
+  },
+  "payRegister": {
+    "present": 23,
+    "paidLeaves": 2,
+    "ods": 8.5,
+    "lates": 0,
+    "earlyOuts": 0,
+    "payableShifts": 23
+  },
+  "dailyRecords": [
+    {
+      "date": "2026-01-26",
+      "s1": "holiday",
+      "s2": "holiday",
+      "od1": false,
+      "od2": false,
+      "isLate": false,
+      "isEarlyOut": false
+    },
+    {
+      "date": "2026-01-27",
+      "s1": "present",
+      "s2": "od",
+      "od1": false,
+      "od2": true,
+      "isLate": false,
+      "isEarlyOut": false
+    },
+    {
+      "date": "2026-01-28",
+      "s1": "od",
+      "s2": "od",
+      "od1": true,
+      "od2": true,
+      "isLate": false,
+      "isEarlyOut": false
+    },
+    {
+      "date": "2026-01-29",
+      "s1": "present",
+      "s2": "present",
+      "od1": false,
+      "od2": false,
+      "isLate": false,
+      "isEarlyOut": false
+    },
+    {
+      "date": "2026-01-30",
+      "s1": "present",
+      "s2": "present",
+      "od1": false,
+      "od2": false,
+      "isLate": false,
+      "isEarlyOut": false
+    },
+    {
+      "date": "2026-01-31",
+      "s1": "absent",
+      "s2": "od",
+      "od1": false,
+      "od2": true,
+      "isLate": false,
+      "isEarlyOut": false
+    },
+    {
+      "date": "2026-02-01",
+      "s1": "week_off",
+      "s2": "week_off",
+      "od1": false,
+      "od2": false,
+      "isLate": false,
+      "isEarlyOut": false
+    },
+    {
+      "date": "2026-02-02",
+      "s1": "present",
+      "s2": "present",
+      "od1": false,
+      "od2": false,
+      "isLate": false,
+      "isEarlyOut": false
+    },
+    {
+      "date": "2026-02-03",
+      "s1": "od",
+      "s2": "od",
+      "od1": true,
+      "od2": true,
+      "isLate": false,
+      "isEarlyOut": false
+    },
+    {
+      "date": "2026-02-04",
+      "s1": "present",
+      "s2": "od",
+      "od1": false,
+      "od2": true,
+      "isLate": false,
+      "isEarlyOut": false
+    },
+    {
+      "date": "2026-02-05",
+      "s1": "present",
+      "s2": "od",
+      "od1": false,
+      "od2": true,
+      "isLate": false,
+      "isEarlyOut": false
+    },
+    {
+      "date": "2026-02-06",
+      "s1": "present",
+      "s2": "present",
+      "od1": false,
+      "od2": false,
+      "isLate": false,
+      "isEarlyOut": false
+    },
+    {
+      "date": "2026-02-07",
+      "s1": "od",
+      "s2": "od",
+      "od1": true,
+      "od2": true,
+      "isLate": false,
+      "isEarlyOut": false
+    },
+    {
+      "date": "2026-02-08",
+      "s1": "week_off",
+      "s2": "week_off",
+      "od1": false,
+      "od2": false,
+      "isLate": false,
+      "isEarlyOut": false
+    },
+    {
+      "date": "2026-02-09",
+      "s1": "present",
+      "s2": "od",
+      "od1": false,
+      "od2": true,
+      "isLate": false,
+      "isEarlyOut": false
+    },
+    {
+      "date": "2026-02-10",
+      "s1": "leave",
+      "s2": "leave",
+      "od1": false,
+      "od2": false,
+      "isLate": false,
+      "isEarlyOut": false
+    },
+    {
+      "date": "2026-02-11",
+      "s1": "od",
+      "s2": "od",
+      "od1": true,
+      "od2": true,
+      "isLate": false,
+      "isEarlyOut": false
+    },
+    {
+      "date": "2026-02-12",
+      "s1": "present",
+      "s2": "present",
+      "od1": false,
+      "od2": false,
+      "isLate": false,
+      "isEarlyOut": false
+    },
+    {
+      "date": "2026-02-13",
+      "s1": "present",
+      "s2": "present",
+      "od1": false,
+      "od2": false,
+      "isLate": false,
+      "isEarlyOut": false
+    },
+    {
+      "date": "2026-02-14",
+      "s1": "present",
+      "s2": "od",
+      "od1": false,
+      "od2": true,
+      "isLate": false,
+      "isEarlyOut": false
+    },
+    {
+      "date": "2026-02-15",
+      "s1": "week_off",
+      "s2": "week_off",
+      "od1": false,
+      "od2": false,
+      "isLate": false,
+      "isEarlyOut": false
+    },
+    {
+      "date": "2026-02-16",
+      "s1": "absent",
+      "s2": "leave",
+      "od1": false,
+      "od2": false,
+      "isLate": false,
+      "isEarlyOut": false
+    },
+    {
+      "date": "2026-02-17",
+      "s1": "present",
+      "s2": "present",
+      "od1": false,
+      "od2": false,
+      "isLate": false,
+      "isEarlyOut": false
+    },
+    {
+      "date": "2026-02-18",
+      "s1": "present",
+      "s2": "leave",
+      "od1": false,
+      "od2": false,
+      "isLate": false,
+      "isEarlyOut": false
+    },
+    {
+      "date": "2026-02-19",
+      "s1": "present",
+      "s2": "present",
+      "od1": false,
+      "od2": false,
+      "isLate": false,
+      "isEarlyOut": false
+    },
+    {
+      "date": "2026-02-20",
+      "s1": "present",
+      "s2": "od",
+      "od1": false,
+      "od2": true,
+      "isLate": false,
+      "isEarlyOut": false
+    },
+    {
+      "date": "2026-02-21",
+      "s1": "present",
+      "s2": "present",
+      "od1": false,
+      "od2": false,
+      "isLate": false,
+      "isEarlyOut": false
+    },
+    {
+      "date": "2026-02-22",
+      "s1": "week_off",
+      "s2": "week_off",
+      "od1": false,
+      "od2": false,
+      "isLate": false,
+      "isEarlyOut": false
+    },
+    {
+      "date": "2026-02-23",
+      "s1": "present",
+      "s2": "od",
+      "od1": false,
+      "od2": true,
+      "isLate": false,
+      "isEarlyOut": false
+    },
+    {
+      "date": "2026-02-24",
+      "s1": "od",
+      "s2": "present",
+      "od1": true,
+      "od2": false,
+      "isLate": false,
+      "isEarlyOut": false
+    },
+    {
+      "date": "2026-02-25",
+      "s1": "present",
+      "s2": "present",
+      "od1": false,
+      "od2": false,
+      "isLate": false,
+      "isEarlyOut": false
+    }
+  ]
+}
