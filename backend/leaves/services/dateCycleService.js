@@ -1,5 +1,6 @@
 const Settings = require('../../settings/model/Settings');
 const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
+const { extractISTComponents, createISTDate } = require('../../shared/utils/dateUtils');
 
 /**
  * Date and Cycle Utility Service
@@ -8,18 +9,17 @@ const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
 
 class DateCycleService {
     /**
-     * Get payroll cycle settings
+     * Get payroll cycle settings (startDay, endDay from settings – not hardcoded).
+     * Returns numeric 1–31 so period resolution works for any configured cycle.
      */
     async getPayrollCycleSettings() {
         try {
             const settings = await Settings.getSettingsByCategory('payroll');
-            return {
-                startDay: settings.payroll_cycle_start_day || 1,
-                endDay: settings.payroll_cycle_end_day || 31
-            };
+            const startDay = Math.min(31, Math.max(1, parseInt(settings.payroll_cycle_start_day, 10) || 1));
+            const endDay = Math.min(31, Math.max(1, parseInt(settings.payroll_cycle_end_day, 10) || 31));
+            return { startDay, endDay };
         } catch (error) {
             console.error('Error getting payroll cycle settings:', error);
-            // Default to calendar month
             return { startDay: 1, endDay: 31 };
         }
     }
@@ -44,67 +44,62 @@ class DateCycleService {
     }
 
     /**
-     * Get payroll cycle for a given date
-     * Returns { startDate, endDate, month, year }
+     * Get payroll cycle for a given date.
+     * Pay cycle is always read from settings (startDay, endDay) – not hardcoded.
+     * Uses IST (Asia/Kolkata) so which period a date belongs to is correct regardless of server TZ.
+     * Dates outside a period are not included; each date resolves to exactly one period.
+     * Returns { startDate, endDate, month, year, isCustomCycle }
      */
     async getPayrollCycleForDate(date = new Date()) {
         const payrollSettings = await this.getPayrollCycleSettings();
-        const targetDate = new Date(date);
-        
-        const { startDay, endDay } = payrollSettings;
-        
-        // If cycle is calendar month (1st to 31st)
-        if (startDay === 1 && endDay === 31) {
-            const monthStart = new Date(targetDate.getFullYear(), targetDate.getMonth(), 1);
-            const monthEnd = new Date(targetDate.getFullYear(), targetDate.getMonth() + 1, 0); // Last day of month
-            
+        const startDay = Number(payrollSettings.startDay) || 1;
+        const endDay = Number(payrollSettings.endDay) || 31;
+
+        // Resolve the calendar day in IST so server timezone does not change the period
+        const ist = extractISTComponents(new Date(date));
+        const day = ist.day;
+        const month1Based = ist.month; // 1-12
+        const year = ist.year;
+
+        // Calendar month: 1st to last day of month
+        if (startDay === 1 && endDay >= 28) {
+            const startDate = createISTDate(`${year}-${String(month1Based).padStart(2, '0')}-01`);
+            const lastDay = new Date(year, month1Based, 0).getDate();
+            const endDate = createISTDate(`${year}-${String(month1Based).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`, '23:59');
             return {
-                startDate: monthStart,
-                endDate: monthEnd,
-                month: targetDate.getMonth() + 1,
-                year: targetDate.getFullYear(),
+                startDate,
+                endDate,
+                month: month1Based,
+                year,
                 isCustomCycle: false
             };
         }
 
-        // Custom cycle (e.g., 26th to 25th)
-        // Month/year are taken from the period END so that 26 Jan–25 Feb → February (2), not January (1).
+        // Custom cycle (e.g. startDay–endDay): period is startDay of month to endDay of next month (in IST).
+        // Example: 26–25 → 26 Jan–25 Feb = Feb period. So 26, 30, 31 Jan belong to Feb; 1–25 Jan belong to Jan period.
         let cycleStartDate, cycleEndDate;
 
-        if (targetDate.getDate() >= startDay) {
-            // Date falls in current month's cycle
-            cycleStartDate = new Date(targetDate.getFullYear(), targetDate.getMonth(), startDay);
-            
-            // Calculate end date properly for next month
-            const nextMonth = new Date(targetDate.getFullYear(), targetDate.getMonth() + 1, 1);
-            cycleEndDate = new Date(nextMonth);
-            cycleEndDate.setDate(endDay);
-            
-            // If endDay exceeds days in next month, adjust to last day of next month
-            const lastDayOfNextMonth = new Date(targetDate.getFullYear(), targetDate.getMonth() + 2, 0).getDate();
-            if (endDay > lastDayOfNextMonth) {
-                cycleEndDate.setDate(lastDayOfNextMonth);
-            }
+        if (day >= startDay) {
+            // In IST: date is on or after startDay → period that starts this month
+            cycleStartDate = createISTDate(`${year}-${String(month1Based).padStart(2, '0')}-${String(startDay).padStart(2, '0')}`);
+            const nextMonth = month1Based === 12 ? 1 : month1Based + 1;
+            const nextYear = month1Based === 12 ? year + 1 : year;
+            const lastDayNext = new Date(nextYear, nextMonth, 0).getDate();
+            const endDayActual = Math.min(endDay, lastDayNext);
+            cycleEndDate = createISTDate(`${nextYear}-${String(nextMonth).padStart(2, '0')}-${String(endDayActual).padStart(2, '0')}`, '23:59');
         } else {
-            // Date falls in previous month's cycle
-            const prevMonth = new Date(targetDate.getFullYear(), targetDate.getMonth(), 1);
-            prevMonth.setMonth(prevMonth.getMonth() - 1);
-            
-            cycleStartDate = new Date(prevMonth.getFullYear(), prevMonth.getMonth(), startDay);
-            
-            // Calculate end date for current month
-            cycleEndDate = new Date(targetDate.getFullYear(), targetDate.getMonth(), endDay);
-            
-            // If endDay exceeds days in current month, adjust to last day of current month
-            const lastDayOfCurrentMonth = new Date(targetDate.getFullYear(), targetDate.getMonth() + 1, 0).getDate();
-            if (endDay > lastDayOfCurrentMonth) {
-                cycleEndDate.setDate(lastDayOfCurrentMonth);
-            }
+            // In IST: date is before startDay → period that ended this month (started previous month)
+            const prevMonth = month1Based === 1 ? 12 : month1Based - 1;
+            const prevYear = month1Based === 1 ? year - 1 : year;
+            cycleStartDate = createISTDate(`${prevYear}-${String(prevMonth).padStart(2, '0')}-${String(startDay).padStart(2, '0')}`);
+            const lastDayCur = new Date(year, month1Based, 0).getDate();
+            const endDayActual = Math.min(endDay, lastDayCur);
+            cycleEndDate = createISTDate(`${year}-${String(month1Based).padStart(2, '0')}-${String(endDayActual).padStart(2, '0')}`, '23:59');
         }
 
-        // Use period end date for month/year so 26 Jan–25 Feb → month 2 (February)
-        const cycleMonth = cycleEndDate.getMonth() + 1;
-        const cycleYear = cycleEndDate.getFullYear();
+        const endIST = extractISTComponents(cycleEndDate);
+        const cycleMonth = endIST.month;
+        const cycleYear = endIST.year;
 
         return {
             startDate: cycleStartDate,
@@ -113,6 +108,17 @@ class DateCycleService {
             year: cycleYear,
             isCustomCycle: true
         };
+    }
+
+    /**
+     * Check if a date (in IST) falls inside a payroll period [startDate, endDate].
+     * Use when you need to exclude dates that do not belong to the period.
+     */
+    isDateInPayrollPeriod(date, startDate, endDate) {
+        const d = extractISTComponents(new Date(date)).dateStr;
+        const start = extractISTComponents(new Date(startDate)).dateStr;
+        const end = extractISTComponents(new Date(endDate)).dateStr;
+        return d >= start && d <= end;
     }
 
     /**

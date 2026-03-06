@@ -159,10 +159,32 @@ exports.getLeaves = async (req, res) => {
     const scopeFilter = req.scopeFilter || { isActive: true };
     const workflowFilter = buildWorkflowVisibilityFilter(req.user);
 
+    // Include leaves whose document has division/department in scope OR whose employeeId is in scope.
+    // Also: for scoped roles (HOD/Manager/HR), show ALL requests from in-scope employees regardless of workflow stage,
+    // so they can track and manage team requests even when pending at reporting_manager or other stages.
+    let jurisdictionFilter = scopeFilter;
+    let visibilityFilter = workflowFilter;
+    const scopedEmployeeIds = await getEmployeeIdsInScope(req.user);
+    if (Array.isArray(scopedEmployeeIds) && scopedEmployeeIds.length > 0) {
+      jurisdictionFilter = {
+        $or: [
+          scopeFilter,
+          { employeeId: { $in: scopedEmployeeIds } }
+        ]
+      };
+      // Scoped roles see all requests from in-scope employees (bypass workflow stage restriction)
+      visibilityFilter = {
+        $or: [
+          workflowFilter,
+          { employeeId: { $in: scopedEmployeeIds } }
+        ]
+      };
+    }
+
     const filter = {
       $and: [
-        scopeFilter,
-        workflowFilter,
+        jurisdictionFilter,
+        visibilityFilter,
         { isActive: true }
       ]
     };
@@ -680,7 +702,18 @@ exports.applyLeave = async (req, res) => {
     // HARD ENFORCEMENT for Casual Leave (CL) against payroll-cycle monthly limit (including pending locks)
     if (leaveType === 'CL') {
       try {
-        const periodInfo = await dateCycleService.getPeriodInfo(from);
+        // Resolve period from leave start date (date-only); support YYYY-MM-DD and DD-MM-YYYY
+        const fromDateStr = String(fromDate || '').trim();
+        let fromForPeriod = from;
+        const isoMatch = fromDateStr.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+        const dmyMatch = fromDateStr.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+        if (isoMatch) {
+          fromForPeriod = new Date(Date.UTC(parseInt(isoMatch[1], 10), parseInt(isoMatch[2], 10) - 1, parseInt(isoMatch[3], 10), 12, 0, 0));
+        } else if (dmyMatch) {
+          const y = parseInt(dmyMatch[3], 10), m = parseInt(dmyMatch[2], 10) - 1, d = parseInt(dmyMatch[1], 10);
+          if (m >= 0 && m <= 11 && d >= 1 && d <= 31) fromForPeriod = new Date(Date.UTC(y, m, d, 12, 0, 0));
+        }
+        const periodInfo = await dateCycleService.getPeriodInfo(fromForPeriod);
 
         // Use payroll-cycle month/year derived from fromDate, not calendar month
         const registerResult = await leaveRegisterService.getLeaveRegister(
@@ -693,7 +726,9 @@ exports.applyLeave = async (req, res) => {
           periodInfo.payrollCycle.year
         );
 
-        const clEntry = Array.isArray(registerResult?.data) ? registerResult.data.find(e => e.casualLeave) : null;
+        // leaveRegisterService.getLeaveRegister returns the array directly, not { data: array }
+        const registerList = Array.isArray(registerResult) ? registerResult : (registerResult?.data || []);
+        const clEntry = registerList.find(e => e.casualLeave) || null;
         const allowedRemaining = clEntry?.casualLeave?.allowedRemaining ?? null;
 
         if (allowedRemaining !== null && allowedRemaining !== undefined) {
@@ -1951,10 +1986,29 @@ exports.getDashboardStats = async (req, res) => {
     const scopeFilter = req.scopeFilter || { isActive: true };
     const workflowFilter = buildWorkflowVisibilityFilter(req.user);
 
+    // Same jurisdiction and visibility as getLeaves/getODs
+    let jurisdictionFilter = scopeFilter;
+    let visibilityFilter = workflowFilter;
+    const scopedEmployeeIds = await getEmployeeIdsInScope(req.user);
+    if (Array.isArray(scopedEmployeeIds) && scopedEmployeeIds.length > 0) {
+      jurisdictionFilter = {
+        $or: [
+          scopeFilter,
+          { employeeId: { $in: scopedEmployeeIds } }
+        ]
+      };
+      visibilityFilter = {
+        $or: [
+          workflowFilter,
+          { employeeId: { $in: scopedEmployeeIds } }
+        ]
+      };
+    }
+
     const baseFilter = {
       $and: [
-        scopeFilter,
-        workflowFilter,
+        jurisdictionFilter,
+        visibilityFilter,
         { isActive: true }
       ]
     };

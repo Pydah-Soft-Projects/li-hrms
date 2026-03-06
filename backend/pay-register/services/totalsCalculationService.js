@@ -1,7 +1,61 @@
 /**
  * Totals Calculation Service
- * Calculates monthly totals from dailyRecords array
+ * Calculates monthly totals from dailyRecords array.
+ * Week-offs and holidays are overridden from shift roster (PreScheduledShift) so totals respect roster as source of truth.
  */
+
+const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
+
+/**
+ * Get week-off and holiday counts from shift roster for the given employee and date range.
+ * Used to ensure pay register totals respect roster (not just daily record statuses).
+ * @param {String} emp_no - Employee number (will be normalized to uppercase)
+ * @param {String} startDate - YYYY-MM-DD
+ * @param {String} endDate - YYYY-MM-DD
+ * @returns {Promise<{ totalWeeklyOffs: number, totalHolidays: number }>}
+ */
+async function getRosterWOHOLCounts(emp_no, startDate, endDate) {
+  const empNoNorm = (emp_no && String(emp_no).trim()) ? String(emp_no).trim().toUpperCase() : '';
+  if (!empNoNorm || !startDate || !endDate) {
+    return { totalWeeklyOffs: 0, totalHolidays: 0 };
+  }
+  const startStr = typeof startDate === 'string' ? startDate : (startDate && startDate.toISOString) ? startDate.toISOString().slice(0, 10) : '';
+  const endStr = typeof endDate === 'string' ? endDate : (endDate && endDate.toISOString) ? endDate.toISOString().slice(0, 10) : '';
+  if (!startStr || !endStr) return { totalWeeklyOffs: 0, totalHolidays: 0 };
+
+  const rosterNonWorking = await PreScheduledShift.find({
+    employeeNumber: empNoNorm,
+    date: { $gte: startStr, $lte: endStr },
+    status: { $in: ['WO', 'HOL'] },
+  })
+    .select('date status')
+    .lean();
+
+  let totalWeeklyOffs = 0;
+  let totalHolidays = 0;
+  for (const row of rosterNonWorking) {
+    if (row.status === 'WO') totalWeeklyOffs += 1;
+    if (row.status === 'HOL') totalHolidays += 1;
+  }
+  return { totalWeeklyOffs, totalHolidays };
+}
+
+/**
+ * Overwrite totals.totalWeeklyOffs and totals.totalHolidays from shift roster so pay register respects roster.
+ * Call after calculateTotals() whenever pay register totals are set.
+ * @param {Object} totals - Totals object (mutated in place)
+ * @param {String} emp_no - Employee number
+ * @param {String} startDate - YYYY-MM-DD
+ * @param {String} endDate - YYYY-MM-DD
+ * @returns {Promise<Object>} The same totals object (with totalWeeklyOffs/totalHolidays updated)
+ */
+async function ensureTotalsRespectRoster(totals, emp_no, startDate, endDate) {
+  if (!totals || typeof totals !== 'object') return totals;
+  const { totalWeeklyOffs, totalHolidays } = await getRosterWOHOLCounts(emp_no, startDate, endDate);
+  totals.totalWeeklyOffs = totalWeeklyOffs;
+  totals.totalHolidays = totalHolidays;
+  return totals;
+}
 
 /**
  * Calculate totals from dailyRecords array
@@ -259,5 +313,7 @@ module.exports = {
   calculateTotals,
   countDaysByCategory,
   calculatePayableShifts,
+  getRosterWOHOLCounts,
+  ensureTotalsRespectRoster,
 };
 
