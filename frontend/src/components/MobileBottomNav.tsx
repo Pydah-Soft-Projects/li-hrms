@@ -10,17 +10,11 @@ import {
   LayoutDashboard,
   MoreHorizontal,
   X,
-  Plane,
   Users,
   Building2,
   UserCog,
   Settings,
   PiggyBank,
-  BarChart3,
-  CreditCard,
-  Receipt,
-  LogOut,
-  TentTree,
   Briefcase,
   Gift,
   Clock,
@@ -28,6 +22,7 @@ import {
   Timer,
   Fingerprint,
   CalendarHeart,
+  CalendarClock,
   UserCircle,
   HandCoins,
   AlertOctagon,
@@ -35,16 +30,18 @@ import {
   Calculator,
   ArrowRightLeft,
   ScrollText,
-  BadgeDollarSign
+  BadgeDollarSign,
+  LogOut,
+  Receipt
 } from 'lucide-react';
 import { cn } from '@/lib/utils'; // Assuming this exists, based on usual project structure
 
 // Module code to icon mapping (Same as Sidebar)
 const moduleIcons: Record<string, any> = {
   DASHBOARD: LayoutDashboard,
-  LEAVE: TentTree,
+  LEAVE: CalendarClock,
   OD: Briefcase,
-  LEAVE_OD: Plane,
+  LEAVE_OD: CalendarDays,
   CCL: Gift,
   EMPLOYEE: Users,
   EMPLOYEES: Users,
