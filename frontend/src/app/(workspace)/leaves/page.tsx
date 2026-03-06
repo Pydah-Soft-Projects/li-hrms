@@ -3707,57 +3707,55 @@ export default function LeavesPage() {
                   {/* Stats Grid - Cleaner Look */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-slate-50 dark:bg-slate-700/30 p-4 sm:p-6 rounded-xl">
                     <div className="space-y-1">
-                      <p className="text-xs uppercase font-bold text-slate-400 tracking-wider">Type</p>
-                      <p className="text-sm font-bold text-slate-900 dark:text-white truncate" title={detailType === 'leave' ? (selectedItem! as LeaveApplication).leaveType : (selectedItem! as ODApplication).odType}>
+                      <p className="text-[10px] sm:text-xs uppercase font-bold text-slate-400 tracking-wider">Type</p>
+                      <p className="text-[13px] sm:text-sm font-bold text-slate-900 dark:text-white truncate" title={detailType === 'leave' ? (selectedItem! as LeaveApplication).leaveType : (selectedItem! as ODApplication).odType}>
                         {((detailType === 'leave' ? (selectedItem! as LeaveApplication).leaveType : (selectedItem! as ODApplication).odType) || '').replace('_', ' ')}
                       </p>
                     </div>
                     <div className="space-y-1">
-                      <p className="text-xs uppercase font-bold text-slate-400 tracking-wider">Duration</p>
-                      <p className="text-sm font-bold text-slate-900 dark:text-white">
+                      <p className="text-[10px] sm:text-xs uppercase font-bold text-slate-400 tracking-wider">Duration</p>
+                      <p className="text-[13px] sm:text-sm font-bold text-slate-900 dark:text-white">
                         {selectedItem!.numberOfDays}d {selectedItem!.isHalfDay ? `(${(selectedItem!.halfDayType?.replace('_', ' ') || 'first half')})` : ''}
                       </p>
                     </div>
                     <div className="space-y-1">
-                      <p className="text-xs uppercase font-bold text-slate-400 tracking-wider">From</p>
-                      <p className="text-sm font-bold text-slate-900 dark:text-white">{formatDate(selectedItem!.fromDate)}</p>
+                      <p className="text-[10px] sm:text-xs uppercase font-bold text-slate-400 tracking-wider">From</p>
+                      <p className="text-[13px] sm:text-sm font-bold text-slate-900 dark:text-white">{formatDate(selectedItem!.fromDate)}</p>
                     </div>
                     <div className="space-y-1">
-                      <p className="text-xs uppercase font-bold text-slate-400 tracking-wider">To</p>
-                      <p className="text-sm font-bold text-slate-900 dark:text-white">{formatDate(selectedItem!.toDate)}</p>
+                      <p className="text-[10px] sm:text-xs uppercase font-bold text-slate-400 tracking-wider">To</p>
+                      <p className="text-[13px] sm:text-sm font-bold text-slate-900 dark:text-white">{formatDate(selectedItem!.toDate)}</p>
                     </div>
                   </div>
 
-                  {/* Details Content - Clean & Aligned */}
                   <div className="space-y-6">
                     <div className="bg-slate-50 dark:bg-slate-900/50 p-4 sm:p-6 rounded-xl">
-                      <p className="text-xs uppercase font-bold text-slate-400 mb-2 tracking-wider">Purpose / Reason</p>
-                      <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+                      <p className="text-[10px] sm:text-xs uppercase font-bold text-slate-400 mb-2 tracking-wider">Purpose / Reason</p>
+                      <p className="text-[13px] sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
                         {selectedItem!.purpose || 'No purpose specified'}
                       </p>
                     </div>
 
                     {detailType === 'od' && (selectedItem! as ODApplication).placeVisited && (
-                      <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 text-sm text-slate-700 dark:text-slate-300 px-2 mt-2">
-                        <span className="font-bold text-xs uppercase text-slate-400 tracking-wider sm:min-w-20">Location:</span>
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 text-[13px] sm:text-sm text-slate-700 dark:text-slate-300 px-2 mt-2">
+                        <span className="font-bold text-[10px] sm:text-xs uppercase text-slate-400 tracking-wider sm:min-w-20">Location:</span>
                         <span className="font-medium break-words">{(selectedItem! as ODApplication).placeVisited}</span>
                       </div>
                     )}
                     {selectedItem!.contactNumber && (
-                      <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 text-sm text-slate-700 dark:text-slate-300 px-2 mt-2">
-                        <span className="font-bold text-xs uppercase text-slate-400 tracking-wider sm:min-w-20">Contact:</span>
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 text-[13px] sm:text-sm text-slate-700 dark:text-slate-300 px-2 mt-2">
+                        <span className="font-bold text-[10px] sm:text-xs uppercase text-slate-400 tracking-wider sm:min-w-20">Contact:</span>
                         <span className="font-medium text-slate-900 dark:text-white break-all">{selectedItem!.contactNumber}</span>
                       </div>
                     )}
                   </div>
 
-                  {/* Photo Evidence & Location (OD view) - photo, address, Google Maps link */}
                   {detailType === 'od' && ((selectedItem as any).photoEvidence || (selectedItem as any).geoLocation) && (
                     <div className="rounded-xl bg-slate-50 dark:bg-slate-900/50 p-4 sm:p-5 border border-slate-200 dark:border-slate-700">
                       <p className="text-xs uppercase font-bold text-slate-400 mb-3 tracking-wider">Evidence & Location</p>
-                      <div className="space-y-4">
+                      <div className="flex flex-col sm:grid sm:grid-cols-2 gap-6">
                         {(selectedItem as any).photoEvidence && (
-                          <div className="flex items-start gap-3">
+                          <div className="flex items-start gap-4 p-4 rounded-xl bg-white dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 shadow-sm">
                             <a
                               href={(selectedItem as any).photoEvidence.url}
                               target="_blank"
@@ -3767,68 +3765,73 @@ export default function LeavesPage() {
                               <img
                                 src={(selectedItem as any).photoEvidence.url}
                                 alt="Evidence"
-                                className="w-20 h-20 rounded-lg object-cover border border-slate-200 dark:border-slate-600 shadow-sm transition-transform group-hover:scale-105"
+                                className="w-24 h-24 rounded-lg object-cover border border-slate-200 dark:border-slate-600 shadow-sm transition-transform group-hover:scale-105"
                               />
                               <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/20 transition-colors rounded-lg">
                                 <svg className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                               </div>
                             </a>
-                            <div>
-                              <p className="text-sm font-medium text-slate-900 dark:text-white">Photo Evidence</p>
-                              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Captured at application time</p>
+                            <div className="pt-1">
+                              <p className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-tight">Photo Evidence</p>
+                              <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 uppercase font-black">Captured via App</p>
                             </div>
                           </div>
                         )}
-                        {(selectedItem as any).geoLocation && (
-                          <div className="p-3 rounded-lg bg-white dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700">
-                            <div className="flex items-center gap-2 mb-2">
-                              <svg className="w-4 h-4 text-red-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                              <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Location</span>
-                            </div>
-                            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
-                              <div>
-                                <span className="text-slate-500">Lat:</span>
-                                <span className="ml-1 font-mono text-slate-700 dark:text-slate-300">{(selectedItem as any).geoLocation.latitude?.toFixed(6)}</span>
+                        <div className="space-y-4">
+                          {(selectedItem as any).geoLocation && (
+                            <div className="p-4 rounded-xl bg-white dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 shadow-sm">
+                              <div className="flex items-center gap-2 mb-3">
+                                <svg className="w-4 h-4 text-red-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                <span className="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest">Live Location</span>
                               </div>
-                              <div>
-                                <span className="text-slate-500">Lon:</span>
-                                <span className="ml-1 font-mono text-slate-700 dark:text-slate-300">{(selectedItem as any).geoLocation.longitude?.toFixed(6)}</span>
-                              </div>
-                              {(selectedItem as any).geoLocation.address && (
-                                <div className="col-span-2 pt-2 border-t border-slate-100 dark:border-slate-700 mt-1">
-                                  <span className="block text-slate-500 mb-0.5">Address</span>
-                                  <p className="text-slate-700 dark:text-slate-300 leading-tight text-xs">{(selectedItem as any).geoLocation.address}</p>
+                              <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                                <div>
+                                  <span className="text-[10px] uppercase font-bold text-slate-400">Lat:</span>
+                                  <span className="ml-1 font-mono text-slate-700 dark:text-slate-300">{(selectedItem as any).geoLocation.latitude?.toFixed(6)}</span>
                                 </div>
-                              )}
-                              <div className="col-span-2 mt-1">
-                                <a
-                                  href={`https://www.google.com/maps?q=${(selectedItem as any).geoLocation.latitude},${(selectedItem as any).geoLocation.longitude}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1 font-medium text-xs"
-                                >
-                                  View on Google Maps
-                                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                                </a>
+                                <div>
+                                  <span className="text-[10px] uppercase font-bold text-slate-400">Lon:</span>
+                                  <span className="ml-1 font-mono text-slate-700 dark:text-slate-300">{(selectedItem as any).geoLocation.longitude?.toFixed(6)}</span>
+                                </div>
+                                {(selectedItem as any).geoLocation.address && (
+                                  <div className="col-span-2 pt-3 border-t border-slate-100 dark:border-slate-700 mt-2">
+                                    <span className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Full Address</span>
+                                    <p className="text-slate-700 dark:text-slate-300 leading-tight text-[11px] font-medium">{(selectedItem as any).geoLocation.address}</p>
+                                  </div>
+                                )}
+                                <div className="col-span-2 mt-2 pt-2">
+                                  <a
+                                    href={`https://www.google.com/maps?q=${(selectedItem as any).geoLocation.latitude},${(selectedItem as any).geoLocation.longitude}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-2 font-black text-[10px] uppercase tracking-wider"
+                                  >
+                                    <div className="p-1 rounded bg-blue-50 dark:bg-blue-900/30">
+                                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                                    </div>
+                                    View on Maps
+                                  </a>
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        )}
-                        {/* Leaflet map view */}
-                        {(() => {
-                          const geo = (selectedItem as any).geoLocation;
-                          const exif = (selectedItem as any).photoEvidence?.exifLocation;
-                          const lat = geo?.latitude ?? exif?.latitude;
-                          const lng = geo?.longitude ?? exif?.longitude;
-                          const address = geo?.address ?? null;
-                          if (lat == null || lng == null) return null;
-                          return (
-                            <div className="mt-2">
-                              <span className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Map</span>
-                              <LocationMap latitude={lat} longitude={lng} address={address} height="180px" />
-                            </div>
-                          );
-                        })()}
+                          )}
+
+                          {/* Leaflet map view */}
+                          {(() => {
+                            const geo = (selectedItem as any).geoLocation;
+                            const exif = (selectedItem as any).photoEvidence?.exifLocation;
+                            const lat = geo?.latitude ?? exif?.latitude;
+                            const lng = geo?.longitude ?? exif?.longitude;
+                            const address = geo?.address ?? null;
+                            if (lat == null || lng == null) return null;
+                            return (
+                              <div className="p-1 pb-0 rounded-xl bg-white dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden">
+                                <span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest p-3 pb-2">Map Preview</span>
+                                <LocationMap latitude={lat} longitude={lng} address={address} height="150px" className="rounded-b-lg" />
+                              </div>
+                            );
+                          })()}
+                        </div>
                       </div>
                     </div>
                   )}
@@ -4010,8 +4013,8 @@ export default function LeavesPage() {
                     </div>
                   )}
 
-                  {/* Interactive Split Editor (For Approvers) */}
-                  {detailType === 'leave' && !['rejected', 'cancelled'].includes(selectedItem.status) && (
+                  {/* Interactive Split Editor (For Approvers/Admins) */}
+                  {detailType === 'leave' && currentUser?.role !== 'employee' && !['rejected', 'cancelled'].includes(selectedItem.status) && (
                     <div className="rounded-2xl bg-slate-50 dark:bg-slate-900/50 p-6 border border-slate-200 dark:border-slate-700 space-y-4">
                       <div className="flex items-center justify-between gap-3">
                         <div>
@@ -4241,16 +4244,18 @@ export default function LeavesPage() {
                     </button>
                   )}
 
-                  {(isSuperAdmin || currentUser?.role === 'sub_admin' || (selectedItem.employeeId?._id === currentUser?.employeeRef || selectedItem.appliedBy?._id === currentUser?._id || selectedItem.appliedBy === currentUser?._id)) && (
-                    <button
-                      onClick={() => {
-                        handleDeleteRequest(selectedItem._id, detailType);
-                      }}
-                      className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg shadow-sm transition-colors"
-                    >
-                      Delete
-                    </button>
-                  )}
+                  {(isSuperAdmin || currentUser?.role === 'sub_admin' ||
+                    ((selectedItem.employeeId?._id === currentUser?.employeeRef || selectedItem.appliedBy?._id === currentUser?._id || selectedItem.appliedBy === currentUser?._id) &&
+                      selectedItem.status === 'pending')) && (
+                      <button
+                        onClick={() => {
+                          handleDeleteRequest(selectedItem._id, detailType);
+                        }}
+                        className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg shadow-sm transition-colors"
+                      >
+                        Delete
+                      </button>
+                    )}
 
                   <button
                     onClick={() => {

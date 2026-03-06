@@ -2215,11 +2215,11 @@ export default function AttendancePage() {
       const isoString = inTimeDialogValue.includes('T')
         ? new Date(inTimeDialogValue).toISOString()
         : (() => {
-            const [hours, mins] = inTimeDialogValue.split(':').map(Number);
-            const d = new Date(selectedRecordForInTime.date);
-            d.setHours(hours, mins, 0, 0);
-            return d.toISOString();
-          })();
+          const [hours, mins] = inTimeDialogValue.split(':').map(Number);
+          const d = new Date(selectedRecordForInTime.date);
+          d.setHours(hours, mins, 0, 0);
+          return d.toISOString();
+        })();
       const response = await api.updateAttendanceInTime(
         selectedRecordForInTime.employee.emp_no,
         selectedRecordForInTime.date,
@@ -2563,21 +2563,19 @@ export default function AttendancePage() {
 
         {/* Header */}
 
-        <div className="mb-6 flex flex-nowrap items-center justify-between gap-4 overflow-x-auto pb-2 scrollbar-hide">
+        <div className="mb-6 flex flex-col sm:flex-row items-center sm:justify-between gap-4 pb-2">
 
-          <div className="flex flex-nowrap items-center gap-4">
+          <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
 
             {/* Title Section */}
 
-            <div className="flex flex-nowrap items-center gap-3 shrink-0">
+            <div className="flex items-center justify-between sm:justify-start gap-3 w-full sm:w-auto">
 
               <div className="flex flex-col">
-                <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white whitespace-nowrap">Attendance Management</h1>
+                <h1 className="text-xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white whitespace-nowrap">Attendance</h1>
               </div>
 
-
-
-              <div className="h-8 w-px bg-slate-200 dark:bg-slate-800 hidden md:block" />
+              <div className="h-6 w-px bg-slate-200 dark:bg-slate-800 hidden sm:block" />
 
 
 
@@ -2766,9 +2764,7 @@ export default function AttendancePage() {
 
           </div>
 
-
-
-          <div className="flex flex-nowrap items-center gap-3 shrink-0">
+          <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
 
             {/* Month/Year Navigation */}
 
@@ -2915,73 +2911,47 @@ export default function AttendancePage() {
           const item = filteredMonthlyData[0];
           const s = item.summary;
           return (
-            <div className="mb-4 rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-4 shadow-sm dark:border-slate-700 dark:from-slate-800/80 dark:to-slate-900/80">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3">Monthly summary</h3>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-3">
-                <div>
-                  <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase">Present Days</div>
-                  <div className="text-lg font-bold text-slate-900 dark:text-white">{s?.totalPresentDays ?? item.presentDays ?? 0}</div>
+            <div className="mb-4 rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-3 sm:p-4 shadow-sm dark:border-slate-700 dark:from-slate-800/80 dark:to-slate-900/80">
+              <h3 className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2 sm:mb-3">Monthly summary</h3>
+              <div className="grid grid-cols-4 sm:grid-cols-4 md:grid-cols-4 lg:grid-cols-8 gap-2 sm:gap-3">
+                <div className="flex flex-col">
+                  <div className="text-[8px] sm:text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase leading-tight">Present</div>
+                  <div className="text-sm sm:text-lg font-bold text-slate-900 dark:text-white">{s?.totalPresentDays ?? item.presentDays ?? 0}</div>
                 </div>
-                <div>
-                  <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase">Payable Shifts</div>
-                  <div className="text-lg font-bold text-green-600 dark:text-green-400">{(s?.totalPayableShifts ?? item.payableShifts ?? 0).toFixed(2)}</div>
+                <div className="flex flex-col">
+                  <div className="text-[8px] sm:text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase leading-tight">Payable</div>
+                  <div className="text-sm sm:text-lg font-bold text-green-600 dark:text-green-400">{(s?.totalPayableShifts ?? item.payableShifts ?? 0).toFixed(1)}</div>
                 </div>
-                <div>
-                  <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase">Leaves</div>
-                  <div className="text-lg font-bold text-amber-600 dark:text-amber-400">{s?.totalLeaves ?? 0}</div>
+                <div className="flex flex-col">
+                  <div className="text-[8px] sm:text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase leading-tight">Leave</div>
+                  <div className="text-sm sm:text-lg font-bold text-amber-600 dark:text-amber-400">{s?.totalLeaves ?? 0}</div>
                 </div>
-                <div>
-                  <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase">Week Offs</div>
-                  <div className="text-lg font-bold text-orange-600 dark:text-orange-400">{s?.totalWeeklyOffs ?? 0}</div>
+                <div className="flex flex-col">
+                  <div className="text-[8px] sm:text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase leading-tight">WOff</div>
+                  <div className="text-sm sm:text-lg font-bold text-orange-600 dark:text-orange-400">{s?.totalWeeklyOffs ?? 0}</div>
                 </div>
-                <div>
-                  <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase">Holidays</div>
-                  <div className="text-lg font-bold text-red-600 dark:text-red-400">{s?.totalHolidays ?? 0}</div>
+                <div className="flex flex-col">
+                  <div className="text-[8px] sm:text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase leading-tight">Hol</div>
+                  <div className="text-sm sm:text-lg font-bold text-red-600 dark:text-red-400">{s?.totalHolidays ?? 0}</div>
                 </div>
-                <div>
-                  <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase">ODs</div>
-                  <div className="text-lg font-bold text-blue-600 dark:text-blue-400">{s?.totalODs ?? 0}</div>
+                <div className="flex flex-col">
+                  <div className="text-[8px] sm:text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase leading-tight">OD</div>
+                  <div className="text-sm sm:text-lg font-bold text-blue-600 dark:text-blue-400">{s?.totalODs ?? 0}</div>
                 </div>
-                <div>
-                  <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase">Late/Early</div>
-                  <div className="text-lg font-bold text-rose-600 dark:text-rose-400">{s?.lateOrEarlyCount ?? 0}</div>
+                <div className="flex flex-col">
+                  <div className="text-[8px] sm:text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase leading-tight">L/E</div>
+                  <div className="text-sm sm:text-lg font-bold text-rose-600 dark:text-rose-400">{s?.lateOrEarlyCount ?? 0}</div>
                 </div>
-                <div>
-                  <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase">Days in period</div>
-                  <div className="text-lg font-bold text-slate-700 dark:text-slate-300">{s?.totalDaysInMonth ?? 0}</div>
+                <div className="flex flex-col">
+                  <div className="text-[8px] sm:text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase leading-tight">Days</div>
+                  <div className="text-sm sm:text-lg font-bold text-slate-700 dark:text-slate-300">{s?.totalDaysInMonth ?? 0}</div>
                 </div>
               </div>
             </div>
           );
         })()}
 
-        {/* Status Legend */}
-        <div className="mb-6 flex flex-wrap items-center gap-4 px-4 py-3 rounded-2xl bg-white/50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 backdrop-blur-sm shadow-sm animate-in fade-in slide-in-from-top-2 duration-500">
-          <span className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mr-2">Status Key</span>
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-            {[
-              { label: 'P', name: 'Present', color: 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800' },
-              { label: 'H', name: 'Holiday', color: 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800' },
-              { label: 'WO', name: 'Week Off', color: 'bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-800' },
-              { label: 'L', name: 'Leave', color: 'bg-orange-50 text-orange-600 border-orange-100 dark:bg-orange-900/10 dark:text-orange-400 dark:border-orange-800' },
-              { label: 'LL', name: 'Long Leave', color: 'bg-amber-200 text-amber-800 border-amber-300 dark:bg-amber-900/40 dark:text-amber-400 dark:border-amber-700' },
-              { label: 'OD', name: 'On Duty', color: 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800' },
-              { label: 'PT', name: 'Partial', color: 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-800' },
-              { label: 'A', name: 'Absent', color: 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700' },
-              { label: '!', name: 'Conflict', color: 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-800' },
-              { label: '✎', name: 'Edited', color: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/10 dark:text-indigo-400 dark:border-indigo-800' },
-              { label: '●', name: 'Late', color: 'bg-amber-500', dotOnly: true },
-              { label: '●', name: 'Early out', color: 'bg-blue-500', dotOnly: true },
-            ].map((item, idx) => (
-              <div key={`${(item as any).name}-${idx}`} className="flex items-center gap-2 group cursor-help">
-                <div className={`flex items-center justify-center rounded text-[10px] font-bold border shadow-sm transition-all duration-200 group-hover:scale-110 group-hover:shadow-md ${(item as any).dotOnly ? 'w-5 h-5 border-transparent' : 'w-6 h-6'} ${(item as any).dotOnly ? '' : item.color}`}>
-                  {(item as any).dotOnly ? <span className={`inline-block h-2 w-2 rounded-full ${item.color}`} /> : item.label}
-                </div>
-                <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">{item.name}</span>
-              </div>
-            ))}
-          </div>
-        </div>
+        {/* Messages moved here */}
 
         {/* Messages */}
         {
@@ -3002,8 +2972,25 @@ export default function AttendancePage() {
 
         {/* Attendance: Table or Day Cards (Employee) */}
         {isEmployee && employeeViewMode === 'cards' && filteredMonthlyData.length > 0 ? (
-          <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
-            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-3 p-4">
+          <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-xl dark:border-slate-700 dark:bg-slate-900/80 overflow-hidden">
+            <div className="grid grid-cols-7 gap-1 sm:gap-2 p-2 sm:p-4">
+              {/* Day Labels - Small Calendar Style */}
+              {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+                <div key={i} className="text-center text-[8px] font-black text-slate-400 dark:text-slate-500 pb-1 uppercase tracking-tighter">
+                  {d}
+                </div>
+              ))}
+
+              {/* Padding for first day of month */}
+              {(() => {
+                const firstDayStr = daysArray[0];
+                const firstDay = new Date(firstDayStr + 'T12:00:00');
+                const startDay = firstDay.getDay();
+                return Array.from({ length: startDay }).map((_, i) => (
+                  <div key={`pad-${i}`} className="aspect-square opacity-20" />
+                ));
+              })()}
+
               {daysArray.map((dateStr) => {
                 const item = filteredMonthlyData[0];
                 const record = item.dailyAttendance[dateStr] || null;
@@ -3029,466 +3016,460 @@ export default function AttendancePage() {
                   <div
                     key={dateStr}
                     onClick={() => hasData && handleDateClick(item.employee, dateStr)}
-                    className={`rounded-xl border p-3 min-h-[80px] transition-all ${hasData ? 'cursor-pointer hover:shadow-md hover:ring-2 hover:ring-green-500/30' : 'opacity-80'} ${getCellBackgroundColor(record)} ${getStatusColor(record)}`}
+                    className={`relative rounded-lg sm:rounded-xl border p-1 sm:p-3 aspect-square flex flex-col items-center justify-center transition-all ${hasData ? 'cursor-pointer hover:shadow-md hover:ring-2 hover:ring-green-500/30' : 'opacity-80'} ${getCellBackgroundColor(record)} ${getStatusColor(record)}`}
                   >
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">{dayLabel}</span>
-                      <span className="text-sm font-black text-slate-700 dark:text-slate-200">{dayNum}</span>
+                    <div className="text-[10px] sm:text-sm font-black text-slate-800 dark:text-white leading-none">
+                      {dayNum}
                     </div>
+
                     {hasData ? (
-                      <div className="space-y-0.5">
-                        {tableType === 'complete' && (
-                          <>
-                            <div className="font-bold text-[11px]">{displayStatus}</div>
-                            {shiftName !== '-' && <div className="text-[9px] opacity-80 truncate">{shiftName}</div>}
-                            {record && record.totalHours != null && <div className="text-[9px] font-semibold">{formatHours(record.totalHours)}</div>}
-                          </>
-                        )}
-                        {tableType === 'present_absent' && <div className="font-bold text-sm">{displayStatus}</div>}
-                        {tableType === 'in_out' && (
-                          (record?.shifts?.length ?? 0) > 0 ? (
-                            (record?.shifts ?? []).slice(0, 2).map((s: any, idx: number) => (
-                              <div key={idx} className="text-[9px]">
-                                <span className="text-green-600 dark:text-green-400">{s.inTime ? formatTime(s.inTime) : '-'}</span>
-                                <span className="text-slate-400 mx-1">/</span>
-                                <span className="text-red-600 dark:text-red-400">{s.outTime ? formatTime(s.outTime) : '-'}</span>
-                              </div>
-                            ))
-                          ) : (
-                            <div className="text-[9px]">
-                              <span className="text-green-600 dark:text-green-400">{record?.inTime ? formatTime(record.inTime) : '-'}</span>
-                              <span className="text-slate-400 mx-1">/</span>
-                              <span className="text-red-600 dark:text-red-400">{record?.outTime ? formatTime(record.outTime) : '-'}</span>
-                            </div>
-                          )
-                        )}
-                        {tableType === 'leaves' && <div className="font-bold text-[11px]">{displayStatus}</div>}
-                        {tableType === 'od' && <div className="font-bold text-[11px]">{displayStatus}</div>}
-                        {tableType === 'ot' && (
-                          <div className="text-[9px]">
-                            <div className="text-orange-600">OT: {record?.otHours ? formatHours(record.otHours) : '-'}</div>
-                            <div className="text-purple-600">Ex: {record?.extraHours ? formatHours(record.extraHours) : '-'}</div>
-                          </div>
-                        )}
+                      <div className="mt-0.5 sm:mt-1 flex flex-col items-center">
+                        <div className="font-bold text-[7px] sm:text-[10px] uppercase leading-none">{displayStatus}</div>
                         {(isLate || isEarlyOut) && (
-                          <div className="flex gap-1 mt-1">
-                            {isLate && <span className="h-1.5 w-1.5 rounded-full bg-amber-500" title="Late" />}
-                            {isEarlyOut && <span className="h-1.5 w-1.5 rounded-full bg-blue-500" title="Early out" />}
+                          <div className="flex gap-0.5 mt-0.5">
+                            {isLate && <span className="h-1 w-1 sm:h-1.5 sm:w-1.5 rounded-full bg-amber-500" />}
+                            {isEarlyOut && <span className="h-1 w-1 sm:h-1.5 sm:w-1.5 rounded-full bg-blue-500" />}
                           </div>
                         )}
                       </div>
-                    ) : (
-                      <span className="text-slate-400 text-[10px]">-</span>
-                    )}
+                    ) : null}
                   </div>
                 );
               })}
             </div>
           </div>
         ) : (
-        <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
-          <div className="overflow-x-auto scrollbar-hide">
-            <table className="w-full border-collapse text-xs">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-800">
-                  <th className="sticky left-0 z-10 w-[180px] border-r border-slate-200 bg-slate-50 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                    Employee
-                  </th>
-                  {daysArray.map((dateStr) => {
-                    const dayNum = new Date(dateStr + 'T12:00:00').getDate();
-                    const dayName = new Date(dateStr + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short' });
-                    return (
-                      <th
-                        key={dateStr}
-                        className="w-[35px] min-w-[35px] border-r border-slate-200 px-1 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300"
-                        title={dateStr}
-                      >
-                        <div className="font-bold">{dayNum}</div>
-                        <div className="text-[8px] opacity-70">{dayName}</div>
-                      </th>
-                    );
-                  })}
-                  {tableType === 'complete' && (
-                    <>
-                      <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-blue-50 dark:bg-blue-900/20">Days Present</th>
-                      <th className="w-[70px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-amber-50 dark:bg-amber-900/20">Leaves</th>
-                      <th className="w-[70px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-orange-100 dark:bg-orange-900/20">Week Offs</th>
-                      <th className="w-[70px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-red-50 dark:bg-red-900/20">Holidays</th>
-                      <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-orange-50 dark:bg-orange-900/20">OT Hours</th>
-                      <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-purple-50 dark:bg-purple-900/20">Extra Hours</th>
-                      <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-cyan-50 dark:bg-cyan-900/20">Permissions</th>
-                      <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-rose-50 dark:bg-rose-900/20">Late/Early</th>
-                      <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-green-900/20 bg-green-50">Payable Shifts</th>
-                    </>
-                  )}
-                  {tableType === 'present_absent' && (
-                    <>
-                      <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-green-50 text-green-700">Present (M)</th>
-                      <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-red-50 text-red-700">Absent (M)</th>
-                    </>
-                  )}
-                  {tableType === 'in_out' && (
-                    <th className="w-[100px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-blue-50 text-blue-700">Total Days Present</th>
-                  )}
-                  {tableType === 'leaves' && (
-                    <>
-                      <th className="w-[100px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-orange-50 text-orange-700">Total Leaves</th>
-                      <th className="w-[100px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-yellow-50 text-yellow-700">Paid Leaves</th>
-                      <th className="w-[100px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-rose-50 text-rose-700">LOPs</th>
-                    </>
-                  )}
-                  {tableType === 'od' && (
-                    <th className="w-[100px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-indigo-50 text-indigo-700">Total ODs</th>
-                  )}
-                  {tableType === 'ot' && (
-                    <>
-                      <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-orange-50 text-orange-700">OT Hours</th>
-                      <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-purple-50 text-purple-700">Extra Hours</th>
-                    </>
-                  )}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                {loading ? (
-                  <>
-                    {/* Skeleton Loading - only tbody cells */}
-                    {[1, 2, 3, 4, 5].map((i) => (
-                      <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                        <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
-                          <div className="h-4 w-32 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                          <div className="mt-1 h-3 w-24 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                        </td>
-                        {daysArray.map((dateStr) => (
-                          <td
-                            key={dateStr}
-                            className="border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700"
-                          >
-                            <div className="h-8 w-full animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                          </td>
-                        ))}
-                        {tableType === 'complete' && (
-                          <>
-                            <td className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-blue-900/20">
-                              <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                            </td>
-                            <td className="border-r border-slate-200 bg-amber-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-amber-900/20">
-                              <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                            </td>
-                            <td className="border-r border-slate-200 bg-orange-100 px-2 py-2 text-center dark:border-slate-700 dark:bg-orange-900/20">
-                              <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                            </td>
-                            <td className="border-r border-slate-200 bg-red-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-red-900/20">
-                              <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                            </td>
-                            <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-orange-900/20">
-                              <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                            </td>
-                            <td className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-purple-900/20">
-                              <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                            </td>
-                            <td className="border-r border-slate-200 bg-cyan-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-cyan-900/20">
-                              <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                            </td>
-                            <td className="border-r border-slate-200 bg-rose-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-rose-900/20">
-                              <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                            </td>
-                            <td className="border-r-0 border-slate-200 bg-green-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-green-900/20">
-                              <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                            </td>
-                          </>
-                        )}
-                        {tableType === 'present_absent' && (
-                          <>
-                            <td className="border-r border-slate-200 bg-green-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
-                            <td className="border-r border-slate-200 bg-red-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
-                          </>
-                        )}
-                        {tableType === 'in_out' && (
-                          <td className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
-                        )}
-                        {tableType === 'leaves' && (
-                          <>
-                            <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
-                            <td className="border-r border-slate-200 bg-yellow-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
-                            <td className="border-r border-slate-200 bg-rose-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
-                          </>
-                        )}
-                        {tableType === 'od' && (
-                          <td className="border-r border-slate-200 bg-indigo-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
-                        )}
-                        {tableType === 'ot' && (
-                          <>
-                            <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
-                            <td className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
-                          </>
-                        )}
-                      </tr>
-                    ))}
-                  </>
-                ) : (
-                  <>
-                    {filteredMonthlyData.length === 0 ? (
-                      <tr>
-                        <td colSpan={daysArray.length + (tableType === 'complete' ? 10 : tableType === 'present_absent' ? 3 : tableType === 'ot' ? 3 : 2)} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
-                          No employees found matching the selected filters.
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredMonthlyData.map((item) => {
-                        const daysPresent = item.presentDays !== undefined
-                          ? item.presentDays
-                          : Object.values(item.dailyAttendance).filter(
-                            (record) => record && (record.status === 'PRESENT' || record.status === 'PARTIAL')
-                          ).length;
-                        const payableShifts = item.payableShifts !== undefined ? item.payableShifts : 0;
-
-                        // Helper calculations for specific tables
-                        const monthPresent = Object.values(item.dailyAttendance).filter(r => r?.status === 'PRESENT').length;
-                        const monthAbsent = Object.values(item.dailyAttendance).filter(r => r?.status === 'ABSENT').length;
-                        const daysAbsent = periodDays - daysPresent;
-                        const leaveRecords = Object.values(item.dailyAttendance).filter(r => r?.status === 'LEAVE' || r?.hasLeave);
-                        const totalLeaves = item.summary?.totalLeaves ?? leaveRecords.length;
-                        const weekOffsCount = item.summary?.totalWeeklyOffs ?? Object.values(item.dailyAttendance).filter(r => r?.status === 'WEEK_OFF').length;
-                        const holidaysCount = item.summary?.totalHolidays ?? Object.values(item.dailyAttendance).filter(r => r?.status === 'HOLIDAY').length;
-                        const lopCount = leaveRecords.filter(r => {
-                          return (r as any)?.leaveNature === 'lop' ||
-                            (r as any)?.leaveInfo?.leaveType?.toLowerCase().includes('lop') ||
-                            (r as any)?.leaveInfo?.leaveType?.toLowerCase().includes('loss of pay');
-                        }).length;
-                        const paidLeaves = totalLeaves - lopCount;
-
-                        const totalODs = Object.values(item.dailyAttendance).filter(r => r?.status === 'OD' || r?.hasOD).length;
-
-                        const isHighAbsenteeism = monthAbsent > 2;
-
-                        return (
-                          <tr key={item.employee._id} className={`hover:bg-slate-50 dark:hover:bg-slate-800/50 ${isHighAbsenteeism ? 'bg-red-50/30 dark:bg-red-900/10' : ''}`}>
-                            <td className={`sticky left-0 z-10 border-r border-slate-200 px-3 py-2 text-[11px] font-medium text-slate-900 dark:border-slate-700 dark:text-white ${isHighAbsenteeism ? 'bg-red-50 dark:bg-red-900/20' : 'bg-white dark:bg-slate-900'}`}>
-                              <div>
-                                <div className="flex items-center gap-2">
-                                  <div
-                                    className="font-semibold truncate cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors flex-1"
-                                    onClick={() => handleEmployeeClick(item.employee)}
-                                    title="Click to view monthly summary"
-                                  >
-                                    {item.employee.employee_name}
-                                  </div>
-
-                                </div>
-                                <div className="text-[9px] text-slate-500 dark:text-slate-400 truncate mt-1">
-                                  {item.employee.emp_no}
-                                  {item.employee.department && ` • ${(item.employee.department as any)?.name || ''}`}
-                                </div>
-                              </div>
-                            </td>
-                            {daysArray.map((dateStr) => {
-                              const record = item.dailyAttendance[dateStr] || null;
-                              const shifts = (record as any)?.shifts || [];
-                              const shiftName = record?.shiftId && typeof record.shiftId === 'object' ? record.shiftId.name : '-';
-
-                              // Determine display status - check for leave/OD even if no attendance record
-                              let displayStatus = 'A';
-                              if (record) {
-                                if (record.status === 'PRESENT') displayStatus = 'P';
-                                else if (record.status === 'PARTIAL') displayStatus = 'PT';
-                                else if (record.status === 'HOLIDAY') displayStatus = 'H';
-                                else if (record.status === 'WEEK_OFF') displayStatus = 'WO';
-                                else if (record.status === 'LEAVE' || record.hasLeave) {
-                                  displayStatus = (record.leaveInfo?.numberOfDays && record.leaveInfo.numberOfDays >= 3) ? 'LL' : 'L';
-                                }
-                                else if (record.status === 'OD' || record.hasOD) displayStatus = 'OD';
-                                else displayStatus = 'A';
-                              }
-
-                              // Check if there's any data to display (attendance, leave, or OD)
-                              const hasData = record && (record.status || record.hasLeave || record.hasOD);
-                              const isLate = hasData && (
-                                (record && (record as any).lateInMinutes != null && (record as any).lateInMinutes > 0) ||
-                                (shifts && shifts.some((s: any) => s.lateInMinutes != null && s.lateInMinutes > 0))
-                              );
-                              const isEarlyOut = hasData && (
-                                (record && (record as any).earlyOutMinutes != null && (record as any).earlyOutMinutes > 0) ||
-                                (shifts && shifts.some((s: any) => s.earlyOutMinutes != null && s.earlyOutMinutes > 0))
-                              );
-
-                              return (
-                                <td
-                                  key={dateStr}
-                                  onClick={() => hasData && handleDateClick(item.employee, dateStr)}
-                                  className={`border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700 relative ${hasData ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800' : ''
-                                    } ${getStatusColor(record)} ${getCellBackgroundColor(record)}`}
-                                >
-                                  {(isLate || isEarlyOut) && (
-                                    <div className="absolute bottom-0.5 left-0 right-0 flex justify-center gap-0.5 z-10" title={`${isLate ? 'Late in' : ''}${isLate && isEarlyOut ? ' • ' : ''}${isEarlyOut ? 'Early out' : ''}`}>
-                                      {isLate && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" title="Late" />}
-                                      {isEarlyOut && <span className="h-1.5 w-1.5 rounded-full bg-blue-500 shrink-0" title="Early out" />}
-                                    </div>
-                                  )}
-                                  {hasData ? (
-                                    <div className="space-y-0.5">
-                                      {tableType === 'complete' && (
-                                        <>
-                                          <div className="font-semibold text-[9px]">{displayStatus}</div>
-                                          {/* Shift Assignment - Only for HR */}
-                                          {hasManagePermission ? (
-                                            <div
-                                              className="text-[8px] opacity-75 truncate cursor-pointer hover:text-blue-600 hover:underline"
-                                              title={shiftName !== '-' ? shiftName : 'Assign Shift'}
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                // Only open shift dialog if authorized
-                                                if (hasManagePermission) {
-                                                  // Logic to open shift dialog would go here if not handled by row click
-                                                  // For now, let row click handle it but visual cue is restricted
-                                                }
-                                              }}
-                                            >
-                                              {shiftName !== '-' ? shiftName.substring(0, 3) : (record?.totalHours ? '' : 'Asgn')}
-                                            </div>
-                                          ) : (
-                                            shiftName !== '-' && (
-                                              <div className="text-[8px] opacity-75 truncate" title={shiftName}>{shiftName.substring(0, 3)}</div>
-                                            )
-                                          )}
-                                          {record && record.totalHours !== null && (
-                                            <div className="text-[8px] font-semibold">{formatHours(record.totalHours)}</div>
-                                          )}
-                                        </>
-                                      )}
-                                      {tableType === 'present_absent' && (
-                                        <div className="font-bold text-[10px]">{displayStatus}</div>
-                                      )}
-                                      {tableType === 'in_out' && (
-                                        <div className="text-[8px] font-medium leading-tight">
-                                          {record?.shifts && record.shifts.length > 0 ? (
-                                            record.shifts.map((s: any, idx: number) => (
-                                              <div key={idx} className={idx > 0 ? "mt-1 pt-1 border-t border-slate-100 dark:border-slate-800" : ""}>
-                                                <div className="text-green-600 dark:text-green-400">{s.inTime ? formatTime(s.inTime) : '-'}</div>
-                                                <div className="text-red-600 dark:text-red-400">{s.outTime ? formatTime(s.outTime) : '-'}</div>
-                                              </div>
-                                            ))
-                                          ) : (
-                                            <>
-                                              <div className="text-green-600 dark:text-green-400">{record?.inTime ? formatTime(record.inTime) : '-'}</div>
-                                              <div className="text-red-600 dark:text-red-400">{record?.outTime ? formatTime(record.outTime) : '-'}</div>
-                                            </>
-                                          )}
-                                        </div>
-                                      )}
-                                      {tableType === 'leaves' && (
-                                        <div className="font-bold text-[10px] text-orange-600">{displayStatus === 'L' ? 'L' : '-'}</div>
-                                      )}
-                                      {tableType === 'od' && (
-                                        <div className="font-bold text-[10px] text-indigo-600">{displayStatus === 'OD' ? 'OD' : '-'}</div>
-                                      )}
-                                      {tableType === 'ot' && (
-                                        <div className="text-[8px] font-medium leading-tight">
-                                          <div className="text-orange-600">{record?.otHours ? formatHours(record.otHours) : '-'}</div>
-                                          <div className="text-purple-600">{record?.extraHours ? formatHours(record.extraHours) : '-'}</div>
-                                        </div>
-                                      )}
-                                      {(record?.source?.includes('manual') || record?.isEdited) && (
-                                        <div className="text-[7px] text-indigo-600 dark:text-indigo-400 absolute top-0.5 right-0.5" title="Manually Edited">✎</div>
-                                      )}
-                                    </div>
-                                  ) : (
-                                    <>
-                                      {record?.source?.includes('manual') && (
-                                        <div className="text-[7px] text-indigo-600 dark:text-indigo-400 absolute top-0.5 right-0.5" title="Manually Edited">✎</div>
-                                      )}
-                                      <span className="text-slate-400 text-[9px]">-</span>
-                                    </>
-                                  )}
-                                </td>
-                              );
-                            })}
-                            {tableType === 'complete' && (
-                              <>
-                                <td onClick={() => handleViewTypeSummary(item, 'present')} className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center text-[11px] font-bold text-blue-700 dark:border-slate-700 dark:bg-blue-900/20 dark:text-blue-300 cursor-pointer hover:bg-blue-100">
-                                  {daysPresent}
-                                </td>
-                                <td onClick={() => handleViewTypeSummary(item, 'leaves')} className="border-r border-slate-200 bg-amber-50 px-2 py-2 text-center text-[11px] font-bold text-amber-700 dark:border-slate-700 dark:bg-amber-900/20 dark:text-amber-300 cursor-pointer hover:bg-amber-100">
-                                  {totalLeaves}
-                                </td>
-                                <td className="border-r border-slate-200 bg-orange-100 px-2 py-2 text-center text-[11px] font-bold text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 dark:text-orange-300">
-                                  {weekOffsCount}
-                                </td>
-                                <td className="border-r border-slate-200 bg-red-50 px-2 py-2 text-center text-[11px] font-bold text-red-700 dark:border-slate-700 dark:bg-red-900/20 dark:text-red-300">
-                                  {holidaysCount}
-                                </td>
-                                <td onClick={() => handleViewTypeSummary(item, 'ot')} className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 dark:text-orange-300 cursor-pointer hover:bg-orange-100">
-                                  {formatHours(Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.otHours || 0), 0))}
-                                </td>
-                                <td onClick={() => handleViewTypeSummary(item, 'extra')} className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center text-[11px] font-bold text-purple-700 dark:border-slate-700 dark:bg-purple-900/20 dark:text-purple-300 cursor-pointer hover:bg-purple-100">
-                                  {formatHours(Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.extraHours || 0), 0))}
-                                </td>
-                                <td onClick={() => handleViewTypeSummary(item, 'permission')} className="border-r border-slate-200 bg-cyan-50 px-2 py-2 text-center text-[11px] font-bold text-cyan-700 dark:border-slate-700 dark:bg-cyan-900/20 dark:text-cyan-300 cursor-pointer hover:bg-cyan-100">
-                                  {Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.permissionCount || 0), 0)}
-                                </td>
-                                <td className="border-r border-slate-200 bg-rose-50 px-2 py-2 text-center text-[11px] font-bold text-rose-700 dark:border-slate-700 dark:bg-rose-900/20 dark:text-rose-300 w-[70px] min-w-[70px]">
-                                  {item.summary?.lateOrEarlyCount ?? 0}
-                                </td>
-                                <td onClick={() => handleEmployeeClick(item.employee)} className="border-r-0 border-slate-200 bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:border-slate-700 dark:bg-green-900/20 dark:text-green-300 cursor-pointer hover:bg-green-100">
-                                  {payableShifts.toFixed(2)}
-                                </td>
-                              </>
-                            )}
-                            {tableType === 'present_absent' && (
-                              <>
-                                <td onClick={() => handleViewTypeSummary(item, 'present')} className="border-r border-slate-200 bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 cursor-pointer hover:bg-green-100">{monthPresent}</td>
-                                <td onClick={() => handleViewTypeSummary(item, 'absent')} className="border-r border-slate-200 bg-red-50 px-2 py-2 text-center text-[11px] font-bold text-red-700 cursor-pointer hover:bg-red-100">{monthAbsent}</td>
-                              </>
-                            )}
-                            {tableType === 'in_out' && (
-                              <td onClick={() => handleViewTypeSummary(item, 'in_out')} className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center text-[11px] font-bold text-blue-700 cursor-pointer hover:bg-blue-100">{daysPresent}</td>
-                            )}
-                            {tableType === 'leaves' && (
-                              <>
-                                <td onClick={() => handleViewTypeSummary(item, 'leaves')} className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 cursor-pointer hover:bg-orange-100">{totalLeaves}</td>
-                                <td className="border-r border-slate-200 bg-yellow-50 px-2 py-2 text-center text-[11px] font-bold text-yellow-700">{paidLeaves}</td>
-                                <td className="border-r border-slate-200 bg-rose-50 px-2 py-2 text-center text-[11px] font-bold text-rose-700">{lopCount}</td>
-                              </>
-                            )}
-                            {tableType === 'od' && (
-                              <td onClick={() => handleViewTypeSummary(item, 'od')} className="border-r border-slate-200 bg-indigo-50 px-2 py-2 text-center text-[11px] font-bold text-indigo-700 cursor-pointer hover:bg-indigo-100">{totalODs}</td>
-                            )}
-                            {tableType === 'ot' && (
-                              <>
-                                <td onClick={() => handleViewTypeSummary(item, 'ot')} className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 cursor-pointer hover:bg-orange-100">
-                                  {formatHours(Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.otHours || 0), 0))}
-                                </td>
-                                <td onClick={() => handleViewTypeSummary(item, 'extra')} className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center text-[11px] font-bold text-purple-700 cursor-pointer hover:bg-purple-100">
-                                  {formatHours(Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.extraHours || 0), 0))}
-                                </td>
-                              </>
-                            )}
-                          </tr>
-                        );
-                      })
+          <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
+            <div className="overflow-x-auto scrollbar-hide">
+              <table className="w-full border-separate border-spacing-0 text-xs">
+                <thead className="sticky top-0 z-20 shadow-sm">
+                  <tr className="border-b border-slate-200 bg-slate-50 dark:border-slate-800">
+                    <th className="sticky left-0 z-30 w-[160px] min-w-[160px] border-r border-b border-slate-200 bg-slate-100 px-3 py-2.5 text-left text-[10px] font-black uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 shadow-[2px_0_5px_rgba(0,0,0,0.05)]">
+                      Employee
+                    </th>
+                    {daysArray.map((dateStr) => {
+                      const dayNum = new Date(dateStr + 'T12:00:00').getDate();
+                      const dayName = new Date(dateStr + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short' });
+                      return (
+                        <th
+                          key={dateStr}
+                          className="w-[35px] min-w-[35px] border-r border-slate-200 px-1 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300"
+                          title={dateStr}
+                        >
+                          <div className="font-bold">{dayNum}</div>
+                          <div className="text-[8px] opacity-70">{dayName}</div>
+                        </th>
+                      );
+                    })}
+                    {tableType === 'complete' && (
+                      <>
+                        <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-blue-900/20 bg-blue-50">Days Present</th>
+                        <th className="w-[70px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-amber-900/20 bg-amber-50">Leaves</th>
+                        <th className="w-[70px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-orange-900/20 bg-orange-100">Week Offs</th>
+                        <th className="w-[70px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-red-900/20 bg-red-50">Holidays</th>
+                        <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-orange-900/20 bg-orange-50">OT Hours</th>
+                        <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-purple-900/20 bg-purple-50">Extra Hours</th>
+                        <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-cyan-900/20 bg-cyan-50">Permissions</th>
+                        <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-rose-900/20 bg-rose-50">Late/Early</th>
+                        <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-green-900/20 bg-green-50">Payable Shifts</th>
+                      </>
                     )}
-                  </>
-                )}
-              </tbody>
-            </table>
+                    {tableType === 'present_absent' && (
+                      <>
+                        <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-green-50 text-green-700">Present (M)</th>
+                        <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-red-50 text-red-700">Absent (M)</th>
+                      </>
+                    )}
+                    {tableType === 'in_out' && (
+                      <th className="w-[100px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-blue-50 text-blue-700">Total Days Present</th>
+                    )}
+                    {tableType === 'leaves' && (
+                      <>
+                        <th className="w-[100px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-orange-50 text-orange-700">Total Leaves</th>
+                        <th className="w-[100px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-yellow-50 text-yellow-700">Paid Leaves</th>
+                        <th className="w-[100px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-rose-50 text-rose-700">LOPs</th>
+                      </>
+                    )}
+                    {tableType === 'od' && (
+                      <th className="w-[100px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-indigo-50 text-indigo-700">Total ODs</th>
+                    )}
+                    {tableType === 'ot' && (
+                      <>
+                        <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-orange-50 text-orange-700">OT Hours</th>
+                        <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-purple-50 text-purple-700">Extra Hours</th>
+                      </>
+                    )}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                  {loading ? (
+                    <>
+                      {/* Skeleton Loading - only tbody cells */}
+                      {[1, 2, 3, 4, 5].map((i) => (
+                        <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                          <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900">
+                            <div className="h-4 w-32 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                            <div className="mt-1 h-3 w-24 animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                          </td>
+                          {daysArray.map((dateStr) => (
+                            <td
+                              key={dateStr}
+                              className="border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700"
+                            >
+                              <div className="h-8 w-full animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                            </td>
+                          ))}
+                          {tableType === 'complete' && (
+                            <>
+                              <td className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-blue-900/20">
+                                <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                              </td>
+                              <td className="border-r border-slate-200 bg-amber-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-amber-900/20">
+                                <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                              </td>
+                              <td className="border-r border-slate-200 bg-orange-100 px-2 py-2 text-center dark:border-slate-700 dark:bg-orange-900/20">
+                                <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                              </td>
+                              <td className="border-r border-slate-200 bg-red-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-red-900/20">
+                                <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                              </td>
+                              <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-orange-900/20">
+                                <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                              </td>
+                              <td className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-purple-900/20">
+                                <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                              </td>
+                              <td className="border-r border-slate-200 bg-cyan-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-cyan-900/20">
+                                <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                              </td>
+                              <td className="border-r border-slate-200 bg-rose-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-rose-900/20">
+                                <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                              </td>
+                              <td className="border-r-0 border-slate-200 bg-green-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-green-900/20">
+                                <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                              </td>
+                            </>
+                          )}
+                          {tableType === 'present_absent' && (
+                            <>
+                              <td className="border-r border-slate-200 bg-green-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
+                              <td className="border-r border-slate-200 bg-red-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
+                            </>
+                          )}
+                          {tableType === 'in_out' && (
+                            <td className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
+                          )}
+                          {tableType === 'leaves' && (
+                            <>
+                              <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
+                              <td className="border-r border-slate-200 bg-yellow-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
+                              <td className="border-r border-slate-200 bg-rose-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
+                            </>
+                          )}
+                          {tableType === 'od' && (
+                            <td className="border-r border-slate-200 bg-indigo-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
+                          )}
+                          {tableType === 'ot' && (
+                            <>
+                              <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
+                              <td className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
+                            </>
+                          )}
+                        </tr>
+                      ))}
+                    </>
+                  ) : (
+                    <>
+                      {filteredMonthlyData.length === 0 ? (
+                        <tr>
+                          <td colSpan={daysArray.length + (tableType === 'complete' ? 10 : tableType === 'present_absent' ? 3 : tableType === 'ot' ? 3 : 2)} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                            No employees found matching the selected filters.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredMonthlyData.map((item) => {
+                          const daysPresent = item.presentDays !== undefined
+                            ? item.presentDays
+                            : Object.values(item.dailyAttendance).filter(
+                              (record) => record && (record.status === 'PRESENT' || record.status === 'PARTIAL')
+                            ).length;
+                          const payableShifts = item.payableShifts !== undefined ? item.payableShifts : 0;
 
-            {/* Infinite Scroll Sentinel (NEW) */}
-            <div ref={observerTarget} className="h-4 w-full" />
+                          // Helper calculations for specific tables
+                          const monthPresent = Object.values(item.dailyAttendance).filter(r => r?.status === 'PRESENT').length;
+                          const monthAbsent = Object.values(item.dailyAttendance).filter(r => r?.status === 'ABSENT').length;
+                          const daysAbsent = periodDays - daysPresent;
+                          const leaveRecords = Object.values(item.dailyAttendance).filter(r => r?.status === 'LEAVE' || r?.hasLeave);
+                          const totalLeaves = item.summary?.totalLeaves ?? leaveRecords.length;
+                          const weekOffsCount = item.summary?.totalWeeklyOffs ?? Object.values(item.dailyAttendance).filter(r => r?.status === 'WEEK_OFF').length;
+                          const holidaysCount = item.summary?.totalHolidays ?? Object.values(item.dailyAttendance).filter(r => r?.status === 'HOLIDAY').length;
+                          const lopCount = leaveRecords.filter(r => {
+                            return (r as any)?.leaveNature === 'lop' ||
+                              (r as any)?.leaveInfo?.leaveType?.toLowerCase().includes('lop') ||
+                              (r as any)?.leaveInfo?.leaveType?.toLowerCase().includes('loss of pay');
+                          }).length;
+                          const paidLeaves = totalLeaves - lopCount;
 
-            {/* Loading More Indicator (NEW) */}
-            {loadingMore && (
-              <div className="flex justify-center items-center py-8">
-                <div className="flex items-center gap-3 text-slate-600 dark:text-slate-400">
-                  <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                  </svg>
-                  <span className="text-sm font-medium">Loading more attendance records...</span>
+                          const totalODs = Object.values(item.dailyAttendance).filter(r => r?.status === 'OD' || r?.hasOD).length;
+
+                          const isHighAbsenteeism = monthAbsent > 2;
+
+                          return (
+                            <tr key={item.employee._id} className={`hover:bg-slate-50 dark:hover:bg-slate-800/50 ${isHighAbsenteeism ? 'bg-red-50/30 dark:bg-red-900/10' : ''}`}>
+                              <td className={`sticky left-0 z-10 border-r border-slate-200 px-3 py-2 text-[11px] font-medium text-slate-900 dark:border-slate-700 dark:text-white shadow-[2px_0_5px_rgba(0,0,0,0.05)] ${isHighAbsenteeism ? 'bg-red-50 dark:bg-red-900/20' : 'bg-white dark:bg-slate-900'}`}>
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <div
+                                      className="font-semibold truncate cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors flex-1"
+                                      onClick={() => handleEmployeeClick(item.employee)}
+                                      title="Click to view monthly summary"
+                                    >
+                                      {item.employee.employee_name}
+                                    </div>
+
+                                  </div>
+                                  <div className="text-[9px] text-slate-500 dark:text-slate-400 truncate mt-1">
+                                    {item.employee.emp_no}
+                                    {item.employee.department && ` • ${(item.employee.department as any)?.name || ''}`}
+                                  </div>
+                                </div>
+                              </td>
+                              {daysArray.map((dateStr) => {
+                                const record = item.dailyAttendance[dateStr] || null;
+                                const shifts = (record as any)?.shifts || [];
+                                const shiftName = record?.shiftId && typeof record.shiftId === 'object' ? record.shiftId.name : '-';
+
+                                // Determine display status - check for leave/OD even if no attendance record
+                                let displayStatus = 'A';
+                                if (record) {
+                                  if (record.status === 'PRESENT') displayStatus = 'P';
+                                  else if (record.status === 'PARTIAL') displayStatus = 'PT';
+                                  else if (record.status === 'HOLIDAY') displayStatus = 'H';
+                                  else if (record.status === 'WEEK_OFF') displayStatus = 'WO';
+                                  else if (record.status === 'LEAVE' || record.hasLeave) {
+                                    displayStatus = (record.leaveInfo?.numberOfDays && record.leaveInfo.numberOfDays >= 3) ? 'LL' : 'L';
+                                  }
+                                  else if (record.status === 'OD' || record.hasOD) displayStatus = 'OD';
+                                  else displayStatus = 'A';
+                                }
+
+                                // Check if there's any data to display (attendance, leave, or OD)
+                                const hasData = record && (record.status || record.hasLeave || record.hasOD);
+                                const isLate = hasData && (
+                                  (record && (record as any).lateInMinutes != null && (record as any).lateInMinutes > 0) ||
+                                  (shifts && shifts.some((s: any) => s.lateInMinutes != null && s.lateInMinutes > 0))
+                                );
+                                const isEarlyOut = hasData && (
+                                  (record && (record as any).earlyOutMinutes != null && (record as any).earlyOutMinutes > 0) ||
+                                  (shifts && shifts.some((s: any) => s.earlyOutMinutes != null && s.earlyOutMinutes > 0))
+                                );
+
+                                return (
+                                  <td
+                                    key={dateStr}
+                                    onClick={() => hasData && handleDateClick(item.employee, dateStr)}
+                                    className={`border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700 relative ${hasData ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800' : ''
+                                      } ${getStatusColor(record)} ${getCellBackgroundColor(record)}`}
+                                  >
+                                    {(isLate || isEarlyOut) && (
+                                      <div className="absolute bottom-0.5 left-0 right-0 flex justify-center gap-0.5 z-10" title={`${isLate ? 'Late in' : ''}${isLate && isEarlyOut ? ' • ' : ''}${isEarlyOut ? 'Early out' : ''}`}>
+                                        {isLate && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" title="Late" />}
+                                        {isEarlyOut && <span className="h-1.5 w-1.5 rounded-full bg-blue-500 shrink-0" title="Early out" />}
+                                      </div>
+                                    )}
+                                    {hasData ? (
+                                      <div className="space-y-0.5">
+                                        {tableType === 'complete' && (
+                                          <>
+                                            <div className="font-semibold text-[9px]">{displayStatus}</div>
+                                            {/* Shift Assignment - Only for HR */}
+                                            {hasManagePermission ? (
+                                              <div
+                                                className="text-[8px] opacity-75 truncate cursor-pointer hover:text-blue-600 hover:underline"
+                                                title={shiftName !== '-' ? shiftName : 'Assign Shift'}
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  // Only open shift dialog if authorized
+                                                  if (hasManagePermission) {
+                                                    // Logic to open shift dialog would go here if not handled by row click
+                                                    // For now, let row click handle it but visual cue is restricted
+                                                  }
+                                                }}
+                                              >
+                                                {shiftName !== '-' ? shiftName.substring(0, 3) : (record?.totalHours ? '' : 'Asgn')}
+                                              </div>
+                                            ) : (
+                                              shiftName !== '-' && (
+                                                <div className="text-[8px] opacity-75 truncate" title={shiftName}>{shiftName.substring(0, 3)}</div>
+                                              )
+                                            )}
+                                            {record && record.totalHours !== null && (
+                                              <div className="text-[8px] font-semibold">{formatHours(record.totalHours)}</div>
+                                            )}
+                                          </>
+                                        )}
+                                        {tableType === 'present_absent' && (
+                                          <div className="font-bold text-[10px]">{displayStatus}</div>
+                                        )}
+                                        {tableType === 'in_out' && (
+                                          <div className="text-[8px] font-medium leading-tight">
+                                            {record?.shifts && record.shifts.length > 0 ? (
+                                              record.shifts.map((s: any, idx: number) => (
+                                                <div key={idx} className={idx > 0 ? "mt-1 pt-1 border-t border-slate-100 dark:border-slate-800" : ""}>
+                                                  <div className="text-green-600 dark:text-green-400">{s.inTime ? formatTime(s.inTime) : '-'}</div>
+                                                  <div className="text-red-600 dark:text-red-400">{s.outTime ? formatTime(s.outTime) : '-'}</div>
+                                                </div>
+                                              ))
+                                            ) : (
+                                              <>
+                                                <div className="text-green-600 dark:text-green-400">{record?.inTime ? formatTime(record.inTime) : '-'}</div>
+                                                <div className="text-red-600 dark:text-red-400">{record?.outTime ? formatTime(record.outTime) : '-'}</div>
+                                              </>
+                                            )}
+                                          </div>
+                                        )}
+                                        {tableType === 'leaves' && (
+                                          <div className="font-bold text-[10px] text-orange-600">{displayStatus === 'L' ? 'L' : '-'}</div>
+                                        )}
+                                        {tableType === 'od' && (
+                                          <div className="font-bold text-[10px] text-indigo-600">{displayStatus === 'OD' ? 'OD' : '-'}</div>
+                                        )}
+                                        {tableType === 'ot' && (
+                                          <div className="text-[8px] font-medium leading-tight">
+                                            <div className="text-orange-600">{record?.otHours ? formatHours(record.otHours) : '-'}</div>
+                                            <div className="text-purple-600">{record?.extraHours ? formatHours(record.extraHours) : '-'}</div>
+                                          </div>
+                                        )}
+                                        {(record?.source?.includes('manual') || record?.isEdited) && (
+                                          <div className="text-[7px] text-indigo-600 dark:text-indigo-400 absolute top-0.5 right-0.5" title="Manually Edited">✎</div>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <>
+                                        {record?.source?.includes('manual') && (
+                                          <div className="text-[7px] text-indigo-600 dark:text-indigo-400 absolute top-0.5 right-0.5" title="Manually Edited">✎</div>
+                                        )}
+                                        <span className="text-slate-400 text-[9px]">-</span>
+                                      </>
+                                    )}
+                                  </td>
+                                );
+                              })}
+                              {tableType === 'complete' && (
+                                <>
+                                  <td onClick={() => handleViewTypeSummary(item, 'present')} className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center text-[11px] font-bold text-blue-700 dark:border-slate-700 dark:bg-blue-900/20 dark:text-blue-300 cursor-pointer hover:bg-blue-100">
+                                    {daysPresent}
+                                  </td>
+                                  <td onClick={() => handleViewTypeSummary(item, 'leaves')} className="border-r border-slate-200 bg-amber-50 px-2 py-2 text-center text-[11px] font-bold text-amber-700 dark:border-slate-700 dark:bg-amber-900/20 dark:text-amber-300 cursor-pointer hover:bg-amber-100">
+                                    {totalLeaves}
+                                  </td>
+                                  <td className="border-r border-slate-200 bg-orange-100 px-2 py-2 text-center text-[11px] font-bold text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 dark:text-orange-300">
+                                    {weekOffsCount}
+                                  </td>
+                                  <td className="border-r border-slate-200 bg-red-50 px-2 py-2 text-center text-[11px] font-bold text-red-700 dark:border-slate-700 dark:bg-red-900/20 dark:text-red-300">
+                                    {holidaysCount}
+                                  </td>
+                                  <td onClick={() => handleViewTypeSummary(item, 'ot')} className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 dark:text-orange-300 cursor-pointer hover:bg-orange-100">
+                                    {formatHours(Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.otHours || 0), 0))}
+                                  </td>
+                                  <td onClick={() => handleViewTypeSummary(item, 'extra')} className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center text-[11px] font-bold text-purple-700 dark:border-slate-700 dark:bg-purple-900/20 dark:text-purple-300 cursor-pointer hover:bg-purple-100">
+                                    {formatHours(Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.extraHours || 0), 0))}
+                                  </td>
+                                  <td onClick={() => handleViewTypeSummary(item, 'permission')} className="border-r border-slate-200 bg-cyan-50 px-2 py-2 text-center text-[11px] font-bold text-cyan-700 dark:border-slate-700 dark:bg-cyan-900/20 dark:text-cyan-300 cursor-pointer hover:bg-cyan-100">
+                                    {Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.permissionCount || 0), 0)}
+                                  </td>
+                                  <td className="border-r border-slate-200 bg-rose-50 px-2 py-2 text-center text-[11px] font-bold text-rose-700 dark:border-slate-700 dark:bg-rose-900/20 dark:text-rose-300 w-[70px] min-w-[70px]">
+                                    {item.summary?.lateOrEarlyCount ?? 0}
+                                  </td>
+                                  <td onClick={() => handleEmployeeClick(item.employee)} className="border-r-0 border-slate-200 bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:border-slate-700 dark:bg-green-900/20 dark:text-green-300 cursor-pointer hover:bg-green-100">
+                                    {payableShifts.toFixed(2)}
+                                  </td>
+                                </>
+                              )}
+                              {tableType === 'present_absent' && (
+                                <>
+                                  <td onClick={() => handleViewTypeSummary(item, 'present')} className="border-r border-slate-200 bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 cursor-pointer hover:bg-green-100">{monthPresent}</td>
+                                  <td onClick={() => handleViewTypeSummary(item, 'absent')} className="border-r border-slate-200 bg-red-50 px-2 py-2 text-center text-[11px] font-bold text-red-700 cursor-pointer hover:bg-red-100">{monthAbsent}</td>
+                                </>
+                              )}
+                              {tableType === 'in_out' && (
+                                <td onClick={() => handleViewTypeSummary(item, 'in_out')} className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center text-[11px] font-bold text-blue-700 cursor-pointer hover:bg-blue-100">{daysPresent}</td>
+                              )}
+                              {tableType === 'leaves' && (
+                                <>
+                                  <td onClick={() => handleViewTypeSummary(item, 'leaves')} className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 cursor-pointer hover:bg-orange-100">{totalLeaves}</td>
+                                  <td className="border-r border-slate-200 bg-yellow-50 px-2 py-2 text-center text-[11px] font-bold text-yellow-700">{paidLeaves}</td>
+                                  <td className="border-r border-slate-200 bg-rose-50 px-2 py-2 text-center text-[11px] font-bold text-rose-700">{lopCount}</td>
+                                </>
+                              )}
+                              {tableType === 'od' && (
+                                <td onClick={() => handleViewTypeSummary(item, 'od')} className="border-r border-slate-200 bg-indigo-50 px-2 py-2 text-center text-[11px] font-bold text-indigo-700 cursor-pointer hover:bg-indigo-100">{totalODs}</td>
+                              )}
+                              {tableType === 'ot' && (
+                                <>
+                                  <td onClick={() => handleViewTypeSummary(item, 'ot')} className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 cursor-pointer hover:bg-orange-100">
+                                    {formatHours(Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.otHours || 0), 0))}
+                                  </td>
+                                  <td onClick={() => handleViewTypeSummary(item, 'extra')} className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center text-[11px] font-bold text-purple-700 cursor-pointer hover:bg-purple-100">
+                                    {formatHours(Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.extraHours || 0), 0))}
+                                  </td>
+                                </>
+                              )}
+                            </tr>
+                          );
+                        })
+                      )}
+                    </>
+                  )}
+                </tbody>
+              </table>
+
+              {/* Infinite Scroll Sentinel (NEW) */}
+              <div ref={observerTarget} className="h-4 w-full" />
+
+              {/* Loading More Indicator (NEW) */}
+              {loadingMore && (
+                <div className="flex justify-center items-center py-8">
+                  <div className="flex items-center gap-3 text-slate-600 dark:text-slate-400">
+                    <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    <span className="text-sm font-medium">Loading more attendance records...</span>
+                  </div>
                 </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Status Legend - Improved for Mobile */}
+        <div className="mt-8 mb-6 flex flex-col md:flex-row items-start md:items-center gap-4 px-4 py-4 rounded-2xl bg-white/50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 backdrop-blur-sm shadow-sm animate-in fade-in slide-in-from-bottom-2 duration-500">
+          <span className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest md:border-r md:border-slate-200 md:dark:border-slate-700 md:pr-4">Status Key</span>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:flex md:flex-wrap items-center gap-x-6 gap-y-3 w-full">
+            {[
+              { label: 'P', name: 'Present', color: 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800' },
+              { label: 'H', name: 'Holiday', color: 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800' },
+              { label: 'WO', name: 'Week Off', color: 'bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-800' },
+              { label: 'L', name: 'Leave', color: 'bg-orange-50 text-orange-600 border-orange-100 dark:bg-orange-900/10 dark:text-orange-400 dark:border-orange-800' },
+              { label: 'LL', name: 'Long Leave', color: 'bg-amber-200 text-amber-800 border-amber-300 dark:bg-amber-900/40 dark:text-amber-400 dark:border-amber-700' },
+              { label: 'OD', name: 'On Duty', color: 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800' },
+              { label: 'PT', name: 'Partial', color: 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-800' },
+              { label: 'A', name: 'Absent', color: 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700' },
+              { label: '!', name: 'Conflict', color: 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-800' },
+              { label: '✎', name: 'Edited', color: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/10 dark:text-indigo-400 dark:border-indigo-800' },
+              { label: '●', name: 'Late', color: 'bg-amber-500', dotOnly: true },
+              { label: '●', name: 'Early out', color: 'bg-blue-500', dotOnly: true },
+            ].map((item, idx) => (
+              <div key={`${(item as any).name}-${idx}`} className="flex items-center gap-2 group cursor-help">
+                <div className={`flex items-center justify-center rounded text-[10px] font-bold border shadow-sm transition-all duration-200 group-hover:scale-110 group-hover:shadow-md ${(item as any).dotOnly ? 'w-5 h-5 border-transparent' : 'w-6 h-6'} ${(item as any).dotOnly ? '' : item.color}`}>
+                  {(item as any).dotOnly ? <span className={`inline-block h-2 w-2 rounded-full ${item.color}`} /> : item.label}
+                </div>
+                <span className="text-[10px] sm:text-[11px] font-bold text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">{item.name}</span>
               </div>
-            )}
+            ))}
           </div>
         </div>
-        )}
 
 
         {/* Dialogs */}
@@ -4007,11 +3988,10 @@ export default function AttendancePage() {
 
                           )}
                           {hasExistingOT && (
-                            <span className={`ml-3 rounded-full px-2 py-1 text-[10px] font-medium ${
-                              otRequestStatus === 'approved'
-                                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                                : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-                            }`}>
+                            <span className={`ml-3 rounded-full px-2 py-1 text-[10px] font-medium ${otRequestStatus === 'approved'
+                              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                              : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                              }`}>
                               {otRequestStatus === 'approved' ? 'Already Converted' : 'Pending approval'}
                             </span>
                           )}

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import exifr from 'exifr';
-import { MapPin, XCircle, AlertCircle } from 'lucide-react';
+import { MapPin, XCircle, AlertCircle, Camera, RefreshCw } from 'lucide-react';
 
 const LocationMap = dynamic(() => import('@/components/LocationMap'), { ssr: false });
 
@@ -73,6 +73,7 @@ export default function LocationPhotoCapture({
     const [distance, setDistance] = useState<number | null>(null);
     const [address, setAddress] = useState<string | null>(null);
     const [showCamera, setShowCamera] = useState(false);
+    const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment');
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
@@ -273,15 +274,26 @@ export default function LocationPhotoCapture({
         }
     };
 
-    const startCamera = async () => {
+    const startCamera = async (mode: 'user' | 'environment' = facingMode) => {
         try {
             setError(null);
+            // Stop any existing stream before starting a new one
+            if (streamRef.current) {
+                streamRef.current.getTracks().forEach(track => track.stop());
+            }
+
             const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: 'environment' },
+                video: { facingMode: mode },
                 audio: false
             });
             streamRef.current = stream;
+            setFacingMode(mode);
             setShowCamera(true);
+
+            // Critical for iOS: need to wait for state update then assign srcObject
+            if (videoRef.current) {
+                videoRef.current.srcObject = stream;
+            }
         } catch (err: any) {
             console.error('Camera access error:', err);
             let msg = 'Could not access camera.';
@@ -289,6 +301,11 @@ export default function LocationPhotoCapture({
             else if (err.name === 'NotFoundError') msg = 'No camera found on this device.';
             setError(msg);
         }
+    };
+
+    const switchCamera = async () => {
+        const nextMode = facingMode === 'environment' ? 'user' : 'environment';
+        await startCamera(nextMode);
     };
 
     const stopCamera = () => {
@@ -306,9 +323,21 @@ export default function LocationPhotoCapture({
             const context = canvas.getContext('2d');
 
             if (context) {
-                canvas.width = video.videoWidth;
-                canvas.height = video.videoHeight;
-                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                // Determine the square size (min of width and height)
+                const size = Math.min(video.videoWidth, video.videoHeight);
+                const sourceX = (video.videoWidth - size) / 2;
+                const sourceY = (video.videoHeight - size) / 2;
+
+                // Set canvas to square
+                canvas.width = size;
+                canvas.height = size;
+
+                // Draw cropped center square
+                context.drawImage(
+                    video,
+                    sourceX, sourceY, size, size, // Source rect
+                    0, 0, size, size             // Dest rect
+                );
 
                 canvas.toBlob((blob) => {
                     if (blob) {
@@ -395,7 +424,7 @@ export default function LocationPhotoCapture({
                     />
 
                     {loading ? (
-                        <div className="flex flex-col items-center justify-center p-8 rounded-2xl border-2 border-dashed border-blue-300 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-900/10 transition-all">
+                        <div className="flex flex-col items-center justify-center p-8 rounded-2xl border-2 border-dashed border-blue-300 bg-blue-50/50 dark:border-blue-900/10 transition-all">
                             <div className="relative mb-3">
                                 <div className="h-10 w-10 animate-spin rounded-full border-4 border-blue-500 border-t-transparent"></div>
                                 <div className="absolute inset-0 flex items-center justify-center">
@@ -407,11 +436,11 @@ export default function LocationPhotoCapture({
                             </span>
                         </div>
                     ) : (
-                        <div className="flex flex-col gap-4">
+                        <div className={`flex flex-col gap-4 transition-all duration-500 ${showCamera ? 'min-h-[420px]' : ''}`}>
                             {/* Primary Upload Area - Large, Dashed Dropzone */}
                             <label
                                 htmlFor="upload-input"
-                                className="group relative cursor-pointer flex flex-col items-center justify-center p-4 sm:p-8 rounded-2xl sm:rounded-3xl border-2 border-dashed border-slate-300 bg-slate-50 hover:bg-slate-100 hover:border-blue-400 dark:border-slate-700 dark:bg-slate-900/50 dark:hover:bg-slate-800 dark:hover:border-blue-600 transition-all duration-300 min-h-[100px] sm:min-h-[160px]"
+                                className={`group relative cursor-pointer flex flex-col items-center justify-center p-4 sm:p-8 rounded-2xl sm:rounded-3xl border-2 border-dashed border-slate-300 bg-slate-50 hover:bg-slate-100 hover:border-blue-400 dark:border-slate-700 dark:bg-slate-900/50 dark:hover:bg-slate-800 dark:hover:border-blue-600 transition-all duration-300 ${showCamera ? 'min-h-[420px]' : 'min-h-[100px] sm:min-h-[160px]'}`}
                             >
                                 <div className="mb-2 sm:mb-4 p-3 sm:p-4 rounded-full bg-white shadow-sm ring-1 ring-slate-200 dark:bg-slate-800 dark:ring-slate-700 group-hover:scale-110 transition-transform duration-300">
                                     <svg className="h-6 w-6 sm:h-8 sm:w-8 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -435,7 +464,7 @@ export default function LocationPhotoCapture({
 
                             <button
                                 type="button"
-                                onClick={startCamera}
+                                onClick={() => startCamera()}
                                 className="flex items-center justify-center gap-2 p-2.5 sm:p-3 rounded-xl bg-white border border-slate-200 shadow-sm hover:bg-slate-50 hover:border-slate-300 dark:bg-slate-800 dark:border-slate-700 dark:hover:bg-slate-700 transition-all active:scale-95"
                             >
                                 <svg className="h-4 w-4 sm:h-5 sm:w-5 text-slate-600 dark:text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -555,48 +584,74 @@ export default function LocationPhotoCapture({
                     )}
                 </div>
             )}
-            {/* Camera Modal */}
+            {/* Camera Modal - Absolute positioned within the component container */}
             {showCamera && (
-                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4">
-                    <div className="relative w-full max-w-lg bg-slate-900 rounded-3xl overflow-hidden shadow-2xl ring-1 ring-white/10">
-                        {/* Camera Header */}
-                        <div className="absolute top-0 inset-x-0 p-4 flex justify-between items-center z-10 bg-gradient-to-b from-black/50 to-transparent">
-                            <h3 className="text-white font-semibold text-sm">Capture Photo</h3>
-                            <button
-                                type="button"
-                                onClick={stopCamera}
-                                className="p-2 rounded-full bg-black/30 text-white hover:bg-black/50 transition-colors"
-                            >
-                                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                            </button>
+                <div className="absolute inset-0 z-[60] flex items-center justify-center bg-slate-100/10 dark:bg-slate-900/10 backdrop-blur-md rounded-2xl p-2 animate-in fade-in duration-300">
+                    <div className="relative w-full max-w-[260px] bg-white dark:bg-slate-900 rounded-2xl overflow-hidden shadow-2xl ring-1 ring-slate-200 dark:ring-white/10 flex flex-col border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-300">
+                        {/* Camera Header - Ultra Compact */}
+                        <div className="px-3 py-2 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-white/5 shrink-0">
+                            <div className="flex items-center gap-1.5">
+                                <Camera className="w-3 h-3 text-blue-500" />
+                                <h3 className="text-slate-900 dark:text-white font-bold text-[10px] tracking-tight">Camera Feed</h3>
+                            </div>
+                            <span className="px-1 py-0.5 rounded bg-blue-50 dark:bg-white/5 border border-blue-100 dark:border-white/10 text-[7px] font-black uppercase tracking-wider text-blue-600 dark:text-white/40">
+                                {facingMode === 'environment' ? 'Back' : 'Front'}
+                            </span>
                         </div>
 
-                        {/* Video Feed */}
-                        <div className="relative aspect-[4/3] bg-black flex items-center justify-center">
+                        {/* Video Feed - Square 1:1 - Miniature */}
+                        <div className="relative aspect-square w-full bg-slate-100 dark:bg-black flex items-center justify-center overflow-hidden min-h-0">
                             <video
                                 ref={videoRef}
                                 autoPlay
                                 playsInline
                                 muted
                                 onLoadedMetadata={() => videoRef.current?.play()}
-                                className="w-full h-full object-cover"
+                                className="w-full h-full object-cover scale-x-[-1]"
                             />
-                            {/* Overlay/Grid (Optional) */}
-                            <div className="absolute inset-0 border-2 border-white/20 pointer-events-none rounded-2xl m-8"></div>
+                            {/* Simple Visual Guide */}
+                            <div className="absolute inset-4 border border-blue-500/20 pointer-events-none rounded-lg border-dashed"></div>
                         </div>
 
-                        {/* Controls */}
-                        <div className="p-6 bg-slate-900 flex flex-col items-center gap-4">
+                        {/* Controls - Ultra Compact Bar */}
+                        <div className="p-3 bg-white dark:bg-slate-900 flex items-center justify-center gap-5 shrink-0 border-t border-slate-100 dark:border-white/5">
+                            {/* Flip Camera - Mini */}
+                            <button
+                                type="button"
+                                onClick={switchCamera}
+                                className="group flex flex-col items-center gap-0.5"
+                            >
+                                <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-white/5 flex items-center justify-center text-slate-600 dark:text-white group-hover:bg-slate-200 dark:group-hover:bg-white/10 group-active:scale-90 transition-all">
+                                    <RefreshCw className="w-3.5 h-3.5" />
+                                </div>
+                                <span className="text-[6px] font-black text-slate-400 dark:text-white/20 uppercase tracking-widest">Flip</span>
+                            </button>
+
+                            {/* Capture Button - Mini */}
                             <button
                                 type="button"
                                 onClick={capturePhoto}
-                                className="w-16 h-16 rounded-full bg-white border-4 border-slate-400 flex items-center justify-center hover:scale-110 active:scale-95 transition-all shadow-xl"
+                                className="relative group"
                             >
-                                <div className="w-12 h-12 rounded-full bg-white border-2 border-slate-200"></div>
+                                <div className="w-12 h-12 rounded-full border-2 border-slate-200 dark:border-white/20 flex items-center justify-center group-active:scale-95 transition-all">
+                                    <div className="w-9 h-9 rounded-full bg-blue-600 border-[2px] border-white dark:border-slate-900"></div>
+                                </div>
+                                <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 whitespace-nowrap">
+                                    <span className="text-[7px] font-black text-white uppercase tracking-tighter bg-blue-600 px-1 py-0 rounded ring-1 ring-white">Snap</span>
+                                </div>
                             </button>
-                            <p className="text-slate-400 text-xs font-medium">Click button to take photo</p>
+
+                            {/* Close Button - Mini */}
+                            <button
+                                type="button"
+                                onClick={stopCamera}
+                                className="group flex flex-col items-center gap-0.5"
+                            >
+                                <div className="w-8 h-8 rounded-full bg-red-50 dark:bg-red-500/10 flex items-center justify-center text-red-500 group-hover:bg-red-100 dark:group-hover:bg-red-500/20 group-active:scale-90 transition-all">
+                                    <XCircle className="w-3.5 h-3.5" />
+                                </div>
+                                <span className="text-[6px] font-black text-red-400 dark:text-red-500/30 uppercase tracking-widest">Exit</span>
+                            </button>
                         </div>
                     </div>
 
