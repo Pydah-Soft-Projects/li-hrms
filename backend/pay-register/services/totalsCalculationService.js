@@ -239,7 +239,7 @@ function calculateTotals(dailyRecords) {
     // Check first half
     if (record.firstHalf) {
       const h1 = record.firstHalf;
-      if (h1.status === 'present' || h1.status === 'od' || (h1.status === 'leave' && h1.leaveType === 'paid')) {
+      if (h1.status === 'present' || h1.status === 'od') {
         totalPayableShiftsValue += (Number(record.payableShifts || 1) / 2);
       }
     }
@@ -247,7 +247,7 @@ function calculateTotals(dailyRecords) {
     // Check second half
     if (record.secondHalf) {
       const h2 = record.secondHalf;
-      if (h2.status === 'present' || h2.status === 'od' || (h2.status === 'leave' && h2.leaveType === 'paid')) {
+      if (h2.status === 'present' || h2.status === 'od') {
         totalPayableShiftsValue += (Number(record.payableShifts || 1) / 2);
       }
     }
