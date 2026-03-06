@@ -205,7 +205,7 @@ const startServer = async () => {
     const { startSyncJob } = require('./attendance/services/attendanceSyncJob');
     await startSyncJob();
 
-    // Monthly leave accrual cron (00:10 IST on 1st of every month – CL/EL + CCL expiry)
+    // Monthly leave accrual cron (00:10 IST daily – runs EL/CCL leave register entries on payroll cycle end date)
     try {
       const { startMonthlyAccrualCron } = require('./leaves/jobs/monthlyAccrualCron');
       startMonthlyAccrualCron();

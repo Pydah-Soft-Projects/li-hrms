@@ -1,7 +1,8 @@
 const PayRegisterSummary = require('../model/PayRegisterSummary');
 const Employee = require('../../employees/model/Employee');
 const { populatePayRegisterFromSources, getAllDatesInMonth } = require('./autoPopulationService');
-const { calculateTotals } = require('./totalsCalculationService');
+const { calculateTotals, ensureTotalsRespectRoster } = require('./totalsCalculationService');
+const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
 const mongoose = require('mongoose');
 
 /**
@@ -18,6 +19,7 @@ const mongoose = require('mongoose');
  */
 async function processSummaryBulkUpload(month, rows, userId) {
     const [year, monthNum] = month.split('-').map(Number);
+    const { startDate, endDate } = await getPayrollDateRange(year, monthNum);
     const results = {
         total: rows.length,
         success: 0,
@@ -243,6 +245,8 @@ async function processSummaryBulkUpload(month, rows, userId) {
 
             // Final aggregate pass
             payRegister.recalculateTotals();
+            // Override week-offs and holidays from shift roster so totals respect roster
+            await ensureTotalsRespectRoster(payRegister.totals, payRegister.emp_no, startDate, endDate);
 
             await payRegister.save();
             results.success++;

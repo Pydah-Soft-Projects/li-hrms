@@ -283,20 +283,23 @@ leaveRegisterSchema.statics.getLeaveRegister = function (filters = {}, month = n
     if (filters.employmentStatus) query.employmentStatus = filters.employmentStatus;
     if (filters.transactionType) query.transactionType = filters.transactionType;
 
-    // Balance-as-of month: include all transactions up to and including month/year (for apply-form CL balance)
-    const balanceAsOf = filters.balanceAsOf && (filters.employeeId || filters.empNo) && month && year;
-    if (month && year) {
+    // Balance-as-of month: include all transactions up to and including month/year (for apply-form CL balance).
+    // Coerce to numbers so Feb/March (and query params as strings) compare correctly with stored Number fields.
+    const balanceAsOf = filters.balanceAsOf && (filters.employeeId || filters.empNo) && month != null && year != null;
+    const numMonth = month != null ? Number(month) : null;
+    const numYear = year != null ? Number(year) : null;
+    if (numMonth != null && numYear != null && !isNaN(numMonth) && !isNaN(numYear)) {
         if (balanceAsOf) {
             query.$and = (query.$and || []);
             query.$and.push({
                 $or: [
-                    { year: { $lt: year } },
-                    { year: year, month: { $lte: month } }
+                    { year: { $lt: numYear } },
+                    { year: numYear, month: { $lte: numMonth } }
                 ]
             });
         } else {
-            query.month = month;
-            query.year = year;
+            query.month = numMonth;
+            query.year = numYear;
         }
     }
 
