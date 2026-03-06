@@ -316,6 +316,50 @@ class LeaveRegisterService {
             // Group by employee and provide monthly breakdown
             let groupedData = this.groupByEmployeeMonthly(populatedData, month, year);
 
+            // When viewing register for a month (not a single employee), ensure ALL active employees in scope
+            // are listed. Otherwise "current month" shows only employees with transactions in that month.
+            if (!filters.employeeId && !filters.empNo && month && year) {
+                const existingIds = new Set(
+                    groupedData
+                        .map((entry) => entry.employee && (entry.employee.id || entry.employee._id))
+                        .filter(Boolean)
+                        .map((id) => id.toString())
+                );
+                const empQuery = { is_active: true };
+                if (filters.divisionId) empQuery.division_id = filters.divisionId;
+                if (filters.departmentId) empQuery.department_id = filters.departmentId;
+                const extraEmployees = await Employee.find(empQuery)
+                    .select('_id emp_no employee_name designation_id department_id division_id doj is_active casualLeaves paidLeaves compensatoryOffs')
+                    .populate('designation_id', 'name')
+                    .populate('department_id', 'name')
+                    .populate('division_id', 'name')
+                    .lean();
+                for (const emp of extraEmployees) {
+                    const idStr = emp._id.toString();
+                    if (existingIds.has(idStr)) continue;
+                    existingIds.add(idStr);
+                    const clBalance = typeof emp.casualLeaves === 'number' ? emp.casualLeaves : 0;
+                    const elBalance = typeof emp.paidLeaves === 'number' ? emp.paidLeaves : 0;
+                    const cclBalance = typeof emp.compensatoryOffs === 'number' ? emp.compensatoryOffs : 0;
+                    groupedData.push({
+                        employee: {
+                            id: emp._id,
+                            empNo: emp.emp_no,
+                            name: emp.employee_name,
+                            designation: emp.designation_id?.name || 'N/A',
+                            department: emp.department_id?.name || 'N/A',
+                            division: emp.division_id?.name || 'N/A',
+                            doj: emp.doj,
+                            status: emp.is_active ? 'active' : 'inactive'
+                        },
+                        casualLeave: { openingBalance: 0, accruedThisMonth: 0, earnedCCL: 0, usedThisMonth: 0, expired: 0, balance: clBalance, carryForward: 0 },
+                        earnedLeave: { openingBalance: 0, accruedThisMonth: 0, usedThisMonth: 0, balance: elBalance },
+                        compensatoryOff: { openingBalance: 0, earned: 0, used: 0, expired: 0, balance: cclBalance },
+                        totalPaidBalance: clBalance + elBalance + cclBalance
+                    });
+                }
+            }
+
             // When balance-as-of was requested for one employee and register has no transactions, fallback to Employee.casualLeaves
             if (filters.balanceAsOf && (filters.employeeId || filters.empNo) && groupedData.length === 0) {
                 const emp = filters.employeeId
@@ -356,31 +400,57 @@ class LeaveRegisterService {
             }
 
             // Monthly CL limit: protect at least 1 CL for each remaining month in the year.
-            // Uses payroll cycle month index via dateCycleService.
-            if (filters.balanceAsOf && groupedData.length > 0) {
+            // Run whenever we have a month view (so current month and previous month both show correct limits).
+            if (groupedData.length > 0 && month && year) {
                 const dateCycleService = require('./dateCycleService');
                 const today = new Date();
-                const baseYear = year ? Number(year) : today.getFullYear();
-                const baseMonth = month ? Number(month) : (today.getMonth() + 1);
+                // Coerce to numbers so Feb/March (and string query params) resolve to correct payroll cycle
+                const baseYear = (year != null && year !== '') ? Number(year) : today.getFullYear();
+                const baseMonth = (month != null && month !== '') ? Number(month) : (today.getMonth() + 1);
+                const safeYear = Number.isFinite(baseYear) ? baseYear : today.getFullYear();
+                const safeMonth = (Number.isFinite(baseMonth) && baseMonth >= 1 && baseMonth <= 12) ? baseMonth : (today.getMonth() + 1);
                 // Use the 15th of the requested month as a representative date to resolve payroll cycle
-                const targetDate = new Date(baseYear, baseMonth - 1, 15);
+                const targetDate = new Date(safeYear, safeMonth - 1, 15);
                 const periodInfo = await dateCycleService.getPeriodInfo(targetDate);
                 const cycleMonth = periodInfo.payrollCycle.month; // 1–12
 
-                const monthIndex = Math.min(Math.max(cycleMonth, 1), 12);
-                const remainingMonths = Math.max(0, 12 - monthIndex); // months AFTER the current payroll month
+                // Fixed 2 CL per pay cycle period. Locking: pending CL in this period reduces allowed. CCL is added on top elsewhere.
+                const CL_PER_PAY_CYCLE = 2;
 
-                // Compute pending CL days in this payroll month to "lock" against monthly limit
-                const Leave = require('../model/Leave');
+                // If register's last CL transaction is from a previous year, use Employee.casualLeaves so
+                // new-year entitlement (or manual balance) is shown until annual reset is written to register.
+                const staleEmpIds = groupedData
+                    .filter((e) => e.casualLeave && (e.casualLeave.lastTransactionYear == null || Number(e.casualLeave.lastTransactionYear) < safeYear))
+                    .map((e) => e.employee?.id || e.employee?._id)
+                    .filter(Boolean);
+                let empBalanceMap = new Map();
+                if (staleEmpIds.length > 0) {
+                    const employees = await Employee.find({ _id: { $in: staleEmpIds } })
+                        .select('_id casualLeaves')
+                        .lean();
+                    employees.forEach((emp) => empBalanceMap.set(emp._id.toString(), typeof emp.casualLeaves === 'number' ? emp.casualLeaves : 0));
+                }
+
                 for (const entry of groupedData) {
                     if (!entry.casualLeave) continue;
-                    const balance = Number(entry.casualLeave.balance) || 0;
-                    const monthlyLimit = Math.max(0, balance - remainingMonths);
+                    const lastTxYear = entry.casualLeave.lastTransactionYear != null ? Number(entry.casualLeave.lastTransactionYear) : null;
+                    if (lastTxYear != null && lastTxYear < safeYear) {
+                        const empId = entry.employee?.id || entry.employee?._id;
+                        if (empId && empBalanceMap.has(empId.toString())) {
+                            const balance = empBalanceMap.get(empId.toString());
+                            entry.casualLeave.balance = balance;
+                            entry.casualLeave._balanceFromEmployee = true;
+                            const elBal = Number(entry.earnedLeave?.balance) || 0;
+                            const cclBal = Number(entry.compensatoryOff?.balance) || 0;
+                            entry.totalPaidBalance = balance + elBal + cclBal;
+                        }
+                    }
 
+                    // Pending CL in this pay cycle locks against the 2 CL limit (same as before)
                     const empId = entry.employee?.id || entry.employee?._id;
                     const empNo = entry.employee?.empNo;
                     let pendingCLDays = 0;
-
+                    const Leave = require('../model/Leave');
                     if (empId || empNo) {
                         const empFilter = empId ? { employeeId: empId } : { emp_no: empNo };
                         const startOfCycle = periodInfo.payrollCycle.startDate;
@@ -396,77 +466,11 @@ class LeaveRegisterService {
                         pendingCLDays = pendingLeaves.reduce((sum, l) => sum + (l.numberOfDays || 0), 0);
                     }
 
+                    const monthlyLimit = CL_PER_PAY_CYCLE;
                     const allowedRemaining = Math.max(0, monthlyLimit - pendingCLDays);
                     entry.casualLeave.allowedRemaining = allowedRemaining;
                     entry.casualLeave.pendingThisMonth = pendingCLDays;
                     entry.casualLeave.monthlyCLLimit = monthlyLimit;
-                }
-            }
-
-            // When querying for a month without restricting to a single employee, ensure all active employees
-            // in scope (division/department) are represented, even if they have no transactions in that month.
-            if (!filters.balanceAsOf && !filters.employeeId && !filters.empNo && month && year) {
-                const existingIds = new Set(
-                    groupedData
-                        .map((entry) => entry.employee && (entry.employee.id || entry.employee._id))
-                        .filter(Boolean)
-                        .map((id) => id.toString())
-                );
-
-                const empQuery = { is_active: true };
-                if (filters.divisionId) empQuery.division_id = filters.divisionId;
-                if (filters.departmentId) empQuery.department_id = filters.departmentId;
-
-                const extraEmployees = await Employee.find(empQuery)
-                    .select('_id emp_no employee_name designation_id department_id division_id doj is_active casualLeaves paidLeaves compensatoryOffs')
-                    .populate('designation_id', 'name')
-                    .populate('department_id', 'name')
-                    .populate('division_id', 'name')
-                    .lean();
-
-                for (const emp of extraEmployees) {
-                    const idStr = emp._id.toString();
-                    if (existingIds.has(idStr)) continue;
-
-                    const clBalance = typeof emp.casualLeaves === 'number' ? emp.casualLeaves : 0;
-                    const elBalance = typeof emp.paidLeaves === 'number' ? emp.paidLeaves : 0;
-                    const cclBalance = typeof emp.compensatoryOffs === 'number' ? emp.compensatoryOffs : 0;
-
-                    groupedData.push({
-                        employee: {
-                            id: emp._id,
-                            empNo: emp.emp_no,
-                            name: emp.employee_name,
-                            designation: emp.designation_id?.name || 'N/A',
-                            department: emp.department_id?.name || 'N/A',
-                            division: emp.division_id?.name || 'N/A',
-                            doj: emp.doj,
-                            status: emp.is_active ? 'active' : 'inactive'
-                        },
-                        casualLeave: {
-                            openingBalance: 0,
-                            accruedThisMonth: 0,
-                            earnedCCL: 0,
-                            usedThisMonth: 0,
-                            expired: 0,
-                            balance: clBalance,
-                            carryForward: 0
-                        },
-                        earnedLeave: {
-                            openingBalance: 0,
-                            accruedThisMonth: 0,
-                            usedThisMonth: 0,
-                            balance: elBalance
-                        },
-                        compensatoryOff: {
-                            openingBalance: 0,
-                            earned: 0,
-                            used: 0,
-                            expired: 0,
-                            balance: cclBalance
-                        },
-                        totalPaidBalance: clBalance + elBalance + cclBalance
-                    });
                 }
             }
 
@@ -639,6 +643,9 @@ class LeaveRegisterService {
                 const cl = grouped[key].casualLeave;
                 if (cl.openingBalance === 0) cl.openingBalance = transaction.openingBalance;
                 cl.balance = transaction.closingBalance;
+                // Track last CL transaction period to detect stale register (e.g. new year, reset not yet in register)
+                cl.lastTransactionYear = transaction.year;
+                cl.lastTransactionMonth = transaction.month;
 
                 if (type === 'CREDIT') {
                     if (transaction.autoGeneratedType === 'INITIAL_BALANCE') cl.accruedThisMonth += days;

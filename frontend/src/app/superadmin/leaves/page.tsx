@@ -1141,19 +1141,27 @@ export default function LeavesPage() {
       setClBalanceForMonth(null);
       return;
     }
-    const from = parseDateOnly(formData.fromDate);
-    const month = from.getMonth() + 1;
-    const year = from.getFullYear();
+    // Determine pay-cycle period from the selected date: send baseDate (not calendar month/year)
+    // so the backend resolves the correct period (e.g. 26 Jan–25 Feb for 31 Jan when cycle is 26–25).
+    const raw = formData.fromDate?.includes('T') ? formData.fromDate.split('T')[0] : (formData.fromDate || '');
+    const baseDateForApi = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : toISODate(formData.fromDate) || raw;
     let cancelled = false;
     setClBalanceLoading(true);
     setClBalanceForMonth(null);
-    api.getLeaveRegister({ employeeId: String(targetEmployeeId), month, year })
+    api.getLeaveRegister({
+      employeeId: String(targetEmployeeId),
+      baseDate: baseDateForApi,
+      balanceAsOf: true,
+    })
       .then((res: any) => {
         if (cancelled) return;
         const data = res?.data;
         if (Array.isArray(data) && data.length > 0 && data[0].casualLeave) {
-          const balance = Number(data[0].casualLeave.balance);
-          setClBalanceForMonth(Number.isFinite(balance) ? balance : 0);
+          const cl = data[0].casualLeave;
+          const balance = Number(cl.balance);
+          const allowedRaw = cl.allowedRemaining != null ? Number(cl.allowedRemaining) : balance;
+          const clCap = Number.isFinite(allowedRaw) ? Math.max(0, allowedRaw) : (Number.isFinite(balance) ? balance : 0);
+          setClBalanceForMonth(clCap);
         } else {
           setClBalanceForMonth(0);
         }
