@@ -352,9 +352,14 @@ export interface ApiResponse<T> {
     page: number;
     limit: number;
   };
+  // Flat pagination fields for consistency
+  total?: number;
+  page?: number;
+  totalPages?: number;
+  count?: number;
+  stats?: any;
   // For backward compatibility with various response formats
   durations?: any[];
-  count?: number;
   warnings?: string[];
   // For workspace responses
   workspaces?: Workspace[];
@@ -3919,6 +3924,9 @@ export const api = {
     employeeId?: string;
     departmentId?: string;
     divisionId?: string;
+    page?: number;
+    limit?: number;
+    search?: string;
   }) => {
     const query = new URLSearchParams();
     if (params.startDate) query.append('startDate', params.startDate);
@@ -3926,6 +3934,9 @@ export const api = {
     if (params.employeeId) query.append('employeeId', params.employeeId);
     if (params.departmentId) query.append('departmentId', params.departmentId);
     if (params.divisionId) query.append('divisionId', params.divisionId);
+    if (params.page) query.append('page', params.page.toString());
+    if (params.limit) query.append('limit', params.limit.toString());
+    if (params.search) query.append('search', params.search);
 
     return apiRequest<any>(`/attendance/reports/summary?${query.toString()}`, { method: 'GET' });
   },
@@ -3934,14 +3945,59 @@ export const api = {
     startDate?: string;
     endDate?: string;
     employeeId?: string;
+    search?: string;
+    page?: number;
     limit?: number;
   }) => {
     const query = new URLSearchParams();
     if (params.startDate) query.append('startDate', params.startDate);
     if (params.endDate) query.append('endDate', params.endDate);
     if (params.employeeId) query.append('employeeId', params.employeeId);
+    if (params.search) query.append('search', params.search);
+    if (params.page) query.append('page', params.page.toString());
     if (params.limit) query.append('limit', params.limit.toString());
 
     return apiRequest<any>(`/attendance/reports/thumb?${query.toString()}`, { method: 'GET' });
+  },
+
+  exportAttendanceReport: async (params: {
+    startDate: string;
+    endDate: string;
+    employeeId?: string;
+    departmentId?: string;
+    divisionId?: string;
+    strict?: boolean;
+  }) => {
+    const query = new URLSearchParams();
+    query.append('startDate', params.startDate);
+    query.append('endDate', params.endDate);
+    if (params.employeeId) query.append('employeeId', params.employeeId);
+    if (params.departmentId) query.append('departmentId', params.departmentId);
+    if (params.divisionId) query.append('divisionId', params.divisionId);
+    if (params.strict) query.append('strict', 'true');
+
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/attendance/reports/export?${query.toString()}`, {
+      method: 'GET',
+      credentials: 'include',
+      headers,
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      let errorMsg = 'Failed to export report';
+      try {
+        const json = JSON.parse(text);
+        errorMsg = json.message || errorMsg;
+      } catch (e) { }
+      throw new Error(errorMsg);
+    }
+
+    return await response.blob();
   },
 };

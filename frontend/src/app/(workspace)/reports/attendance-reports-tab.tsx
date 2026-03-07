@@ -2,28 +2,14 @@
 
 import { useState, useEffect } from 'react';
 import { api, Department, Division } from '@/lib/api';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select";
 import {
     Search,
-    Filter,
     Download,
-    Calendar as CalendarIcon,
     Users,
     CheckCircle2,
     XCircle,
     Clock,
-    Loader2,
-    ChevronLeft,
-    ChevronRight
+    Loader2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
@@ -53,6 +39,13 @@ export default function AttendanceReportsTab() {
     const [departments, setDepartments] = useState<Department[]>([]);
     const [divisions, setDivisions] = useState<Division[]>([]);
 
+    // Pagination states
+    const [page, setPage] = useState(1);
+    const [totalPages, setTotalPages] = useState(1);
+    const [totalCount, setTotalCount] = useState(0);
+    const [limit] = useState(50);
+    const [reportStats, setReportStats] = useState({ present: 0, absent: 0, late: 0 });
+
     // Filter states
     const [startDate, setStartDate] = useState(dayjs().startOf('month').format('YYYY-MM-DD'));
     const [endDate, setEndDate] = useState(dayjs().format('YYYY-MM-DD'));
@@ -60,9 +53,20 @@ export default function AttendanceReportsTab() {
     const [divisionId, setDivisionId] = useState<string>('all');
     const [searchQuery, setSearchQuery] = useState('');
 
+    // Export Dialog states
+    const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
+    const [exportParams, setExportParams] = useState({
+        startDate: dayjs().startOf('month').format('YYYY-MM-DD'),
+        endDate: dayjs().format('YYYY-MM-DD'),
+        departmentId: 'all',
+        divisionId: 'all',
+        strict: false
+    });
+
     useEffect(() => {
         loadFilters();
-        loadReport();
+        loadReport(1);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const loadFilters = async () => {
@@ -78,12 +82,15 @@ export default function AttendanceReportsTab() {
         }
     };
 
-    const loadReport = async () => {
+    const loadReport = async (pageToLoad: number = page) => {
         setLoading(true);
         try {
             const params: any = {
                 startDate,
-                endDate
+                endDate,
+                page: pageToLoad,
+                limit,
+                search: searchQuery
             };
             if (departmentId !== 'all') params.departmentId = departmentId;
             if (divisionId !== 'all') params.divisionId = divisionId;
@@ -91,6 +98,12 @@ export default function AttendanceReportsTab() {
             const response = await api.getAttendanceReportSummary(params);
             if (response.success) {
                 setRecords(response.data || []);
+                setTotalPages(response.totalPages || 1);
+                setTotalCount(response.total || 0);
+                setPage(response.page || pageToLoad);
+                if (response.stats) {
+                    setReportStats(response.stats);
+                }
             } else {
                 toast.error(response.message || 'Failed to load report');
             }
@@ -102,21 +115,32 @@ export default function AttendanceReportsTab() {
         }
     };
 
-    const filteredRecords = records.filter(record => {
-        if (!searchQuery) return true;
-        const query = searchQuery.toLowerCase();
-        return (
-            record.employee?.employee_name?.toLowerCase().includes(query) ||
-            record.employeeNumber?.toLowerCase().includes(query)
-        );
-    });
+    const handleAdvancedExport = async () => {
+        const toastId = toast.loading('Preparing your report...');
+        try {
+            const params: any = {
+                startDate: exportParams.startDate,
+                endDate: exportParams.endDate
+            };
+            if (exportParams.departmentId !== 'all') params.departmentId = exportParams.departmentId;
+            if (exportParams.divisionId !== 'all') params.divisionId = exportParams.divisionId;
+            if (exportParams.strict) params.strict = true;
 
-    // Calculate Stats
-    const stats = {
-        present: filteredRecords.filter(r => r.status === 'PRESENT' || r.status === 'HALF_DAY').length,
-        absent: filteredRecords.filter(r => r.status === 'ABSENT').length,
-        late: filteredRecords.filter(r => (r.totalLateInMinutes || 0) > 0).length,
-        total: filteredRecords.length
+            const blob = await api.exportAttendanceReport(params);
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `attendance_report_${params.startDate}_to_${params.endDate}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            a.remove();
+            toast.success('Report downloaded successfully', { id: toastId });
+            setIsExportDialogOpen(false);
+        } catch (error: any) {
+            console.error('Export error:', error);
+            toast.error(error.message || 'Export failed', { id: toastId });
+        }
     };
 
     const getStatusColor = (status: string) => {
@@ -129,208 +153,274 @@ export default function AttendanceReportsTab() {
         }
     };
 
-    const handleExport = () => {
-        // Basic CSV export
-        const headers = ['Employee ID', 'Name', 'Date', 'Status', 'In Time', 'Out Time', 'Hours', 'Late (min)', 'Early Out (min)'];
-        const rows = filteredRecords.map(r => [
-            r.employeeNumber,
-            r.employee?.employee_name,
-            r.date,
-            r.status,
-            r.firstInTime ? dayjs(r.firstInTime).format('HH:mm') : '-',
-            r.lastOutTime ? dayjs(r.lastOutTime).format('HH:mm') : '-',
-            r.totalWorkingHours?.toFixed(2) || '0',
-            r.totalLateInMinutes || '0',
-            r.totalEarlyOutMinutes || '0'
-        ]);
-
-        const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n");
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.setAttribute("href", url);
-        link.setAttribute("download", `attendance_report_${startDate}_to_${endDate}.csv`);
-        link.click();
-    };
-
     return (
-        <div className="space-y-6">
-            {/* Stats Overview */}
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                <Card className="border-none bg-emerald-50 shadow-none dark:bg-emerald-950/20">
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-sm font-medium text-emerald-600 dark:text-emerald-400">Total Present</CardTitle>
-                        <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold text-emerald-900 dark:text-emerald-100">{stats.present}</div>
-                        <p className="text-xs text-emerald-600/60 dark:text-emerald-400/60">Includes half days</p>
-                    </CardContent>
-                </Card>
+        <div className="space-y-4">
+            {/* Stats Overview - Reduced padding and smaller text */}
+            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+                <div className="rounded-lg border-none bg-emerald-50 p-3 dark:bg-emerald-950/20">
+                    <div className="flex flex-row items-center justify-between pb-1">
+                        <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">Present</span>
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                    </div>
+                    <div>
+                        <div className="text-xl font-bold text-emerald-900 dark:text-emerald-100">{reportStats.present}</div>
+                    </div>
+                </div>
 
-                <Card className="border-none bg-rose-50 shadow-none dark:bg-rose-950/20">
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-sm font-medium text-rose-600 dark:text-rose-400">Total Absent</CardTitle>
-                        <XCircle className="h-4 w-4 text-rose-600 dark:text-rose-400" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold text-rose-900 dark:text-rose-100">{stats.absent}</div>
-                        <p className="text-xs text-rose-600/60 dark:text-rose-400/60">For the selected period</p>
-                    </CardContent>
-                </Card>
+                <div className="rounded-lg border-none bg-rose-50 p-3 dark:bg-rose-950/20">
+                    <div className="flex flex-row items-center justify-between pb-1">
+                        <span className="text-xs font-semibold text-rose-600 dark:text-rose-400">Absent</span>
+                        <XCircle className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />
+                    </div>
+                    <div>
+                        <div className="text-xl font-bold text-rose-900 dark:text-rose-100">{reportStats.absent}</div>
+                    </div>
+                </div>
 
-                <Card className="border-none bg-amber-50 shadow-none dark:bg-amber-950/20">
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-sm font-medium text-amber-600 dark:text-amber-400">Late Entries</CardTitle>
-                        <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold text-amber-900 dark:text-amber-100">{stats.late}</div>
-                        <p className="text-xs text-amber-600/60 dark:text-amber-400/60">Exceeding grace time</p>
-                    </CardContent>
-                </Card>
+                <div className="rounded-lg border-none bg-amber-50 p-3 dark:bg-amber-950/20">
+                    <div className="flex flex-row items-center justify-between pb-1">
+                        <span className="text-xs font-semibold text-amber-600 dark:text-amber-400">Late</span>
+                        <Clock className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                    </div>
+                    <div>
+                        <div className="text-xl font-bold text-amber-900 dark:text-amber-100">{reportStats.late}</div>
+                    </div>
+                </div>
 
-                <Card className="border-none bg-indigo-50 shadow-none dark:bg-indigo-950/20">
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-sm font-medium text-indigo-600 dark:text-indigo-400">Total Records</CardTitle>
-                        <Users className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold text-indigo-900 dark:text-indigo-100">{stats.total}</div>
-                        <p className="text-xs text-indigo-600/60 dark:text-indigo-400/60">Filtered results</p>
-                    </CardContent>
-                </Card>
+                <div className="rounded-lg border-none bg-indigo-50 p-3 dark:bg-indigo-950/20">
+                    <div className="flex flex-row items-center justify-between pb-1">
+                        <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">Total</span>
+                        <Users className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+                    </div>
+                    <div>
+                        <div className="text-xl font-bold text-indigo-900 dark:text-indigo-100">{totalCount}</div>
+                    </div>
+                </div>
             </div>
 
-            {/* Filters & Actions */}
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
-                    <div className="space-y-2">
-                        <label className="text-xs font-medium text-slate-500">Start Date</label>
-                        <Input
+            {/* Filters & Actions - More compact */}
+            <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                <div className="flex flex-wrap items-end gap-3">
+                    <div className="space-y-1 min-w-[140px]">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Start Date</label>
+                        <input
                             type="date"
                             value={startDate}
                             onChange={(e) => setStartDate(e.target.value)}
-                            className="h-9"
+                            className="w-full h-8 rounded border border-slate-300 bg-white px-2 py-1 text-xs focus:border-indigo-500 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                         />
                     </div>
-                    <div className="space-y-2">
-                        <label className="text-xs font-medium text-slate-500">End Date</label>
-                        <Input
+                    <div className="space-y-1 min-w-[140px]">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">End Date</label>
+                        <input
                             type="date"
                             value={endDate}
                             onChange={(e) => setEndDate(e.target.value)}
-                            className="h-9"
+                            className="w-full h-8 rounded border border-slate-300 bg-white px-2 py-1 text-xs focus:border-indigo-500 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                         />
                     </div>
-                    <div className="space-y-2">
-                        <label className="text-xs font-medium text-slate-500">Department</label>
-                        <Select value={departmentId} onValueChange={setDepartmentId}>
-                            <SelectTrigger className="h-9">
-                                <SelectValue placeholder="All Departments" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">All Departments</SelectItem>
-                                {departments.map(d => (
-                                    <SelectItem key={d._id} value={d._id}>{d.name}</SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
+                    <div className="space-y-1 min-w-[160px]">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Department</label>
+                        <select
+                            value={departmentId}
+                            onChange={(e) => setDepartmentId(e.target.value)}
+                            className="w-full h-8 rounded border border-slate-300 bg-white px-2 py-1 text-xs focus:border-indigo-500 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                        >
+                            <option value="all">All Departments</option>
+                            {departments.map(d => (
+                                <option key={d._id} value={d._id}>{d.name}</option>
+                            ))}
+                        </select>
                     </div>
-                    <div className="space-y-2">
-                        <label className="text-xs font-medium text-slate-500">Division</label>
-                        <Select value={divisionId} onValueChange={setDivisionId}>
-                            <SelectTrigger className="h-9">
-                                <SelectValue placeholder="All Divisions" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">All Divisions</SelectItem>
-                                {divisions.map(d => (
-                                    <SelectItem key={d._id} value={d._id}>{d.name}</SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
+                    <div className="space-y-1 min-w-[160px]">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Division</label>
+                        <select
+                            value={divisionId}
+                            onChange={(e) => setDivisionId(e.target.value)}
+                            className="w-full h-8 rounded border border-slate-300 bg-white px-2 py-1 text-xs focus:border-indigo-500 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                        >
+                            <option value="all">All Divisions</option>
+                            {divisions.map(d => (
+                                <option key={d._id} value={d._id}>{d.name}</option>
+                            ))}
+                        </select>
                     </div>
-                    <div className="flex items-end space-x-2">
-                        <Button onClick={loadReport} className="h-9 w-full bg-indigo-600 hover:bg-indigo-700">
-                            Apply Filters
-                        </Button>
-                        <Button variant="outline" size="icon" className="h-9 w-9 shrink-0" onClick={handleExport}>
-                            <Download className="h-4 w-4" />
-                        </Button>
+                    <div className="space-y-1 flex-1 min-w-[200px]">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Search Employee</label>
+                        <div className="relative">
+                            <Search className="absolute left-2 top-2 h-3.5 w-3.5 text-slate-400" />
+                            <input
+                                type="text"
+                                placeholder="Name or ID..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && loadReport(1)}
+                                className="w-full h-8 pl-8 rounded border border-slate-300 bg-white px-2 py-1 text-xs focus:border-indigo-500 outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                            />
+                        </div>
                     </div>
-                </div>
-
-                <div className="mt-4 flex items-center space-x-2">
-                    <div className="relative flex-1 max-w-sm">
-                        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
-                        <Input
-                            type="search"
-                            placeholder="Search by name or ID..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="h-9 pl-9"
-                        />
+                    <div className="flex space-x-2 shrink-0">
+                        <button
+                            onClick={() => loadReport(1)}
+                            className="h-8 rounded bg-indigo-600 px-3 py-1 text-xs font-semibold text-white hover:bg-indigo-700 transition-colors disabled:opacity-50"
+                            disabled={loading}
+                        >
+                            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin mx-auto" /> : 'Apply'}
+                        </button>
+                        <button
+                            className="h-8 w-8 flex items-center justify-center rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition-colors"
+                            onClick={() => setIsExportDialogOpen(true)}
+                            title="Download Excel Report"
+                        >
+                            <Download className="h-3.5 w-3.5" />
+                        </button>
                     </div>
                 </div>
             </div>
 
+            {/* Export Dialog Modal */}
+            {isExportDialogOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                    <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                        <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+                            <h3 className="text-lg font-bold text-slate-900 dark:text-white">Download Attendance Report</h3>
+                            <p className="text-xs text-slate-500">Excel export with dynamic IN/OUT columns.</p>
+                        </div>
+
+                        <div className="p-4 space-y-4">
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Start Date</label>
+                                    <input
+                                        type="date"
+                                        value={exportParams.startDate}
+                                        onChange={(e) => setExportParams({ ...exportParams, startDate: e.target.value })}
+                                        className="w-full h-10 rounded border border-slate-300 bg-white px-3 text-sm outline-none focus:ring-1 focus:ring-indigo-500 dark:bg-slate-800 dark:border-slate-700"
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">End Date</label>
+                                    <input
+                                        type="date"
+                                        value={exportParams.endDate}
+                                        onChange={(e) => setExportParams({ ...exportParams, endDate: e.target.value })}
+                                        className="w-full h-10 rounded border border-slate-300 bg-white px-3 text-sm outline-none focus:ring-1 focus:ring-indigo-500 dark:bg-slate-800 dark:border-slate-700"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Department</label>
+                                <select
+                                    value={exportParams.departmentId}
+                                    onChange={(e) => setExportParams({ ...exportParams, departmentId: e.target.value })}
+                                    className="w-full h-10 rounded border border-slate-300 bg-white px-3 text-sm outline-none focus:ring-1 focus:ring-indigo-500 dark:bg-slate-800 dark:border-slate-700"
+                                >
+                                    <option value="all">All Departments</option>
+                                    {departments.map(d => <option key={d._id} value={d._id}>{d.name}</option>)}
+                                </select>
+                            </div>
+
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Division</label>
+                                <select
+                                    value={exportParams.divisionId}
+                                    onChange={(e) => setExportParams({ ...exportParams, divisionId: e.target.value })}
+                                    className="w-full h-10 rounded border border-slate-300 bg-white px-3 text-sm outline-none focus:ring-1 focus:ring-indigo-500 dark:bg-slate-800 dark:border-slate-700"
+                                >
+                                    <option value="all">All Divisions</option>
+                                    {divisions.map(d => <option key={d._id} value={d._id}>{d.name}</option>)}
+                                </select>
+                            </div>
+
+                            <div className="flex items-center gap-3 p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg">
+                                <input
+                                    type="checkbox"
+                                    id="strict-mode"
+                                    checked={exportParams.strict}
+                                    onChange={(e) => setExportParams({ ...exportParams, strict: e.target.checked })}
+                                    className="w-4 h-4 rounded border-slate-300 text-indigo-600"
+                                />
+                                <label htmlFor="strict-mode" className="text-xs font-semibold text-indigo-900 dark:text-indigo-200 cursor-pointer">
+                                    Strict Mode (Only HRMS Employees)
+                                </label>
+                            </div>
+                        </div>
+
+                        <div className="p-4 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2 bg-slate-50 dark:bg-slate-800/50">
+                            <button
+                                onClick={() => setIsExportDialogOpen(false)}
+                                className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleAdvancedExport}
+                                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded shadow-lg transition-all active:scale-95"
+                            >
+                                Download XLSX
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Data Table */}
-            <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div className="rounded-lg border border-slate-200 bg-white overflow-hidden shadow-sm dark:border-slate-800 dark:bg-slate-900">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                         <thead>
                             <tr className="bg-slate-50 border-b border-slate-200 dark:bg-slate-800/50 dark:border-slate-800">
-                                <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Employee</th>
-                                <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Date</th>
-                                <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase text-center">Status</th>
-                                <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">In Time</th>
-                                <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Out Time</th>
-                                <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase text-right">Hours</th>
-                                <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase text-right text-rose-500">Late</th>
+                                <th className="px-3 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-tight">Employee</th>
+                                <th className="px-3 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-tight">Date</th>
+                                <th className="px-3 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-tight text-center">Status</th>
+                                <th className="px-3 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-tight">In Time</th>
+                                <th className="px-3 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-tight">Out Time</th>
+                                <th className="px-3 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-tight text-right">Hours</th>
+                                <th className="px-3 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-tight text-right text-rose-500">Late</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                             {loading ? (
                                 <tr>
-                                    <td colSpan={7} className="px-4 py-12 text-center">
+                                    <td colSpan={7} className="px-3 py-10 text-center">
                                         <div className="flex flex-col items-center">
-                                            <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
-                                            <p className="mt-2 text-sm text-slate-500">Fetching report data...</p>
+                                            <Loader2 className="h-6 w-6 animate-spin text-indigo-500" />
+                                            <p className="mt-2 text-xs text-slate-500 font-medium">Loading...</p>
                                         </div>
                                     </td>
                                 </tr>
-                            ) : filteredRecords.length === 0 ? (
+                            ) : records.length === 0 ? (
                                 <tr>
-                                    <td colSpan={7} className="px-4 py-12 text-center text-slate-500">
-                                        No attendance records found for the selected filters.
+                                    <td colSpan={7} className="px-3 py-10 text-center text-xs text-slate-500 font-medium">
+                                        No records found.
                                     </td>
                                 </tr>
                             ) : (
-                                filteredRecords.map((record) => (
+                                records.map((record) => (
                                     <tr key={record._id} className="hover:bg-slate-50/50 transition-colors dark:hover:bg-slate-800/30">
-                                        <td className="px-4 py-3">
-                                            <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{record.employee?.employee_name}</p>
-                                            <p className="text-xs text-slate-500">{record.employeeNumber}</p>
+                                        <td className="px-3 py-2">
+                                            <p className="text-xs font-bold text-slate-900 dark:text-slate-100">{record.employee?.employee_name}</p>
+                                            <p className="text-[10px] text-slate-500 font-medium">{record.employeeNumber}</p>
                                         </td>
-                                        <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">
+                                        <td className="px-3 py-2 text-xs text-slate-600 dark:text-slate-400 font-medium whitespace-nowrap">
                                             {dayjs(record.date).format('DD MMM, YYYY')}
                                         </td>
-                                        <td className="px-4 py-3 text-center">
-                                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${getStatusColor(record.status)}`}>
+                                        <td className="px-3 py-2 text-center">
+                                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold ${getStatusColor(record.status)}`}>
                                                 {record.status}
                                             </span>
                                         </td>
-                                        <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">
+                                        <td className="px-3 py-2 text-xs text-slate-600 dark:text-slate-400 font-medium whitespace-nowrap">
                                             {record.firstInTime ? dayjs(record.firstInTime).format('hh:mm A') : '-'}
                                         </td>
-                                        <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-400">
+                                        <td className="px-3 py-2 text-xs text-slate-600 dark:text-slate-400 font-medium whitespace-nowrap">
                                             {record.lastOutTime ? dayjs(record.lastOutTime).format('hh:mm A') : '-'}
                                         </td>
-                                        <td className="px-4 py-3 text-sm text-right font-medium text-slate-900 dark:text-slate-100">
+                                        <td className="px-3 py-2 text-xs text-right font-bold text-slate-900 dark:text-slate-100">
                                             {record.totalWorkingHours?.toFixed(2) || '0.00'}
                                         </td>
-                                        <td className="px-4 py-3 text-sm text-right text-rose-500 font-medium">
+                                        <td className="px-3 py-2 text-xs text-right text-rose-500 font-bold">
                                             {record.totalLateInMinutes ? `${record.totalLateInMinutes}m` : '-'}
                                         </td>
                                     </tr>
@@ -338,6 +428,32 @@ export default function AttendanceReportsTab() {
                             )}
                         </tbody>
                     </table>
+                </div>
+
+                {/* Pagination Footer */}
+                <div className="bg-slate-50 px-3 py-2 border-t border-slate-200 flex items-center justify-between dark:bg-slate-800/50 dark:border-slate-800">
+                    <div className="text-[10px] text-slate-500 font-bold uppercase tracking-tight">
+                        Showing {(page - 1) * limit + 1} to {Math.min(page * limit, totalCount)} of {totalCount} records
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => loadReport(page - 1)}
+                            disabled={page === 1 || loading}
+                            className="px-2 py-1 text-[10px] font-bold border border-slate-300 rounded hover:bg-white disabled:opacity-50 transition-colors dark:border-slate-700 dark:text-slate-300"
+                        >
+                            Previous
+                        </button>
+                        <div className="text-xs font-bold text-slate-600 dark:text-slate-400">
+                            Page {page} of {totalPages}
+                        </div>
+                        <button
+                            onClick={() => loadReport(page + 1)}
+                            disabled={page === totalPages || loading}
+                            className="px-2 py-1 text-[10px] font-bold border border-slate-300 rounded hover:bg-white disabled:opacity-50 transition-colors dark:border-slate-700 dark:text-slate-300"
+                        >
+                            Next
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
