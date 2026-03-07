@@ -3964,6 +3964,7 @@ export const api = {
     startDate: string;
     endDate: string;
     employeeId?: string;
+    search?: string;
     departmentId?: string;
     divisionId?: string;
     strict?: boolean;
@@ -3972,6 +3973,7 @@ export const api = {
     query.append('startDate', params.startDate);
     query.append('endDate', params.endDate);
     if (params.employeeId) query.append('employeeId', params.employeeId);
+    if (params.search) query.append('search', params.search);
     if (params.departmentId) query.append('departmentId', params.departmentId);
     if (params.divisionId) query.append('divisionId', params.divisionId);
     if (params.strict) query.append('strict', 'true');

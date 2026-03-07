@@ -105,6 +105,7 @@ export default function ThumbReportsTab() {
             const blob = await api.exportAttendanceReport({
                 startDate,
                 endDate,
+                search: searchQuery || undefined,
                 strict: false // Use biometric logs without requiring HRMS employee match if needed
             });
             const url = window.URL.createObjectURL(blob);
