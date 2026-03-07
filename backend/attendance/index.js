@@ -104,6 +104,7 @@ router.get('/reports/live/filters', authorize('super_admin'), liveAttendanceRepo
 // General Attendance and Biometric Report Routes
 router.get('/reports/summary', reportsController.getAttendanceReport);
 router.get('/reports/thumb', reportsController.getThumbReports);
+router.get('/reports/export', authorize('super_admin', 'sub_admin', 'hr'), reportsController.exportAttendanceReport);
 
 module.exports = router;
 

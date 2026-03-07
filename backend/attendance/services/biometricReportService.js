@@ -46,6 +46,8 @@ const getThumbReports = async (filters = {}) => {
 
         if (filters.employeeId) {
             query.employeeId = filters.employeeId;
+        } else if (filters.employeeIds && Array.isArray(filters.employeeIds)) {
+            query.employeeId = { $in: filters.employeeIds };
         }
 
         if (filters.startDate || filters.endDate) {
@@ -54,12 +56,26 @@ const getThumbReports = async (filters = {}) => {
             if (filters.endDate) query.timestamp.$lte = new Date(filters.endDate);
         }
 
-        const logs = await Model.find(query)
-            .sort({ timestamp: -1 })
-            .limit(filters.limit || 500)
-            .lean();
+        const limit = parseInt(filters.limit) || 50;
+        const page = parseInt(filters.page) || 1;
+        const skip = (page - 1) * limit;
 
-        return logs;
+        const [logs, total] = await Promise.all([
+            Model.find(query)
+                .sort({ timestamp: -1 })
+                .skip(skip)
+                .limit(limit)
+                .lean(),
+            Model.countDocuments(query)
+        ]);
+
+        return {
+            logs,
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit)
+        };
     } catch (error) {
         console.error('Error fetching thumb reports:', error);
         throw error;
