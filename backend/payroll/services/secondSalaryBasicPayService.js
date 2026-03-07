@@ -33,8 +33,7 @@ function calculateBasicPay(employee, attendanceSummary) {
     const perDayBasicPay = totalDaysInMonth > 0 ? basicPay / totalDaysInMonth : 0;
 
     // 1. Calculate Total Paid Days (User Formula)
-    // Formula: Calculated Paid Days = Payable Shifts + Holidays + Weekly Offs
-    // Note: totalPayableShifts already includes Present Days + OD Days + Paid Leaves (from PayRegisterSummary)
+    // Formula: Calculated Paid Days = Payable Shifts (inclusive of P, OD, Paid Leaves, and Extra) + Holidays + Weekly Offs
     const physicalUnits = (attendanceSummary.totalPayableShifts || 0) +
         (attendanceSummary.totalWeeklyOffs || 0) +
         (attendanceSummary.totalHolidays || 0);

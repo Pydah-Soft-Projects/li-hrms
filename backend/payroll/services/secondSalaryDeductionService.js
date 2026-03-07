@@ -5,6 +5,7 @@ const PermissionDeductionSettings = require('../../permissions/model/PermissionD
 const AttendanceDeductionSettings = require('../../attendance/model/AttendanceDeductionSettings');
 const AllowanceDeductionMaster = require('../../allowances-deductions/model/AllowanceDeductionMaster');
 const cacheService = require('../../shared/services/cacheService');
+const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
 
 /**
  * Second Salary Deduction Calculation Service
@@ -167,8 +168,9 @@ async function calculateAttendanceDeduction(employeeId, month, departmentId, per
             const rulesTemp = await getResolvedAttendanceDeductionRules(departmentId, divisionId);
             const minimumDuration = rulesTemp.minimumDuration || 0;
             const [year, monthNum] = month.split('-').map(Number);
-            const startDate = new Date(year, monthNum - 1, 1);
-            const endDate = new Date(year, monthNum, 0, 23, 59, 59, 999);
+            const { startDate: startStr, endDate: endStr } = await getPayrollDateRange(year, monthNum);
+            const startDate = new Date(startStr + 'T00:00:00.000Z');
+            const endDate = new Date(endStr + 'T23:59:59.999Z');
 
             const attendanceRecords = await AttendanceDaily.find({
                 employeeId,
@@ -300,8 +302,9 @@ async function calculatePermissionDeduction(employeeId, month, departmentId, per
         }
 
         const [year, monthNum] = month.split('-').map(Number);
-        const startDate = new Date(year, monthNum - 1, 1);
-        const endDate = new Date(year, monthNum, 0, 23, 59, 59, 999);
+        const { startDate: startStr, endDate: endStr } = await getPayrollDateRange(year, monthNum);
+        const startDate = new Date(startStr + 'T00:00:00.000Z');
+        const endDate = new Date(endStr + 'T23:59:59.999Z');
 
         const permissions = await Permission.find({
             employeeId,

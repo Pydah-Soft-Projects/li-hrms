@@ -5,6 +5,8 @@ const AllowanceDeductionMaster = require('../../allowances-deductions/model/Allo
 const Division = require('../../departments/model/Division');
 const Department = require('../../departments/model/Department');
 const Designation = require('../../departments/model/Designation');
+const SecondSalarySyncService = require('../../payroll/services/secondSalarySyncService');
+const { getTodayISTDateString } = require('../../shared/utils/dateUtils');
 
 /** Field IDs that store ObjectIds; we show names in template and resolve names on upload */
 const REF_FIELD_IDS = ['division_id', 'department_id', 'designation_id'];
@@ -90,16 +92,21 @@ const processSecondSalaryUpload = async (fileBuffer) => {
             }
 
             try {
-                const result = await Employee.updateOne(
+                const doc = await Employee.findOneAndUpdate(
                     { emp_no: empNo },
-                    { $set: { second_salary: salaryValue } }
+                    { $set: { second_salary: salaryValue } },
+                    { new: true }
                 );
 
-                if (result.matchedCount === 0) {
+                if (!doc) {
                     failedCount++;
                     errors.push({ empNo, error: 'Employee not found' });
                 } else {
                     updatedCount++;
+                    // Trigger sync for current month
+                    const currentMonth = getTodayISTDateString().slice(0, 7);
+                    SecondSalarySyncService.syncEmployee(doc._id, currentMonth, 'system')
+                        .catch(err => console.error('[SalaryUpdate] Second Salary sync failed:', err));
                 }
             } catch (err) {
                 failedCount++;
@@ -379,6 +386,13 @@ const processEmployeeUpdateUpload = async (fileBuffer) => {
 
                 await doc.save();
                 updatedCount++;
+
+                // Trigger sync if second_salary was updated
+                if (updateData.second_salary !== undefined) {
+                    const currentMonth = getTodayISTDateString().slice(0, 7);
+                    SecondSalarySyncService.syncEmployee(doc._id, currentMonth, 'system')
+                        .catch(err => console.error('[EmployeeUpdate] Second Salary sync failed:', err));
+                }
             } catch (err) {
                 failedCount++;
                 errors.push({ empNo: normalizedEmpNo, error: err.message });
