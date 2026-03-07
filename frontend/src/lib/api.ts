@@ -3908,4 +3908,40 @@ export const api = {
       method: 'POST'
     });
   },
+
+  // ==========================================
+  // REPORTS API
+  // ==========================================
+
+  getAttendanceReportSummary: async (params: {
+    startDate?: string;
+    endDate?: string;
+    employeeId?: string;
+    departmentId?: string;
+    divisionId?: string;
+  }) => {
+    const query = new URLSearchParams();
+    if (params.startDate) query.append('startDate', params.startDate);
+    if (params.endDate) query.append('endDate', params.endDate);
+    if (params.employeeId) query.append('employeeId', params.employeeId);
+    if (params.departmentId) query.append('departmentId', params.departmentId);
+    if (params.divisionId) query.append('divisionId', params.divisionId);
+
+    return apiRequest<any>(`/attendance/reports/summary?${query.toString()}`, { method: 'GET' });
+  },
+
+  getThumbReports: async (params: {
+    startDate?: string;
+    endDate?: string;
+    employeeId?: string;
+    limit?: number;
+  }) => {
+    const query = new URLSearchParams();
+    if (params.startDate) query.append('startDate', params.startDate);
+    if (params.endDate) query.append('endDate', params.endDate);
+    if (params.employeeId) query.append('employeeId', params.employeeId);
+    if (params.limit) query.append('limit', params.limit.toString());
+
+    return apiRequest<any>(`/attendance/reports/thumb?${query.toString()}`, { method: 'GET' });
+  },
 };
