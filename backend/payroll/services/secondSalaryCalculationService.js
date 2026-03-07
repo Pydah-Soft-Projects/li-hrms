@@ -65,6 +65,7 @@ async function calculateSecondSalary(employeeId, month, userId, sharedContext = 
                 totalOTHours: payRegisterSummary.totals?.totalOTHours || 0,
                 totalLeaveDays: payRegisterSummary.totals?.totalLeaveDays || 0,
                 totalODDays: payRegisterSummary.totals?.totalODDays || 0,
+                totalLopDays: payRegisterSummary.totals?.totalLopDays || 0,
                 totalPresentDays: payRegisterSummary.totals?.totalPresentDays || 0,
                 totalDaysInMonth: payRegisterSummary.totalDaysInMonth || 30,
                 totalPaidLeaveDays: payRegisterSummary.totals?.totalPaidLeaveDays || 0,
@@ -86,9 +87,10 @@ async function calculateSecondSalary(employeeId, month, userId, sharedContext = 
                 totalOTHours: doc.totalOTHours || 0,
                 totalLeaveDays: doc.totalLeaves || 0,
                 totalODDays: doc.totalODs || 0,
+                totalLopDays: 0, // Fallback
                 totalPresentDays: doc.totalPresentDays || 0,
                 totalDaysInMonth: doc.totalDaysInMonth || 30,
-                totalPaidLeaveDays: doc.totalLeaves || 0, // Fallback
+                totalPaidLeaveDays: doc.totalPaidLeaves || doc.totalLeaves || 0, // Prefer totalPaidLeaves if available
                 totalWeeklyOffs: 0,
                 totalHolidays: 0,
                 extraDays: 0,
@@ -111,21 +113,35 @@ async function calculateSecondSalary(employeeId, month, userId, sharedContext = 
             department = await Department.findById(departmentId);
         }
 
-        // Get paid leaves: Check employee first, then department (Parity with Regular Payroll)
-        let paidLeaves = 0;
-        if (employee.paidLeaves !== null && employee.paidLeaves !== undefined && employee.paidLeaves > 0) {
-            paidLeaves = employee.paidLeaves;
-        } else {
-            paidLeaves = department?.paidLeaves || 0;
-        }
-        const totalLeaves = attendanceSummary.totalLeaveDays || 0;
-        const remainingPaidLeaves = Math.max(0, paidLeaves - totalLeaves);
+        // Get leave policy settings for EL-as-paid feature (Parity with Regular Payroll)
+        const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
+        let elUsedInPayroll = 0;
+        // User request: ensure paid leaves are included in payable shifts (parity with regular payroll calculation logic)
+        // totalPayableShifts already includes present + extra; we add standard paid leave days
+        let paidLeaveDays = attendanceSummary.totalPaidLeaveDays || 0;
+        let payableShifts = (attendanceSummary.totalPayableShifts || 0) + paidLeaveDays;
+        const monthDays = attendanceSummary.totalDaysInMonth;
 
-        const adjustedPayableShifts = (attendanceSummary.totalPayableShifts || 0) + remainingPaidLeaves;
+        try {
+            const policy = await LeavePolicySettings.getSettings();
+            if (policy.earnedLeave && policy.earnedLeave.useAsPaidInPayroll !== false) {
+                const elBalance = Math.max(0, Number(employee.paidLeaves) || 0);
+                if (elBalance > 0) {
+                    elUsedInPayroll = Math.min(elBalance, monthDays);
+                    // Add EL to both buckets
+                    payableShifts = payableShifts + elUsedInPayroll;
+                    paidLeaveDays = paidLeaveDays + elUsedInPayroll;
+                }
+            }
+        } catch (e) {
+            console.warn('[SecondSalary] LeavePolicySettings check failed:', e.message);
+        }
 
         const modifiedAttendanceSummary = {
             ...attendanceSummary,
-            totalPayableShifts: adjustedPayableShifts
+            totalPayableShifts: payableShifts,
+            totalPaidLeaveDays: paidLeaveDays,
+            elUsedInPayroll
         };
 
         const attendanceData = {
@@ -259,10 +275,10 @@ async function calculateSecondSalary(employeeId, month, userId, sharedContext = 
             { employee }
         );
 
-        // Leave deduction is NOT added to totalDeductions if basic is already prorated
+        // Leave deduction is calculated for record-keeping but proration is handled in basicPay
         const leaveDeductionResult = secondSalaryDeductionService.calculateLeaveDeduction(
-            totalLeaves,
-            paidLeaves,
+            attendanceSummary.totalLeaveDays || 0,
+            attendanceSummary.totalPaidLeaveDays || 0, // Use summarized paid leaves
             modifiedAttendanceSummary.totalDaysInMonth,
             basicPayResult.basicPay
         );
@@ -349,7 +365,7 @@ async function calculateSecondSalary(employeeId, month, userId, sharedContext = 
         }
 
         // Set fields
-        record.set('totalPayableShifts', attendanceSummary.totalPayableShifts);
+        record.set('totalPayableShifts', modifiedAttendanceSummary.totalPayableShifts);
         record.set('netSalary', roundedNet);
         record.set('payableAmountBeforeAdvance', grossAmountSalary);
         record.set('roundOff', roundOff);
@@ -364,8 +380,8 @@ async function calculateSecondSalary(employeeId, month, userId, sharedContext = 
             odDays: attendanceSummary.totalODDays,
             weeklyOffs: attendanceSummary.totalWeeklyOffs,
             holidays: attendanceSummary.totalHolidays,
-            absentDays: Math.max(0, attendanceSummary.totalDaysInMonth - (attendanceSummary.totalPresentDays + attendanceSummary.totalWeeklyOffs + attendanceSummary.totalHolidays + attendanceSummary.totalPaidLeaveDays + attendanceSummary.totalODDays)),
-            payableShifts: attendanceSummary.totalPayableShifts,
+            absentDays: Math.max(0, attendanceSummary.totalDaysInMonth - (attendanceSummary.totalPresentDays + attendanceSummary.totalWeeklyOffs + attendanceSummary.totalHolidays + attendanceSummary.totalPaidLeaveDays)), // Removed totalODDays (already in presentDays)
+            payableShifts: modifiedAttendanceSummary.totalPayableShifts,
             extraDays: extraDays,
             totalPaidDays: totalPaidDays,
             paidDays: totalPaidDays - extraDays, // Base paid days
@@ -373,6 +389,7 @@ async function calculateSecondSalary(employeeId, month, userId, sharedContext = 
             otDays: (otPayResult.eligibleOTHours || 0) / 8, // Roughly
             earnedSalary: earnedSalary,
             lopDays: (attendanceSummary.totalLopDays || 0) + (leaveDeductionResult.breakdown?.unpaidLeaves || 0),
+            elUsedInPayroll: modifiedAttendanceSummary.elUsedInPayroll || 0
         });
 
         // Earnings

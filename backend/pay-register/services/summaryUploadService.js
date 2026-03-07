@@ -4,6 +4,7 @@ const { populatePayRegisterFromSources, getAllDatesInMonth } = require('./autoPo
 const { calculateTotals, ensureTotalsRespectRoster } = require('./totalsCalculationService');
 const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
 const mongoose = require('mongoose');
+const SecondSalarySyncService = require('../../payroll/services/secondSalarySyncService');
 
 /**
  * Summary Upload Service
@@ -27,6 +28,8 @@ async function processSummaryBulkUpload(month, rows, userId) {
         failed: 0,
         errors: [],
     };
+
+    const updatedEmployeeIds = [];
 
     // Helper to find value in row by various possible key names (case-insensitive, trimmed)
     const getValue = (row, variants) => {
@@ -218,11 +221,18 @@ async function processSummaryBulkUpload(month, rows, userId) {
             payRegister.markModified('dailyRecords');
 
             await payRegister.save();
+            updatedEmployeeIds.push(employeeId.toString());
             results.success++;
         } catch (err) {
             results.failed++;
             results.errors.push(`Row ${rows.indexOf(row) + 1}: ${err.message}`);
         }
+    }
+
+    // Trigger Second Salary Sync for all successful updates
+    if (updatedEmployeeIds.length > 0) {
+        SecondSalarySyncService.syncMultipleEmployees(updatedEmployeeIds, month, userId)
+            .catch(err => console.error('[SummaryUpload] Second Salary sync failed:', err));
     }
 
     return results;
