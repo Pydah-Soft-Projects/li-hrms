@@ -2,10 +2,12 @@
 
 import { useState } from 'react';
 import PayrollTransactionsTab from './payroll-transactions-tab';
+import AttendanceReportsTab from './attendance-reports-tab';
+import ThumbReportsTab from './thumb-reports-tab';
 import { auth } from '@/lib/auth';
 import { canViewReports, canViewFinancialReports } from '@/lib/permissions';
 
-type TabType = 'payroll';
+type TabType = 'payroll' | 'attendance' | 'biometric';
 
 export default function ReportsPage() {
   const [activeTab, setActiveTab] = useState<TabType>('payroll');
@@ -26,9 +28,17 @@ export default function ReportsPage() {
   }
 
   const tabs: { id: TabType; label: string }[] = [];
+
+  // Financial access required for payroll reports
   if (hasFinancialAccess) {
     tabs.push({ id: 'payroll', label: 'Payroll Transactions' });
   }
+
+  // Attendance reports available to anyone with reports access
+  tabs.push({ id: 'attendance', label: 'Attendance Reports' });
+
+  // Biometric logs (Thumb reports) available to anyone with reports access
+  tabs.push({ id: 'biometric', label: 'Biometric Logs' });
 
   // If user has access but no tabs are available (e.g. manager with no specific reports yet)
   if (tabs.length === 0) {
@@ -41,6 +51,9 @@ export default function ReportsPage() {
       </div>
     );
   }
+
+  // Set default tab if payroll is not available
+  const currentTab = tabs.find(t => t.id === activeTab) ? activeTab : tabs[0].id;
 
   return (
     <div className="space-y-6 p-6">
@@ -61,7 +74,7 @@ export default function ReportsPage() {
               onClick={() => setActiveTab(tab.id)}
               className={`
                 whitespace-nowrap border-b-2 px-1 py-4 text-sm font-medium transition-colors
-                ${activeTab === tab.id
+                ${currentTab === tab.id
                   ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400'
                   : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
                 }
@@ -74,8 +87,10 @@ export default function ReportsPage() {
       </div>
 
       {/* Tab Content */}
-      <div>
-        {activeTab === 'payroll' && <PayrollTransactionsTab />}
+      <div className="mt-6">
+        {currentTab === 'payroll' && <PayrollTransactionsTab />}
+        {currentTab === 'attendance' && <AttendanceReportsTab />}
+        {currentTab === 'biometric' && <ThumbReportsTab />}
       </div>
     </div>
   );
