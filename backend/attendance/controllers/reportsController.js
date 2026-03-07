@@ -194,7 +194,7 @@ exports.getThumbReports = async (req, res) => {
  */
 exports.exportAttendanceReport = async (req, res) => {
     try {
-        const { startDate, endDate, departmentId, divisionId, employeeId, strict } = req.query;
+        const { startDate, endDate, departmentId, divisionId, employeeId, search, strict } = req.query;
 
         if (!startDate || !endDate) {
             return res.status(400).json({ success: false, message: 'startDate and endDate are required' });
@@ -207,6 +207,12 @@ exports.exportAttendanceReport = async (req, res) => {
         if (departmentId) empQuery.department_id = departmentId;
         if (divisionId) empQuery.division_id = divisionId;
         if (employeeId) empQuery._id = employeeId;
+        if (search) {
+            empQuery.$or = [
+                { employee_name: { $regex: search, $options: 'i' } },
+                { emp_no: { $regex: search, $options: 'i' } }
+            ];
+        }
 
         const employees = await Employee.find(empQuery)
             .populate('department_id', 'name')
@@ -239,7 +245,15 @@ exports.exportAttendanceReport = async (req, res) => {
             endDate: fetchEnd.toISOString(),
             limit: 100000
         };
-        if (isStrict && empNosFromHRMS.length > 0) {
+
+        // Always scope the Atlas query to relevant employees:
+        //  - Single employee selected → use employeeId directly
+        //  - Department/division filter (or strict mode) → use the filtered HRMS emp list
+        if (employeeId && empNosFromHRMS.length === 1) {
+            // Single employee — use the resolved emp_no from HRMS
+            thumbFilters.employeeId = empNosFromHRMS[0];
+        } else if (empNosFromHRMS.length > 0) {
+            // Department / division filter or strict mode — scope to matching employees
             thumbFilters.employeeIds = empNosFromHRMS;
         }
 
