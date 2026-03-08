@@ -995,7 +995,7 @@ export default function DynamicEmployeeForm({
     }
 
     const qualFields = settings.qualifications.fields
-      .filter((f) => f.isEnabled !== false)
+      .filter((f) => f.isEnabled !== false && f.id !== 's_no')
       .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
     if (qualFields.length === 0) {
@@ -1072,8 +1072,8 @@ export default function DynamicEmployeeForm({
     const renderQualificationValueSpan = (value: any, field: QualificationsField) => {
       const display =
         field.type === 'boolean' ? (value ? 'Yes' : 'No')
-        : field.type === 'date' && value && field.id === 'month_year_of_pass' ? String(value).slice(0, 7)
-        : value != null && value !== '' ? String(value) : '—';
+          : field.type === 'date' && value && field.id === 'month_year_of_pass' ? String(value).slice(0, 7)
+            : value != null && value !== '' ? String(value) : '—';
       return <span className="text-slate-700 dark:text-slate-300">{display}</span>;
     };
 

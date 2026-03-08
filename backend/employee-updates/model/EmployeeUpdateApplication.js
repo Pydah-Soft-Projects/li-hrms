@@ -14,6 +14,9 @@ const EmployeeUpdateApplicationSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.Mixed,
         required: true
     },
+    previousValues: {
+        type: mongoose.Schema.Types.Mixed
+    },
     status: {
         type: String,
         enum: ['pending', 'approved', 'rejected'],

@@ -91,6 +91,11 @@ const employeeApplicationSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
       default: null,
     },
+    qualificationStatus: {
+      type: String,
+      default: 'Partial',
+      trim: true,
+    },
     experience: {
       type: Number,
       default: null,
@@ -158,6 +163,11 @@ const employeeApplicationSchema = new mongoose.Schema(
       default: null,
     },
     paidLeaves: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    casualLeaves: {
       type: Number,
       default: 0,
       min: 0,
