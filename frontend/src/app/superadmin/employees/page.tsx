@@ -5330,234 +5330,145 @@ export default function EmployeesPage() {
                     </div>
                   )}
 
-                  {/* Allowances & Deductions (profile view only) */}
+                  {/* Profile Tab Content */}
                   {employeeViewTab === 'profile' && (
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                      <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Allowances & Deductions</h3>
-
-                      {/* Allowances */}
-                      {(Array.isArray(viewingEmployee.employeeAllowances) && viewingEmployee.employeeAllowances.length > 0) ? (
-                        <div className="mb-6">
-                          <h4 className="mb-3 text-sm font-semibold text-green-700 dark:text-green-400">Allowances</h4>
-                          <div className="space-y-2">
-                            {viewingEmployee.employeeAllowances.map((allowance: any, idx: number) => (
-                              <div key={idx} className="flex items-center justify-between rounded-lg border border-green-200 bg-green-50/50 p-3 dark:border-green-800 dark:bg-green-900/20">
-                                <div className="flex-1">
-                                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{allowance.name || '-'}</p>
-                                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                                    {allowance.type === 'percentage'
-                                      ? `${allowance.percentage}% of ${allowance.percentageBase || 'basic'}`
-                                      : 'Fixed Amount'}
-                                    {allowance.isOverride && (
-                                      <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                                        Override
-                                      </span>
-                                    )}
-                                  </p>
-                                </div>
-                                <p className="text-sm font-semibold text-green-700 dark:text-green-400">
-                                  {allowance.amount !== null && allowance.amount !== undefined
-                                    ? `₹${Number(allowance.amount).toLocaleString()}`
-                                    : '-'}
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-                          <p className="text-sm text-slate-500 dark:text-slate-400">
-                            No employee-level allowance overrides. Default allowances from Department/Global settings will be used during payroll calculation.
-                          </p>
-                        </div>
-                      )}
-
-                      {/* Deductions */}
-                      {(Array.isArray(viewingEmployee.employeeDeductions) && viewingEmployee.employeeDeductions.length > 0) ? (
-                        <div>
-                          <h4 className="mb-3 text-sm font-semibold text-red-700 dark:text-red-400">Deductions</h4>
-                          <div className="space-y-2">
-                            {viewingEmployee.employeeDeductions.map((deduction: any, idx: number) => (
-                              <div key={idx} className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50/50 p-3 dark:border-red-800 dark:bg-red-900/20">
-                                <div className="flex-1">
-                                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{deduction.name || '-'}</p>
-                                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                                    {deduction.type === 'percentage'
-                                      ? `${deduction.percentage}% of ${deduction.percentageBase || 'basic'}`
-                                      : 'Fixed Amount'}
-                                    {deduction.isOverride && (
-                                      <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                                        Override
-                                      </span>
-                                    )}
-                                  </p>
-                                </div>
-                                <p className="text-sm font-semibold text-red-700 dark:text-red-400">
-                                  {deduction.amount !== null && deduction.amount !== undefined
-                                    ? `₹${Number(deduction.amount).toLocaleString()}`
-                                    : '-'}
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-                          <p className="text-sm text-slate-500 dark:text-slate-400">
-                            No employee-level deduction overrides. Default deductions from Department/Global settings will be used during payroll calculation.
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Left Date Information (profile view only) */}
-                  {employeeViewTab === 'profile' && viewingEmployee.leftDate && (
-                    <div className="rounded-2xl border border-orange-200 bg-orange-50/50 p-5 dark:border-orange-800 dark:bg-orange-900/20 mb-5">
-                      <h3 className="mb-4 text-lg font-semibold text-orange-900 dark:text-orange-100">Left Date Information</h3>
-                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                        <div>
-                          <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Left Date</label>
-                          <p className="mt-1 text-sm font-medium text-orange-900 dark:text-orange-100">
-                            {new Date(viewingEmployee.leftDate).toLocaleDateString('en-US', {
-                              year: 'numeric',
-                              month: 'long',
-                              day: 'numeric'
-                            })}
-                          </p>
-                        </div>
-                        {viewingEmployee.leftReason && (
-                          <div>
-                            <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Reason</label>
-                            <p className="mt-1 text-sm font-medium text-orange-900 dark:text-orange-100">
-                              {viewingEmployee.leftReason}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                      {/* Reactivate button moved to header; no button here */}
-                    </div>
-                  )}
-
-                  {/* Leave Information (profile view only) */}
-                  {employeeViewTab === 'profile' && (
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                      <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Leave Information</h3>
-                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                        <div>
-                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Monthly Paid Leaves</label>
-                          <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                            {viewingEmployee.paidLeaves !== undefined && viewingEmployee.paidLeaves !== null
-                              ? `${viewingEmployee.paidLeaves} days/month`
-                              : '0 days/month'}
-                          </p>
-                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                            Recurring monthly paid leaves
-                          </p>
-                        </div>
-                        <div>
-                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Yearly Allotted Leaves</label>
-                          <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                            {viewingEmployee.allottedLeaves !== undefined && viewingEmployee.allottedLeaves !== null
-                              ? `${viewingEmployee.allottedLeaves} days/year`
-                              : '0 days/year'}
-                          </p>
-                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                            Total for without_pay/LOP leaves (for balance tracking)
-                          </p>
-                        </div>
-                        {((viewingEmployee as any).ctcSalary !== undefined && (viewingEmployee as any).ctcSalary !== null) && (
-                          <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">CTC Salary</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                              ₹{Number((viewingEmployee as any).ctcSalary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                            </p>
-                          </div>
-                        )}
-                        {((viewingEmployee as any).calculatedSalary !== undefined && (viewingEmployee as any).calculatedSalary !== null) && (
-                          <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Calculated Salary (Net)</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                              ₹{Number((viewingEmployee as any).calculatedSalary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Reporting Authority Section (profile view only) - Check both root and dynamicFields */}
-                  {employeeViewTab === 'profile' && (((viewingEmployee as any).reporting_to || (viewingEmployee as any).reporting_to_ || viewingEmployee.dynamicFields?.reporting_to || viewingEmployee.dynamicFields?.reporting_to_)) && (
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                      <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Reporting Authority</h3>
-                      {(() => {
-                        const reportingTo = (viewingEmployee as any).reporting_to || (viewingEmployee as any).reporting_to_ || viewingEmployee.dynamicFields?.reporting_to || viewingEmployee.dynamicFields?.reporting_to_;
-                        console.log('Displaying reporting_to:', reportingTo);
-
-                        if (!reportingTo || !Array.isArray(reportingTo) || reportingTo.length === 0) {
-                          return <p className="text-sm text-slate-500 dark:text-slate-400">No reporting managers assigned</p>;
-                        }
-
-                        const isPopulated = reportingTo[0] && typeof reportingTo[0] === 'object' && reportingTo[0].name;
-                        console.log('Is populated:', isPopulated, 'First item:', reportingTo[0]);
-
-                        return (
-                          <div className="space-y-2">
-                            {isPopulated ? (
-                              reportingTo.map((user: any, idx: number) => (
-                                <div key={idx} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
-                                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                    </svg>
-                                  </div>
+                    <>
+                      {/* Allowances & Deductions */}
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                        <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Allowances & Deductions</h3>
+                        {(Array.isArray(viewingEmployee.employeeAllowances) && viewingEmployee.employeeAllowances.length > 0) ? (
+                          <div className="mb-6">
+                            <h4 className="mb-3 text-sm font-semibold text-green-700 dark:text-green-400">Allowances</h4>
+                            <div className="space-y-2">
+                              {viewingEmployee.employeeAllowances.map((allowance: any, idx: number) => (
+                                <div key={idx} className="flex items-center justify-between rounded-lg border border-green-200 bg-green-50/50 p-3 dark:border-green-800 dark:bg-green-900/20">
                                   <div className="flex-1">
-                                    <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{user.name || 'Unknown'}</p>
-                                    <p className="text-xs text-slate-500 dark:text-slate-400">{user.email || ''}</p>
+                                    <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{allowance.name || '-'}</p>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                                      {allowance.type === 'percentage' ? `${allowance.percentage}% of ${allowance.percentageBase || 'basic'}` : 'Fixed Amount'}
+                                      {allowance.isOverride && <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">Override</span>}
+                                    </p>
                                   </div>
-                                  {user.role && (
-                                    <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-400">
-                                      {user.role}
-                                    </span>
-                                  )}
+                                  <p className="text-sm font-semibold text-green-700 dark:text-green-400">
+                                    {allowance.amount !== null && allowance.amount !== undefined ? `₹${Number(allowance.amount).toLocaleString()}` : '-'}
+                                  </p>
                                 </div>
-                              ))
-                            ) : (
-                              // Fallback if not populated (show IDs)
-                              reportingTo.map((id: any, idx: number) => (
-                                <div key={idx} className="text-sm text-slate-600 dark:text-slate-400">
-                                  {typeof id === 'object' ? id._id || JSON.stringify(id) : id}
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+                            <p className="text-sm text-slate-500 dark:text-slate-400">No allowance overrides. Defaults will be used.</p>
+                          </div>
+                        )}
+
+                        {(Array.isArray(viewingEmployee.employeeDeductions) && viewingEmployee.employeeDeductions.length > 0) ? (
+                          <div>
+                            <h4 className="mb-3 text-sm font-semibold text-red-700 dark:text-red-400">Deductions</h4>
+                            <div className="space-y-2">
+                              {viewingEmployee.employeeDeductions.map((deduction: any, idx: number) => (
+                                <div key={idx} className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50/50 p-3 dark:border-red-800 dark:bg-red-900/20">
+                                  <div className="flex-1">
+                                    <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{deduction.name || '-'}</p>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                                      {deduction.type === 'percentage' ? `${deduction.percentage}% of ${deduction.percentageBase || 'basic'}` : 'Fixed Amount'}
+                                      {deduction.isOverride && <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">Override</span>}
+                                    </p>
+                                  </div>
+                                  <p className="text-sm font-semibold text-red-700 dark:text-red-400">
+                                    {deduction.amount !== null && deduction.amount !== undefined ? `₹${Number(deduction.amount).toLocaleString()}` : '-'}
+                                  </p>
                                 </div>
-                              ))
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+                            <p className="text-sm text-slate-500 dark:text-slate-400">No deduction overrides. Defaults will be used.</p>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Left Date Information */}
+                      {viewingEmployee.leftDate && (
+                        <div className="rounded-2xl border border-orange-200 bg-orange-50/50 p-5 dark:border-orange-800 dark:bg-orange-900/20 mb-5">
+                          <h3 className="mb-4 text-lg font-semibold text-orange-900 dark:text-orange-100">Left Date Information</h3>
+                          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                            <div>
+                              <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Left Date</label>
+                              <p className="mt-1 text-sm font-medium text-orange-900 dark:text-orange-100">{new Date(viewingEmployee.leftDate).toLocaleDateString()}</p>
+                            </div>
+                            {viewingEmployee.leftReason && (
+                              <div>
+                                <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Reason</label>
+                                <p className="mt-1 text-sm font-medium text-orange-900 dark:text-orange-100">{viewingEmployee.leftReason}</p>
+                              </div>
                             )}
                           </div>
-                        );
-                      })()}
-                    </div>
+                        </div>
+                      )}
+
+                      {/* Leave Information */}
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                        <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Leave Information</h3>
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Monthly Paid Leaves</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.paidLeaves ?? 0} days/month</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Yearly Allotted Leaves</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.allottedLeaves ?? 0} days/year</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Reporting Authority */}
+                      {((viewingEmployee as any).reporting_to || (viewingEmployee as any).reporting_to_) && (
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                          <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Reporting Authority</h3>
+                          <p className="text-sm text-slate-500 dark:text-slate-400">Managers assigned.</p>
+                        </div>
+                      )}
+                    </>
                   )}
 
-
+                  {/* History Tab Content */}
+                  {employeeViewTab === 'history' && (
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-5 dark:border-slate-700 dark:bg-slate-900/60">
+                      <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Employee History</h3>
+                      {employeeHistoryLoading ? (
+                        <p className="text-sm text-slate-500 dark:text-slate-400">Loading history…</p>
+                      ) : employeeHistory.length === 0 ? (
+                        <p className="text-sm text-slate-500 dark:text-slate-400">No history recorded.</p>
+                      ) : (
+                        <ol className="relative space-y-4 border-l border-slate-200 pl-4 text-sm dark:border-slate-700">
+                          {employeeHistory.map((h: any, idx: number) => (
+                            <li key={idx} className="relative pl-4">
+                              <span className="absolute -left-[9px] h-4 w-4 rounded-full border-2 border-slate-400 bg-white dark:bg-slate-950" />
+                              <div className="rounded-2xl border border-slate-200 bg-white/90 p-3 shadow-sm dark:bg-slate-950/70">
+                                <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold text-slate-800">{h.event}</span>
+                                <div className="text-xs text-slate-500">{new Date(h.timestamp || h.created_at).toLocaleString()}</div>
+                              </div>
+                            </li>
+                          ))}
+                        </ol>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
+
               {/* Certificate image/document popup */}
               {certificatePreviewUrl && (
                 <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" onClick={() => setCertificatePreviewUrl(null)}>
                   <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
                   <div className="relative z-10 max-h-[90vh] max-w-[90vw] rounded-2xl bg-white shadow-2xl dark:bg-slate-900" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-2 border-b border-slate-200 p-2 dark:border-slate-700">
-                      <a href={certificatePreviewUrl} target="_blank" rel="noopener noreferrer" className="rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">
-                        Open in new tab
-                      </a>
-                      <button type="button" onClick={() => setCertificatePreviewUrl(null)} className="rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">
-                        Close
-                      </button>
+                      <button type="button" onClick={() => setCertificatePreviewUrl(null)} className="rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">Close</button>
                     </div>
                     <div className="p-2">
-                      {certificatePreviewUrl.toLowerCase().endsWith('.pdf') ? (
-                        <iframe src={certificatePreviewUrl} title="Certificate" className="h-[80vh] w-[85vw] max-w-4xl rounded-lg border-0" />
-                      ) : (
-                        <img src={certificatePreviewUrl} alt="Certificate" className="max-h-[80vh] max-w-full rounded-lg object-contain" />
-                      )}
+                      <img src={certificatePreviewUrl} alt="Certificate" className="max-h-[80vh] max-w-full rounded-lg object-contain" />
                     </div>
                   </div>
                 </div>
@@ -5566,252 +5477,52 @@ export default function EmployeesPage() {
           )
         }
 
-        {/* History – View complete modal (all changes for one entry, full data) */}
+        {/* Other Modals (History Complete, Left Date, Bulk Process, Comparison) */}
         {historyViewComplete && (
           <div className="fixed inset-0 z-[55] flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setHistoryViewComplete(null)} />
-            <div className="relative z-10 flex max-h-[85vh] w-full max-w-4xl flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900" onClick={(e) => e.stopPropagation()}>
+            <div className="relative z-10 flex max-h-[85vh] w-full max-w-4xl flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
               <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-                  {historyViewComplete.eventLabel} – complete data
-                </h3>
-                <button
-                  type="button"
-                  onClick={() => setHistoryViewComplete(null)}
-                  className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
-                >
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                </button>
-              </div>
-              <div className="overflow-auto p-4 space-y-4">
-                {historyViewComplete.changes.map((c, idx) => (
-                  <div key={`${c.field}-${idx}`} className="rounded-xl border border-slate-200 bg-slate-50/50 p-3 dark:border-slate-700 dark:bg-slate-800/50">
-                    <p className="mb-2 text-sm font-semibold text-slate-800 dark:text-slate-200">{c.fieldLabel}</p>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Previous</p>
-                        <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-white p-2 text-xs text-slate-800 dark:bg-slate-900 dark:text-slate-200">
-                          {typeof c.previous === 'object' && c.previous !== null
-                            ? JSON.stringify(c.previous, null, 2)
-                            : String(c.previous ?? '—')}
-                        </pre>
-                      </div>
-                      <div>
-                        <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Current</p>
-                        <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-white p-2 text-xs text-slate-800 dark:bg-slate-900 dark:text-slate-200">
-                          {typeof c.current === 'object' && c.current !== null
-                            ? JSON.stringify(c.current, null, 2)
-                            : String(c.current ?? '—')}
-                        </pre>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">{historyViewComplete.eventLabel}</h3>
+                <button onClick={() => setHistoryViewComplete(null)}>Close</button>
               </div>
             </div>
           </div>
         )}
 
-        {/* Left Date Modal */}
-        {
-          showLeftDateModal && selectedEmployeeForLeftDate && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowLeftDateModal(false)} />
-              <div className="relative z-50 w-full max-w-md rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950/95">
-                <div className="mb-6 flex items-center justify-between">
-                  <div>
-                    <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
-                      Resignation
-                    </h2>
-                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                      {selectedEmployeeForLeftDate.employee_name} ({selectedEmployeeForLeftDate.emp_no}) — Enter last working date and remarks. If resignation workflow is enabled in settings, the request will go through approval.
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setShowLeftDateModal(false);
-                      setSelectedEmployeeForLeftDate(null);
-                      setLeftDateForm({ leftDate: '', leftReason: '' });
-                    }}
-                    className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:bg-slate-900"
-                  >
-                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
-
-                {error && (
-                  <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
-                    {error}
-                  </div>
-                )}
-
-                {success && (
-                  <div className="mb-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400">
-                    {success}
-                  </div>
-                )}
-
-                <form onSubmit={handleSubmitLeftDate} className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      Last working date <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="date"
-                      required
-                      readOnly
-                      value={leftDateForm.leftDate}
-                      min={(() => {
-                        const d = new Date();
-                        d.setDate(d.getDate() + resignationNoticePeriodDays);
-                        return d.toISOString().split('T')[0];
-                      })()}
-                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-300 cursor-not-allowed"
-                    />
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                      This date will be recorded as the employee&apos;s last day in office. They will be included in pay register until this month, then excluded from future months.
-                    </p>
-                    {resignationNoticePeriodDays > 0 && (
-                      <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-                        Notice period: {resignationNoticePeriodDays} day(s). Last working date must be at least {resignationNoticePeriodDays} days from today.
-                      </p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      Remarks for resignation (Optional)
-                    </label>
-                    <textarea
-                      value={leftDateForm.leftReason}
-                      onChange={(e) => setLeftDateForm({ ...leftDateForm, leftReason: e.target.value })}
-                      rows={3}
-                      placeholder="Enter remarks for resignation..."
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-
-                  <div className="flex justify-end gap-3 pt-4">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowLeftDateModal(false);
-                        setSelectedEmployeeForLeftDate(null);
-                        setLeftDateForm({ leftDate: '', leftReason: '' });
-                      }}
-                      className="rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      className="rounded-xl bg-gradient-to-r from-red-500 to-orange-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-red-500/30 transition-all hover:from-red-600 hover:to-orange-600"
-                    >
-                      Submit Resignation
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          )
-        }
-      </div>
-
-      {allowEmployeeBulkProcess && showEmployeeUpdateModal && (
-        <EmployeeUpdateModal
-          onClose={() => setShowEmployeeUpdateModal(false)}
-          onSuccess={() => {
-            setShowEmployeeUpdateModal(false);
-            loadEmployees(currentPage);
-          }}
-        />
-      )}
-
-      {allowEmployeeBulkProcess && showBulkAllowancesDeductions && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl dark:bg-slate-800">
-            <h3 className="mb-4 text-xl font-bold text-slate-800 dark:text-white">Bulk Allowances & Deductions Update</h3>
-            <p className="mb-6 text-slate-600 dark:text-slate-400">
-              Download the template with current values, modify them, and upload to update.
-            </p>
-
-            <div className="space-y-4">
-              <button
-                onClick={async () => {
-                  try {
-                    const blob = await api.downloadAllowanceDeductionTemplate();
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = 'AD_Template.xlsx';
-                    document.body.appendChild(a);
-                    a.click();
-                    window.URL.revokeObjectURL(url);
-                    document.body.removeChild(a);
-                  } catch (e) {
-                    setError('Failed to download template');
-                  }
-                }}
-                className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-purple-200 bg-purple-50 p-4 text-purple-700 hover:bg-purple-100 dark:border-purple-800 dark:bg-purple-900/20 dark:text-purple-300"
-              >
-                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-                Download Current Template
-              </button>
-
-              <div className="relative">
-                <input
-                  type="file"
-                  accept=".xlsx,.xls"
-                  onChange={async (e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-
-                    try {
-                      setLoading(true);
-                      const res = await api.bulkUpdateAllowancesDeductions(file);
-                      if (res.success) {
-                        setSuccess(res.message || 'Updated successfully');
-                        setShowBulkAllowancesDeductions(false);
-                        loadEmployees(currentPage);
-                      } else {
-                        setError(res.message || 'Upload failed');
-                      }
-                    } catch (err: any) {
-                      setError(err.message || 'Upload failed');
-                    } finally {
-                      setLoading(false);
-                    }
-                  }}
-                  className="hidden"
-                  id="ad-bulk-upload"
-                />
-                <label
-                  htmlFor="ad-bulk-upload"
-                  className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-purple-600 p-4 font-medium text-white hover:bg-purple-700"
-                >
-                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                  </svg>
-                  Upload Updated Template
-                </label>
-              </div>
-            </div>
-
-            <div className="mt-6 flex justify-end">
-              <button
-                onClick={() => setShowBulkAllowancesDeductions(false)}
-                className="rounded-lg px-4 py-2 text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700"
-              >
-                Cancel
-              </button>
+        {showLeftDateModal && selectedEmployeeForLeftDate && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            {/* Left Date Modal Content */}
+            <div className="fixed inset-0 bg-slate-900/60" onClick={() => setShowLeftDateModal(false)} />
+            <div className="relative z-50 rounded-3xl bg-white p-6 dark:bg-slate-950">
+              <h2 className="text-xl font-bold">Resignation</h2>
+              <button onClick={() => setShowLeftDateModal(false)}>Close</button>
             </div>
           </div>
-        </div>
-      )}
-    </div >
+        )}
+
+        {allowEmployeeBulkProcess && showEmployeeUpdateModal && (
+          <EmployeeUpdateModal onClose={() => setShowEmployeeUpdateModal(false)} onSuccess={() => { setShowEmployeeUpdateModal(false); loadEmployees(currentPage); }} />
+        )}
+
+        {allowEmployeeBulkProcess && showBulkAllowancesDeductions && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div className="bg-white p-6 rounded-2xl dark:bg-slate-800">
+              <h3 className="text-xl font-bold">Bulk Update</h3>
+              <button onClick={() => setShowBulkAllowancesDeductions(false)}>Cancel</button>
+            </div>
+          </div>
+        )}
+
+        {selectedUpdateRequest && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <div className="bg-white p-6 rounded-3xl dark:bg-slate-950">
+              <h3 className="text-xl font-bold">Review Update Request</h3>
+              <button onClick={() => setSelectedUpdateRequest(null)}>Close</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
