@@ -137,6 +137,8 @@ interface Department {
   _id: string;
   name: string;
   code?: string;
+  division?: string | { _id: string; name: string };
+  divisions?: (string | { _id: string; name: string })[];
 }
 
 interface Designation {
@@ -465,7 +467,7 @@ export default function AttendancePage() {
       if (response.success && response.data) {
         let depts = response.data;
         if (divisionId) {
-          depts = depts.filter((d: any) => {
+          depts = depts.filter((d: Department) => {
             // Check direct division assignment (object or string)
             const deptDivisionId = d.division && typeof d.division === 'object' ? d.division._id : d.division;
             if (deptDivisionId === divisionId) return true;

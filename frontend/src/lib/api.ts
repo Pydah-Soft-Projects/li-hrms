@@ -1715,17 +1715,6 @@ export const api = {
     });
   },
 
-  // General Settings
-  getSetting: async (key: string) => {
-    return apiRequest<any>(`/settings/${key}`, { method: 'GET' });
-  },
-
-  upsertSetting: async (data: { key: string; value: any; description?: string; category?: string }) => {
-    return apiRequest<any>(`/settings`, {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  },
 
   // Employee Profile Update Requests
   getEmployeeUpdateRequests: async (params?: { status?: string }) => {
