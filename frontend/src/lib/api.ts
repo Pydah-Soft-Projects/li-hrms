@@ -644,6 +644,7 @@ export interface Employee {
   salary_mode?: 'Bank' | 'Cash';
   second_salary?: number;
   paidLeaves?: number;
+  casualLeaves?: number;
   allottedLeaves?: number;
   employeeAllowances?: any[];
   employeeDeductions?: any[];
@@ -656,6 +657,7 @@ export interface Employee {
   created_at?: string;
   updated_at?: string;
   salaryStatus?: 'pending_approval' | 'approved';
+  qualificationStatus?: string;
   // Populated fields (from virtuals or population)
   department?: any;
   division?: any;
@@ -1558,7 +1560,7 @@ export const api = {
     return apiRequest<any>(`/employee-applications/${id}`, { method: 'GET' });
   },
 
-  approveEmployeeApplication: async (id: string, data: { approvedSalary?: number; doj?: string; comments?: string; employeeAllowances?: any[]; employeeDeductions?: any[]; ctcSalary?: number; calculatedSalary?: number }) => {
+  approveEmployeeApplication: async (id: string, data: { approvedSalary?: number; doj?: string; comments?: string; qualificationStatus?: string; paidLeaves?: number; casualLeaves?: number; employeeAllowances?: any[]; employeeDeductions?: any[]; ctcSalary?: number; calculatedSalary?: number }) => {
     return apiRequest<any>(`/employee-applications/${id}/approve`, {
       method: 'PUT',
       body: JSON.stringify(data),
@@ -1571,7 +1573,7 @@ export const api = {
     });
   },
 
-  approveEmployeeSalary: async (id: string, data: { approvedSalary?: number; doj?: string; comments?: string; second_salary?: number; employeeAllowances?: any[]; employeeDeductions?: any[]; ctcSalary?: number; calculatedSalary?: number }) => {
+  approveEmployeeSalary: async (id: string, data: { approvedSalary?: number; doj?: string; comments?: string; second_salary?: number; qualificationStatus?: string; paidLeaves?: number; casualLeaves?: number; employeeAllowances?: any[]; employeeDeductions?: any[]; ctcSalary?: number; calculatedSalary?: number }) => {
     return apiRequest<any>(`/employee-applications/${id}/approve-salary`, {
       method: 'PUT',
       body: JSON.stringify(data),

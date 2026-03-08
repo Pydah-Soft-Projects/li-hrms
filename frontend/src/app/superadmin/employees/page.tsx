@@ -35,8 +35,14 @@ import {
   KeyRound,
   Upload,
   Settings,
-  Users
+  Users,
+  List,
+  LayoutGrid,
+  ArrowRight,
+  XCircle,
+  AlertTriangle
 } from 'lucide-react';
+
 
 
 
@@ -50,9 +56,18 @@ interface UpdateRequest {
     department?: { name: string };
     designation?: { name: string };
     dynamicFields?: Record<string, any>;
+    email?: string;
+    phone_number?: string;
+    address?: string;
+    blood_group?: string;
+    dob?: string;
+    doj?: string;
+    gender?: string;
+    marital_status?: string;
   };
   emp_no: string;
   requestedChanges: Record<string, any>;
+  previousValues?: Record<string, any>;
   status: 'pending' | 'approved' | 'rejected';
   createdBy?: { name: string };
   comments?: string;
@@ -267,6 +282,7 @@ export default function EmployeesPage() {
   const [loadingUpdateRequests, setLoadingUpdateRequests] = useState(false);
   const [selectedUpdateRequest, setSelectedUpdateRequest] = useState<UpdateRequest | null>(null);
   const [updateRequestStatusFilter, setUpdateRequestStatusFilter] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
+  const [updateRequestViewMode, setUpdateRequestViewMode] = useState<'list' | 'card'>('list');
   const [processingUpdateRequest, setProcessingUpdateRequest] = useState(false);
   const [updateRequestRejectComments, setUpdateRequestRejectComments] = useState('');
   const [divisions, setDivisions] = useState<Division[]>([]);
@@ -285,6 +301,8 @@ export default function EmployeesPage() {
   const [editingApplicationID, setEditingApplicationID] = useState<string | null>(null);
   const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null);
   const [showViewDialog, setShowViewDialog] = useState(false);
+  const [showApprovalOverrides, setShowApprovalOverrides] = useState(false);
+
   const [employeeHistory, setEmployeeHistory] = useState<any[]>([]);
   const [employeeHistoryLoading, setEmployeeHistoryLoading] = useState(false);
   const [employeeViewTab, setEmployeeViewTab] = useState<'profile' | 'history'>('profile');
@@ -302,7 +320,11 @@ export default function EmployeesPage() {
     second_salary?: number;
     doj: string;
     comments: string;
-  }>({ approvedSalary: 0, doj: '', comments: '' });
+    qualifications?: any[];
+    qualificationStatus?: string;
+    paidLeaves?: number;
+    casualLeaves?: number;
+  }>({ approvedSalary: 0, doj: '', comments: '', qualifications: [], qualificationStatus: 'Partial', paidLeaves: 0, casualLeaves: 0 });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [notificationChannels, setNotificationChannels] = useState<{ sms: boolean; whatsapp: boolean; email: boolean }>({
@@ -849,7 +871,7 @@ export default function EmployeesPage() {
 
   // Load allowance/deduction defaults for approval dialog when opened or salary changes
   useEffect(() => {
-    if (!showApprovalDialog || !selectedApplication) return;
+    if ((!showApprovalDialog && !showViewDialog) || !selectedApplication) return;
     const deptRaw = selectedApplication.department_id || selectedApplication.department?._id;
     const deptId = typeof deptRaw === 'string' ? deptRaw : (deptRaw as any)?._id;
     const gross = approvalData.approvedSalary || selectedApplication.proposedSalary;
@@ -860,7 +882,8 @@ export default function EmployeesPage() {
       setApprovalOverrideAllowances({});
       setApprovalOverrideDeductions({});
     }
-  }, [showApprovalDialog, selectedApplication, approvalData.approvedSalary]);
+  }, [showApprovalDialog, showViewDialog, selectedApplication, approvalData.approvedSalary]);
+
 
   useEffect(() => {
     // Show all designations since they are now global
@@ -1166,8 +1189,11 @@ export default function EmployeesPage() {
       if (res.success) {
         await alertSuccess('Approved!', 'Request approved successfully');
         setSelectedUpdateRequest(null);
+        setShowViewDialog(false);
+        setViewingEmployee(null);
         loadUpdateRequests();
         loadEmployees(currentPage);
+
       } else {
         await alertError('Failed', res.message || 'Failed to approve request');
       }
@@ -1190,8 +1216,11 @@ export default function EmployeesPage() {
       if (res.success) {
         await alertSuccess('Rejected', 'Request rejected');
         setSelectedUpdateRequest(null);
+        setShowViewDialog(false);
+        setViewingEmployee(null);
         setUpdateRequestRejectComments('');
         loadUpdateRequests();
+
       } else {
         await alertError('Failed', res.message || 'Failed to reject request');
       }
@@ -1331,6 +1360,18 @@ export default function EmployeesPage() {
     });
     return { division: divMap, department: deptMap, designation: desMap };
   }, [divisions, departments, designations]);
+
+  // Derived state for the currently viewed employee in the View Dialog
+  const pendingUpdateForViewing = useMemo(() => {
+    if (!viewingEmployee) return null;
+    return updateRequests.find(r => r.emp_no === viewingEmployee.emp_no && r.status === 'pending');
+  }, [viewingEmployee, updateRequests]);
+
+  const pendingAppForViewing = useMemo(() => {
+    if (!viewingEmployee) return null;
+    return applications.find(a => a.emp_no === viewingEmployee.emp_no && a.status === 'verified');
+  }, [viewingEmployee, applications]);
+
 
   // Trigger search and filter
   useEffect(() => {
@@ -1999,13 +2040,18 @@ export default function EmployeesPage() {
       } else {
         setEmployeeHistory([]);
       }
-    } catch (error) {
-      console.error('Error fetching employee history:', error);
-      setEmployeeHistory([]);
     } finally {
       setEmployeeHistoryLoading(false);
     }
+
+    // Check if there is a pending salary approval (verified application) for this employee
+    const pendingApp = applications.find(a => a.emp_no === employee.emp_no && a.status === 'verified');
+    if (pendingApp) {
+      initApprovalState(pendingApp);
+    }
   };
+
+
 
   const openCreateDialog = () => {
     setEditingEmployee(null);
@@ -2208,17 +2254,24 @@ export default function EmployeesPage() {
         second_salary: (approvalData as any).second_salary || undefined,
         doj: approvalData.doj || undefined,
         comments: approvalData.comments,
+        qualifications: (approvalData as any).qualifications,
+        qualificationStatus: (approvalData as any).qualificationStatus,
+        paidLeaves: (approvalData as any).paidLeaves,
+        casualLeaves: (approvalData as any).casualLeaves,
         employeeAllowances: buildOverridePayload(approvalComponentDefaults.allowances, approvalOverrideAllowances, approvalOverrideAllowancesBasedOnPresentDays, 'allowance'),
         employeeDeductions: buildOverridePayload(approvalComponentDefaults.deductions, approvalOverrideDeductions, approvalOverrideDeductionsBasedOnPresentDays, 'deduction'),
         ctcSalary: approvalSalarySummary.ctcSalary,
         calculatedSalary: approvalSalarySummary.netSalary,
-      });
+      } as any);
 
       if (response.success) {
         setSuccess(response.message || 'Application approved and employee created successfully!');
         setShowApprovalDialog(false);
+        setShowViewDialog(false);
+        setViewingEmployee(null);
         setSelectedApplication(null);
-        setApprovalData({ approvedSalary: 0, doj: '', comments: '' });
+
+        setApprovalData({ approvedSalary: 0, doj: '', comments: '', qualifications: [], qualificationStatus: 'Partial', paidLeaves: 0, casualLeaves: 0 });
         loadApplications();
         loadEmployees(); // Reload employees list
       } else {
@@ -2244,8 +2297,11 @@ export default function EmployeesPage() {
       if (response.success) {
         setSuccess('Application rejected successfully!');
         setShowApprovalDialog(false);
+        setShowViewDialog(false);
+        setViewingEmployee(null);
         setSelectedApplication(null);
-        setApprovalData({ approvedSalary: 0, doj: '', comments: '' });
+
+        setApprovalData({ approvedSalary: 0, doj: '', comments: '', qualifications: [], qualificationStatus: 'Partial', paidLeaves: 0, casualLeaves: 0 });
         loadApplications();
       } else {
         setError(response.message || 'Failed to reject application');
@@ -2256,7 +2312,7 @@ export default function EmployeesPage() {
     }
   };
 
-  const openApprovalDialog = (application: EmployeeApplication) => {
+  const initApprovalState = (application: EmployeeApplication) => {
     setSelectedApplication(application);
     // Use application DOJ if available, otherwise default to today
     let dojValue = '';
@@ -2276,6 +2332,10 @@ export default function EmployeesPage() {
       second_salary: application.second_salary || undefined,
       doj: dojValue,
       comments: '',
+      qualifications: application.qualifications ? structuredClone(application.qualifications) : [],
+      qualificationStatus: application.qualificationStatus || 'Partial',
+      paidLeaves: application.paidLeaves ?? application.dynamicFields?.paid_leaves ?? 0,
+      casualLeaves: application.casualLeaves ?? application.dynamicFields?.casual_leaves ?? 0,
     });
     setApprovalComponentDefaults({ allowances: [], deductions: [] });
     setApprovalOverrideAllowances({});
@@ -2286,10 +2346,15 @@ export default function EmployeesPage() {
       netSalary: 0,
       ctcSalary: 0,
     });
+  };
+
+  const openApprovalDialog = (application: EmployeeApplication) => {
+    initApprovalState(application);
     setShowApprovalDialog(true);
     setError('');
     setSuccess('');
   };
+
 
   const openApplicationDialog = () => {
     setApplicationFormData({ ...initialFormState, proposedSalary: 0 });
@@ -2357,7 +2422,7 @@ export default function EmployeesPage() {
                   : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
                   }`}
               >
-                Update Requests
+                Updates
                 {pendingUpdateRequests.length > 0 && (
                   <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] bg-indigo-500 text-white">
                     {pendingUpdateRequests.length}
@@ -2938,7 +3003,7 @@ export default function EmployeesPage() {
           </>
         )}
 
-        {/* Update Requests Tab */}
+        {/* Updates Tab */}
         {activeTab === 'requests' && (
           <div className="space-y-6">
             <div className="flex flex-wrap items-center justify-between gap-4">
@@ -2980,69 +3045,223 @@ export default function EmployeesPage() {
                   All
                 </button>
               </div>
+
+              <div className="flex items-center gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
+                <button
+                  onClick={() => setUpdateRequestViewMode('list')}
+                  className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${updateRequestViewMode === 'list'
+                    ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-700 dark:text-indigo-400'
+                    : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                    }`}
+                >
+                  <List className="h-3.5 w-3.5" />
+                  List
+                </button>
+                <button
+                  onClick={() => setUpdateRequestViewMode('card')}
+                  className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${updateRequestViewMode === 'card'
+                    ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-700 dark:text-indigo-400'
+                    : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                    }`}
+                >
+                  <LayoutGrid className="h-3.5 w-3.5" />
+                  Cards
+                </button>
+              </div>
             </div>
 
             {loadingUpdateRequests ? (
               <div className="flex flex-col items-center justify-center py-20">
                 <Spinner className="h-10 w-10 text-indigo-600" />
-                <p className="mt-4 text-slate-500">Loading requests...</p>
+                <p className="mt-4 text-slate-500">Loading updates...</p>
               </div>
             ) : updateRequests.length === 0 ? (
               <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50/50 p-12 text-center dark:border-slate-700 dark:bg-slate-900/50">
-                <p className="text-lg font-medium text-slate-600 dark:text-slate-400">No update requests found</p>
+                <p className="text-lg font-medium text-slate-600 dark:text-slate-400">No profile updates found</p>
                 <p className="mt-1 text-sm text-slate-500">New profile update requests from employees will appear here.</p>
               </div>
+            ) : updateRequestViewMode === 'list' ? (
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-slate-100 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-900/50">
+                        <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Employee</th>
+                        <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Requested Changes</th>
+                        <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Date</th>
+                        <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Status</th>
+                        <th className="px-6 py-4 text-right text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {updateRequests.map((req) => (
+                        <tr key={req._id} className="group transition-colors hover:bg-slate-50/50 dark:hover:bg-slate-900/50">
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-3">
+                              {req.employeeId?.profilePhoto ? (
+                                <img src={req.employeeId.profilePhoto} alt="" className="h-10 w-10 rounded-xl object-cover ring-2 ring-slate-100 dark:ring-slate-800" />
+                              ) : (
+                                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-sm font-bold text-indigo-600 dark:bg-indigo-900/30">
+                                  {req.employeeId?.employee_name?.charAt(0) || req.emp_no.charAt(0)}
+                                </div>
+                              )}
+                              <div>
+                                <h4 className="font-bold text-slate-900 dark:text-slate-100">{req.employeeId?.employee_name || 'Unknown'}</h4>
+                                <p className="text-xs text-slate-500 font-medium">{req.emp_no}</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="max-w-[300px] flex flex-wrap gap-1.5">
+                              {Object.entries(req.requestedChanges).map(([field, newValue]) => {
+                                const oldValue = req.previousValues?.[field] ??
+                                  (req.employeeId as any)[field] ??
+                                  (req.employeeId.dynamicFields?.[field]);
+                                return (
+                                  <div key={field} className="flex items-center gap-1 rounded-lg bg-slate-50 px-2 py-1 text-[10px] ring-1 ring-slate-200 dark:bg-slate-800/50 dark:ring-slate-700">
+                                    <span className="font-bold text-indigo-600 dark:text-indigo-400 capitalize">{field.replace(/_/g, ' ')}:</span>
+                                    <span className="text-slate-400 line-through decoration-red-300/50">{String(oldValue || '—')}</span>
+                                    <ArrowRight className="h-2 w-2 text-slate-400" />
+                                    <span className="font-semibold text-slate-900 dark:text-slate-100">{String(newValue || '—')}</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </td>
+                          <td className="whitespace-nowrap px-6 py-4 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                            {new Date(req.createdAt).toLocaleDateString()}
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${req.status === 'pending' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
+                              req.status === 'approved' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                                'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                              }`}>
+                              {req.status}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            <div className="flex justify-end gap-2">
+                              {req.status === 'pending' && (
+                                <>
+                                  <button
+                                    onClick={() => {
+                                      setSelectedUpdateRequest(req);
+                                      setUpdateRequestRejectComments(''); // Reset comments
+                                    }}
+                                    className="rounded-lg bg-red-50 p-2 text-red-600 transition-all hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40"
+                                    title="Reject"
+                                  >
+                                    <XCircle className="h-4 w-4" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleApproveUpdateRequest(req._id)}
+                                    className="rounded-lg bg-indigo-50 p-2 text-indigo-600 transition-all hover:bg-indigo-100 dark:bg-indigo-900/20 dark:hover:bg-indigo-900/40"
+                                    title="Approve"
+                                  >
+                                    <CheckCircle className="h-4 w-4" />
+                                  </button>
+                                </>
+                              )}
+                              <button
+                                onClick={() => setSelectedUpdateRequest(req)}
+                                className="rounded-lg bg-slate-50 p-2 text-slate-600 transition-all hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700"
+                                title="View Details"
+                              >
+                                <Eye className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             ) : (
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              <div className="grid gap-6 sm:grid-cols-1 lg:grid-cols-2 xl:grid-cols-3">
                 {updateRequests.map((req) => (
                   <div
                     key={req._id}
-                    onClick={() => setSelectedUpdateRequest(req)}
-                    className="group relative flex cursor-pointer flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white transition-all hover:border-indigo-300 hover:shadow-xl dark:border-slate-800 dark:bg-slate-950"
+                    className="group relative overflow-hidden rounded-3xl border border-slate-200 bg-white transition-all hover:border-indigo-300 hover:shadow-xl dark:border-slate-800 dark:bg-slate-950"
                   >
-                    <div className="p-5">
-                      <div className="mb-4 flex items-center gap-3">
-                        {req.employeeId?.profilePhoto ? (
-                          <img
-                            src={req.employeeId.profilePhoto}
-                            alt=""
-                            className="h-12 w-12 rounded-xl object-cover ring-2 ring-slate-100 dark:ring-slate-800"
-                          />
-                        ) : (
-                          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-50 text-xl font-bold text-indigo-600 dark:bg-indigo-900/30">
-                            {req.employeeId?.employee_name?.charAt(0) || req.emp_no.charAt(0)}
+                    <div className="p-6">
+                      {/* Header with Employee Info */}
+                      <div className="mb-6 flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          {req.employeeId?.profilePhoto ? (
+                            <img src={req.employeeId.profilePhoto} alt="" className="h-14 w-14 rounded-2xl object-cover ring-2 ring-slate-100 dark:ring-slate-800" />
+                          ) : (
+                            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-50 text-2xl font-bold text-indigo-600 dark:bg-indigo-900/30">
+                              {req.employeeId?.employee_name?.charAt(0) || req.emp_no.charAt(0)}
+                            </div>
+                          )}
+                          <div>
+                            <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">{req.employeeId?.employee_name || 'Unknown'}</h3>
+                            <p className="text-sm font-medium text-slate-500">{req.emp_no}</p>
                           </div>
-                        )}
-                        <div className="min-w-0">
-                          <h3 className="truncate font-bold text-slate-900 dark:text-slate-100">{req.employeeId?.employee_name || 'Unknown Employee'}</h3>
-                          <p className="text-xs text-slate-500">{req.emp_no}</p>
+                        </div>
+                        <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wider ${req.status === 'pending' ? 'bg-amber-100 text-amber-700' :
+                          req.status === 'approved' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                          {req.status}
+                        </span>
+                      </div>
+
+                      {/* Content: Changes */}
+                      <div className="space-y-3">
+                        <h4 className="text-xs font-bold uppercase tracking-widest text-slate-400">Requested Changes</h4>
+                        <div className="grid gap-2">
+                          {Object.entries(req.requestedChanges).map(([field, newValue]) => {
+                            const oldValue = req.previousValues?.[field] ??
+                              (req.employeeId as any)[field] ??
+                              (req.employeeId.dynamicFields?.[field]);
+                            return (
+                              <div key={field} className="rounded-xl border border-slate-100 bg-slate-50/50 p-3 transition-colors hover:border-indigo-100 hover:bg-white dark:border-slate-800 dark:bg-slate-900/50 dark:hover:bg-slate-900">
+                                <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+                                  {getFieldLabel(field, formSettings)}
+                                </label>
+                                <div className="flex items-center gap-3">
+                                  <div className="text-xs text-slate-400 line-through decoration-red-200">{String(oldValue || '—')}</div>
+                                  <ArrowRight className="h-3 w-3 text-slate-300" />
+                                  <div className="text-xs font-bold text-slate-900 dark:text-slate-100">{String(newValue || '—')}</div>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
 
-                      <div className="mb-4 flex flex-wrap gap-2">
-                        {Object.keys(req.requestedChanges).slice(0, 3).map((field) => (
-                          <span
-                            key={field}
-                            className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-400"
+                      {/* Footer Actions */}
+                      <div className="mt-8 flex items-center justify-between gap-4 border-t border-slate-100 pt-6 dark:border-slate-800">
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                          Requested on {new Date(req.createdAt).toLocaleDateString()}
+                        </span>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => setSelectedUpdateRequest(req)}
+                            className="rounded-xl bg-slate-100 px-4 py-2 text-xs font-bold text-slate-600 transition-all hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700"
                           >
-                            {field.replace(/_/g, ' ')}
-                          </span>
-                        ))}
-                        {Object.keys(req.requestedChanges).length > 3 && (
-                          <span className="text-[10px] text-slate-400">+{Object.keys(req.requestedChanges).length - 3} more</span>
-                        )}
-                      </div>
-
-                      <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-800">
-                        <span className="text-[10px] text-slate-400 uppercase font-semibold">
-                          {new Date(req.createdAt).toLocaleDateString()}
-                        </span>
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${req.status === 'pending' ? 'bg-amber-100 text-amber-700' :
-                          req.status === 'approved' ? 'bg-green-100 text-green-700' :
-                            'bg-red-100 text-red-700'
-                          }`}>
-                          {req.status}
-                        </span>
+                            Details
+                          </button>
+                          {req.status === 'pending' && (
+                            <>
+                              <button
+                                onClick={() => {
+                                  setSelectedUpdateRequest(req);
+                                  setUpdateRequestRejectComments('');
+                                }}
+                                className="rounded-xl bg-red-100 px-4 py-2 text-xs font-bold text-red-600 transition-all hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50"
+                              >
+                                Reject
+                              </button>
+                              <button
+                                onClick={() => handleApproveUpdateRequest(req._id)}
+                                className="rounded-xl bg-indigo-600 px-6 py-2 text-xs font-bold text-white shadow-lg shadow-indigo-600/20 transition-all hover:bg-indigo-700 hover:shadow-indigo-600/40"
+                              >
+                                Approve
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -3760,7 +3979,7 @@ export default function EmployeesPage() {
                   <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
                     <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Qualifications & Certificates</h3>
                     {(() => {
-                      const quals = selectedApplication.qualifications;
+                      const quals = approvalData.qualifications || selectedApplication.qualifications;
                       if (!quals || (Array.isArray(quals) && quals.length === 0)) {
                         return <p className="text-sm italic text-slate-500 dark:text-slate-400">No qualifications provided.</p>;
                       }
@@ -3772,8 +3991,14 @@ export default function EmployeesPage() {
                               const certificateUrl = qual.certificateUrl;
                               const isPDF = certificateUrl?.toLowerCase().endsWith('.pdf');
                               const displayEntries = Object.entries(qual).filter(([k, v]) =>
-                                k !== 'certificateUrl' && v !== null && v !== undefined && v !== ''
+                                k !== 'certificateUrl' && k !== 'status' && v !== null && v !== undefined && v !== ''
                               );
+
+                              const handleStatusChange = (newStatus: string) => {
+                                const newQuals = [...quals];
+                                newQuals[idx] = { ...newQuals[idx], status: newStatus };
+                                setApprovalData({ ...approvalData, qualifications: newQuals });
+                              };
 
                               return (
                                 <div key={idx} className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white transition-all hover:border-blue-300 hover:shadow-lg dark:border-slate-700 dark:bg-slate-900 dark:hover:border-blue-700 flex flex-col h-full">
@@ -3821,6 +4046,22 @@ export default function EmployeesPage() {
                                   {/* Card Content Area */}
                                   <div className="flex flex-1 flex-col p-5">
                                     <div className="space-y-3">
+                                      {/* Status Dropdown */}
+                                      <div className="flex flex-col border-b border-slate-100 pb-3 last:border-0 last:pb-0 dark:border-slate-800">
+                                        <label className="text-[10px] uppercase font-bold tracking-wider text-slate-400 dark:text-slate-500 mb-1">
+                                          Verification Status
+                                        </label>
+                                        <select
+                                          value={qual.status || 'Partial'}
+                                          onChange={(e) => handleStatusChange(e.target.value)}
+                                          className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+                                        >
+                                          <option value="Partial">Partial</option>
+                                          <option value="Not Certified">Not Certified</option>
+                                          <option value="Certified">Certified</option>
+                                        </select>
+                                      </div>
+
                                       {displayEntries.length > 0 ? displayEntries.map(([key, value]) => {
                                         const fieldLabel = formSettings?.qualifications?.fields?.find((f: any) => f.id === key)?.label || key.replace(/_/g, ' ');
                                         return (
@@ -4789,7 +5030,51 @@ export default function EmployeesPage() {
                 </div>
 
                 <div className="space-y-6">
+                  {/* Action Bar for Pending Items */}
+                  {(pendingUpdateForViewing || pendingAppForViewing) && (
+                    <div className="mb-6 overflow-hidden rounded-2xl border border-indigo-100 bg-indigo-50/50 p-4 dark:border-indigo-900/30 dark:bg-indigo-900/10">
+                      <div className="flex flex-wrap items-center justify-between gap-4">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-400">
+                            <AlertTriangle className="h-5 w-5" />
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">Action Required</h4>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">This employee has pending management actions.</p>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {pendingUpdateForViewing && (
+                            <button
+                              onClick={() => setSelectedUpdateRequest(pendingUpdateForViewing)}
+                              className="flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-xs font-bold text-indigo-600 shadow-sm transition hover:bg-slate-50 dark:bg-slate-800 dark:text-indigo-400 dark:hover:bg-slate-700"
+                            >
+                              <LucideClock className="h-4 w-4" />
+                              Review Profile Changes
+                            </button>
+                          )}
+                          {pendingAppForViewing && (
+                            <button
+                              onClick={() => {
+                                setEmployeeViewTab('profile');
+                                setTimeout(() => {
+                                  const element = document.getElementById('salary-approval-section');
+                                  element?.scrollIntoView({ behavior: 'smooth' });
+                                }, 100);
+                              }}
+                              className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold text-white shadow-md transition hover:bg-indigo-700 hover:shadow-lg shadow-indigo-500/30"
+                            >
+                              <CheckCircle className="h-4 w-4" />
+                              Finalize Salary Structure
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Status Badge */}
+
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <span className={viewingEmployee.is_active !== false
@@ -4830,7 +5115,10 @@ export default function EmployeesPage() {
 
                   {employeeViewTab === 'profile' && (
                     <>
+
+
                       {/* Basic Information */}
+
                       <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
                         <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Basic Information</h3>
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -4890,13 +5178,6 @@ export default function EmployeesPage() {
                             <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Blood Group</label>
                             <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.blood_group || '-'}</p>
                           </div>
-                        </div>
-                      </div>
-
-                      {/* Contact Information */}
-                      <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                        <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Contact Information</h3>
-                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                           <div>
                             <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Phone Number</label>
                             <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.phone_number || '-'}</p>
@@ -4920,28 +5201,79 @@ export default function EmployeesPage() {
                         </div>
                       </div>
 
+                      {/* Financial Information */}
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                        <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Financial Information</h3>
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">PF Number</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.pf_number || '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">ESI Number</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.esi_number || '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Aadhar Number</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.aadhar_number || '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Account Number</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_account_no || '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Bank Name</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_name || '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Bank Place</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_place || '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">IFSC Code</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.ifsc_code || '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Salary Mode</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.salary_mode || 'Bank'}</p>
+                          </div>
+                        </div>
+                      </div>
+
                       {/* Professional Information */}
                       <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
                         <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Professional Information</h3>
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                           <div className="sm:col-span-2 lg:col-span-3">
-                            <div className="mb-2 flex items-center justify-between">
-                              <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Qualifications</label>
+                            <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                              <label className="text-sm font-bold text-slate-700 dark:text-slate-300">Qualifications</label>
                               {(() => {
-                                const quals = viewingEmployee.qualifications;
-                                if (!quals || !Array.isArray(quals) || quals.length === 0) return null;
-                                const total = quals.length;
-                                const certLabel = formSettings?.qualifications?.fields?.find((f: any) => f.id === 'certificate_submitted')?.label;
-                                const count = quals.filter((q: any) => {
-                                  const v = q.certificate_submitted ?? (certLabel ? q[certLabel] : null);
-                                  return v === true || v === 'Yes' || (typeof v === 'string' && v.toLowerCase() === 'yes');
-                                }).length;
-                                const status = total === 0 ? '—' : count === total ? 'Certified' : `Partial (${count}/${total})`;
-                                return (
-                                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${count === total ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' : 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'}`}>
-                                    {status}
-                                  </span>
-                                );
+                                const statuses = formSettings?.qualification_statuses || ['Partial', 'Not Certified', 'Certified'];
+                                if (pendingAppForViewing) {
+                                  return (
+                                    <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                                      <span className="text-xs font-medium text-slate-500">Overall Status:</span>
+                                      <select
+                                        value={approvalData.qualificationStatus || 'Partial'}
+                                        onChange={(e) => setApprovalData({ ...approvalData, qualificationStatus: e.target.value })}
+                                        className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-800"
+                                      >
+                                        {statuses.map((st: string) => (
+                                          <option key={st} value={st}>{st}</option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                  );
+                                } else {
+                                  return (
+                                    <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                                      <span className="text-xs font-medium text-slate-500">Overall Status:</span>
+                                      <span className="rounded-full px-2.5 py-1 text-xs font-semibold bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300">
+                                        {viewingEmployee.qualificationStatus || '—'}
+                                      </span>
+                                    </div>
+                                  );
+                                }
                               })()}
                             </div>
                             {(() => {
@@ -5008,810 +5340,1064 @@ export default function EmployeesPage() {
                             <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.experience ?? '-'}</p>
                           </div>
                         </div>
-                      </div>
-                    </>
-                  )}
-
-                  {employeeViewTab === 'history' && (
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-5 dark:border-slate-700 dark:bg-slate-900/60">
-                      <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Employee History</h3>
-                      {employeeHistoryLoading && (
-                        <p className="text-sm text-slate-500 dark:text-slate-400">Loading history…</p>
                       )}
-                      {!employeeHistoryLoading && employeeHistory.length === 0 && (
-                        <p className="text-sm text-slate-500 dark:text-slate-400">No history recorded for this employee yet.</p>
-                      )}
-                      {!employeeHistoryLoading && employeeHistory.length > 0 && (
-                        <ol className="relative space-y-4 border-l border-slate-200 pl-4 text-sm dark:border-slate-700">
-                          {employeeHistory.map((h: any, index: number) => {
-                            const ts = h.timestamp || h.created_at;
-                            const when = ts ? new Date(ts).toLocaleString() : '-';
-                            const actor = h.performedByName || 'System';
-                            const role = h.performedByRole ? ` (${h.performedByRole})` : '';
-                            const labelMap: Record<string, string> = {
-                              application_created: 'Application created',
-                              employee_verified: 'Employee verified',
-                              salary_approved: 'Salary approved',
-                              data_updated: 'Data updated',
-                              status_changed: 'Status changed',
-                              employee_updated: 'Profile updated',
-                              resignation_submitted: 'Resignation submitted',
-                              resignation_step_approved: 'Resignation step approved',
-                              resignation_step_rejected: 'Resignation step rejected',
-                              resignation_final_approved: 'Resignation fully approved',
-                              resignation_rejected: 'Resignation rejected',
-                              left_date_set: 'Left date set',
-                              left_date_cleared: 'Left date cleared',
-                              leave_applied: 'Leave applied',
-                              leave_approved: 'Leave approved',
-                              leave_rejected: 'Leave rejected',
-                              od_applied: 'OD applied',
-                              od_approved: 'OD approved',
-                              od_rejected: 'OD rejected',
-                              credentials_resent: 'Credentials resent',
-                              password_reset: 'Password reset',
-                              user_promoted: 'User promoted',
-                              user_demoted: 'User role changed',
-                              user_activated: 'User activated',
-                              user_deactivated: 'User deactivated',
-                              user_deleted: 'User deleted',
-                            };
-                            const label = labelMap[h.event] || h.event || 'Event';
-                            const rawChanges = h.details?.changes;
-                            const skipDisplayFields = new Set(['getQualifications', 'allData', 'updated_at', '__v', 'created_at']);
-                            const changes = Array.isArray(rawChanges)
-                              ? rawChanges.filter((c: any) => !skipDisplayFields.has(c.field))
-                              : [];
-                            const fieldLabelMap: Record<string, string> = {
-                              division_id: 'Division',
-                              department_id: 'Department',
-                              designation_id: 'Designation',
-                              qualifications: 'Qualifications',
-                              dynamicFields: 'Dynamic fields',
-                              name: 'Name',
-                              employee_name: 'Name',
-                              email: 'Email',
-                              phone: 'Phone',
-                              emp_no: 'Employee number',
-                              date_of_joining: 'Date of joining',
-                              leftDate: 'Left date',
-                              leftReason: 'Left reason',
-                            };
-                            const refMaps = historyRefNames;
-                            const formatChangeValue = (v: unknown, field?: string): string => {
-                              if (v === undefined || v === null) return '—';
-                              if (Array.isArray(v)) {
-                                const arr = v as any[];
-                                if (!arr.length) return '—';
-                                if (field === 'qualifications') {
-                                  const summaries = arr.map((item: any) => {
-                                    if (item && typeof item === 'object') {
-                                      const o = item as Record<string, any>;
-                                      const primary = o.Examination ?? o['Examination'] ?? o.degree ?? o.course ?? o.title ?? o['School/College name'] ?? o.University ?? o['University/Board'] ?? o.name;
-                                      if (primary != null) return String(primary);
-                                      const keys = Object.keys(o).filter((k) => !k.startsWith('_'));
-                                      if (keys.length) return `${keys[0]}: ${String(o[keys[0]])}`;
-                                      return '[item]';
-                                    }
-                                    return String(item);
-                                  });
-                                  const preview = summaries.slice(0, 2).join(', ');
-                                  return summaries.length > 2 ? `${preview} +${summaries.length - 2} more` : preview;
-                                }
-                                const allPrimitive = arr.every((it) => it == null || typeof it !== 'object');
-                                if (allPrimitive) return arr.map((it) => String(it)).join(', ');
-                                return `${arr.length} item(s)`;
-                              }
-                              if (typeof v === 'object' && v !== null) {
-                                const o = v as Record<string, unknown>;
-                                if (typeof o.name === 'string') return o.name;
-                                const keys = Object.keys(o).filter((k) => !k.startsWith('_'));
-                                if (keys.length) return `${keys.length} field(s)`;
-                                return '[updated]';
-                              }
-                              const s = String(v);
-                              if (s === '[object Object]') return '[updated]';
-                              if (field === 'division_id' && /^[a-f\d]{24}$/i.test(s)) return refMaps.division[s] ?? s;
-                              if (field === 'department_id' && /^[a-f\d]{24}$/i.test(s)) return refMaps.department[s] ?? s;
-                              if (field === 'designation_id' && /^[a-f\d]{24}$/i.test(s)) return refMaps.designation[s] ?? s;
-                              if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s)) {
-                                try {
-                                  return new Date(s).toLocaleString();
-                                } catch {
-                                  return s;
-                                }
-                              }
-                              return s;
-                            };
-                            // Choose colour variant based on event category
-                            let ringColor = 'border-slate-400';
-                            let cardBorder = 'border-slate-200 dark:border-slate-700';
-                            let pillBg = 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200';
 
-                            const ev = h.event as string;
-                            if (ev?.startsWith('resignation') || ev === 'left_date_set' || ev === 'left_date_cleared') {
-                              ringColor = 'border-orange-500';
-                              cardBorder = 'border-orange-200 dark:border-orange-700/70';
-                              pillBg = 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200';
-                            } else if (ev?.startsWith('leave_')) {
-                              ringColor = 'border-emerald-500';
-                              cardBorder = 'border-emerald-200 dark:border-emerald-700/70';
-                              pillBg = 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200';
-                            } else if (ev?.startsWith('od_')) {
-                              ringColor = 'border-sky-500';
-                              cardBorder = 'border-sky-200 dark:border-sky-700/70';
-                              pillBg = 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200';
-                            } else if (ev === 'credentials_resent' || ev === 'password_reset' || ev?.startsWith('user_')) {
-                              ringColor = 'border-violet-500';
-                              cardBorder = 'border-violet-200 dark:border-violet-700/70';
-                              pillBg = 'bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-200';
-                            } else if (ev === 'employee_updated') {
-                              ringColor = 'border-amber-500';
-                              cardBorder = 'border-amber-200 dark:border-amber-700/70';
-                              pillBg = 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200';
-                            }
 
-                            return (
-                              <li key={h._id || `${h.event}-${when}-${actor}-${index}`} className="relative pl-4">
-                                {/* Timeline dot */}
-                                <span
-                                  className={`absolute -left-[9px] flex h-4 w-4 items-center justify-center rounded-full border-2 ${ringColor} bg-white dark:bg-slate-950`}
-                                >
-                                  <span className="h-1.5 w-1.5 rounded-full bg-slate-500 dark:bg-slate-300" />
-                                </span>
+                        {/* Leave Information */}
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                          <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Leave Information</h3>
+                          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                            <div>
+                              <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Paid Leaves</label>
+                              {pendingAppForViewing ? (
+                                <input
+                                  type="number"
+                                  value={approvalData.paidLeaves ?? 0}
+                                  onChange={(e) => setApprovalData({ ...approvalData, paidLeaves: Number(e.target.value) })}
+                                  className="mt-1 w-full max-w-[120px] rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                                />
+                              ) : (
+                                <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                                  {(() => {
+                                    const val = (viewingEmployee as any).paid_leaves ?? viewingEmployee.dynamicFields?.paid_leaves;
+                                    return val !== undefined && val !== null ? String(val) : '0';
+                                  })()}
+                                </p>
+                              )}
+                              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                Total paid leaves balance
+                              </p>
+                            </div>
+                            <div>
+                              <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Casual Leaves</label>
+                              {pendingAppForViewing ? (
+                                <input
+                                  type="number"
+                                  value={approvalData.casualLeaves ?? 0}
+                                  onChange={(e) => setApprovalData({ ...approvalData, casualLeaves: Number(e.target.value) })}
+                                  className="mt-1 w-full max-w-[120px] rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                                />
+                              ) : (
+                                <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                                  {(() => {
+                                    const val = viewingEmployee.casualLeaves ?? (viewingEmployee as any).casual_leaves ?? viewingEmployee.dynamicFields?.casual_leaves;
+                                    return val !== undefined && val !== null ? String(val) : '0';
+                                  })()}
+                                </p>
+                              )}
+                              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                Casual leaves count
+                              </p>
+                            </div>
+                            {((viewingEmployee as any).ctcSalary !== undefined && (viewingEmployee as any).ctcSalary !== null) && (
+                              <div>
+                                <label className="text-xs font-medium text-slate-500 dark:text-slate-400">CTC Salary</label>
+                                <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                                  ₹{Number((viewingEmployee as any).ctcSalary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                </p>
+                              </div>
+                            )}
+                            {((viewingEmployee as any).calculatedSalary !== undefined && (viewingEmployee as any).calculatedSalary !== null) && (
+                              <div>
+                                <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Calculated Salary (Net)</label>
+                                <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                                  ₹{Number((viewingEmployee as any).calculatedSalary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
 
-                                {/* Card */}
-                                <div
-                                  className={`rounded-2xl border ${cardBorder} bg-white/90 p-3 shadow-sm shadow-slate-900/5 dark:bg-slate-950/70`}
-                                >
-                                  <div className="flex items-start justify-between gap-3">
-                                    <div className="space-y-1">
-                                      <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${pillBg}`}>
-                                        {label}
-                                      </span>
-                                      <div className="text-xs text-slate-500 dark:text-slate-400">
-                                        {when} • {actor}
-                                        {role}
+                        {/* Integrated Salary Approval Section (Consolidated Flow) */}
+                        {pendingAppForViewing && selectedApplication && (
+                          <div id="salary-approval-section" className="mb-6 overflow-hidden rounded-2xl border-2 border-green-200 bg-green-50/50 shadow-sm dark:border-green-800 dark:bg-green-900/20">
+                            <div className="border-b border-green-100 bg-green-100/30 px-5 py-3 dark:border-green-800 dark:bg-green-950/30">
+                              <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-green-800 dark:text-green-400">
+                                <ShieldCheck className="h-4 w-4" />
+                                Final Salary Approval
+                              </h3>
+                            </div>
+
+                            <div className="p-5">
+                              <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                                {/* Left Column: Form Fields */}
+                                <div className="space-y-4">
+                                  <div>
+                                    <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                                      Approved Salary (Monthly Gross) *
+                                    </label>
+                                    <input
+                                      type="number"
+                                      value={approvalData.approvedSalary}
+                                      onChange={(e) => setApprovalData({ ...approvalData, approvedSalary: Number(e.target.value) })}
+                                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                    />
+                                    <p className="mt-1.5 text-[10px] text-slate-500">Proposed by HR: ₹{selectedApplication.proposedSalary.toLocaleString()}</p>
+                                  </div>
+
+                                  <div>
+                                    <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                                      Second Salary / Fixed Allowance
+                                    </label>
+                                    <input
+                                      type="number"
+                                      value={(approvalData as any).second_salary || ''}
+                                      onChange={(e) => setApprovalData({ ...approvalData, second_salary: Number(e.target.value) } as any)}
+                                      placeholder="Enter additional amount"
+                                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold transition-all focus:border-indigo-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                                      Date of Joining *
+                                    </label>
+                                    <input
+                                      type="date"
+                                      value={approvalData.doj || ''}
+                                      onChange={(e) => setApprovalData({ ...approvalData, doj: e.target.value })}
+                                      className="w-full rounded-xl border-2 border-green-400 bg-white px-4 py-2.5 text-sm font-bold transition-all focus:border-green-500 focus:outline-none dark:border-green-600 dark:bg-slate-900 dark:text-slate-100"
+                                    />
+                                  </div>
+                                </div>
+
+                                {/* Right Column: Allowances/Deductions Preview */}
+                                <div className="space-y-4">
+                                  <div className="rounded-xl border border-slate-200 bg-white/50 p-4 dark:border-slate-700 dark:bg-slate-900/50">
+                                    <h4 className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">Salary Summary</h4>
+                                    <div className="space-y-2 text-sm">
+                                      <div className="flex justify-between">
+                                        <span className="text-slate-500">Gross Salary</span>
+                                        <span className="font-semibold text-slate-900 dark:text-slate-100">₹{Number(approvalData.approvedSalary || 0).toLocaleString()}</span>
+                                      </div>
+                                      <div className="flex justify-between">
+                                        <span className="text-green-600">Total Allowances</span>
+                                        <span className="font-semibold text-green-600">+₹{approvalSalarySummary.totalAllowances.toLocaleString()}</span>
+                                      </div>
+                                      <div className="flex justify-between">
+                                        <span className="text-red-600">Total Deductions</span>
+                                        <span className="font-semibold text-red-600">-₹{approvalSalarySummary.totalDeductions.toLocaleString()}</span>
+                                      </div>
+                                      <div className="mt-2 border-t border-slate-200 pt-2 flex justify-between font-bold text-slate-900 dark:text-slate-100">
+                                        <span>Net Salary</span>
+                                        <span>₹{approvalSalarySummary.netSalary.toLocaleString()}</span>
                                       </div>
                                     </div>
                                   </div>
-                                  {h.comments && (
-                                    <div className="mt-2 text-xs text-slate-700 dark:text-slate-200">
-                                      {h.comments}
-                                    </div>
-                                  )}
-                                  {Array.isArray(changes) && changes.length > 0 && (
-                                    <>
-                                      <ul className="mt-2 space-y-0.5 text-xs text-slate-600 dark:text-slate-300">
-                                        {changes.map((c: any, idx: number) => {
-                                          const fieldLabel = fieldLabelMap[c.field] ?? c.field;
+
+                                  <div>
+                                    <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Comments</label>
+                                    <textarea
+                                      value={approvalData.comments}
+                                      onChange={(e) => setApprovalData({ ...approvalData, comments: e.target.value })}
+                                      className="h-24 w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm transition-all focus:border-green-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                      placeholder="Add notes about this approval..."
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Overrides Expanded Section (Optional toggle if too long) */}
+                              <div className="mt-6">
+                                <button
+                                  type="button"
+                                  onClick={() => setShowApprovalOverrides(!showApprovalOverrides)}
+                                  className="flex items-center gap-2 text-xs font-bold text-green-700 dark:text-green-400 hover:underline"
+                                >
+                                  {showApprovalOverrides ? 'Hide component overrides' : 'Show component overrides (Allowances/Deductions)'}
+                                  <ChevronRight className={`h-4 w-4 transition-transform ${showApprovalOverrides ? 'rotate-90' : ''}`} />
+                                </button>
+
+                                {showApprovalOverrides && (
+                                  <div className="mt-4 grid gap-4 md:grid-cols-2">
+                                    {/* Copying minimized version of override inputs here or just using the existing logic */}
+                                    <div className="rounded-xl border border-green-100 bg-green-50/30 p-4">
+                                      <h5 className="mb-3 text-[10px] font-bold uppercase text-green-700">Allowances</h5>
+                                      <div className="space-y-3">
+                                        {approvalComponentDefaults.allowances.map(item => {
+                                          const key = getKey(item);
+                                          const current = approvalOverrideAllowances[key] ?? item.amount ?? 0;
                                           return (
-                                            <li key={`${c.field}-${idx}`} className="flex flex-wrap items-center gap-x-1 gap-y-0.5">
-                                              <span className="font-semibold">{fieldLabel}</span>{' '}
-                                              changed from{' '}
-                                              <span className="font-mono text-slate-700 dark:text-slate-100">
-                                                {formatChangeValue(c.previous, c.field)}
-                                              </span>{' '}
-                                              to{' '}
-                                              <span className="font-mono text-slate-700 dark:text-slate-100">
-                                                {formatChangeValue(c.current, c.field)}
-                                              </span>
-                                            </li>
+                                            <div key={key} className="flex items-center justify-between gap-4">
+                                              <span className="text-xs text-slate-700 dark:text-slate-300">{item.name}</span>
+                                              <input
+                                                type="number"
+                                                value={current === null ? '' : current}
+                                                onChange={(e) => handleApprovalOverrideChange('allowance', item, e.target.value)}
+                                                className="w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-right"
+                                              />
+                                            </div>
                                           );
                                         })}
-                                      </ul>
-                                      <button
-                                        type="button"
-                                        onClick={() => setHistoryViewComplete({
-                                          eventLabel: label,
-                                          changes: changes.map((c: any) => ({
-                                            field: c.field,
-                                            fieldLabel: fieldLabelMap[c.field] ?? c.field,
-                                            previous: c.previous,
-                                            current: c.current,
-                                          })),
+                                      </div>
+                                    </div>
+                                    <div className="rounded-xl border border-red-100 bg-red-50/30 p-4">
+                                      <h5 className="mb-3 text-[10px] font-bold uppercase text-red-700">Deductions</h5>
+                                      <div className="space-y-3">
+                                        {approvalComponentDefaults.deductions.map(item => {
+                                          const key = getKey(item);
+                                          const current = approvalOverrideDeductions[key] ?? item.amount ?? 0;
+                                          return (
+                                            <div key={key} className="flex items-center justify-between gap-4">
+                                              <span className="text-xs text-slate-700 dark:text-slate-300">{item.name}</span>
+                                              <input
+                                                type="number"
+                                                value={current === null ? '' : current}
+                                                onChange={(e) => handleApprovalOverrideChange('deduction', item, e.target.value)}
+                                                className="w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-right"
+                                              />
+                                            </div>
+                                          );
                                         })}
-                                        className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100 dark:border-amber-600 dark:bg-amber-900/30 dark:text-amber-200 dark:hover:bg-amber-900/50"
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="mt-6 flex justify-end gap-3">
+                                <button
+                                  onClick={handleRejectApplication}
+                                  className="rounded-xl px-6 py-2.5 text-sm font-bold text-red-600 hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors"
+                                >
+                                  Reject Application
+                                </button>
+                                <button
+                                  onClick={handleApproveApplication}
+                                  className="rounded-xl bg-gradient-to-r from-green-600 to-green-700 px-8 py-2.5 text-sm font-bold text-white shadow-lg shadow-green-600/30 transition-all hover:scale-[1.02] active:scale-95"
+                                >
+                                  Approve & Finalize
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+
+
+                        {employeeViewTab === 'history' && (
+                          <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-5 dark:border-slate-700 dark:bg-slate-900/60">
+                            <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Employee History</h3>
+                            {employeeHistoryLoading && (
+                              <p className="text-sm text-slate-500 dark:text-slate-400">Loading history…</p>
+                            )}
+                            {!employeeHistoryLoading && employeeHistory.length === 0 && (
+                              <p className="text-sm text-slate-500 dark:text-slate-400">No history recorded for this employee yet.</p>
+                            )}
+                            {!employeeHistoryLoading && employeeHistory.length > 0 && (
+                              <ol className="relative space-y-4 border-l border-slate-200 pl-4 text-sm dark:border-slate-700">
+                                {employeeHistory.map((h: any, index: number) => {
+                                  const ts = h.timestamp || h.created_at;
+                                  const when = ts ? new Date(ts).toLocaleString() : '-';
+                                  const actor = h.performedByName || 'System';
+                                  const role = h.performedByRole ? ` (${h.performedByRole})` : '';
+                                  const labelMap: Record<string, string> = {
+                                    application_created: 'Application created',
+                                    employee_verified: 'Employee verified',
+                                    salary_approved: 'Salary approved',
+                                    data_updated: 'Data updated',
+                                    status_changed: 'Status changed',
+                                    employee_updated: 'Profile updated',
+                                    resignation_submitted: 'Resignation submitted',
+                                    resignation_step_approved: 'Resignation step approved',
+                                    resignation_step_rejected: 'Resignation step rejected',
+                                    resignation_final_approved: 'Resignation fully approved',
+                                    resignation_rejected: 'Resignation rejected',
+                                    left_date_set: 'Left date set',
+                                    left_date_cleared: 'Left date cleared',
+                                    leave_applied: 'Leave applied',
+                                    leave_approved: 'Leave approved',
+                                    leave_rejected: 'Leave rejected',
+                                    od_applied: 'OD applied',
+                                    od_approved: 'OD approved',
+                                    od_rejected: 'OD rejected',
+                                    credentials_resent: 'Credentials resent',
+                                    password_reset: 'Password reset',
+                                    user_promoted: 'User promoted',
+                                    user_demoted: 'User role changed',
+                                    user_activated: 'User activated',
+                                    user_deactivated: 'User deactivated',
+                                    user_deleted: 'User deleted',
+                                  };
+                                  const label = labelMap[h.event] || h.event || 'Event';
+                                  const rawChanges = h.details?.changes;
+                                  const skipDisplayFields = new Set(['getQualifications', 'allData', 'updated_at', '__v', 'created_at']);
+                                  const changes = Array.isArray(rawChanges)
+                                    ? rawChanges.filter((c: any) => !skipDisplayFields.has(c.field))
+                                    : [];
+                                  const fieldLabelMap: Record<string, string> = {
+                                    division_id: 'Division',
+                                    department_id: 'Department',
+                                    designation_id: 'Designation',
+                                    qualifications: 'Qualifications',
+                                    dynamicFields: 'Dynamic fields',
+                                    name: 'Name',
+                                    employee_name: 'Name',
+                                    email: 'Email',
+                                    personal_email: 'Personal Email',
+                                    phone: 'Phone',
+                                    phone_number: 'Phone Number',
+                                    emp_no: 'Employee number',
+                                    date_of_joining: 'Date of joining',
+                                    date_of_birth: 'Date of Birth',
+                                    dob: 'Date of Birth',
+                                    doj: 'Joining Date',
+                                    gender: 'Gender',
+                                    marital_status: 'Marital Status',
+                                    blood_group: 'Blood Group',
+                                    address: 'Address',
+                                    leftDate: 'Left date',
+                                    leftReason: 'Left reason',
+                                  };
+                                  const refMaps = historyRefNames;
+                                  const formatChangeValue = (v: unknown, field?: string): string => {
+                                    if (v === undefined || v === null) return '—';
+                                    if (Array.isArray(v)) {
+                                      const arr = v as any[];
+                                      if (!arr.length) return '—';
+                                      if (field === 'qualifications') {
+                                        const summaries = arr.map((item: any) => {
+                                          if (item && typeof item === 'object') {
+                                            const o = item as Record<string, any>;
+                                            const primary = o.Examination ?? o['Examination'] ?? o.degree ?? o.course ?? o.title ?? o['School/College name'] ?? o.University ?? o['University/Board'] ?? o.name;
+                                            if (primary != null) return String(primary);
+                                            const keys = Object.keys(o).filter((k) => !k.startsWith('_'));
+                                            if (keys.length) return `${keys[0]}: ${String(o[keys[0]])}`;
+                                            return '[item]';
+                                          }
+                                          return String(item);
+                                        });
+                                        const preview = summaries.slice(0, 2).join(', ');
+                                        return summaries.length > 2 ? `${preview} +${summaries.length - 2} more` : preview;
+                                      }
+                                      const allPrimitive = arr.every((it) => it == null || typeof it !== 'object');
+                                      if (allPrimitive) return arr.map((it) => String(it)).join(', ');
+                                      return `${arr.length} item(s)`;
+                                    }
+                                    if (typeof v === 'object' && v !== null) {
+                                      const o = v as Record<string, unknown>;
+                                      if (typeof o.name === 'string') return o.name;
+                                      const keys = Object.keys(o).filter((k) => !k.startsWith('_'));
+                                      if (keys.length) return `${keys.length} field(s)`;
+                                      return '[updated]';
+                                    }
+                                    const s = String(v);
+                                    if (s === '[object Object]') return '[updated]';
+                                    if (field === 'division_id' && /^[a-f\d]{24}$/i.test(s)) return refMaps.division[s] ?? s;
+                                    if (field === 'department_id' && /^[a-f\d]{24}$/i.test(s)) return refMaps.department[s] ?? s;
+                                    if (field === 'designation_id' && /^[a-f\d]{24}$/i.test(s)) return refMaps.designation[s] ?? s;
+                                    if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+                                      try {
+                                        return new Date(s).toLocaleDateString();
+                                      } catch {
+                                        return s;
+                                      }
+                                    }
+                                    return s;
+                                  };
+                                  // Choose colour variant based on event category
+                                  let ringColor = 'border-slate-400';
+                                  let cardBorder = 'border-slate-200 dark:border-slate-700';
+                                  let pillBg = 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200';
+
+                                  const ev = h.event as string;
+                                  if (ev?.startsWith('resignation') || ev === 'left_date_set' || ev === 'left_date_cleared') {
+                                    ringColor = 'border-orange-500';
+                                    cardBorder = 'border-orange-200 dark:border-orange-700/70';
+                                    pillBg = 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200';
+                                  } else if (ev?.startsWith('leave_')) {
+                                    ringColor = 'border-emerald-500';
+                                    cardBorder = 'border-emerald-200 dark:border-emerald-700/70';
+                                    pillBg = 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200';
+                                  } else if (ev?.startsWith('od_')) {
+                                    ringColor = 'border-sky-500';
+                                    cardBorder = 'border-sky-200 dark:border-sky-700/70';
+                                    pillBg = 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200';
+                                  } else if (ev === 'credentials_resent' || ev === 'password_reset' || ev?.startsWith('user_')) {
+                                    ringColor = 'border-violet-500';
+                                    cardBorder = 'border-violet-200 dark:border-violet-700/70';
+                                    pillBg = 'bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-200';
+                                  } else if (ev === 'employee_updated') {
+                                    ringColor = 'border-amber-500';
+                                    cardBorder = 'border-amber-200 dark:border-amber-700/70';
+                                    pillBg = 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200';
+                                  }
+
+                                  return (
+
+                                    <li key={h._id || `${h.event}-${when}-${actor}-${index}`} className="relative pl-4">
+                                      {/* Timeline dot */}
+                                      <span
+                                        className={`absolute -left-[9px] flex h-4 w-4 items-center justify-center rounded-full border-2 ${ringColor} bg-white dark:bg-slate-950`}
                                       >
-                                        View complete
-                                      </button>
-                                    </>
-                                  )}
-                                </div>
-                              </li>
-                            );
-                          })}
-                        </ol>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Financial Information (profile view only) */}
-                  {employeeViewTab === 'profile' && (
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                      <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Financial Information</h3>
-                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                        <div>
-                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">PF Number</label>
-                          <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.pf_number || '-'}</p>
-                        </div>
-                        <div>
-                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">ESI Number</label>
-                          <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.esi_number || '-'}</p>
-                        </div>
-                        <div>
-                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Aadhar Number</label>
-                          <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.aadhar_number || '-'}</p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Deduction Preferences - Statutory & Attendance flags (profile view only) */}
-                  {employeeViewTab === 'profile' && (
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                      <h3 className="mb-2 text-lg font-semibold text-slate-900 dark:text-slate-100">Deduction Preferences</h3>
-                      <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
-                        Controls which statutory and attendance deductions apply to this employee during payroll. Disabled items are not calculated (amount 0).
-                      </p>
-                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                        <div>
-                          <p className="mb-2 text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">Statutory</p>
-                          <div className="space-y-2">
-                            {[
-                              { key: 'applyProfessionTax', label: 'Profession Tax' },
-                              { key: 'applyESI', label: 'ESI' },
-                              { key: 'applyPF', label: 'PF' },
-                            ].map(({ key, label }) => {
-                              const enabled = (viewingEmployee as any)[key] !== false;
-                              return (
-                                <div key={key} className="flex items-center justify-between">
-                                  <span className="text-sm text-slate-700 dark:text-slate-300">{label}</span>
-                                  <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${enabled ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'}`}>
-                                    {enabled ? 'Enabled' : 'Disabled'}
-                                  </span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                        <div>
-                          <p className="mb-2 text-xs font-semibold uppercase text-slate-500 dark:text-slate-400">Attendance deduction</p>
-                          <div className="space-y-2">
-                            {[
-                              { key: 'applyAttendanceDeduction', label: 'Apply attendance deduction' },
-                              { key: 'deductLateIn', label: 'Late-ins' },
-                              { key: 'deductEarlyOut', label: 'Early-outs' },
-                              { key: 'deductPermission', label: 'Permission' },
-                              { key: 'deductAbsent', label: 'Absents (extra LOP)' },
-                            ].map(({ key, label }) => {
-                              const enabled = (viewingEmployee as any)[key] !== false;
-                              return (
-                                <div key={key} className="flex items-center justify-between">
-                                  <span className="text-sm text-slate-700 dark:text-slate-300">{label}</span>
-                                  <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${enabled ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'}`}>
-                                    {enabled ? 'Enabled' : 'Disabled'}
-                                  </span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Bank Details (profile view only) */}
-                  {employeeViewTab === 'profile' && (
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                      <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Bank Details</h3>
-                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                        <div>
-                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Account Number</label>
-                          <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_account_no || '-'}</p>
-                        </div>
-                        <div>
-                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Bank Name</label>
-                          <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_name || '-'}</p>
-                        </div>
-                        <div>
-                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Bank Place</label>
-                          <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_place || '-'}</p>
-                        </div>
-                        <div>
-                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">IFSC Code</label>
-                          <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.ifsc_code || '-'}</p>
-                        </div>
-                        <div>
-                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Salary Mode</label>
-                          <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.salary_mode || 'Bank'}</p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Allowances & Deductions (profile view only) */}
-                  {employeeViewTab === 'profile' && (
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                      <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Allowances & Deductions</h3>
-
-                      {/* Allowances */}
-                      {(Array.isArray(viewingEmployee.employeeAllowances) && viewingEmployee.employeeAllowances.length > 0) ? (
-                        <div className="mb-6">
-                          <h4 className="mb-3 text-sm font-semibold text-green-700 dark:text-green-400">Allowances</h4>
-                          <div className="space-y-2">
-                            {viewingEmployee.employeeAllowances.map((allowance: any, idx: number) => (
-                              <div key={idx} className="flex items-center justify-between rounded-lg border border-green-200 bg-green-50/50 p-3 dark:border-green-800 dark:bg-green-900/20">
-                                <div className="flex-1">
-                                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{allowance.name || '-'}</p>
-                                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                                    {allowance.type === 'percentage'
-                                      ? `${allowance.percentage}% of ${allowance.percentageBase || 'basic'}`
-                                      : 'Fixed Amount'}
-                                    {allowance.isOverride && (
-                                      <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                                        Override
+                                        <span className="h-1.5 w-1.5 rounded-full bg-slate-500 dark:bg-slate-300" />
                                       </span>
-                                    )}
-                                  </p>
-                                </div>
-                                <p className="text-sm font-semibold text-green-700 dark:text-green-400">
-                                  {allowance.amount !== null && allowance.amount !== undefined
-                                    ? `₹${Number(allowance.amount).toLocaleString()}`
-                                    : '-'}
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-                          <p className="text-sm text-slate-500 dark:text-slate-400">
-                            No employee-level allowance overrides. Default allowances from Department/Global settings will be used during payroll calculation.
-                          </p>
-                        </div>
-                      )}
 
-                      {/* Deductions */}
-                      {(Array.isArray(viewingEmployee.employeeDeductions) && viewingEmployee.employeeDeductions.length > 0) ? (
-                        <div>
-                          <h4 className="mb-3 text-sm font-semibold text-red-700 dark:text-red-400">Deductions</h4>
-                          <div className="space-y-2">
-                            {viewingEmployee.employeeDeductions.map((deduction: any, idx: number) => (
-                              <div key={idx} className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50/50 p-3 dark:border-red-800 dark:bg-red-900/20">
-                                <div className="flex-1">
-                                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{deduction.name || '-'}</p>
-                                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                                    {deduction.type === 'percentage'
-                                      ? `${deduction.percentage}% of ${deduction.percentageBase || 'basic'}`
-                                      : 'Fixed Amount'}
-                                    {deduction.isOverride && (
-                                      <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                                        Override
-                                      </span>
-                                    )}
-                                  </p>
-                                </div>
-                                <p className="text-sm font-semibold text-red-700 dark:text-red-400">
-                                  {deduction.amount !== null && deduction.amount !== undefined
-                                    ? `₹${Number(deduction.amount).toLocaleString()}`
-                                    : '-'}
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
-                          <p className="text-sm text-slate-500 dark:text-slate-400">
-                            No employee-level deduction overrides. Default deductions from Department/Global settings will be used during payroll calculation.
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Left Date Information (profile view only) */}
-                  {employeeViewTab === 'profile' && viewingEmployee.leftDate && (
-                    <div className="rounded-2xl border border-orange-200 bg-orange-50/50 p-5 dark:border-orange-800 dark:bg-orange-900/20 mb-5">
-                      <h3 className="mb-4 text-lg font-semibold text-orange-900 dark:text-orange-100">Left Date Information</h3>
-                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                        <div>
-                          <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Left Date</label>
-                          <p className="mt-1 text-sm font-medium text-orange-900 dark:text-orange-100">
-                            {new Date(viewingEmployee.leftDate).toLocaleDateString('en-US', {
-                              year: 'numeric',
-                              month: 'long',
-                              day: 'numeric'
-                            })}
-                          </p>
-                        </div>
-                        {viewingEmployee.leftReason && (
-                          <div>
-                            <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Reason</label>
-                            <p className="mt-1 text-sm font-medium text-orange-900 dark:text-orange-100">
-                              {viewingEmployee.leftReason}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                      {/* Reactivate button moved to header; no button here */}
-                    </div>
-                  )}
-
-                  {/* Leave Information (profile view only) */}
-                  {employeeViewTab === 'profile' && (
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                      <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Leave Information</h3>
-                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                        <div>
-                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Monthly Paid Leaves</label>
-                          <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                            {viewingEmployee.paidLeaves !== undefined && viewingEmployee.paidLeaves !== null
-                              ? `${viewingEmployee.paidLeaves} days/month`
-                              : '0 days/month'}
-                          </p>
-                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                            Recurring monthly paid leaves
-                          </p>
-                        </div>
-                        <div>
-                          <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Yearly Allotted Leaves</label>
-                          <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                            {viewingEmployee.allottedLeaves !== undefined && viewingEmployee.allottedLeaves !== null
-                              ? `${viewingEmployee.allottedLeaves} days/year`
-                              : '0 days/year'}
-                          </p>
-                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                            Total for without_pay/LOP leaves (for balance tracking)
-                          </p>
-                        </div>
-                        {((viewingEmployee as any).ctcSalary !== undefined && (viewingEmployee as any).ctcSalary !== null) && (
-                          <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">CTC Salary</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                              ₹{Number((viewingEmployee as any).ctcSalary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                            </p>
-                          </div>
-                        )}
-                        {((viewingEmployee as any).calculatedSalary !== undefined && (viewingEmployee as any).calculatedSalary !== null) && (
-                          <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Calculated Salary (Net)</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                              ₹{Number((viewingEmployee as any).calculatedSalary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Reporting Authority Section (profile view only) - Check both root and dynamicFields */}
-                  {employeeViewTab === 'profile' && (((viewingEmployee as any).reporting_to || (viewingEmployee as any).reporting_to_ || viewingEmployee.dynamicFields?.reporting_to || viewingEmployee.dynamicFields?.reporting_to_)) && (
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                      <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Reporting Authority</h3>
-                      {(() => {
-                        const reportingTo = (viewingEmployee as any).reporting_to || (viewingEmployee as any).reporting_to_ || viewingEmployee.dynamicFields?.reporting_to || viewingEmployee.dynamicFields?.reporting_to_;
-                        console.log('Displaying reporting_to:', reportingTo);
-
-                        if (!reportingTo || !Array.isArray(reportingTo) || reportingTo.length === 0) {
-                          return <p className="text-sm text-slate-500 dark:text-slate-400">No reporting managers assigned</p>;
-                        }
-
-                        const isPopulated = reportingTo[0] && typeof reportingTo[0] === 'object' && reportingTo[0].name;
-                        console.log('Is populated:', isPopulated, 'First item:', reportingTo[0]);
-
-                        return (
-                          <div className="space-y-2">
-                            {isPopulated ? (
-                              reportingTo.map((user: any, idx: number) => (
-                                <div key={idx} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
-                                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                    </svg>
-                                  </div>
-                                  <div className="flex-1">
-                                    <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{user.name || 'Unknown'}</p>
-                                    <p className="text-xs text-slate-500 dark:text-slate-400">{user.email || ''}</p>
-                                  </div>
-                                  {user.role && (
-                                    <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-400">
-                                      {user.role}
-                                    </span>
-                                  )}
-                                </div>
-                              ))
-                            ) : (
-                              // Fallback if not populated (show IDs)
-                              reportingTo.map((id: any, idx: number) => (
-                                <div key={idx} className="text-sm text-slate-600 dark:text-slate-400">
-                                  {typeof id === 'object' ? id._id || JSON.stringify(id) : id}
-                                </div>
-                              ))
+                                      {/* Card */}
+                                      <div
+                                        className={`rounded-2xl border ${cardBorder} bg-white/90 p-3 shadow-sm shadow-slate-900/5 dark:bg-slate-950/70`}
+                                      >
+                                        <div className="flex items-start justify-between gap-3">
+                                          <div className="space-y-1">
+                                            <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${pillBg}`}>
+                                              {label}
+                                            </span>
+                                            <div className="text-xs text-slate-500 dark:text-slate-400">
+                                              {when} • {actor}
+                                              {role}
+                                            </div>
+                                          </div>
+                                        </div>
+                                        {h.comments && (
+                                          <div className="mt-2 text-xs text-slate-700 dark:text-slate-200">
+                                            {h.comments}
+                                          </div>
+                                        )}
+                                        {h.details?.gross_salary && (
+                                          <div className="mt-2 flex items-baseline gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                                            <span>Gross Salary:</span>
+                                            <span className="font-mono">₹{Number(h.details.gross_salary).toLocaleString()}</span>
+                                          </div>
+                                        )}
+                                        {h.details?.action && !h.comments && (
+                                          <div className="mt-2 text-xs text-slate-500 dark:text-slate-400 italic">
+                                            {h.details.action}
+                                          </div>
+                                        )}
+                                        {Array.isArray(changes) && changes.length > 0 && (
+                                          <>
+                                            <ul className="mt-2 space-y-0.5 text-xs text-slate-600 dark:text-slate-300">
+                                              {changes.map((c: any, idx: number) => {
+                                                const fieldLabel = fieldLabelMap[c.field] ?? c.field;
+                                                return (
+                                                  <li key={`${c.field}-${idx}`} className="flex flex-wrap items-center gap-x-1 gap-y-0.5">
+                                                    <span className="font-semibold">{fieldLabel}</span>{' '}
+                                                    changed from{' '}
+                                                    <span className="font-mono text-slate-700 dark:text-slate-100">
+                                                      {formatChangeValue(c.previous, c.field)}
+                                                    </span>{' '}
+                                                    to{' '}
+                                                    <span className="font-mono text-slate-700 dark:text-slate-100">
+                                                      {formatChangeValue(c.current, c.field)}
+                                                    </span>
+                                                  </li>
+                                                );
+                                              })}
+                                            </ul>
+                                            <button
+                                              type="button"
+                                              onClick={() => setHistoryViewComplete({
+                                                eventLabel: label,
+                                                changes: changes.map((c: any) => ({
+                                                  field: c.field,
+                                                  fieldLabel: fieldLabelMap[c.field] ?? c.field,
+                                                  previous: c.previous,
+                                                  current: c.current,
+                                                })),
+                                              })}
+                                              className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100 dark:border-amber-600 dark:bg-amber-900/30 dark:text-amber-200 dark:hover:bg-amber-900/50"
+                                            >
+                                              View complete
+                                            </button>
+                                          </>
+                                        )}
+                                      </div>
+                                    </li>
+                                  );
+                                })}
+                              </ol>
                             )}
                           </div>
-                        );
-                      })()}
-                    </div>
+                        )}
+
+
+
+
+
+                        {/* Allowances & Deductions (profile view only) */}
+                        {employeeViewTab === 'profile' && (
+                          <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                            <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Allowances & Deductions</h3>
+
+                            {/* Allowances */}
+                            {(Array.isArray(viewingEmployee.employeeAllowances) && viewingEmployee.employeeAllowances.length > 0) ? (
+                              <div className="mb-6">
+                                <h4 className="mb-3 text-sm font-semibold text-green-700 dark:text-green-400">Allowances</h4>
+                                <div className="space-y-2">
+                                  {viewingEmployee.employeeAllowances.map((allowance: any, idx: number) => (
+                                    <div key={idx} className="flex items-center justify-between rounded-lg border border-green-200 bg-green-50/50 p-3 dark:border-green-800 dark:bg-green-900/20">
+                                      <div className="flex-1">
+                                        <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{allowance.name || '-'}</p>
+                                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                                          {allowance.type === 'percentage'
+                                            ? `${allowance.percentage}% of ${allowance.percentageBase || 'basic'}`
+                                            : 'Fixed Amount'}
+                                          {allowance.isOverride && (
+                                            <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                                              Override
+                                            </span>
+                                          )}
+                                        </p>
+                                      </div>
+                                      <p className="text-sm font-semibold text-green-700 dark:text-green-400">
+                                        {allowance.amount !== null && allowance.amount !== undefined
+                                          ? `₹${Number(allowance.amount).toLocaleString()}`
+                                          : '-'}
+                                      </p>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+                                <p className="text-sm text-slate-500 dark:text-slate-400">
+                                  No employee-level allowance overrides. Default allowances from Department/Global settings will be used during payroll calculation.
+                                </p>
+                              </div>
+                            )}
+
+                            {/* Deductions */}
+                            {(Array.isArray(viewingEmployee.employeeDeductions) && viewingEmployee.employeeDeductions.length > 0) ? (
+                              <div>
+                                <h4 className="mb-3 text-sm font-semibold text-red-700 dark:text-red-400">Deductions</h4>
+                                <div className="space-y-2">
+                                  {viewingEmployee.employeeDeductions.map((deduction: any, idx: number) => (
+                                    <div key={idx} className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50/50 p-3 dark:border-red-800 dark:bg-red-900/20">
+                                      <div className="flex-1">
+                                        <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{deduction.name || '-'}</p>
+                                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                                          {deduction.type === 'percentage'
+                                            ? `${deduction.percentage}% of ${deduction.percentageBase || 'basic'}`
+                                            : 'Fixed Amount'}
+                                          {deduction.isOverride && (
+                                            <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                                              Override
+                                            </span>
+                                          )}
+                                        </p>
+                                      </div>
+                                      <p className="text-sm font-semibold text-red-700 dark:text-red-400">
+                                        {deduction.amount !== null && deduction.amount !== undefined
+                                          ? `₹${Number(deduction.amount).toLocaleString()}`
+                                          : '-'}
+                                      </p>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+                                <p className="text-sm text-slate-500 dark:text-slate-400">
+                                  No employee-level deduction overrides. Default deductions from Department/Global settings will be used during payroll calculation.
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Left Date Information (profile view only) */}
+                        {employeeViewTab === 'profile' && viewingEmployee.leftDate && (
+                          <div className="rounded-2xl border border-orange-200 bg-orange-50/50 p-5 dark:border-orange-800 dark:bg-orange-900/20 mb-5">
+                            <h3 className="mb-4 text-lg font-semibold text-orange-900 dark:text-orange-100">Left Date Information</h3>
+                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                              <div>
+                                <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Left Date</label>
+                                <p className="mt-1 text-sm font-medium text-orange-900 dark:text-orange-100">
+                                  {new Date(viewingEmployee.leftDate).toLocaleDateString('en-US', {
+                                    year: 'numeric',
+                                    month: 'long',
+                                    day: 'numeric'
+                                  })}
+                                </p>
+                              </div>
+                              {viewingEmployee.leftReason && (
+                                <div>
+                                  <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Reason</label>
+                                  <p className="mt-1 text-sm font-medium text-orange-900 dark:text-orange-100">
+                                    {viewingEmployee.leftReason}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                            {/* Reactivate button moved to header; no button here */}
+                          </div>
+                        )}
+
+
+
+                        {/* Generic dynamic form groups (profile view only) */}
+                        {employeeViewTab === 'profile' && formSettings?.groups?.filter(g =>
+                          g.isEnabled &&
+                          !['basic_info', 'personal_info', 'contact_info', 'bank_details', 'reporting_authority', 'leave_info', 'leave_information'].includes(g.id) &&
+                          !g.isSystem
+                        )
+                          .sort((a, b) => (a.order || 0) - (b.order || 0))
+                          .map(group => (
+                            <div key={group.id} className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                              <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">{group.label}</h3>
+                              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                                {group.fields
+                                  ?.filter(f => f.isEnabled !== false)
+                                  .sort((a, b) => (a.order || 0) - (b.order || 0))
+                                  .map(field => {
+                                    const value = (viewingEmployee as any)[field.id] ?? viewingEmployee.dynamicFields?.[field.id];
+                                    return (
+                                      <div key={field.id}>
+                                        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{field.label}</label>
+                                        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                                          {value != null && value !== '' ? (
+                                            typeof value === 'object' ? JSON.stringify(value) : String(value)
+                                          ) : '-'}
+                                        </p>
+                                        {field.description && (
+                                          <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                                            {field.description}
+                                          </p>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                              </div>
+                            </div>
+                          ))}
+
+                        {/* Reporting Authority Section (profile view only) - Check both root and dynamicFields */}
+                        {employeeViewTab === 'profile' && (((viewingEmployee as any).reporting_to || (viewingEmployee as any).reporting_to_ || viewingEmployee.dynamicFields?.reporting_to || viewingEmployee.dynamicFields?.reporting_to_)) && (
+                          <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                            <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Reporting Authority</h3>
+                            {(() => {
+                              const reportingTo = (viewingEmployee as any).reporting_to || (viewingEmployee as any).reporting_to_ || viewingEmployee.dynamicFields?.reporting_to || viewingEmployee.dynamicFields?.reporting_to_;
+                              console.log('Displaying reporting_to:', reportingTo);
+
+                              if (!reportingTo || !Array.isArray(reportingTo) || reportingTo.length === 0) {
+                                return <p className="text-sm text-slate-500 dark:text-slate-400">No reporting managers assigned</p>;
+                              }
+
+                              const isPopulated = reportingTo[0] && typeof reportingTo[0] === 'object' && reportingTo[0].name;
+                              console.log('Is populated:', isPopulated, 'First item:', reportingTo[0]);
+
+                              return (
+                                <div className="space-y-2">
+                                  {isPopulated ? (
+                                    reportingTo.map((user: any, idx: number) => (
+                                      <div key={idx} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-800">
+                                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                                          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                          </svg>
+                                        </div>
+                                        <div className="flex-1">
+                                          <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{user.name || 'Unknown'}</p>
+                                          <p className="text-xs text-slate-500 dark:text-slate-400">{user.email || ''}</p>
+                                        </div>
+                                        {user.role && (
+                                          <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                                            {user.role}
+                                          </span>
+                                        )}
+                                      </div>
+                                    ))
+                                  ) : (
+                                    // Fallback if not populated (show IDs)
+                                    reportingTo.map((id: any, idx: number) => (
+                                      <div key={idx} className="text-sm text-slate-600 dark:text-slate-400">
+                                        {typeof id === 'object' ? id._id || JSON.stringify(id) : id}
+                                      </div>
+                                    ))
+                                  )}
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        )}
+                      </>
                   )}
 
-
-                </div>
-              </div>
-              {/* Certificate image/document popup */}
-              {certificatePreviewUrl && (
-                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" onClick={() => setCertificatePreviewUrl(null)}>
-                  <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
-                  <div className="relative z-10 max-h-[90vh] max-w-[90vw] rounded-2xl bg-white shadow-2xl dark:bg-slate-900" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex items-center justify-end gap-2 border-b border-slate-200 p-2 dark:border-slate-700">
-                      <a href={certificatePreviewUrl} target="_blank" rel="noopener noreferrer" className="rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">
-                        Open in new tab
-                      </a>
-                      <button type="button" onClick={() => setCertificatePreviewUrl(null)} className="rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">
-                        Close
-                      </button>
-                    </div>
-                    <div className="p-2">
-                      {certificatePreviewUrl.toLowerCase().endsWith('.pdf') ? (
-                        <iframe src={certificatePreviewUrl} title="Certificate" className="h-[80vh] w-[85vw] max-w-4xl rounded-lg border-0" />
-                      ) : (
-                        <img src={certificatePreviewUrl} alt="Certificate" className="max-h-[80vh] max-w-full rounded-lg object-contain" />
+                      {/* Certificate image/document popup */}
+                      {certificatePreviewUrl && (
+                        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" onClick={() => setCertificatePreviewUrl(null)}>
+                          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+                          <div className="relative z-10 max-h-[90vh] max-w-[90vw] rounded-2xl bg-white shadow-2xl dark:bg-slate-900" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center justify-end gap-2 border-b border-slate-200 p-2 dark:border-slate-700">
+                              <a href={certificatePreviewUrl} target="_blank" rel="noopener noreferrer" className="rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">
+                                Open in new tab
+                              </a>
+                              <button type="button" onClick={() => setCertificatePreviewUrl(null)} className="rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">
+                                Close
+                              </button>
+                            </div>
+                            <div className="p-2">
+                              {certificatePreviewUrl.toLowerCase().endsWith('.pdf') ? (
+                                <iframe src={certificatePreviewUrl} title="Certificate" className="h-[80vh] w-[85vw] max-w-4xl rounded-lg border-0" />
+                              ) : (
+                                <img src={certificatePreviewUrl} alt="Certificate" className="max-h-[80vh] max-w-full rounded-lg object-contain" />
+                              )}
+                            </div>
+                          </div>
+                        </div>
                       )}
                     </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          )
+                  )
         }
 
-        {/* History – View complete modal (all changes for one entry, full data) */}
-        {historyViewComplete && (
-          <div className="fixed inset-0 z-[55] flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setHistoryViewComplete(null)} />
-            <div className="relative z-10 flex max-h-[85vh] w-full max-w-4xl flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900" onClick={(e) => e.stopPropagation()}>
-              <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-                  {historyViewComplete.eventLabel} – complete data
-                </h3>
-                <button
-                  type="button"
-                  onClick={() => setHistoryViewComplete(null)}
-                  className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
-                >
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                </button>
-              </div>
-              <div className="overflow-auto p-4 space-y-4">
-                {historyViewComplete.changes.map((c, idx) => (
-                  <div key={`${c.field}-${idx}`} className="rounded-xl border border-slate-200 bg-slate-50/50 p-3 dark:border-slate-700 dark:bg-slate-800/50">
-                    <p className="mb-2 text-sm font-semibold text-slate-800 dark:text-slate-200">{c.fieldLabel}</p>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Previous</p>
-                        <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-white p-2 text-xs text-slate-800 dark:bg-slate-900 dark:text-slate-200">
-                          {typeof c.previous === 'object' && c.previous !== null
-                            ? JSON.stringify(c.previous, null, 2)
-                            : String(c.previous ?? '—')}
-                        </pre>
+                  {/* History – View complete modal (all changes for one entry, full data) */}
+                  {
+                    historyViewComplete && (
+                      <div className="fixed inset-0 z-[55] flex items-center justify-center p-4">
+                        <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setHistoryViewComplete(null)} />
+                        <div className="relative z-10 flex max-h-[85vh] w-full max-w-4xl flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+                            <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                              {historyViewComplete.eventLabel} – complete data
+                            </h3>
+                            <button
+                              type="button"
+                              onClick={() => setHistoryViewComplete(null)}
+                              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
+                            >
+                              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                          </div>
+                          <div className="overflow-auto p-4 space-y-4">
+                            {historyViewComplete.changes.map((c, idx) => (
+                              <div key={`${c.field}-${idx}`} className="rounded-xl border border-slate-200 bg-slate-50/50 p-3 dark:border-slate-700 dark:bg-slate-800/50">
+                                <p className="mb-2 text-sm font-semibold text-slate-800 dark:text-slate-200">{c.fieldLabel}</p>
+                                <div className="grid grid-cols-2 gap-3">
+                                  <div>
+                                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Previous</p>
+                                    <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-white p-2 text-xs text-slate-800 dark:bg-slate-900 dark:text-slate-200">
+                                      {typeof c.previous === 'object' && c.previous !== null
+                                        ? JSON.stringify(c.previous, null, 2)
+                                        : String(c.previous ?? '—')}
+                                    </pre>
+                                  </div>
+                                  <div>
+                                    <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Current</p>
+                                    <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-white p-2 text-xs text-slate-800 dark:bg-slate-900 dark:text-slate-200">
+                                      {typeof c.current === 'object' && c.current !== null
+                                        ? JSON.stringify(c.current, null, 2)
+                                        : String(c.current ?? '—')}
+                                    </pre>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Current</p>
-                        <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-white p-2 text-xs text-slate-800 dark:bg-slate-900 dark:text-slate-200">
-                          {typeof c.current === 'object' && c.current !== null
-                            ? JSON.stringify(c.current, null, 2)
-                            : String(c.current ?? '—')}
-                        </pre>
+                    )
+                  }
+
+                  {/* Left Date Modal */}
+                  {
+                    showLeftDateModal && selectedEmployeeForLeftDate && (
+                      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowLeftDateModal(false)} />
+                        <div className="relative z-50 w-full max-w-md rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950/95">
+                          <div className="mb-6 flex items-center justify-between">
+                            <div>
+                              <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
+                                Resignation
+                              </h2>
+                              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                                {selectedEmployeeForLeftDate.employee_name} ({selectedEmployeeForLeftDate.emp_no}) — Enter last working date and remarks. If resignation workflow is enabled in settings, the request will go through approval.
+                              </p>
+                            </div>
+                            <button
+                              onClick={() => {
+                                setShowLeftDateModal(false);
+                                setSelectedEmployeeForLeftDate(null);
+                                setLeftDateForm({ leftDate: '', leftReason: '' });
+                              }}
+                              className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:bg-slate-900"
+                            >
+                              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </div>
+
+                          {error && (
+                            <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+                              {error}
+                            </div>
+                          )}
+
+                          {success && (
+                            <div className="mb-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400">
+                              {success}
+                            </div>
+                          )}
+
+                          <form onSubmit={handleSubmitLeftDate} className="space-y-4">
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                Last working date <span className="text-red-500">*</span>
+                              </label>
+                              <input
+                                type="date"
+                                required
+                                readOnly
+                                value={leftDateForm.leftDate}
+                                min={(() => {
+                                  const d = new Date();
+                                  d.setDate(d.getDate() + resignationNoticePeriodDays);
+                                  return d.toISOString().split('T')[0];
+                                })()}
+                                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-300 cursor-not-allowed"
+                              />
+                              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                This date will be recorded as the employee&apos;s last day in office. They will be included in pay register until this month, then excluded from future months.
+                              </p>
+                              {resignationNoticePeriodDays > 0 && (
+                                <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                                  Notice period: {resignationNoticePeriodDays} day(s). Last working date must be at least {resignationNoticePeriodDays} days from today.
+                                </p>
+                              )}
+                            </div>
+
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                Remarks for resignation (Optional)
+                              </label>
+                              <textarea
+                                value={leftDateForm.leftReason}
+                                onChange={(e) => setLeftDateForm({ ...leftDateForm, leftReason: e.target.value })}
+                                rows={3}
+                                placeholder="Enter remarks for resignation..."
+                                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                              />
+                            </div>
+
+                            <div className="flex justify-end gap-3 pt-4">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setShowLeftDateModal(false);
+                                  setSelectedEmployeeForLeftDate(null);
+                                  setLeftDateForm({ leftDate: '', leftReason: '' });
+                                }}
+                                className="rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="submit"
+                                className="rounded-xl bg-gradient-to-r from-red-500 to-orange-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-red-500/30 transition-all hover:from-red-600 hover:to-orange-600"
+                              >
+                                Submit Resignation
+                              </button>
+                            </div>
+                          </form>
+                        </div>
+                      </div>
+                    )
+                  }
+                </div >
+
+                {allowEmployeeBulkProcess && showEmployeeUpdateModal && (
+                  <EmployeeUpdateModal
+                    onClose={() => setShowEmployeeUpdateModal(false)}
+                    onSuccess={() => {
+                      setShowEmployeeUpdateModal(false);
+                      loadEmployees(currentPage);
+                    }}
+                  />
+                )}
+
+                {
+                  allowEmployeeBulkProcess && showBulkAllowancesDeductions && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+                      <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl dark:bg-slate-800">
+                        <h3 className="mb-4 text-xl font-bold text-slate-800 dark:text-white">Bulk Allowances & Deductions Update</h3>
+                        <p className="mb-6 text-slate-600 dark:text-slate-400">
+                          Download the template with current values, modify them, and upload to update.
+                        </p>
+
+                        <div className="space-y-4">
+                          <button
+                            onClick={async () => {
+                              try {
+                                const blob = await api.downloadAllowanceDeductionTemplate();
+                                const url = window.URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = 'AD_Template.xlsx';
+                                document.body.appendChild(a);
+                                a.click();
+                                window.URL.revokeObjectURL(url);
+                                document.body.removeChild(a);
+                              } catch (e) {
+                                setError('Failed to download template');
+                              }
+                            }}
+                            className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-purple-200 bg-purple-50 p-4 text-purple-700 hover:bg-purple-100 dark:border-purple-800 dark:bg-purple-900/20 dark:text-purple-300"
+                          >
+                            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                            Download Current Template
+                          </button>
+
+                          <div className="relative">
+                            <input
+                              type="file"
+                              accept=".xlsx,.xls"
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+
+                                try {
+                                  setLoading(true);
+                                  const res = await api.bulkUpdateAllowancesDeductions(file);
+                                  if (res.success) {
+                                    setSuccess(res.message || 'Updated successfully');
+                                    setShowBulkAllowancesDeductions(false);
+                                    loadEmployees(currentPage);
+                                  } else {
+                                    setError(res.message || 'Upload failed');
+                                  }
+                                } catch (err: any) {
+                                  setError(err.message || 'Upload failed');
+                                } finally {
+                                  setLoading(false);
+                                }
+                              }}
+                              className="hidden"
+                              id="ad-bulk-upload"
+                            />
+                            <label
+                              htmlFor="ad-bulk-upload"
+                              className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-purple-600 p-4 font-medium text-white hover:bg-purple-700"
+                            >
+                              <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                              </svg>
+                              Upload Updated Template
+                            </label>
+                          </div>
+                        </div>
+
+                        <div className="mt-6 flex justify-end">
+                          <button
+                            onClick={() => setShowBulkAllowancesDeductions(false)}
+                            className="rounded-lg px-4 py-2 text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700"
+                          >
+                            Cancel
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
+                  )
+                }
 
-        {/* Left Date Modal */}
-        {
-          showLeftDateModal && selectedEmployeeForLeftDate && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowLeftDateModal(false)} />
-              <div className="relative z-50 w-full max-w-md rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950/95">
-                <div className="mb-6 flex items-center justify-between">
-                  <div>
-                    <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
-                      Resignation
-                    </h2>
-                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                      {selectedEmployeeForLeftDate.employee_name} ({selectedEmployeeForLeftDate.emp_no}) — Enter last working date and remarks. If resignation workflow is enabled in settings, the request will go through approval.
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setShowLeftDateModal(false);
-                      setSelectedEmployeeForLeftDate(null);
-                      setLeftDateForm({ leftDate: '', leftReason: '' });
-                    }}
-                    className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:bg-slate-900"
-                  >
-                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
+                {/* Comparison Modal */}
+                {
+                  selectedUpdateRequest && (
+                    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+                      <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setSelectedUpdateRequest(null)} />
+                      <div className="relative w-full max-w-2xl overflow-hidden rounded-3xl bg-white shadow-2xl dark:bg-slate-950">
+                        {/* Modal Header */}
+                        <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/50 p-6 dark:border-slate-800 dark:bg-slate-900/50">
+                          <div className="flex items-center gap-4">
+                            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-500 text-white shadow-lg shadow-indigo-500/20">
+                              <Edit2 className="h-6 w-6" />
+                            </div>
+                            <div>
+                              <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100">Review Update Request</h3>
+                              <p className="text-sm text-slate-500">From {selectedUpdateRequest.employeeId?.employee_name} ({selectedUpdateRequest.emp_no})</p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => setSelectedUpdateRequest(null)}
+                            className="rounded-xl p-2 text-slate-400 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
+                          >
+                            <Plus className="h-6 w-6 rotate-45" />
+                          </button>
+                        </div>
 
-                {error && (
-                  <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
-                    {error}
-                  </div>
-                )}
+                        {/* Modal Body */}
+                        <div className="max-h-[60vh] overflow-y-auto p-6">
+                          <div className="space-y-4">
+                            <div className="grid grid-cols-2 gap-4 rounded-xl bg-slate-50 p-3 text-xs font-bold uppercase tracking-wider text-slate-500 dark:bg-slate-900">
+                              <span>Current Value</span>
+                              <span>Requested Change</span>
+                            </div>
+                            {Object.entries(selectedUpdateRequest.requestedChanges).map(([field, newValue]) => {
+                              const oldValue = selectedUpdateRequest.previousValues?.[field] ??
+                                (selectedUpdateRequest.employeeId as any)[field] ??
+                                (selectedUpdateRequest.employeeId.dynamicFields?.[field]);
 
-                {success && (
-                  <div className="mb-4 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400">
-                    {success}
-                  </div>
-                )}
+                              return (
+                                <div key={field} className="group rounded-2xl border border-slate-100 p-4 transition-all hover:border-indigo-100 hover:bg-indigo-50/20 dark:border-slate-800 dark:hover:bg-indigo-900/10">
+                                  <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+                                    {getFieldLabel(field, formSettings)}
+                                  </label>
+                                  <div className="grid grid-cols-2 gap-8">
+                                    <div className="text-sm text-slate-500 line-through decoration-red-300/50">
+                                      {String(oldValue || '—')}
+                                    </div>
+                                    <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                                      {String(newValue || '—')}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
 
-                <form onSubmit={handleSubmitLeftDate} className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      Last working date <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="date"
-                      required
-                      readOnly
-                      value={leftDateForm.leftDate}
-                      min={(() => {
-                        const d = new Date();
-                        d.setDate(d.getDate() + resignationNoticePeriodDays);
-                        return d.toISOString().split('T')[0];
-                      })()}
-                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-300 cursor-not-allowed"
-                    />
-                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                      This date will be recorded as the employee&apos;s last day in office. They will be included in pay register until this month, then excluded from future months.
-                    </p>
-                    {resignationNoticePeriodDays > 0 && (
-                      <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-                        Notice period: {resignationNoticePeriodDays} day(s). Last working date must be at least {resignationNoticePeriodDays} days from today.
-                      </p>
-                    )}
-                  </div>
+                          {selectedUpdateRequest.status === 'pending' && (
+                            <div className="mt-8 border-t border-slate-100 pt-6 dark:border-slate-800">
+                              <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">
+                                Rejection Comments (Optional)
+                              </label>
+                              <textarea
+                                value={updateRequestRejectComments}
+                                onChange={(e) => setUpdateRequestRejectComments(e.target.value)}
+                                placeholder="Enter reason if rejecting..."
+                                className="w-full rounded-2xl border border-slate-200 bg-white p-4 text-sm transition-all focus:border-indigo-400 focus:outline-none focus:ring-4 focus:ring-indigo-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:ring-indigo-900/20"
+                                rows={3}
+                              />
+                            </div>
+                          )}
+                        </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                      Remarks for resignation (Optional)
-                    </label>
-                    <textarea
-                      value={leftDateForm.leftReason}
-                      onChange={(e) => setLeftDateForm({ ...leftDateForm, leftReason: e.target.value })}
-                      rows={3}
-                      placeholder="Enter remarks for resignation..."
-                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    />
-                  </div>
-
-                  <div className="flex justify-end gap-3 pt-4">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowLeftDateModal(false);
-                        setSelectedEmployeeForLeftDate(null);
-                        setLeftDateForm({ leftDate: '', leftReason: '' });
-                      }}
-                      className="rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      className="rounded-xl bg-gradient-to-r from-red-500 to-orange-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-red-500/30 transition-all hover:from-red-600 hover:to-orange-600"
-                    >
-                      Submit Resignation
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          )
-        }
-      </div>
-
-      {allowEmployeeBulkProcess && showEmployeeUpdateModal && (
-        <EmployeeUpdateModal
-          onClose={() => setShowEmployeeUpdateModal(false)}
-          onSuccess={() => {
-            setShowEmployeeUpdateModal(false);
-            loadEmployees(currentPage);
-          }}
-        />
-      )}
-
-      {allowEmployeeBulkProcess && showBulkAllowancesDeductions && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl dark:bg-slate-800">
-            <h3 className="mb-4 text-xl font-bold text-slate-800 dark:text-white">Bulk Allowances & Deductions Update</h3>
-            <p className="mb-6 text-slate-600 dark:text-slate-400">
-              Download the template with current values, modify them, and upload to update.
-            </p>
-
-            <div className="space-y-4">
-              <button
-                onClick={async () => {
-                  try {
-                    const blob = await api.downloadAllowanceDeductionTemplate();
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = 'AD_Template.xlsx';
-                    document.body.appendChild(a);
-                    a.click();
-                    window.URL.revokeObjectURL(url);
-                    document.body.removeChild(a);
-                  } catch (e) {
-                    setError('Failed to download template');
-                  }
-                }}
-                className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-purple-200 bg-purple-50 p-4 text-purple-700 hover:bg-purple-100 dark:border-purple-800 dark:bg-purple-900/20 dark:text-purple-300"
-              >
-                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-                Download Current Template
-              </button>
-
-              <div className="relative">
-                <input
-                  type="file"
-                  accept=".xlsx,.xls"
-                  onChange={async (e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-
-                    try {
-                      setLoading(true);
-                      const res = await api.bulkUpdateAllowancesDeductions(file);
-                      if (res.success) {
-                        setSuccess(res.message || 'Updated successfully');
-                        setShowBulkAllowancesDeductions(false);
-                        loadEmployees(currentPage);
-                      } else {
-                        setError(res.message || 'Upload failed');
-                      }
-                    } catch (err: any) {
-                      setError(err.message || 'Upload failed');
-                    } finally {
-                      setLoading(false);
-                    }
-                  }}
-                  className="hidden"
-                  id="ad-bulk-upload"
-                />
-                <label
-                  htmlFor="ad-bulk-upload"
-                  className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-purple-600 p-4 font-medium text-white hover:bg-purple-700"
-                >
-                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                  </svg>
-                  Upload Updated Template
-                </label>
-              </div>
-            </div>
-
-            <div className="mt-6 flex justify-end">
-              <button
-                onClick={() => setShowBulkAllowancesDeductions(false)}
-                className="rounded-lg px-4 py-2 text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-700"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div >
-  );
+                        {/* Modal Footer */}
+                        <div className="flex items-center justify-end gap-3 bg-slate-50/50 p-6 dark:bg-slate-900/50">
+                          <button
+                            onClick={() => setSelectedUpdateRequest(null)}
+                            className="rounded-xl px-6 py-2.5 text-sm font-semibold text-slate-600 transition-all hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+                          >
+                            Close
+                          </button>
+                          {selectedUpdateRequest.status === 'pending' && (
+                            <>
+                              <button
+                                onClick={() => handleRejectUpdateRequest(selectedUpdateRequest._id)}
+                                disabled={processingUpdateRequest}
+                                className="rounded-xl bg-red-50 px-6 py-2.5 text-sm font-bold text-red-600 transition-all hover:bg-red-100 disabled:opacity-50 dark:bg-red-900/20"
+                              >
+                                Reject
+                              </button>
+                              <button
+                                onClick={() => handleApproveUpdateRequest(selectedUpdateRequest._id)}
+                                disabled={processingUpdateRequest}
+                                className="group relative flex items-center gap-2 rounded-xl bg-indigo-600 px-8 py-2.5 text-sm font-bold text-white shadow-lg shadow-indigo-600/20 transition-all hover:bg-indigo-700 hover:shadow-indigo-600/40 disabled:opacity-50"
+                              >
+                                {processingUpdateRequest ? (
+                                  <Spinner className="h-4 w-4 border-white" />
+                                ) : (
+                                  <ShieldCheck className="h-4 w-4" />
+                                )}
+                                Approve Changes
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                }
+              </div >
+              );
 }
