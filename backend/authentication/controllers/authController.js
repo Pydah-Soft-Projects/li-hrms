@@ -435,6 +435,7 @@ exports.ssoLogin = async (req, res) => {
           featureControl: userType === 'user' ? user.featureControl : undefined,
           dataScope: userType === 'user' ? user.dataScope : 'own',
           divisionMapping: userType === 'user' ? user.divisionMapping : undefined,
+          loginMethod: 'sso',
         },
         workspaces,
         activeWorkspace,
