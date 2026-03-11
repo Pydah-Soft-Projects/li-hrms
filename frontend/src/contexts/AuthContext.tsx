@@ -51,8 +51,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             localStorage.removeItem('user'); // Ensure local storage user is gone
 
             // Redirect to login page only if not already there
-            if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
-                window.location.href = '/login';
+            if (typeof window !== 'undefined') {
+                const loadedUser = localStorage.getItem('user');
+                const parsedUser = loadedUser ? JSON.parse(loadedUser) : null;
+                const isSSO = parsedUser?.loginMethod === 'sso';
+                const crmUrl = process.env.NEXT_PUBLIC_CRM_URL;
+
+                if (isSSO && crmUrl) {
+                    window.location.href = crmUrl;
+                } else if (window.location.pathname !== '/login') {
+                    window.location.href = '/login';
+                }
             }
         };
 

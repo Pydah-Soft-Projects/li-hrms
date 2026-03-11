@@ -13,6 +13,7 @@ export interface User {
   employeeRef?: string;
   emp_no?: string;
   featureControl?: string[];
+  loginMethod?: string;
 }
 
 export const auth = {
