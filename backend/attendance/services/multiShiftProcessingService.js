@@ -286,8 +286,9 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
             }
 
             // 2. Initial Pair Detection (Closest next punch)
-            // 26h window for overnight spans (e.g. 9 AM Day1 → 9 AM Day2 = 24h; +2h margin)
-            const MAX_WINDOW_MS = 26 * 60 * 60 * 1000;
+            // 36h window covers: 24hr shifts (9AM Day1→9AM Day2 = 24h), 9AM-9PM/9PM-9AM split
+            // spans up to 36h from first IN. This must match the spec requirement.
+            const MAX_WINDOW_MS = 36 * 60 * 60 * 1000;
             let nextOut = effectiveOutOverride && i === 0
                 ? effectiveOutOverride
                 : allOutsFull.find(p => {
@@ -316,8 +317,19 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                     if (!firstShift) {
                         // No first shift match - fall through to normal assignment
                     } else {
-                        const firstEndDate = timeStringToDate(firstShift.endTime, date, timeToMinutes(firstShift.endTime) < timeToMinutes(firstShift.startTime));
+                        // Detect 24hr shift: startTime === endTime OR shift duration >= 24h
+                        // In both cases end is on the NEXT day relative to IN time
+                        const is24hrShift = (
+                            firstShift.startTime === firstShift.endTime ||
+                            (firstShift.duration != null && firstShift.duration >= 24)
+                        );
+                        const firstShiftIsOvernight = is24hrShift
+                            ? true  // 24hr shift always ends next day
+                            : timeToMinutes(firstShift.endTime) < timeToMinutes(firstShift.startTime);
+                        const firstEndDate = timeStringToDate(firstShift.endTime, date, firstShiftIsOvernight);
                         const gapHours = (outTime.getTime() - firstEndDate.getTime()) / (60 * 60 * 1000);
+
+                        console.log(`[MultiShift] firstShift=${firstShift.name}, is24hr=${is24hrShift}, firstEndDate=${firstEndDate.toISOString()}, gapHours=${gapHours.toFixed(2)}`);
 
                         // First segment: full rule - duration >= threshold, OUT > shift1 end, gap > 3h
                         const fullSplitHolds = outTime > firstEndDate && gapHours > splitMinGapHours;
@@ -343,7 +355,15 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
                                 if (!nextShift) break;
 
                                 const segDateStr = formatDate(segmentStart);
-                                const nextEndDate = timeStringToDate(nextShift.endTime, segDateStr, timeToMinutes(nextShift.endTime) < timeToMinutes(nextShift.startTime));
+                                // Detect 24hr shift: startTime === endTime OR shift duration >= 24h
+                                const isNext24hrShift = (
+                                    nextShift.startTime === nextShift.endTime ||
+                                    (nextShift.duration != null && nextShift.duration >= 24)
+                                );
+                                const nextShiftIsOvernight = isNext24hrShift
+                                    ? true
+                                    : timeToMinutes(nextShift.endTime) < timeToMinutes(nextShift.startTime);
+                                const nextEndDate = timeStringToDate(nextShift.endTime, segDateStr, nextShiftIsOvernight);
                                 const nextGapHours = (remainderOut.getTime() - nextEndDate.getTime()) / (60 * 60 * 1000);
 
                                 const halfDayHours = (nextShift.duration || 8) / 2;
@@ -795,12 +815,49 @@ async function processMultiShiftBatch(logsByEmployee, generalConfig) {
                 logsByDate[date].push(log);
             }
 
+            // Cross-day OUT injection: for overnight/24hr shifts, the OUT punch on date+1
+            // must be available when processing date. Without this, allOutsFull won't contain
+            // the next-day OUT and the shift stays 'incomplete'.
+            // Logic: for each date, also attach OUT punches from the next calendar date.
+            const allDates = Object.keys(logsByDate).sort();
+            for (const date of allDates) {
+                // Build next date string
+                const [y, m, d] = date.split('-').map(Number);
+                const nextDt = new Date(Date.UTC(y, m - 1, d + 1));
+                const nextDateStr = `${nextDt.getUTCFullYear()}-${String(nextDt.getUTCMonth() + 1).padStart(2, '0')}-${String(nextDt.getUTCDate()).padStart(2, '0')}`;
+                const nextDayLogs = logsByDate[nextDateStr];
+                if (nextDayLogs && nextDayLogs.length > 0) {
+                    const nextDayOuts = nextDayLogs.filter(l => l.type === 'OUT' || l.punch_state === 1 || l.punch_state === '1');
+                    if (nextDayOuts.length > 0) {
+                        // Only inject OUTs within 36h of earliest IN on current date
+                        const currentIns = logsByDate[date].filter(l => l.type === 'IN' || l.punch_state === 0 || l.punch_state === '0');
+                        const earliestIn = currentIns.length > 0
+                            ? new Date(Math.min(...currentIns.map(l => new Date(l.timestamp).getTime())))
+                            : null;
+                        const MAX_CROSS_DAY_MS = 36 * 60 * 60 * 1000;
+                        const eligibleOuts = earliestIn
+                            ? nextDayOuts.filter(l => {
+                                const diff = new Date(l.timestamp).getTime() - earliestIn.getTime();
+                                return diff > 0 && diff <= MAX_CROSS_DAY_MS;
+                            })
+                            : nextDayOuts;
+                        if (eligibleOuts.length > 0) {
+                            // Avoid duplicates
+                            const existingIds = new Set(logsByDate[date].map(l => String(l._id || l.id || l.timestamp)));
+                            const toAdd = eligibleOuts.filter(l => !existingIds.has(String(l._id || l.id || l.timestamp)));
+                            logsByDate[date] = [...logsByDate[date], ...toAdd];
+                            console.log(`[MultiShift-Batch] Injected ${toAdd.length} next-day OUT(s) from ${nextDateStr} into ${date} for ${employeeNumber}`);
+                        }
+                    }
+                }
+            }
+
             // Process each date
             for (const [date, dateLogs] of Object.entries(logsByDate)) {
                 const result = await processMultiShiftAttendance(
                     employeeNumber,
                     date,
-                    logs, // Pass all logs for context
+                    dateLogs, // Pass enriched logs (includes cross-day OUTs)
                     generalConfig
                 );
 
