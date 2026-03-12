@@ -401,13 +401,14 @@ export default function DynamicEmployeeForm({
               type="number"
               value={value || ''}
               onChange={(e) => handleFieldChange(actualFieldId, parseFloat(e.target.value) || 0)}
+              onWheel={(e) => e.currentTarget.blur()}
               placeholder={field.placeholder}
               required={field.isRequired}
               min={field.validation?.min}
               max={field.validation?.max}
               step={field.id === 'proposedSalary' ? '0.01' : '1'}
               disabled={isViewMode}
-              className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
+              className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 no-spinner ${error ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
                 }`}
             />
             {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
@@ -545,12 +546,13 @@ export default function DynamicEmployeeForm({
                                 const newItem = { ...item, [nestedField.id]: parseFloat(e.target.value) || 0 };
                                 handleArrayItemChange(field.id, index, newItem);
                               }}
+                              onWheel={(e) => e.currentTarget.blur()}
                               placeholder={nestedField.placeholder}
                               required={nestedField.isRequired}
                               min={nestedField.validation?.min}
                               max={nestedField.validation?.max}
                               disabled={isViewMode}
-                              className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${nestedError ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
+                              className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 no-spinner ${nestedError ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
                                 }`}
                             />
                           ) : nestedField.type === 'select' ? (
@@ -586,9 +588,10 @@ export default function DynamicEmployeeForm({
                       const newValue = field.itemType === 'number' ? parseFloat(e.target.value) || 0 : e.target.value;
                       handleArrayItemChange(field.id, index, newValue);
                     }}
+                    onWheel={(e) => field.itemType === 'number' && e.currentTarget.blur()}
                     placeholder={field.placeholder}
                     disabled={isViewMode}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    className={`w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${field.itemType === 'number' ? 'no-spinner' : ''}`}
                   />
                 )}
               </div>
@@ -769,12 +772,13 @@ export default function DynamicEmployeeForm({
                               [nestedField.id]: parseFloat(e.target.value) || 0,
                             });
                           }}
+                          onWheel={(e) => e.currentTarget.blur()}
                           placeholder={nestedField.placeholder}
                           required={nestedField.isRequired}
                           min={nestedField.validation?.min}
                           max={nestedField.validation?.max}
                           disabled={isViewMode}
-                          className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${nestedError ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
+                          className={`w-full rounded-xl border px-4 py-2.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 no-spinner ${nestedError ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'
                             }`}
                         />
                       ) : nestedField.type === 'date' ? (

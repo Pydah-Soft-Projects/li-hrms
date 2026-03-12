@@ -3778,8 +3778,8 @@ export default function EmployeesPage() {
                                       min="0"
                                       step="0.01"
                                       value={current === null ? '' : current}
-                                      onChange={(e) => handleOverrideChange('allowance', item, e.target.value)}
-                                      className="w-24 rounded border border-green-200 bg-white px-2 py-1 text-[11px] text-green-900 focus:border-green-400 focus:outline-none dark:border-green-800 dark:bg-green-950 dark:text-green-100"
+                                      onWheel={(e) => e.currentTarget.blur()}
+                                      className="w-24 rounded border border-green-200 bg-white px-2 py-1 text-[11px] text-green-900 focus:border-green-400 focus:outline-none dark:border-green-800 dark:bg-green-950 dark:text-green-100 no-spinner"
                                     />
                                   </div>
                                 </div>
@@ -3844,8 +3844,8 @@ export default function EmployeesPage() {
                                       min="0"
                                       step="0.01"
                                       value={current === null ? '' : current}
-                                      onChange={(e) => handleOverrideChange('deduction', item, e.target.value)}
-                                      className="w-24 rounded border border-red-200 bg-white px-2 py-1 text-[11px] text-red-900 focus:border-red-400 focus:outline-none dark:border-red-800 dark:bg-green-950 dark:text-green-100"
+                                      onWheel={(e) => e.currentTarget.blur()}
+                                      className="w-24 rounded border border-red-200 bg-white px-2 py-1 text-[11px] text-red-900 focus:border-red-400 focus:outline-none dark:border-red-800 dark:bg-green-950 dark:text-green-100 no-spinner"
                                     />
                                   </div>
                                 </div>
@@ -4150,10 +4150,11 @@ export default function EmployeesPage() {
                           type="number"
                           value={approvalData.approvedSalary || ''}
                           onChange={(e) => setApprovalData({ ...approvalData, approvedSalary: Number(e.target.value) })}
+                          onWheel={(e) => e.currentTarget.blur()}
                           required
                           min="0"
                           step="0.01"
-                          className="w-full rounded-xl border-2 border-green-400 bg-white px-4 py-2.5 text-lg font-semibold transition-all focus:border-green-500 focus:outline-none focus:ring-2 focus:ring-green-500/20 dark:border-green-600 dark:bg-slate-900 dark:text-slate-100"
+                          className="w-full rounded-xl border-2 border-green-400 bg-white px-4 py-2.5 text-lg font-semibold transition-all focus:border-green-500 focus:outline-none focus:ring-2 focus:ring-green-500/20 dark:border-green-600 dark:bg-slate-900 dark:text-slate-100 no-spinner"
                           placeholder="Enter approved salary"
                         />
                         {approvalData.approvedSalary !== selectedApplication.proposedSalary && (
@@ -4172,9 +4173,10 @@ export default function EmployeesPage() {
                           type="number"
                           value={(approvalData as any).second_salary || ''}
                           onChange={(e) => setApprovalData({ ...approvalData, second_salary: Number(e.target.value) } as any)}
+                          onWheel={(e) => e.currentTarget.blur()}
                           min="0"
                           step="0.01"
-                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold transition-all focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold transition-all focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 no-spinner"
                           placeholder="Enter second salary if any"
                         />
                         <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
@@ -4283,7 +4285,8 @@ export default function EmployeesPage() {
                                       step="0.01"
                                       value={current === null ? '' : current}
                                       onChange={(e) => handleApprovalOverrideChange('allowance', item, e.target.value)}
-                                      className="w-24 rounded border border-green-200 bg-white px-2 py-1 text-[11px] text-green-900 focus:border-green-400 focus:outline-none dark:border-green-800 dark:bg-green-950 dark:text-green-100"
+                                      onWheel={(e) => e.currentTarget.blur()}
+                                      className="w-24 rounded border border-green-200 bg-white px-2 py-1 text-[11px] text-green-900 focus:border-green-400 focus:outline-none dark:border-green-800 dark:bg-green-950 dark:text-green-100 no-spinner"
                                     />
                                   </div>
                                 </div>
@@ -4349,7 +4352,8 @@ export default function EmployeesPage() {
                                       step="0.01"
                                       value={current === null ? '' : current}
                                       onChange={(e) => handleApprovalOverrideChange('deduction', item, e.target.value)}
-                                      className="w-24 rounded border border-red-200 bg-white px-2 py-1 text-[11px] text-red-900 focus:border-red-400 focus:outline-none dark:border-red-800 dark:bg-green-950 dark:text-green-100"
+                                      onWheel={(e) => e.currentTarget.blur()}
+                                      className="w-24 rounded border border-red-200 bg-white px-2 py-1 text-[11px] text-red-900 focus:border-red-400 focus:outline-none dark:border-red-800 dark:bg-green-950 dark:text-green-100 no-spinner"
                                     />
                                   </div>
                                 </div>
@@ -4593,9 +4597,10 @@ export default function EmployeesPage() {
                         name="paidLeaves"
                         value={formData.paidLeaves ?? 0}
                         onChange={handleInputChange}
+                        onWheel={(e) => e.currentTarget.blur()}
                         min="0"
                         step="0.5"
-                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 no-spinner"
                         placeholder="0"
                       />
                       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
@@ -4611,9 +4616,10 @@ export default function EmployeesPage() {
                         name="allottedLeaves"
                         value={formData.allottedLeaves ?? 0}
                         onChange={handleInputChange}
+                        onWheel={(e) => e.currentTarget.blur()}
                         min="0"
                         step="0.5"
-                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 no-spinner"
                         placeholder="0"
                       />
                       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
@@ -4711,7 +4717,8 @@ export default function EmployeesPage() {
                                       step="0.01"
                                       value={current === null ? '' : current}
                                       onChange={(e) => handleOverrideChange('allowance', item, e.target.value)}
-                                      className="w-24 rounded border border-green-200 bg-white px-2 py-1 text-[11px] text-green-900 focus:border-green-400 focus:outline-none dark:border-green-800 dark:bg-green-950 dark:text-green-100"
+                                      onWheel={(e) => e.currentTarget.blur()}
+                                      className="w-24 rounded border border-green-200 bg-white px-2 py-1 text-[11px] text-green-900 focus:border-green-400 focus:outline-none dark:border-green-800 dark:bg-green-950 dark:text-green-100 no-spinner"
                                     />
                                   </div>
                                 </div>
@@ -4777,7 +4784,8 @@ export default function EmployeesPage() {
                                       step="0.01"
                                       value={current === null ? '' : current}
                                       onChange={(e) => handleOverrideChange('deduction', item, e.target.value)}
-                                      className="w-24 rounded border border-red-200 bg-white px-2 py-1 text-[11px] text-red-900 focus:border-red-400 focus:outline-none dark:border-red-800 dark:bg-green-950 dark:text-green-100"
+                                      onWheel={(e) => e.currentTarget.blur()}
+                                      className="w-24 rounded border border-red-200 bg-white px-2 py-1 text-[11px] text-red-900 focus:border-red-400 focus:outline-none dark:border-red-800 dark:bg-red-950 dark:text-red-100 no-spinner"
                                     />
                                   </div>
                                 </div>
