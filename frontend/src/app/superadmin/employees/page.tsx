@@ -3741,16 +3741,17 @@ export default function EmployeesPage() {
                         <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
                           Monthly Paid Leaves
                         </label>
-                        <input
-                          type="number"
-                          name="paidLeaves"
-                          value={applicationFormData.paidLeaves ?? ''}
-                          onChange={handleApplicationInputChange}
-                          min="0"
-                          step="0.5"
-                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                          placeholder="Optional"
-                        />
+                          <input
+                            type="number"
+                            name="paidLeaves"
+                            value={applicationFormData.paidLeaves ?? ''}
+                            onChange={handleApplicationInputChange}
+                            onWheel={(e) => e.currentTarget.blur()}
+                            min="0"
+                            step="0.5"
+                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 no-spinner"
+                            placeholder="Optional"
+                          />
                         <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                           Monthly recurring paid leaves
                         </p>
@@ -3759,16 +3760,17 @@ export default function EmployeesPage() {
                         <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
                           Yearly Allotted Leaves
                         </label>
-                        <input
-                          type="number"
-                          name="allottedLeaves"
-                          value={applicationFormData.allottedLeaves ?? ''}
-                          onChange={handleApplicationInputChange}
-                          min="0"
-                          step="0.5"
-                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                          placeholder="Optional"
-                        />
+                          <input
+                            type="number"
+                            name="allottedLeaves"
+                            value={applicationFormData.allottedLeaves ?? ''}
+                            onChange={handleApplicationInputChange}
+                            onWheel={(e) => e.currentTarget.blur()}
+                            min="0"
+                            step="0.5"
+                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 no-spinner"
+                            placeholder="Optional"
+                          />
                         <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                           Yearly total for without_pay/LOP leaves
                         </p>
@@ -3854,7 +3856,8 @@ export default function EmployeesPage() {
                                       step="0.01"
                                       value={current === null ? '' : current}
                                       onChange={(e) => handleOverrideChange('allowance', item, e.target.value)}
-                                      className="w-24 rounded border border-green-200 bg-white px-2 py-1 text-[11px] text-green-900 focus:border-green-400 focus:outline-none dark:border-green-800 dark:bg-green-950 dark:text-green-100"
+                                      onWheel={(e) => e.currentTarget.blur()}
+                                      className="w-24 rounded border border-green-200 bg-white px-2 py-1 text-[11px] text-green-900 focus:border-green-400 focus:outline-none dark:border-green-800 dark:bg-green-950 dark:text-green-100 no-spinner"
                                     />
                                   </div>
                                 </div>
@@ -3920,7 +3923,8 @@ export default function EmployeesPage() {
                                       step="0.01"
                                       value={current === null ? '' : current}
                                       onChange={(e) => handleOverrideChange('deduction', item, e.target.value)}
-                                      className="w-24 rounded border border-red-200 bg-white px-2 py-1 text-[11px] text-red-900 focus:border-red-400 focus:outline-none dark:border-red-800 dark:bg-red-950 dark:text-red-100"
+                                      onWheel={(e) => e.currentTarget.blur()}
+                                      className="w-24 rounded border border-red-200 bg-white px-2 py-1 text-[11px] text-red-900 focus:border-red-400 focus:outline-none dark:border-red-800 dark:bg-red-950 dark:text-red-100 no-spinner"
                                     />
                                   </div>
                                 </div>
@@ -4196,9 +4200,10 @@ export default function EmployeesPage() {
                           type="number"
                           value={approvalData.approvedSalary}
                           onChange={(e) => setApprovalData({ ...approvalData, approvedSalary: Number(e.target.value) })}
+                          onWheel={(e) => e.currentTarget.blur()}
                           min="0"
                           step="0.01"
-                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 no-spinner"
                         />
                         {approvalData.approvedSalary !== selectedApplication.proposedSalary && (
                           <p className="mt-2 text-xs text-green-600 dark:text-green-400">
@@ -4215,9 +4220,10 @@ export default function EmployeesPage() {
                           type="number"
                           value={(approvalData as any).second_salary || ''}
                           onChange={(e) => setApprovalData({ ...approvalData, second_salary: Number(e.target.value) } as any)}
+                          onWheel={(e) => e.currentTarget.blur()}
                           min="0"
                           step="0.01"
-                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold transition-all focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold transition-all focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 no-spinner"
                           placeholder="Enter second salary if any"
                         />
                         <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
@@ -4322,7 +4328,8 @@ export default function EmployeesPage() {
                                       step="0.01"
                                       value={current === null ? '' : current}
                                       onChange={(e) => handleApprovalOverrideChange('allowance', item, e.target.value)}
-                                      className="w-24 rounded border border-green-200 bg-white px-2 py-1 text-[11px] text-green-900 focus:border-green-400 focus:outline-none dark:border-green-800 dark:bg-green-950 dark:text-green-100"
+                                      onWheel={(e) => e.currentTarget.blur()}
+                                      className="w-24 rounded border border-green-200 bg-white px-2 py-1 text-[11px] text-green-900 focus:border-green-400 focus:outline-none dark:border-green-800 dark:bg-green-950 dark:text-green-100 no-spinner"
                                     />
                                   </div>
                                 </div>
@@ -4388,7 +4395,8 @@ export default function EmployeesPage() {
                                       step="0.01"
                                       value={current === null ? '' : current}
                                       onChange={(e) => handleApprovalOverrideChange('deduction', item, e.target.value)}
-                                      className="w-24 rounded border border-red-200 bg-white px-2 py-1 text-[11px] text-red-900 focus:border-red-400 focus:outline-none dark:border-red-800 dark:bg-red-950 dark:text-red-100"
+                                      onWheel={(e) => e.currentTarget.blur()}
+                                      className="w-24 rounded border border-red-200 bg-white px-2 py-1 text-[11px] text-red-900 focus:border-red-400 focus:outline-none dark:border-red-800 dark:bg-red-950 dark:text-red-100 no-spinner"
                                     />
                                   </div>
                                 </div>
@@ -4631,9 +4639,10 @@ export default function EmployeesPage() {
                           name="paidLeaves"
                           value={formData.paidLeaves ?? ''}
                           onChange={handleInputChange}
+                          onWheel={(e) => e.currentTarget.blur()}
                           min="0"
                           step="0.5"
-                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 no-spinner"
                           placeholder="Optional"
                         />
                         <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
@@ -4649,9 +4658,10 @@ export default function EmployeesPage() {
                           name="allottedLeaves"
                           value={formData.allottedLeaves ?? ''}
                           onChange={handleInputChange}
+                          onWheel={(e) => e.currentTarget.blur()}
                           min="0"
                           step="0.5"
-                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 no-spinner"
                           placeholder="Optional"
                         />
                         <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
@@ -4746,7 +4756,8 @@ export default function EmployeesPage() {
                                       step="0.01"
                                       value={current === null ? '' : current}
                                       onChange={(e) => handleOverrideChange('allowance', item, e.target.value)}
-                                      className="w-24 rounded border border-green-200 bg-white px-2 py-1 text-[11px] text-green-900 focus:border-green-400 focus:outline-none dark:border-green-800 dark:bg-green-950 dark:text-green-100"
+                                      onWheel={(e) => e.currentTarget.blur()}
+                                      className="w-24 rounded border border-green-200 bg-white px-2 py-1 text-[11px] text-green-900 focus:border-green-400 focus:outline-none dark:border-green-800 dark:bg-green-950 dark:text-green-100 no-spinner"
                                     />
                                   </div>
                                 </div>
@@ -4812,7 +4823,8 @@ export default function EmployeesPage() {
                                       step="0.01"
                                       value={current === null ? '' : current}
                                       onChange={(e) => handleOverrideChange('deduction', item, e.target.value)}
-                                      className="w-24 rounded border border-red-200 bg-white px-2 py-1 text-[11px] text-red-900 focus:border-red-400 focus:outline-none dark:border-red-800 dark:bg-red-950 dark:text-red-100"
+                                      onWheel={(e) => e.currentTarget.blur()}
+                                      className="w-24 rounded border border-red-200 bg-white px-2 py-1 text-[11px] text-red-900 focus:border-red-400 focus:outline-none dark:border-red-800 dark:bg-red-950 dark:text-red-100 no-spinner"
                                     />
                                   </div>
                                 </div>
@@ -5564,7 +5576,8 @@ export default function EmployeesPage() {
                                 type="number"
                                 value={approvalData.paidLeaves ?? 0}
                                 onChange={(e) => setApprovalData({ ...approvalData, paidLeaves: Number(e.target.value) })}
-                                className="mt-1 w-full max-w-[120px] rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                                onWheel={(e) => e.currentTarget.blur()}
+                                className="mt-1 w-full max-w-[120px] rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white no-spinner"
                               />
                             ) : (
                               <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
@@ -5585,7 +5598,8 @@ export default function EmployeesPage() {
                                 type="number"
                                 value={approvalData.casualLeaves ?? 0}
                                 onChange={(e) => setApprovalData({ ...approvalData, casualLeaves: Number(e.target.value) })}
-                                className="mt-1 w-full max-w-[120px] rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+                                onWheel={(e) => e.currentTarget.blur()}
+                                className="mt-1 w-full max-w-[120px] rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-white no-spinner"
                               />
                             ) : (
                               <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
@@ -5640,7 +5654,8 @@ export default function EmployeesPage() {
                                     type="number"
                                     value={approvalData.approvedSalary}
                                     onChange={(e) => setApprovalData({ ...approvalData, approvedSalary: Number(e.target.value) })}
-                                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                    onWheel={(e) => e.currentTarget.blur()}
+                                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 no-spinner"
                                   />
                                   <p className="mt-1.5 text-[10px] text-slate-500">Proposed by HR: ₹{selectedApplication.proposedSalary.toLocaleString()}</p>
                                 </div>
@@ -5653,8 +5668,9 @@ export default function EmployeesPage() {
                                     type="number"
                                     value={(approvalData as any).second_salary || ''}
                                     onChange={(e) => setApprovalData({ ...approvalData, second_salary: Number(e.target.value) } as any)}
+                                    onWheel={(e) => e.currentTarget.blur()}
                                     placeholder="Enter additional amount"
-                                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold transition-all focus:border-indigo-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold transition-all focus:border-indigo-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 no-spinner"
                                   />
                                 </div>
 
@@ -5734,7 +5750,8 @@ export default function EmployeesPage() {
                                               type="number"
                                               value={current === null ? '' : current}
                                               onChange={(e) => handleApprovalOverrideChange('allowance', item, e.target.value)}
-                                              className="w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-right"
+                                              onWheel={(e) => e.currentTarget.blur()}
+                                              className="w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-right no-spinner"
                                             />
                                           </div>
                                         );
@@ -5754,7 +5771,8 @@ export default function EmployeesPage() {
                                               type="number"
                                               value={current === null ? '' : current}
                                               onChange={(e) => handleApprovalOverrideChange('deduction', item, e.target.value)}
-                                              className="w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-right"
+                                              onWheel={(e) => e.currentTarget.blur()}
+                                              className="w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-right no-spinner"
                                             />
                                           </div>
                                         );
