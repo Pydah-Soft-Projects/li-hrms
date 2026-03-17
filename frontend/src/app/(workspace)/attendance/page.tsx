@@ -2919,41 +2919,29 @@ export default function AttendancePage() {
           const item = filteredMonthlyData[0];
           const s = item.summary;
           return (
-            <div className="mb-4 rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-3 sm:p-4 shadow-sm dark:border-slate-700 dark:from-slate-800/80 dark:to-slate-900/80">
-              <h3 className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2 sm:mb-3">Monthly summary</h3>
-              <div className="grid grid-cols-4 sm:grid-cols-4 md:grid-cols-4 lg:grid-cols-8 gap-2 sm:gap-3">
-                <div className="flex flex-col">
-                  <div className="text-[8px] sm:text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase leading-tight">Present</div>
-                  <div className="text-sm sm:text-lg font-bold text-slate-900 dark:text-white">{s?.totalPresentDays ?? item.presentDays ?? 0}</div>
-                </div>
-                <div className="flex flex-col">
-                  <div className="text-[8px] sm:text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase leading-tight">Payable</div>
-                  <div className="text-sm sm:text-lg font-bold text-green-600 dark:text-green-400">{(s?.totalPayableShifts ?? item.payableShifts ?? 0).toFixed(1)}</div>
-                </div>
-                <div className="flex flex-col">
-                  <div className="text-[8px] sm:text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase leading-tight">Leave</div>
-                  <div className="text-sm sm:text-lg font-bold text-amber-600 dark:text-amber-400">{s?.totalLeaves ?? 0}</div>
-                </div>
-                <div className="flex flex-col">
-                  <div className="text-[8px] sm:text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase leading-tight">WOff</div>
-                  <div className="text-sm sm:text-lg font-bold text-orange-600 dark:text-orange-400">{s?.totalWeeklyOffs ?? 0}</div>
-                </div>
-                <div className="flex flex-col">
-                  <div className="text-[8px] sm:text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase leading-tight">Hol</div>
-                  <div className="text-sm sm:text-lg font-bold text-red-600 dark:text-red-400">{s?.totalHolidays ?? 0}</div>
-                </div>
-                <div className="flex flex-col">
-                  <div className="text-[8px] sm:text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase leading-tight">OD</div>
-                  <div className="text-sm sm:text-lg font-bold text-blue-600 dark:text-blue-400">{s?.totalODs ?? 0}</div>
-                </div>
-                <div className="flex flex-col">
-                  <div className="text-[8px] sm:text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase leading-tight">L/E</div>
-                  <div className="text-sm sm:text-lg font-bold text-rose-600 dark:text-rose-400">{s?.lateOrEarlyCount ?? 0}</div>
-                </div>
-                <div className="flex flex-col">
-                  <div className="text-[8px] sm:text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase leading-tight">Days</div>
-                  <div className="text-sm sm:text-lg font-bold text-slate-700 dark:text-slate-300">{s?.totalDaysInMonth ?? 0}</div>
-                </div>
+            <div className="mb-6 rounded-2xl border border-slate-200/60 bg-white/40 backdrop-blur-md p-4 sm:p-6 shadow-xl shadow-slate-200/20 dark:border-slate-700/50 dark:bg-slate-800/40 dark:shadow-none transition-all hover:shadow-2xl hover:shadow-slate-200/40 dark:hover:shadow-none">
+              <div className="flex items-center justify-between mb-4 sm:mb-6">
+                <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 flex items-center gap-2">
+                  <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                  Monthly Performance Summary
+                </h3>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 sm:gap-4 xl:gap-6">
+                {[
+                  { label: "Present", value: s?.totalPresentDays ?? item.presentDays ?? 0, color: "text-slate-900 dark:text-white", bcolor: "bg-slate-50 dark:bg-slate-700/30" },
+                  { label: "Payable", value: (s?.totalPayableShifts ?? item.payableShifts ?? 0).toFixed(1), color: "text-green-600 dark:text-green-400", bcolor: "bg-green-50/50 dark:bg-green-900/10" },
+                  { label: "Leave", value: s?.totalLeaves ?? 0, color: "text-amber-600 dark:text-amber-400", bcolor: "bg-amber-50/50 dark:bg-amber-900/10" },
+                  { label: "W-Off", value: s?.totalWeeklyOffs ?? 0, color: "text-orange-600 dark:text-orange-400", bcolor: "bg-orange-50/50 dark:bg-orange-900/10" },
+                  { label: "Holiday", value: s?.totalHolidays ?? 0, color: "text-red-500 dark:text-red-400", bcolor: "bg-red-50/50 dark:bg-red-900/10" },
+                  { label: "OD", value: s?.totalODs ?? 0, color: "text-blue-600 dark:text-blue-400", bcolor: "bg-blue-50/50 dark:bg-blue-900/10" },
+                  { label: "Late/Early", value: s?.lateOrEarlyCount ?? 0, color: "text-rose-600 dark:text-rose-400", bcolor: "bg-rose-50/50 dark:bg-rose-900/10" },
+                  { label: "Period Days", value: s?.totalDaysInMonth ?? 0, color: "text-slate-600 dark:text-slate-400", bcolor: "bg-slate-50/50 dark:bg-slate-700/20" },
+                ].map((stat, idx) => (
+                  <div key={idx} className={`flex flex-col p-3 rounded-xl border border-transparent transition-all hover:border-slate-200 dark:hover:border-slate-700 hover:bg-white dark:hover:bg-slate-800 shadow-sm hover:shadow-md ${stat.bcolor}`}>
+                    <div className="text-[10px] xl:text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-tight mb-1">{stat.label}</div>
+                    <div className={`text-lg xl:text-2xl font-black ${stat.color}`}>{stat.value}</div>
+                  </div>
+                ))}
               </div>
             </div>
           );
@@ -2980,11 +2968,11 @@ export default function AttendancePage() {
 
         {/* Attendance: Table or Day Cards (Employee) */}
         {isEmployee && employeeViewMode === 'cards' && filteredMonthlyData.length > 0 ? (
-          <div className="rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm shadow-xl dark:border-slate-700 dark:bg-slate-900/80 overflow-hidden">
-            <div className="grid grid-cols-7 gap-1 sm:gap-2 p-2 sm:p-4">
+          <div className="rounded-3xl border border-slate-200/60 bg-white/60 backdrop-blur-xl shadow-2xl shadow-slate-200/40 dark:border-slate-700/50 dark:bg-slate-900/60 dark:shadow-none overflow-hidden mx-auto max-w-6xl">
+            <div className="grid grid-cols-7 gap-2 sm:gap-3 lg:gap-4 xl:gap-5 p-4 sm:p-6 lg:p-8">
               {/* Day Labels - Small Calendar Style */}
-              {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
-                <div key={i} className="text-center text-[8px] font-black text-slate-400 dark:text-slate-500 pb-1 uppercase tracking-tighter">
+              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d, i) => (
+                <div key={i} className="text-center text-[9px] sm:text-[11px] xl:text-xs font-black text-slate-400 dark:text-slate-500 pb-2 sm:pb-4 uppercase tracking-widest">
                   {d}
                 </div>
               ))}
@@ -3024,9 +3012,9 @@ export default function AttendancePage() {
                   <div
                     key={dateStr}
                     onClick={() => hasData && handleDateClick(item.employee, dateStr)}
-                    className={`relative rounded-lg sm:rounded-xl border p-1 sm:p-3 aspect-square flex flex-col items-center justify-center transition-all ${hasData ? 'cursor-pointer hover:shadow-md hover:ring-2 hover:ring-green-500/30' : 'opacity-80'} ${getCellBackgroundColor(record)} ${getStatusColor(record)}`}
+                    className={`relative rounded-xl sm:rounded-2xl lg:rounded-3xl border p-1 sm:p-3 xl:p-4 aspect-square flex flex-col items-center justify-center transition-all duration-300 ${hasData ? 'cursor-pointer hover:shadow-lg hover:shadow-green-500/10 hover:-translate-y-1 hover:ring-2 hover:ring-green-500/20' : 'opacity-80'} ${getCellBackgroundColor(record)} ${getStatusColor(record)} shadow-sm`}
                   >
-                    <div className="text-[10px] sm:text-sm font-black text-slate-800 dark:text-white leading-none">
+                    <div className="text-xs sm:text-base lg:text-xl xl:text-2xl font-black text-slate-800 dark:text-white leading-none tracking-tighter">
                       {dayNum}
                     </div>
 
