@@ -374,8 +374,8 @@ export default function AttendancePage() {
   const [loadingSummary, setLoadingSummary] = useState(false);
 
   // Pay period (same as superadmin)
-  const [payrollCycleStartDay, setPayrollCycleStartDay] = useState(1);
-  const [payrollCycleEndDay, setPayrollCycleEndDay] = useState(31);
+  const [payrollCycleStartDay, setPayrollCycleStartDay] = useState<number | null>(null);
+  const [payrollCycleEndDay, setPayrollCycleEndDay] = useState<number | null>(null);
   const [cycleDates, setCycleDates] = useState({ startDate: '', endDate: '', label: '' });
 
   // Filter states
@@ -625,9 +625,7 @@ export default function AttendancePage() {
 
 
   useEffect(() => {
-
     if (isEmployee && user) {
-
       // Auto-select current employee
 
       const emp: Employee = {
@@ -663,16 +661,12 @@ export default function AttendancePage() {
       }
       fetchEmpAttendance();
 
-      // NEW: Reset pagination and load first page
-
+      // For employees, we load directly as they don't depend on custom cycle ranges for the initial view load
       setPage(1);
-
       setHasMore(true);
-
       loadMonthlyAttendance(true);
-
     }
-
+    // Note: HR view is now handled by the [cycleDates.startDate] effect to avoid race conditions
   }, [year, month, isEmployee, user]);
 
 
@@ -681,14 +675,14 @@ export default function AttendancePage() {
 
   useEffect(() => {
     if (!cycleDates.startDate) return;
+    
+    // This is now the MAIN trigger for initial load and filter changes for HR
     if (!isEmployee) {
       setPage(1);
       setHasMore(true);
       loadMonthlyAttendance(true);
-
     }
-
-  }, [selectedDivision, selectedDepartment, selectedDesignation, cycleDates.startDate]);
+  }, [selectedDivision, selectedDepartment, selectedDesignation, cycleDates.startDate, year, month]);
 
 
 
