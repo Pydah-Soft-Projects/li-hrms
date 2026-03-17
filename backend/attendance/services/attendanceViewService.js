@@ -3,6 +3,8 @@ const AttendanceRawLog = require('../model/AttendanceRawLog');
 const Leave = require('../../leaves/model/Leave');
 const OD = require('../../leaves/model/OD');
 const { calculateMonthlySummary } = require('./summaryCalculationService');
+const { extractISTComponents } = require('../../shared/utils/dateUtils');
+const dateCycleService = require('../../leaves/services/dateCycleService');
 
 /**
  * Get attendance data for calendar view (Single Employee)
@@ -11,22 +13,25 @@ exports.getCalendarViewData = async (employee, year, month) => {
   const targetYear = parseInt(year);
   const targetMonth = parseInt(month);
 
-  // Calculate date range for the month
-  const startDate = `${targetYear}-${String(targetMonth).padStart(2, '0')}-01`;
-  const endDate = new Date(targetYear, targetMonth, 0); // Last day of month
-  const endDateStr = `${targetYear}-${String(targetMonth).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`;
+  // Resolve the payroll period using dateCycleService
+  // Use 15th of the month as anchor to find the period that covers/ends in this month
+  const anchorDateStr = `${targetYear}-${String(targetMonth).padStart(2, '0')}-15`;
+  const periodInfo = await dateCycleService.getPeriodInfo(new Date(anchorDateStr));
+  
+  const startDateStr = extractISTComponents(periodInfo.payrollCycle.startDate).dateStr;
+  const endDateStr = extractISTComponents(periodInfo.payrollCycle.endDate).dateStr;
 
   // Fetch attendance records for the month
   const records = await AttendanceDaily.find({
     employeeNumber: employee.emp_no,
-    date: { $gte: startDate, $lte: endDateStr },
+    date: { $gte: startDateStr, $lte: endDateStr },
   })
     .populate('shifts.shiftId', 'name startTime endTime duration payableShifts')
     .sort({ date: 1 });
 
   // Fetch approved leaves and ODs
-  const startDateObj = new Date(targetYear, targetMonth - 1, 1);
-  const endDateObj = new Date(targetYear, targetMonth, 0);
+  const startDateObj = periodInfo.payrollCycle.startDate;
+  const endDateObj = periodInfo.payrollCycle.endDate;
 
   const approvedLeaves = await Leave.find({
     employeeId: employee._id,
@@ -236,8 +241,17 @@ exports.getMonthlyTableViewData = async (employees, year, month, startQueryDate,
   const targetYear = parseInt(year);
   const targetMonth = parseInt(month);
 
-  const startDate = startQueryDate || `${targetYear}-${String(targetMonth).padStart(2, '0')}-01`;
-  const endDateStr = endQueryDate || `${targetYear}-${String(targetMonth).padStart(2, '0')}-${String(new Date(targetYear, targetMonth, 0).getDate()).padStart(2, '0')}`;
+  let startDate = startQueryDate;
+  let endDateStr = endQueryDate;
+
+  // If dates not provided, resolve using payroll cycle
+  if (!startDate || !endDateStr) {
+    const anchorDateStr = `${targetYear}-${String(targetMonth).padStart(2, '0')}-15`;
+    const periodInfo = await dateCycleService.getPeriodInfo(new Date(anchorDateStr));
+    
+    if (!startDate) startDate = extractISTComponents(periodInfo.payrollCycle.startDate).dateStr;
+    if (!endDateStr) endDateStr = extractISTComponents(periodInfo.payrollCycle.endDate).dateStr;
+  }
 
   const startDateObj = new Date(startDate);
   const endDateObj = new Date(endDateStr);
