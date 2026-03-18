@@ -87,6 +87,7 @@ interface ResignationRequest {
     }>;
     reportingManagerIds?: string[];
   };
+  isLwdManual?: boolean;
   lwdHistory?: Array<{
     oldDate: string;
     newDate: string;
@@ -112,12 +113,18 @@ const getStatusColor = (status: string) => {
   }
 };
 
-const formatDate = (dateStr: string) => {
-  return new Date(dateStr).toLocaleDateString('en-IN', {
+const formatDate = (dateStr: string, isManual?: boolean, status?: string) => {
+  if (!dateStr) return '—';
+  const formatted = new Date(dateStr).toLocaleDateString('en-IN', {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
   });
+  
+  if (status === 'pending' && isManual === false) {
+    return `(Tentative) ${formatted}`;
+  }
+  return formatted;
 };
 
 /** Format date as YYYY-MM-DD in local time (avoids UTC shift that makes "today + 90" show as previous day) */
@@ -727,7 +734,7 @@ export default function ResignationsPage() {
                     <div className="space-y-1.5 text-sm">
                       <div className="flex justify-between">
                         <span className="text-slate-500 dark:text-slate-400">Last working date</span>
-                        <span className="font-medium text-slate-700 dark:text-slate-300">{formatDate(req.leftDate)}</span>
+                        <span className="font-medium text-slate-700 dark:text-slate-300">{formatDate(req.leftDate, req.isLwdManual, req.status)}</span>
                       </div>
                       {req.remarks && (
                         <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 pt-1 border-t border-slate-100 dark:border-slate-700">
@@ -789,7 +796,7 @@ export default function ResignationsPage() {
                     <div className="mb-4 space-y-2 text-sm">
                       <div className="flex justify-between">
                         <span className="text-slate-500 dark:text-slate-400">Last working date</span>
-                        <span className="font-medium text-slate-700 dark:text-slate-300">{formatDate(req.leftDate)}</span>
+                        <span className="font-medium text-slate-700 dark:text-slate-300">{formatDate(req.leftDate, req.isLwdManual, req.status)}</span>
                       </div>
                       {req.remarks && (
                         <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2">&quot;{req.remarks}&quot;</p>
@@ -935,7 +942,7 @@ export default function ResignationsPage() {
                     )}
                   </div>
                 ) : (
-                  <span className="font-medium text-slate-900 dark:text-white">{formatDate(selectedRequest.leftDate)}</span>
+                  <span className="font-medium text-slate-900 dark:text-white">{formatDate(selectedRequest.leftDate, selectedRequest.isLwdManual, selectedRequest.status)}</span>
                 )}
               </div>
               
@@ -946,7 +953,7 @@ export default function ResignationsPage() {
                     {selectedRequest.lwdHistory.map((history, idx) => (
                       <div key={idx} className="text-[11px] text-slate-600 dark:text-slate-400 pb-2 border-b border-slate-100 dark:border-slate-800 last:border-0 last:pb-0">
                         <div className="flex justify-between font-bold text-slate-700 dark:text-slate-300">
-                          <span>{formatDate(history.oldDate)} → {formatDate(history.newDate)}</span>
+                          <span>{formatDate(history.oldDate, true)} → {formatDate(history.newDate, true)}</span>
                           <span className="opacity-60">{history.timestamp ? new Date(history.timestamp).toLocaleDateString() : '—'}</span>
                         </div>
                         <p className="mt-0.5">Changed by <span className="font-semibold">{history.updatedByName}</span> ({history.updatedByRole})</p>

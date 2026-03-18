@@ -225,6 +225,14 @@ const startServer = async () => {
       console.warn('⚠️  Annual CL reset cron failed to start:', cronErr.message);
     }
 
+    // Resignation deactivation cron (00:05 IST daily - deactivates employees after LWD)
+    try {
+      const { startResignationCron } = require('./resignations/jobs/resignationCron');
+      startResignationCron();
+    } catch (cronErr) {
+      console.warn('⚠️  Resignation deactivation cron failed to start:', cronErr.message);
+    }
+
     // Start BullMQ Workers for background job processing
     try {
       const { startWorkers } = require('./shared/jobs/worker');

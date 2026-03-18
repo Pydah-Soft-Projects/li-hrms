@@ -112,6 +112,15 @@ exports.createResignationRequest = async (req, res) => {
     const firstRole = approvalSteps[0]?.role || 'hr';
     const finalAuthority = settings?.workflow?.finalAuthority?.role || 'hr';
 
+    // Check if the submitted leftDate is the default one (today + notice period)
+    // If it's different, we consider it "manually set"
+    const defaultLeftDate = new Date();
+    defaultLeftDate.setHours(12, 0, 0, 0);
+    defaultLeftDate.setDate(defaultLeftDate.getDate() + noticePeriodDays);
+    
+    // Compare dates (YYYY-MM-DD only)
+    const isManual = leftDateObj.toISOString().split('T')[0] !== defaultLeftDate.toISOString().split('T')[0];
+
     const resignation = new ResignationRequest({
       employeeId: employee._id,
       emp_no: employee.emp_no,
@@ -119,6 +128,7 @@ exports.createResignationRequest = async (req, res) => {
       remarks: remarks || '',
       status: 'pending',
       requestedBy: req.user._id,
+      isLwdManual: isManual,
       workflow: {
         currentStepRole: firstRole,
         nextApproverRole: firstRole,
@@ -296,6 +306,7 @@ exports.approveResignationRequest = async (req, res) => {
       if (!isNaN(newDateObj.getTime())) {
         const oldDate = resignation.leftDate;
         resignation.leftDate = newDateObj;
+        resignation.isLwdManual = true; // Mark as manual override
 
         // Log LWD change to lwdHistory (newly added array)
         if (!resignation.lwdHistory) resignation.lwdHistory = [];
@@ -423,6 +434,30 @@ exports.approveResignationRequest = async (req, res) => {
       resignation.workflow.isCompleted = true;
       resignation.workflow.currentStepRole = null;
       resignation.workflow.nextApproverRole = null;
+
+      // Calculate final LWD if not manual
+      if (!resignation.isLwdManual) {
+        const ResignationSettings = require('../model/ResignationSettings');
+        const settings = await ResignationSettings.getActiveSettings();
+        const noticePeriodDays = Math.max(0, Number(settings?.noticePeriodDays) || 0);
+        
+        const finalLwd = new Date();
+        finalLwd.setHours(12, 0, 0, 0);
+        finalLwd.setDate(finalLwd.getDate() + noticePeriodDays);
+        resignation.leftDate = finalLwd;
+        
+        // Log this final calculation to history
+        resignation.workflow.history.push({
+          step: 'system',
+          action: 'approved',
+          actionBy: req.user._id,
+          actionByName: 'System',
+          actionByRole: 'system',
+          comments: `Final LWD calculated as per ${noticePeriodDays} days notice period.`,
+          timestamp: new Date(),
+        });
+      }
+
       await resignation.save();
 
       const emp = await Employee.findById(resignation.employeeId._id || resignation.employeeId);

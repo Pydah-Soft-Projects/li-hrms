@@ -79,6 +79,11 @@ const ResignationRequestSchema = new mongoose.Schema(
         timestamp: { type: Date, default: Date.now },
       },
     ],
+    // Whether LWD was manually set/changed by a user. If false, LWD is calculated at final approval.
+    isLwdManual: {
+      type: Boolean,
+      default: false,
+    },
   },
   { timestamps: true }
 );
