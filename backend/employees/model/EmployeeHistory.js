@@ -49,13 +49,16 @@ const employeeHistorySchema = new mongoose.Schema(
                 'user_activated',
                 'user_deactivated',
                 'user_deleted',
+                // Automation
+                'system_auto_deactivation',
+                'status_deactivated',
             ],
             required: true,
         },
         performedBy: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'User',
-            required: true,
+            required: false, // Optional for system-run actions
         },
         performedByName: {
             type: String,
