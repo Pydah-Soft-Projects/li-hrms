@@ -142,6 +142,8 @@ exports.createResignationRequest = async (req, res) => {
     const resignation = new ResignationRequest({
       employeeId: employee._id,
       emp_no: employee.emp_no,
+      division_id: employee.division_id,
+      department_id: employee.department_id,
       leftDate: leftDateObj,
       remarks: remarks || '',
       status: 'pending',
@@ -213,20 +215,46 @@ exports.createResignationRequest = async (req, res) => {
 // @access  Private
 exports.getPendingApprovals = async (req, res) => {
   try {
-    const userRole = (req.user.role || '').toLowerCase();
-    const filter = { status: 'pending' };
+    const {
+      buildWorkflowVisibilityFilter,
+      getEmployeeIdsInScope
+    } = require('../../shared/middleware/dataScopeMiddleware');
 
-    if (['super_admin', 'sub_admin'].includes(userRole)) {
-      // no employee scope
-    } else {
-      const roleVariants = [userRole];
-      if (userRole === 'hr') roleVariants.push('final_authority');
-      filter.$or = [
-        { 'workflow.approvalChain': { $elemMatch: { role: { $in: roleVariants } } } },
-        { 'workflow.reportingManagerIds': req.user._id.toString() },
-      ];
-      const employeeIds = await getEmployeeIdsInScope(req.user);
-      filter.employeeId = employeeIds.length ? { $in: employeeIds } : { $in: [] };
+    const userRole = (req.user.role || '').toLowerCase();
+    const isSuperOrSubAdmin = ['super_admin', 'sub_admin'].includes(userRole);
+
+    let filter = { status: 'pending' };
+
+    if (!isSuperOrSubAdmin) {
+      const workflowFilter = buildWorkflowVisibilityFilter(req.user);
+      const scopeFilter = req.scopeFilter || { _id: null };
+      const scopedEmployeeIds = await getEmployeeIdsInScope(req.user);
+
+      let jurisdictionFilter = scopeFilter;
+      let visibilityFilter = workflowFilter;
+
+      if (Array.isArray(scopedEmployeeIds) && scopedEmployeeIds.length > 0) {
+        jurisdictionFilter = {
+          $or: [
+            scopeFilter,
+            { employeeId: { $in: scopedEmployeeIds } }
+          ]
+        };
+        visibilityFilter = {
+          $or: [
+            workflowFilter,
+            { employeeId: { $in: scopedEmployeeIds } }
+          ]
+        };
+      }
+
+      filter = {
+        $and: [
+          { status: 'pending' },
+          jurisdictionFilter,
+          visibilityFilter
+        ]
+      };
     }
 
     const list = await ResignationRequest.find(filter)
@@ -548,27 +576,47 @@ exports.getResignationRequests = async (req, res) => {
   try {
     const { emp_no } = req.query;
 
-    // Visibility and Scope:
-    // Applicants see their own. 
-    // Super/Sub admins see everything. 
-    // Functional roles (HOD/Manager/HR) see in-scope employees OR those in their workflow chain.
-    const workflowFilter = buildWorkflowVisibilityFilter(req.user);
-    const scopeEmployeeIds = await getEmployeeIdsInScope(req.user);
-    
-    // Final visibility: (part of workflow) OR (in administrative scope)
-    const visibilityFilter = {
-      $or: [
-        workflowFilter,
-        { employeeId: { $in: scopeEmployeeIds } }
-      ]
-    };
+    const {
+      buildWorkflowVisibilityFilter,
+      getEmployeeIdsInScope
+    } = require('../../shared/middleware/dataScopeMiddleware');
 
-    const filter = {
-      $and: [
-        visibilityFilter,
-        { isActive: { $ne: false } }
-      ]
-    };
+    const userRole = (req.user.role || '').toLowerCase();
+    const isSuperOrSubAdmin = ['super_admin', 'sub_admin'].includes(userRole);
+
+    let filter = { isActive: { $ne: false } };
+
+    if (!isSuperOrSubAdmin) {
+      const workflowFilter = buildWorkflowVisibilityFilter(req.user);
+      const scopeFilter = req.scopeFilter || { _id: null };
+      const scopedEmployeeIds = await getEmployeeIdsInScope(req.user);
+
+      let jurisdictionFilter = scopeFilter;
+      let visibilityFilter = workflowFilter;
+
+      if (Array.isArray(scopedEmployeeIds) && scopedEmployeeIds.length > 0) {
+        jurisdictionFilter = {
+          $or: [
+            scopeFilter,
+            { employeeId: { $in: scopedEmployeeIds } }
+          ]
+        };
+        visibilityFilter = {
+          $or: [
+            workflowFilter,
+            { employeeId: { $in: scopedEmployeeIds } }
+          ]
+        };
+      }
+
+      filter = {
+        $and: [
+          jurisdictionFilter,
+          visibilityFilter,
+          { isActive: { $ne: false } }
+        ]
+      };
+    }
 
     if (emp_no) filter.emp_no = String(emp_no).toUpperCase();
     const list = await ResignationRequest.find(filter)
