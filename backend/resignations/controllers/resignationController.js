@@ -73,6 +73,21 @@ exports.createResignationRequest = async (req, res) => {
     if (!employee) {
       return res.status(404).json({ success: false, message: 'Employee not found' });
     }
+
+    // Check for existing pending or approved resignation/termination requests
+    const existingRequest = await ResignationRequest.findOne({
+      emp_no: String(emp_no).toUpperCase(),
+      status: { $in: ['pending', 'approved'] }
+    });
+
+    if (existingRequest) {
+      const typeLabel = (existingRequest.requestType || 'resignation').toLowerCase();
+      return res.status(400).json({ 
+        success: false, 
+        message: `An active ${typeLabel} request (Status: ${existingRequest.status}) already exists for this employee.` 
+      });
+    }
+
     if (employee.leftDate) {
       return res.status(400).json({ success: false, message: 'Employee already has a left date' });
     }
