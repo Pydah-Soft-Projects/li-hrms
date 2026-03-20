@@ -2,13 +2,14 @@ import React from 'react';
 
 interface ResignationModalProps {
     employee: { employee_name: string; emp_no: string };
-    leftDateForm: { leftDate: string; leftReason: string };
-    setLeftDateForm: (form: { leftDate: string; leftReason: string }) => void;
+    leftDateForm: { leftDate: string; leftReason: string; requestType?: 'resignation' | 'termination' };
+    setLeftDateForm: (form: { leftDate: string; leftReason: string; requestType?: 'resignation' | 'termination' }) => void;
     resignationNoticePeriodDays: number;
     error: string;
     success: string;
     onSubmit: (e: React.FormEvent) => void;
     onClose: () => void;
+    allowedToTerminate?: boolean;
 }
 
 export default function ResignationModal({
@@ -20,7 +21,10 @@ export default function ResignationModal({
     success,
     onSubmit,
     onClose,
+    allowedToTerminate = false,
 }: ResignationModalProps) {
+    const isTermination = leftDateForm.requestType === 'termination';
+
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
@@ -28,10 +32,10 @@ export default function ResignationModal({
                 <div className="mb-6 flex items-center justify-between">
                     <div>
                         <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
-                            Resignation
+                            {isTermination ? 'Terminate Employee' : 'Resignation'}
                         </h2>
                         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                            {employee.employee_name} ({employee.emp_no}) — Enter last working date and remarks. If resignation workflow is enabled in settings, the request will go through approval.
+                            {employee.employee_name} ({employee.emp_no}) — {isTermination ? 'Enter termination date and remarks.' : 'Enter last working date and remarks.'}
                         </p>
                     </div>
                     <button
@@ -57,26 +61,63 @@ export default function ResignationModal({
                 )}
 
                 <form onSubmit={onSubmit} className="space-y-4">
+                    {allowedToTerminate && (
+                        <div className="mb-4">
+                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                Request Type
+                            </label>
+                            <div className="flex gap-2 p-1 rounded-xl bg-slate-100 dark:bg-slate-800">
+                                <button
+                                    type="button"
+                                    onClick={() => setLeftDateForm({ ...leftDateForm, requestType: 'resignation' })}
+                                    className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${!isTermination
+                                        ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100'
+                                        : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                                        }`}
+                                >
+                                    Resignation
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setLeftDateForm({
+                                        ...leftDateForm,
+                                        requestType: 'termination',
+                                        leftDate: new Date().toISOString().split('T')[0]
+                                    })}
+                                    className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all ${isTermination
+                                        ? 'bg-white text-red-600 shadow-sm dark:bg-slate-700 dark:text-red-400'
+                                        : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
+                                        }`}
+                                >
+                                    Termination
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
                     <div>
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                            Last working date <span className="text-red-500">*</span>
+                            {isTermination ? 'Termination date' : 'Last working date'} <span className="text-red-500">*</span>
                         </label>
                         <input
                             type="date"
                             required
-                            readOnly
                             value={leftDateForm.leftDate}
-                            min={(() => {
+                            onChange={(e) => setLeftDateForm({ ...leftDateForm, leftDate: e.target.value })}
+                            readOnly={!isTermination}
+                            min={!isTermination ? (() => {
                                 const d = new Date();
                                 d.setDate(d.getDate() + resignationNoticePeriodDays);
                                 return d.toISOString().split('T')[0];
-                            })()}
-                            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-300 cursor-not-allowed"
+                            })() : undefined}
+                            className={`w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 ${!isTermination ? 'bg-slate-50 cursor-not-allowed' : ''}`}
                         />
                         <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                            This date will be recorded as the employee&apos;s last day in office. They will be included in pay register until this month, then excluded from future months.
+                            {isTermination
+                                ? 'The employee will be deactivated immediately on this date.'
+                                : 'They will be included in pay register until this month, then excluded from future months.'}
                         </p>
-                        {resignationNoticePeriodDays > 0 && (
+                        {!isTermination && resignationNoticePeriodDays > 0 && (
                             <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
                                 Notice period: {resignationNoticePeriodDays} day(s). Last working date must be at least {resignationNoticePeriodDays} days from today.
                             </p>
@@ -85,13 +126,13 @@ export default function ResignationModal({
 
                     <div>
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                            Remarks for resignation (Optional)
+                            {isTermination ? 'Remarks for termination' : 'Remarks for resignation'} (Optional)
                         </label>
                         <textarea
                             value={leftDateForm.leftReason}
                             onChange={(e) => setLeftDateForm({ ...leftDateForm, leftReason: e.target.value })}
                             rows={3}
-                            placeholder="Enter remarks for resignation..."
+                            placeholder={isTermination ? "Enter reason for termination..." : "Enter remarks for resignation..."}
                             className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-2 focus:ring-green-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                         />
                     </div>
@@ -106,9 +147,9 @@ export default function ResignationModal({
                         </button>
                         <button
                             type="submit"
-                            className="rounded-xl bg-gradient-to-r from-red-500 to-orange-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-red-500/30 transition-all hover:from-red-600 hover:to-orange-600"
+                            className={`rounded-xl bg-gradient-to-r ${isTermination ? 'from-red-600 to-red-700 shadow-red-600/30' : 'from-red-500 to-orange-500 shadow-red-500/30'} px-5 py-2.5 text-sm font-semibold text-white shadow-lg transition-all hover:scale-[1.02] active:scale-95`}
                         >
-                            Submit Resignation
+                            {isTermination ? 'Terminate Employee' : 'Submit Resignation'}
                         </button>
                     </div>
                 </form>

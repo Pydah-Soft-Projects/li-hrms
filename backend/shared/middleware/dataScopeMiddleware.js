@@ -77,7 +77,7 @@ function buildScopeFilter(user) {
                 { employeeId: user.employeeRef },  // OT, Permission: employeeId is MongoDB ref
                 { emp_no: user.employeeId },      // Leave/OD: emp_no (string)
                 { appliedBy: user._id },
-                { requestedBy: user._id }         // OT, Permission use requestedBy
+                { requestedBy: user._id }         // Resignation/Termination use requestedBy
             ]
         };
     } else if (user.employeeId) {
@@ -86,7 +86,7 @@ function buildScopeFilter(user) {
                 { emp_no: user.employeeId },      // Leave/OD: emp_no
                 { employeeId: user.employeeId },  // When employeeId is used as ref
                 { appliedBy: user._id },
-                { requestedBy: user._id }
+                { requestedBy: user._id }         // Resignation/Termination use requestedBy
             ]
         };
     } else {

@@ -15,6 +15,7 @@ exports.getSettings = async (req, res) => {
           steps: [],
           finalAuthority: { role: 'hr', anyHRCanApprove: true },
           allowHigherAuthorityToApproveLowerLevels: false,
+          terminationAllowedRoles: ['super_admin', 'hr'],
         },
         isActive: true,
         isDefault: true,
@@ -28,6 +29,7 @@ exports.getSettings = async (req, res) => {
           steps: [],
           finalAuthority: { role: 'hr', anyHRCanApprove: true },
           allowHigherAuthorityToApproveLowerLevels: false,
+          terminationAllowedRoles: ['super_admin', 'hr'],
         },
         isActive: plain.isActive !== false,
       };
@@ -63,6 +65,9 @@ exports.saveSettings = async (req, res) => {
       if (workflow.finalAuthority) settings.workflow.finalAuthority = workflow.finalAuthority;
       if (workflow.allowHigherAuthorityToApproveLowerLevels !== undefined) {
         settings.workflow.allowHigherAuthorityToApproveLowerLevels = !!workflow.allowHigherAuthorityToApproveLowerLevels;
+      }
+      if (workflow.terminationAllowedRoles) {
+        settings.workflow.terminationAllowedRoles = workflow.terminationAllowedRoles;
       }
     }
     settings.updatedBy = req.user?._id;
