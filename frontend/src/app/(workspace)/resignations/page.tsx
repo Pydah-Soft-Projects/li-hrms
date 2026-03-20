@@ -255,6 +255,16 @@ export default function ResignationsPage() {
     setShowApplyModal(true);
   };
 
+  const handleApplyTypeChange = (type: 'resignation' | 'termination') => {
+    setApplyType(type);
+    if (type === 'termination') {
+      setApplyLastWorkingDate(toLocalDateString(new Date()));
+    } else {
+      // For resignation, we can either clear it or let the notice period calc (which happens in useEffect) take over
+      setApplyLastWorkingDate('');
+    }
+  };
+
   useEffect(() => {
     if (!showApplyModal) return;
     let cancelled = false;
@@ -321,10 +331,11 @@ export default function ResignationsPage() {
         setShowApplyModal(false);
         loadData();
       } else {
-        Swal.fire({ icon: 'error', title: 'Failed', text: (res as any)?.message || 'Submit failed.' });
+        Swal.fire({ icon: 'error', title: 'Failed', text: res?.message || 'Submit failed.' });
       }
-    } catch (err: any) {
-      Swal.fire({ icon: 'error', title: 'Error', text: err?.message || 'Submit failed.' });
+    } catch (err: unknown) {
+      const error = err as { message?: string };
+      Swal.fire({ icon: 'error', title: 'Error', text: error?.message || 'Submit failed.' });
     } finally {
       setApplyLoading(false);
     }
@@ -344,9 +355,9 @@ export default function ResignationsPage() {
     if (role === nextRole) return true;
     if (nextRole === 'final_authority' && role === 'hr') return true;
     if (nextRole === 'reporting_manager') {
-      const reportingManagerIds = item.workflow?.reportingManagerIds as string[] | undefined;
-      const userId = String((currentUser as any).id ?? (currentUser as any)._id ?? '').trim();
-      if (reportingManagerIds?.length && userId && reportingManagerIds.some((id: string) => String(id).trim() === userId)) return true;
+      const reportingManagerIds = item.workflow?.reportingManagerIds;
+      const userId = currentUser._id || (currentUser as any).id;
+      if (reportingManagerIds?.length && userId && reportingManagerIds.some((id: string) => String(id).trim() === String(userId).trim())) return true;
     }
 
     // Allow Higher Authority logic
@@ -355,8 +366,8 @@ export default function ResignationsPage() {
       const chain = item.workflow.approvalChain;
       const activeIndex = chain.findIndex(s => s.status === 'pending');
       if (activeIndex !== -1) {
-        const userId = String((currentUser as any).id ?? (currentUser as any)._id ?? '').trim();
-        const isReportingManager = item.workflow.reportingManagerIds?.some(id => String(id).trim() === userId);
+        const userId = currentUser._id || (currentUser as any).id;
+        const isReportingManager = item.workflow.reportingManagerIds?.some(id => String(id).trim() === String(userId).trim());
         
         // Look for any LATER step that matches user
         const laterSteps = chain.slice(activeIndex);
@@ -376,7 +387,7 @@ export default function ResignationsPage() {
   const getCurrentStep = useCallback((req: ResignationRequest) => {
     if (!req.workflow?.approvalChain || !currentUser) return null;
     const role = (currentUser.role || '').toLowerCase();
-    const userId = String((currentUser as any).id ?? (currentUser as any)._id ?? '').trim();
+    const userId = currentUser._id || (currentUser as any).id;
     const isSuperOrSubAdmin = ['super_admin', 'sub_admin'].includes(role);
     
     const allowHigher = resignationSettings?.workflow?.allowHigherAuthorityToApproveLowerLevels === true;
@@ -926,13 +937,45 @@ export default function ResignationsPage() {
                   <select
                     value={applySelectedEmpNo}
                     onChange={(e) => setApplySelectedEmpNo(e.target.value)}
-                    className="w-full h-11 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium text-slate-900 dark:text-white focus:ring-4 focus:ring-green-500/10 focus:border-green-500 outline-none"
+                    className="w-full h-11 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium text-slate-900 dark:text-white focus:ring-4 focus:ring-green-500/10 focus:border-green-500 outline-none transition-all"
                   >
                     <option value="">Select employee</option>
                     {applyEmployees.map((emp) => (
                       <option key={emp.emp_no} value={emp.emp_no}>{emp.name} ({emp.emp_no})</option>
                     ))}
                   </select>
+                </div>
+                )}
+
+                {canInitiateTermination(currentUser, resignationSettings) && !applySelfOnly && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Request Type</label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => handleApplyTypeChange('resignation')}
+                      className={`h-11 rounded-xl border flex items-center justify-center gap-2 text-sm font-bold transition-all ${
+                        applyType === 'resignation'
+                          ? 'bg-green-500/10 border-green-500 text-green-700 dark:text-green-400'
+                          : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500'
+                      }`}
+                    >
+                      <LogOut className="w-4 h-4" />
+                      Resignation
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleApplyTypeChange('termination')}
+                      className={`h-11 rounded-xl border flex items-center justify-center gap-2 text-sm font-bold transition-all ${
+                        applyType === 'termination'
+                          ? 'bg-rose-500/10 border-rose-500 text-rose-700 dark:text-rose-400'
+                          : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500'
+                      }`}
+                    >
+                      <X className="w-4 h-4" />
+                      Termination
+                    </button>
+                  </div>
                 </div>
                 )}
                 <div>

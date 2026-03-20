@@ -357,7 +357,7 @@ export default function EmployeesPage() {
   const [userRole, setUserRole] = useState<string>('');
   const [showLeftDateModal, setShowLeftDateModal] = useState(false);
   const [selectedEmployeeForLeftDate, setSelectedEmployeeForLeftDate] = useState<Employee | null>(null);
-  const [leftDateForm, setLeftDateForm] = useState({ leftDate: '', leftReason: '' });
+  const [leftDateForm, setLeftDateForm] = useState<{ leftDate: string; leftReason: string; requestType?: 'resignation' | 'termination' }>({ leftDate: '', leftReason: '', requestType: 'resignation' });
   const [resignationNoticePeriodDays, setResignationNoticePeriodDays] = useState(0);
   const [includeLeftEmployees, setIncludeLeftEmployees] = useState(false);
   const [passwordMode, setPasswordMode] = useState<'random' | 'phone_empno'>('random');
@@ -1970,6 +1970,7 @@ export default function EmployeesPage() {
     setLeftDateForm({
       leftDate: employee.leftDate ? new Date(employee.leftDate).toISOString().split('T')[0] : defaultLastWorking,
       leftReason: employee.leftReason || '',
+      requestType: 'resignation',
     });
     setShowLeftDateModal(true);
   };
@@ -1994,7 +1995,8 @@ export default function EmployeesPage() {
           emp_no: selectedEmployeeForLeftDate.emp_no,
           leftDate: leftDateForm.leftDate,
           remarks: leftDateForm.leftReason || undefined,
-        });
+          requestType: leftDateForm.requestType,
+        } as any);
         if (response.success) {
           setSuccess('Resignation request submitted. It will be processed through the approval flow.');
           setShowLeftDateModal(false);
@@ -6234,6 +6236,7 @@ export default function EmployeesPage() {
             leftDateForm={leftDateForm}
             setLeftDateForm={setLeftDateForm}
             resignationNoticePeriodDays={resignationNoticePeriodDays}
+            allowedToTerminate={true}
             error={error}
             success={success}
             onSubmit={handleSubmitLeftDate}
