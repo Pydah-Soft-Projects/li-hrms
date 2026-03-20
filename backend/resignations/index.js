@@ -3,8 +3,10 @@ const router = express.Router();
 const resignationSettingsController = require('./controllers/resignationSettingsController');
 const resignationController = require('./controllers/resignationController');
 const { protect, authorize } = require('../authentication/middleware/authMiddleware');
+const { applyScopeFilter } = require('../shared/middleware/dataScopeMiddleware');
 
 router.use(protect);
+router.use(applyScopeFilter);
 
 // Settings
 router.get('/settings', resignationSettingsController.getSettings);

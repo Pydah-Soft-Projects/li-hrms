@@ -12,13 +12,14 @@ const ResignationSettings = () => {
   const [saving, setSaving] = useState(false);
   const [settings, setSettings] = useState<{
     noticePeriodDays: number;
-    workflow: WorkflowData;
+    workflow: WorkflowData & { terminationAllowedRoles?: string[] };
   }>({
     noticePeriodDays: 0,
     workflow: {
       isEnabled: true,
       steps: [],
       finalAuthority: { role: 'hr', anyHRCanApprove: true },
+      terminationAllowedRoles: ['super_admin', 'hr'],
     },
   });
 
@@ -48,6 +49,7 @@ const ResignationSettings = () => {
             })),
             finalAuthority: d.workflow?.finalAuthority || { role: 'hr', anyHRCanApprove: true },
             allowHigherAuthorityToApproveLowerLevels: d.workflow?.allowHigherAuthorityToApproveLowerLevels ?? false,
+            terminationAllowedRoles: d.workflow?.terminationAllowedRoles || ['super_admin', 'hr'],
           },
         });
       }
@@ -78,6 +80,7 @@ const ResignationSettings = () => {
           })),
           finalAuthority: settings.workflow.finalAuthority,
           allowHigherAuthorityToApproveLowerLevels: settings.workflow.allowHigherAuthorityToApproveLowerLevels ?? false,
+          terminationAllowedRoles: settings.workflow.terminationAllowedRoles || ['super_admin', 'hr'],
         },
       };
       const res = await api.saveResignationSettings(payload);
@@ -139,6 +142,51 @@ const ResignationSettings = () => {
                 description="Approval steps before employee left date is set."
                 isResignationWorkflow={true}
               />
+
+              <div className="pt-6 border-t border-gray-100 dark:border-gray-800 space-y-4">
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest">
+                  Roles Allowed to Initiate Termination
+                </label>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  {['hr', 'manager', 'hod', 'reporting_manager'].map((role) => (
+                    <label key={role} className="flex items-center gap-3 p-3 rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30 cursor-pointer hover:bg-white dark:hover:bg-gray-800 transition-all">
+                      <input
+                        type="checkbox"
+                        checked={(settings.workflow.terminationAllowedRoles || []).includes(role)}
+                        onChange={(e) => {
+                          const roles = [...(settings.workflow.terminationAllowedRoles || [])];
+                          if (e.target.checked) {
+                            if (!roles.includes(role)) roles.push(role);
+                          } else {
+                            const index = roles.indexOf(role);
+                            if (index > -1) roles.splice(index, 1);
+                          }
+                          setSettings(s => ({
+                            ...s,
+                            workflow: { ...s.workflow, terminationAllowedRoles: roles }
+                          }));
+                        }}
+                        className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-gray-300 dark:border-gray-700 dark:bg-gray-900"
+                      />
+                      <span className="text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
+                        {role.replace('_', ' ')}
+                      </span>
+                    </label>
+                  ))}
+                  <label className="flex items-center gap-3 p-3 rounded-xl border border-green-100 dark:border-green-900/30 bg-green-50/50 dark:bg-green-900/10 cursor-not-allowed opacity-80 shadow-sm">
+                    <input
+                      type="checkbox"
+                      checked={true}
+                      disabled={true}
+                      className="w-4 h-4 rounded text-green-600 focus:ring-green-500 border-green-300 dark:border-green-700 dark:bg-gray-900"
+                    />
+                    <span className="text-xs font-bold text-green-700 dark:text-green-400 uppercase tracking-wider">
+                      super admin
+                    </span>
+                  </label>
+                </div>
+                <p className="text-[10px] text-gray-400 italic">Super Admin is always allowed to terminate employees. Other roles must be explicitly granted permission.</p>
+              </div>
             </div>
           </section>
         </div>

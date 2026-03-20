@@ -14,10 +14,23 @@ const ResignationRequestSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    division_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Division',
+    },
+    department_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Department',
+    },
     // Requested last working / left date
     leftDate: {
       type: Date,
       required: true,
+    },
+    requestType: {
+      type: String,
+      enum: ['resignation', 'termination'],
+      default: 'resignation',
     },
     // Resignation remarks (reason)
     remarks: {

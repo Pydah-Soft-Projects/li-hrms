@@ -2400,7 +2400,7 @@ export const api = {
       body: JSON.stringify(data),
     });
   },
-  createResignationRequest: async (data: { emp_no: string; leftDate: string; remarks?: string }) => {
+  createResignationRequest: async (data: { emp_no: string; leftDate: string; remarks?: string, requestType?: 'resignation' | 'termination' }) => {
     return apiRequest<any>('/resignations', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -2415,9 +2415,12 @@ export const api = {
       body: JSON.stringify(data),
     });
   },
-  getResignationRequests: async (params?: { emp_no?: string }) => {
-    const q = params?.emp_no ? `?emp_no=${encodeURIComponent(params.emp_no)}` : '';
-    return apiRequest<any>(`/resignations${q}`, { method: 'GET' });
+  getResignationRequests: async (params?: { emp_no?: string, requestType?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.emp_no) q.append('emp_no', params.emp_no);
+    if (params?.requestType) q.append('requestType', params.requestType);
+    const queryString = q.toString() ? `?${q.toString()}` : '';
+    return apiRequest<any>(`/resignations${queryString}`, { method: 'GET' });
   },
   updateResignationLWD: async (id: string, data: { newLeftDate: string; comments?: string }) => {
     return apiRequest<any>(`/resignations/${id}/lwd`, {
