@@ -111,6 +111,21 @@ class DateCycleService {
     }
 
     /**
+     * Get payroll cycle range for a specific year and month
+     * @param {number} year 
+     * @param {number} month (1-12)
+     */
+    async getPayrollCycleForMonth(year, month) {
+        const payrollSettings = await this.getPayrollCycleSettings();
+        // Use a date that definitely falls in the cycle ending in this month/year.
+        // For standard 1-31, any date work. 
+        // For custom e.g. 26-25, the 25th of the month is the end of the 'month' period.
+        const targetDay = Math.min(payrollSettings.endDay, 28); 
+        const testDate = createISTDate(`${year}-${String(month).padStart(2, '0')}-${String(targetDay).padStart(2, '0')}`);
+        return await this.getPayrollCycleForDate(testDate);
+    }
+
+    /**
      * Check if a date (in IST) falls inside a payroll period [startDate, endDate].
      * Use when you need to exclude dates that do not belong to the period.
      */
