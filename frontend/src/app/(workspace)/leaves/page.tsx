@@ -45,15 +45,15 @@ import {
 // Custom Stat Card
 // Custom Stat Card
 const StatCard = ({ title, value, icon: Icon, bgClass, iconClass, dekorClass, trend, loading }: { title: string, value: number | string, icon: any, bgClass: string, iconClass: string, dekorClass?: string, trend?: { value: string, positive: boolean }, loading?: boolean }) => (
-  <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 transition-all hover:shadow-xl dark:border-slate-800 dark:bg-slate-900">
+  <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 transition-all hover:shadow-xl dark:border-slate-800 dark:bg-slate-900 group">
     <div className="flex items-center justify-between gap-3 sm:gap-4">
       <div className="flex-1 min-w-0">
-        <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500 truncate">{title}</p>
+        <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500 truncate group-hover:text-blue-500 transition-colors">{title}</p>
         <div className="mt-1 sm:mt-2 flex items-baseline gap-2">
           {loading ? (
-            <div className="h-6 w-16 bg-slate-200 dark:bg-slate-700 rounded animate-pulse"></div>
+            <div className="h-8 w-16 bg-slate-200 dark:bg-slate-700 rounded animate-pulse"></div>
           ) : (
-            <h3 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">{value}</h3>
+            <h3 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">{value}</h3>
           )}
           {!loading && trend && (
             <span className={`text-[9px] sm:text-[10px] font-black px-1.5 py-0.5 rounded-md ${trend.positive ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'}`}>
@@ -62,11 +62,11 @@ const StatCard = ({ title, value, icon: Icon, bgClass, iconClass, dekorClass, tr
           )}
         </div>
       </div>
-      <div className={`flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-2xl shrink-0 ${bgClass} ${iconClass}`}>
+      <div className={`flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-2xl shadow-lg shrink-0 transition-transform group-hover:scale-110 ${bgClass} ${iconClass}`}>
         <Icon className="h-5 w-5 sm:h-6 sm:w-6" />
       </div>
     </div>
-    {dekorClass && <div className={`absolute -right-4 -bottom-4 h-20 w-20 sm:h-24 sm:w-24 rounded-full ${dekorClass}`} />}
+    {dekorClass && <div className={`absolute -right-4 -bottom-4 h-20 w-20 sm:h-24 sm:w-24 rounded-full opacity-10 group-hover:opacity-20 transition-all ${dekorClass}`} />}
   </div>
 );
 
@@ -406,6 +406,51 @@ export default function LeavesPage() {
   const [pendingODs, setPendingODs] = useState<ODApplication[]>([]);
   const [loading, setLoading] = useState(true);
   const [showFilters, setShowFilters] = useState(false);
+
+  // Pay cycle start day from settings (default 1)
+  const [payCycleStartDay, setPayCycleStartDay] = useState(1);
+
+  // Date range filter — defaults to current pay-cycle (startDay of month/prev month → today)
+  const getDefaultDateRange = (startDay: number = 1) => {
+    const now = new Date();
+    const today = now.getDate();
+    let startDate = new Date(now);
+
+    // If startDay > 1 and today < startDay, cycle started in previous month
+    if (startDay > 1 && today < startDay) {
+      startDate.setMonth(startDate.getMonth() - 1);
+    }
+
+    startDate.setDate(startDay);
+    const format = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    return { from: format(startDate), to: format(now) };
+  };
+
+  const getPreviousPayCycle = (startDay: number = 1) => {
+    const { from } = getDefaultDateRange(startDay);
+    const startDate = new Date(from);
+
+    const prevEnd = new Date(startDate);
+    prevEnd.setDate(prevEnd.getDate() - 1);
+
+    const prevStart = new Date(startDate);
+    prevStart.setMonth(prevStart.getMonth() - 1);
+
+    const format = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    return { from: format(prevStart), to: format(prevEnd) };
+  };
+
+  const getLast3MonthsPayCycle = (startDay: number = 1) => {
+    const { to } = getDefaultDateRange(startDay);
+    const { from } = getDefaultDateRange(startDay);
+    const startDate = new Date(from);
+    startDate.setMonth(startDate.getMonth() - 2); // 3 cycles total including current
+
+    const format = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    return { from: format(startDate), to };
+  };
+
+  const [dateRange, setDateRange] = useState(() => getDefaultDateRange(1));
   const [error, setError] = useState<string | null>(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -573,9 +618,36 @@ export default function LeavesPage() {
         setIsSuperAdmin(true);
       }
     }
-    loadData(user);
+    loadData(user, dateRange);
     loadTypes();
   }, []);
+
+  // Fetch pay cycle start day setting on mount
+  useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        const res = await api.getSetting('payroll_cycle_start_day');
+        if (res?.data?.value) {
+          const startDay = parseInt(res.data.value, 10);
+          if (!isNaN(startDay) && startDay >= 1 && startDay <= 31) {
+            setPayCycleStartDay(startDay);
+            // Update the default date range now that we have the actual start day
+            setDateRange(getDefaultDateRange(startDay));
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch payroll_cycle_start_day:', err);
+      }
+    };
+    fetchSettings();
+  }, []);
+
+  // Re-fetch when date range changes
+  useEffect(() => {
+    if (currentUser) {
+      loadData(currentUser, dateRange);
+    }
+  }, [dateRange.from, dateRange.to]);
 
   // Load employees and permissions when user or workspace changes
   useEffect(() => {
@@ -590,18 +662,18 @@ export default function LeavesPage() {
     }
   }, [currentUser, activeWorkspace?._id]);
 
-  const loadData = async (user?: any) => {
+  const loadData = async (user?: any, range?: { from: string; to: string }) => {
     setLoading(true);
+    const activeRange = range || dateRange;
     try {
       const role = user?.role || currentUser?.role;
       const isEmployee = role === 'employee';
-      // console.log('loadData for role:', currentUser?.role);
 
       if (isEmployee) {
-        // Employee Plan: Fetch MY leaves/ODs
+        // Employee Plan: Fetch MY leaves/ODs scoped by date range
         const [leavesRes, odsRes] = await Promise.all([
-          api.getMyLeaves(),
-          api.getMyODs(),
+          api.getMyLeaves({ fromDate: activeRange.from, toDate: activeRange.to }),
+          api.getMyODs({ fromDate: activeRange.from, toDate: activeRange.to }),
         ]);
 
         const myLeaves = leavesRes.success ? (leavesRes.data as LeaveApplication[]) : [];
@@ -619,14 +691,11 @@ export default function LeavesPage() {
 
       } else {
         // Manager/HOD/Admin Plan:
-        // 1. "Leaves" tab -> Scoped leaves (own + team, including approved)
-        // 2. "OD" tab -> Scoped ODs (own + team, including approved)
-        // 3. "Pending" tab -> Leaves/ODs in workflow needing approval
         const [leavesRes, odsRes, pendingLeavesRes, pendingODsRes] = await Promise.all([
-          api.getLeaves({ limit: 500 }), // Scoped: own + team (incl. approved), respects workflow visibility
-          api.getODs({ limit: 500 }),    // Scoped: own + team (incl. approved), respects workflow visibility
-          api.getPendingLeaveApprovals(),
-          api.getPendingODApprovals(),
+          api.getLeaves({ limit: 500, fromDate: activeRange.from, toDate: activeRange.to }),
+          api.getODs({ limit: 500, fromDate: activeRange.from, toDate: activeRange.to }),
+          api.getPendingLeaveApprovals({ fromDate: activeRange.from, toDate: activeRange.to }),
+          api.getPendingODApprovals({ fromDate: activeRange.from, toDate: activeRange.to }),
         ]);
 
         if (leavesRes.success) setLeaves(leavesRes.data || []);
@@ -2271,22 +2340,59 @@ export default function LeavesPage() {
                   </div>
                 )}
 
-                {/* Date Range */}
-                <div className="col-span-2 flex items-center flex-nowrap gap-2 px-0 py-0 bg-transparent border-0 md:px-3 md:py-1.5 md:rounded-xl md:bg-slate-100 md:dark:bg-slate-800 md:border md:border-slate-200 md:dark:border-slate-700">
-                  <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                  <input
-                    type="date"
-                    value={leaveFilters.startDate}
-                    onChange={(e) => setLeaveFilters(prev => ({ ...prev, startDate: e.target.value }))}
-                    className="bg-transparent text-xs font-bold text-slate-600 dark:text-slate-300 outline-none cursor-pointer w-full sm:w-auto min-w-[100px]"
-                  />
-                  <span className="text-slate-300 dark:text-slate-600 font-bold shrink-0">→</span>
-                  <input
-                    type="date"
-                    value={leaveFilters.endDate}
-                    onChange={(e) => setLeaveFilters(prev => ({ ...prev, endDate: e.target.value }))}
-                    className="bg-transparent text-xs font-bold text-slate-600 dark:text-slate-300 outline-none cursor-pointer w-full sm:w-auto min-w-[100px]"
-                  />
+                {/* Pay Period / Date Range — drives backend fetch */}
+                <div className="col-span-2 flex flex-col sm:flex-row items-start sm:items-center gap-2">
+                  {/* Quick Presets */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {[
+                      {
+                        label: 'This Month',
+                        get: () => getDefaultDateRange(payCycleStartDay)
+                      },
+                      {
+                        label: 'Last Month',
+                        get: () => getPreviousPayCycle(payCycleStartDay)
+                      },
+                      {
+                        label: 'Last 3M',
+                        get: () => getLast3MonthsPayCycle(payCycleStartDay)
+                      }
+                    ].map(preset => {
+                      const r = preset.get();
+                      const isActive = dateRange.from === r.from && dateRange.to === r.to;
+                      return (
+                        <button
+                          key={preset.label}
+                          onClick={() => setDateRange(r)}
+                          className={`h-7 px-2.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all border ${isActive
+                            ? 'bg-blue-500 text-white border-blue-500 shadow-md shadow-blue-500/20'
+                            : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:border-blue-300 hover:text-blue-600'}`}
+                        >
+                          {preset.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {/* Custom range inputs */}
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                    <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <input
+                      type="date"
+                      value={dateRange.from}
+                      onChange={(e) => setDateRange(prev => ({ ...prev, from: e.target.value }))}
+                      className="bg-transparent text-xs font-bold text-slate-600 dark:text-slate-300 outline-none cursor-pointer w-[110px]"
+                    />
+                    <span className="text-slate-300 dark:text-slate-600 font-bold shrink-0">→</span>
+                    <input
+                      type="date"
+                      value={dateRange.to}
+                      onChange={(e) => setDateRange(prev => ({ ...prev, to: e.target.value }))}
+                      className="bg-transparent text-xs font-bold text-slate-600 dark:text-slate-300 outline-none cursor-pointer w-[110px]"
+                    />
+                    {loading && (
+                      <div className="w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin shrink-0" />
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
