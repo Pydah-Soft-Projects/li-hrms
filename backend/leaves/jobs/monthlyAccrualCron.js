@@ -19,7 +19,7 @@ const cron = require('node-cron');
 const accrualEngine = require('../services/accrualEngine');
 const dateCycleService = require('../services/dateCycleService');
 
-const CRON_IST = '10 0 * * *'; // 00:10 every day
+const CRON_IST = '55 23 * * *'; // 23:55 every day
 const TIMEZONE = 'Asia/Kolkata';
 
 let scheduledTask = null;

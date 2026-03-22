@@ -1513,11 +1513,17 @@ export default function LeavesPage() {
         if (cancelled) return;
         const data = res?.data;
         if (Array.isArray(data) && data.length > 0 && data[0].casualLeave) {
-          const cl = data[0].casualLeave;
+          const entry = data[0];
+          const cl = entry.casualLeave;
           const balance = Number(cl.balance);
-          const allowedRaw = cl.allowedRemaining != null ? Number(cl.allowedRemaining) : balance;
+          
+          // Use monthlyAllowedLimit if available (reflects pooled CL + CCL + EL limits)
+          const pooledLimit = entry.monthlyAllowedLimit != null ? Number(entry.monthlyAllowedLimit) : null;
+          const allowedRaw = pooledLimit !== null ? pooledLimit : (cl.allowedRemaining != null ? Number(cl.allowedRemaining) : balance);
+          
           const clCap = Number.isFinite(allowedRaw) ? Math.max(0, allowedRaw) : (Number.isFinite(balance) ? balance : 0);
           setClBalanceForMonth(clCap);
+
           setClAnnualBalance(Number.isFinite(balance) ? Math.max(0, balance) : null);
           const cclRaw = data[0].compensatoryOff?.balance;
           const cclVal = Number(cclRaw);
@@ -3453,19 +3459,20 @@ export default function LeavesPage() {
                         </p>
                         <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
                           <span className="text-green-600 dark:text-green-400">
-                            CL allowed this pay period: <strong>{clBalanceForMonth}</strong> day{clBalanceForMonth !== 1 ? 's' : ''} (2 per period, pending CL locks).
+                            Leaves allowed this pay period: <strong>{clBalanceForMonth}</strong> day{clBalanceForMonth !== 1 ? 's' : ''} (Pooled CL/CCL/EL limits).
                           </span>
                         </p>
                         <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
-                          You can apply for up to <strong>{clBalanceForMonth}</strong> CL day{clBalanceForMonth !== 1 ? 's' : ''} in this pay cycle. Compensatory (CCL) is in addition.
+                          You can apply for up to <strong>{clBalanceForMonth}</strong> day{clBalanceForMonth !== 1 ? 's' : ''} in this pay cycle based on your available balance and organization policy.
                         </p>
                         <p className="text-sm text-slate-700 dark:text-slate-300">
                           Compensatory off (CCL):{' '}
                           <span className="font-semibold">
                             {cclBalance ?? 0} day{(cclBalance ?? 0) !== 1 ? 's' : ''}.
                           </span>{' '}
-                          CCL is added on top of the 2 CL per period when you use it.
+                          CCL is included in the pooled Monthly Limit shown above.
                         </p>
+
                       </>
                     ) : (
                       <p className="text-sm text-amber-600 dark:text-amber-400">
