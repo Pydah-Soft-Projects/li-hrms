@@ -73,6 +73,15 @@ interface LeavePolicySettings {
         updateFrequency: 'daily' | 'weekly' | 'monthly';
         updateDay: number;
     };
+    monthlyLimitSettings: {
+        mode: 'strict' | 'accumulative' | 'unrestricted';
+        defaultMonthlyCap: number;
+        maxUsableLimit: number;
+        protectFutureMonths: boolean;
+        includeCCL: boolean;
+        includeEL: boolean;
+        logicType: 'ADDITIVE' | 'CAP_INCLUSIVE';
+    };
 }
 
 const LeavePolicySettings = () => {
@@ -147,6 +156,15 @@ const LeavePolicySettings = () => {
             enabled: true,
             updateFrequency: 'monthly',
             updateDay: 1
+        },
+        monthlyLimitSettings: {
+            mode: 'accumulative',
+            defaultMonthlyCap: 1,
+            maxUsableLimit: 4,
+            protectFutureMonths: true,
+            includeCCL: true,
+            includeEL: true,
+            logicType: 'ADDITIVE'
         }
     });
 
@@ -188,7 +206,14 @@ const LeavePolicySettings = () => {
                             ? data.annualCLReset.casualLeaveByExperience
                             : (defaults.annualCLReset.casualLeaveByExperience || [])
                     },
-                    autoUpdate: { ...defaults.autoUpdate, ...data.autoUpdate }
+                    autoUpdate: { ...defaults.autoUpdate, ...data.autoUpdate },
+                    monthlyLimitSettings: { 
+                        ...defaults.monthlyLimitSettings, 
+                        ...(data.monthlyLimitSettings || {
+                            // Support legacy flag for EL inclusion if new object missing
+                            includeEL: data.earnedLeave?.includeInMonthlyLimit ?? defaults.monthlyLimitSettings.includeEL
+                        })
+                    }
                 });
             } else {
                 setSettings(getDefaultSettings());
@@ -626,8 +651,127 @@ const LeavePolicySettings = () => {
                     </section>
                 </div>
 
-                {/* ——— Right column: Carry Forward, Annual CL Reset, Auto Update ——— */}
+                {/* ——— Center/Right column: Monthly Limit Logic + Carry Forward ——— */}
                 <div className="space-y-8 min-w-0">
+                    {/* 2.5 Monthly Limit Logic */}
+                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
+                        <div className="px-6 sm:px-8 py-6 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
+                            <div className="h-10 w-10 flex items-center justify-center rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800/50">
+                                <Settings className="h-5 w-5" />
+                            </div>
+                            <div>
+                                <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Monthly Limit Logic</h3>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Configure how CL, CCL, and EL interact.</p>
+                            </div>
+                        </div>
+                        <div className="p-6 sm:p-8 space-y-6">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-1.5">
+                                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Limit Mode</label>
+                                    <select
+                                        value={settings.monthlyLimitSettings?.mode || 'accumulative'}
+                                        onChange={(e) => updateSettings('monthlyLimitSettings.mode', '', e.target.value)}
+                                        className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                                    >
+                                        <option value="strict">Strict (Monthly quota lost if unused)</option>
+                                        <option value="accumulative">Accumulative (Carry-forward limit)</option>
+                                        <option value="unrestricted">Unrestricted (Allowed = Daily Balance)</option>
+                                    </select>
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Monthly Usage Cap</label>
+                                    <input
+                                        type="number"
+                                        min={0}
+                                        value={settings.monthlyLimitSettings?.defaultMonthlyCap ?? 1}
+                                        onChange={(e) => updateSettings('monthlyLimitSettings.defaultMonthlyCap', '', parseInt(e.target.value) || 0)}
+                                        className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-1.5">
+                                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Max Usable (Master Cap)</label>
+                                    <input
+                                        type="number"
+                                        min={1}
+                                        value={settings.monthlyLimitSettings?.maxUsableLimit ?? 4}
+                                        onChange={(e) => updateSettings('monthlyLimitSettings.maxUsableLimit', '', parseInt(e.target.value) || 1)}
+                                        className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Calculation Type</label>
+                                    <select
+                                        value={settings.monthlyLimitSettings?.logicType || 'ADDITIVE'}
+                                        onChange={(e) => updateSettings('monthlyLimitSettings.logicType', '', e.target.value)}
+                                        className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                                    >
+                                        <option value="ADDITIVE">Additive (Limit + CCL + EL)</option>
+                                        <option value="CAP_INCLUSIVE">Absolute Cap (Total allowance = Cap)</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div className="flex flex-col gap-3">
+                                <div className="flex items-center justify-between gap-4 p-3 rounded-xl border border-gray-100 dark:border-gray-700 bg-emerald-50/30 dark:bg-emerald-900/10">
+                                    <div className="flex-1">
+                                        <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Safety Rule: Protect Future Months</span>
+                                        <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 italic">Ensures at least 1 leave remains available for each remaining month of the year.</p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        role="switch"
+                                        aria-checked={settings.monthlyLimitSettings?.protectFutureMonths}
+                                        onClick={() => updateSettings('monthlyLimitSettings.protectFutureMonths', '', !settings.monthlyLimitSettings?.protectFutureMonths)}
+                                        className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900 ${settings.monthlyLimitSettings?.protectFutureMonths ? 'bg-emerald-600' : 'bg-gray-200 dark:bg-gray-700'}`}
+                                    >
+                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${settings.monthlyLimitSettings?.protectFutureMonths ? 'translate-x-6' : 'translate-x-1'}`} />
+                                    </button>
+                                </div>
+
+                                <div className="flex items-center justify-between gap-4 p-3 rounded-xl border border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30">
+                                    <div>
+                                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Include CCL in monthly limit</span>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        role="switch"
+                                        aria-checked={settings.monthlyLimitSettings?.includeCCL}
+                                        onClick={() => updateSettings('monthlyLimitSettings.includeCCL', '', !settings.monthlyLimitSettings?.includeCCL)}
+                                        className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900 ${settings.monthlyLimitSettings?.includeCCL ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-gray-700'}`}
+                                    >
+                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${settings.monthlyLimitSettings?.includeCCL ? 'translate-x-6' : 'translate-x-1'}`} />
+                                    </button>
+                                </div>
+
+                                <div className="flex items-center justify-between gap-4 p-3 rounded-xl border border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30">
+                                    <div>
+                                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Include EL in monthly limit</span>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        role="switch"
+                                        aria-checked={settings.monthlyLimitSettings?.includeEL}
+                                        onClick={() => {
+                                            const newVal = !settings.monthlyLimitSettings?.includeEL;
+                                            setSettings((prev: any) => ({
+                                                ...prev,
+                                                monthlyLimitSettings: { ...(prev?.monthlyLimitSettings || {}), includeEL: newVal },
+                                                // Sync with legacy flag
+                                                earnedLeave: { ...(prev?.earnedLeave || {}), includeInMonthlyLimit: newVal }
+                                            }));
+                                        }}
+                                        className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900 ${settings.monthlyLimitSettings?.includeEL ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-gray-700'}`}
+                                    >
+                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${settings.monthlyLimitSettings?.includeEL ? 'translate-x-6' : 'translate-x-1'}`} />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
                     {/* 3. Carry Forward */}
                     <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
                         <div className="px-6 sm:px-8 py-6 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">

@@ -96,6 +96,14 @@ exports.getRegister = async (req, res) => {
                 }
             }
         }
+        
+        // Ensure defaults if still missing (e.g. admin register year view)
+        if (effectiveMonth == null || effectiveYear == null) {
+            const today = new Date();
+            const period = await dateCycleService.getPeriodInfo(today);
+            effectiveMonth = effectiveMonth ?? String(period.payrollCycle.month);
+            effectiveYear = effectiveYear ?? String(period.payrollCycle.year);
+        }
 
         const registerData = await leaveRegisterService.getLeaveRegister(filters, effectiveMonth, effectiveYear);
 
@@ -104,25 +112,32 @@ exports.getRegister = async (req, res) => {
         let dataWithLimit = registerData;
         try {
             dataWithLimit = registerData.map((entry) => {
-                const clBal = Number(entry.casualLeave?.balance) || 0;
-                const cclBal = Number(entry.compensatoryOff?.balance) || 0;
-                const monthlyCLLimit = entry.casualLeave?.monthlyCLLimit != null
-                    ? Number(entry.casualLeave.monthlyCLLimit)
-                    : clBal;
-                const allowedRemaining = entry.casualLeave?.allowedRemaining != null
-                    ? Number(entry.casualLeave.allowedRemaining)
-                    : monthlyCLLimit;
-                const monthlyAllowedLimit = allowedRemaining + cclBal;
+                const targetSub = entry.monthlySubLedgers?.find(s => s.month === Number(effectiveMonth) && s.year === Number(effectiveYear));
+                
+                const monthlyAllowedLimit = targetSub?.monthlyAllowedLimit ?? (Number(entry.casualLeave?.balance) || 0);
+                const monthlyCLLimit = targetSub?.casualLeave?.monthlyCLLimit ?? (Number(entry.casualLeave?.balance) || 0);
+                const pendingCLThisMonth = targetSub?.casualLeave?.pendingThisMonth ?? 0;
+                const allowedRemainingCL = targetSub?.casualLeave?.allowedRemaining ?? monthlyCLLimit;
+
                 return {
                     ...entry,
                     monthlyCLLimit,
                     monthlyAllowedLimit,
-                    pendingCLThisMonth: entry.casualLeave?.pendingThisMonth ?? 0,
+                    allowedRemainingCL,
+                    pendingCLThisMonth,
+                    // Backward compatibility for old UI components
+                    casualLeave: {
+                        ...(entry.casualLeave || {}),
+                        allowedRemaining: allowedRemainingCL,
+                        monthlyCLLimit,
+                        pendingThisMonth: pendingCLThisMonth
+                    }
                 };
             });
         } catch (e) {
             console.error('Error computing monthly allowed limit for leave register:', e);
         }
+
 
         // Derive payroll-cycle period and return in IST (YYYY-MM-DD) so frontend shows correct period.
         let startDate = null;

@@ -454,21 +454,20 @@ class LeaveRegisterService {
      */
     async getLeaveRegister(filters = {}, month = null, year = null) {
         try {
-            // Determine the financial year to fetch the "Yearly Ledger" data.
-            // If explicit month/year is provided (from UI select), resolve the FY covering that period.
-            let fyName = filters.financialYear;
-            if (!fyName) {
-                const dateCycleService = require('./dateCycleService');
-                const today = new Date();
-                const baseYearNum = year ? Number(year) : today.getFullYear();
-                const baseMonthNum = month ? Number(month) : (today.getMonth() + 1);
-                const midOfMonth = new Date(baseYearNum, baseMonthNum - 1, 15);
-                const periodInfo = await dateCycleService.getPeriodInfo(midOfMonth);
-                fyName = periodInfo.financialYear.name;
-                filters.financialYear = fyName; // Fetch for whole year
-            }
+            const dateCycleService = require('./dateCycleService');
+            const today = new Date();
+            const baseYearNum = (year != null && year !== '') ? Number(year) : today.getFullYear();
+            const baseMonthNum = (month != null && month !== '') ? Number(month) : (today.getMonth() + 1);
+            const midOfMonth = new Date(baseYearNum, baseMonthNum - 1, 15);
+            const periodInfo = await dateCycleService.getPeriodInfo(midOfMonth);
+
+            // Determine the financial year
+            let fyName = filters.financialYear || periodInfo.financialYear.name;
+            filters.financialYear = fyName;
+            const fyStart = periodInfo.financialYear.startDate;
 
             const registerData = await LeaveRegister.getLeaveRegister(filters, null, null); // Pass null, null to use financialYear
+
 
             // Batch-fetch all employees so we always have designation/department/division (model populate only has name, email)
             const rawData = Array.isArray(registerData) ? registerData : [];
@@ -516,7 +515,9 @@ class LeaveRegisterService {
             });
 
             // Group by employee and provide yearly ledger with monthly sub-ledgers
-            let groupedData = this.groupByEmployeeYearly(populatedData);
+            let groupedData = this.groupByEmployeeYearly(populatedData, fyStart);
+
+
 
             // When viewing register for a month (not a single employee), ensure ALL active employees in scope are listed.
             if (!filters.employeeId && !filters.empNo && month && year) {
@@ -607,68 +608,136 @@ class LeaveRegisterService {
                 }
             }
 
-            // Calculate Yearly Aggregates and inject monthly limits
-            const dateCycleService = require('./dateCycleService');
-            const today = new Date();
-            const baseYear = (year != null && year !== '') ? Number(year) : today.getFullYear();
-            const baseMonth = (month != null && month !== '') ? Number(month) : (today.getMonth() + 1);
-            const safeYear = Number.isFinite(baseYear) ? baseYear : today.getFullYear();
-            const safeMonth = (Number.isFinite(baseMonth) && baseMonth >= 1 && baseMonth <= 12) ? baseMonth : (today.getMonth() + 1);
-            const targetDate = new Date(safeYear, safeMonth - 1, 15);
-            const periodInfo = await dateCycleService.getPeriodInfo(targetDate);
+            // 3. Apply Policy-Driven Monthly Limits
             const LeaveSettings = require('../model/LeaveSettings');
-            const settings = await LeaveSettings.findOne({ type: 'leave', isActive: true }).lean();
-            const limitEnabled = settings?.settings?.monthlyCLLimitEnabled !== false;
-            const CL_PER_PAY_CYCLE = limitEnabled ? (settings?.settings?.monthlyCLLimit ?? 2) : 999;
+            const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
+            const policySettings = await LeavePolicySettings.getSettings();
+            
+            const limitConfig = policySettings?.monthlyLimitSettings || { 
+                mode: 'accumulative', 
+                defaultMonthlyCap: 1, 
+                maxUsableLimit: 4, 
+                protectFutureMonths: true,
+                includeCCL: true, 
+                includeEL: true, 
+                logicType: 'ADDITIVE' 
+            };
+
+            const mode = limitConfig.mode || 'accumulative';
+            const defaultMonthlyCap = limitConfig.defaultMonthlyCap ?? 1;
+            const maxUsableLimit = limitConfig.maxUsableLimit ?? 4;
+            const protectFutureMonths = limitConfig.protectFutureMonths !== false;
+            
+            // Generate list of months in FY up to target month
+            const monthsToProcess = [];
+            let curr = new Date(fyStart);
+            curr.setUTCDate(15); // middle of month
+            while (curr <= midOfMonth) {
+                monthsToProcess.push({ month: curr.getUTCMonth() + 1, year: curr.getUTCFullYear() });
+                curr.setUTCMonth(curr.getUTCMonth() + 1);
+            }
+
 
             for (const entry of groupedData) {
                 const empId = entry.employee?.id || entry.employee?._id;
+                const emp = employeesList.find(e => e._id.toString() === empId.toString());
                 if (!empId) continue;
 
-                // 1. Global Yearly Summary
-                const fyName = filters.financialYear || periodInfo.financialYear.name;
-                const yearlyStats = await LeaveRegister.aggregate([
-                    { $match: { employeeId: new mongoose.Types.ObjectId(empId.toString()), financialYear: fyName } },
-                    { $group: {
-                        _id: "$leaveType",
-                        totalCredits: { $sum: { $cond: [{ $eq: ["$transactionType", "CREDIT"] }, "$days", 0] } },
-                        totalDebits: { $sum: { $cond: [{ $eq: ["$transactionType", "DEBIT"] }, "$days", 0] } },
-                        adjustments: { $sum: { $cond: [{ $eq: ["$transactionType", "ADJUSTMENT"] }, "$days", 0] } }
-                    }}
-                ]);
+                // Determine Monthly Cap (Department Override vs Default)
+                let monthlyCap = defaultMonthlyCap;
+                if (emp?.department_id?.leaveLimits?.monthlyLimit > 0) {
+                    monthlyCap = emp.department_id.leaveLimits.monthlyLimit;
+                }
 
-                entry.yearlySummary = yearlyStats.reduce((acc, stat) => {
-                    acc[stat._id] = {
-                        totalCredits: stat.totalCredits,
-                        totalDebits: stat.totalDebits,
-                        adjustments: stat.adjustments
-                    };
-                    return acc;
-                }, {});
+                // Calculate Experience-Based Allotment for Safety Rule
+                let annualCL = policySettings.annualCLReset?.resetToBalance || 12;
+                if (emp?.doj && policySettings.annualCLReset?.casualLeaveByExperience?.length > 0) {
+                    const doj = new Date(emp.doj);
+                    const diffMs = today - doj;
+                    const years = diffMs / (1000 * 60 * 60 * 24 * 365.25);
+                    const matchingTier = [...policySettings.annualCLReset.casualLeaveByExperience]
+                        .sort((a, b) => a.minYears - b.minYears)
+                        .find(t => years >= t.minYears && years <= t.maxYears);
+                    if (matchingTier) annualCL = matchingTier.casualLeave;
+                }
 
-                // 2. Inject Monthly Limit Details for the requested month
-                for (const sub of entry.monthlySubLedgers) {
-                    if (sub.month === safeMonth && sub.year === safeYear) {
-                        const Leave = require('../model/Leave');
-                        const startOfCycle = periodInfo.payrollCycle.startDate;
-                        const endOfCycle = periodInfo.payrollCycle.endDate;
-                        
-                        const pendingLeaves = await Leave.find({
-                            employeeId: empId,
-                            leaveType: 'CL',
-                            fromDate: { $lte: endOfCycle },
-                            toDate: { $gte: startOfCycle },
-                            status: { $in: ['pending', 'hod_approved', 'manager_approved', 'hr_approved'] },
-                            isActive: true
-                        }).select('numberOfDays').lean();
+                // Process months to determine carry-forward limit
+                let limitCarrier = 0;
+                let finalMonthAllowed = 0;
 
-                        const pendingCLDays = pendingLeaves.reduce((sum, l) => sum + (l.numberOfDays || 0), 0);
-                        sub.casualLeave.allowedRemaining = Math.max(0, CL_PER_PAY_CYCLE - pendingCLDays);
-                        sub.casualLeave.pendingThisMonth = pendingCLDays;
-                        sub.casualLeave.monthlyCLLimit = CL_PER_PAY_CYCLE;
+                for (let i = 0; i < monthsToProcess.length; i++) {
+                    const mInfo = monthsToProcess[i];
+                    const sub = entry.monthlySubLedgers.find(s => s.month === mInfo.month && s.year === mInfo.year);
+                    
+                    if (mode === 'unrestricted') {
+                        finalMonthAllowed = 999; // Essentially infinity, will be capped by balance later
+                        continue;
+                    }
+
+                    // Calculate Limit for this month
+                    let monthLimit = monthlyCap + limitCarrier;
+                    monthLimit = Math.min(monthLimit, maxUsableLimit);
+
+                    // Safety Rule: Protect Future Months
+                    if (protectFutureMonths) {
+                        const totalMonthsInFY = 12;
+                        const monthsRemainingAfterThis = totalMonthsInFY - (i + 1);
+                        // We need to ensure we leave at least 1 CL for each remaining month
+                        const clBalance = sub?.casualLeave?.balance || (i > 0 ? entry.monthlySubLedgers[i-1].casualLeave.balance : (emp?.casualLeaves || 0));
+                        const safeLimit = Math.max(0, clBalance - (monthsRemainingAfterThis * 1));
+                        monthLimit = Math.min(monthLimit, safeLimit);
+                    }
+
+                    // How much was used?
+                    const used = sub?.casualLeave?.usedThisMonth || 0;
+                    
+                    if (mInfo.month === baseMonthNum && mInfo.year === baseYearNum) {
+                        finalMonthAllowed = monthLimit;
+                    }
+
+                    // Update carrier for next month
+                    if (mode === 'accumulative') {
+                        limitCarrier = Math.max(0, monthLimit - used);
+                    } else {
+                        limitCarrier = 0;
+                    }
+                }
+
+                // Inject limits into the requested month's sub-ledger
+                const targetSub = entry.monthlySubLedgers.find(s => s.month === baseMonthNum && s.year === baseYearNum);
+                if (targetSub) {
+                    const clBalance = targetSub.casualLeave.balance || 0;
+                    const cclBalance = targetSub.compensatoryOff.balance || 0;
+                    const elBalance = targetSub.earnedLeave.balance || 0;
+
+                    const pendingLeaves = await Leave.find({
+                        employeeId: empId,
+                        fromDate: { $lte: targetPeriod.payrollCycle.endDate },
+                        toDate: { $gte: targetPeriod.payrollCycle.startDate },
+                        status: { $in: ['pending', 'hod_approved', 'manager_approved', 'hr_approved'] },
+                        isActive: true
+                    }).select('leaveType numberOfDays').lean();
+
+                    const pendingCLDays = pendingLeaves.filter(l => l.leaveType === 'CL').reduce((sum, l) => sum + (l.numberOfDays || 0), 0);
+                    const pendingAllDays = pendingLeaves.reduce((sum, l) => sum + (l.numberOfDays || 0), 0);
+
+                    targetSub.casualLeave.monthlyCLLimit = finalMonthAllowed;
+                    targetSub.casualLeave.pendingThisMonth = pendingCLDays;
+
+                    // Absolute Cap (Inclusive Mode) or Additive
+                    if (limitConfig.logicType === 'CAP_INCLUSIVE') {
+                        const totalPotential = clBalance + (limitConfig.includeCCL ? cclBalance : 0) + (limitConfig.includeEL ? elBalance : 0);
+                        targetSub.monthlyAllowedLimit = Math.max(0, Math.min(totalPotential, finalMonthAllowed));
+                        targetSub.casualLeave.allowedRemaining = Math.max(0, Math.min(clBalance, finalMonthAllowed) - pendingCLDays);
+                    } else {
+                        targetSub.casualLeave.allowedRemaining = Math.max(0, Math.min(clBalance, finalMonthAllowed) - pendingCLDays);
+                        targetSub.monthlyAllowedLimit = targetSub.casualLeave.allowedRemaining + 
+                                                      (limitConfig.includeCCL ? cclBalance : 0) + 
+                                                      (limitConfig.includeEL ? elBalance : 0);
                     }
                 }
             }
+
 
             return groupedData;
         } catch (error) {
@@ -827,9 +896,9 @@ class LeaveRegisterService {
                 grouped[empKey].months[monthKey] = {
                     month: monthNum,
                     year: yearNum,
-                    casualLeave: { openingBalance: 0, accruedThisMonth: 0, earnedCCL: 0, usedThisMonth: 0, expired: 0, balance: 0, carryForward: 0 },
-                    earnedLeave: { openingBalance: 0, accruedThisMonth: 0, usedThisMonth: 0, balance: 0 },
-                    compensatoryOff: { openingBalance: 0, earned: 0, used: 0, expired: 0, balance: 0 },
+                    casualLeave: { openingBalance: 0, accruedThisMonth: 0, earnedCCL: 0, usedThisMonth: 0, expired: 0, balance: 0, carryForward: 0, adjustments: 0 },
+                    earnedLeave: { openingBalance: 0, accruedThisMonth: 0, usedThisMonth: 0, balance: 0, adjustments: 0 },
+                    compensatoryOff: { openingBalance: 0, earned: 0, used: 0, expired: 0, balance: 0, adjustments: 0 },
                     totalPaidBalance: 0,
                     transactions: []
                 };
@@ -844,70 +913,151 @@ class LeaveRegisterService {
 
             if (leaveType === 'CL') {
                 const cl = monthData.casualLeave;
-                if (!cl._firstEntry) {
-                    cl.openingBalance = transaction.openingBalance;
-                    cl._firstEntry = true;
-                }
                 cl.balance = transaction.closingBalance;
                 if (type === 'CREDIT') {
                     if (transaction.autoGeneratedType === 'INITIAL_BALANCE') cl.accruedThisMonth += days;
                     else if (transaction.reason?.includes('CCL')) cl.earnedCCL += days;
                     else cl.accruedThisMonth += days;
-                } else if (type === 'DEBIT') cl.usedThisMonth += days;
+                }
+                else if (type === 'DEBIT') cl.usedThisMonth += days;
                 else if (type === 'EXPIRY') cl.expired += days;
-                else if (type === 'CARRY_FORWARD') cl.carryForward += days;
+                else if (type === 'ADJUSTMENT') cl.adjustments += days;
             } else if (leaveType === 'EL') {
                 const el = monthData.earnedLeave;
-                if (!el._firstEntry) {
-                    el.openingBalance = transaction.openingBalance;
-                    el._firstEntry = true;
-                }
                 el.balance = transaction.closingBalance;
                 if (type === 'CREDIT') el.accruedThisMonth += days;
                 else if (type === 'DEBIT') el.usedThisMonth += days;
+                else if (type === 'ADJUSTMENT') el.adjustments += days;
             } else if (leaveType === 'CCL') {
                 const ccl = monthData.compensatoryOff;
-                if (!ccl._firstEntry) {
-                    ccl.openingBalance = transaction.openingBalance;
-                    ccl._firstEntry = true;
-                }
                 ccl.balance = transaction.closingBalance;
                 if (type === 'CREDIT') ccl.earned += days;
                 else if (type === 'DEBIT') ccl.used += days;
                 else if (type === 'EXPIRY') ccl.expired += days;
+                else if (type === 'ADJUSTMENT') ccl.adjustments += days;
             }
         });
 
-        // 2. Resolve 12 months for the financial year and chain balances
+        // 2. Resolve full 12-month sequence for the financial year (or at least all months up to latest activity)
         return Object.values(grouped).map(empEntry => {
-            const monthsInOrder = Object.values(empEntry.months).sort((a, b) => (a.year - b.year) || (a.month - b.month));
+            // Determine full sequence of months to show if fyStart was provided
+            let monthsInOrder = [];
+            if (fyStart) {
+                let curr = new Date(fyStart);
+                curr.setUTCDate(15);
+                for (let i = 0; i < 12; i++) {
+                    const m = curr.getUTCMonth() + 1;
+                    const y = curr.getUTCFullYear();
+                    const key = `${y}-${m}`;
+                    
+                    if (empEntry.months[key]) {
+                        monthsInOrder.push(empEntry.months[key]);
+                    } else {
+                        // Create placeholder month
+                        monthsInOrder.push({
+                            month: m,
+                            year: y,
+                            casualLeave: { openingBalance: 0, accruedThisMonth: 0, earnedCCL: 0, usedThisMonth: 0, expired: 0, balance: 0, carryForward: 0 },
+                            earnedLeave: { openingBalance: 0, accruedThisMonth: 0, usedThisMonth: 0, balance: 0 },
+                            compensatoryOff: { openingBalance: 0, earned: 0, used: 0, expired: 0, balance: 0 },
+                            totalPaidBalance: 0,
+                            transactions: []
+                        });
+                    }
+                    curr.setUTCMonth(curr.getUTCMonth() + 1);
+                }
+            } else {
+                monthsInOrder = Object.values(empEntry.months).sort((a, b) => (a.year - b.year) || (a.month - b.month));
+            }
             
-            // If we have transactions, fill in gaps between months and ensure ledger continuity
+            // 3. Chain balances across the sequence
             if (monthsInOrder.length > 0) {
                 for (let i = 0; i < monthsInOrder.length; i++) {
                     const m = monthsInOrder[i];
-                    delete m.casualLeave._firstEntry;
-                    delete m.earnedLeave._firstEntry;
-                    delete m.compensatoryOff._firstEntry;
                     
+                    if (i > 0) {
+                        const prevM = monthsInOrder[i - 1];
+                        m.casualLeave.openingBalance = prevM.casualLeave.closingBalance ?? prevM.casualLeave.balance;
+                        m.earnedLeave.openingBalance = prevM.earnedLeave.closingBalance ?? prevM.earnedLeave.balance;
+                        m.compensatoryOff.openingBalance = prevM.compensatoryOff.closingBalance ?? prevM.compensatoryOff.balance;
+                    } else {
+                        if (m.transactions.length > 0) {
+                            m.casualLeave.openingBalance = m.transactions.find(tx => tx.leaveType === 'CL')?.openingBalance || 0;
+                            m.earnedLeave.openingBalance = m.transactions.find(tx => tx.leaveType === 'EL')?.openingBalance || 0;
+                            m.compensatoryOff.openingBalance = m.transactions.find(tx => tx.leaveType === 'CCL')?.openingBalance || 0;
+                        }
+                    }
+
+                    if (m.transactions.length === 0) {
+                        m.casualLeave.balance = m.casualLeave.openingBalance;
+                        m.earnedLeave.balance = m.earnedLeave.openingBalance;
+                        m.compensatoryOff.balance = m.compensatoryOff.openingBalance;
+                    } else {
+                        const deltaCL = m.casualLeave.accruedThisMonth + m.casualLeave.earnedCCL - m.casualLeave.usedThisMonth - m.casualLeave.expired + m.casualLeave.adjustments;
+                        const deltaEL = m.earnedLeave.accruedThisMonth - m.earnedLeave.usedThisMonth + m.earnedLeave.adjustments;
+                        const deltaCCL = m.compensatoryOff.earned - m.compensatoryOff.used - m.compensatoryOff.expired + m.compensatoryOff.adjustments;
+                        
+                        m.casualLeave.balance = m.casualLeave.openingBalance + deltaCL;
+                        m.earnedLeave.balance = m.earnedLeave.openingBalance + deltaEL;
+                        m.compensatoryOff.balance = m.compensatoryOff.openingBalance + deltaCCL;
+                    }
+
                     m.casualLeave.closingBalance = m.casualLeave.balance;
                     m.earnedLeave.closingBalance = m.earnedLeave.balance;
                     m.compensatoryOff.closingBalance = m.compensatoryOff.balance;
-                    m.totalPaidBalance = (m.casualLeave.balance || 0) + (m.earnedLeave.balance || 0) + (m.compensatoryOff.balance || 0);
-
-                    // If not the last month, ensure the next month's opening balance matches this month's closing
-                    if (i < monthsInOrder.length - 1) {
-                        const nextM = monthsInOrder[i + 1];
-                        // If there are no transactions in next month yet (gap filling would happen here if we wanted all 12 months)
-                        // For now, sorting them is enough to show the sequence.
-                    }
+                    m.totalPaidBalance = m.casualLeave.balance + m.earnedLeave.balance + m.compensatoryOff.balance;
                 }
             }
 
+
+            // 4. Calculate Yearly Summary from the sub-ledgers
+
+            const yearlySummary = {
+                CL: { openingBalance: 0, totalCredits: 0, totalDebits: 0, adjustments: 0, closingBalance: 0 },
+                EL: { openingBalance: 0, totalCredits: 0, totalDebits: 0, adjustments: 0, closingBalance: 0 },
+                CCL: { openingBalance: 0, totalCredits: 0, totalDebits: 0, adjustments: 0, closingBalance: 0 }
+            };
+
+            if (monthsInOrder.length > 0) {
+                // Initial opening balances from the first month in the financial year
+                yearlySummary.CL.openingBalance = monthsInOrder[0].casualLeave.openingBalance;
+                yearlySummary.EL.openingBalance = monthsInOrder[0].earnedLeave.openingBalance;
+                yearlySummary.CCL.openingBalance = monthsInOrder[0].compensatoryOff.openingBalance;
+
+                // Final closing balances from the last month in the financial year
+                yearlySummary.CL.closingBalance = monthsInOrder[monthsInOrder.length - 1].casualLeave.closingBalance;
+                yearlySummary.EL.closingBalance = monthsInOrder[monthsInOrder.length - 1].earnedLeave.closingBalance;
+                yearlySummary.CCL.closingBalance = monthsInOrder[monthsInOrder.length - 1].compensatoryOff.closingBalance;
+
+                // Aggregate credits/debits across all 12 months
+                monthsInOrder.forEach(m => {
+                    yearlySummary.CL.totalCredits += m.casualLeave.accruedThisMonth + m.casualLeave.earnedCCL;
+                    yearlySummary.CL.totalDebits += m.casualLeave.usedThisMonth;
+                    
+                    yearlySummary.EL.totalCredits += m.earnedLeave.accruedThisMonth;
+                    yearlySummary.EL.totalDebits += m.earnedLeave.usedThisMonth;
+                    
+                    yearlySummary.CCL.totalCredits += m.compensatoryOff.earned;
+                    yearlySummary.CCL.totalDebits += m.compensatoryOff.used;
+
+                    // Sum adjustments from transactions
+                    m.transactions.forEach(tx => {
+                        if (tx.transactionType === 'ADJUSTMENT') {
+                            if (tx.leaveType === 'CL') yearlySummary.CL.adjustments += tx.days;
+                            else if (tx.leaveType === 'EL') yearlySummary.EL.adjustments += tx.days;
+                            else if (tx.leaveType === 'CCL') yearlySummary.CCL.adjustments += tx.days;
+                        }
+                    });
+                });
+            }
+
+            empEntry.yearlySummary = yearlySummary;
             empEntry.monthlySubLedgers = monthsInOrder;
             delete empEntry.months;
             return empEntry;
         });
+
+
     }
 
     async updateEmployeeBalance(employeeId, leaveType) {

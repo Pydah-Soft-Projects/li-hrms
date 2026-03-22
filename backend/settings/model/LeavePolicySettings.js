@@ -28,6 +28,51 @@ const leavePolicySettingsSchema = new mongoose.Schema({
             description: 'Use calendar year (Jan-Dec) instead of custom financial year'
         }
     },
+    // Monthly Limit Logic Configuration
+    monthlyLimitSettings: {
+        // 'strict' = No carry-over of unused monthly quota
+        // 'accumulative' = Unused monthly quota carries over to next month
+        // 'unrestricted' = No monthly cap (limit = total balance)
+        mode: {
+            type: String,
+            enum: ['strict', 'accumulative', 'unrestricted'],
+            default: 'accumulative',
+            description: 'Monthly limit accumulation mode'
+        },
+        defaultMonthlyCap: {
+            type: Number,
+            default: 1,
+            min: 0,
+            description: 'Default usage restriction (e.g., 1 CL per month)'
+        },
+        maxUsableLimit: {
+            type: Number,
+            default: 4,
+            min: 1,
+            description: 'Master Cap: Maximum leaves usable in a single month even if accumulated'
+        },
+        protectFutureMonths: {
+            type: Boolean,
+            default: true,
+            description: 'Safety Rule: Ensure remaining months have at least 1 leave available'
+        },
+        includeCCL: {
+            type: Boolean,
+            default: true,
+            description: 'Whether to include Compensatory Off in the monthly allowed limit calculation'
+        },
+        includeEL: {
+            type: Boolean,
+            default: true,
+            description: 'Whether to include Earned Leave in the monthly allowed limit calculation'
+        },
+        logicType: {
+            type: String,
+            enum: ['ADDITIVE', 'CAP_INCLUSIVE'],
+            default: 'ADDITIVE',
+            description: 'ADDITIVE = Monthly_Limit + CCL + EL; CAP_INCLUSIVE = Monthly_Limit is the total absolute cap'
+        }
+    },
 
     // Earned Leave (EL) Configuration
     earnedLeave: {

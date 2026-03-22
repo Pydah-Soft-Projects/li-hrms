@@ -320,9 +320,8 @@ leaveRegisterSchema.statics.getLeaveRegister = function (filters = {}, month = n
         else query.$or = termCondition.$or;
     }
 
-    const sort = balanceAsOf
-        ? { year: 1, month: 1, createdAt: 1 }
-        : { createdAt: -1 };
+    const sort = { year: 1, month: 1, createdAt: 1 };
+
 
     return this.find(query)
         .populate('employeeId', 'name email')
