@@ -2001,6 +2001,52 @@ export const api = {
     return apiRequest<any>(`/leaves${query}`, { method: 'GET' });
   },
 
+  downloadLeaveODReportPDF: async (filters: { 
+    status?: string; 
+    fromDate?: string; 
+    toDate?: string; 
+    leaveType?: string; 
+    department?: string; 
+    division?: string;
+    designation?: string;
+    employeeId?: string;
+    search?: string;
+    includeLeaves?: boolean;
+    includeODs?: boolean;
+    includeSummary?: boolean;
+  }) => {
+    const params = new URLSearchParams();
+    if (filters.status) params.append('status', filters.status);
+    if (filters.fromDate) params.append('fromDate', filters.fromDate);
+    if (filters.toDate) params.append('toDate', filters.toDate);
+    if (filters.leaveType) params.append('leaveType', filters.leaveType);
+    if (filters.department) params.append('department', filters.department);
+    if (filters.division) params.append('division', filters.division);
+    if (filters.designation) params.append('designation', filters.designation);
+    if (filters.employeeId) params.append('employeeId', filters.employeeId);
+    if (filters.search) params.append('search', filters.search);
+    if (filters.includeLeaves !== undefined) params.append('includeLeaves', String(filters.includeLeaves));
+    if (filters.includeODs !== undefined) params.append('includeODs', String(filters.includeODs));
+    if (filters.includeSummary !== undefined) params.append('includeSummary', String(filters.includeSummary));
+
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const url = `${API_BASE_URL}/leaves/export/pdf?${params.toString()}`;
+    
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || 'Failed to download PDF');
+    }
+
+    return response.blob();
+  },
+
   // Dashboard stats (global or filtered) for superadmin cards
   getLeaveDashboardStats: async (filters?: { search?: string; division?: string; department?: string; designation?: string }) => {
     const params = new URLSearchParams();

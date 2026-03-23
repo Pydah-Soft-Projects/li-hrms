@@ -20,6 +20,7 @@ const Department = require('../../departments/model/Department');
 const OD = require('../model/OD');
 const leaveRegisterService = require('../services/leaveRegisterService');
 const dateCycleService = require('../services/dateCycleService');
+const PDFDocument = require('pdfkit');
 
 /**
  * Get employee settings from database
@@ -2455,6 +2456,263 @@ exports.validateLeaveSplits = async (req, res) => {
       success: false,
       error: error.message || 'Failed to validate leave splits',
     });
+  }
+};
+
+/**
+ * Helper to draw a simple table in PDFKit
+ */
+const drawPDFTable = (doc, headers, data, startX, startY, colWidths, options = {}) => {
+  const { headerFill = '#2980b9', rowFill = '#f8f9fa', fontSize = 8 } = options;
+  let y = startY;
+  const tableWidth = colWidths.reduce((a, b) => a + b, 0);
+
+  // Draw Header
+  doc.fillColor(headerFill).rect(startX, y, tableWidth, 20).fill();
+  doc.fillColor('#FFFFFF').fontSize(fontSize + 1).font('Helvetica-Bold');
+  
+  let x = startX;
+  headers.forEach((h, i) => {
+    doc.text(h, x + 4, y + 6, { width: colWidths[i] - 8, align: 'left' });
+    x += colWidths[i];
+  });
+  
+  y += 20;
+  doc.font('Helvetica').fontSize(fontSize).fillColor('#333333');
+
+  // Draw Rows
+  data.forEach((row, rowIndex) => {
+    // Check for page break
+    if (y > 750) {
+      doc.addPage();
+      y = 50;
+    }
+
+    if (rowIndex % 2 === 0) {
+      doc.fillColor(rowFill).rect(startX, y, tableWidth, 18).fill();
+    }
+
+    doc.fillColor('#333333');
+    let xRow = startX;
+    row.forEach((cell, i) => {
+      doc.text(String(cell || ''), xRow + 4, y + 5, { width: colWidths[i] - 8, align: 'left', lineBreak: false });
+      xRow += colWidths[i];
+    });
+    y += 18;
+  });
+
+  return y;
+};
+
+// @desc    Export Leaves and ODs as PDF
+// @route   GET /api/leaves/export/pdf
+// @access  Private
+exports.exportReportPDF = async (req, res) => {
+  try {
+    const { 
+      status, fromDate, toDate, leaveType, department, division, designation, search, employeeId,
+      includeLeaves = 'true', includeODs = 'true', includeSummary = 'true' 
+    } = req.query;
+
+    // Multi-layered filter logic (same as getLeaves for consistency/security)
+    const scopeFilter = req.scopeFilter || { isActive: true };
+    const workflowFilter = buildWorkflowVisibilityFilter(req.user);
+    const scopedEmployeeIds = await getEmployeeIdsInScope(req.user);
+    
+    let jurisdictionFilter = scopeFilter;
+    let visibilityFilter = workflowFilter;
+    
+    if (Array.isArray(scopedEmployeeIds) && scopedEmployeeIds.length > 0) {
+      jurisdictionFilter = {
+        $or: [
+          scopeFilter,
+          { employeeId: { $in: scopedEmployeeIds } }
+        ]
+      };
+      visibilityFilter = {
+        $or: [
+          workflowFilter,
+          { employeeId: { $in: scopedEmployeeIds } }
+        ]
+      };
+    }
+
+    const baseFilter = {
+      $and: [
+        jurisdictionFilter,
+        visibilityFilter,
+        { isActive: true }
+      ]
+    };
+
+    if (status && !['leaves', 'od', 'all'].includes(status)) baseFilter.status = status;
+    if (employeeId) baseFilter.employeeId = employeeId;
+    if (department) baseFilter.department = department;
+    if (division) baseFilter.division_id = division;
+    if (designation) baseFilter.designation = designation;
+    if (fromDate) baseFilter.fromDate = { $gte: new Date(fromDate) };
+    if (toDate) baseFilter.toDate = { ...baseFilter.toDate, $lte: new Date(toDate) };
+
+    // Search logic (resolve employee IDs)
+    if (search && String(search).trim()) {
+      const searchStr = String(search).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(searchStr, 'i');
+      const matchedEmployees = await Employee.find({
+        $or: [
+          { emp_no: regex },
+          { employee_name: regex },
+          { first_name: regex },
+          { last_name: regex }
+        ]
+      }).select('_id').lean();
+      const ids = matchedEmployees.map(e => e._id);
+      if (ids.length > 0) {
+        baseFilter.employeeId = { $in: ids };
+      } else {
+        baseFilter.employeeId = { $in: [] };
+      }
+    }
+
+    // Clone for Leave and OD
+    const leaveFilter = { ...baseFilter };
+    if (leaveType) leaveFilter.leaveType = leaveType;
+
+    const odFilter = { ...baseFilter };
+    // OD status mapping if needed (OD uses similar statuses)
+
+    const [leaves, ods] = await Promise.all([
+      includeLeaves === 'true' ? Leave.find(leaveFilter).populate('employeeId', 'employee_name emp_no first_name last_name').lean() : [],
+      includeODs === 'true' ? OD.find(odFilter).populate('employeeId', 'employee_name emp_no first_name last_name').lean() : []
+    ]);
+
+    // Setup PDF
+    const doc = new PDFDocument({ margin: 30, size: 'A4', bufferPages: true });
+    const filename = `Report_${new Date().toISOString().split('T')[0]}.pdf`;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    doc.pipe(res);
+
+    const pageWidth = doc.page.width;
+    const margin = 30;
+
+    // --- Header ---
+    doc.font('Helvetica-Bold').fontSize(20).fillColor('#00008B')
+       .text("PYDAH COLLEGE OF ENGINEERING & TECHNOLOGY", { align: 'center' });
+    doc.moveDown(0.2);
+    doc.fontSize(14).fillColor('#000000')
+       .text("Leave & OD Request Report", { align: 'center' });
+    
+    // Filter summary
+    doc.fontSize(9).font('Helvetica').text(`Period: ${fromDate || 'Any'} to ${toDate || 'Any'} | Status: ${status || 'All'}`, { align: 'left' });
+    doc.moveTo(margin, doc.y + 5).lineTo(pageWidth - margin, doc.y + 5).strokeColor('#CCCCCC').stroke();
+    doc.moveDown(1.5);
+
+    let currentY = doc.y;
+
+    const formatDate = (date) => date ? new Date(date).toLocaleDateString('en-GB') : '-';
+    const getEmpName = (emp) => {
+      if (!emp) return '-';
+      if (emp.employee_name) return emp.employee_name;
+      return `${emp.first_name || ''} ${emp.last_name || ''} (${emp.emp_no || ''})`.trim();
+    };
+
+    // --- Leaves Table ---
+    if (includeLeaves === 'true' && leaves.length > 0) {
+      doc.fontSize(11).font('Helvetica-Bold').text("LEAVE APPLICATIONS", margin, currentY);
+      currentY = drawPDFTable(doc, 
+        ['S.No', 'Employee Name', 'Type', 'Dates', 'Days', 'Status'],
+        leaves.map((l, i) => [
+          i + 1,
+          getEmpName(l.employeeId),
+          l.leaveType,
+          `${formatDate(l.fromDate)}${l.fromDate !== l.toDate ? ' - ' + formatDate(l.toDate) : ''}`,
+          l.numberOfDays,
+          (l.status || '').toUpperCase()
+        ]),
+        margin, currentY + 15, [30, 180, 60, 150, 40, 75]
+      );
+      currentY += 25;
+    }
+
+    // --- OD Table ---
+    if (includeODs === 'true' && ods.length > 0) {
+      if (currentY > 700) { doc.addPage(); currentY = 50; }
+      doc.fontSize(11).font('Helvetica-Bold').text("ON DUTY (OD) APPLICATIONS", margin, currentY);
+      currentY = drawPDFTable(doc, 
+        ['S.No', 'Employee Name', 'Type', 'Dates', 'Days', 'Status'],
+        ods.map((o, i) => [
+          i + 1,
+          getEmpName(o.employeeId),
+          (o.odType || '').replace('_', ' '),
+          `${formatDate(o.fromDate)}${o.fromDate !== o.toDate ? ' - ' + formatDate(o.toDate) : ''}`,
+          o.numberOfDays,
+          (o.status || '').toUpperCase()
+        ]),
+        margin, currentY + 15, [30, 180, 60, 150, 40, 75],
+        { headerFill: '#8e44ad' }
+      );
+      currentY += 25;
+    }
+
+    // --- Summary Table ---
+    if (includeSummary === 'true') {
+      if (currentY > 600) { doc.addPage(); currentY = 50; }
+      doc.fontSize(11).font('Helvetica-Bold').text("SUMMARY (APPROVED)", margin, currentY);
+      
+      const summaryMap = {};
+      const process = (item, isOD) => {
+        if (item.status !== 'approved' && item.status !== 'split_approved') return;
+        const name = getEmpName(item.employeeId);
+        if (!summaryMap[name]) summaryMap[name] = { CL: 0, OTHER: 0, OD: 0 };
+        const days = item.numberOfDays || 0;
+        if (isOD) summaryMap[name].OD += days;
+        else if (item.leaveType === 'CL') summaryMap[name].CL += days;
+        else summaryMap[name].OTHER += days;
+      };
+
+      if (includeLeaves === 'true') leaves.forEach(l => process(l, false));
+      if (includeODs === 'true') ods.forEach(o => process(o, true));
+
+      const headers = ['S.No', 'Employee Name'];
+      const colWidths = [30, 200];
+      if (includeLeaves === 'true') { headers.push('CL', 'Other'); colWidths.push(50, 50); }
+      if (includeODs === 'true') { headers.push('OD'); colWidths.push(50); }
+      headers.push('Total'); colWidths.push(60);
+
+      const summaryData = Object.entries(summaryMap).map(([name, counts], i) => {
+        const row = [i + 1, name];
+        let total = 0;
+        if (includeLeaves === 'true') { row.push(counts.CL, counts.OTHER); total += counts.CL + counts.OTHER; }
+        if (includeODs === 'true') { row.push(counts.OD); total += counts.OD; }
+        row.push(total);
+        return row;
+      });
+
+      if (summaryData.length > 0) {
+        currentY = drawPDFTable(doc, headers, summaryData, margin, currentY + 15, colWidths, { headerFill: '#34495e' });
+      } else {
+        doc.fontSize(9).font('Helvetica-Oblique').text("No approved requests found for summary.", margin, currentY + 15);
+      }
+    }
+
+    // Footer on each page
+    const pages = doc.bufferedPageRange();
+    for (let i = 0; i < pages.count; i++) {
+        doc.switchToPage(i);
+        doc.fontSize(8).fillColor('#999999').text(
+            `Generated on ${new Date().toLocaleString()} | Page ${i + 1} of ${pages.count}`,
+            margin, doc.page.height - 25, { align: 'center' }
+        );
+    }
+
+    doc.end();
+
+  } catch (error) {
+    console.error('Backend PDF Export Error:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, error: 'Failed to generate PDF' });
+    }
   }
 };
 

@@ -4,16 +4,20 @@ import { useState } from 'react';
 import PayrollTransactionsTab from './payroll-transactions-tab';
 import AttendanceReportsTab from './attendance-reports-tab';
 import ThumbReportsTab from './thumb-reports-tab';
+import LeaveReportsTab from './leave-reports-tab';
+import ODReportsTab from './od-reports-tab';
 import { auth } from '@/lib/auth';
 import { canViewReports, canViewFinancialReports } from '@/lib/permissions';
-import { BarChart2, Fingerprint, CreditCard, Lock } from 'lucide-react';
+import { BarChart2, Fingerprint, CreditCard, Lock, FileText, Briefcase } from 'lucide-react';
 
-type TabType = 'payroll' | 'attendance' | 'biometric';
+type TabType = 'payroll' | 'attendance' | 'biometric' | 'leaves' | 'od';
 
 const TAB_CONFIG = {
   payroll: { label: 'Payroll', icon: CreditCard, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-950/30', border: 'border-violet-500', activeBg: 'bg-violet-600' },
   attendance: { label: 'Attendance', icon: BarChart2, color: 'text-indigo-600 dark:text-indigo-400', bg: 'bg-indigo-50 dark:bg-indigo-950/30', border: 'border-indigo-500', activeBg: 'bg-indigo-600' },
   biometric: { label: 'Biometric', icon: Fingerprint, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-950/30', border: 'border-emerald-500', activeBg: 'bg-emerald-600' },
+  leaves: { label: 'Leaves', icon: FileText, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-950/30', border: 'border-blue-500', activeBg: 'bg-blue-600' },
+  od: { label: 'OD', icon: Briefcase, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-950/30', border: 'border-amber-500', activeBg: 'bg-amber-600' },
 };
 
 export default function ReportsPage() {
@@ -37,7 +41,7 @@ export default function ReportsPage() {
 
   const tabs: TabType[] = [];
   if (hasFinancialAccess) tabs.push('payroll');
-  tabs.push('attendance', 'biometric');
+  tabs.push('attendance', 'biometric', 'leaves', 'od');
 
   const currentTab: TabType = tabs.includes(activeTab) ? activeTab : tabs[0];
 
@@ -83,6 +87,8 @@ export default function ReportsPage() {
         {currentTab === 'payroll' && <PayrollTransactionsTab />}
         {currentTab === 'attendance' && <AttendanceReportsTab />}
         {currentTab === 'biometric' && <ThumbReportsTab />}
+        {currentTab === 'leaves' && <LeaveReportsTab />}
+        {currentTab === 'od' && <ODReportsTab />}
       </div>
     </div>
   );

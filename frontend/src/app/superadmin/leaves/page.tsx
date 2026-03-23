@@ -4,13 +4,14 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { api, Department, Division, Designation } from '@/lib/api';
 import { auth } from '@/lib/auth';
-import { toast, ToastContainer } from 'react-toastify';
+import { toast } from 'react-toastify';
 import Swal from 'sweetalert2';
-import 'react-toastify/dist/ReactToastify.css';
 import Spinner from '@/components/Spinner';
 import LocationPhotoCapture from '@/components/LocationPhotoCapture';
 import EmployeeSelect from '@/components/EmployeeSelect';
-import { Loader2, Calendar, Briefcase, X, Clock as Clock3 } from 'lucide-react';
+import { Loader2, Calendar, Briefcase, X, Clock as Clock3, FileText } from 'lucide-react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 const LocationMap = dynamic(() => import('@/components/LocationMap'), { ssr: false });
 
@@ -392,6 +393,8 @@ export default function LeavesPage() {
 
   // Dialog states
   const [showApplyDialog, setShowApplyDialog] = useState(false);
+  const [showExportPDFDialog, setShowExportPDFDialog] = useState(false);
+  const [exportPDFOptions, setExportPDFOptions] = useState({ includeLeaves: true, includeODs: true });
   const [applyType, setApplyType] = useState<'leave' | 'od'>('leave');
   const [showDetailDialog, setShowDetailDialog] = useState(false);
   const [isChangeHistoryExpanded, setIsChangeHistoryExpanded] = useState(false);
@@ -988,6 +991,44 @@ export default function LeavesPage() {
       setLoadingMessage('');
     }
   };
+  const exportToPDF = async (options = { includeLeaves: true, includeODs: true, includeSummary: true }) => {
+    const filters = getLeavesODFilters();
+    const toastId = toast.loading('Generating PDF report...');
+
+    try {
+      const blob = await api.downloadLeaveODReportPDF({
+        ...filters,
+        status: activeTab === 'pending' ? 'pending' : undefined,
+        includeLeaves: options.includeLeaves,
+        includeODs: options.includeODs,
+        includeSummary: options.includeSummary
+      });
+
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Leave_OD_Report_${new Date().toISOString().split('T')[0]}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      toast.update(toastId, { 
+        render: 'PDF Downloaded Successfully!', 
+        type: 'success', 
+        isLoading: false, 
+        autoClose: 2000 
+      });
+    } catch (err: any) {
+      console.error('PDF Export Error:', err);
+      toast.update(toastId, { 
+        render: 'Failed to export PDF: ' + (err.message || 'Unknown error'), 
+        type: 'error', 
+        isLoading: false, 
+        autoClose: 5000 
+      });
+    }
+  };
 
   const handleAction = async (id: string, type: 'leave' | 'od', action: 'approve' | 'reject', comments: string = '') => {
     try {
@@ -1212,6 +1253,14 @@ export default function LeavesPage() {
     }
 
     setShowApplyDialog(true);
+  };
+
+  const openExportPDFDialog = () => {
+    setExportPDFOptions({
+      includeLeaves: true,
+      includeODs: true
+    });
+    setShowExportPDFDialog(true);
   };
 
   const [showEditDialog, setShowEditDialog] = useState(false);
@@ -1544,29 +1593,25 @@ export default function LeavesPage() {
               Manage leave applications and on-duty requests
             </p>
           </div>
-          <button
-            onClick={() => openApplyDialog('leave')}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-r from-green-500 to-green-600 text-white text-xs font-semibold shadow-sm hover:shadow-md transition-all"
-          >
-            <PlusIcon />
-            Apply Leave / OD
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={openExportPDFDialog}
+              className="group flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-all active:scale-[0.98]"
+            >
+              <FileText className="w-4 h-4" />
+              Download PDF
+            </button>
+            <button
+              onClick={() => openApplyDialog('leave')}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-r from-green-500 to-green-600 text-white text-xs font-semibold shadow-sm hover:shadow-md transition-all active:scale-[0.98]"
+            >
+              <PlusIcon />
+              Apply Leave / OD
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Toast Container */}
-      <ToastContainer
-        position="top-right"
-        autoClose={3000}
-        hideProgressBar={false}
-        newestOnTop={false}
-        closeOnClick
-        rtl={false}
-        pauseOnFocusLoss
-        draggable
-        pauseOnHover
-        theme="light"
-      />
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
@@ -3721,6 +3766,83 @@ export default function LeavesPage() {
           </div>
         )
       }
+      {showExportPDFDialog && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div 
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" 
+            onClick={() => setShowExportPDFDialog(false)} 
+          />
+          <div className="relative w-full max-w-md bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden transform transition-all">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-blue-500" />
+                  Export PDF Options
+                </h3>
+                <button 
+                  onClick={() => setShowExportPDFDialog(false)}
+                  className="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full transition-colors"
+                >
+                  <X className="w-5 h-5 text-slate-500" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  Select the types of requests you want to include in the report:
+                </p>
+
+                <div className="grid grid-cols-1 gap-3">
+                  <label className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${exportPDFOptions.includeLeaves ? 'bg-blue-50/50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800' : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}>
+                    <input
+                      type="checkbox"
+                      className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      checked={exportPDFOptions.includeLeaves}
+                      onChange={(e) => setExportPDFOptions({ ...exportPDFOptions, includeLeaves: e.target.checked })}
+                    />
+                    <div className="flex-1">
+                      <span className="block text-sm font-semibold text-slate-900 dark:text-white">Leaves</span>
+                      <span className="block text-xs text-slate-500 dark:text-slate-400">Include all leave applications</span>
+                    </div>
+                  </label>
+
+                  <label className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${exportPDFOptions.includeODs ? 'bg-purple-50/50 border-purple-200 dark:bg-purple-900/20 dark:border-purple-800' : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}>
+                    <input
+                      type="checkbox"
+                      className="w-4 h-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500"
+                      checked={exportPDFOptions.includeODs}
+                      onChange={(e) => setExportPDFOptions({ ...exportPDFOptions, includeODs: e.target.checked })}
+                    />
+                    <div className="flex-1">
+                      <span className="block text-sm font-semibold text-slate-900 dark:text-white">On Duty (OD)</span>
+                      <span className="block text-xs text-slate-500 dark:text-slate-400">Include all on-duty requests</span>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              <div className="mt-8 flex items-center gap-3">
+                <button
+                  onClick={() => setShowExportPDFDialog(false)}
+                  className="flex-1 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  disabled={!exportPDFOptions.includeLeaves && !exportPDFOptions.includeODs}
+                  onClick={() => {
+                    setShowExportPDFDialog(false);
+                    exportToPDF({ ...exportPDFOptions, includeSummary: true });
+                  }}
+                  className="flex-1 px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 shadow-md shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                >
+                  Generate PDF
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div >
   );
 }
