@@ -73,7 +73,7 @@ const navItems: NavItem[] = [
   { href: '/superadmin/reports', label: 'Reports', icon: BarChart3, category: 'Administration', moduleCode: 'REPORTS' },
   { href: '/superadmin/payments', label: 'Payments', icon: CreditCard, category: 'Finance & Payroll', moduleCode: 'PAYMENTS' },
   { href: '/superadmin/payments/second-salary', label: '2nd Salary Payments', icon: Banknote, category: 'Finance & Payroll', moduleCode: 'PAYMENTS' },
-  { href: '/superadmin/pay-register', label: 'Pay Register', icon: Sheet, category: 'Finance & Payroll', moduleCode: 'PAY_REGISTER' },
+  { href: '/superadmin/pay-register', label: 'Pay Register', icon: Table2, category: 'Finance & Payroll', moduleCode: 'PAY_REGISTER' },
   { href: '/superadmin/payroll-config', label: 'Payroll Configuration', icon: Settings, category: 'Finance & Payroll', moduleCode: 'PAYROLL_CONFIG' },
   { href: '/superadmin/statutory-deductions', label: 'Statutory Deductions', icon: Shield, category: 'Finance & Payroll', moduleCode: 'STATUTORY_DEDUCTIONS' },
   { href: '/superadmin/payslips', label: 'Payslips', icon: Receipt, category: 'Finance & Payroll', moduleCode: 'PAYSLIPS' },
