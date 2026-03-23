@@ -1,5 +1,6 @@
 const AttendanceDaily = require('../model/AttendanceDaily');
 const Leave = require('../../leaves/model/Leave');
+const LeaveSplit = require('../../leaves/model/LeaveSplit');
 const OD = require('../../leaves/model/OD');
 const MonthlyAttendanceSummary = require('../model/MonthlyAttendanceSummary');
 const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
@@ -65,8 +66,11 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       startDateStr = startComponents.dateStr;
       endDateStr = endComponents.dateStr;
     }
-    const startDate = createISTDate(startDateStr);
-    const endDate = createISTDate(endDateStr);
+    // IMPORTANT: endDate must be inclusive until end-of-day IST.
+    // If we use 00:00 for endDate, Date comparisons ($lte) can drop leaves/splits
+    // that occur later on the last day due to UTC storage offsets.
+    const startDate = createISTDate(startDateStr, '00:00');
+    const endDate = createISTDate(endDateStr, '23:59');
 
     // Month days = exact number of days in the pay period (fully respects pay cycle e.g. 25 Jan–26 Feb = 33 days)
     const periodDays = getAllDatesInRange(startDateStr, endDateStr).length;
@@ -158,6 +162,8 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     const approvedLeaves = await Leave.find({
       employeeId,
       status: 'approved',
+      // Do NOT count split leaves here; they are handled day-by-day via LeaveSplit.
+      splitStatus: { $in: [null, ''] },
       $or: [
         {
           fromDate: { $lte: endDate },
@@ -179,6 +185,13 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       ],
       isActive: true,
     }).select('fromDate toDate isHalfDay odType_extended halfDayType').lean(); // Added halfDayType
+
+    // 4b. Get approved split leaves for this period (so leave totals are correct)
+    const approvedLeaveSplits = await LeaveSplit.find({
+      employeeId,
+      status: 'approved',
+      date: { $gte: startDate, $lte: endDate },
+    }).select('date isHalfDay halfDayType numberOfDays leaveType leaveNature').lean();
 
     // Fill map from DB results
     for (const rec of attendanceRecords) {
@@ -209,6 +222,19 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       }
     }
 
+    for (const split of approvedLeaveSplits) {
+      const dStr = toNormalizedDateStr(split.date);
+      const day = dailyStatsMap.get(dStr);
+      if (!day) continue;
+      day.leaves.push({
+        // Keep the minimal shape used below (isHalfDay + leaveType).
+        isHalfDay: split.isHalfDay,
+        numberOfDays: split.numberOfDays,
+        leaveType: split.leaveType,
+        leaveNature: split.leaveNature,
+      });
+    }
+
     // Process each day
     let totalPresentDays = 0;
     let totalPayableShifts = 0;
@@ -222,7 +248,13 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     for (const [dStr, day] of dailyStatsMap) {
       // 1. Leaves (Priority - if leave is taken, it counts as leave)
       if (day.leaves.length > 0) {
-        const leaveContrib = day.leaves.some(l => !l.isHalfDay) ? 1 : 0.5;
+        // Sum all leave units on the same date (multiple 0.5 leaves can make 1.0)
+        // and cap to 1.0 day because payroll works per-day (or per-half) capacity.
+        const leaveContribRaw = day.leaves.reduce((sum, l) => {
+          if (typeof l.numberOfDays === 'number') return sum + l.numberOfDays;
+          return sum + (l.isHalfDay ? 0.5 : 1);
+        }, 0);
+        const leaveContrib = Math.min(1, leaveContribRaw);
         const firstLeave = day.leaves[0];
         if (!contributingDates.leaves.some(cd => cd.date === dStr)) {
           contributingDates.leaves.push({
