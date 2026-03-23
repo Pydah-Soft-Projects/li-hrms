@@ -371,6 +371,7 @@ export interface ApiResponse<T> {
   syncError?: any;
   identifier?: string;
   generatedPassword?: string;
+  summaries?: any[];
   isHolidayOrWeekOff?: boolean;
 }
 
@@ -1999,6 +2000,52 @@ export const api = {
     if (filters?.limit != null) params.append('limit', String(filters.limit));
     const query = params.toString() ? `?${params.toString()}` : '';
     return apiRequest<any>(`/leaves${query}`, { method: 'GET' });
+  },
+
+  downloadLeaveODReportPDF: async (filters: { 
+    status?: string; 
+    fromDate?: string; 
+    toDate?: string; 
+    leaveType?: string; 
+    department?: string; 
+    division?: string;
+    designation?: string;
+    employeeId?: string;
+    search?: string;
+    includeLeaves?: boolean;
+    includeODs?: boolean;
+    includeSummary?: boolean;
+  }) => {
+    const params = new URLSearchParams();
+    if (filters.status) params.append('status', filters.status);
+    if (filters.fromDate) params.append('fromDate', filters.fromDate);
+    if (filters.toDate) params.append('toDate', filters.toDate);
+    if (filters.leaveType) params.append('leaveType', filters.leaveType);
+    if (filters.department) params.append('department', filters.department);
+    if (filters.division) params.append('division', filters.division);
+    if (filters.designation) params.append('designation', filters.designation);
+    if (filters.employeeId) params.append('employeeId', filters.employeeId);
+    if (filters.search) params.append('search', filters.search);
+    if (filters.includeLeaves !== undefined) params.append('includeLeaves', String(filters.includeLeaves));
+    if (filters.includeODs !== undefined) params.append('includeODs', String(filters.includeODs));
+    if (filters.includeSummary !== undefined) params.append('includeSummary', String(filters.includeSummary));
+
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const url = `${API_BASE_URL}/leaves/export/pdf?${params.toString()}`;
+    
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || 'Failed to download PDF');
+    }
+
+    return response.blob();
   },
 
   // Dashboard stats (global or filtered) for superadmin cards
@@ -4026,6 +4073,9 @@ export const api = {
     page?: number;
     limit?: number;
     search?: string;
+    groupBy?: string;
+    month?: string;
+    year?: string;
   }) => {
     const query = new URLSearchParams();
     if (params.startDate) query.append('startDate', params.startDate);
@@ -4036,6 +4086,9 @@ export const api = {
     if (params.page) query.append('page', params.page.toString());
     if (params.limit) query.append('limit', params.limit.toString());
     if (params.search) query.append('search', params.search);
+    if (params.groupBy) query.append('groupBy', params.groupBy);
+    if (params.month) query.append('month', params.month);
+    if (params.year) query.append('year', params.year);
 
     return apiRequest<any>(`/attendance/reports/summary?${query.toString()}`, { method: 'GET' });
   },
@@ -4060,28 +4113,32 @@ export const api = {
   },
 
   exportAttendanceReport: async (params: {
-    startDate: string;
-    endDate: string;
+    startDate?: string;
+    endDate?: string;
     employeeId?: string;
     search?: string;
     departmentId?: string;
     divisionId?: string;
     strict?: boolean;
+    groupBy?: string;
+    month?: string;
+    year?: string;
   }) => {
     const query = new URLSearchParams();
-    query.append('startDate', params.startDate);
-    query.append('endDate', params.endDate);
+    if (params.startDate) query.append('startDate', params.startDate);
+    if (params.endDate) query.append('endDate', params.endDate);
+    if (params.month) query.append('month', params.month);
+    if (params.year) query.append('year', params.year);
     if (params.employeeId) query.append('employeeId', params.employeeId);
     if (params.search) query.append('search', params.search);
     if (params.departmentId) query.append('departmentId', params.departmentId);
     if (params.divisionId) query.append('divisionId', params.divisionId);
     if (params.strict) query.append('strict', 'true');
+    if (params.groupBy) query.append('groupBy', params.groupBy);
 
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const headers: Record<string, string> = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    if (token) headers['Authorization'] = `Bearer ${token}`;
 
     const response = await fetch(`${API_BASE_URL}/attendance/reports/export?${query.toString()}`, {
       method: 'GET',
@@ -4091,14 +4148,59 @@ export const api = {
 
     if (!response.ok) {
       const text = await response.text();
-      let errorMsg = 'Failed to export report';
+      let errorMsg = 'Failed to export Excel report';
       try {
         const json = JSON.parse(text);
         errorMsg = json.message || errorMsg;
       } catch (e) { }
       throw new Error(errorMsg);
     }
+    return await response.blob();
+  },
 
+  exportAttendanceReportPDF: async (params: {
+    startDate?: string;
+    endDate?: string;
+    employeeId?: string;
+    search?: string;
+    departmentId?: string;
+    divisionId?: string;
+    strict?: boolean;
+    groupBy?: string;
+    month?: string;
+    year?: string;
+  }) => {
+    const query = new URLSearchParams();
+    if (params.startDate) query.append('startDate', params.startDate);
+    if (params.endDate) query.append('endDate', params.endDate);
+    if (params.month) query.append('month', params.month);
+    if (params.year) query.append('year', params.year);
+    if (params.employeeId) query.append('employeeId', params.employeeId);
+    if (params.search) query.append('search', params.search);
+    if (params.departmentId) query.append('departmentId', params.departmentId);
+    if (params.divisionId) query.append('divisionId', params.divisionId);
+    if (params.strict) query.append('strict', 'true');
+    if (params.groupBy) query.append('groupBy', params.groupBy);
+
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const response = await fetch(`${API_BASE_URL}/attendance/reports/export-pdf?${query.toString()}`, {
+      method: 'GET',
+      credentials: 'include',
+      headers,
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      let errorMsg = 'Failed to export PDF report';
+      try {
+        const json = JSON.parse(text);
+        errorMsg = json.message || errorMsg;
+      } catch (e) { }
+      throw new Error(errorMsg);
+    }
     return await response.blob();
   },
 };
