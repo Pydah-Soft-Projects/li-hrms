@@ -178,6 +178,9 @@ router.post('/:id/update-for-attendance', authorize('manager', 'super_admin', 's
 // Get all leaves (with filters) - employee allowed; applyScopeFilter restricts to own/scope
 router.get('/', authorize('employee', 'manager', 'hod', 'hr', 'sub_admin', 'super_admin'), applyScopeFilter, leaveController.getLeaves);
 
+// Export PDF report
+router.get('/export/pdf', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), applyScopeFilter, leaveController.exportReportPDF);
+
 // Apply for leave
 router.post('/', leaveController.applyLeave);
 
