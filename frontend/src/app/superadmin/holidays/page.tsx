@@ -29,6 +29,7 @@ export default function HolidayManagementPage() {
     const [divisions, setDivisions] = useState<Division[]>([]);
     const [departments, setDepartments] = useState<Department[]>([]);
     const [employeeGroups, setEmployeeGroups] = useState<EmployeeGroup[]>([]);
+    const [customEmployeeGroupingEnabled, setCustomEmployeeGroupingEnabled] = useState(false);
     const [selectedGroupId, setSelectedGroupId] = useState<string>('GLOBAL');
 
     // Form States
@@ -66,14 +67,18 @@ export default function HolidayManagementPage() {
 
     const loadDivisionsAndDepartments = useCallback(async () => {
         try {
-            const [divRes, deptRes, groupRes] = await Promise.all([
+            const [divRes, deptRes, groupRes, groupingSettingRes] = await Promise.all([
                 api.getDivisions(),
                 api.getDepartments(),
-                api.getEmployeeGroups(true)
+                api.getEmployeeGroups(true),
+                api.getSetting('custom_employee_grouping_enabled')
             ]);
             if (divRes.success) setDivisions(divRes.data || []);
             if (deptRes.success) setDepartments(deptRes.data || []);
             if (groupRes.success) setEmployeeGroups(groupRes.data || []);
+            if (groupingSettingRes.success && groupingSettingRes.data) {
+                setCustomEmployeeGroupingEnabled(!!groupingSettingRes.data.value);
+            }
         } catch (err) {
             console.error('Error loading metadata:', err);
         }
@@ -821,6 +826,7 @@ export default function HolidayManagementPage() {
                                 divisions={divisions}
                                 departments={departments}
                                 employeeGroups={employeeGroups}
+                                customEmployeeGroupingEnabled={customEmployeeGroupingEnabled}
                                 onClose={() => setShowGroupForm(false)}
                                 onSave={() => {
                                     setShowGroupForm(false);
@@ -835,11 +841,12 @@ export default function HolidayManagementPage() {
     );
 }
 
-function HolidayGroupForm({ editing, divisions, departments, employeeGroups, onClose, onSave }: {
+function HolidayGroupForm({ editing, divisions, departments, employeeGroups, customEmployeeGroupingEnabled, onClose, onSave }: {
     editing: HolidayGroup | null;
     divisions: Division[];
     departments: Department[];
     employeeGroups: EmployeeGroup[];
+    customEmployeeGroupingEnabled: boolean;
     onClose: () => void;
     onSave: () => void;
 }) {
@@ -998,6 +1005,7 @@ function HolidayGroupForm({ editing, divisions, departments, employeeGroups, onC
                                         {m.departments.length === 0 ? 'Currently targeting ALL departments in this division.' : 'Ctrl+Click to select multiple.'}
                                     </p>
                                 </div>
+                                {customEmployeeGroupingEnabled && (
                                 <div>
                                     <div className="space-y-2">
                                         <label className="block text-xs font-medium text-slate-500 dark:text-slate-400">Employee Group Targeting</label>
@@ -1044,6 +1052,7 @@ function HolidayGroupForm({ editing, divisions, departments, employeeGroups, onC
                                         {m.employeeGroups.length === 0 ? 'Currently targeting ALL employee groups in this scope.' : 'Ctrl+Click to select multiple groups.'}
                                     </p>
                                 </div>
+                                )}
                             </div>
                         </div>
                     ))}

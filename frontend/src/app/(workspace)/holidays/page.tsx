@@ -32,6 +32,7 @@ export default function WorkspaceHolidaysPage() {
     const [divisions, setDivisions] = useState<Division[]>([]);
     const [departments, setDepartments] = useState<Department[]>([]);
     const [employeeGroups, setEmployeeGroups] = useState<EmployeeGroup[]>([]);
+    const [customEmployeeGroupingEnabled, setCustomEmployeeGroupingEnabled] = useState(false);
     const [selectedGroupId, setSelectedGroupId] = useState<string>('GLOBAL');
     const [canManage, setCanManage] = useState(false);
     const [canView, setCanView] = useState(true);
@@ -92,14 +93,18 @@ export default function WorkspaceHolidaysPage() {
     const loadDivisionsAndDepartments = useCallback(async () => {
         if (!canManage) return;
         try {
-            const [divRes, deptRes, groupRes] = await Promise.all([
+            const [divRes, deptRes, groupRes, groupingSettingRes] = await Promise.all([
                 api.getDivisions(),
                 api.getDepartments(),
-                api.getEmployeeGroups(true)
+                api.getEmployeeGroups(true),
+                api.getSetting('custom_employee_grouping_enabled')
             ]);
             if (divRes.success) setDivisions(divRes.data || []);
             if (deptRes.success) setDepartments(deptRes.data || []);
             if (groupRes.success) setEmployeeGroups(groupRes.data || []);
+            if (groupingSettingRes.success && groupingSettingRes.data) {
+                setCustomEmployeeGroupingEnabled(!!groupingSettingRes.data.value);
+            }
         } catch (err) {
             console.error('Error loading metadata:', err);
         }
@@ -668,6 +673,7 @@ export default function WorkspaceHolidaysPage() {
                             divisions={divisions}
                             departments={departments}
                             employeeGroups={employeeGroups}
+                            customEmployeeGroupingEnabled={customEmployeeGroupingEnabled}
                             onClose={() => setShowGroupForm(false)}
                             onSave={() => {
                                 setShowGroupForm(false);
@@ -686,6 +692,7 @@ function HolidayGroupForm({
     divisions,
     departments,
     employeeGroups,
+    customEmployeeGroupingEnabled,
     onClose,
     onSave
 }: {
@@ -693,6 +700,7 @@ function HolidayGroupForm({
     divisions: Division[];
     departments: Department[];
     employeeGroups: EmployeeGroup[];
+    customEmployeeGroupingEnabled: boolean;
     onClose: () => void;
     onSave: () => void;
 }) {
@@ -843,6 +851,7 @@ function HolidayGroupForm({
                                         </p>
                                     </div>
                                 </div>
+                                {customEmployeeGroupingEnabled && (
                                 <div>
                                     <div className="space-y-2">
                                         <label className="block text-xs font-medium text-slate-500 dark:text-slate-400">Employee Group Targeting</label>
@@ -889,6 +898,7 @@ function HolidayGroupForm({
                                         </p>
                                     </div>
                                 </div>
+                                )}
                             </div>
                         </div>
                     ))}
