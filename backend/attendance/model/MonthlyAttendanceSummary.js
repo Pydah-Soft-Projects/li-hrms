@@ -86,6 +86,13 @@ const monthlyAttendanceSummarySchema = new mongoose.Schema(
       min: 0,
     },
 
+    // Days explicitly marked ABSENT (working days; excludes WO/HOL roster)
+    totalAbsentDays: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
     // Total days in the pay period (respects pay cycle: e.g. 28–31 for calendar month, or 33 for 25 Jan–26 Feb)
     totalDaysInMonth: {
       type: Number,
@@ -204,6 +211,27 @@ const monthlyAttendanceSummarySchema = new mongoose.Schema(
       min: 0,
     },
 
+    // Policy-based attendance deduction (late/early + optional absent extra) — same logic as payroll deductionService.calculateAttendanceDeduction
+    totalAttendanceDeductionDays: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    attendanceDeductionBreakdown: {
+      lateInsCount: { type: Number, default: 0 },
+      earlyOutsCount: { type: Number, default: 0 },
+      combinedCount: { type: Number, default: 0 },
+      freeAllowedPerMonth: { type: Number, default: 0 },
+      effectiveCount: { type: Number, default: 0 },
+      daysDeducted: { type: Number, default: 0 },
+      lateEarlyDaysDeducted: { type: Number, default: 0 },
+      absentExtraDays: { type: Number, default: 0 },
+      absentDays: { type: Number, default: 0 },
+      lopDaysPerAbsent: { type: Number, default: null },
+      deductionType: { type: String, default: null },
+      calculationMode: { type: String, default: null },
+    },
+
     // Last calculated/updated timestamp
     lastCalculatedAt: {
       type: Date,
@@ -226,6 +254,7 @@ const monthlyAttendanceSummarySchema = new mongoose.Schema(
       lateIn: [{ date: String, value: Number, label: String }],
       earlyOut: [{ date: String, value: Number, label: String }],
       permissions: [{ date: String, value: Number, label: String }],
+      absent: [{ date: String, value: Number, label: String }],
     },
 
     // Additional metadata
