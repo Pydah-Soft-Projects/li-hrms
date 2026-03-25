@@ -18,6 +18,7 @@
 const cron = require('node-cron');
 const accrualEngine = require('../services/accrualEngine');
 const dateCycleService = require('../services/dateCycleService');
+const monthlyClScheduledCreditService = require('../services/monthlyClScheduledCreditService');
 
 const CRON_IST = '55 23 * * *'; // 23:55 every day
 const TIMEZONE = 'Asia/Kolkata';
@@ -57,6 +58,20 @@ function startMonthlyAccrualCron() {
         );
         if (results.errors && results.errors.length > 0) {
           console.warn('[AccrualCron] Errors:', results.errors.slice(0, 5));
+        }
+
+        try {
+          const clForfeit = await monthlyClScheduledCreditService.forfeitUnusedScheduledClIfNeeded(month, year);
+          if (clForfeit.forfeitsPosted > 0 || clForfeit.errors.length > 0) {
+            console.log(
+              `[AccrualCron] CL monthly scheduled forfeit: yearDocs=${clForfeit.processed}, posted=${clForfeit.forfeitsPosted}, skipped=${clForfeit.skipped}, errors=${clForfeit.errors.length}`
+            );
+          }
+          if (clForfeit.errors.length > 0) {
+            console.warn('[AccrualCron] CL forfeit errors:', clForfeit.errors.slice(0, 5));
+          }
+        } catch (forfeitErr) {
+          console.error('[AccrualCron] CL scheduled forfeit failed:', forfeitErr.message);
         }
       } catch (err) {
         console.error('[AccrualCron] Failed:', err.message);

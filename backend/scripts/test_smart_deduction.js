@@ -7,7 +7,6 @@ dotenv.config({ path: path.join(__dirname, '../.env') });
 const Employee = require('../employees/model/Employee');
 const Leave = require('../leaves/model/Leave');
 const LeaveSettings = require('../leaves/model/LeaveSettings');
-const LeavePolicySettings = require('../settings/model/LeavePolicySettings');
 const LeaveRegister = require('../leaves/model/LeaveRegister');
 const Division = require('../departments/model/Division');
 const Department = require('../departments/model/Department');
@@ -75,21 +74,8 @@ async function runTest() {
         await settings.save();
         console.log('   ✓ CCL and EL are now hidden from selectable types.\n');
 
-        // 3. Setup Leave Policy (Enable Substitution and 1-day CL cap)
-        console.log('3. Configuring Leave Policy (1-day CL cap, Substitution ON)...');
-        let policy = await LeavePolicySettings.findOne({});
-        if (!policy) policy = new LeavePolicySettings({});
-        
-        policy.monthlyLimitSettings = {
-            mode: 'strict',
-            defaultMonthlyCap: 1, // 1 day CL cap
-            maxUsableLimit: 4,
-            includeCCL: true,
-            includeEL: true,
-            logicType: 'ADDITIVE'
-        };
-        await policy.save();
-        console.log('   ✓ Policy: 1-day CL cap, CCL/EL included in total limit.\n');
+        // 3. Leave policy: monthly cap removed — substitution is driven by hidden CCL/EL types only.
+        console.log('3. Leave policy: using hidden CCL/EL types for CL substitution (no monthly cap policy).\n');
 
         // 4. Clean up previous test register entries
         await LeaveRegister.deleteMany({ empNo: 'TEST_SMART_01' });

@@ -10,7 +10,7 @@ import 'react-toastify/dist/ReactToastify.css';
 import Spinner from '@/components/Spinner';
 import LocationPhotoCapture from '@/components/LocationPhotoCapture';
 import EmployeeSelect from '@/components/EmployeeSelect';
-import { Loader2, Calendar, Briefcase, X, Clock as Clock3, Star, CheckCircle2 } from 'lucide-react';
+import { Loader2, Calendar, Briefcase, X, Clock as Clock3, Star, CheckCircle2, AlertCircle } from 'lucide-react';
 
 const LocationMap = dynamic(() => import('@/components/LocationMap'), { ssr: false });
 
@@ -495,6 +495,18 @@ export default function LeavesPage() {
   // OD Holiday Info
   const [checkingHoliday, setCheckingHoliday] = useState(false);
   const [holidayInfo, setHolidayInfo] = useState<{ isHolidayOrWeekOff: boolean; message: string } | null>(null);
+
+  const [clBalanceForMonth, setClBalanceForMonth] = useState<number | null>(null);
+  const [clAnnualBalance, setClAnnualBalance] = useState<number | null>(null);
+  const [cclBalance, setCclBalance] = useState<number | null>(null);
+  const [clBalanceLoading, setClBalanceLoading] = useState(false);
+  const [clMonthlyCap, setClMonthlyCap] = useState<number | null>(null);
+  const [pendingDaysInCycle, setPendingDaysInCycle] = useState<number | null>(null);
+  const [isCCLIncluded, setIsCCLIncluded] = useState(false);
+  const [isELIncluded, setIsELIncluded] = useState(false);
+  const [elBalance, setElBalance] = useState<number | null>(null);
+  const [pooledLimit, setPooledLimit] = useState<number | null>(null);
+  const [applyPeriodContext, setApplyPeriodContext] = useState<any | null>(null);
 
   // Form state
   const [formData, setFormData] = useState<{
@@ -1129,6 +1141,16 @@ export default function LeavesPage() {
     setEvidenceFile(null);
     setLoadingMessage('');
     setLocationData(null);
+    setClBalanceForMonth(null);
+    setClAnnualBalance(null);
+    setCclBalance(null);
+    setClMonthlyCap(null);
+    setPendingDaysInCycle(null);
+    setIsCCLIncluded(false);
+    setIsELIncluded(false);
+    setElBalance(null);
+    setPooledLimit(null);
+    setApplyPeriodContext(null);
   };
 
   const handleSelectEmployee = (employee: Employee) => {
@@ -1217,6 +1239,107 @@ export default function LeavesPage() {
   const targetEmployeeId = selectedEmployee?._id;
   const hasValidEmployeeId = targetEmployeeId && String(targetEmployeeId).length === 24 && !String(targetEmployeeId).startsWith('current');
 
+  const isCLSelected =
+    applyType === 'leave' && (formData.leaveType === 'CL' || formData.leaveType?.toUpperCase() === 'CL');
+  const canFetchCLBalance = !!hasValidEmployeeId;
+
+  useEffect(() => {
+    if (!showApplyDialog) {
+      setClBalanceForMonth(null);
+      setClAnnualBalance(null);
+      setCclBalance(null);
+      setClMonthlyCap(null);
+      setPendingDaysInCycle(null);
+      setIsCCLIncluded(false);
+      setIsELIncluded(false);
+      setElBalance(null);
+      setPooledLimit(null);
+      setApplyPeriodContext(null);
+    }
+  }, [showApplyDialog]);
+
+  useEffect(() => {
+    if (!showApplyDialog || applyType !== 'leave' || !isCLSelected || !formData.fromDate) {
+      return;
+    }
+    if (!canFetchCLBalance) {
+      setClBalanceForMonth(null);
+      setClMonthlyCap(null);
+      setPooledLimit(null);
+      setPendingDaysInCycle(null);
+      setApplyPeriodContext(null);
+      setCclBalance(null);
+      setElBalance(null);
+      setClAnnualBalance(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setClBalanceLoading(true);
+      try {
+        const res = await api.getLeaveApplyPeriodContext({
+          fromDate: formData.fromDate,
+          employeeId: String(targetEmployeeId),
+        });
+        if (cancelled) return;
+        if (!res?.success || !res.data) {
+          setApplyPeriodContext(null);
+          setClBalanceForMonth(null);
+          return;
+        }
+        const d = res.data;
+        setApplyPeriodContext(d);
+        if (!d.hasYearDoc || !d.hasSlot) {
+          setClBalanceForMonth(null);
+          setClMonthlyCap(null);
+          setPooledLimit(null);
+          setPendingDaysInCycle(null);
+          setCclBalance(null);
+          setElBalance(null);
+          setClAnnualBalance(null);
+          setIsCCLIncluded(false);
+          setIsELIncluded(false);
+          return;
+        }
+        const ceiling = d.monthlyApplyCeiling != null ? Number(d.monthlyApplyCeiling) : null;
+        const remaining =
+          d.monthlyApplyRemaining != null ? Number(d.monthlyApplyRemaining) : null;
+        setClMonthlyCap(ceiling);
+        setPooledLimit(ceiling);
+        setClBalanceForMonth(remaining);
+        setPendingDaysInCycle(
+          d.monthlyApplyLocked != null ? Number(d.monthlyApplyLocked) : null
+        );
+        setCclBalance(d.balances?.ccl != null ? Number(d.balances.ccl) : null);
+        setElBalance(
+          d.includeELInMonthlyPool && d.balances?.el != null
+            ? Number(d.balances.el)
+            : null
+        );
+        setIsCCLIncluded(true);
+        setIsELIncluded(!!d.includeELInMonthlyPool);
+        setClAnnualBalance(d.balances?.cl != null ? Number(d.balances.cl) : null);
+      } catch {
+        if (!cancelled) {
+          setApplyPeriodContext(null);
+          setClBalanceForMonth(null);
+        }
+      } finally {
+        if (!cancelled) setClBalanceLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    showApplyDialog,
+    applyType,
+    isCLSelected,
+    formData.fromDate,
+    canFetchCLBalance,
+    targetEmployeeId,
+  ]);
+
   // Check holiday status for OD
   useEffect(() => {
     const checkHolidayStatus = async () => {
@@ -1276,6 +1399,16 @@ export default function LeavesPage() {
     setSelectedEmployee(null);
     setEmployeeSearch('');
     setShowEmployeeDropdown(false);
+    setClBalanceForMonth(null);
+    setClAnnualBalance(null);
+    setCclBalance(null);
+    setClMonthlyCap(null);
+    setPendingDaysInCycle(null);
+    setIsCCLIncluded(false);
+    setIsELIncluded(false);
+    setElBalance(null);
+    setPooledLimit(null);
+    setApplyPeriodContext(null);
 
     // Auto-select if only one type available
     if (type === 'leave' && leaveTypes.length === 1) {
@@ -2371,6 +2504,126 @@ export default function LeavesPage() {
                 )}
               </div>
 
+              {applyType === 'leave' && isCLSelected && (
+                <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30 overflow-hidden">
+                  <div className="bg-slate-100/50 dark:bg-slate-800/50 px-4 py-2 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                      Leave limits (monthly apply cap)
+                    </span>
+                    {clBalanceLoading && <Loader2 className="w-3 h-3 animate-spin text-blue-500" />}
+                  </div>
+                  <div className="p-4 space-y-3">
+                    {!formData.fromDate || !canFetchCLBalance ? (
+                      <p className="text-xs text-slate-500 dark:text-slate-400 italic text-center py-2">
+                        Select employee and from date to view this period&apos;s CL / pooled apply limit.
+                      </p>
+                    ) : clBalanceLoading ? (
+                      <div className="flex flex-col gap-2 py-2">
+                        <div className="h-3 w-full bg-slate-200 dark:bg-slate-700 rounded animate-pulse" />
+                        <div className="h-3 w-4/5 bg-slate-200 dark:bg-slate-700 rounded animate-pulse" />
+                      </div>
+                    ) : applyPeriodContext && (!applyPeriodContext.hasYearDoc || !applyPeriodContext.hasSlot) ? (
+                      <p className="text-xs text-amber-700 dark:text-amber-300 text-center py-2 bg-amber-50 dark:bg-amber-900/20 rounded-lg">
+                        No leave register row for this payroll period yet. Limits show after FY register exists.
+                      </p>
+                    ) : clBalanceForMonth !== null ? (
+                      <>
+                        <div className="flex items-center justify-between mb-2 pb-2 border-b border-dashed border-slate-200 dark:border-slate-700">
+                          <div className="flex flex-col">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">
+                              Can still apply (this period)
+                            </span>
+                            <span className="text-xs text-slate-500 italic">Ceiling minus locked + approved</span>
+                          </div>
+                          <span className="text-lg font-black text-blue-600 dark:text-blue-400">
+                            {clBalanceForMonth} Days
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-1 gap-2.5">
+                          {applyPeriodContext?.payrollLabel && (
+                            <div className="text-[10px] text-slate-500 font-medium">
+                              Period: {applyPeriodContext.payrollLabel}
+                            </div>
+                          )}
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-slate-500">Scheduled CL (period)</span>
+                            <span className="font-semibold text-slate-700 dark:text-slate-300">
+                              {applyPeriodContext?.scheduledCl ?? '—'} Days
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-slate-500">Scheduled CCL (period)</span>
+                            <span className="font-semibold text-slate-700 dark:text-slate-300">
+                              {applyPeriodContext?.scheduledCcl ?? '—'} Days
+                            </span>
+                          </div>
+                          {applyPeriodContext?.includeELInMonthlyPool && (
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="text-slate-500">Scheduled EL (period, counts toward cap)</span>
+                              <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                {applyPeriodContext?.scheduledEl ?? '—'} Days
+                              </span>
+                            </div>
+                          )}
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-slate-500">Monthly apply ceiling (stored)</span>
+                            <span className="font-semibold text-slate-700 dark:text-slate-300">
+                              {clMonthlyCap ?? 0} Days
+                            </span>
+                          </div>
+                          {(applyPeriodContext?.monthlyApplyLocked != null ||
+                            applyPeriodContext?.monthlyApplyApproved != null) && (
+                            <div className="flex items-center justify-between text-[10px] text-slate-500 uppercase tracking-tight">
+                              <span>
+                                Used toward cap — locked {applyPeriodContext?.monthlyApplyLocked ?? 0} · approved{' '}
+                                {applyPeriodContext?.monthlyApplyApproved ?? 0}
+                              </span>
+                            </div>
+                          )}
+                          {isCCLIncluded && (
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="text-slate-500">Substitutable CCL balance</span>
+                              <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                {cclBalance ?? 0} Days
+                              </span>
+                            </div>
+                          )}
+                          {isELIncluded && (
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="text-slate-500">Substitutable EL balance</span>
+                              <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                {elBalance ?? 0} Days
+                              </span>
+                            </div>
+                          )}
+                          <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-100 dark:border-slate-800">
+                            <span className="text-slate-500 font-medium">Combined limit for period</span>
+                            <span className="font-bold text-slate-700 dark:text-slate-300">
+                              {pooledLimit ?? 0} Days
+                            </span>
+                          </div>
+                          {pendingDaysInCycle != null && pendingDaysInCycle > 0 && (
+                            <div className="flex items-center justify-between text-xs text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 p-2 rounded-lg border border-orange-100 dark:border-orange-900/30">
+                              <span className="flex items-center gap-1.5 font-bold uppercase tracking-tight text-[10px]">
+                                <AlertCircle className="w-3 h-3" /> Already pending
+                              </span>
+                              <span className="font-black text-sm">{pendingDaysInCycle} Days</span>
+                            </div>
+                          )}
+                          <div className="flex items-center justify-between text-[10px] text-slate-400 uppercase tracking-tight pt-2 border-t border-slate-100 dark:border-slate-800">
+                            <span>Current CL balance (FY register)</span>
+                            <span>{clAnnualBalance ?? 0} Days</span>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <p className="text-xs text-red-500 dark:text-red-400 text-center py-2 bg-red-50 dark:bg-red-900/20 rounded-lg">
+                        Could not load limit information. Please try again.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* OD Type Extended - Full Day / Half Day / Hours Selector */}
               {applyType === 'od' && (
@@ -2502,33 +2755,73 @@ export default function LeavesPage() {
                       </div>
                     ) : (
                       /* Two Date Inputs for Full Day */
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">From Date *</label>
-                          <input
-                            type="date"
-                            min={minDate}
-                            max={maxDate}
-                            value={formData.fromDate}
-                            onChange={(e) => setFormData({ ...formData, fromDate: e.target.value })}
-                            required
-                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">To Date *</label>
-                          <input
-                            type="date"
-                            min={formData.fromDate || minDate}
-                            max={maxDate}
-                            value={formData.toDate}
-                            onChange={(e) => setFormData({ ...formData, toDate: e.target.value })}
-                            required
-                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                          />
-                        </div>
-                        {hint && <p className="col-span-2 text-xs text-indigo-500 dark:text-indigo-400">{hint}</p>}
-                      </div>
+                      (() => {
+                        const isCLFullDay =
+                          isCLSelected &&
+                          !formData.isHalfDay &&
+                          applyType === 'leave' &&
+                          !!formData.fromDate &&
+                          clBalanceForMonth !== null &&
+                          clBalanceForMonth >= 0;
+                        const maxToDateISO =
+                          isCLFullDay && formData.fromDate
+                            ? (() => {
+                                const d = new Date(formData.fromDate);
+                                d.setDate(d.getDate() + Math.max(0, Math.floor(clBalanceForMonth!) - 1));
+                                return d.toISOString().split('T')[0];
+                              })()
+                            : undefined;
+                        const toMax =
+                          maxToDateISO != null
+                            ? maxDate && maxToDateISO > maxDate
+                              ? maxDate
+                              : maxToDateISO
+                            : maxDate;
+                        return (
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">From Date *</label>
+                              <input
+                                type="date"
+                                min={minDate}
+                                max={maxDate}
+                                value={formData.fromDate}
+                                onChange={(e) => setFormData({ ...formData, fromDate: e.target.value })}
+                                required
+                                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">To Date *</label>
+                              <input
+                                type="date"
+                                min={formData.fromDate || minDate}
+                                max={toMax}
+                                value={formData.toDate}
+                                onChange={(e) => {
+                                  let toDate = e.target.value;
+                                  if (maxToDateISO && toDate > maxToDateISO) {
+                                    toDate = maxToDateISO;
+                                    toast.info(
+                                      `CL allowed for this period: up to ${clBalanceForMonth} days; To date capped.`,
+                                    );
+                                  }
+                                  if (maxDate && toDate > maxDate) toDate = maxDate;
+                                  setFormData({ ...formData, toDate });
+                                }}
+                                required
+                                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                              />
+                              {isCLFullDay && maxToDateISO && formData.toDate > maxToDateISO && (
+                                <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                                  Max {clBalanceForMonth} days for CL in this pay period.
+                                </p>
+                              )}
+                            </div>
+                            {hint && <p className="col-span-2 text-xs text-indigo-500 dark:text-indigo-400">{hint}</p>}
+                          </div>
+                        );
+                      })()
                     )}
                   </>
                 );

@@ -3,18 +3,27 @@
  * Manages annual casual leave balance reset operations
  */
 
-const { performAnnualCLReset, performInitialCLSync, getInitialSyncEntitlement, getCLResetStatus, getNextResetDate } = require('../services/annualCLResetService');
+const {
+    performAnnualCLReset,
+    performInitialCLSync,
+    syncEmployeeCLFromPolicy,
+    buildInitialSyncMonthsPayload,
+    getCLResetStatus,
+    getNextResetDate,
+    getMaxAnnualCarryForwardCl,
+} = require('../services/annualCLResetService');
+const { createISTDate, getTodayISTDateString, extractISTComponents } = require('../../shared/utils/dateUtils');
 const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
 const Employee = require('../../employees/model/Employee');
 const leaveRegisterService = require('../services/leaveRegisterService');
+const leaveRegisterYearService = require('../services/leaveRegisterYearService');
 
 function yearsOfExperience(doj, asOfDate) {
     if (!doj) return 0;
-    const start = new Date(doj);
-    const end = new Date(asOfDate);
-    if (end < start) return 0;
-    const years = (end.getFullYear() - start.getFullYear()) +
-        ((end.getMonth() - start.getMonth()) * 12 + (end.getDate() - start.getDate())) / 365.25;
+    const s = extractISTComponents(doj);
+    const e = extractISTComponents(asOfDate);
+    if (e.dateStr < s.dateStr) return 0;
+    const years = (e.year - s.year) + ((e.month - s.month) * 12 + (e.day - s.day)) / 365.25;
     return Math.floor(years);
 }
 
@@ -119,20 +128,18 @@ exports.previewInitialCLSync = async (req, res) => {
         const start = (pageNum - 1) * limitNum;
         const pageRows = filtered.slice(start, start + limitNum);
 
-        const maxCF = settings?.carryForward?.casualLeave?.enabled
-            ? (settings?.carryForward?.casualLeave?.maxMonths || 12)
-            : 0;
+        const maxCarryCap = getMaxAnnualCarryForwardCl(settings);
         const addCarryForward = settings?.annualCLReset?.addCarryForward !== false;
+        const effectiveDate = createISTDate(getTodayISTDateString());
 
         const previewRows = [];
         for (const emp of pageRows) {
-            const currentCL = await leaveRegisterService.getCurrentBalance(emp._id, 'CL');
+            const built = await buildInitialSyncMonthsPayload(emp, settings, effectiveDate);
+            const currentCL = Number(built.ledgerCLBalance || 0);
             const currentEL = await leaveRegisterService.getCurrentBalance(emp._id, 'EL');
             const currentCCL = await leaveRegisterService.getCurrentBalance(emp._id, 'CCL');
 
-            const { entitlement, proration } = await getInitialSyncEntitlement(settings, emp.doj, new Date());
-            const carryForward = addCarryForward ? Math.min(currentCL, maxCF) : 0;
-            const targetCL = Math.max(0, entitlement + carryForward);
+            const targetCL = Math.max(0, Number(built.defaultPoolBalance) || 0);
 
             previewRows.push({
                 employeeId: emp._id,
@@ -142,28 +149,34 @@ exports.previewInitialCLSync = async (req, res) => {
                 department: emp.department_id?.name || 'N/A',
                 division: emp.division_id?.name || 'N/A',
                 doj: emp.doj,
+                effectiveDate,
                 currentBalances: {
-                    CL: Number(currentCL || 0),
+                    CL: currentCL,
                     EL: Number(currentEL || 0),
-                    CCL: Number(currentCCL || 0)
+                    CCL: Number(currentCCL || 0),
                 },
                 proposedBalances: {
-                    CL: Number(targetCL || 0),
-                    // Keep existing EL/CCL by default; user may edit before apply.
+                    CL: targetCL,
                     EL: Number(currentEL || 0),
-                    CCL: Number(currentCCL || 0)
+                    CCL: Number(currentCCL || 0),
                 },
+                /** Remaining FY grid after past payroll slots zeroed (before carry); carry is folded into first open month. */
+                policyClScheduled: Number(built.policyRemainingGridOnly || 0),
+                carryForwardInTarget: built.carryForwardAllowed,
+                monthlyClBreakdown: built.monthlyBreakdown,
                 clCalculation: {
-                    entitlement,
-                    proration,
-                    carryForward,
-                    maxCarryForward: maxCF,
-                    addCarryForward
+                    entitlement: built.entitlement,
+                    entitlementFullYear: built.fullYearGridSum,
+                    policyRemainingGridOnly: built.policyRemainingGridOnly,
+                    pastClearedCreditsTotal: built.pastClearedCreditsTotal,
+                    defaultPoolBalance: built.defaultPoolBalance,
+                    ledgerClForCarry: Number(built.ledgerCLBalance || 0),
+                    proration: built.proration,
+                    carryForward: built.carryForwardAllowed,
+                    maxCarryForward: maxCarryCap,
+                    addCarryForward,
                 },
-                needsUpdate:
-                    Number(targetCL || 0) !== Number(currentCL || 0) ||
-                    Number(currentEL || 0) !== Number(currentEL || 0) ||
-                    Number(currentCCL || 0) !== Number(currentCCL || 0)
+                needsUpdate: Number(targetCL) !== currentCL,
             });
         }
 
@@ -183,7 +196,6 @@ exports.previewInitialCLSync = async (req, res) => {
                 },
                 settings: {
                     annualCLReset: settings.annualCLReset,
-                    monthlyLimitSettings: settings.monthlyLimitSettings
                 }
             }
         });
@@ -198,13 +210,14 @@ exports.previewInitialCLSync = async (req, res) => {
 };
 
 /**
- * @desc    Apply initial CL/EL/CCL balances from reviewed preview rows
+ * @desc    Apply initial CL/EL/CCL balances from reviewed preview rows, or all active employees (CL from policy only).
  * @route   POST /api/leaves/initial-cl-sync/apply
+ * @body    { confirm, scope?: 'listed' | 'all', employees?: [...], reason? }
  * @access  Private (HR, Admin only)
  */
 exports.applyInitialCLSync = async (req, res) => {
     try {
-        const { confirm, employees = [], reason } = req.body || {};
+        const { confirm, scope = 'listed', employees = [], reason } = req.body || {};
         if (!confirm) {
             return res.status(400).json({
                 success: false,
@@ -212,47 +225,103 @@ exports.applyInitialCLSync = async (req, res) => {
             });
         }
 
-        if (!Array.isArray(employees) || employees.length === 0) {
-            return res.status(400).json({
-                success: false,
-                message: 'No employees payload provided for apply.'
-            });
-        }
+        const scopeNorm = scope === 'all' ? 'all' : 'listed';
+        const reasonStr = reason ? String(reason).trim() : '';
+        const adjReason = `Initial policy sync${reasonStr ? `: ${reasonStr}` : ''}`;
+
+        const settings = await LeavePolicySettings.getSettings();
+        const effectiveDate = createISTDate(getTodayISTDateString());
 
         const results = {
             processed: 0,
             successCount: 0,
             errors: [],
-            details: []
+            details: [],
+            scope: scopeNorm,
         };
+
+        if (scopeNorm === 'all') {
+            const employeesAll = await Employee.find({ is_active: true })
+                .select('_id emp_no employee_name department_id division_id doj is_active compensatoryOffs')
+                .populate('department_id', 'name')
+                .populate('division_id', 'name');
+
+            for (const emp of employeesAll) {
+                try {
+                    const syncResult = await syncEmployeeCLFromPolicy(emp, settings, effectiveDate, {});
+                    if (!syncResult.success) {
+                        throw new Error(syncResult.error || 'CL sync failed');
+                    }
+                    results.successCount++;
+                    results.details.push({
+                        employeeId: emp._id,
+                        success: true,
+                        newBalance: syncResult.newBalance,
+                        policyOpening: syncResult.policyOpening,
+                    });
+                } catch (e) {
+                    results.errors.push({ employeeId: emp._id, error: e.message });
+                    results.details.push({ employeeId: emp._id, success: false, error: e.message });
+                } finally {
+                    results.processed++;
+                }
+            }
+
+            return res.status(200).json({
+                success: true,
+                message: `Initial sync (all active): ${results.successCount}/${results.processed} employees processed`,
+                data: results,
+            });
+        }
+
+        if (!Array.isArray(employees) || employees.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'No employees in payload. Use scope "all" to process every active employee, or send the listed employees array.',
+            });
+        }
 
         for (const row of employees) {
             const { employeeId, targetCL, targetEL, targetCCL } = row || {};
             if (!employeeId) continue;
 
             try {
-                const targetMap = [
-                    { type: 'CL', value: targetCL },
-                    { type: 'EL', value: targetEL },
-                    { type: 'CCL', value: targetCCL }
-                ];
+                const emp = await Employee.findById(employeeId)
+                    .select('_id emp_no employee_name department_id division_id doj is_active compensatoryOffs')
+                    .populate('department_id', 'name')
+                    .populate('division_id', 'name');
+                if (!emp) {
+                    throw new Error('Employee not found');
+                }
 
-                for (const t of targetMap) {
+                const clOpts =
+                    targetCL != null && targetCL !== '' && Number.isFinite(Number(targetCL))
+                        ? { targetCL: Number(targetCL) }
+                        : {};
+                const syncResult = await syncEmployeeCLFromPolicy(emp, settings, effectiveDate, clOpts);
+                if (!syncResult.success) {
+                    throw new Error(syncResult.error || 'CL sync failed');
+                }
+
+                for (const t of [
+                    { type: 'EL', value: targetEL },
+                    { type: 'CCL', value: targetCCL },
+                ]) {
                     if (t.value == null || t.value === '') continue;
                     const num = Number(t.value);
                     if (!Number.isFinite(num) || num < 0) {
                         throw new Error(`Invalid ${t.type} target value for employee ${employeeId}`);
                     }
-                    await leaveRegisterService.addAdjustment(
-                        employeeId,
-                        t.type,
-                        num,
-                        `Initial policy sync${reason ? `: ${String(reason).trim()}` : ''}`
-                    );
+                    await leaveRegisterService.addAdjustment(employeeId, t.type, num, adjReason);
                 }
 
                 results.successCount++;
-                results.details.push({ employeeId, success: true });
+                results.details.push({
+                    employeeId,
+                    success: true,
+                    newBalance: syncResult.newBalance,
+                    policyOpening: syncResult.policyOpening,
+                });
             } catch (e) {
                 results.errors.push({ employeeId, error: e.message });
                 results.details.push({ employeeId, success: false, error: e.message });
@@ -264,7 +333,7 @@ exports.applyInitialCLSync = async (req, res) => {
         res.status(200).json({
             success: true,
             message: `Initial sync apply completed: ${results.successCount}/${results.processed} employees processed`,
-            data: results
+            data: results,
         });
     } catch (error) {
         console.error('Error applying initial CL sync:', error);
@@ -404,6 +473,36 @@ exports.getNextResetDate = async (req, res) => {
  * @route   POST /api/leaves/annual-reset/preview
  * @access  Private (HR, Admin)
  */
+/**
+ * @desc    Per-employee leave register for one financial year (after annual reset)
+ * @route   GET /api/leaves/leave-register-year/:employeeId?financialYear=2025-2026
+ * @access  Private (HR, Admin)
+ */
+exports.getLeaveRegisterYear = async (req, res) => {
+    try {
+        const { employeeId } = req.params;
+        const financialYear = req.query.financialYear;
+        if (!financialYear || String(financialYear).trim() === '') {
+            return res.status(400).json({
+                success: false,
+                message: 'Query parameter financialYear is required (must match policy FY label, e.g. 2025-2026)'
+            });
+        }
+        const doc = await leaveRegisterYearService.findByEmployeeAndFY(employeeId, String(financialYear).trim());
+        return res.status(200).json({
+            success: true,
+            data: doc
+        });
+    } catch (error) {
+        console.error('Error fetching leave register year:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Error fetching leave register year',
+            error: error.message
+        });
+    }
+};
+
 exports.previewReset = async (req, res) => {
     try {
         const { sampleSize = 10 } = req.body; // Preview for sample employees
@@ -433,9 +532,10 @@ exports.previewReset = async (req, res) => {
             const currentCL = employee.paidLeaves || 0;
             let carryForwardAmount = 0;
             
-            if (settings.annualCLReset.addCarryForward && settings.carryForward.casualLeave.enabled) {
-                const unusedCL = Math.max(0, currentCL - 5); // Simplified calculation
-                carryForwardAmount = Math.min(unusedCL, settings.carryForward.casualLeave.maxMonths || 12);
+            if (settings.annualCLReset.addCarryForward) {
+                const maxCarry = getMaxAnnualCarryForwardCl(settings);
+                const unusedCL = Math.max(0, currentCL - 5); // Simplified sample preview
+                carryForwardAmount = Math.min(unusedCL, maxCarry);
             }
 
             const newBalance = settings.annualCLReset.resetToBalance + carryForwardAmount;

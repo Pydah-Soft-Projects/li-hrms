@@ -8,6 +8,8 @@ const Employee = require('../../employees/model/Employee');
 const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
 const leaveRegisterService = require('./leaveRegisterService');
 const dateCycleService = require('./dateCycleService');
+const leaveRegisterYearService = require('./leaveRegisterYearService');
+const leaveRegisterYearLedgerService = require('./leaveRegisterYearLedgerService');
 const { createISTDate, getTodayISTDateString, extractISTComponents } = require('../../shared/utils/dateUtils');
 
 /**
@@ -15,29 +17,56 @@ const { createISTDate, getTodayISTDateString, extractISTComponents } = require('
  */
 function yearsOfExperience(doj, asOfDate) {
     if (!doj) return 0;
-    const start = new Date(doj);
-    const end = new Date(asOfDate);
-    if (end < start) return 0;
-    const years = (end.getFullYear() - start.getFullYear()) +
-        ((end.getMonth() - start.getMonth()) * 12 + (end.getDate() - start.getDate())) / 365.25;
+    const s = extractISTComponents(doj);
+    const e = extractISTComponents(asOfDate);
+    if (e.dateStr < s.dateStr) return 0;
+    const years = (e.year - s.year) +
+        ((e.month - s.month) * 12 + (e.day - s.day)) / 365.25;
     return Math.floor(years);
 }
 
 /**
- * Get casual leave entitlement for reset: from experience tiers if configured, else default.
+ * Max CL days allowed to carry at annual reset / initial sync when carry is enabled.
+ * Uses annualCLReset.maxCarryForwardCl when set; otherwise 12.
  */
-function getCasualLeaveEntitlement(settings, doj, resetDate) {
+function getMaxAnnualCarryForwardCl(settings) {
+    const explicit = settings?.annualCLReset?.maxCarryForwardCl;
+    if (explicit != null && Number.isFinite(Number(explicit)) && Number(explicit) >= 0) {
+        return Math.min(365, Number(explicit));
+    }
+    return 12;
+}
+
+/**
+ * First matching experience tier (by years of service at reset date), or null.
+ */
+function getMatchingExperienceTier(settings, doj, resetDate) {
     const defaultCL = settings.annualCLReset.resetToBalance ?? 12;
     const tiers = settings.annualCLReset.casualLeaveByExperience;
-    if (!Array.isArray(tiers) || tiers.length === 0) return defaultCL;
+    if (!Array.isArray(tiers) || tiers.length === 0) {
+        return { tier: null, defaultCL };
+    }
     const years = yearsOfExperience(doj, resetDate);
     const sorted = [...tiers].sort((a, b) => (a.minYears || 0) - (b.minYears || 0));
     for (const t of sorted) {
         const min = t.minYears ?? 0;
         const max = t.maxYears ?? 999;
-        if (years >= min && years < max) return t.casualLeave ?? defaultCL;
+        if (years >= min && years < max) {
+            return { tier: t, defaultCL };
+        }
     }
-    return defaultCL;
+    return { tier: null, defaultCL };
+}
+
+/**
+ * Nominal annual CL from policy (tier casualLeave or default), before join pro-rata.
+ * Sum of monthly grid when configured, else tier.casualLeave / default.
+ */
+function getCasualLeaveEntitlement(settings, doj, resetDate) {
+    const { tier, defaultCL } = getMatchingExperienceTier(settings, doj, resetDate);
+    if (!tier) return defaultCL;
+    const grid = leaveRegisterYearService.normalizeTierMonthlyCredits(tier, defaultCL);
+    return grid.reduce((a, b) => a + b, 0);
 }
 
 /**
@@ -64,7 +93,7 @@ async function performAnnualCLReset(targetYear = null) {
         console.log(`[AnnualCLReset] Rollover execution date: ${resetDate.toISOString()}`);
 
         const employees = await Employee.find({ is_active: true })
-            .select('_id emp_no employee_name department_id division_id doj is_active')
+            .select('_id emp_no employee_name department_id division_id doj is_active compensatoryOffs')
             .populate('department_id', 'name')
             .populate('division_id', 'name');
 
@@ -90,6 +119,8 @@ async function performAnnualCLReset(targetYear = null) {
                         expiredAmount: resetResult.expiredAmount,
                         carryForwarded: resetResult.carryForwarded,
                         entitlement: resetResult.entitlement,
+                        scheduledClSubtotal: resetResult.scheduledClSubtotal,
+                        scheduledClTotal: resetResult.scheduledClTotal,
                         newBalance: resetResult.newBalance
                     });
                 } else {
@@ -126,68 +157,153 @@ async function resetEmployeeCL(employee, settings, resetDate) {
 
         // 2. Carry forward bounds (only if addCarryForward and carry forward enabled)
         const addCarryForward = settings.annualCLReset.addCarryForward !== false;
-        if (addCarryForward && settings.carryForward.casualLeave.enabled) {
-            const maxCF = settings.carryForward.casualLeave.maxMonths || 12;
-            carryForwardAllowed = Math.min(currentBalance, maxCF);
+        if (addCarryForward) {
+            const maxCarry = getMaxAnnualCarryForwardCl(settings);
+            carryForwardAllowed = Math.min(currentBalance, maxCarry);
         }
         expiredAmount = Math.max(0, currentBalance - carryForwardAllowed);
 
-        // 3. Post EXPIRY if balance exceeds carry forward limit
-        if (expiredAmount > 0) {
-            await leaveRegisterService.addTransaction({
-                employeeId: employee._id,
-                empNo: employee.emp_no,
-                employeeName: employee.employee_name,
-                designation: 'N/A',
-                department: employee.department_id?.name || 'N/A',
-                divisionId: employee.division_id?._id,
-                departmentId: employee.department_id?._id,
-                dateOfJoining: employee.doj,
-                employmentStatus: employee.is_active ? 'active' : 'inactive',
+        // 3. Expiry above carry cap is recorded in yearlyTransactions (new FY ledger starts from scheduled credits only).
+
+        // 4. Monthly CL grid from tier (or default split), then join rule per pay period (default: full cell if > half cycle remains)
+        const { tier, defaultCL } = getMatchingExperienceTier(settings, employee.doj, resetDate);
+        const monthlyGrid = leaveRegisterYearService.normalizeTierMonthlyCredits(
+            tier || { casualLeave: defaultCL },
+            defaultCL
+        );
+        const { months } = await leaveRegisterYearService.buildYearMonthSlots(
+            resetDate,
+            monthlyGrid,
+            employee.doj,
+            {}
+        );
+        const scheduledClSubtotal = leaveRegisterYearService.sumScheduledCl(months);
+        const nominalAnnual = getCasualLeaveEntitlement(settings, employee.doj, resetDate);
+
+        // Carry forward is added to first payroll month of the leave year (alongside tier/pro-rata credit)
+        if (carryForwardAllowed > 0 && months.length > 0) {
+            months[0].clCredits = (Number(months[0].clCredits) || 0) + carryForwardAllowed;
+        }
+        const scheduledClTotal = leaveRegisterYearService.sumScheduledCl(months);
+        const newBalance = scheduledClTotal;
+
+        // 5–6. LeaveRegisterYear only: reset-slot audit (EXPIRY + zero pool), then one CL CREDIT per payroll
+        // month (months[].clCredits from tier 12-cell grid + join rules; carry folded into period 1).
+        // ADJUSTMENT 0 clears the running balance from prior FY so monthly CREDITs sum to newBalance.
+        const monthsPayload = months.map((m) => ({
+            ...m,
+            transactions: [],
+        }));
+
+        const resetSlot =
+            monthsPayload.find(
+                (m) =>
+                    resetDate >= new Date(m.payPeriodStart) &&
+                    resetDate <= new Date(m.payPeriodEnd)
+            ) || monthsPayload[0];
+
+        const resetMs = new Date(resetDate).getTime();
+        if (resetSlot) {
+            if (!resetSlot.transactions) resetSlot.transactions = [];
+            if (expiredAmount > 0) {
+                const atEx = new Date(resetMs);
+                resetSlot.transactions.push({
+                    at: atEx,
+                    leaveType: 'CL',
+                    transactionType: 'EXPIRY',
+                    days: expiredAmount,
+                    openingBalance: 0,
+                    closingBalance: 0,
+                    startDate: atEx,
+                    endDate: atEx,
+                    reason: `Annual reset: CL above carry-forward cap (${expiredAmount} day(s) not carried)`,
+                    status: 'APPROVED',
+                    autoGenerated: true,
+                    autoGeneratedType: 'ANNUAL_RESET_EXPIRY',
+                });
+            }
+            const atZero = new Date(resetMs + 1);
+            resetSlot.transactions.push({
+                at: atZero,
                 leaveType: 'CL',
-                transactionType: 'EXPIRY',
-                startDate: resetDate,
-                endDate: resetDate,
-                days: expiredAmount,
-                reason: `Annual Reset: Unused CL above carry-forward limit. Expired ${expiredAmount} day(s).`,
+                transactionType: 'ADJUSTMENT',
+                days: 0,
+                openingBalance: 0,
+                closingBalance: 0,
+                startDate: atZero,
+                endDate: atZero,
+                reason: `Annual reset: close prior CL pool; per-month CL credits follow (grid + join; carry in period 1 if any)`,
                 status: 'APPROVED',
                 autoGenerated: true,
-                autoGeneratedType: 'EXPIRY'
+                autoGeneratedType: 'ANNUAL_RESET_ZERO_POOL',
             });
         }
 
-        // 4. Entitlement from settings (default or experience-based)
-        const entitlement = getCasualLeaveEntitlement(settings, employee.doj, resetDate);
-        const newBalance = entitlement + carryForwardAllowed;
+        leaveRegisterYearService.appendMonthlyClScheduledCreditTransactions(monthsPayload, {});
 
-        // 5. Post ADJUSTMENT to set CL to new year entitlement + carry forward
-        await leaveRegisterService.addTransaction({
+        // Year-level audit (not the movement ledger — that is months[].transactions only)
+        const yearlyTransactions = [];
+        if (expiredAmount > 0) {
+            yearlyTransactions.push({
+                at: resetDate,
+                transactionKind: 'EXPIRY',
+                leaveType: 'CL',
+                days: expiredAmount,
+                reason: 'Annual Reset: CL above carry-forward limit',
+            });
+        }
+        if (carryForwardAllowed > 0) {
+            yearlyTransactions.push({
+                at: resetDate,
+                transactionKind: 'CARRY_FORWARD',
+                leaveType: 'CL',
+                days: carryForwardAllowed,
+                reason: `CL carry forward folded into first payroll month (${monthsPayload[0]?.label || 'period 1'})`,
+                payrollMonthIndex: 1,
+                payPeriodStart: monthsPayload[0]?.payPeriodStart,
+                payPeriodEnd: monthsPayload[0]?.payPeriodEnd,
+                meta: { foldedIntoMonthIndex: 1 },
+            });
+        }
+        yearlyTransactions.push({
+            at: resetDate,
+            transactionKind: 'ADJUSTMENT',
+            leaveType: 'CL',
+            days: newBalance,
+            reason: `Annual reset FY opening CL pool: ${newBalance} day(s) = sum of monthly scheduled credits (see months[].transactions MONTHLY_CL_SCHEDULE).`,
+            meta: {
+                yearlyPolicyClScheduledTotal: scheduledClTotal,
+                scheduledClSubtotal,
+                nominalAnnual,
+                carryForwardAllowed,
+                expiredAmount,
+            },
+        });
+
+        const ccoBal = typeof employee.compensatoryOffs === 'number' ? employee.compensatoryOffs : 0;
+        await leaveRegisterYearService.upsertLeaveRegisterYear({
             employeeId: employee._id,
             empNo: employee.emp_no,
             employeeName: employee.employee_name,
-            designation: 'N/A',
-            department: employee.department_id?.name || 'N/A',
-            divisionId: employee.division_id?._id,
-            departmentId: employee.department_id?._id,
-            dateOfJoining: employee.doj,
-            employmentStatus: employee.is_active ? 'active' : 'inactive',
-            leaveType: 'CL',
-            transactionType: 'ADJUSTMENT',
-            startDate: resetDate,
-            endDate: resetDate,
-            days: newBalance,
-            reason: `Annual CL Reset: entitlement ${entitlement} (by experience)${carryForwardAllowed > 0 ? ` + carry forward ${carryForwardAllowed}` : ''} = ${newBalance}`,
-            status: 'APPROVED',
-            autoGenerated: true,
-            autoGeneratedType: 'ANNUAL_RESET'
+            resetDate,
+            casualBalance: newBalance,
+            compensatoryOffBalance: ccoBal,
+            months: monthsPayload,
+            yearlyTransactions,
+            yearlyPolicyClScheduledTotal: scheduledClTotal,
+            source: 'ANNUAL_RESET',
         });
+
+        await leaveRegisterYearLedgerService.recalculateRegisterBalances(employee._id, 'CL', null);
 
         return {
             success: true,
             previousBalance: currentBalance,
             carryForwarded: carryForwardAllowed,
             expiredAmount,
-            entitlement,
+            entitlement: nominalAnnual,
+            scheduledClSubtotal,
+            scheduledClTotal,
             newBalance
         };
     } catch (error) {
@@ -257,8 +373,8 @@ async function getCLResetStatus(employeeIds = null) {
             currentCL: typeof emp.casualLeaves === 'number' ? emp.casualLeaves : 0,
             nextResetDate: nextDate,
             rolloverEnabled: settings.annualCLReset.enabled,
-            carryForwardEnabled: settings.carryForward.casualLeave.enabled,
-            carryForwardMax: settings.carryForward.casualLeave.maxMonths || 12
+            carryForwardEnabled: settings.annualCLReset.addCarryForward !== false,
+            carryForwardMax: getMaxAnnualCarryForwardCl(settings)
         }));
 
         return {
@@ -269,8 +385,8 @@ async function getCLResetStatus(employeeIds = null) {
                 usePayrollCycleForReset: settings.annualCLReset.usePayrollCycleForReset,
                 resetMonth: settings.annualCLReset.resetMonth,
                 resetDay: settings.annualCLReset.resetDay,
-                carryForwardEnabled: settings.carryForward.casualLeave.enabled,
-                carryForwardMax: settings.carryForward.casualLeave.maxMonths || 12
+                carryForwardEnabled: settings.annualCLReset.addCarryForward !== false,
+                carryForwardMax: getMaxAnnualCarryForwardCl(settings)
             }
         };
 
@@ -320,7 +436,7 @@ async function performInitialCLSync() {
         const effectiveDate = createISTDate(getTodayISTDateString()); // IST midnight today
 
         const employees = await Employee.find({ is_active: true })
-            .select('_id emp_no employee_name department_id division_id doj is_active')
+            .select('_id emp_no employee_name department_id division_id doj is_active compensatoryOffs')
             .populate('department_id', 'name')
             .populate('division_id', 'name');
 
@@ -334,7 +450,7 @@ async function performInitialCLSync() {
 
         for (const employee of employees) {
             try {
-                const syncResult = await syncEmployeeCLFromPolicy(employee, settings, effectiveDate);
+                const syncResult = await syncEmployeeCLFromPolicy(employee, settings, effectiveDate, {});
                 if (syncResult.success) {
                     results.successCount++;
                     results.details.push({
@@ -366,48 +482,247 @@ async function performInitialCLSync() {
 }
 
 /**
- * Set one employee's CL to policy entitlement + optional carry forward (no EXPIRY).
+ * Initial sync month grid: full FY from tier + join rules, then zero clCredits for payroll periods
+ * already ended on or before effectiveDate (IST). Carry (LeaveRegisterYear ledger only) folds into
+ * the first still-open period. Remaining months are credited in one go via MONTHLY_CL_SCHEDULE.
+ *
+ * @returns {Promise<object>}
  */
-async function syncEmployeeCLFromPolicy(employee, settings, effectiveDate) {
-    try {
-        const currentBalance = await leaveRegisterService.getCurrentBalance(employee._id, 'CL');
-        let carryForwardAllowed = 0;
-        const addCarryForward = settings.annualCLReset?.addCarryForward !== false;
-        if (addCarryForward && settings.carryForward?.casualLeave?.enabled) {
-            const maxCF = settings.carryForward.casualLeave.maxMonths || 12;
-            carryForwardAllowed = Math.min(currentBalance, maxCF);
-        }
-        const { entitlement, proration } = await getInitialSyncEntitlement(settings, employee.doj, effectiveDate);
-        const newBalance = entitlement + carryForwardAllowed;
+async function buildInitialSyncMonthsPayload(employee, settings, effectiveDate) {
+    const ledgerCLBalance = await leaveRegisterYearLedgerService.getCurrentBalanceLedgerOnly(
+        employee._id,
+        'CL',
+        effectiveDate
+    );
+    const addCarryForward = settings.annualCLReset?.addCarryForward !== false;
+    const maxCarry = getMaxAnnualCarryForwardCl(settings);
+    const carryForwardAllowed = addCarryForward
+        ? Math.min(Math.max(0, Number(ledgerCLBalance) || 0), maxCarry)
+        : 0;
 
-        await leaveRegisterService.addTransaction({
+    const init = await getInitialSyncEntitlement(settings, employee.doj, effectiveDate);
+    let { entitlement, proration, months: rawMonths } = init;
+
+    let months =
+        Array.isArray(rawMonths) && rawMonths.length > 0
+            ? rawMonths
+            : (await (async () => {
+                  const { tier, defaultCL } = getMatchingExperienceTier(settings, employee.doj, effectiveDate);
+                  const monthlyGrid = leaveRegisterYearService.normalizeTierMonthlyCredits(
+                      tier || { casualLeave: defaultCL },
+                      defaultCL
+                  );
+                  const { months: m } = await leaveRegisterYearService.buildYearMonthSlots(
+                      effectiveDate,
+                      monthlyGrid,
+                      employee.doj,
+                      {}
+                  );
+                  return m;
+              })());
+
+    const originals = months.map((m) => Math.round((Number(m.clCredits) || 0) * 2) / 2);
+    const fullYearGridSum = originals.reduce((a, b) => a + b, 0);
+
+    const monthsPayload = months.map((m) => ({
+        ...m,
+        transactions: [],
+    }));
+
+    const monthlyBreakdown = [];
+    let policyRemainingGridOnly = 0;
+
+    for (let i = 0; i < monthsPayload.length; i++) {
+        const m = monthsPayload[i];
+        const orig = originals[i];
+        let clearedPast = false;
+        if (m.payPeriodEnd && leaveRegisterYearService.isPayrollPeriodEndedOnOrBeforeAsOf(m.payPeriodEnd, effectiveDate)) {
+            m.clCredits = 0;
+            clearedPast = true;
+        }
+        const afterZero = Math.round((Number(m.clCredits) || 0) * 2) / 2;
+        policyRemainingGridOnly += afterZero;
+        monthlyBreakdown.push({
+            payrollMonthIndex: m.payrollMonthIndex,
+            label: m.label || `Period ${m.payrollMonthIndex}`,
+            payPeriodStart: m.payPeriodStart,
+            payPeriodEnd: m.payPeriodEnd,
+            policyCellOriginal: orig,
+            clearedPast,
+            carryAddedHere: 0,
+            clCreditsApplied: afterZero,
+        });
+    }
+
+    let firstOpenIndex = monthsPayload.findIndex((m) => {
+        if (!m.payPeriodEnd) return true;
+        return !leaveRegisterYearService.isPayrollPeriodEndedOnOrBeforeAsOf(m.payPeriodEnd, effectiveDate);
+    });
+    if (firstOpenIndex < 0) firstOpenIndex = 0;
+
+    if (carryForwardAllowed > 0) {
+        const base = Math.round((Number(monthsPayload[firstOpenIndex].clCredits) || 0) * 2) / 2;
+        monthsPayload[firstOpenIndex].clCredits = Math.round((base + carryForwardAllowed) * 2) / 2;
+        if (monthlyBreakdown[firstOpenIndex]) {
+            monthlyBreakdown[firstOpenIndex].carryAddedHere = carryForwardAllowed;
+            monthlyBreakdown[firstOpenIndex].clCreditsApplied = monthsPayload[firstOpenIndex].clCredits;
+        }
+    }
+
+    const defaultPoolBalance = leaveRegisterYearService.sumScheduledCl(monthsPayload);
+    const pastClearedCreditsTotal = Math.round((fullYearGridSum - policyRemainingGridOnly) * 2) / 2;
+
+    return {
+        monthsPayload,
+        monthlyBreakdown,
+        entitlement,
+        proration,
+        ledgerCLBalance,
+        carryForwardAllowed,
+        fullYearGridSum,
+        policyRemainingGridOnly,
+        pastClearedCreditsTotal,
+        defaultPoolBalance,
+        firstOpenIndex,
+    };
+}
+
+/**
+ * Set one employee's CL from policy: LeaveRegisterYear only (ledger CL for carry).
+ * Past payroll periods (ended on/before effectiveDate, IST) get clCredits 0; remaining months
+ * receive MONTHLY_CL_SCHEDULE credits in one go. Carry folds into first open period.
+ * @param {object} [options]
+ * @param {number|null|undefined} [options.targetCL] — if set (e.g. from preview review), applied CL balance; else default pool.
+ */
+async function syncEmployeeCLFromPolicy(employee, settings, effectiveDate, options = {}) {
+    try {
+        const targetCLOverride = options.targetCL;
+
+        const built = await buildInitialSyncMonthsPayload(employee, settings, effectiveDate);
+        const {
+            monthsPayload,
+            entitlement,
+            proration,
+            ledgerCLBalance,
+            carryForwardAllowed,
+            fullYearGridSum,
+            policyRemainingGridOnly,
+            pastClearedCreditsTotal,
+            defaultPoolBalance,
+            firstOpenIndex,
+        } = built;
+
+        const newBalance =
+            targetCLOverride != null &&
+            targetCLOverride !== '' &&
+            Number.isFinite(Number(targetCLOverride))
+                ? Math.max(0, Number(targetCLOverride))
+                : defaultPoolBalance;
+
+        const yearlyTransactions = [];
+        if (carryForwardAllowed > 0 && monthsPayload.length > 0) {
+            const fold = monthsPayload[firstOpenIndex] || monthsPayload[0];
+            yearlyTransactions.push({
+                at: effectiveDate,
+                transactionKind: 'CARRY_FORWARD',
+                leaveType: 'CL',
+                days: carryForwardAllowed,
+                reason: `Initial sync: carry folded into first open payroll month (${fold?.label || 'period'})`,
+                payrollMonthIndex: fold?.payrollMonthIndex,
+                payPeriodStart: fold?.payPeriodStart,
+                payPeriodEnd: fold?.payPeriodEnd,
+                meta: { foldedIntoPayrollMonthIndex: fold?.payrollMonthIndex, firstOpenIndex },
+            });
+        }
+        yearlyTransactions.push({
+            at: effectiveDate,
+            transactionKind: 'ADJUSTMENT',
+            leaveType: 'CL',
+            days: newBalance,
+            reason: `Initial policy sync: pool ${newBalance} (remaining FY grid ${policyRemainingGridOnly} + carry ${carryForwardAllowed}; full grid before past-zero ${fullYearGridSum}; past slots cleared ${pastClearedCreditsTotal})${targetCLOverride != null ? '; review override' : ''}`,
+            meta: {
+                fullYearGridSum,
+                policyRemainingGridOnly,
+                pastClearedCreditsTotal,
+                carryForwardAllowed,
+            },
+        });
+
+        leaveRegisterYearService.appendMonthlyClScheduledCreditTransactions(monthsPayload, {});
+
+        const syncSlot =
+            monthsPayload.find(
+                (m) =>
+                    effectiveDate >= new Date(m.payPeriodStart) &&
+                    effectiveDate <= new Date(m.payPeriodEnd)
+            ) || monthsPayload[0];
+
+        const diff = Math.round((newBalance - defaultPoolBalance) * 100) / 100;
+        if (syncSlot && Math.abs(diff) > 0.001) {
+            if (!syncSlot.transactions) syncSlot.transactions = [];
+            const at = new Date(effectiveDate);
+            if (diff > 0) {
+                syncSlot.transactions.push({
+                    at,
+                    leaveType: 'CL',
+                    transactionType: 'CREDIT',
+                    days: diff,
+                    openingBalance: 0,
+                    closingBalance: 0,
+                    startDate: at,
+                    endDate: at,
+                    reason: `Initial sync: extra ${diff} day(s) vs policy schedule (reviewed target)`,
+                    status: 'APPROVED',
+                    autoGenerated: true,
+                    autoGeneratedType: 'INITIAL_SYNC_DELTA',
+                });
+            } else {
+                syncSlot.transactions.push({
+                    at,
+                    leaveType: 'CL',
+                    transactionType: 'EXPIRY',
+                    days: Math.abs(diff),
+                    openingBalance: 0,
+                    closingBalance: 0,
+                    startDate: at,
+                    endDate: at,
+                    reason: `Initial sync: reduce ${Math.abs(diff)} day(s) vs policy schedule (reviewed target)`,
+                    status: 'APPROVED',
+                    autoGenerated: true,
+                    autoGeneratedType: 'INITIAL_SYNC_DELTA',
+                });
+            }
+        }
+
+        const ccoBal = typeof employee.compensatoryOffs === 'number' ? employee.compensatoryOffs : 0;
+        await leaveRegisterYearService.upsertLeaveRegisterYear({
             employeeId: employee._id,
             empNo: employee.emp_no,
             employeeName: employee.employee_name,
-            designation: 'N/A',
-            department: employee.department_id?.name || 'N/A',
-            divisionId: employee.division_id?._id,
-            departmentId: employee.department_id?._id,
-            dateOfJoining: employee.doj,
-            employmentStatus: employee.is_active ? 'active' : 'inactive',
-            leaveType: 'CL',
-            transactionType: 'ADJUSTMENT',
-            startDate: effectiveDate,
-            endDate: effectiveDate,
-            days: newBalance,
-            reason: `Initial CL sync from policy: entitlement ${entitlement}${carryForwardAllowed > 0 ? ` + carry forward ${carryForwardAllowed}` : ''} = ${newBalance}`,
-            status: 'APPROVED',
-            autoGenerated: true,
-            autoGeneratedType: 'INITIAL_BALANCE'
+            resetDate: effectiveDate,
+            casualBalance: newBalance,
+            compensatoryOffBalance: ccoBal,
+            months: monthsPayload,
+            yearlyTransactions,
+            yearlyPolicyClScheduledTotal: defaultPoolBalance,
+            source: 'INITIAL_POLICY_SYNC',
         });
+
+        await leaveRegisterYearLedgerService.recalculateRegisterBalances(employee._id, 'CL', null);
 
         return {
             success: true,
-            previousBalance: currentBalance,
+            previousBalance: ledgerCLBalance,
             entitlement,
             proration,
             carryForwarded: carryForwardAllowed,
-            newBalance
+            newBalance,
+            fullYearGridSum,
+            policyRemainingGridOnly,
+            pastClearedCreditsTotal,
+            defaultPoolBalance,
+            /** @deprecated use defaultPoolBalance */
+            policyOpening: defaultPoolBalance,
         };
     } catch (error) {
         return { success: false, error: error.message };
@@ -415,17 +730,36 @@ async function syncEmployeeCLFromPolicy(employee, settings, effectiveDate) {
 }
 
 /**
- * Initial-sync entitlement with proration:
- * - If DOJ is before FY start: full entitlement.
- * - If DOJ is within current FY: prorated by remaining months in FY.
- * - If DOJ is after FY end: 0.
+ * Initial-sync CL entitlement from the same source as LeaveRegisterYear: 12 payroll slots × tier monthlyClCredits,
+ * Join mid-cycle: default majority_full (full cell if more than half the pay period remains from DOJ). Missing DOJ → full grid sum for the FY.
  */
 async function getInitialSyncEntitlement(settings, doj, effectiveDate) {
-    const fullEntitlement = getCasualLeaveEntitlement(settings, doj, effectiveDate);
+    const { tier, defaultCL } = getMatchingExperienceTier(settings, doj || effectiveDate, effectiveDate);
+    const monthlyGrid = leaveRegisterYearService.normalizeTierMonthlyCredits(
+        tier || { casualLeave: defaultCL },
+        defaultCL
+    );
+    const fullEntitlement = monthlyGrid.reduce((a, b) => a + Number(b || 0), 0);
+
     if (!doj) {
+        const { months, fy } = await leaveRegisterYearService.buildYearMonthSlots(
+            effectiveDate,
+            monthlyGrid,
+            null,
+            {}
+        );
+        const sum = leaveRegisterYearService.sumScheduledCl(months);
+        const entitlement = Math.round(sum * 2) / 2;
         return {
-            entitlement: fullEntitlement,
-            proration: { applied: false, reason: 'missing_doj', fullEntitlement, remainingMonths: 12, totalMonths: 12 }
+            entitlement,
+            months,
+            financialYear: fy?.name,
+            proration: {
+                applied: false,
+                reason: 'missing_doj',
+                fullEntitlement,
+                method: 'policy_monthly_grid_sum',
+            },
         };
     }
 
@@ -441,40 +775,55 @@ async function getInitialSyncEntitlement(settings, doj, effectiveDate) {
     if (dojYmd > fyEndYmd) {
         return {
             entitlement: 0,
-            proration: { applied: true, reason: 'joined_after_fy_end', fullEntitlement, remainingMonths: 0, totalMonths: 12 }
-        };
-    }
-    if (dojYmd <= fyStartYmd) {
-        return {
-            entitlement: fullEntitlement,
-            proration: { applied: false, reason: 'joined_before_fy_start', fullEntitlement, remainingMonths: 12, totalMonths: 12 }
+            months: [],
+            financialYear: fy.name,
+            proration: {
+                applied: true,
+                reason: 'joined_after_fy_end',
+                fullEntitlement,
+                method: 'policy_monthly_grid_sum',
+            },
         };
     }
 
-    const remainingMonths = ((fyEndIst.year - dojIst.year) * 12) + (fyEndIst.month - dojIst.month) + 1;
-    const safeRemaining = Math.max(0, Math.min(12, remainingMonths));
-    const raw = (Number(fullEntitlement) * safeRemaining) / 12;
-    const rounded = Math.round(raw * 2) / 2; // nearest 0.5
+    const { months, fy: fyResolved } = await leaveRegisterYearService.buildYearMonthSlots(
+        effectiveDate,
+        monthlyGrid,
+        doj,
+        {}
+    );
+    const sum = leaveRegisterYearService.sumScheduledCl(months);
+    const entitlement = Math.round(sum * 2) / 2;
+
+    const joinedBeforeOrOnFyStart = dojYmd <= fyStartYmd;
+    const creditedSlots = months.filter((m) => (Number(m.clCredits) || 0) > 0).length;
 
     return {
-        entitlement: rounded,
+        entitlement,
+        months,
+        financialYear: fyResolved?.name || fy.name,
         proration: {
-            applied: true,
-            reason: 'joined_within_fy',
+            applied: !joinedBeforeOrOnFyStart,
+            reason: joinedBeforeOrOnFyStart ? 'joined_before_fy_start' : 'joined_within_fy',
             fullEntitlement,
-            remainingMonths: safeRemaining,
-            totalMonths: 12,
-            raw,
-            rounded
-        }
+            method: 'policy_monthly_grid_per_payroll_cycle',
+            joinCycleRuleDefault: 'majority_full',
+            creditedPayrollSlots: creditedSlots,
+            scheduledClSubtotal: sum,
+        },
     };
 }
 
 module.exports = {
     performAnnualCLReset,
     performInitialCLSync,
+    syncEmployeeCLFromPolicy,
+    buildInitialSyncMonthsPayload,
     getInitialSyncEntitlement,
     getCLResetStatus,
     getNextResetDate,
-    getResetDate
+    getResetDate,
+    getMatchingExperienceTier,
+    getCasualLeaveEntitlement,
+    getMaxAnnualCarryForwardCl
 };

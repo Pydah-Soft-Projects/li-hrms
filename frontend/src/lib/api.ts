@@ -3938,6 +3938,59 @@ export const api = {
     });
   },
 
+  getLeaveRegisterYear: async (employeeId: string, financialYear: string) => {
+    const q = new URLSearchParams({ financialYear: String(financialYear) });
+    return apiRequest<any>(`/leaves/leave-register-year/${employeeId}?${q}`, { method: 'GET' });
+  },
+
+  /** Stored monthly apply ceiling / consumption for payroll period of fromDate (CL apply dialog). */
+  getLeaveApplyPeriodContext: async (params: {
+    fromDate: string;
+    employeeId?: string;
+    refresh?: boolean;
+  }) => {
+    const q = new URLSearchParams();
+    q.set('fromDate', params.fromDate);
+    if (params.employeeId) q.set('employeeId', params.employeeId);
+    if (params.refresh) q.set('refresh', '1');
+    return apiRequest<any>(`/leaves/apply-period-context?${q}`, { method: 'GET' });
+  },
+
+  listLeaveRegister: async (params?: {
+    financialYear?: string;
+    month?: number;
+    year?: number;
+    departmentId?: string;
+    divisionId?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+  }) => {
+    const q = new URLSearchParams();
+    if (params?.financialYear) q.set('financialYear', params.financialYear);
+    if (params?.month != null) q.set('month', String(params.month));
+    if (params?.year != null) q.set('year', String(params.year));
+    if (params?.departmentId) q.set('departmentId', params.departmentId);
+    if (params?.divisionId) q.set('divisionId', params.divisionId);
+    if (params?.search) q.set('search', params.search);
+    if (params?.page != null) q.set('page', String(params.page));
+    if (params?.limit != null) q.set('limit', String(params.limit));
+    const qs = q.toString();
+    return apiRequest<any>(`/leaves/register${qs ? `?${qs}` : ''}`, { method: 'GET' });
+  },
+
+  getEmployeeLeaveRegisterDetail: async (
+    employeeId: string,
+    params?: { financialYear?: string; month?: number; year?: number }
+  ) => {
+    const q = new URLSearchParams();
+    if (params?.financialYear) q.set('financialYear', params.financialYear);
+    if (params?.month != null) q.set('month', String(params.month));
+    if (params?.year != null) q.set('year', String(params.year));
+    const qs = q.toString();
+    return apiRequest<any>(`/leaves/register/employee/${employeeId}${qs ? `?${qs}` : ''}`, { method: 'GET' });
+  },
+
   /** Apply initial CL balance from policy to all employees (manual; creates ADJUSTMENT transactions). Not the annual reset. */
   performInitialCLSync: async (confirm: boolean = true) => {
     return apiRequest<any>('/leaves/initial-cl-sync', {
@@ -3967,11 +4020,12 @@ export const api = {
       return apiRequest<any>(`/leaves/initial-cl-sync/preview${qs}`, { method: 'POST' });
     }
   },
-  /** Apply reviewed initial CL/EL/CCL sync rows. */
+  /** Apply initial sync: scope "listed" = payload employees only; "all" = every active employee (CL from policy; EL/CCL only on listed). */
   applyInitialCLSync: async (payload: {
     confirm: boolean;
+    scope?: 'listed' | 'all';
     reason?: string;
-    employees: Array<{
+    employees?: Array<{
       employeeId: string;
       targetCL?: number;
       targetEL?: number;

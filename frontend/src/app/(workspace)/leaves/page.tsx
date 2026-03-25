@@ -524,6 +524,8 @@ export default function LeavesPage() {
   const [isELIncluded, setIsELIncluded] = useState(false);
   const [elBalance, setElBalance] = useState<number | null>(null);
   const [pooledLimit, setPooledLimit] = useState<number | null>(null);
+  /** Full payload from GET /leaves/apply-period-context (stored slot + balances). */
+  const [applyPeriodContext, setApplyPeriodContext] = useState<any | null>(null);
   const [loadingMessage, setLoadingMessage] = useState<string>('');
 
   // Form state
@@ -1478,6 +1480,89 @@ export default function LeavesPage() {
   const canFetchCLBalance = hasValidEmployeeId || hasValidEmpNo;
 
   // CL monthly-limit validation is enforced on backend during apply.
+
+  useEffect(() => {
+    if (!showApplyDialog || applyType !== 'leave' || !isCLSelected || !formData.fromDate) {
+      return;
+    }
+    if (!canFetchCLBalance) {
+      setClBalanceForMonth(null);
+      setClMonthlyCap(null);
+      setPooledLimit(null);
+      setPendingDaysInCycle(null);
+      setApplyPeriodContext(null);
+      setCclBalance(null);
+      setElBalance(null);
+      setClAnnualBalance(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setClBalanceLoading(true);
+      try {
+        const res = await api.getLeaveApplyPeriodContext({
+          fromDate: formData.fromDate,
+          ...(hasValidEmployeeId ? { employeeId: String(targetEmployeeId) } : {}),
+        });
+        if (cancelled) return;
+        if (!res?.success || !res.data) {
+          setApplyPeriodContext(null);
+          setClBalanceForMonth(null);
+          return;
+        }
+        const d = res.data;
+        setApplyPeriodContext(d);
+        if (!d.hasYearDoc || !d.hasSlot) {
+          setClBalanceForMonth(null);
+          setClMonthlyCap(null);
+          setPooledLimit(null);
+          setPendingDaysInCycle(null);
+          setCclBalance(null);
+          setElBalance(null);
+          setClAnnualBalance(null);
+          setIsCCLIncluded(false);
+          setIsELIncluded(false);
+          return;
+        }
+        const ceiling = d.monthlyApplyCeiling != null ? Number(d.monthlyApplyCeiling) : null;
+        const remaining =
+          d.monthlyApplyRemaining != null ? Number(d.monthlyApplyRemaining) : null;
+        setClMonthlyCap(ceiling);
+        setPooledLimit(ceiling);
+        setClBalanceForMonth(remaining);
+        setPendingDaysInCycle(
+          d.monthlyApplyLocked != null ? Number(d.monthlyApplyLocked) : null
+        );
+        setCclBalance(d.balances?.ccl != null ? Number(d.balances.ccl) : null);
+        setElBalance(
+          d.includeELInMonthlyPool && d.balances?.el != null
+            ? Number(d.balances.el)
+            : null
+        );
+        setIsCCLIncluded(true);
+        setIsELIncluded(!!d.includeELInMonthlyPool);
+        setClAnnualBalance(d.balances?.cl != null ? Number(d.balances.cl) : null);
+      } catch {
+        if (!cancelled) {
+          setApplyPeriodContext(null);
+          setClBalanceForMonth(null);
+        }
+      } finally {
+        if (!cancelled) setClBalanceLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    showApplyDialog,
+    applyType,
+    isCLSelected,
+    formData.fromDate,
+    canFetchCLBalance,
+    hasValidEmployeeId,
+    targetEmployeeId,
+  ]);
 
   const buildInitialSplits = (leave: LeaveApplication) => {
     if (!leave) return [];
@@ -3373,21 +3458,59 @@ export default function LeavesPage() {
                           <div className="h-3 w-full bg-slate-200 dark:bg-slate-700 rounded animate-pulse" />
                           <div className="h-3 w-4/5 bg-slate-200 dark:bg-slate-700 rounded animate-pulse" />
                         </div>
+                      ) : applyPeriodContext && (!applyPeriodContext.hasYearDoc || !applyPeriodContext.hasSlot) ? (
+                        <p className="text-xs text-amber-700 dark:text-amber-300 text-center py-2 bg-amber-50 dark:bg-amber-900/20 rounded-lg">
+                          No leave register row for this payroll period yet. Limits show after FY register exists.
+                        </p>
                       ) : clBalanceForMonth !== null ? (
                         <>
                           <div className="flex items-center justify-between mb-2 pb-2 border-b border-dashed border-slate-200 dark:border-slate-700">
                              <div className="flex flex-col">
-                               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Net Allowed to Apply</span>
-                               <span className="text-xs text-slate-500 italic">After deducting pending leaves</span>
+                               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">You can still apply (this period)</span>
+                               <span className="text-xs text-slate-500 italic">Stored ceiling minus locked + approved</span>
                              </div>
                              <span className="text-lg font-black text-blue-600 dark:text-blue-400">{clBalanceForMonth} Days</span>
                           </div>
 
                           <div className="grid grid-cols-1 gap-2.5">
+                            {applyPeriodContext?.payrollLabel && (
+                              <div className="text-[10px] text-slate-500 font-medium">
+                                Period: {applyPeriodContext.payrollLabel}
+                              </div>
+                            )}
                             <div className="flex items-center justify-between text-xs">
-                              <span className="text-slate-500">Monthly CL Cap (Max Allowed)</span>
+                              <span className="text-slate-500">Scheduled CL (period)</span>
+                              <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                {applyPeriodContext?.scheduledCl ?? '—'} Days
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="text-slate-500">Scheduled CCL (period)</span>
+                              <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                {applyPeriodContext?.scheduledCcl ?? '—'} Days
+                              </span>
+                            </div>
+                            {applyPeriodContext?.includeELInMonthlyPool && (
+                              <div className="flex items-center justify-between text-xs">
+                                <span className="text-slate-500">Scheduled EL (period, counts toward cap)</span>
+                                <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                  {applyPeriodContext?.scheduledEl ?? '—'} Days
+                                </span>
+                              </div>
+                            )}
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="text-slate-500">Monthly apply ceiling (stored)</span>
                               <span className="font-semibold text-slate-700 dark:text-slate-300">{clMonthlyCap ?? 0} Days</span>
                             </div>
+                            {(applyPeriodContext?.monthlyApplyLocked != null ||
+                              applyPeriodContext?.monthlyApplyApproved != null) && (
+                              <div className="flex items-center justify-between text-[10px] text-slate-500 uppercase tracking-tight">
+                                <span>
+                                  Used toward cap — locked {applyPeriodContext?.monthlyApplyLocked ?? 0} · approved{' '}
+                                  {applyPeriodContext?.monthlyApplyApproved ?? 0}
+                                </span>
+                              </div>
+                            )}
 
                             {isCCLIncluded && (
                               <div className="flex items-center justify-between text-xs">
@@ -3418,7 +3541,7 @@ export default function LeavesPage() {
                             )}
 
                             <div className="flex items-center justify-between text-[10px] text-slate-400 uppercase tracking-tight pt-2 border-t border-slate-100 dark:border-slate-800">
-                              <span>Total Yearly CL Balance</span>
+                              <span>Current CL balance (FY register)</span>
                               <span>{clAnnualBalance ?? 0} Days</span>
                             </div>
                           </div>
