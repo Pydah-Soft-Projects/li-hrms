@@ -35,6 +35,7 @@ router.get('/getrequest.aspx', async (req, res) => {
 
     // Ensure device is in DB
     await ensureDeviceRegistered(SN, clientIp);
+    await touchDeviceHeartbeat(SN);
 
     // Log basic heartbeat
     logger.info(`ADMS Heartbeat: SN=${SN}, INFO=${INFO || 'none'}, Options=${option || 'none'} from ${clientIp}`);
@@ -104,6 +105,7 @@ router.get('/cdata.aspx', async (req, res) => {
 
     // Ensure device is in DB
     await ensureDeviceRegistered(SN, clientIp);
+    await touchDeviceHeartbeat(SN);
 
     logger.info(`ICLOCK990 Handshake: SN=${SN}, Options=${options || 'none'}, PushVer=${pushver || 'unknown'} from ${clientIp}`);
 
@@ -245,6 +247,7 @@ router.post('/getrequest.aspx', async (req, res) => {
             method: 'POST',
             ipAddress: clientIp
         });
+        await touchDeviceHeartbeat(SN);
     } catch (err) {
         logger.error(`ADMS Keep-alive Log Error: ${err.message}`);
     }
@@ -257,6 +260,19 @@ const getClientIp = (req) => {
         req.socket.remoteAddress ||
         req.ip;
 };
+
+/** Updates lastSeenAt on any ADMS heartbeat / handshake / data push (for live online UI). */
+async function touchDeviceHeartbeat(SN) {
+    if (!SN || SN === 'UNKNOWN') return;
+    try {
+        await Device.updateOne(
+            { deviceId: SN },
+            { $set: { lastSeenAt: new Date() } }
+        );
+    } catch (err) {
+        logger.warn(`touchDeviceHeartbeat failed for ${SN}: ${err.message}`);
+    }
+}
 
 /**
  * HELPER: Ensure device is registered and visible
@@ -343,6 +359,8 @@ async function processAdmsPost(req, res, SN, table, clientIp) {
         });
 
         logger.info(`ADMS Data: SN=${SN}, Table=${table}, Size=${rawBody?.length || 0} chars`);
+
+        await touchDeviceHeartbeat(SN);
 
         // ==========================================
         // DEBUG: Show RAW body data

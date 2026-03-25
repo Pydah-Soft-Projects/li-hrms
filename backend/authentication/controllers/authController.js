@@ -467,6 +467,13 @@ exports.changePassword = async (req, res) => {
       });
     }
 
+    if (String(newPassword).length < 4) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password must be at least 4 characters',
+      });
+    }
+
     let user = await User.findById(req.user.userId).select('+password');
     let userType = 'user';
 

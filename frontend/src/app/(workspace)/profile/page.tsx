@@ -212,8 +212,8 @@ export default function ProfilePage() {
       setPasswordError('New password is required');
       return;
     }
-    if (passwordData.newPassword.length < 6) {
-      setPasswordError('New password must be at least 6 characters');
+    if (passwordData.newPassword.length < 4) {
+      setPasswordError('New password must be at least 4 characters');
       return;
     }
     if (passwordData.newPassword !== passwordData.confirmPassword) {
@@ -714,7 +714,7 @@ export default function ProfilePage() {
                           value={passwordData.newPassword}
                           onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
                           className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent transition-all"
-                          placeholder="At least 6 characters"
+                          placeholder="At least 4 characters"
                         />
                         <Shield className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                       </div>
