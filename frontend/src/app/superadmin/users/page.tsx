@@ -522,8 +522,8 @@ export default function UsersPage() {
     setError('');
 
     if (!resetPasswordState.autoGenerate) {
-      if (resetPasswordState.newPassword.length < 6) {
-        setError('Password must be at least 6 characters');
+      if (resetPasswordState.newPassword.length < 4) {
+        setError('Password must be at least 4 characters');
         return;
       }
       if (resetPasswordState.newPassword !== resetPasswordState.confirmPassword) {
@@ -2566,7 +2566,7 @@ export default function UsersPage() {
                               value={resetPasswordState.newPassword}
                               onChange={(e) => setResetPasswordState(prev => ({ ...prev, newPassword: e.target.value }))}
                               className="w-full rounded-2xl border border-slate-200 bg-white py-3.5 pl-11 pr-12 text-sm focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 dark:border-slate-800 dark:bg-slate-900 dark:text-white"
-                              placeholder="Min. 8 characters"
+                              placeholder="Min. 4 characters"
                             />
                             <button
                               type="button"
@@ -2668,7 +2668,7 @@ export default function UsersPage() {
                       </button>
                       <button
                         onClick={handleResetPassword}
-                        disabled={!resetPasswordState.autoGenerate && (resetPasswordState.newPassword.length < 6 || resetPasswordState.newPassword !== resetPasswordState.confirmPassword)}
+                        disabled={!resetPasswordState.autoGenerate && (resetPasswordState.newPassword.length < 4 || resetPasswordState.newPassword !== resetPasswordState.confirmPassword)}
                         className="flex-1 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-600 px-4 py-3.5 text-xs font-bold uppercase tracking-widest text-white shadow-xl shadow-amber-500/30 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-40 disabled:grayscale disabled:pointer-events-none"
                       >
                         Process

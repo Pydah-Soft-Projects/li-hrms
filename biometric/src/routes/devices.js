@@ -3,18 +3,27 @@ const router = express.Router();
 const Device = require('../models/Device');
 const logger = require('../utils/logger');
 
+/** Max age of lastSeenAt (ms) to treat device as "live" in dashboard. Override with DEVICE_HEARTBEAT_STALE_MS. */
+const HEARTBEAT_STALE_MS = parseInt(process.env.DEVICE_HEARTBEAT_STALE_MS, 10) || 180000;
+
 /**
  * GET /api/devices
  * Get all devices
  */
 router.get('/', async (req, res) => {
     try {
-        const devices = await Device.find().sort({ createdAt: -1 });
+        const devices = await Device.find().sort({ createdAt: -1 }).lean();
+        const now = Date.now();
+        const data = devices.map((d) => ({
+            ...d,
+            isOnline: Boolean(d.lastSeenAt && now - new Date(d.lastSeenAt).getTime() <= HEARTBEAT_STALE_MS),
+        }));
 
         res.json({
             success: true,
-            count: devices.length,
-            data: devices
+            count: data.length,
+            heartbeatStaleMs: HEARTBEAT_STALE_MS,
+            data
         });
     } catch (error) {
         logger.error('Error fetching devices:', error);
@@ -40,9 +49,17 @@ router.get('/:deviceId', async (req, res) => {
             });
         }
 
+        const d = device.toObject ? device.toObject() : device;
+        const now = Date.now();
+        const enriched = {
+            ...d,
+            isOnline: Boolean(d.lastSeenAt && now - new Date(d.lastSeenAt).getTime() <= HEARTBEAT_STALE_MS),
+        };
+
         res.json({
             success: true,
-            data: device
+            heartbeatStaleMs: HEARTBEAT_STALE_MS,
+            data: enriched
         });
     } catch (error) {
         logger.error('Error fetching device:', error);
