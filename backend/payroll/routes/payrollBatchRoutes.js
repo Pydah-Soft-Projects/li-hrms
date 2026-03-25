@@ -24,8 +24,10 @@ router.post('/:id/rollback/:historyId', protect, payrollBatchController.rollback
 // Validation
 router.get('/:id/validation', protect, payrollBatchController.validateBatch);
 
-// Bulk Operations
+// Bulk Operations (register before /:id for consistency)
 router.post('/bulk-approve', protect, payrollBatchController.bulkApproveBatches);
+router.post('/bulk-freeze', protect, payrollBatchController.bulkFreezeBatches);
+router.post('/bulk-complete', protect, payrollBatchController.bulkCompleteBatches);
 router.post('/migrate', protect, payrollBatchController.migrateBatchDivisions); // One-off migration route
 
 module.exports = router;

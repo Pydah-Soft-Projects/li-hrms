@@ -3557,6 +3557,20 @@ export const api = {
     });
   },
 
+  bulkFreezeBatches: async (batchIds: string[], reason?: string) => {
+    return apiRequest<any>(`/payroll-batch/bulk-freeze`, {
+      method: 'POST',
+      body: JSON.stringify({ batchIds, reason }),
+    });
+  },
+
+  bulkCompleteBatches: async (batchIds: string[], reason?: string) => {
+    return apiRequest<any>(`/payroll-batch/bulk-complete`, {
+      method: 'POST',
+      body: JSON.stringify({ batchIds, reason }),
+    });
+  },
+
   approvePayroll: async (payrollRecordId: string, comments?: string) => {
     return apiRequest<any>(`/payroll/${payrollRecordId}/approve`, {
       method: 'PUT',

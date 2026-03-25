@@ -14,20 +14,75 @@ const { jsPDF } = require('jspdf');
 const autoTable = require('jspdf-autotable').default;
 const XLSX = require('xlsx');
 
-// Date format DD-Mon-YY (e.g. 01-Dec-25)
-function formatPDate(d) {
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const day = String(d.getDate()).padStart(2, '0');
-    const mon = months[d.getMonth()];
-    const yy = String(d.getFullYear()).slice(-2);
+const TZ_IST = 'Asia/Kolkata';
+
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** Calendar day in IST as YYYY-MM-DD (for grouping punch logs). */
+function getDateKeyIST(date) {
+    return new Intl.DateTimeFormat('en-CA', {
+        timeZone: TZ_IST,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+    }).format(new Date(date));
+}
+
+/** DD-Mon-YY for report PDate column (IST calendar day from YYYY-MM-DD key). */
+function formatPDateFromYMDKey(dateKey) {
+    const [y, m, d] = dateKey.split('-').map((x) => parseInt(x, 10));
+    if (!y || !m || !d) return dateKey;
+    const day = String(d).padStart(2, '0');
+    const mon = MONTHS_SHORT[m - 1] || '';
+    const yy = String(y).slice(-2);
     return `${day}-${mon}-${yy}`;
 }
 
-// Time format HH.MM (e.g. 7.57, 20.00)
-function formatTime(d) {
-    const h = d.getHours();
-    const m = d.getMinutes();
-    return `${h}.${String(m).padStart(2, '0')}`;
+// Time format H.MM (e.g. 7.57, 20.00) — clock components in IST
+function formatTimeIST(d) {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: TZ_IST,
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: false,
+    }).formatToParts(new Date(d));
+    const hour = parseInt(parts.find((p) => p.type === 'hour').value, 10);
+    const minute = parts.find((p) => p.type === 'minute').value;
+    return `${hour}.${minute.padStart(2, '0')}`;
+}
+
+function formatISTDateCell(d) {
+    return new Intl.DateTimeFormat('en-IN', {
+        timeZone: TZ_IST,
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+    }).format(new Date(d));
+}
+
+function formatISTTimeCell(d) {
+    return new Intl.DateTimeFormat('en-IN', {
+        timeZone: TZ_IST,
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+    }).format(new Date(d));
+}
+
+function formatISTDateTimeLabel(d) {
+    return (
+        new Intl.DateTimeFormat('en-IN', {
+            timeZone: TZ_IST,
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false,
+        }).format(new Date(d)) + ' IST'
+    );
 }
 
 // Build daily pairs (IN, OUT) and TOT HRS
@@ -257,18 +312,12 @@ router.get('/export/attendance', async (req, res) => {
         // - Max 3 pairs
         const byEmpDate = {}; // This will store { pairs: [], totHrs: number }
 
-        // Helper to format Date key YYYY-MM-DD
-        const getDateKey = (date) => {
-            const d = new Date(date);
-            return d.toISOString().slice(0, 10);
-        };
-
-        // Group raw logs first
+        // Group raw logs first (calendar day in IST)
         const rawLogsByEmpDate = {};
 
         logs.forEach(log => {
             const empId = String(log.employeeId).toUpperCase();
-            const dateKey = getDateKey(log.timestamp);
+            const dateKey = getDateKeyIST(log.timestamp);
 
             if (!rawLogsByEmpDate[empId]) rawLogsByEmpDate[empId] = {};
             if (!rawLogsByEmpDate[empId][dateKey]) rawLogsByEmpDate[empId][dateKey] = [];
@@ -415,8 +464,7 @@ router.get('/export/attendance', async (req, res) => {
                 const dates = Object.keys(byEmpDate[empNo]).sort();
 
                 for (const dateKey of dates) {
-                    const [y, m, day] = dateKey.split('-');
-                    const pDate = formatPDate(new Date(parseInt(y), parseInt(m) - 1, parseInt(day)));
+                    const pDate = formatPDateFromYMDKey(dateKey);
 
                     // dayLogs is now { pairs, totHrsStr }
                     const { pairs, totHrsStr } = byEmpDate[empNo][dateKey];
@@ -466,8 +514,8 @@ router.get('/export/attendance', async (req, res) => {
             // Add pairs
             for (let i = 0; i < maxPairs; i++) {
                 const p = r.pairs && r.pairs[i];
-                rowObj[`IN ${i + 1}`] = p?.in ? formatTime(p.in) : '';
-                rowObj[`OUT ${i + 1}`] = p?.out ? formatTime(p.out) : '';
+                rowObj[`IN ${i + 1}`] = p?.in ? formatTimeIST(p.in) : '';
+                rowObj[`OUT ${i + 1}`] = p?.out ? formatTimeIST(p.out) : '';
             }
 
             rowObj['TOT HRS'] = r.totHrs;
@@ -480,6 +528,14 @@ router.get('/export/attendance', async (req, res) => {
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, "Attendance");
 
+        const infoSheet = XLSX.utils.aoa_to_sheet([
+            ['Timezone', 'Asia/Kolkata (IST)'],
+            ['PDate / IN / OUT columns', 'Clock times shown in IST'],
+            ['Generated at (IST)', formatISTDateTimeLabel(new Date())],
+        ]);
+        infoSheet['!cols'] = [{ wch: 28 }, { wch: 48 }];
+        XLSX.utils.book_append_sheet(workbook, infoSheet, 'Export info');
+
         // Column widths (basic)
         const wscols = finalHeaders.map(h => ({ wch: 15 }));
         wscols[2] = { wch: 25 }; // Name
@@ -487,7 +543,9 @@ router.get('/export/attendance', async (req, res) => {
 
         const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
 
-        const filename = `attendance_report_${start.toISOString().slice(0, 10)}_${end.toISOString().slice(0, 10)}.xlsx`;
+        const istStart = getDateKeyIST(start);
+        const istEnd = getDateKeyIST(end);
+        const filename = `attendance_report_IST_${istStart}_${istEnd}.xlsx`;
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         res.send(buffer);
@@ -513,7 +571,7 @@ router.get('/export/summary/pdf', async (req, res) => {
         doc.setFontSize(20);
         doc.text('Biometric Device Summary Report', 14, 22);
         doc.setFontSize(12);
-        doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 30);
+        doc.text(`Generated on (IST): ${formatISTDateTimeLabel(new Date())}`, 14, 30);
 
         // Device details table
         const tableData = devices.map(dev => {
@@ -552,7 +610,7 @@ router.get('/export/summary/pdf', async (req, res) => {
         const pdfBuffer = doc.output('arraybuffer');
 
         res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename="biometric_summary_${new Date().toISOString().slice(0, 10)}.pdf"`);
+        res.setHeader('Content-Disposition', `attachment; filename="biometric_summary_IST_${getDateKeyIST(new Date())}.pdf"`);
         res.send(Buffer.from(pdfBuffer));
 
     } catch (err) {
@@ -576,12 +634,19 @@ router.get('/export/unique-users/excel', async (req, res) => {
             'Fingers': u.fingerprints?.length || 0,
             'Face Support': u.face?.templateData ? 'Yes' : 'No',
             'Last Device': u.lastDeviceId || 'Unknown',
-            'Last Synced': new Date(u.lastSyncedAt).toLocaleString()
+            'Last Synced (IST)': u.lastSyncedAt ? formatISTDateTimeLabel(u.lastSyncedAt) : ''
         }));
 
         const worksheet = XLSX.utils.json_to_sheet(users);
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, "Unique Users");
+
+        const infoSheet = XLSX.utils.aoa_to_sheet([
+            ['Timezone', 'Asia/Kolkata (IST)'],
+            ['Generated at (IST)', formatISTDateTimeLabel(new Date())],
+        ]);
+        infoSheet['!cols'] = [{ wch: 22 }, { wch: 48 }];
+        XLSX.utils.book_append_sheet(workbook, infoSheet, 'Export info');
 
         // Auto-adjust column widths
         const wscols = Object.keys(users[0] || {}).map(k => ({ wch: Math.max(k.length, 15) }));
@@ -590,7 +655,7 @@ router.get('/export/unique-users/excel', async (req, res) => {
         const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
 
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        res.setHeader('Content-Disposition', `attachment; filename="unique_users_${new Date().toISOString().slice(0, 10)}.xlsx"`);
+        res.setHeader('Content-Disposition', `attachment; filename="unique_users_IST_${getDateKeyIST(new Date())}.xlsx"`);
         res.send(buffer);
 
     } catch (err) {
@@ -631,8 +696,8 @@ router.get('/export/logs', async (req, res) => {
         // Map to Excel format
         const excelData = logs.map(log => ({
             'Employee ID': log.employeeId,
-            'Date': new Date(log.timestamp).toLocaleDateString(),
-            'Time': new Date(log.timestamp).toLocaleTimeString(),
+            'Date (IST)': formatISTDateCell(log.timestamp),
+            'Time (IST)': formatISTTimeCell(log.timestamp),
             'Log Type': log.logType || (log.rawType == 1 ? 'CHECK-OUT' : 'CHECK-IN'),
             'Device ID': log.serialNumber || 'Unknown'
         }));
@@ -640,13 +705,25 @@ router.get('/export/logs', async (req, res) => {
         if (excelData.length === 0) {
             // Add one empty row with headers if no data
             excelData.push({
-                'Employee ID': '', 'Date': '', 'Time': '', 'Log Type': '', 'Device ID': ''
+                'Employee ID': '',
+                'Date (IST)': '',
+                'Time (IST)': '',
+                'Log Type': '',
+                'Device ID': ''
             });
         }
 
         const worksheet = XLSX.utils.json_to_sheet(excelData);
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, "Raw Logs");
+
+        const infoSheet = XLSX.utils.aoa_to_sheet([
+            ['Timezone', 'Asia/Kolkata (IST)'],
+            ['Date / Time columns', 'Stored UTC in DB; exported in IST'],
+            ['Generated at (IST)', formatISTDateTimeLabel(new Date())],
+        ]);
+        infoSheet['!cols'] = [{ wch: 28 }, { wch: 48 }];
+        XLSX.utils.book_append_sheet(workbook, infoSheet, 'Export info');
 
         // Auto-width
         const wscols = [
@@ -660,7 +737,7 @@ router.get('/export/logs', async (req, res) => {
 
         const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
 
-        const filename = `attendance_logs_${startDate}_${endDate}.xlsx`;
+        const filename = `attendance_logs_IST_${startDate}_${endDate}.xlsx`;
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         res.send(buffer);
