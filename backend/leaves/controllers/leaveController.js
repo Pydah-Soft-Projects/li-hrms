@@ -21,6 +21,7 @@ const OD = require('../model/OD');
 const leaveRegisterService = require('../services/leaveRegisterService');
 const dateCycleService = require('../services/dateCycleService');
 const leaveRegisterYearMonthlyApplyService = require('../services/leaveRegisterYearMonthlyApplyService');
+const leaveRegisterYearService = require('../services/leaveRegisterYearService');
 const PDFDocument = require('pdfkit');
 const XLSX = require('xlsx');
 const dayjs = require('dayjs');
@@ -2764,6 +2765,113 @@ exports.getEmployeeLeaveRegisterDetail = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: error.message || 'Failed to fetch leave register',
+    });
+  }
+};
+
+/**
+ * @desc    Adjust scheduled pool on one FY payroll slot (CL/CCL/EL credits, optional policy lock)
+ * @route   PATCH /api/leaves/leave-register-year/:employeeId/month-slot
+ * @access  hr, sub_admin, super_admin (scoped)
+ */
+exports.patchLeaveRegisterYearMonthSlot = async (req, res) => {
+  try {
+    const user = req.scopedUser || req.user;
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+    const { employeeId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(String(employeeId))) {
+      return res.status(400).json({ success: false, message: 'Invalid employee id' });
+    }
+    const emp = await Employee.findById(employeeId)
+      .select('_id emp_no employee_name department_id division_id')
+      .lean();
+    if (!emp) {
+      return res.status(404).json({ success: false, message: 'Employee not found' });
+    }
+    if (!checkJurisdiction(user, { department_id: emp.department_id, division_id: emp.division_id })) {
+      return res.status(403).json({ success: false, message: 'Not authorized for this employee' });
+    }
+
+    const {
+      financialYear,
+      payrollCycleMonth,
+      payrollCycleYear,
+      clCredits,
+      compensatoryOffs,
+      elCredits,
+      lockedCredits,
+      reason,
+    } = req.body || {};
+
+    const result = await leaveRegisterYearService.patchMonthSlotScheduledCredits({
+      employeeId: emp._id,
+      financialYear,
+      payrollCycleMonth,
+      payrollCycleYear,
+      patch: { clCredits, compensatoryOffs, elCredits, lockedCredits },
+      reason,
+      actorUserId: user._id,
+    });
+
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    console.error('patchLeaveRegisterYearMonthSlot:', error);
+    return res.status(400).json({
+      success: false,
+      message: error.message || 'Failed to update month slot',
+    });
+  }
+};
+
+/**
+ * @desc    Refresh monthlyApply* denorm from Leave rows for one payroll slot (no schedule edits)
+ * @route   POST /api/leaves/leave-register-year/:employeeId/sync-month-apply
+ * @access  hr, sub_admin, super_admin (scoped)
+ */
+exports.syncLeaveRegisterYearMonthApply = async (req, res) => {
+  try {
+    const user = req.scopedUser || req.user;
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+    const { employeeId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(String(employeeId))) {
+      return res.status(400).json({ success: false, message: 'Invalid employee id' });
+    }
+    const emp = await Employee.findById(employeeId)
+      .select('_id department_id division_id')
+      .lean();
+    if (!emp) {
+      return res.status(404).json({ success: false, message: 'Employee not found' });
+    }
+    if (!checkJurisdiction(user, { department_id: emp.department_id, division_id: emp.division_id })) {
+      return res.status(403).json({ success: false, message: 'Not authorized for this employee' });
+    }
+
+    const { financialYear, payrollCycleMonth, payrollCycleYear } = req.body || {};
+    const result = await leaveRegisterYearService.syncMonthApplyOnly({
+      employeeId: emp._id,
+      financialYear,
+      payrollCycleMonth,
+      payrollCycleYear,
+    });
+
+    if (!result.ok) {
+      return res.status(400).json({
+        success: false,
+        message: result.sync?.reason || 'Could not sync monthly apply fields for this slot',
+        data: result,
+      });
+    }
+
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    console.error('syncLeaveRegisterYearMonthApply:', error);
+    return res.status(400).json({
+      success: false,
+      message: error.message || 'Failed to sync month apply',
     });
   }
 };

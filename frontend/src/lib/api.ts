@@ -4127,6 +4127,37 @@ export const api = {
     return apiRequest<any>(`/leaves/leave-register-year/${employeeId}?${q}`, { method: 'GET' });
   },
 
+  /** Admin: adjust scheduled CL / CCL / EL pool on one payroll month slot + recompute apply ceiling & sync consumption. */
+  patchLeaveRegisterYearMonthSlot: async (
+    employeeId: string,
+    body: {
+      financialYear: string;
+      payrollCycleMonth: number;
+      payrollCycleYear: number;
+      clCredits?: number;
+      compensatoryOffs?: number;
+      elCredits?: number;
+      lockedCredits?: number;
+      reason: string;
+    }
+  ) => {
+    return apiRequest<any>(`/leaves/leave-register-year/${employeeId}/month-slot`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+  },
+
+  /** Admin: refresh monthlyApply* from Leave rows only (same FY month slot). */
+  syncLeaveRegisterYearMonthApply: async (
+    employeeId: string,
+    body: { financialYear: string; payrollCycleMonth: number; payrollCycleYear: number }
+  ) => {
+    return apiRequest<any>(`/leaves/leave-register-year/${employeeId}/sync-month-apply`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  },
+
   /** Stored monthly apply ceiling / consumption for payroll period of fromDate (CL apply dialog). */
   getLeaveApplyPeriodContext: async (params: {
     fromDate: string;
