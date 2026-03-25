@@ -191,32 +191,44 @@ async function calculateAttendanceDeduction(employeeId, month, departmentId, per
       }
     }
 
-    // Priority 2: Fallback to Raw Attendance Logs if Pay Register has 0
+    // Priority 2: Fallback to AttendanceDaily if Pay Register has 0 (uses employeeNumber + YYYY-MM-DD date strings)
     if (lateInsCount === 0 && earlyOutsCount === 0) {
-      // Find minimum duration threshold from settings just for counting purposes
-      // (We fetch rules here just to get minimumDuration, even if we don't deduct later)
       const rulesTemp = await getResolvedAttendanceDeductionRules(departmentId, divisionId);
       const minimumDuration = rulesTemp.minimumDuration || 0;
-      // Parse month string (YYYY-MM) to get start and end dates
-      const [year, monthNum] = month.split('-').map(Number);
-      const startDate = new Date(year, monthNum - 1, 1);
-      const endDate = new Date(year, monthNum, 0, 23, 59, 59, 999);
+      const [y, mNum] = month.split('-').map(Number);
+      const startStr = `${y}-${String(mNum).padStart(2, '0')}-01`;
+      const lastD = new Date(y, mNum, 0).getDate();
+      const endStr = `${y}-${String(mNum).padStart(2, '0')}-${String(lastD).padStart(2, '0')}`;
 
-      const attendanceRecords = await AttendanceDaily.find({
-        employeeId,
-        date: {
-          $gte: startDate,
-          $lte: endDate,
-        },
-      }).select('lateInMinutes earlyOutMinutes');
+      const Employee = require('../../employees/model/Employee');
+      const empDoc = await Employee.findById(employeeId).select('emp_no').lean();
+      if (empDoc?.emp_no) {
+        const empNo = String(empDoc.emp_no).toUpperCase();
+        const attendanceRecords = await AttendanceDaily.find({
+          employeeNumber: empNo,
+          date: { $gte: startStr, $lte: endStr },
+        })
+          .select('shifts totalLateInMinutes totalEarlyOutMinutes')
+          .lean();
 
-      for (const record of attendanceRecords) {
-        if (record.lateInMinutes !== null && record.lateInMinutes !== undefined && record.lateInMinutes >= minimumDuration) {
-          lateInsCount++;
+        for (const record of attendanceRecords) {
+          const shifts = Array.isArray(record.shifts) ? record.shifts : [];
+          let dayLate = 0;
+          let dayEarly = 0;
+          if (shifts.length > 0) {
+            for (const s of shifts) {
+              dayLate += Number(s.lateInMinutes) || 0;
+              dayEarly += Number(s.earlyOutMinutes) || 0;
+            }
+          } else {
+            dayLate = Number(record.totalLateInMinutes) || 0;
+            dayEarly = Number(record.totalEarlyOutMinutes) || 0;
+          }
+          // Count only actual late/early occurrences; avoid counting zero-minute days.
+          if (dayLate > 0 && dayLate >= minimumDuration) lateInsCount++;
+          if (dayEarly > 0 && dayEarly >= minimumDuration) earlyOutsCount++;
         }
-        if (record.earlyOutMinutes !== null && record.earlyOutMinutes !== undefined && record.earlyOutMinutes >= minimumDuration) {
-          earlyOutsCount++;
-        }
+        source = 'attendance_logs';
       }
     }
 

@@ -65,6 +65,12 @@ exports.registerUser = async (req, res) => {
         message: 'Password is required',
       });
     }
+    if (!autoGeneratePassword && String(userPassword).length < 4) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 4 characters',
+      });
+    }
 
     // Validate role-specific requirements: HOD must have at least one division and one department (via divisionMapping or division+department)
     if (role === 'hod') {
@@ -262,6 +268,12 @@ exports.createUserFromEmployee = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Password is required. No password provided and employee has no password.',
+      });
+    }
+    if (!autoGeneratePassword && password && String(password).length < 4) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 4 characters',
       });
     }
 
@@ -727,6 +739,12 @@ exports.resetPassword = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Password is required',
+      });
+    }
+    if (!autoGenerate && String(password).length < 4) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 4 characters',
       });
     }
 

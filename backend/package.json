@@ -6,6 +6,7 @@
     "dev": "nodemon --max-old-space-size=4096 server.js",
     "start": "node --max-old-space-size=4096 server.js",
     "seed:admin": "node scripts/seedSuperAdmin.js",
+    "seed:summary-sandbox": "node scripts/seed-summary-calculation-sandbox.js",
     "test": "jest",
     "test:api": "jest tests/api",
     "test:health": "jest tests/api/health.test.js",

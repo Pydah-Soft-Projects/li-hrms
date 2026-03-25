@@ -139,7 +139,7 @@ exports.getPayrollBatches = async (req, res) => {
 
         res.status(200).json({
             success: true,
-            count: batches.length,
+            count: total,
             total,
             page: parseInt(page),
             pages: Math.ceil(total / parseInt(limit)),
@@ -424,6 +424,38 @@ exports.validateBatch = async (req, res) => {
     }
 };
 
+/** Loop batch IDs through PayrollBatchService.changeStatus; shared by bulk approve/freeze/complete */
+const bulkChangeBatchStatus = async (req, res, targetStatus, verbLabel) => {
+    const { batchIds, reason } = req.body;
+    const userId = req.user._id || req.user.userId || req.user.id;
+
+    if (!batchIds || !Array.isArray(batchIds) || batchIds.length === 0) {
+        return res.status(400).json({
+            success: false,
+            message: 'Batch IDs array is required'
+        });
+    }
+
+    const results = [];
+    const errors = [];
+
+    for (const batchId of batchIds) {
+        try {
+            const batch = await PayrollBatchService.changeStatus(batchId, targetStatus, userId, reason);
+            results.push(batch);
+        } catch (error) {
+            errors.push({ batchId, error: error.message });
+        }
+    }
+
+    return res.status(200).json({
+        success: true,
+        message: `${verbLabel} ${results.length} of ${batchIds.length} batches`,
+        data: results,
+        errors
+    });
+};
+
 /**
  * @desc    Bulk approve batches
  * @route   POST /api/payroll-batch/bulk-approve
@@ -431,39 +463,46 @@ exports.validateBatch = async (req, res) => {
  */
 exports.bulkApproveBatches = async (req, res) => {
     try {
-        const { batchIds, reason } = req.body;
-        const userId = req.user._id || req.user.userId || req.user.id;
-
-        if (!batchIds || !Array.isArray(batchIds) || batchIds.length === 0) {
-            return res.status(400).json({
-                success: false,
-                message: 'Batch IDs array is required'
-            });
-        }
-
-        const results = [];
-        const errors = [];
-
-        for (const batchId of batchIds) {
-            try {
-                const batch = await PayrollBatchService.changeStatus(batchId, 'approved', userId, reason);
-                results.push(batch);
-            } catch (error) {
-                errors.push({ batchId, error: error.message });
-            }
-        }
-
-        res.status(200).json({
-            success: true,
-            message: `Approved ${results.length} of ${batchIds.length} batches`,
-            data: results,
-            errors
-        });
+        await bulkChangeBatchStatus(req, res, 'approved', 'Approved');
     } catch (error) {
         console.error('Error bulk approving batches:', error);
         res.status(500).json({
             success: false,
             message: error.message || 'Error bulk approving batches'
+        });
+    }
+};
+
+/**
+ * @desc    Bulk freeze batches
+ * @route   POST /api/payroll-batch/bulk-freeze
+ * @access  Private (SuperAdmin, HR)
+ */
+exports.bulkFreezeBatches = async (req, res) => {
+    try {
+        await bulkChangeBatchStatus(req, res, 'freeze', 'Frozen');
+    } catch (error) {
+        console.error('Error bulk freezing batches:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Error bulk freezing batches'
+        });
+    }
+};
+
+/**
+ * @desc    Bulk complete batches
+ * @route   POST /api/payroll-batch/bulk-complete
+ * @access  Private (SuperAdmin, HR)
+ */
+exports.bulkCompleteBatches = async (req, res) => {
+    try {
+        await bulkChangeBatchStatus(req, res, 'complete', 'Completed');
+    } catch (error) {
+        console.error('Error bulk completing batches:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Error bulk completing batches'
         });
     }
 };

@@ -2,9 +2,11 @@
 
 
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, type MouseEvent } from 'react';
 
 import { api } from '@/lib/api';
+
+import { formatHighlightContribution, highlightBadgeSubtitle } from '@/lib/attendanceHighlight';
 
 import { toast } from 'react-toastify';
 
@@ -221,11 +223,31 @@ interface MonthlyAttendanceData {
 
     totalLateOrEarlyMinutes?: number;
 
+    /** Policy-based (payroll-aligned) late/early + absent-extra deduction days */
+    totalAttendanceDeductionDays?: number;
+
+    attendanceDeductionBreakdown?: {
+      lateInsCount?: number;
+      earlyOutsCount?: number;
+      combinedCount?: number;
+      freeAllowedPerMonth?: number;
+      effectiveCount?: number;
+      daysDeducted?: number;
+      lateEarlyDaysDeducted?: number;
+      absentExtraDays?: number;
+      absentDays?: number;
+      lopDaysPerAbsent?: number | null;
+      deductionType?: string | null;
+      calculationMode?: string | null;
+    };
+
     lastCalculatedAt: string;
 
     createdAt: string;
 
     updatedAt: string;
+
+    contributingDates?: Record<string, Array<string | { date: string; value?: number; label?: string }>>;
 
   };
 
@@ -323,6 +345,110 @@ export default function AttendancePage() {
     } catch {
       return timeStr;
     }
+  };
+
+  const appendHalfStatus = (base: string, marker: string) => {
+    if (!marker) return base || '-';
+    if (!base || base === '-') return marker;
+    if (base === marker) return base;
+    if (base === 'A') return marker;
+    return `${base}/${marker}`;
+  };
+
+  const getBaseDisplayStatus = (record: AttendanceRecord | null) => {
+    if (!record) return 'A';
+    if (record.status === 'PRESENT') return 'P';
+    if (record.status === 'HALF_DAY') return 'HD';
+    if (record.status === 'PARTIAL') return 'PT';
+    if (record.status === 'HOLIDAY') return 'H';
+    if (record.status === 'WEEK_OFF') return 'WO';
+    if (record.status === 'LEAVE' || record.hasLeave) {
+      return (record.leaveInfo?.numberOfDays && record.leaveInfo.numberOfDays >= 3) ? 'LL' : 'L';
+    }
+    if (record.status === 'OD' || record.hasOD) return 'OD';
+    return 'A';
+  };
+
+  const buildSplitCellStatus = (record: AttendanceRecord | null) => {
+    if (!record) return null;
+
+    const leaveInfo = record.leaveInfo;
+    const odInfo = record.odInfo;
+
+    const leaveMarker = leaveInfo ? ((leaveInfo.numberOfDays && leaveInfo.numberOfDays >= 3) ? 'LL' : 'L') : '';
+    const odMarker = odInfo ? 'OD' : '';
+    const hasHalfLeave = !!leaveInfo?.isHalfDay;
+    const isHoursOD = !!(odInfo && odInfo.odType_extended === 'hours');
+    const hasHalfOD = !!(odInfo && odInfo.odType_extended === 'half_day' && odInfo.isHalfDay);
+    const hasFullLeave = !!(leaveInfo && !leaveInfo.isHalfDay);
+    const hasFullOD = !!(odInfo && odInfo.odType_extended === 'full_day');
+
+    const shouldSplit = !isHoursOD && (record.status === 'HALF_DAY' || hasHalfLeave || hasHalfOD);
+    if (!shouldSplit) return null;
+
+    let top = 'A';
+    let bottom = 'A';
+
+    if (record.status === 'PRESENT') {
+      top = 'P';
+      bottom = 'P';
+    } else if (record.status === 'PARTIAL') {
+      top = 'PT';
+      bottom = 'PT';
+    } else if (record.status === 'HALF_DAY') {
+      const eo = Number(record.earlyOutMinutes) || 0;
+      const li = Number(record.lateInMinutes) || 0;
+      const workedHalf: 'first' | 'second' = eo > 120 ? 'first' : li > 120 ? 'second' : 'first';
+      if (workedHalf === 'first') {
+        top = 'HD';
+        bottom = 'A';
+      } else {
+        top = 'A';
+        bottom = 'HD';
+      }
+    }
+
+    if (hasFullLeave && leaveMarker) {
+      top = appendHalfStatus(top, leaveMarker);
+      bottom = appendHalfStatus(bottom, leaveMarker);
+    } else if (hasHalfLeave && leaveMarker) {
+      if (leaveInfo?.halfDayType === 'second_half') bottom = appendHalfStatus(bottom, leaveMarker);
+      else top = appendHalfStatus(top, leaveMarker);
+    }
+
+    if (hasFullOD && odMarker) {
+      top = appendHalfStatus(top, odMarker);
+      bottom = appendHalfStatus(bottom, odMarker);
+    } else if (hasHalfOD && odMarker) {
+      if (odInfo?.halfDayType === 'second_half') bottom = appendHalfStatus(bottom, odMarker);
+      else top = appendHalfStatus(top, odMarker);
+    }
+
+    return { top, bottom };
+  };
+
+  const formatHalfTag = (halfDayType?: string | null) => {
+    if (halfDayType === 'first_half') return '1H';
+    if (halfDayType === 'second_half') return '2H';
+    return 'HD';
+  };
+
+  const getLeaveCellLabel = (record: AttendanceRecord | null) => {
+    if (!(record?.hasLeave || record?.status === 'LEAVE')) return '-';
+    const base = (record?.leaveInfo?.numberOfDays && record.leaveInfo.numberOfDays >= 3) ? 'LL' : 'L';
+    if (record?.leaveInfo?.isHalfDay) return `${base}-${formatHalfTag(record.leaveInfo.halfDayType)}`;
+    return base;
+  };
+
+  const getODCellLabel = (record: AttendanceRecord | null) => {
+    if (!(record?.hasOD || record?.status === 'OD')) return '-';
+    if (record?.odInfo?.odType_extended === 'hours') {
+      return `ODh${record.odInfo.durationHours != null ? `(${record.odInfo.durationHours}h)` : ''}`;
+    }
+    if (record?.odInfo?.isHalfDay || record?.odInfo?.odType_extended === 'half_day') {
+      return `OD-${formatHalfTag(record.odInfo?.halfDayType)}`;
+    }
+    return 'OD';
   };
 
 
@@ -449,6 +575,15 @@ export default function AttendancePage() {
   const [showTypeSummaryModal, setShowTypeSummaryModal] = useState(false);
 
   const [typeSummaryData, setTypeSummaryData] = useState<{ type: string; item: MonthlyAttendanceData } | null>(null);
+
+  const [attendanceDeductionInfo, setAttendanceDeductionInfo] = useState<{
+    employeeName: string;
+    total: number;
+    lateEarlyDays: number;
+    absentDays: number;
+  } | null>(null);
+
+  const [activeHighlight, setActiveHighlight] = useState<{ employeeId: string; category: string } | null>(null);
 
 
 
@@ -668,6 +803,14 @@ export default function AttendancePage() {
     }
     // Note: HR view is now handled by the [cycleDates.startDate] effect to avoid race conditions
   }, [year, month, isEmployee, user]);
+
+
+
+  useEffect(() => {
+
+    setActiveHighlight(null);
+
+  }, [year, month, cycleDates.startDate, cycleDates.endDate]);
 
 
 
@@ -2047,6 +2190,65 @@ export default function AttendancePage() {
 
 
 
+  const handleSummaryClick = (employeeId: string, category: string) => {
+
+    setActiveHighlight((prev) => {
+
+      if (prev?.employeeId === employeeId && prev?.category === category) return null;
+
+      return { employeeId, category };
+
+    });
+
+  };
+
+
+
+  const openAttendanceDeductionInfo = (
+    e: MouseEvent<HTMLTableCellElement>,
+    item: MonthlyAttendanceData
+  ) => {
+    e.stopPropagation();
+    const breakdown = item.summary?.attendanceDeductionBreakdown || {};
+    const total = Number(item.summary?.totalAttendanceDeductionDays ?? breakdown.daysDeducted ?? 0);
+    const absentDays = Number(breakdown.absentExtraDays ?? 0);
+    const lateEarlyDays = Number(breakdown.lateEarlyDaysDeducted ?? 0);
+    setAttendanceDeductionInfo({
+      employeeName: item.employee.employee_name,
+      total,
+      lateEarlyDays,
+      absentDays,
+    });
+  };
+
+  const onSummaryMetricClick = (
+
+    e: MouseEvent<HTMLTableCellElement>,
+
+    employeeId: string,
+
+    apiCategory: string,
+
+    modalType: string,
+
+    item: MonthlyAttendanceData
+
+  ) => {
+
+    if (e.altKey) {
+
+      handleViewTypeSummary(item, modalType);
+
+      return;
+
+    }
+
+    handleSummaryClick(employeeId, apiCategory);
+
+  };
+
+
+
   const handleExportPDF = () => {
 
     window.print();
@@ -2440,6 +2642,8 @@ export default function AttendancePage() {
 
     if (record.status === 'PRESENT') return 'bg-green-50 border-green-200 text-green-800 dark:bg-green-900/10 dark:border-green-800 dark:text-green-400';
 
+    if (record.status === 'HALF_DAY') return 'bg-orange-50 border-orange-200 text-orange-800 dark:bg-orange-900/10 dark:border-orange-800 dark:text-orange-400';
+
     if (record.status === 'PARTIAL') return 'bg-yellow-50 border-yellow-200 text-yellow-800 dark:bg-yellow-900/10 dark:border-yellow-800 dark:text-yellow-400';
 
     if (record.status === 'HOLIDAY') return 'bg-red-50 border-red-200 text-red-800 dark:bg-red-900/10 dark:border-red-800 dark:text-red-400';
@@ -2496,7 +2700,7 @@ export default function AttendancePage() {
 
     }
 
-    if (record.status === 'ABSENT' || record.status === 'LEAVE' || record.status === 'OD') {
+    if (record.status === 'ABSENT' || record.status === 'LEAVE' || record.status === 'OD' || record.status === 'HALF_DAY') {
 
       return 'bg-slate-100 dark:bg-slate-800';
 
@@ -2553,7 +2757,74 @@ export default function AttendancePage() {
 
   const periodDays = daysArray.length;
 
+  /** Employee + day columns + trailing summary columns (matches thead) */
+  const attendanceTableColSpan = useMemo(() => {
+    const summaryCols =
+      tableType === 'complete'
+        ? 11
+        : tableType === 'present_absent'
+          ? 2
+          : tableType === 'in_out'
+            ? 1
+            : tableType === 'leaves'
+              ? 4
+              : tableType === 'od'
+                ? 1
+                : tableType === 'ot'
+                  ? 2
+                  : 0;
+    return 1 + daysArray.length + summaryCols;
+  }, [tableType, daysArray.length]);
 
+  const activeHighlightDates = useMemo(() => {
+
+    if (!activeHighlight) return new Map<string, { value: number; label: string }>();
+
+    const empData = monthlyData.find((d) => d.employee._id === activeHighlight.employeeId);
+
+    if (!empData) return new Map<string, { value: number; label: string }>();
+
+    const map = new Map<string, { value: number; label: string }>();
+
+    const cd = empData.summary?.contributingDates as Record<string, unknown> | undefined;
+
+    const items = cd?.[activeHighlight.category];
+
+    if (Array.isArray(items)) {
+
+      items.forEach((item: unknown) => {
+
+        if (typeof item === 'string') {
+
+          map.set(item, { value: 1, label: '' });
+
+        } else if (item && typeof item === 'object' && 'date' in item && (item as { date: string }).date) {
+
+          const o = item as { date: string; value?: number; label?: string };
+
+          map.set(o.date, { value: o.value ?? 1, label: o.label || '' });
+
+        }
+
+      });
+
+      return map;
+
+    }
+
+    if (activeHighlight.category === 'absent' && empData.dailyAttendance) {
+
+      for (const [dateStr, rec] of Object.entries(empData.dailyAttendance)) {
+
+        if (rec?.status === 'ABSENT') map.set(dateStr, { value: 1, label: '' });
+
+      }
+
+    }
+
+    return map;
+
+  }, [activeHighlight, monthlyData]);
 
   return (
 
@@ -2918,6 +3189,19 @@ export default function AttendancePage() {
         {isEmployee && filteredMonthlyData.length > 0 && (() => {
           const item = filteredMonthlyData[0];
           const s = item.summary;
+          const leaveRecords = Object.values(item.dailyAttendance).filter(
+            (r) => r?.status === 'LEAVE' || r?.hasLeave
+          );
+          const totalLeaveDays = s?.totalLeaves ?? leaveRecords.length;
+          const lopLeaveDays = leaveRecords.filter((r) => {
+            const anyR = r as any;
+            return (
+              anyR?.leaveNature === 'lop' ||
+              anyR?.leaveInfo?.leaveType?.toLowerCase().includes('lop') ||
+              anyR?.leaveInfo?.leaveType?.toLowerCase().includes('loss of pay')
+            );
+          }).length;
+          const paidLeaveDays = totalLeaveDays - lopLeaveDays;
           return (
             <div className="mb-6 rounded-2xl border border-slate-200/60 bg-white/40 backdrop-blur-md p-4 sm:p-6 shadow-xl shadow-slate-200/20 dark:border-slate-700/50 dark:bg-slate-800/40 dark:shadow-none transition-all hover:shadow-2xl hover:shadow-slate-200/40 dark:hover:shadow-none">
               <div className="flex items-center justify-between mb-4 sm:mb-6">
@@ -2926,15 +3210,23 @@ export default function AttendancePage() {
                   Monthly Performance Summary
                 </h3>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 sm:gap-4 xl:gap-6">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 xl:gap-6">
                 {[
                   { label: "Present", value: s?.totalPresentDays ?? item.presentDays ?? 0, color: "text-slate-900 dark:text-white", bcolor: "bg-slate-50 dark:bg-slate-700/30" },
                   { label: "Payable", value: (s?.totalPayableShifts ?? item.payableShifts ?? 0).toFixed(1), color: "text-green-600 dark:text-green-400", bcolor: "bg-green-50/50 dark:bg-green-900/10" },
-                  { label: "Leave", value: s?.totalLeaves ?? 0, color: "text-amber-600 dark:text-amber-400", bcolor: "bg-amber-50/50 dark:bg-amber-900/10" },
+                  { label: "Total leave", value: totalLeaveDays, color: "text-amber-600 dark:text-amber-400", bcolor: "bg-amber-50/50 dark:bg-amber-900/10" },
+                  { label: "Paid leave", value: paidLeaveDays, color: "text-yellow-700 dark:text-yellow-400", bcolor: "bg-yellow-50/50 dark:bg-yellow-900/10" },
+                  { label: "LOP", value: lopLeaveDays, color: "text-rose-600 dark:text-rose-400", bcolor: "bg-rose-50/50 dark:bg-rose-900/10" },
                   { label: "W-Off", value: s?.totalWeeklyOffs ?? 0, color: "text-orange-600 dark:text-orange-400", bcolor: "bg-orange-50/50 dark:bg-orange-900/10" },
                   { label: "Holiday", value: s?.totalHolidays ?? 0, color: "text-red-500 dark:text-red-400", bcolor: "bg-red-50/50 dark:bg-red-900/10" },
                   { label: "OD", value: s?.totalODs ?? 0, color: "text-blue-600 dark:text-blue-400", bcolor: "bg-blue-50/50 dark:bg-blue-900/10" },
                   { label: "Late/Early", value: s?.lateOrEarlyCount ?? 0, color: "text-rose-600 dark:text-rose-400", bcolor: "bg-rose-50/50 dark:bg-rose-900/10" },
+                  {
+                    label: "Att. deduction days",
+                    value: Number(s?.totalAttendanceDeductionDays ?? 0).toFixed(2).replace(/\.?0+$/, "") || "0",
+                    color: "text-purple-700 dark:text-purple-300",
+                    bcolor: "bg-purple-50/50 dark:bg-purple-900/10",
+                  },
                   { label: "Period Days", value: s?.totalDaysInMonth ?? 0, color: "text-slate-600 dark:text-slate-400", bcolor: "bg-slate-50/50 dark:bg-slate-700/20" },
                 ].map((stat, idx) => (
                   <div key={idx} className={`flex flex-col p-3 rounded-xl border border-transparent transition-all hover:border-slate-200 dark:hover:border-slate-700 hover:bg-white dark:hover:bg-slate-800 shadow-sm hover:shadow-md ${stat.bcolor}`}>
@@ -2992,35 +3284,58 @@ export default function AttendancePage() {
                 const record = item.dailyAttendance[dateStr] || null;
                 const shifts = (record as any)?.shifts || [];
                 const shiftName = record?.shiftId && typeof record.shiftId === 'object' ? record.shiftId.name : '-';
-                let displayStatus = 'A';
-                if (record) {
-                  if (record.status === 'PRESENT') displayStatus = 'P';
-                  else if (record.status === 'PARTIAL') displayStatus = 'PT';
-                  else if (record.status === 'HOLIDAY') displayStatus = 'H';
-                  else if (record.status === 'WEEK_OFF') displayStatus = 'WO';
-                  else if (record.status === 'LEAVE' || record.hasLeave) displayStatus = (record.leaveInfo?.numberOfDays && record.leaveInfo.numberOfDays >= 3) ? 'LL' : 'L';
-                  else if (record.status === 'OD' || record.hasOD) displayStatus = 'OD';
-                  else if (record.status === 'HALF_DAY') displayStatus = 'HD';
-                  else displayStatus = 'A';
-                }
+                const displayStatus = getBaseDisplayStatus(record);
+                const splitStatus = buildSplitCellStatus(record);
                 const hasData = record && (record.status || record.hasLeave || record.hasOD);
                 const isLate = hasData && ((record && (record as any).lateInMinutes != null && (record as any).lateInMinutes > 0) || (shifts && shifts.some((s: any) => s.lateInMinutes != null && s.lateInMinutes > 0)));
                 const isEarlyOut = hasData && ((record && (record as any).earlyOutMinutes != null && (record as any).earlyOutMinutes > 0) || (shifts && shifts.some((s: any) => s.earlyOutMinutes != null && s.earlyOutMinutes > 0)));
                 const dayNum = new Date(dateStr + 'T12:00:00').getDate();
-                const dayLabel = new Date(dateStr + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'short' });
+                const highlightInfo =
+                  activeHighlight?.employeeId === item.employee._id ? activeHighlightDates.get(dateStr) : null;
+                const isHighlighted = !!highlightInfo;
+                const highlightSub =
+                  isHighlighted && highlightInfo && activeHighlight
+                    ? highlightBadgeSubtitle(activeHighlight.category, highlightInfo.label)
+                    : null;
                 return (
                   <div
                     key={dateStr}
-                    onClick={() => hasData && handleDateClick(item.employee, dateStr)}
-                    className={`relative rounded-xl sm:rounded-2xl lg:rounded-3xl border p-1 sm:p-3 xl:p-4 aspect-square flex flex-col items-center justify-center transition-all duration-300 ${hasData ? 'cursor-pointer hover:shadow-lg hover:shadow-green-500/10 hover:-translate-y-1 hover:ring-2 hover:ring-green-500/20' : 'opacity-80'} ${getCellBackgroundColor(record)} ${getStatusColor(record)} shadow-sm`}
+                    onClick={() => (hasData || isHighlighted) && handleDateClick(item.employee, dateStr)}
+                    className={`relative rounded-xl sm:rounded-2xl lg:rounded-3xl border p-1 sm:p-3 xl:p-4 aspect-square flex flex-col items-center justify-center transition-all duration-300 ${hasData || isHighlighted ? 'cursor-pointer hover:shadow-lg hover:shadow-green-500/10 hover:-translate-y-1 hover:ring-2 hover:ring-green-500/20' : 'opacity-80'} ${getCellBackgroundColor(record)} ${getStatusColor(record)} shadow-sm ${isHighlighted ? 'ring-2 ring-blue-400/60 ring-inset z-10 !bg-blue-50/90 dark:!bg-blue-900/60' : ''}`}
                   >
+                    {isHighlighted && highlightInfo && (
+                      <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none p-0.5">
+                        <div className="bg-blue-600/90 text-white px-1 py-0.5 rounded-md shadow-md border border-white/30 flex flex-col items-center justify-center gap-0 leading-none max-w-[90%]">
+                          <span className="text-[9px] sm:text-[10px] font-black tabular-nums tracking-tight">
+                            {formatHighlightContribution(highlightInfo.value)}
+                          </span>
+                          {highlightSub ? (
+                            <span
+                              className={`text-[5px] sm:text-[6px] opacity-90 truncate text-center leading-tight ${
+                                activeHighlight?.category === 'leaves' ? 'font-semibold normal-case' : 'font-bold uppercase'
+                              }`}
+                              title={highlightSub}
+                            >
+                              {highlightSub}
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                    )}
                     <div className="text-xs sm:text-base lg:text-xl xl:text-2xl font-black text-slate-800 dark:text-white leading-none tracking-tighter">
                       {dayNum}
                     </div>
 
                     {hasData ? (
                       <div className="mt-0.5 sm:mt-1 flex flex-col items-center">
-                        <div className="font-bold text-[7px] sm:text-[10px] uppercase leading-none">{displayStatus}</div>
+                        {splitStatus ? (
+                          <div className="overflow-hidden rounded border border-slate-300/80 dark:border-slate-600/80 bg-white/70 dark:bg-slate-900/50 leading-none">
+                            <div className="px-1 py-[1px] text-[7px] sm:text-[9px] font-bold uppercase">{splitStatus.top}</div>
+                            <div className="border-t border-slate-300/80 dark:border-slate-600/80 px-1 py-[1px] text-[7px] sm:text-[9px] font-bold uppercase">{splitStatus.bottom}</div>
+                          </div>
+                        ) : (
+                          <div className="font-bold text-[7px] sm:text-[10px] uppercase leading-none">{displayStatus}</div>
+                        )}
                         {(isLate || isEarlyOut) && (
                           <div className="flex gap-0.5 mt-0.5">
                             {isLate && <span className="h-1 w-1 sm:h-1.5 sm:w-1.5 rounded-full bg-amber-500" />}
@@ -3067,6 +3382,12 @@ export default function AttendancePage() {
                         <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-purple-900/20 bg-purple-50">Extra Hours</th>
                         <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-cyan-900/20 bg-cyan-50">Permissions</th>
                         <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-rose-900/20 bg-rose-50">Late/Early</th>
+                        <th
+                          className="w-[72px] border-r border-slate-200 px-1 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-violet-900 dark:border-slate-700 dark:bg-violet-900/25 bg-violet-50"
+                          title="Policy attendance deduction days (late/early + absent extra)"
+                        >
+                          Att ded
+                        </th>
                         <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-green-900/20 bg-green-50">Payable Shifts</th>
                       </>
                     )}
@@ -3082,6 +3403,7 @@ export default function AttendancePage() {
                     {tableType === 'leaves' && (
                       <>
                         <th className="w-[100px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-orange-50 text-orange-700">Total Leaves</th>
+                        <th className="w-[100px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-red-50 text-red-700">Absent</th>
                         <th className="w-[100px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-yellow-50 text-yellow-700">Paid Leaves</th>
                         <th className="w-[100px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-rose-50 text-rose-700">LOPs</th>
                       </>
@@ -3141,6 +3463,9 @@ export default function AttendancePage() {
                               <td className="border-r border-slate-200 bg-rose-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-rose-900/20">
                                 <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
                               </td>
+                              <td className="border-r border-slate-200 bg-violet-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-violet-900/25">
+                                <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                              </td>
                               <td className="border-r-0 border-slate-200 bg-green-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-green-900/20">
                                 <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
                               </td>
@@ -3158,6 +3483,7 @@ export default function AttendancePage() {
                           {tableType === 'leaves' && (
                             <>
                               <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
+                              <td className="border-r border-slate-200 bg-red-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
                               <td className="border-r border-slate-200 bg-yellow-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
                               <td className="border-r border-slate-200 bg-rose-50 px-2 py-2 text-center dark:border-slate-700"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
                             </>
@@ -3178,7 +3504,7 @@ export default function AttendancePage() {
                     <>
                       {filteredMonthlyData.length === 0 ? (
                         <tr>
-                          <td colSpan={daysArray.length + (tableType === 'complete' ? 10 : tableType === 'present_absent' ? 3 : tableType === 'ot' ? 3 : 2)} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                          <td colSpan={attendanceTableColSpan} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
                             No employees found matching the selected filters.
                           </td>
                         </tr>
@@ -3235,19 +3561,8 @@ export default function AttendancePage() {
                                 const shifts = (record as any)?.shifts || [];
                                 const shiftName = record?.shiftId && typeof record.shiftId === 'object' ? record.shiftId.name : '-';
 
-                                // Determine display status - check for leave/OD even if no attendance record
-                                let displayStatus = 'A';
-                                if (record) {
-                                  if (record.status === 'PRESENT') displayStatus = 'P';
-                                  else if (record.status === 'PARTIAL') displayStatus = 'PT';
-                                  else if (record.status === 'HOLIDAY') displayStatus = 'H';
-                                  else if (record.status === 'WEEK_OFF') displayStatus = 'WO';
-                                  else if (record.status === 'LEAVE' || record.hasLeave) {
-                                    displayStatus = (record.leaveInfo?.numberOfDays && record.leaveInfo.numberOfDays >= 3) ? 'LL' : 'L';
-                                  }
-                                  else if (record.status === 'OD' || record.hasOD) displayStatus = 'OD';
-                                  else displayStatus = 'A';
-                                }
+                                const displayStatus = getBaseDisplayStatus(record);
+                                const splitStatus = buildSplitCellStatus(record);
 
                                 // Check if there's any data to display (attendance, leave, or OD)
                                 const hasData = record && (record.status || record.hasLeave || record.hasOD);
@@ -3260,13 +3575,44 @@ export default function AttendancePage() {
                                   (shifts && shifts.some((s: any) => s.earlyOutMinutes != null && s.earlyOutMinutes > 0))
                                 );
 
+                                const highlightInfo =
+                                  activeHighlight?.employeeId === item.employee._id ? activeHighlightDates.get(dateStr) : null;
+
+                                const isHighlighted = !!highlightInfo;
+
+                                const highlightSub =
+                                  isHighlighted && highlightInfo && activeHighlight
+                                    ? highlightBadgeSubtitle(activeHighlight.category, highlightInfo.label)
+                                    : null;
+
                                 return (
                                   <td
                                     key={dateStr}
-                                    onClick={() => hasData && handleDateClick(item.employee, dateStr)}
-                                    className={`border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700 relative ${hasData ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800' : ''
-                                      } ${getStatusColor(record)} ${getCellBackgroundColor(record)}`}
+                                    onClick={() => (hasData || isHighlighted) && handleDateClick(item.employee, dateStr)}
+                                    className={`border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700 relative ${hasData || isHighlighted ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800' : ''
+                                      } ${getStatusColor(record)} ${getCellBackgroundColor(record)} ${isHighlighted ? 'ring-2 ring-blue-400/60 ring-inset z-10 !bg-blue-50/90 dark:!bg-blue-900/60 shadow-[0_0_20px_rgba(59,130,246,0.2)] scale-[1.02] rounded-md' : ''}`}
                                   >
+                                    {isHighlighted && highlightInfo && (
+                                      <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none px-0.5">
+                                        <div className="bg-blue-600/90 text-white px-1 py-0.5 rounded-md shadow-md border border-white/30 flex flex-col items-center justify-center gap-0 leading-none min-w-[1.35rem] max-w-[42px]">
+                                          <span className="text-[10px] font-black tabular-nums tracking-tight">
+                                            {formatHighlightContribution(highlightInfo.value)}
+                                          </span>
+                                          {highlightSub ? (
+                                            <span
+                                              className={`text-[6px] opacity-90 truncate max-w-[40px] text-center leading-tight ${
+                                                activeHighlight?.category === 'leaves'
+                                                  ? 'font-semibold normal-case'
+                                                  : 'font-bold uppercase'
+                                              }`}
+                                              title={highlightSub}
+                                            >
+                                              {highlightSub}
+                                            </span>
+                                          ) : null}
+                                        </div>
+                                      </div>
+                                    )}
                                     {(isLate || isEarlyOut) && (
                                       <div className="absolute bottom-0.5 left-0 right-0 flex justify-center gap-0.5 z-10" title={`${isLate ? 'Late in' : ''}${isLate && isEarlyOut ? ' • ' : ''}${isEarlyOut ? 'Early out' : ''}`}>
                                         {isLate && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" title="Late" />}
@@ -3277,7 +3623,14 @@ export default function AttendancePage() {
                                       <div className="space-y-0.5">
                                         {tableType === 'complete' && (
                                           <>
-                                            <div className="font-semibold text-[9px]">{displayStatus}</div>
+                                            {splitStatus ? (
+                                              <div className="mx-auto w-fit overflow-hidden rounded border border-slate-300/80 dark:border-slate-600/80 bg-white/70 dark:bg-slate-900/50 leading-none">
+                                                <div className="px-1 py-[1px] text-[8px] font-bold uppercase">{splitStatus.top}</div>
+                                                <div className="border-t border-slate-300/80 dark:border-slate-600/80 px-1 py-[1px] text-[8px] font-bold uppercase">{splitStatus.bottom}</div>
+                                              </div>
+                                            ) : (
+                                              <div className="font-semibold text-[9px]">{displayStatus}</div>
+                                            )}
                                             {/* Shift Assignment - Only for HR */}
                                             {hasManagePermission ? (
                                               <div
@@ -3302,6 +3655,15 @@ export default function AttendancePage() {
                                             {record && record.totalHours !== null && (
                                               <div className="text-[8px] font-semibold">{formatHours(record.totalHours)}</div>
                                             )}
+                                            {record?.odInfo?.odType_extended === 'hours' && (
+                                              <div
+                                                className="inline-flex items-center gap-1 rounded bg-indigo-100 px-1 py-[1px] text-[7px] font-extrabold text-indigo-800 dark:bg-indigo-900/50 dark:text-indigo-200"
+                                                title={`Hourly OD ${record.odInfo.durationHours != null ? `(${record.odInfo.durationHours}h)` : ''}`}
+                                              >
+                                                <span>ODh</span>
+                                                {record.odInfo.durationHours != null ? <span>{record.odInfo.durationHours}h</span> : null}
+                                              </div>
+                                            )}
                                           </>
                                         )}
                                         {tableType === 'present_absent' && (
@@ -3325,10 +3687,12 @@ export default function AttendancePage() {
                                           </div>
                                         )}
                                         {tableType === 'leaves' && (
-                                          <div className="font-bold text-[10px] text-orange-600">{displayStatus === 'L' ? 'L' : '-'}</div>
+                                          <div className={`font-bold text-[10px] ${displayStatus === 'LL' ? 'text-amber-800 dark:text-amber-300' : 'text-orange-600'}`}>
+                                            {getLeaveCellLabel(record)}
+                                          </div>
                                         )}
                                         {tableType === 'od' && (
-                                          <div className="font-bold text-[10px] text-indigo-600">{displayStatus === 'OD' ? 'OD' : '-'}</div>
+                                          <div className="font-bold text-[10px] text-indigo-600">{getODCellLabel(record)}</div>
                                         )}
                                         {tableType === 'ot' && (
                                           <div className="text-[8px] font-medium leading-tight">
@@ -3353,60 +3717,157 @@ export default function AttendancePage() {
                               })}
                               {tableType === 'complete' && (
                                 <>
-                                  <td onClick={() => handleViewTypeSummary(item, 'present')} className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center text-[11px] font-bold text-blue-700 dark:border-slate-700 dark:bg-blue-900/20 dark:text-blue-300 cursor-pointer hover:bg-blue-100">
+                                  <td
+                                    title="Click: highlight days in this total • Alt+click: open date list"
+                                    onClick={(e) => onSummaryMetricClick(e, item.employee._id, 'present', 'present', item)}
+                                    className={`border-r border-slate-200 bg-blue-50 px-2 py-2 text-center text-[11px] font-bold text-blue-700 dark:border-slate-700 dark:bg-blue-900/20 dark:text-blue-300 cursor-pointer hover:bg-blue-100 ${activeHighlight?.employeeId === item.employee._id && activeHighlight?.category === 'present' ? 'ring-2 ring-blue-500 ring-inset shadow-inner dark:ring-blue-400' : ''}`}
+                                  >
                                     {daysPresent}
                                   </td>
-                                  <td onClick={() => handleViewTypeSummary(item, 'leaves')} className="border-r border-slate-200 bg-amber-50 px-2 py-2 text-center text-[11px] font-bold text-amber-700 dark:border-slate-700 dark:bg-amber-900/20 dark:text-amber-300 cursor-pointer hover:bg-amber-100">
+                                  <td
+                                    title="Click: highlight days in this total • Alt+click: open date list"
+                                    onClick={(e) => onSummaryMetricClick(e, item.employee._id, 'leaves', 'leaves', item)}
+                                    className={`border-r border-slate-200 bg-amber-50 px-2 py-2 text-center text-[11px] font-bold text-amber-700 dark:border-slate-700 dark:bg-amber-900/20 dark:text-amber-300 cursor-pointer hover:bg-amber-100 ${activeHighlight?.employeeId === item.employee._id && activeHighlight?.category === 'leaves' ? 'ring-2 ring-amber-500 ring-inset shadow-inner' : ''}`}
+                                  >
                                     {totalLeaves}
                                   </td>
-                                  <td className="border-r border-slate-200 bg-orange-100 px-2 py-2 text-center text-[11px] font-bold text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 dark:text-orange-300">
+                                  <td
+                                    title="Click: highlight week-off dates"
+                                    onClick={() => handleSummaryClick(item.employee._id, 'weeklyOffs')}
+                                    className={`border-r border-slate-200 bg-orange-100 px-2 py-2 text-center text-[11px] font-bold text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 dark:text-orange-300 cursor-pointer hover:bg-orange-200 ${activeHighlight?.employeeId === item.employee._id && activeHighlight?.category === 'weeklyOffs' ? 'ring-2 ring-orange-500 ring-inset shadow-inner' : ''}`}
+                                  >
                                     {weekOffsCount}
                                   </td>
-                                  <td className="border-r border-slate-200 bg-red-50 px-2 py-2 text-center text-[11px] font-bold text-red-700 dark:border-slate-700 dark:bg-red-900/20 dark:text-red-300">
+                                  <td
+                                    title="Click: highlight holiday dates"
+                                    onClick={() => handleSummaryClick(item.employee._id, 'holidays')}
+                                    className={`border-r border-slate-200 bg-red-50 px-2 py-2 text-center text-[11px] font-bold text-red-700 dark:border-slate-700 dark:bg-red-900/20 dark:text-red-300 cursor-pointer hover:bg-red-100 ${activeHighlight?.employeeId === item.employee._id && activeHighlight?.category === 'holidays' ? 'ring-2 ring-red-500 ring-inset shadow-inner' : ''}`}
+                                  >
                                     {holidaysCount}
                                   </td>
-                                  <td onClick={() => handleViewTypeSummary(item, 'ot')} className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 dark:text-orange-300 cursor-pointer hover:bg-orange-100">
+                                  <td
+                                    title="Click: highlight days with OT • Alt+click: open list"
+                                    onClick={(e) => onSummaryMetricClick(e, item.employee._id, 'otHours', 'ot', item)}
+                                    className={`border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 dark:text-orange-300 cursor-pointer hover:bg-orange-100 ${activeHighlight?.employeeId === item.employee._id && activeHighlight?.category === 'otHours' ? 'ring-2 ring-orange-500 ring-inset shadow-inner' : ''}`}
+                                  >
                                     {formatHours(Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.otHours || 0), 0))}
                                   </td>
-                                  <td onClick={() => handleViewTypeSummary(item, 'extra')} className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center text-[11px] font-bold text-purple-700 dark:border-slate-700 dark:bg-purple-900/20 dark:text-purple-300 cursor-pointer hover:bg-purple-100">
+                                  <td
+                                    title="Click: highlight days with extra hours • Alt+click: open list"
+                                    onClick={(e) => onSummaryMetricClick(e, item.employee._id, 'extraHours', 'extra', item)}
+                                    className={`border-r border-slate-200 bg-purple-50 px-2 py-2 text-center text-[11px] font-bold text-purple-700 dark:border-slate-700 dark:bg-purple-900/20 dark:text-purple-300 cursor-pointer hover:bg-purple-100 ${activeHighlight?.employeeId === item.employee._id && activeHighlight?.category === 'extraHours' ? 'ring-2 ring-purple-500 ring-inset shadow-inner' : ''}`}
+                                  >
                                     {formatHours(Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.extraHours || 0), 0))}
                                   </td>
-                                  <td onClick={() => handleViewTypeSummary(item, 'permission')} className="border-r border-slate-200 bg-cyan-50 px-2 py-2 text-center text-[11px] font-bold text-cyan-700 dark:border-slate-700 dark:bg-cyan-900/20 dark:text-cyan-300 cursor-pointer hover:bg-cyan-100">
+                                  <td
+                                    title="Click: highlight permission days • Alt+click: open list"
+                                    onClick={(e) => onSummaryMetricClick(e, item.employee._id, 'permissions', 'permission', item)}
+                                    className={`border-r border-slate-200 bg-cyan-50 px-2 py-2 text-center text-[11px] font-bold text-cyan-700 dark:border-slate-700 dark:bg-cyan-900/20 dark:text-cyan-300 cursor-pointer hover:bg-cyan-100 ${activeHighlight?.employeeId === item.employee._id && activeHighlight?.category === 'permissions' ? 'ring-2 ring-cyan-500 ring-inset shadow-inner' : ''}`}
+                                  >
                                     {Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.permissionCount || 0), 0)}
                                   </td>
-                                  <td className="border-r border-slate-200 bg-rose-50 px-2 py-2 text-center text-[11px] font-bold text-rose-700 dark:border-slate-700 dark:bg-rose-900/20 dark:text-rose-300 w-[70px] min-w-[70px]">
+                                  <td
+                                    title="Click: highlight late / early days"
+                                    onClick={() => handleSummaryClick(item.employee._id, 'lateIn')}
+                                    className={`border-r border-slate-200 bg-rose-50 px-2 py-2 text-center text-[11px] font-bold text-rose-700 dark:border-slate-700 dark:bg-rose-900/20 dark:text-rose-300 w-[70px] min-w-[70px] cursor-pointer hover:bg-rose-100 ${activeHighlight?.employeeId === item.employee._id && activeHighlight?.category === 'lateIn' ? 'ring-2 ring-rose-500 ring-inset shadow-inner' : ''}`}
+                                  >
                                     {item.summary?.lateOrEarlyCount ?? 0}
                                   </td>
-                                  <td onClick={() => handleEmployeeClick(item.employee)} className="border-r-0 border-slate-200 bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:border-slate-700 dark:bg-green-900/20 dark:text-green-300 cursor-pointer hover:bg-green-100">
+                                  <td
+                                    onClick={(e) => openAttendanceDeductionInfo(e, item)}
+                                    className="border-r border-slate-200 bg-violet-50 px-1 py-2 text-center text-[10px] font-bold text-violet-900 dark:border-slate-700 dark:bg-violet-900/25 dark:text-violet-200 cursor-pointer hover:bg-violet-100/80 dark:hover:bg-violet-900/40"
+                                    title="Click to view deduction breakdown (late/early vs absent)"
+                                  >
+                                    {Number(item.summary?.totalAttendanceDeductionDays ?? 0).toLocaleString('en-IN', {
+                                      minimumFractionDigits: 0,
+                                      maximumFractionDigits: 2,
+                                    })}
+                                  </td>
+                                  <td
+                                    title="Click: highlight payable days • Alt+click: monthly summary"
+                                    onClick={(e) => {
+                                      if (e.altKey) {
+                                        handleEmployeeClick(item.employee);
+                                        return;
+                                      }
+                                      handleSummaryClick(item.employee._id, 'payableShifts');
+                                    }}
+                                    className={`border-r-0 border-slate-200 bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:border-slate-700 dark:bg-green-900/20 dark:text-green-300 cursor-pointer hover:bg-green-100 ${activeHighlight?.employeeId === item.employee._id && activeHighlight?.category === 'payableShifts' ? 'ring-2 ring-green-500 ring-inset shadow-inner' : ''}`}
+                                  >
                                     {payableShifts.toFixed(2)}
                                   </td>
                                 </>
                               )}
                               {tableType === 'present_absent' && (
                                 <>
-                                  <td onClick={() => handleViewTypeSummary(item, 'present')} className="border-r border-slate-200 bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 cursor-pointer hover:bg-green-100">{monthPresent}</td>
-                                  <td onClick={() => handleViewTypeSummary(item, 'absent')} className="border-r border-slate-200 bg-red-50 px-2 py-2 text-center text-[11px] font-bold text-red-700 cursor-pointer hover:bg-red-100">{monthAbsent}</td>
+                                  <td
+                                    title="Click: highlight • Alt+click: list"
+                                    onClick={(e) => onSummaryMetricClick(e, item.employee._id, 'present', 'present', item)}
+                                    className={`border-r border-slate-200 bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 cursor-pointer hover:bg-green-100 ${activeHighlight?.employeeId === item.employee._id && activeHighlight?.category === 'present' ? 'ring-2 ring-green-500 ring-inset shadow-inner' : ''}`}
+                                  >
+                                    {monthPresent}
+                                  </td>
+                                  <td
+                                    title="Click: highlight • Alt+click: list"
+                                    onClick={(e) => onSummaryMetricClick(e, item.employee._id, 'absent', 'absent', item)}
+                                    className={`border-r border-slate-200 bg-red-50 px-2 py-2 text-center text-[11px] font-bold text-red-700 cursor-pointer hover:bg-red-100 ${activeHighlight?.employeeId === item.employee._id && activeHighlight?.category === 'absent' ? 'ring-2 ring-red-500 ring-inset shadow-inner' : ''}`}
+                                  >
+                                    {monthAbsent}
+                                  </td>
                                 </>
                               )}
                               {tableType === 'in_out' && (
-                                <td onClick={() => handleViewTypeSummary(item, 'in_out')} className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center text-[11px] font-bold text-blue-700 cursor-pointer hover:bg-blue-100">{daysPresent}</td>
+                                <td
+                                  title="Click: highlight present days • Alt+click: in/out list"
+                                  onClick={(e) => onSummaryMetricClick(e, item.employee._id, 'present', 'in_out', item)}
+                                  className={`border-r border-slate-200 bg-blue-50 px-2 py-2 text-center text-[11px] font-bold text-blue-700 cursor-pointer hover:bg-blue-100 ${activeHighlight?.employeeId === item.employee._id && activeHighlight?.category === 'present' ? 'ring-2 ring-blue-500 ring-inset shadow-inner' : ''}`}
+                                >
+                                  {daysPresent}
+                                </td>
                               )}
                               {tableType === 'leaves' && (
                                 <>
-                                  <td onClick={() => handleViewTypeSummary(item, 'leaves')} className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 cursor-pointer hover:bg-orange-100">{totalLeaves}</td>
+                                  <td
+                                    title="Click: highlight • Alt+click: list"
+                                    onClick={(e) => onSummaryMetricClick(e, item.employee._id, 'leaves', 'leaves', item)}
+                                    className={`border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 cursor-pointer hover:bg-orange-100 ${activeHighlight?.employeeId === item.employee._id && activeHighlight?.category === 'leaves' ? 'ring-2 ring-orange-500 ring-inset shadow-inner' : ''}`}
+                                  >
+                                    {totalLeaves}
+                                  </td>
+                                  <td
+                                    title="Click: highlight • Alt+click: list"
+                                    onClick={(e) => onSummaryMetricClick(e, item.employee._id, 'absent', 'absent', item)}
+                                    className={`border-r border-slate-200 bg-red-50 px-2 py-2 text-center text-[11px] font-bold text-red-700 cursor-pointer hover:bg-red-100 ${activeHighlight?.employeeId === item.employee._id && activeHighlight?.category === 'absent' ? 'ring-2 ring-red-500 ring-inset shadow-inner' : ''}`}
+                                  >
+                                    {monthAbsent}
+                                  </td>
                                   <td className="border-r border-slate-200 bg-yellow-50 px-2 py-2 text-center text-[11px] font-bold text-yellow-700">{paidLeaves}</td>
                                   <td className="border-r border-slate-200 bg-rose-50 px-2 py-2 text-center text-[11px] font-bold text-rose-700">{lopCount}</td>
                                 </>
                               )}
                               {tableType === 'od' && (
-                                <td onClick={() => handleViewTypeSummary(item, 'od')} className="border-r border-slate-200 bg-indigo-50 px-2 py-2 text-center text-[11px] font-bold text-indigo-700 cursor-pointer hover:bg-indigo-100">{totalODs}</td>
+                                <td
+                                  title="Click: highlight • Alt+click: list"
+                                  onClick={(e) => onSummaryMetricClick(e, item.employee._id, 'ods', 'od', item)}
+                                  className={`border-r border-slate-200 bg-indigo-50 px-2 py-2 text-center text-[11px] font-bold text-indigo-700 cursor-pointer hover:bg-indigo-100 ${activeHighlight?.employeeId === item.employee._id && activeHighlight?.category === 'ods' ? 'ring-2 ring-indigo-500 ring-inset shadow-inner' : ''}`}
+                                >
+                                  {totalODs}
+                                </td>
                               )}
                               {tableType === 'ot' && (
                                 <>
-                                  <td onClick={() => handleViewTypeSummary(item, 'ot')} className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 cursor-pointer hover:bg-orange-100">
+                                  <td
+                                    title="Click: highlight • Alt+click: list"
+                                    onClick={(e) => onSummaryMetricClick(e, item.employee._id, 'otHours', 'ot', item)}
+                                    className={`border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 cursor-pointer hover:bg-orange-100 ${activeHighlight?.employeeId === item.employee._id && activeHighlight?.category === 'otHours' ? 'ring-2 ring-orange-500 ring-inset shadow-inner' : ''}`}
+                                  >
                                     {formatHours(Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.otHours || 0), 0))}
                                   </td>
-                                  <td onClick={() => handleViewTypeSummary(item, 'extra')} className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center text-[11px] font-bold text-purple-700 cursor-pointer hover:bg-purple-100">
+                                  <td
+                                    title="Click: highlight • Alt+click: list"
+                                    onClick={(e) => onSummaryMetricClick(e, item.employee._id, 'extraHours', 'extra', item)}
+                                    className={`border-r border-slate-200 bg-purple-50 px-2 py-2 text-center text-[11px] font-bold text-purple-700 cursor-pointer hover:bg-purple-100 ${activeHighlight?.employeeId === item.employee._id && activeHighlight?.category === 'extraHours' ? 'ring-2 ring-purple-500 ring-inset shadow-inner' : ''}`}
+                                  >
                                     {formatHours(Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.extraHours || 0), 0))}
                                   </td>
                                 </>
@@ -3451,6 +3912,7 @@ export default function AttendancePage() {
               { label: 'LL', name: 'Long Leave', color: 'bg-amber-200 text-amber-800 border-amber-300 dark:bg-amber-900/40 dark:text-amber-400 dark:border-amber-700' },
               { label: 'OD', name: 'On Duty', color: 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800' },
               { label: 'PT', name: 'Partial', color: 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-800' },
+              { label: 'HD', name: 'Half Day', color: 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-900/10 dark:text-orange-400 dark:border-orange-900/30' },
               { label: 'A', name: 'Absent', color: 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700' },
               { label: '!', name: 'Conflict', color: 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-800' },
               { label: '✎', name: 'Edited', color: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/10 dark:text-indigo-400 dark:border-indigo-800' },
@@ -4410,6 +4872,44 @@ export default function AttendancePage() {
           )
         }
 
+        {attendanceDeductionInfo && (
+          <div
+            className="fixed inset-0 z-50 flex items-start justify-center bg-black/20 px-4 pt-24"
+            onClick={() => setAttendanceDeductionInfo(null)}
+          >
+            <div
+              className="w-full max-w-sm rounded-xl border border-violet-200 bg-white p-4 shadow-2xl dark:border-violet-800 dark:bg-slate-900"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="mb-2 flex items-center justify-between">
+                <h4 className="text-sm font-bold text-violet-900 dark:text-violet-200">Attendance Deduction Split</h4>
+                <button
+                  type="button"
+                  className="rounded px-2 py-1 text-xs text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  onClick={() => setAttendanceDeductionInfo(null)}
+                >
+                  Close
+                </button>
+              </div>
+              <p className="mb-3 text-xs text-slate-600 dark:text-slate-300">{attendanceDeductionInfo.employeeName}</p>
+              <div className="space-y-2 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-600 dark:text-slate-300">Late/Early deduction days</span>
+                  <span className="font-semibold text-rose-700 dark:text-rose-300">{attendanceDeductionInfo.lateEarlyDays.toFixed(2).replace(/\.?0+$/, '') || '0'}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-600 dark:text-slate-300">Absent extra deduction days</span>
+                  <span className="font-semibold text-red-700 dark:text-red-300">{attendanceDeductionInfo.absentDays.toFixed(2).replace(/\.?0+$/, '') || '0'}</span>
+                </div>
+                <div className="mt-2 flex items-center justify-between border-t border-slate-200 pt-2 dark:border-slate-700">
+                  <span className="font-semibold text-slate-800 dark:text-slate-200">Total deduction days</span>
+                  <span className="font-bold text-violet-900 dark:text-violet-200">{attendanceDeductionInfo.total.toFixed(2).replace(/\.?0+$/, '') || '0'}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Monthly Summary Modal */}
         {
           showSummaryModal && selectedEmployeeForSummary !== null && (
@@ -4475,6 +4975,7 @@ export default function AttendancePage() {
                             <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Present Days</th>
                             <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Total Days</th>
                             <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">Payable Shifts</th>
+                            <th className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white" title="Late/early policy + absent extra (same as payroll)">Att. deduction days</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -4485,6 +4986,7 @@ export default function AttendancePage() {
                             <td className="border border-slate-300 px-4 py-2 text-right text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalPresentDays || 0}</td>
                             <td className="border border-slate-300 px-4 py-2 text-right text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalDaysInMonth || 0}</td>
                             <td className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalPayableShifts?.toFixed(2) || '0.00'}</td>
+                            <td className="border border-slate-300 px-4 py-2 text-right font-semibold text-purple-800 dark:text-purple-200">{Number(monthlySummary.totalAttendanceDeductionDays ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</td>
                           </tr>
                         </tbody>
                       </table>
@@ -4576,6 +5078,7 @@ export default function AttendancePage() {
                           ) : typeSummaryData.type === 'leaves' ? (
                             <>
                               <th className="px-4 py-3 font-semibold border-b border-slate-200 dark:border-slate-700">Leave Type</th>
+                              <th className="px-4 py-3 font-semibold border-b border-slate-200 dark:border-slate-700">Paid / LOP</th>
                               <th className="px-4 py-3 font-semibold border-b border-slate-200 dark:border-slate-700">Reason</th>
                             </>
                           ) : typeSummaryData.type === 'od' ? (
@@ -4594,7 +5097,7 @@ export default function AttendancePage() {
                             if (!record) return false;
                             if (typeSummaryData.type === 'present') return record.status === 'PRESENT' || record.status === 'PARTIAL';
                             if (typeSummaryData.type === 'absent') return record.status === 'ABSENT' || (!record.status && !record.hasLeave && !record.hasOD);
-                            if (typeSummaryData.type === 'leaves') return record.hasLeave;
+                            if (typeSummaryData.type === 'leaves') return record.hasLeave || record.status === 'LEAVE';
                             if (typeSummaryData.type === 'od') return record.hasOD;
                             if (typeSummaryData.type === 'ot') return (record.otHours || 0) > 0;
                             if (typeSummaryData.type === 'extra') return (record.extraHours || 0) > 0;
@@ -4620,7 +5123,28 @@ export default function AttendancePage() {
                                 </>
                               ) : typeSummaryData.type === 'leaves' ? (
                                 <>
-                                  <td className="px-4 py-3 font-semibold text-orange-600">{record?.leaveInfo?.leaveType || 'Leave'}</td>
+                                  <td className="px-4 py-3 font-semibold text-orange-600">
+                                    {record?.leaveInfo?.leaveType || 'Leave'}
+                                    {record?.leaveInfo?.isHalfDay ? (
+                                      <span className="ml-1 text-[10px] font-normal text-slate-500">(half)</span>
+                                    ) : null}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    {(() => {
+                                      const anyR = record as any;
+                                      const lop =
+                                        anyR?.leaveNature === 'lop' ||
+                                        anyR?.leaveInfo?.leaveType?.toLowerCase().includes('lop') ||
+                                        anyR?.leaveInfo?.leaveType?.toLowerCase().includes('loss of pay');
+                                      return (
+                                        <span
+                                          className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold ${lop ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300' : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300'}`}
+                                        >
+                                          {lop ? 'LOP' : 'Paid'}
+                                        </span>
+                                      );
+                                    })()}
+                                  </td>
                                   <td className="px-4 py-3 text-slate-500 truncate max-w-[200px]" title={record?.leaveInfo?.purpose || ''}>{record?.leaveInfo?.purpose || '-'}</td>
                                 </>
                               ) : typeSummaryData.type === 'od' ? (
@@ -4643,7 +5167,7 @@ export default function AttendancePage() {
                           if (!record) return false;
                           if (typeSummaryData.type === 'present') return record.status === 'PRESENT' || record.status === 'PARTIAL';
                           if (typeSummaryData.type === 'absent') return record.status === 'ABSENT' || (!record.status && !record.hasLeave && !record.hasOD);
-                          if (typeSummaryData.type === 'leaves') return record.hasLeave;
+                          if (typeSummaryData.type === 'leaves') return record.hasLeave || record.status === 'LEAVE';
                           if (typeSummaryData.type === 'od') return record.hasOD;
                           if (typeSummaryData.type === 'ot') return (record.otHours || 0) > 0;
                           if (typeSummaryData.type === 'extra') return (record.extraHours || 0) > 0;
@@ -4652,7 +5176,21 @@ export default function AttendancePage() {
                           return true;
                         }).length === 0 && (
                             <tr>
-                              <td colSpan={3} className="px-4 py-8 text-center text-slate-400 italic">No records found for this category.</td>
+                              <td
+                                colSpan={
+                                  typeSummaryData.type === 'leaves'
+                                    ? 4
+                                    : typeSummaryData.type === 'in_out' ||
+                                        typeSummaryData.type === 'ot' ||
+                                        typeSummaryData.type === 'extra' ||
+                                        typeSummaryData.type === 'od'
+                                      ? 3
+                                      : 2
+                                }
+                                className="px-4 py-8 text-center text-slate-400 italic"
+                              >
+                                No records found for this category.
+                              </td>
                             </tr>
                           )}
                       </tbody>

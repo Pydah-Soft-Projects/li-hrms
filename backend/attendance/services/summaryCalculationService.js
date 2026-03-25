@@ -7,6 +7,26 @@ const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
 const Shift = require('../../shifts/model/Shift');
 const { createISTDate, extractISTComponents, getAllDatesInRange } = require('../../shared/utils/dateUtils');
 const dateCycleService = require('../../leaves/services/dateCycleService');
+const Employee = require('../../employees/model/Employee');
+const deductionService = require('../../payroll/services/deductionService');
+const { getAbsentDeductionSettings } = require('../../payroll/services/allowanceDeductionResolverService');
+
+function defaultAttendancePolicyDeductionBreakdown() {
+  return {
+    lateInsCount: 0,
+    earlyOutsCount: 0,
+    combinedCount: 0,
+    freeAllowedPerMonth: 0,
+    effectiveCount: 0,
+    daysDeducted: 0,
+    lateEarlyDaysDeducted: 0,
+    absentExtraDays: 0,
+    absentDays: 0,
+    lopDaysPerAbsent: null,
+    deductionType: null,
+    calculationMode: null,
+  };
+}
 
 /** Normalize to YYYY-MM-DD for reliable set membership (attendance date vs OD loop date) */
 function toNormalizedDateStr(val) {
@@ -75,6 +95,7 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     // Month days = exact number of days in the pay period (fully respects pay cycle e.g. 25 Jan–26 Feb = 33 days)
     const periodDays = getAllDatesInRange(startDateStr, endDateStr).length;
     summary.totalDaysInMonth = Math.round(periodDays);
+    const todayIstStr = extractISTComponents(new Date()).dateStr;
 
     // Initialize contributing dates tracker
     const contributingDates = {
@@ -89,6 +110,7 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       lateIn: [],
       earlyOut: [],
       permissions: [],
+      absent: [],
     };
 
     // Normalize emp_no so we match AttendanceDaily.employeeNumber (schema uses uppercase)
@@ -171,7 +193,7 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         },
       ],
       isActive: true,
-    }).select('fromDate toDate isHalfDay leaveType leaveNature').lean();
+    }).select('fromDate toDate isHalfDay halfDayType leaveType leaveNature numberOfDays').lean();
 
     // 5. Get approved ODs for this month (Using .lean() and projections)
     const approvedODs = await OD.find({
@@ -328,6 +350,40 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         totalPayableShifts += dayPayable;
       }
 
+      // Absent = each working-day half not covered by leave, OD, or attendance (present / worked half).
+      // Examples: half-day leave + no other credit → 0.5 absent; half-day OD + no attendance on other half → 0.5 absent.
+      if (!day.isWO && !day.isHOL && dStr <= todayIstStr) {
+        let leaveFirst = 0;
+        let leaveSecond = 0;
+        for (const l of day.leaves) {
+          if (l.isHalfDay) {
+            if (l.halfDayType === 'second_half') leaveSecond = Math.max(leaveSecond, 0.5);
+            else leaveFirst = Math.max(leaveFirst, 0.5);
+            continue;
+          }
+          const nd = typeof l.numberOfDays === 'number' ? l.numberOfDays : null;
+          if (nd != null && nd >= 1) {
+            leaveFirst = 0.5;
+            leaveSecond = 0.5;
+          } else if (nd != null && nd > 0 && nd < 1) {
+            if (l.halfDayType === 'second_half') leaveSecond = Math.max(leaveSecond, 0.5);
+            else leaveFirst = Math.max(leaveFirst, 0.5);
+          } else {
+            leaveFirst = 0.5;
+            leaveSecond = 0.5;
+          }
+        }
+
+        const mergedFirst = Math.max(attFirst, odFirst, leaveFirst);
+        const mergedSecond = Math.max(attSecond, odSecond, leaveSecond);
+        const dayCovered = Math.min(mergedFirst + mergedSecond, 1.0);
+        const absentPortion = Math.round(Math.max(0, 1.0 - dayCovered) * 100) / 100;
+
+        if (absentPortion > 0 && !contributingDates.absent.some(cd => cd.date === dStr)) {
+          contributingDates.absent.push({ date: dStr, value: absentPortion, label: '' });
+        }
+      }
+
       // 3. Lates & Early Outs (only on PRESENT days)
       if (day.attendance && day.attendance.status === 'PRESENT' && !day.isWO && !day.isHOL) {
         const shifts = Array.isArray(day.attendance.shifts) ? day.attendance.shifts : [];
@@ -381,6 +437,8 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     summary.totalPayableShifts = Math.round(totalPayableShifts * 100) / 100;
     summary.totalLeaves = Math.round(totalLeaveDays * 10) / 10;
     summary.totalODs = Math.round(totalODDays * 10) / 10;
+    const totalAbsentDays = contributingDates.absent.reduce((s, cd) => s + (Number(cd.value) || 0), 0);
+    summary.totalAbsentDays = Math.round(totalAbsentDays * 10) / 10;
     summary.totalLateInMinutes = Math.round(totalLateInMinutes * 100) / 100;
     summary.lateInCount = lateInCount;
     summary.totalEarlyOutMinutes = Math.round(totalEarlyOutMinutes * 100) / 100;
@@ -474,6 +532,63 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
 
     summary.totalLateOrEarlyMinutes = Math.round((summary.totalLateInMinutes + summary.totalEarlyOutMinutes) * 100) / 100;
     summary.lateOrEarlyCount = summary.lateInCount + summary.earlyOutCount;
+
+    // Policy attendance deduction (aligned with payroll deductionService — late/early counts + absent extra)
+    let policyDedDays = 0;
+    let policyBreakdown = defaultAttendancePolicyDeductionBreakdown();
+    try {
+      const employee = await Employee.findById(employeeId)
+        .select(
+          'gross_salary department_id division_id applyAttendanceDeduction deductLateIn deductEarlyOut deductAbsent'
+        )
+        .lean();
+      if (employee && employee.department_id) {
+        const monthStr = `${year}-${String(monthNumber).padStart(2, '0')}`;
+        const gross = Number(employee.gross_salary) || 0;
+        const perDayBasicPay =
+          summary.totalDaysInMonth > 0
+            ? Math.round((gross / summary.totalDaysInMonth) * 100) / 100
+            : 0;
+        const absentSettings = await getAbsentDeductionSettings(
+          String(employee.department_id),
+          employee.division_id ? String(employee.division_id) : null
+        );
+        const attDed = await deductionService.calculateAttendanceDeduction(
+          employeeId,
+          monthStr,
+          String(employee.department_id),
+          perDayBasicPay,
+          employee.division_id ? String(employee.division_id) : null,
+          {
+            absentDays: summary.totalAbsentDays,
+            enableAbsentDeduction: absentSettings.enableAbsentDeduction,
+            lopDaysPerAbsent: absentSettings.lopDaysPerAbsent,
+            employee,
+          }
+        );
+        const b = attDed.breakdown || {};
+        policyDedDays = Number(b.daysDeducted) || 0;
+        policyBreakdown = {
+          ...defaultAttendancePolicyDeductionBreakdown(),
+          lateInsCount: Number(b.lateInsCount) || 0,
+          earlyOutsCount: Number(b.earlyOutsCount) || 0,
+          combinedCount: Number(b.combinedCount) || 0,
+          freeAllowedPerMonth: Number(b.freeAllowedPerMonth) || 0,
+          effectiveCount: Number(b.effectiveCount) || 0,
+          daysDeducted: Number(b.daysDeducted) || 0,
+          lateEarlyDaysDeducted: Number(b.lateEarlyDaysDeducted) || 0,
+          absentExtraDays: Number(b.absentExtraDays) || 0,
+          absentDays: Number(b.absentDays) || 0,
+          lopDaysPerAbsent: b.lopDaysPerAbsent != null ? Number(b.lopDaysPerAbsent) : null,
+          deductionType: b.deductionType != null ? String(b.deductionType) : null,
+          calculationMode: b.calculationMode != null ? String(b.calculationMode) : null,
+        };
+      }
+    } catch (err) {
+      console.error('Policy attendance deduction for monthly summary failed:', err.message);
+    }
+    summary.totalAttendanceDeductionDays = Math.round(policyDedDays * 100) / 100;
+    summary.attendanceDeductionBreakdown = policyBreakdown;
 
     summary.contributingDates = contributingDates;
     summary.lastCalculatedAt = new Date();
