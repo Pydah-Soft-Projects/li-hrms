@@ -3575,119 +3575,207 @@ export default function LeavesPage() {
 
                 {/* CL summary for month/year – show when Casual Leave selected */}
                 {isCLSelected && (
-                  <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30 overflow-hidden">
-                    <div className="bg-slate-100/50 dark:bg-slate-800/50 px-4 py-2 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Leave Limits Breakdown</span>
-                      {clBalanceLoading && <Loader2 className="w-3 h-3 animate-spin text-blue-500" />}
+                  <section
+                    className="rounded-2xl border border-slate-200/80 dark:border-slate-700 bg-white dark:bg-slate-900/40 shadow-sm overflow-hidden"
+                    aria-label="Monthly leave apply limit for casual leave"
+                  >
+                    <div className="px-4 py-3 sm:px-5 sm:py-3.5 border-b border-slate-100 dark:border-slate-800 bg-gradient-to-r from-slate-50 to-blue-50/40 dark:from-slate-800/80 dark:to-slate-900/40 flex justify-between items-start gap-3">
+                      <div>
+                        <h3 className="text-xs font-black uppercase tracking-widest text-slate-600 dark:text-slate-400">
+                          Monthly apply limit
+                        </h3>
+                        <p className="mt-0.5 text-[11px] leading-snug text-slate-500 dark:text-slate-400 max-w-xl">
+                          Days you can still book in this payroll period toward CL (and pooled cap). Pending and approved requests count.
+                        </p>
+                      </div>
+                      {clBalanceLoading && <Loader2 className="w-4 h-4 shrink-0 animate-spin text-blue-500 mt-0.5" />}
                     </div>
-                    
-                    <div className="p-4 space-y-3">
+
+                    <div className="p-4 sm:p-5 space-y-4">
                       {!formData.fromDate || !canFetchCLBalance ? (
-                        <p className="text-xs text-slate-500 dark:text-slate-400 italic text-center py-2">
+                        <p className="text-sm text-slate-500 dark:text-slate-400 text-center py-4">
                           {currentUser?.role === 'employee'
-                            ? 'Select from date to view your available limits.'
-                            : 'Select employee and from date to view limits.'}
+                            ? 'Pick a from date to load this period’s limits.'
+                            : 'Pick employee and from date to load limits.'}
                         </p>
                       ) : clBalanceLoading ? (
                         <div className="flex flex-col gap-2 py-2">
-                          <div className="h-3 w-full bg-slate-200 dark:bg-slate-700 rounded animate-pulse" />
-                          <div className="h-3 w-4/5 bg-slate-200 dark:bg-slate-700 rounded animate-pulse" />
+                          <div className="h-10 w-full bg-slate-100 dark:bg-slate-800 rounded-xl animate-pulse" />
+                          <div className="h-3 w-2/3 bg-slate-100 dark:bg-slate-800 rounded animate-pulse" />
                         </div>
                       ) : applyPeriodContext && (!applyPeriodContext.hasYearDoc || !applyPeriodContext.hasSlot) ? (
-                        <p className="text-xs text-amber-700 dark:text-amber-300 text-center py-2 bg-amber-50 dark:bg-amber-900/20 rounded-lg">
-                          No leave register row for this payroll period yet. Limits show after FY register exists.
-                        </p>
+                        <div className="rounded-xl border border-amber-200/80 bg-amber-50/90 dark:border-amber-900/40 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-900 dark:text-amber-200">
+                          No leave register row for this payroll period yet. Limits appear after the financial year register exists.
+                        </div>
                       ) : clBalanceForMonth !== null ? (
                         <>
-                          <div className="flex items-center justify-between mb-2 pb-2 border-b border-dashed border-slate-200 dark:border-slate-700">
-                             <div className="flex flex-col">
-                               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">You can still apply (this period)</span>
-                               <span className="text-xs text-slate-500 italic">Stored ceiling minus locked + approved</span>
-                             </div>
-                             <span className="text-lg font-black text-blue-600 dark:text-blue-400">{clBalanceForMonth} Days</span>
+                          {(() => {
+                            const remaining = Number(clBalanceForMonth);
+                            const ceiling = Number(
+                              clMonthlyCap ?? applyPeriodContext?.monthlyApplyCeiling ?? 0
+                            );
+                            const locked = Number(applyPeriodContext?.monthlyApplyLocked ?? 0);
+                            const approved = Number(applyPeriodContext?.monthlyApplyApproved ?? 0);
+                            const consumed =
+                              applyPeriodContext?.monthlyApplyConsumed != null
+                                ? Number(applyPeriodContext.monthlyApplyConsumed)
+                                : locked + approved;
+                            const pct =
+                              ceiling > 0 ? Math.min(100, Math.round((consumed / ceiling) * 100)) : 0;
+                            const depleted = remaining <= 0;
+                            return (
+                              <div className="space-y-3">
+                                <div className="flex flex-wrap items-end justify-between gap-3">
+                                  <div>
+                                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                      Can still apply (this period)
+                                    </p>
+                                    <div className="mt-1 flex items-baseline gap-2">
+                                      <span
+                                        className={`text-3xl font-black tabular-nums tracking-tight ${depleted ? 'text-rose-600 dark:text-rose-400' : 'text-blue-600 dark:text-blue-400'}`}
+                                      >
+                                        {remaining}
+                                      </span>
+                                      <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">
+                                        day{remaining === 1 ? '' : 's'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <span
+                                    className={`inline-flex items-center rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-wider ${depleted ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/50 dark:text-rose-200' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200'}`}
+                                  >
+                                    {depleted ? 'Cap used' : 'Room left'}
+                                  </span>
+                                </div>
+
+                                {ceiling > 0 && (
+                                  <div>
+                                    <div className="flex justify-between text-[11px] text-slate-500 dark:text-slate-400 mb-1">
+                                      <span>
+                                        Used {consumed} of {ceiling} (locked {locked} · approved {approved})
+                                      </span>
+                                      <span className="tabular-nums">{pct}%</span>
+                                    </div>
+                                    <div
+                                      className="h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden"
+                                      role="progressbar"
+                                      aria-valuenow={pct}
+                                      aria-valuemin={0}
+                                      aria-valuemax={100}
+                                      aria-label="Share of monthly apply cap used"
+                                    >
+                                      <div
+                                        className={`h-full rounded-full transition-all ${depleted ? 'bg-rose-500' : 'bg-blue-500'} dark:bg-blue-400`}
+                                        style={{ width: `${pct}%` }}
+                                      />
+                                    </div>
+                                  </div>
+                                )}
+
+                                {applyPeriodContext?.payrollLabel && (
+                                  <p className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                                    Payroll period:{' '}
+                                    <span className="font-bold text-slate-900 dark:text-white">
+                                      {applyPeriodContext.payrollLabel}
+                                    </span>
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          })()}
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div className="rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/30 p-3 space-y-2">
+                              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                                This period’s pool
+                              </p>
+                              <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
+                                Scheduled credits for the payroll month (CL + CCL earned here + EL if in cap).
+                              </p>
+                              <dl className="space-y-2 text-xs">
+                                <div className="flex justify-between gap-2">
+                                  <dt className="text-slate-500 dark:text-slate-400">Scheduled CL</dt>
+                                  <dd className="font-bold tabular-nums text-slate-900 dark:text-white">
+                                    {applyPeriodContext?.scheduledCl ?? '—'}
+                                  </dd>
+                                </div>
+                                <div className="flex justify-between gap-2">
+                                  <dt className="text-slate-500 dark:text-slate-400">Scheduled CCL</dt>
+                                  <dd className="font-bold tabular-nums text-slate-900 dark:text-white">
+                                    {applyPeriodContext?.scheduledCcl ?? '—'}
+                                  </dd>
+                                </div>
+                                {applyPeriodContext?.includeELInMonthlyPool && (
+                                  <div className="flex justify-between gap-2">
+                                    <dt className="text-slate-500 dark:text-slate-400">Scheduled EL (in cap)</dt>
+                                    <dd className="font-bold tabular-nums text-slate-900 dark:text-white">
+                                      {applyPeriodContext?.scheduledEl ?? '—'}
+                                    </dd>
+                                  </div>
+                                )}
+                                <div className="flex justify-between gap-2 pt-1 border-t border-slate-200/80 dark:border-slate-700">
+                                  <dt className="text-slate-600 dark:text-slate-300 font-semibold">Apply ceiling</dt>
+                                  <dd className="font-black tabular-nums text-slate-900 dark:text-white">
+                                    {clMonthlyCap ?? applyPeriodContext?.monthlyApplyCeiling ?? 0}
+                                  </dd>
+                                </div>
+                              </dl>
+                            </div>
+
+                            <div className="rounded-xl border border-slate-100 dark:border-slate-800 p-3 space-y-2">
+                              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                                Balances (substitution)
+                              </p>
+                              <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
+                                FY running balances. Used when policy substitutes CCL/EL for a CL application.
+                              </p>
+                              {isCCLIncluded && (
+                                <div className="flex justify-between gap-2 text-xs">
+                                  <span className="text-slate-500 dark:text-slate-400">CCL balance</span>
+                                  <span className="font-bold tabular-nums text-slate-900 dark:text-white">
+                                    {cclBalance ?? 0}
+                                  </span>
+                                </div>
+                              )}
+                              {isELIncluded && (
+                                <div className="flex justify-between gap-2 text-xs">
+                                  <span className="text-slate-500 dark:text-slate-400">EL balance</span>
+                                  <span className="font-bold tabular-nums text-slate-900 dark:text-white">
+                                    {elBalance ?? 0}
+                                  </span>
+                                </div>
+                              )}
+                              <div className="flex justify-between gap-2 text-xs pt-1 border-t border-slate-100 dark:border-slate-800">
+                                <span className="text-slate-600 dark:text-slate-300 font-medium">Combined (UI)</span>
+                                <span className="font-bold tabular-nums">{pooledLimit ?? 0}</span>
+                              </div>
+                            </div>
                           </div>
 
-                          <div className="grid grid-cols-1 gap-2.5">
-                            {applyPeriodContext?.payrollLabel && (
-                              <div className="text-[10px] text-slate-500 font-medium">
-                                Period: {applyPeriodContext.payrollLabel}
-                              </div>
-                            )}
-                            <div className="flex items-center justify-between text-xs">
-                              <span className="text-slate-500">Scheduled CL (period)</span>
-                              <span className="font-semibold text-slate-700 dark:text-slate-300">
-                                {applyPeriodContext?.scheduledCl ?? '—'} Days
+                          {(pendingDaysInCycle ?? 0) > 0 && (
+                            <div className="flex items-center justify-between gap-3 rounded-xl border border-orange-200 dark:border-orange-900/40 bg-orange-50/90 dark:bg-orange-950/25 px-3 py-2.5 text-sm text-orange-900 dark:text-orange-100">
+                              <span className="flex items-center gap-2 font-semibold">
+                                <AlertCircle className="w-4 h-4 shrink-0" />
+                                Already pending this period
                               </span>
+                              <span className="font-black tabular-nums">{pendingDaysInCycle ?? 0} day(s)</span>
                             </div>
-                            <div className="flex items-center justify-between text-xs">
-                              <span className="text-slate-500">Scheduled CCL (period)</span>
-                              <span className="font-semibold text-slate-700 dark:text-slate-300">
-                                {applyPeriodContext?.scheduledCcl ?? '—'} Days
-                              </span>
-                            </div>
-                            {applyPeriodContext?.includeELInMonthlyPool && (
-                              <div className="flex items-center justify-between text-xs">
-                                <span className="text-slate-500">Scheduled EL (period, counts toward cap)</span>
-                                <span className="font-semibold text-slate-700 dark:text-slate-300">
-                                  {applyPeriodContext?.scheduledEl ?? '—'} Days
-                                </span>
-                              </div>
-                            )}
-                            <div className="flex items-center justify-between text-xs">
-                              <span className="text-slate-500">Monthly apply ceiling (stored)</span>
-                              <span className="font-semibold text-slate-700 dark:text-slate-300">{clMonthlyCap ?? 0} Days</span>
-                            </div>
-                            {(applyPeriodContext?.monthlyApplyLocked != null ||
-                              applyPeriodContext?.monthlyApplyApproved != null) && (
-                              <div className="flex items-center justify-between text-[10px] text-slate-500 uppercase tracking-tight">
-                                <span>
-                                  Used toward cap — locked {applyPeriodContext?.monthlyApplyLocked ?? 0} · approved{' '}
-                                  {applyPeriodContext?.monthlyApplyApproved ?? 0}
-                                </span>
-                              </div>
-                            )}
+                          )}
 
-                            {isCCLIncluded && (
-                              <div className="flex items-center justify-between text-xs">
-                                <span className="text-slate-500">Substitutable CCL Balance</span>
-                                <span className="font-semibold text-slate-700 dark:text-slate-300">{cclBalance ?? 0} Days</span>
-                              </div>
-                            )}
-
-                            {isELIncluded && (
-                              <div className="flex items-center justify-between text-xs">
-                                <span className="text-slate-500">Substitutable EL Balance</span>
-                                <span className="font-semibold text-slate-700 dark:text-slate-300">{elBalance ?? 0} Days</span>
-                              </div>
-                            )}
-
-                            <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-100 dark:border-slate-800">
-                              <span className="text-slate-500 font-medium">Combined Limit for Period</span>
-                              <span className="font-bold text-slate-700 dark:text-slate-300">{pooledLimit ?? 0} Days</span>
-                            </div>
-
-                            {(pendingDaysInCycle ?? 0) > 0 && (
-                              <div className="flex items-center justify-between text-xs text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 p-2 rounded-lg border border-orange-100 dark:border-orange-900/30">
-                                <span className="flex items-center gap-1.5 font-bold uppercase tracking-tight text-[10px]">
-                                  <AlertCircle className="w-3 h-3" /> Already Pending
-                                </span>
-                                <span className="font-black text-sm">{pendingDaysInCycle ?? 0} Days</span>
-                              </div>
-                            )}
-
-                            <div className="flex items-center justify-between text-[10px] text-slate-400 uppercase tracking-tight pt-2 border-t border-slate-100 dark:border-slate-800">
-                              <span>Current CL balance (FY register)</span>
-                              <span>{clAnnualBalance ?? 0} Days</span>
-                            </div>
+                          <div className="flex items-center justify-between text-[11px] text-slate-400 dark:text-slate-500 pt-1 border-t border-slate-100 dark:border-slate-800">
+                            <span>CL balance (FY register)</span>
+                            <span className="font-semibold tabular-nums text-slate-600 dark:text-slate-300">
+                              {clAnnualBalance ?? 0} day(s)
+                            </span>
                           </div>
                         </>
                       ) : (
-                        <p className="text-xs text-red-500 dark:text-red-400 text-center py-2 bg-red-50 dark:bg-red-900/20 rounded-lg">
-                           Could not load balance information. Please try again.
+                        <p className="text-sm text-red-600 dark:text-red-400 text-center py-4 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-100 dark:border-red-900/40">
+                          Could not load limit information. Please try again.
                         </p>
                       )}
                     </div>
-                  </div>
+                  </section>
                 )}
 
                 {/* OD Type Extended Selector */}

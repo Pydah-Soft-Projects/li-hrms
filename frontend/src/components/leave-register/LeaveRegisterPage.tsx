@@ -15,6 +15,8 @@ import {
   Building2,
   Layers,
   CalendarRange,
+  Shield,
+  Info,
 } from 'lucide-react';
 
 type MonthLeaveBucket = {
@@ -98,7 +100,21 @@ function formatNullableNum(n: unknown): string {
   return formatNum(n);
 }
 
-export default function LeaveRegisterPage() {
+export type LeaveRegisterPageVariant = 'default' | 'superadmin';
+
+export type LeaveRegisterPageProps = {
+  /** Superadmin gets grouped filters, results toolbar, and stronger visual hierarchy. */
+  variant?: LeaveRegisterPageVariant;
+  /** HR / sub-admin / super-admin: edit FY month scheduled pool (requires financial year filter). Default: superadmin variant only. */
+  allowAdminMonthEdits?: boolean;
+};
+
+export default function LeaveRegisterPage({
+  variant = 'default',
+  allowAdminMonthEdits,
+}: LeaveRegisterPageProps) {
+  const isSuperadmin = variant === 'superadmin';
+  const canEditMonths = allowAdminMonthEdits ?? isSuperadmin;
   const now = useMemo(() => new Date(), []);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -127,6 +143,22 @@ export default function LeaveRegisterPage() {
     label: string;
     transactions: any[];
     loading: boolean;
+  } | null>(null);
+
+  const [registerListRefresh, setRegisterListRefresh] = useState(0);
+  const [slotEditModal, setSlotEditModal] = useState<{
+    open: boolean;
+    employeeId: string;
+    employeeName: string;
+    payrollCycleMonth: number;
+    payrollCycleYear: number;
+    label: string;
+    clCredits: string;
+    compensatoryOffs: string;
+    elCredits: string;
+    lockedCredits: string;
+    reason: string;
+    saving: boolean;
   } | null>(null);
 
   useEffect(() => {
@@ -293,6 +325,101 @@ export default function LeaveRegisterPage() {
     );
   };
 
+  const saveSlotEdit = async () => {
+    if (!slotEditModal) return;
+    const fy = financialYear.trim();
+    if (!fy) {
+      toast.error('Set Financial year in filters first.');
+      return;
+    }
+    const reason = slotEditModal.reason.trim();
+    if (!reason) {
+      toast.error('Reason is required for audit.');
+      return;
+    }
+    const body: {
+      financialYear: string;
+      payrollCycleMonth: number;
+      payrollCycleYear: number;
+      reason: string;
+      clCredits?: number;
+      compensatoryOffs?: number;
+      elCredits?: number;
+      lockedCredits?: number;
+    } = {
+      financialYear: fy,
+      payrollCycleMonth: slotEditModal.payrollCycleMonth,
+      payrollCycleYear: slotEditModal.payrollCycleYear,
+      reason,
+    };
+    const push = (key: 'clCredits' | 'compensatoryOffs' | 'elCredits' | 'lockedCredits', raw: string) => {
+      const t = raw.trim();
+      if (t === '') return;
+      const n = Number(t);
+      if (!Number.isFinite(n) || n < 0) {
+        throw new Error(`Invalid number for ${key}`);
+      }
+      body[key] = n;
+    };
+    try {
+      push('clCredits', slotEditModal.clCredits);
+      push('compensatoryOffs', slotEditModal.compensatoryOffs);
+      push('elCredits', slotEditModal.elCredits);
+      push('lockedCredits', slotEditModal.lockedCredits);
+    } catch (e: any) {
+      toast.error(e?.message || 'Invalid input');
+      return;
+    }
+    if (
+      body.clCredits === undefined &&
+      body.compensatoryOffs === undefined &&
+      body.elCredits === undefined &&
+      body.lockedCredits === undefined
+    ) {
+      toast.error('Enter at least one value to update (scheduled CL, CCL, EL, or policy lock).');
+      return;
+    }
+    setSlotEditModal((m) => (m ? { ...m, saving: true } : null));
+    const empId = slotEditModal.employeeId;
+    try {
+      const res = await api.patchLeaveRegisterYearMonthSlot(empId, body);
+      if (!res.success) throw new Error(res.message || 'Update failed');
+      toast.success('Month slot saved; apply ceiling refreshed from leaves.');
+      setSlotEditModal(null);
+      setRegisterListRefresh((x) => x + 1);
+      detailCacheRef.current.delete(empId);
+    } catch (e: any) {
+      toast.error(e?.message || 'Update failed');
+      setSlotEditModal((m) => (m ? { ...m, saving: false } : null));
+    }
+  };
+
+  const syncSlotApplyOnly = async () => {
+    if (!slotEditModal) return;
+    const fy = financialYear.trim();
+    if (!fy) {
+      toast.error('Set Financial year in filters first.');
+      return;
+    }
+    setSlotEditModal((m) => (m ? { ...m, saving: true } : null));
+    const empId = slotEditModal.employeeId;
+    try {
+      const res = await api.syncLeaveRegisterYearMonthApply(empId, {
+        financialYear: fy,
+        payrollCycleMonth: slotEditModal.payrollCycleMonth,
+        payrollCycleYear: slotEditModal.payrollCycleYear,
+      });
+      if (!res.success) throw new Error(res.message || 'Sync failed');
+      toast.success('Monthly apply fields synced from leave applications.');
+      setSlotEditModal(null);
+      setRegisterListRefresh((x) => x + 1);
+      detailCacheRef.current.delete(empId);
+    } catch (e: any) {
+      toast.error(e?.message || 'Sync failed');
+      setSlotEditModal((m) => (m ? { ...m, saving: false } : null));
+    }
+  };
+
   function rowDisplayBalances(row: ListRow) {
     const ys = row.yearSnapshot;
     const cl =
@@ -324,21 +451,55 @@ export default function LeaveRegisterPage() {
     return [y - 1, y, y + 1];
   }, [now]);
 
+  const inputClass =
+    'w-full px-2.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 dark:focus:border-blue-400';
+
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 pb-12">
-      <div className="border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div
+      className={
+        isSuperadmin
+          ? 'min-h-screen bg-gradient-to-b from-slate-100 via-slate-50 to-white dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 pb-12'
+          : 'min-h-screen bg-slate-50 dark:bg-slate-950 pb-10'
+      }
+    >
+      <div
+        className={
+          isSuperadmin
+            ? 'border-b border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 backdrop-blur-sm'
+            : 'border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900'
+        }
+      >
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-5">
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
             <div className="flex items-start gap-3">
-              <div className="h-12 w-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/25">
-                <BookOpen className="h-6 w-6" />
+              <div
+                className={
+                  isSuperadmin
+                    ? 'h-11 w-11 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white flex items-center justify-center shadow-md shadow-blue-600/20 shrink-0'
+                    : 'h-10 w-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-md shadow-indigo-500/20 shrink-0'
+                }
+              >
+                <BookOpen className="h-5 w-5" />
               </div>
-              <div>
-                <h1 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
+              <div className="space-y-1 min-w-0">
+                {isSuperadmin && (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-blue-200/80 dark:border-blue-800/60 bg-blue-50/90 dark:bg-blue-950/40 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-blue-800 dark:text-blue-200">
+                    <Shield className="h-3 w-3 shrink-0" />
+                    Super admin
+                  </span>
+                )}
+                <h1 className="text-lg sm:text-xl font-semibold text-slate-900 dark:text-white tracking-tight">
                   Leave register
                 </h1>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-                  Per-employee ledger (CL, EL, CCL) for the selected financial year and payroll context.
+                <p className="text-xs text-slate-600 dark:text-slate-400 max-w-2xl leading-normal">
+                  {isSuperadmin ? (
+                    <>
+                      FY balances, payroll-month credits (CL / CCL / EL), and monthly apply limits. Expand a row for
+                      month detail; click a month for transactions.
+                    </>
+                  ) : (
+                    <>Per-employee ledger (CL, EL, CCL) for the selected financial year and payroll context.</>
+                  )}
                 </p>
               </div>
             </div>
@@ -346,126 +507,309 @@ export default function LeaveRegisterPage() {
         </div>
       </div>
 
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-4">
-        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm">
-          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3">
-            <Filter className="h-4 w-4" />
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4">
+        <div
+          className={
+            isSuperadmin
+              ? 'rounded-xl border border-slate-200/80 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 shadow-sm dark:shadow-none'
+              : 'rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 shadow-sm'
+          }
+        >
+          <div className="flex flex-wrap items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400 mb-3">
+            <Filter className="h-3.5 w-3.5" />
             Filters
+            {isSuperadmin && (
+              <span className="ml-auto font-normal normal-case text-[11px] text-slate-400 dark:text-slate-500 max-w-md text-right leading-snug">
+                Payroll month + FY first, then org or search.
+              </span>
+            )}
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-3">
-            <div className="lg:col-span-2">
-              <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Search</label>
-              <div className="relative mt-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Name or employee number…"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500"
-                />
+          {isSuperadmin ? (
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Find people</label>
+                <div className="relative mt-1.5">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Name or employee number…"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    className="w-full pl-9 pr-2.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                <div className="rounded-lg border border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/25 p-3 space-y-2.5">
+                  <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                    <CalendarRange className="h-3.5 w-3.5 shrink-0" />
+                    Payroll context
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    <div className="sm:col-span-3">
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Financial year</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 2025 or 2025-2026"
+                        value={financialYear}
+                        onChange={(e) => setFinancialYear(e.target.value)}
+                        className={`mt-1 ${inputClass}`}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Payroll month</label>
+                      <select
+                        value={month}
+                        onChange={(e) => setMonth(parseInt(e.target.value, 10))}
+                        className={`mt-1 ${inputClass}`}
+                      >
+                        {Array.from({ length: 12 }, (_, i) => (
+                          <option key={i + 1} value={i + 1}>
+                            {new Date(0, i).toLocaleString('default', { month: 'long' })}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Year</label>
+                      <select
+                        value={year}
+                        onChange={(e) => setYear(parseInt(e.target.value, 10))}
+                        className={`mt-1 ${inputClass}`}
+                      >
+                        {yearOptions.map((y) => (
+                          <option key={y} value={y}>
+                            {y}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+                <div className="rounded-xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900/40 p-4 space-y-3">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                    <Building2 className="h-3.5 w-3.5" />
+                    Organization
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[11px] font-medium text-slate-500 flex items-center gap-1">
+                        <Layers className="h-3.5 w-3.5" />
+                        Division
+                      </label>
+                      <select
+                        value={divisionId}
+                        onChange={(e) => {
+                          setDivisionId(e.target.value);
+                          setDepartmentId('');
+                        }}
+                        className={`mt-1 ${inputClass}`}
+                      >
+                        <option value="">All divisions</option>
+                        {divisions.map((d) => (
+                          <option key={d._id} value={d._id}>
+                            {d.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs font-medium text-slate-500 flex items-center gap-1">
+                        <Building2 className="h-3.5 w-3.5" />
+                        Department
+                      </label>
+                      <select
+                        value={departmentId}
+                        onChange={(e) => setDepartmentId(e.target.value)}
+                        className={`mt-1 ${inputClass}`}
+                      >
+                        <option value="">All departments</option>
+                        {departments.map((d) => (
+                          <option key={d._id} value={d._id}>
+                            {d.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
-            <div>
-              <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400 flex items-center gap-1">
-                <CalendarRange className="h-3.5 w-3.5" />
-                Financial year
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. 2025 or 2025-2026"
-                value={financialYear}
-                onChange={(e) => setFinancialYear(e.target.value)}
-                className="mt-1 w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-sm"
-              />
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+              <div className="lg:col-span-2">
+                <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Search</label>
+                <div className="relative mt-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Name or employee number…"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                  <CalendarRange className="h-3.5 w-3.5" />
+                  Financial year
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. 2025 or 2025-2026"
+                  value={financialYear}
+                  onChange={(e) => setFinancialYear(e.target.value)}
+                  className="mt-1 w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] font-medium text-slate-500">Payroll month</label>
+                <select
+                  value={month}
+                  onChange={(e) => setMonth(parseInt(e.target.value, 10))}
+                  className="mt-1 w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-sm"
+                >
+                  {Array.from({ length: 12 }, (_, i) => (
+                    <option key={i + 1} value={i + 1}>
+                      {new Date(0, i).toLocaleString('default', { month: 'long' })}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-[11px] font-medium text-slate-500">Year</label>
+                <select
+                  value={year}
+                  onChange={(e) => setYear(parseInt(e.target.value, 10))}
+                  className="mt-1 w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-sm"
+                >
+                  {yearOptions.map((y) => (
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-[11px] font-medium text-slate-500 flex items-center gap-1">
+                  <Layers className="h-3.5 w-3.5" />
+                  Division
+                </label>
+                <select
+                  value={divisionId}
+                  onChange={(e) => {
+                    setDivisionId(e.target.value);
+                    setDepartmentId('');
+                  }}
+                  className="mt-1 w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-sm"
+                >
+                  <option value="">All divisions</option>
+                  {divisions.map((d) => (
+                    <option key={d._id} value={d._id}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-[11px] font-medium text-slate-500 flex items-center gap-1">
+                  <Building2 className="h-3.5 w-3.5" />
+                  Department
+                </label>
+                <select
+                  value={departmentId}
+                  onChange={(e) => setDepartmentId(e.target.value)}
+                  className="mt-1 w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-sm"
+                >
+                  <option value="">All departments</option>
+                  {departments.map((d) => (
+                    <option key={d._id} value={d._id}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
-            <div>
-              <label className="text-[11px] font-medium text-slate-500">Payroll month</label>
-              <select
-                value={month}
-                onChange={(e) => setMonth(parseInt(e.target.value, 10))}
-                className="mt-1 w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-sm"
-              >
-                {Array.from({ length: 12 }, (_, i) => (
-                  <option key={i + 1} value={i + 1}>
-                    {new Date(0, i).toLocaleString('default', { month: 'long' })}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="text-[11px] font-medium text-slate-500">Year</label>
-              <select
-                value={year}
-                onChange={(e) => setYear(parseInt(e.target.value, 10))}
-                className="mt-1 w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-sm"
-              >
-                {yearOptions.map((y) => (
-                  <option key={y} value={y}>
-                    {y}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="text-[11px] font-medium text-slate-500 flex items-center gap-1">
-                <Layers className="h-3.5 w-3.5" />
-                Division
-              </label>
-              <select
-                value={divisionId}
-                onChange={(e) => {
-                  setDivisionId(e.target.value);
-                  setDepartmentId('');
-                }}
-                className="mt-1 w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-sm"
-              >
-                <option value="">All divisions</option>
-                {divisions.map((d) => (
-                  <option key={d._id} value={d._id}>
-                    {d.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="text-[11px] font-medium text-slate-500 flex items-center gap-1">
-                <Building2 className="h-3.5 w-3.5" />
-                Department
-              </label>
-              <select
-                value={departmentId}
-                onChange={(e) => setDepartmentId(e.target.value)}
-                className="mt-1 w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-sm"
-              >
-                <option value="">All departments</option>
-                {departments.map((d) => (
-                  <option key={d._id} value={d._id}>
-                    {d.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
+          )}
         </div>
 
-        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm overflow-hidden">
+        <div
+          className={
+            isSuperadmin
+              ? 'rounded-xl border border-slate-200/80 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm dark:shadow-none overflow-hidden'
+              : 'rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm overflow-hidden'
+          }
+        >
+          {isSuperadmin && (
+            <div className="flex flex-wrap items-start sm:items-center justify-between gap-2 px-3 sm:px-4 py-2.5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/40">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-slate-800 dark:text-slate-100">Employee register</p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 max-w-xl leading-snug">
+                  Balances use the year snapshot when FY is set. Expand a row for monthly credits and apply ceiling.
+                </p>
+              </div>
+              {!loading && (
+                <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                  <span className="inline-flex items-center rounded-md bg-blue-100 dark:bg-blue-950/60 px-2 py-0.5 text-[11px] font-medium tabular-nums text-blue-900 dark:text-blue-100">
+                    {pagination.total} employee{pagination.total === 1 ? '' : 's'}
+                  </span>
+                  {pagination.pages > 1 && (
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
+                      {page}/{pagination.pages}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className={`w-full ${isSuperadmin ? 'text-xs' : 'text-sm'}`}>
               <thead>
-                <tr className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700">
-                  <th className="w-10 py-3 px-2" aria-label="Expand" />
-                  <th className="text-left py-3 px-4 font-semibold text-slate-600 dark:text-slate-300">Employee</th>
-                  <th className="text-left py-3 px-4 font-semibold text-slate-600 dark:text-slate-300 hidden md:table-cell">
+                <tr
+                  className={
+                    isSuperadmin
+                      ? 'bg-slate-100/95 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700'
+                      : 'bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700'
+                  }
+                >
+                  <th className={`w-9 ${isSuperadmin ? 'py-2 px-1.5' : 'py-3 px-2'}`} aria-label="Expand" />
+                  <th
+                    className={`text-left font-medium text-slate-600 dark:text-slate-300 ${isSuperadmin ? 'py-2 px-3' : 'py-3 px-4'}`}
+                  >
+                    Employee
+                  </th>
+                  <th
+                    className={`text-left font-medium text-slate-600 dark:text-slate-300 hidden md:table-cell ${isSuperadmin ? 'py-2 px-3' : 'py-3 px-4'}`}
+                  >
                     Org
                   </th>
-                  <th className="text-right py-3 px-3 font-semibold text-slate-600 dark:text-slate-300">CL</th>
-                  <th className="text-right py-3 px-3 font-semibold text-slate-600 dark:text-slate-300">EL</th>
-                  <th className="text-right py-3 px-3 font-semibold text-slate-600 dark:text-slate-300">CCL</th>
-                  <th className="text-right py-3 px-3 font-semibold text-slate-600 dark:text-slate-300 hidden sm:table-cell">
+                  <th
+                    className={`text-right font-medium text-slate-600 dark:text-slate-300 ${isSuperadmin ? 'py-2 px-2' : 'py-3 px-3'}`}
+                    title="Casual leave balance (FY snapshot when set)"
+                  >
+                    CL
+                  </th>
+                  <th
+                    className={`text-right font-medium text-slate-600 dark:text-slate-300 ${isSuperadmin ? 'py-2 px-2' : 'py-3 px-3'}`}
+                    title="Earned leave balance"
+                  >
+                    EL
+                  </th>
+                  <th
+                    className={`text-right font-medium text-slate-600 dark:text-slate-300 ${isSuperadmin ? 'py-2 px-2' : 'py-3 px-3'}`}
+                    title="Compensatory / CCL balance"
+                  >
+                    CCL
+                  </th>
+                  <th
+                    className={`text-right font-medium text-slate-600 dark:text-slate-300 hidden sm:table-cell ${isSuperadmin ? 'py-2 px-2' : 'py-3 px-3'}`}
+                  >
                     Total
                   </th>
-                  <th className="text-right py-3 px-3 font-semibold text-slate-600 dark:text-slate-300 hidden lg:table-cell">
+                  <th
+                    className={`text-right font-medium text-slate-600 dark:text-slate-300 hidden lg:table-cell ${isSuperadmin ? 'py-2 px-2' : 'py-3 px-3'}`}
+                  >
                     Txns
                   </th>
                 </tr>
@@ -473,14 +817,14 @@ export default function LeaveRegisterPage() {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={8} className="py-16 text-center text-slate-500">
-                      <Loader2 className="h-8 w-8 animate-spin mx-auto text-indigo-500" />
-                      <p className="mt-2 text-sm">Loading register…</p>
+                    <td colSpan={8} className="py-12 text-center text-slate-500">
+                      <Loader2 className="h-7 w-7 animate-spin mx-auto text-indigo-500" />
+                      <p className="mt-2 text-xs">Loading register…</p>
                     </td>
                   </tr>
                 ) : rows.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="py-16 text-center text-slate-500 dark:text-slate-400">
+                    <td colSpan={8} className="py-12 text-center text-slate-500 dark:text-slate-400 text-xs">
                       No employees match your filters.
                     </td>
                   </tr>
@@ -505,57 +849,81 @@ export default function LeaveRegisterPage() {
                             toggleRowExpand(idStr);
                           }
                         }}
-                        className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50/80 dark:hover:bg-slate-800/40 cursor-pointer"
+                        className={
+                          isSuperadmin
+                            ? 'border-b border-slate-100 dark:border-slate-800/90 hover:bg-blue-50/40 dark:hover:bg-slate-800/50 cursor-pointer transition-colors'
+                            : 'border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50/80 dark:hover:bg-slate-800/40 cursor-pointer'
+                        }
                       >
-                        <td className="py-3 px-2 text-slate-400 align-middle">
+                        <td
+                          className={`text-slate-400 align-middle ${isSuperadmin ? 'py-2 px-1.5' : 'py-3 px-2'}`}
+                        >
                           {idStr ? (
                             <ChevronRight
-                              className={`h-4 w-4 transition-transform ${expanded ? 'rotate-90' : ''}`}
+                              className={`${isSuperadmin ? 'h-3.5 w-3.5' : 'h-4 w-4'} transition-transform ${expanded ? 'rotate-90' : ''}`}
                             />
                           ) : null}
                         </td>
-                        <td className="py-3 px-4">
+                        <td className={isSuperadmin ? 'py-2 px-3' : 'py-3 px-4'}>
                           <div className="flex items-center gap-2">
-                            <div className="h-9 w-9 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center text-indigo-700 dark:text-indigo-300">
-                              <User className="h-4 w-4" />
+                            <div
+                              className={
+                                isSuperadmin
+                                  ? 'h-8 w-8 rounded-lg bg-blue-100 dark:bg-blue-950/50 flex items-center justify-center text-blue-700 dark:text-blue-300'
+                                  : 'h-9 w-9 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center text-indigo-700 dark:text-indigo-300'
+                              }
+                            >
+                              <User className={isSuperadmin ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
                             </div>
-                            <div>
-                              <p className="font-medium text-slate-900 dark:text-white">
+                            <div className="min-w-0">
+                              <p className="font-medium text-slate-900 dark:text-white text-sm leading-tight">
                                 {row.employee?.name || '—'}
                               </p>
-                              <p className="text-xs text-slate-500">
+                              <p className="text-[11px] text-slate-500 leading-snug">
                                 {row.employee?.empNo || '—'}
                                 {row.employee?.designation ? ` · ${row.employee.designation}` : ''}
                               </p>
                               {row.yearSnapshot?.financialYear ? (
-                                <p className="text-[10px] text-slate-400 mt-0.5">
-                                  FY {row.yearSnapshot.financialYear}: CL / CCL from year register
+                                <p className="text-[10px] text-slate-400 mt-0.5 leading-snug">
+                                  FY {row.yearSnapshot.financialYear} · year register
                                 </p>
                               ) : !financialYear.trim() ? (
-                                <p className="text-[10px] text-amber-600/90 dark:text-amber-400/90 mt-0.5">
-                                  Set financial year to load year register snapshot
+                                <p className="text-[10px] text-amber-600/90 dark:text-amber-400/90 mt-0.5 leading-snug">
+                                  Set FY for year snapshot
                                 </p>
                               ) : null}
                             </div>
                           </div>
                         </td>
-                        <td className="py-3 px-4 hidden md:table-cell text-slate-600 dark:text-slate-400 text-xs">
+                        <td
+                          className={`hidden md:table-cell text-slate-600 dark:text-slate-400 ${isSuperadmin ? 'py-2 px-3 text-[11px]' : 'py-3 px-4 text-xs'}`}
+                        >
                           <div>{row.employee?.department || '—'}</div>
                           <div className="text-slate-400">{row.employee?.division || ''}</div>
                         </td>
-                        <td className="py-3 px-3 text-right font-mono tabular-nums">
+                        <td
+                          className={`text-right font-mono tabular-nums ${isSuperadmin ? 'py-2 px-2' : 'py-3 px-3'}`}
+                        >
                           {formatNum(bal.cl)}
                         </td>
-                        <td className="py-3 px-3 text-right font-mono tabular-nums">
+                        <td
+                          className={`text-right font-mono tabular-nums ${isSuperadmin ? 'py-2 px-2' : 'py-3 px-3'}`}
+                        >
                           {formatNum(bal.el)}
                         </td>
-                        <td className="py-3 px-3 text-right font-mono tabular-nums">
+                        <td
+                          className={`text-right font-mono tabular-nums ${isSuperadmin ? 'py-2 px-2' : 'py-3 px-3'}`}
+                        >
                           {formatNum(bal.ccl)}
                         </td>
-                        <td className="py-3 px-3 text-right font-mono tabular-nums hidden sm:table-cell font-semibold text-slate-800 dark:text-slate-200">
+                        <td
+                          className={`text-right font-mono tabular-nums hidden sm:table-cell font-medium text-slate-800 dark:text-slate-200 ${isSuperadmin ? 'py-2 px-2' : 'py-3 px-3'}`}
+                        >
                           {formatNum(bal.total)}
                         </td>
-                        <td className="py-3 px-3 text-right text-slate-500 hidden lg:table-cell">
+                        <td
+                          className={`text-right text-slate-500 hidden lg:table-cell ${isSuperadmin ? 'py-2 px-2' : 'py-3 px-3'}`}
+                        >
                           {row.transactionCount ?? 0}
                         </td>
                       </tr>
@@ -566,28 +934,40 @@ export default function LeaveRegisterPage() {
                           key={`${idStr}-expand`}
                           className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/50"
                         >
-                          <td colSpan={8} className="px-4 py-4">
+                          <td colSpan={8} className={isSuperadmin ? 'px-3 py-3' : 'px-4 py-4'}>
                             {rowDetailLoading[idStr] && !detailCacheRef.current.has(idStr) ? (
-                              <div className="flex items-center gap-2 text-sm text-slate-500">
-                                <Loader2 className="h-4 w-4 animate-spin text-indigo-500" />
+                              <div className="flex items-center gap-2 text-xs text-slate-500">
+                                <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-500" />
                                 Loading months…
                               </div>
                             ) : months.length === 0 ? (
-                              <p className="text-sm text-slate-500">
+                              <p className="text-xs text-slate-500">
                                 No payroll months in this view. Adjust filters or financial year.
                               </p>
                             ) : (
-                              <div className="space-y-2" onClick={(e) => e.stopPropagation()}>
-                                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                                  Payroll months — click a row for transactions
+                              <div className="space-y-1.5" onClick={(e) => e.stopPropagation()}>
+                                <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                                  Payroll months · click a month for transactions
                                 </p>
-                                <p className="text-[10px] text-slate-400">
-                                  The period <strong>ceiling</strong> is min(scheduled CL+CCL[+EL per policy], policy cap).{' '}
-                                  Both <strong>locked</strong> (pending / in-approval) and <strong>approved</strong> days{' '}
-                                  deduct from that ceiling — apply is blocked once locked + approved reaches the ceiling.
-                                </p>
-                                <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/60">
-                                  <table className="w-full min-w-[720px] text-[11px] border-collapse">
+                                {isSuperadmin ? (
+                                  <div className="flex gap-2 rounded-lg border border-blue-200/70 dark:border-blue-900/50 bg-blue-50/90 dark:bg-blue-950/25 px-2.5 py-2 text-[10px] leading-snug text-blue-950 dark:text-blue-100">
+                                    <Info className="h-3.5 w-3.5 shrink-0 text-blue-600 dark:text-blue-400 mt-0.5" />
+                                    <p>
+                                      <span className="font-medium">Apply ceiling</span> = min(scheduled CL+CCL[+EL per
+                                      policy], policy cap). Locked and approved days both count toward it.
+                                    </p>
+                                  </div>
+                                ) : (
+                                  <p className="text-[10px] text-slate-400">
+                                    The period <strong>ceiling</strong> is min(scheduled CL+CCL[+EL per policy], policy cap).{' '}
+                                    Both <strong>locked</strong> (pending / in-approval) and <strong>approved</strong> days{' '}
+                                    deduct from that ceiling — apply is blocked once locked + approved reaches the ceiling.
+                                  </p>
+                                )}
+                                <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/60">
+                                  <table
+                                    className={`w-full min-w-[720px] border-collapse ${isSuperadmin ? 'text-[10px]' : 'text-[11px]'}`}
+                                  >
                                     <thead>
                                       <tr className="bg-slate-100/90 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300">
                                         <th
@@ -691,6 +1071,36 @@ export default function LeaveRegisterPage() {
                                                 · Txns {m.transactionCount ?? 0}
                                               </div>
                                             </div>
+                                            {canEditMonths && financialYear.trim() ? (
+                                              <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setSlotEditModal({
+                                                    open: true,
+                                                    employeeId: idStr,
+                                                    employeeName:
+                                                      row.employee?.name || row.employee?.empNo || 'Employee',
+                                                    payrollCycleMonth: m.month,
+                                                    payrollCycleYear: m.year,
+                                                    label: m.label || `${m.month}/${m.year}`,
+                                                    clCredits:
+                                                      m.scheduledCl != null ? String(m.scheduledCl) : '',
+                                                    compensatoryOffs:
+                                                      m.scheduledCco != null ? String(m.scheduledCco) : '',
+                                                    elCredits:
+                                                      m.scheduledEl != null ? String(m.scheduledEl) : '',
+                                                    lockedCredits:
+                                                      m.lockedCredits != null ? String(m.lockedCredits) : '',
+                                                    reason: '',
+                                                    saving: false,
+                                                  });
+                                                }}
+                                                className="mt-1 text-left text-[10px] font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+                                              >
+                                                Edit scheduled pool (admin)…
+                                              </button>
+                                            ) : null}
                                           </td>
                                           <td className="text-right px-1 py-1.5 border-l border-slate-200 dark:border-slate-600">
                                             {formatNullableNum(m.cl?.credited)}
@@ -711,7 +1121,9 @@ export default function LeaveRegisterPage() {
                                             <div>{formatNullableNum(m.monthlyApplyLimit)}</div>
                                             {m.monthlyApplyRemaining != null &&
                                               m.monthlyApplyLimit != null && (
-                                                <div className="text-[10px] font-normal text-slate-500 dark:text-slate-400 mt-0.5 space-y-0.5">
+                                                <div
+                                                  className={`font-normal text-slate-500 dark:text-slate-400 mt-0.5 space-y-0.5 ${isSuperadmin ? 'text-[9px]' : 'text-[10px]'}`}
+                                                >
                                                   <div>Left {formatNum(m.monthlyApplyRemaining)}</div>
                                                   {m.capConsumedDays != null && (
                                                     <div className="text-slate-400">
@@ -741,28 +1153,42 @@ export default function LeaveRegisterPage() {
           </div>
 
           {!loading && pagination.pages > 1 && (
-            <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
-              <p className="text-xs text-slate-500">
+            <div
+              className={
+                isSuperadmin
+                  ? 'flex items-center justify-between px-3 sm:px-4 py-2 border-t border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/40'
+                  : 'flex items-center justify-between px-4 py-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30'
+              }
+            >
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
                 Page {page} of {pagination.pages} · {pagination.total} employees
               </p>
-              <div className="flex gap-2">
+              <div className="flex gap-1.5">
                 <button
                   type="button"
                   disabled={page <= 1}
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 text-xs font-medium disabled:opacity-40"
+                  className={
+                    isSuperadmin
+                      ? 'inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-[11px] font-medium text-slate-700 dark:text-slate-200 disabled:opacity-40 hover:bg-slate-50 dark:hover:bg-slate-800'
+                      : 'inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 text-xs font-medium disabled:opacity-40'
+                  }
                 >
-                  <ChevronLeft className="h-4 w-4" />
+                  <ChevronLeft className={isSuperadmin ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
                   Prev
                 </button>
                 <button
                   type="button"
                   disabled={page >= pagination.pages}
                   onClick={() => setPage((p) => p + 1)}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 text-xs font-medium disabled:opacity-40"
+                  className={
+                    isSuperadmin
+                      ? 'inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-blue-600 dark:border-blue-500 bg-blue-600 text-white text-[11px] font-medium disabled:opacity-40 hover:bg-blue-700 dark:hover:bg-blue-600'
+                      : 'inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 text-xs font-medium disabled:opacity-40'
+                  }
                 >
                   Next
-                  <ChevronRight className="h-4 w-4" />
+                  <ChevronRight className={isSuperadmin ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
                 </button>
               </div>
             </div>
@@ -779,61 +1205,246 @@ export default function LeaveRegisterPage() {
           onClick={() => setMonthModal(null)}
         >
           <div
-            className="bg-white dark:bg-slate-900 w-full sm:max-w-2xl sm:rounded-2xl shadow-2xl max-h-[88vh] overflow-hidden flex flex-col border border-slate-200 dark:border-slate-700"
+            className={`bg-white dark:bg-slate-900 w-full sm:max-w-2xl sm:rounded-xl shadow-2xl max-h-[88vh] overflow-hidden flex flex-col border ${
+              isSuperadmin
+                ? 'border-slate-200/80 dark:border-slate-600'
+                : 'border-slate-200 dark:border-slate-700'
+            }`}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-800">
-              <div>
-                <h2 id="month-modal-title" className="text-lg font-bold text-slate-900 dark:text-white">
+            <div
+              className={
+                isSuperadmin
+                  ? 'flex items-center justify-between px-3 sm:px-4 py-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-800/50'
+                  : 'flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-800'
+              }
+            >
+              <div className="min-w-0 pr-2">
+                {isSuperadmin && (
+                  <p className="text-[10px] font-medium uppercase tracking-wide text-blue-600 dark:text-blue-400 mb-0.5">
+                    Month transactions
+                  </p>
+                )}
+                <h2
+                  id="month-modal-title"
+                  className={`font-semibold text-slate-900 dark:text-white ${isSuperadmin ? 'text-base' : 'text-lg font-bold'}`}
+                >
                   {monthModal.label}
                 </h2>
-                <p className="text-sm text-slate-500">
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
                   {monthModal.employeeName} · {monthModal.month}/{monthModal.year}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setMonthModal(null)}
-                className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800"
+                className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 shrink-0"
                 aria-label="Close"
               >
-                <X className="h-5 w-5" />
+                <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="overflow-y-auto flex-1 p-4">
+            <div className={`overflow-y-auto flex-1 ${isSuperadmin ? 'p-3 sm:p-4' : 'p-4 sm:p-5'}`}>
               {monthModal.loading ? (
-                <div className="py-12 flex justify-center">
-                  <Loader2 className="h-10 w-10 animate-spin text-indigo-500" />
+                <div className="py-10 flex justify-center">
+                  <Loader2 className={`animate-spin ${isSuperadmin ? 'h-8 w-8 text-blue-600' : 'h-10 w-10 text-indigo-500'}`} />
                 </div>
               ) : monthModal.transactions.length === 0 ? (
-                <p className="text-sm text-slate-500 text-center py-8">No transactions for this month.</p>
+                <p className="text-xs text-slate-500 text-center py-6">No transactions for this month.</p>
               ) : (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-slate-500 text-left border-b border-slate-200 dark:border-slate-700">
-                      <th className="py-2 pr-2">Type</th>
-                      <th className="py-2 pr-2">Leave</th>
-                      <th className="py-2 text-right">Days</th>
-                      <th className="py-2 pl-2 hidden sm:table-cell">Reason</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {monthModal.transactions.map((tx: any) => (
+                <div
+                  className={
+                    isSuperadmin ? 'rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden' : ''
+                  }
+                >
+                  <table className={`w-full ${isSuperadmin ? 'text-xs' : 'text-sm'}`}>
+                    <thead>
                       <tr
-                        key={tx._id || `${tx.createdAt}-${tx.days}-${tx.transactionType}`}
-                        className="border-b border-slate-100 dark:border-slate-800/80"
+                        className={
+                          isSuperadmin
+                            ? 'text-left bg-slate-50 dark:bg-slate-800/90 text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700'
+                            : 'text-slate-500 text-left border-b border-slate-200 dark:border-slate-700'
+                        }
                       >
-                        <td className="py-2 pr-2">{tx.transactionType}</td>
-                        <td className="py-2 pr-2">{tx.leaveType}</td>
-                        <td className="py-2 text-right font-mono tabular-nums">{formatNum(tx.days)}</td>
-                        <td className="py-2 pl-2 text-slate-500 hidden sm:table-cell max-w-[220px] truncate">
-                          {tx.reason || '—'}
-                        </td>
+                        <th className={`font-medium ${isSuperadmin ? 'py-1.5 px-2' : 'py-2.5 px-3 font-semibold'}`}>
+                          Type
+                        </th>
+                        <th className={`font-medium ${isSuperadmin ? 'py-1.5 px-2' : 'py-2.5 px-3 font-semibold'}`}>
+                          Leave
+                        </th>
+                        <th
+                          className={`font-medium text-right ${isSuperadmin ? 'py-1.5 px-2' : 'py-2.5 px-3 font-semibold'}`}
+                        >
+                          Days
+                        </th>
+                        <th
+                          className={`hidden sm:table-cell font-medium ${isSuperadmin ? 'py-1.5 px-2' : 'py-2.5 px-3 font-semibold'}`}
+                        >
+                          Reason
+                        </th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {monthModal.transactions.map((tx: any, idx: number) => (
+                        <tr
+                          key={tx._id || `${tx.createdAt}-${tx.days}-${tx.transactionType}`}
+                          className={
+                            isSuperadmin
+                              ? idx % 2 === 0
+                                ? 'border-b border-slate-100 dark:border-slate-800/80 bg-white dark:bg-slate-900'
+                                : 'border-b border-slate-100 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-800/20'
+                              : 'border-b border-slate-100 dark:border-slate-800/80'
+                          }
+                        >
+                          <td className={isSuperadmin ? 'py-1.5 px-2' : 'py-2.5 px-3'}>{tx.transactionType}</td>
+                          <td className={isSuperadmin ? 'py-1.5 px-2' : 'py-2.5 px-3'}>{tx.leaveType}</td>
+                          <td
+                            className={`text-right font-mono tabular-nums ${isSuperadmin ? 'py-1.5 px-2 font-medium' : 'py-2.5 px-3 font-medium'}`}
+                          >
+                            {formatNum(tx.days)}
+                          </td>
+                          <td
+                            className={`text-slate-500 dark:text-slate-400 hidden sm:table-cell max-w-[220px] truncate ${isSuperadmin ? 'py-1.5 px-2' : 'py-2.5 px-3'}`}
+                          >
+                            {tx.reason || '—'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {slotEditModal?.open && (
+        <div
+          className="fixed inset-0 z-[201] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/50 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="slot-edit-title"
+          onClick={() => !slotEditModal.saving && setSlotEditModal(null)}
+        >
+          <div
+            className="bg-white dark:bg-slate-900 w-full sm:max-w-md sm:rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800">
+              <div>
+                <h2 id="slot-edit-title" className="text-sm font-semibold text-slate-900 dark:text-white">
+                  Edit scheduled pool
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {slotEditModal.employeeName} · {slotEditModal.label} · FY {financialYear.trim() || '—'}
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={slotEditModal.saving}
+                onClick={() => setSlotEditModal(null)}
+                className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50"
+                aria-label="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-4 space-y-3 text-sm">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
+                Updates <strong>scheduled</strong> credits on the FY month slot (initial sync / corrections).
+                Apply-cap consumption (locked/approved) is refreshed from leave rows after save; use{' '}
+                <strong>Sync apply only</strong> if you only fixed applications.
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="col-span-2 text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                  Scheduled CL
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={slotEditModal.clCredits}
+                    onChange={(e) =>
+                      setSlotEditModal((m) => (m ? { ...m, clCredits: e.target.value } : null))
+                    }
+                    className="mt-0.5 w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm"
+                  />
+                </label>
+                <label className="col-span-2 text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                  Scheduled CCL (pool)
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={slotEditModal.compensatoryOffs}
+                    onChange={(e) =>
+                      setSlotEditModal((m) => (m ? { ...m, compensatoryOffs: e.target.value } : null))
+                    }
+                    className="mt-0.5 w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm"
+                  />
+                </label>
+                <label className="col-span-2 text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                  Scheduled EL
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={slotEditModal.elCredits}
+                    onChange={(e) =>
+                      setSlotEditModal((m) => (m ? { ...m, elCredits: e.target.value } : null))
+                    }
+                    className="mt-0.5 w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm"
+                  />
+                </label>
+                <label className="col-span-2 text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                  Policy lock (optional)
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={slotEditModal.lockedCredits}
+                    onChange={(e) =>
+                      setSlotEditModal((m) => (m ? { ...m, lockedCredits: e.target.value } : null))
+                    }
+                    className="mt-0.5 w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm"
+                  />
+                </label>
+              </div>
+              <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                Reason (audit) *
+                <textarea
+                  value={slotEditModal.reason}
+                  onChange={(e) =>
+                    setSlotEditModal((m) => (m ? { ...m, reason: e.target.value } : null))
+                  }
+                  rows={2}
+                  className="mt-0.5 w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm"
+                  placeholder="Why are you changing this month?"
+                />
+              </label>
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button
+                  type="button"
+                  disabled={slotEditModal.saving}
+                  onClick={() => void saveSlotEdit()}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-blue-600 text-white px-3 py-2 text-xs font-semibold hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {slotEditModal.saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                  Save slot
+                </button>
+                <button
+                  type="button"
+                  disabled={slotEditModal.saving}
+                  onClick={() => void syncSlotApplyOnly()}
+                  className="inline-flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-600 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800"
+                >
+                  Sync apply only
+                </button>
+                <button
+                  type="button"
+                  disabled={slotEditModal.saving}
+                  onClick={() => setSlotEditModal(null)}
+                  className="inline-flex items-center justify-center rounded-lg px-3 py-2 text-xs text-slate-500"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
         </div>

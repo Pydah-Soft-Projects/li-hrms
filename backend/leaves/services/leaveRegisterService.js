@@ -5,10 +5,12 @@ const Leave = require('../model/Leave');
 const LeaveSettings = require('../model/LeaveSettings');
 const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
 const { extractISTComponents, createISTDate } = require('../../shared/utils/dateUtils');
+const LeaveRegisterYear = require('../model/LeaveRegisterYear');
 const {
     CAP_COUNT_STATUSES,
     computeScheduledPoolApplyCeiling,
     addLeaveCapToMonthlyBuckets,
+    finalizePendingLockedDisplayByPool,
 } = require('./monthlyApplicationCapService');
 
 /**
@@ -612,13 +614,17 @@ class LeaveRegisterService {
             // Pending / in-flight leaves by payroll month (FY start → selected month).
             // "Locked" = not final `approved`, still counts toward monthly apply cap (same rules as monthlyApplicationCapService).
             const emptyCapBucket = () => ({
-                pendingCLDays: 0,
-                pendingCclDays: 0,
-                pendingElDays: 0,
                 pendingCapDaysInFlight: 0,
                 capConsumedDays: 0,
                 capApprovedDays: 0,
                 capLockedDays: 0,
+                /** In-flight days by application leave type (before pool hierarchy → Lk columns). */
+                lockedClAppDays: 0,
+                lockedCclAppDays: 0,
+                lockedElAppDays: 0,
+                pendingLockedCL: 0,
+                pendingLockedCCL: 0,
+                pendingLockedEL: 0,
             });
             let capPolicy = {};
             try {
@@ -664,6 +670,8 @@ class LeaveRegisterService {
                     ? new Date(monthPayrollWindows[monthPayrollWindows.length - 1].end).getTime()
                     : null;
 
+            const fyForSlots = filters.financialYear && String(filters.financialYear).trim();
+
             for (const entry of groupedData) {
                 const empId = entry.employee?.id || entry.employee?._id;
                 if (!empId) continue;
@@ -688,24 +696,47 @@ class LeaveRegisterService {
                     }
                 }
 
+                let yearDocLean = null;
+                if (fyForSlots) {
+                    yearDocLean = await LeaveRegisterYear.findOne({
+                        employeeId: empId,
+                        financialYear: fyForSlots,
+                    })
+                        .select('months')
+                        .lean();
+                }
+
                 for (const sub of entry.monthlySubLedgers || []) {
                     ensureMonthlySubLedgerShape(sub);
                     const key = `${sub.year}-${sub.month}`;
                     const bucket = pendingByMonthKey[key] || emptyCapBucket();
-                    const pendingCLDays = bucket.pendingCLDays;
                     const pendingCapDaysInFlight = bucket.pendingCapDaysInFlight;
-                    sub.casualLeave.pendingThisMonth = pendingCLDays;
+                    const lockedClApp = Number(bucket.lockedClAppDays) || 0;
+                    const slot =
+                        yearDocLean?.months?.find(
+                            (m) =>
+                                Number(m.payrollCycleMonth) === Number(sub.month) &&
+                                Number(m.payrollCycleYear) === Number(sub.year)
+                        ) || null;
+                    if (slot && finalizePendingLockedDisplayByPool(bucket, slot, capPolicy)) {
+                        /* pendingLocked* set on bucket */
+                    } else {
+                        bucket.pendingLockedCL = lockedClApp;
+                        bucket.pendingLockedCCL = Number(bucket.lockedCclAppDays) || 0;
+                        bucket.pendingLockedEL = Number(bucket.lockedElAppDays) || 0;
+                    }
+                    sub.casualLeave.pendingThisMonth = lockedClApp;
                     sub.pendingAllDays = pendingCapDaysInFlight;
-                    sub.pendingLockedCL = pendingCLDays;
-                    sub.pendingLockedCCL = bucket.pendingCclDays;
-                    sub.pendingLockedEL = bucket.pendingElDays;
+                    sub.pendingLockedCL = bucket.pendingLockedCL;
+                    sub.pendingLockedCCL = bucket.pendingLockedCCL;
+                    sub.pendingLockedEL = bucket.pendingLockedEL;
                     sub.capConsumedDays = bucket.capConsumedDays;
                     sub.capApprovedDays = bucket.capApprovedDays;
                     sub.capLockedDays = bucket.capLockedDays;
                     const clBal = Number(sub.casualLeave?.balance) || 0;
                     const cclBal = Number(sub.compensatoryOff?.balance) || 0;
                     const elBal = Number(sub.earnedLeave?.balance) || 0;
-                    sub.casualLeave.allowedRemaining = Math.max(0, clBal - pendingCLDays);
+                    sub.casualLeave.allowedRemaining = Math.max(0, clBal - lockedClApp);
                     sub.monthlyAllowedLimit = null;
                     sub.monthlyLimitPooled = null;
                     sub.casualLeave.monthlyCLLimit = null;

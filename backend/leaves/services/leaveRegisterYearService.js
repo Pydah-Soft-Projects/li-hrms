@@ -3,6 +3,7 @@ const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
 const dateCycleService = require('./dateCycleService');
 const { extractISTComponents, createISTDate } = require('../../shared/utils/dateUtils');
 const { computeScheduledPoolApplyCeiling } = require('./monthlyApplicationCapService');
+const leaveRegisterYearMonthlyApplyService = require('./leaveRegisterYearMonthlyApplyService');
 
 /** YYYY-MM-DD in Asia/Kolkata (same basis as payroll cycles). */
 function istDateStr(d) {
@@ -309,6 +310,153 @@ async function findByEmployeeAndFY(employeeId, financialYearName) {
   return LeaveRegisterYear.findOne({ employeeId, financialYear: financialYearName }).lean();
 }
 
+function numOrUndef(v) {
+  if (v === '' || v === null || v === undefined) return undefined;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+/**
+ * HR / sub-admin / super-admin: adjust scheduled pool fields on one payroll month slot.
+ * Recomputes monthlyApplyCeiling, syncs monthly apply consumption from Leave rows, appends FY audit row.
+ */
+async function patchMonthSlotScheduledCredits({
+  employeeId,
+  financialYear,
+  payrollCycleMonth,
+  payrollCycleYear,
+  patch,
+  reason,
+  actorUserId,
+}) {
+  const fy = String(financialYear || '').trim();
+  if (!fy) throw new Error('financialYear is required');
+  const reasonStr = String(reason || '').trim();
+  if (!reasonStr) throw new Error('reason is required');
+
+  const pm = Number(payrollCycleMonth);
+  const py = Number(payrollCycleYear);
+  if (!Number.isFinite(pm) || !Number.isFinite(py)) {
+    throw new Error('payrollCycleMonth and payrollCycleYear are required');
+  }
+
+  const doc = await LeaveRegisterYear.findOne({ employeeId, financialYear: fy });
+  if (!doc || !Array.isArray(doc.months)) {
+    throw new Error('Leave register year not found');
+  }
+
+  const idx = doc.months.findIndex(
+    (m) => Number(m.payrollCycleMonth) === pm && Number(m.payrollCycleYear) === py
+  );
+  if (idx < 0) throw new Error('Payroll month slot not found for this FY');
+
+  const slot = doc.months[idx];
+  const before = {
+    clCredits: slot.clCredits,
+    compensatoryOffs: slot.compensatoryOffs,
+    elCredits: slot.elCredits,
+    lockedCredits: slot.lockedCredits,
+    monthlyApplyCeiling: slot.monthlyApplyCeiling,
+  };
+
+  const nextCl = numOrUndef(patch.clCredits);
+  const nextCco = numOrUndef(patch.compensatoryOffs);
+  const nextEl = numOrUndef(patch.elCredits);
+  const nextLk = numOrUndef(patch.lockedCredits);
+
+  if (
+    nextCl === undefined &&
+    nextCco === undefined &&
+    nextEl === undefined &&
+    nextLk === undefined
+  ) {
+    throw new Error('At least one field to update is required');
+  }
+
+  if (nextCl !== undefined) slot.clCredits = Math.max(0, nextCl);
+  if (nextCco !== undefined) slot.compensatoryOffs = Math.max(0, nextCco);
+  if (nextEl !== undefined) slot.elCredits = Math.max(0, nextEl);
+  if (nextLk !== undefined) slot.lockedCredits = Math.max(0, nextLk);
+
+  const policy = await LeavePolicySettings.getSettings().catch(() => ({}));
+  const ceilingRaw = computeScheduledPoolApplyCeiling(
+    {
+      clCredits: slot.clCredits,
+      compensatoryOffs: slot.compensatoryOffs,
+      elCredits: slot.elCredits,
+    },
+    policy
+  );
+  if (ceilingRaw != null && Number.isFinite(ceilingRaw)) {
+    slot.monthlyApplyCeiling = Math.max(0, ceilingRaw);
+  }
+
+  const after = {
+    clCredits: slot.clCredits,
+    compensatoryOffs: slot.compensatoryOffs,
+    elCredits: slot.elCredits,
+    lockedCredits: slot.lockedCredits,
+    monthlyApplyCeiling: slot.monthlyApplyCeiling,
+  };
+
+  if (!Array.isArray(doc.yearlyTransactions)) doc.yearlyTransactions = [];
+  doc.yearlyTransactions.push({
+    at: new Date(),
+    transactionKind: 'ADJUSTMENT',
+    leaveType: 'CL',
+    days: 0,
+    reason: `Admin month slot (${pm}/${py}): ${reasonStr}`,
+    payrollMonthIndex: slot.payrollMonthIndex,
+    payPeriodStart: slot.payPeriodStart,
+    payPeriodEnd: slot.payPeriodEnd,
+    meta: {
+      kind: 'SLOT_SCHEDULE_EDIT',
+      actorUserId: actorUserId ? String(actorUserId) : null,
+      before,
+      after,
+    },
+  });
+
+  doc.source = doc.source || 'MANUAL';
+  doc.markModified('months');
+  doc.markModified('yearlyTransactions');
+  await doc.save();
+
+  const anchorDate =
+    slot.payPeriodStart || slot.payPeriodEnd || new Date(py, pm - 1, 15);
+  await leaveRegisterYearMonthlyApplyService.syncStoredMonthApplyFieldsForEmployeeDate(
+    employeeId,
+    anchorDate
+  );
+
+  const fresh = await LeaveRegisterYear.findOne({ employeeId, financialYear: fy }).lean();
+  const slotOut =
+    fresh?.months?.find(
+      (m) => Number(m.payrollCycleMonth) === pm && Number(m.payrollCycleYear) === py
+    ) || null;
+
+  return { ok: true, slot: slotOut, before, after };
+}
+
+/** Recompute denormalized monthly apply fields from Leave rows only (no slot number changes). */
+async function syncMonthApplyOnly({ employeeId, financialYear, payrollCycleMonth, payrollCycleYear }) {
+  const fy = String(financialYear || '').trim();
+  const pm = Number(payrollCycleMonth);
+  const py = Number(payrollCycleYear);
+  const doc = await LeaveRegisterYear.findOne({ employeeId, financialYear: fy }).lean();
+  if (!doc?.months?.length) throw new Error('Leave register year not found');
+  const slot = doc.months.find(
+    (m) => Number(m.payrollCycleMonth) === pm && Number(m.payrollCycleYear) === py
+  );
+  if (!slot) throw new Error('Payroll month slot not found');
+  const anchorDate = slot.payPeriodStart || slot.payPeriodEnd || new Date(py, pm - 1, 15);
+  const sync = await leaveRegisterYearMonthlyApplyService.syncStoredMonthApplyFieldsForEmployeeDate(
+    employeeId,
+    anchorDate
+  );
+  return { ok: sync.ok, sync, anchorDate };
+}
+
 /** True if this FY row was already created by new-hire CL onboarding (idempotent init). */
 async function hasEmployeeOnboardingYear(employeeId, financialYearName) {
   if (!employeeId || !financialYearName) return false;
@@ -336,4 +484,6 @@ module.exports = {
   findByEmployeeAndFY,
   hasEmployeeOnboardingYear,
   getTwelvePayrollCyclesForFY,
+  patchMonthSlotScheduledCredits,
+  syncMonthApplyOnly,
 };
