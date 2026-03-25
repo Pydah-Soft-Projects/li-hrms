@@ -190,6 +190,13 @@ const leaveRegisterSchema = new mongoose.Schema({
         default: null
     },
 
+    // Detailed Limit Snapshots (at time of transaction)
+    monthlyCLLimit: { type: Number, default: 0 },
+    monthlyCCLLimit: { type: Number, default: 0 },
+    monthlyELLimit: { type: Number, default: 0 },
+    monthlyCombinedLimit: { type: Number, default: 0 },
+    pendingLeavesBeforeAction: { type: Number, default: 0 },
+
     // Calculation Breakdown (for auto-generated entries)
     calculationBreakdown: {
         attendanceDays: Number,
@@ -234,7 +241,7 @@ leaveRegisterSchema.index({ createdAt: -1 });
 leaveRegisterSchema.statics.getEmployeeBalance = function (employeeId, leaveType, asOfDate = new Date()) {
     const targetDate = new Date(asOfDate);
 
-    // Find the latest transaction that occurred on or before the target date
+    // Find the latest transaction where the leave period ended on or before the target date
     return this.findOne({
         employeeId,
         leaveType,
@@ -288,7 +295,11 @@ leaveRegisterSchema.statics.getLeaveRegister = function (filters = {}, month = n
     const balanceAsOf = filters.balanceAsOf && (filters.employeeId || filters.empNo) && month != null && year != null;
     const numMonth = month != null ? Number(month) : null;
     const numYear = year != null ? Number(year) : null;
-    if (numMonth != null && numYear != null && !isNaN(numMonth) && !isNaN(numYear)) {
+    
+    // Use financialYear if provided for a yearly ledger view
+    if (filters.financialYear) {
+        query.financialYear = filters.financialYear;
+    } else if (numMonth != null && numYear != null && !isNaN(numMonth) && !isNaN(numYear)) {
         if (balanceAsOf) {
             query.$and = (query.$and || []);
             query.$and.push({
@@ -316,9 +327,8 @@ leaveRegisterSchema.statics.getLeaveRegister = function (filters = {}, month = n
         else query.$or = termCondition.$or;
     }
 
-    const sort = balanceAsOf
-        ? { year: 1, month: 1, createdAt: 1 }
-        : { createdAt: -1 };
+    const sort = { year: 1, month: 1, createdAt: 1 };
+
 
     return this.find(query)
         .populate('employeeId', 'name email')

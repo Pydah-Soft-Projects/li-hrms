@@ -413,28 +413,12 @@ export default function LeavePolicySettingsPage() {
                         <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Carry Forward Policies</h3>
                         
                         <div className="space-y-6">
-                            {/* Casual Leave */}
+                            {/* Casual Leave — year carry configured on Annual CL Reset tab */}
                             <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-4">
-                                <h4 className="font-medium text-slate-900 dark:text-white mb-4">Casual Leave</h4>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <label className="flex items-center gap-2 text-sm">
-                                        <input
-                                            type="checkbox"
-                                            checked={settings.carryForward.casualLeave.enabled}
-                                            onChange={(e) => updateSettings('carryForward.casualLeave.enabled', '', e.target.checked)}
-                                        />
-                                        Enable Carry Forward
-                                    </label>
-                                    
-                                    <label className="flex items-center gap-2 text-sm">
-                                        <input
-                                            type="checkbox"
-                                            checked={settings.carryForward.casualLeave.carryForwardToNextYear}
-                                            onChange={(e) => updateSettings('carryForward.casualLeave.carryForwardToNextYear', '', e.target.checked)}
-                                        />
-                                        Carry to Next Year
-                                    </label>
-                                </div>
+                                <h4 className="font-medium text-slate-900 dark:text-white mb-2">Casual Leave</h4>
+                                <p className="text-sm text-slate-600 dark:text-slate-400">
+                                    CL carry into the new leave year and max carry days are set under <strong>Annual CL Reset</strong>. Monthly scheduled CL rollover is on the main Leave Policy screen (Carry Forward → CL).
+                                </p>
                             </div>
 
                             {/* Earned Leave */}

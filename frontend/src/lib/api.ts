@@ -2776,50 +2776,6 @@ export const api = {
   },
 
   // ==========================================
-  // LEAVE REGISTER
-  // ==========================================
-
-  // Get leave register data (employeeId or empNo for single-employee balance, e.g. CL for apply form; balanceAsOf=true for balance as of that month)
-  getLeaveRegister: async (filters?: { divisionId?: string; departmentId?: string; searchTerm?: string; month?: number; year?: number; employeeId?: string; empNo?: string; balanceAsOf?: boolean; baseDate?: string }) => {
-    const params = new URLSearchParams();
-    if (filters?.divisionId) params.append('divisionId', filters.divisionId);
-    if (filters?.departmentId) params.append('departmentId', filters.departmentId);
-    if (filters?.searchTerm) params.append('searchTerm', filters.searchTerm);
-    if (filters?.month) params.append('month', String(filters.month));
-    if (filters?.year) params.append('year', String(filters.year));
-    if (filters?.employeeId) params.append('employeeId', filters.employeeId);
-    if (filters?.empNo) params.append('empNo', filters.empNo);
-    if (filters?.balanceAsOf) params.append('balanceAsOf', 'true');
-    if (filters?.baseDate) params.append('baseDate', filters.baseDate);
-    const query = params.toString() ? `?${params.toString()}` : '';
-    return apiRequest<any>(`/leaves/register${query}`, { method: 'GET' });
-  },
-
-  // Get employee leave register data
-  getEmployeeRegister: async (employeeId: string) => {
-    return apiRequest<any>(`/leaves/register/employee/${employeeId}`, { method: 'GET' });
-  },
-
-  // Get employee ledger for specific leave type
-  getEmployeeLedger: async (employeeId: string, leaveType: string) => {
-    return apiRequest<any>(`/leaves/register/employee/${employeeId}/ledger/${leaveType}`, { method: 'GET' });
-  },
-
-  // Adjust leave balance (any type: CREDIT, DEBIT, or ADJUSTMENT)
-  adjustLeaveBalance: async (data: {
-    employeeId: string;
-    leaveType: string;
-    amount: number;
-    transactionType: 'CREDIT' | 'DEBIT' | 'ADJUSTMENT';
-    reason: string;
-  }) => {
-    return apiRequest<any>('/leaves/register/adjust', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  },
-
-  // ==========================================
   // EARNED LEAVE (EL)
   // ==========================================
 
@@ -2828,22 +2784,6 @@ export const api = {
     return apiRequest<any>('/leaves/earned/update-all', {
       method: 'POST',
       body: JSON.stringify(payload),
-    });
-  },
-
-  // Adjust CL balance by days (positive = add, negative = subtract)
-  adjustCLBalance: async (data: { employeeId: string; days: number; reason: string }) => {
-    const amount = Math.abs(data.days);
-    const transactionType = data.days >= 0 ? 'CREDIT' : 'DEBIT';
-    return apiRequest<any>('/leaves/register/adjust', {
-      method: 'POST',
-      body: JSON.stringify({
-        employeeId: data.employeeId,
-        leaveType: 'CL',
-        amount,
-        transactionType,
-        reason: data.reason,
-      }),
     });
   },
 
@@ -4182,11 +4122,103 @@ export const api = {
     });
   },
 
+  getLeaveRegisterYear: async (employeeId: string, financialYear: string) => {
+    const q = new URLSearchParams({ financialYear: String(financialYear) });
+    return apiRequest<any>(`/leaves/leave-register-year/${employeeId}?${q}`, { method: 'GET' });
+  },
+
+  /** Stored monthly apply ceiling / consumption for payroll period of fromDate (CL apply dialog). */
+  getLeaveApplyPeriodContext: async (params: {
+    fromDate: string;
+    employeeId?: string;
+    refresh?: boolean;
+  }) => {
+    const q = new URLSearchParams();
+    q.set('fromDate', params.fromDate);
+    if (params.employeeId) q.set('employeeId', params.employeeId);
+    if (params.refresh) q.set('refresh', '1');
+    return apiRequest<any>(`/leaves/apply-period-context?${q}`, { method: 'GET' });
+  },
+
+  listLeaveRegister: async (params?: {
+    financialYear?: string;
+    month?: number;
+    year?: number;
+    departmentId?: string;
+    divisionId?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+  }) => {
+    const q = new URLSearchParams();
+    if (params?.financialYear) q.set('financialYear', params.financialYear);
+    if (params?.month != null) q.set('month', String(params.month));
+    if (params?.year != null) q.set('year', String(params.year));
+    if (params?.departmentId) q.set('departmentId', params.departmentId);
+    if (params?.divisionId) q.set('divisionId', params.divisionId);
+    if (params?.search) q.set('search', params.search);
+    if (params?.page != null) q.set('page', String(params.page));
+    if (params?.limit != null) q.set('limit', String(params.limit));
+    const qs = q.toString();
+    return apiRequest<any>(`/leaves/register${qs ? `?${qs}` : ''}`, { method: 'GET' });
+  },
+
+  getEmployeeLeaveRegisterDetail: async (
+    employeeId: string,
+    params?: { financialYear?: string; month?: number; year?: number }
+  ) => {
+    const q = new URLSearchParams();
+    if (params?.financialYear) q.set('financialYear', params.financialYear);
+    if (params?.month != null) q.set('month', String(params.month));
+    if (params?.year != null) q.set('year', String(params.year));
+    const qs = q.toString();
+    return apiRequest<any>(`/leaves/register/employee/${employeeId}${qs ? `?${qs}` : ''}`, { method: 'GET' });
+  },
+
   /** Apply initial CL balance from policy to all employees (manual; creates ADJUSTMENT transactions). Not the annual reset. */
   performInitialCLSync: async (confirm: boolean = true) => {
     return apiRequest<any>('/leaves/initial-cl-sync', {
       method: 'POST',
       body: JSON.stringify({ confirm }),
+    });
+  },
+  /** Preview initial CL/EL/CCL sync rows before apply. */
+  previewInitialCLSync: async (params?: {
+    search?: string;
+    departmentId?: string;
+    divisionId?: string;
+    page?: number;
+    limit?: number;
+  }) => {
+    const query = new URLSearchParams();
+    if (params?.search) query.append('search', params.search);
+    if (params?.departmentId) query.append('departmentId', params.departmentId);
+    if (params?.divisionId) query.append('divisionId', params.divisionId);
+    if (params?.page) query.append('page', String(params.page));
+    if (params?.limit) query.append('limit', String(params.limit));
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    try {
+      return await apiRequest<any>(`/leaves/initial-cl-sync/preview${qs}`, { method: 'GET' });
+    } catch (e: any) {
+      // Fallback for environments where GET preview route is unavailable but POST is wired.
+      return apiRequest<any>(`/leaves/initial-cl-sync/preview${qs}`, { method: 'POST' });
+    }
+  },
+  /** Apply initial sync: scope "listed" = payload employees only; "all" = every active employee (CL from policy; EL/CCL only on listed). */
+  applyInitialCLSync: async (payload: {
+    confirm: boolean;
+    scope?: 'listed' | 'all';
+    reason?: string;
+    employees?: Array<{
+      employeeId: string;
+      targetCL?: number;
+      targetEL?: number;
+      targetCCL?: number;
+    }>;
+  }) => {
+    return apiRequest<any>('/leaves/initial-cl-sync/apply', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
   },
 

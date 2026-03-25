@@ -48,6 +48,7 @@ const moduleIcons: Record<string, any> = {
     LEAVE: CalendarClock,
     OD: Briefcase,
     LEAVE_OD: CalendarDays,
+    LEAVE_REGISTER: ScrollText,
     CCL: Gift,
     EMPLOYEE: Users,
     EMPLOYEES: Users,
@@ -215,6 +216,7 @@ export default function WorkspaceSidebar() {
                                         {enabledModules.map(module => {
                                             const isActive = pathname === module.href ||
                                                 (module.code === 'LEAVE_OD' && (pathname === '/leaves' || pathname === '/od')) ||
+                                                (module.code === 'LEAVE_REGISTER' && pathname === '/leave-register') ||
                                                 (module.code === 'CCL' && pathname === '/ccl') ||
                                                 (module.code === 'RESIGNATION' && pathname === '/resignations') ||
                                                 (module.code === 'EMPLOYEE_GROUPS' && pathname === '/employee-groups');

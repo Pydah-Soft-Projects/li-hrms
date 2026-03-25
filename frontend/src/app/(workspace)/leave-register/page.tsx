@@ -1,7 +1,7 @@
 'use client';
 
-import LeaveRegisterPage from '@/components/admin/LeaveRegisterPage';
+import LeaveRegisterPage from '@/components/leave-register/LeaveRegisterPage';
 
-export default function LeaveRegisterPageRoute() {
+export default function Page() {
   return <LeaveRegisterPage />;
 }

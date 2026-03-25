@@ -696,88 +696,21 @@ exports.applyLeave = async (req, res) => {
         }
       }
 
-      // Check monthly limit (if set, 0 = unlimited)
-      if (resolvedLeaveSettings.monthlyLimit !== null && resolvedLeaveSettings.monthlyLimit > 0) {
-        // Get month and year from fromDate
-        const month = from.getMonth() + 1;
-        const year = from.getFullYear();
-
-        // Count approved/pending leaves for this employee in this month
-        const Leave = require('../model/Leave');
-        const monthStart = new Date(year, month - 1, 1);
-        const monthEnd = new Date(year, month, 0, 23, 59, 59);
-
-        const existingLeaves = await Leave.find({
-          employeeId: employee._id,
-          fromDate: { $gte: monthStart, $lte: monthEnd },
-          status: { $in: ['pending', 'hod_approved', 'hr_approved', 'approved'] },
-          isActive: true,
-        });
-
-        const totalDaysThisMonth = existingLeaves.reduce((sum, l) => sum + (l.numberOfDays || 0), 0);
-        const newTotal = totalDaysThisMonth + numberOfDays;
-
-        if (newTotal > resolvedLeaveSettings.monthlyLimit) {
-          limitWarnings.push(`Total leave days for this month(${newTotal} days) would exceed the recommended monthly limit of ${resolvedLeaveSettings.monthlyLimit} days.Current month total: ${totalDaysThisMonth} days`);
-        }
-      }
-
-      // STRICT ENFORCEMENT for Casual Leave (CL) - max per month (when settings exist)
-      if (leaveType === 'CL' && resolvedLeaveSettings) {
-        if (resolvedLeaveSettings.maxCasualLeavesPerMonth !== null && resolvedLeaveSettings.maxCasualLeavesPerMonth > 0) {
-          if (numberOfDays > resolvedLeaveSettings.maxCasualLeavesPerMonth) {
-            return res.status(400).json({
-              success: false,
-              error: `Casual Leave usage is restricted to ${resolvedLeaveSettings.maxCasualLeavesPerMonth} day(s) per month for your department.`
-            });
-          }
-        }
-      }
     }
 
-    // HARD ENFORCEMENT for Casual Leave (CL) against payroll-cycle monthly limit (including pending locks)
-    if (leaveType === 'CL') {
-      try {
-        // Resolve period from leave start date (date-only); support YYYY-MM-DD and DD-MM-YYYY
-        const fromDateStr = String(fromDate || '').trim();
-        let fromForPeriod = from;
-        const isoMatch = fromDateStr.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
-        const dmyMatch = fromDateStr.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
-        if (isoMatch) {
-          fromForPeriod = new Date(Date.UTC(parseInt(isoMatch[1], 10), parseInt(isoMatch[2], 10) - 1, parseInt(isoMatch[3], 10), 12, 0, 0));
-        } else if (dmyMatch) {
-          const y = parseInt(dmyMatch[3], 10), m = parseInt(dmyMatch[2], 10) - 1, d = parseInt(dmyMatch[1], 10);
-          if (m >= 0 && m <= 11 && d >= 1 && d <= 31) fromForPeriod = new Date(Date.UTC(y, m, d, 12, 0, 0));
-        }
-        const periodInfo = await dateCycleService.getPeriodInfo(fromForPeriod);
-
-        // Use payroll-cycle month/year derived from fromDate, not calendar month
-        const registerResult = await leaveRegisterService.getLeaveRegister(
-          {
-            employeeId: employee._id,
-            leaveType: 'CL',
-            balanceAsOf: true,
-          },
-          periodInfo.payrollCycle.month,
-          periodInfo.payrollCycle.year
-        );
-
-        // leaveRegisterService.getLeaveRegister returns the array directly, not { data: array }
-        const registerList = Array.isArray(registerResult) ? registerResult : (registerResult?.data || []);
-        const clEntry = registerList.find(e => e.casualLeave) || null;
-        const allowedRemaining = clEntry?.casualLeave?.allowedRemaining ?? null;
-
-        if (allowedRemaining !== null && allowedRemaining !== undefined) {
-          if (numberOfDays > allowedRemaining) {
-            return res.status(400).json({
-              success: false,
-              error: `Casual Leave monthly limit exceeded for this payroll cycle. Remaining allowed days: ${allowedRemaining}, requested: ${numberOfDays}.`,
-            });
-          }
-        }
-      } catch (err) {
-        console.error('[Apply Leave] Error enforcing CL monthly payroll-cycle limit:', err);
-      }
+    // Combined payroll-period application cap (CL + CCL + optional EL) from leave policy
+    const monthlyApplicationCapService = require('../services/monthlyApplicationCapService');
+    const capCheck = await monthlyApplicationCapService.assertWithinMonthlyApplicationCap(
+      employee._id,
+      fromDate,
+      leaveType,
+      numberOfDays
+    );
+    if (!capCheck.ok) {
+      return res.status(400).json({
+        success: false,
+        error: capCheck.error,
+      });
     }
 
     // CL balance is validated on the frontend only; backend does not enforce balance check here.
@@ -972,6 +905,8 @@ exports.applyLeave = async (req, res) => {
       { path: 'designation', select: 'name' },
     ]);
 
+    leaveRegisterYearMonthlyApplyService.scheduleSyncMonthApply(employee._id, leave.fromDate);
+
     res.status(201).json({
       success: true,
       message: 'Leave application submitted successfully',
@@ -1000,6 +935,8 @@ exports.updateLeave = async (req, res) => {
         error: 'Leave application not found',
       });
     }
+
+    const originalFromDate = leave.fromDate ? new Date(leave.fromDate) : null;
 
     // Check if can edit - Allow editing for pending, hod_approved, hr_approved (not final approved)
     // Super Admin can edit any status except final approved
@@ -1127,6 +1064,36 @@ exports.updateLeave = async (req, res) => {
 
     await leave.save();
 
+    const capAffectingFields = new Set([
+      'leaveType',
+      'fromDate',
+      'toDate',
+      'isHalfDay',
+      'halfDayType',
+      'status',
+    ]);
+    const affectsMonthlyApply = changes.some((c) => capAffectingFields.has(c.field));
+
+    if (affectsMonthlyApply) {
+      try {
+        await leaveRegisterYearMonthlyApplyService.syncStoredMonthApplyFieldsForEmployeeDate(
+          leave.employeeId,
+          leave.fromDate
+        );
+        if (
+          originalFromDate &&
+          new Date(leave.fromDate).getTime() !== originalFromDate.getTime()
+        ) {
+          await leaveRegisterYearMonthlyApplyService.syncStoredMonthApplyFieldsForEmployeeDate(
+            leave.employeeId,
+            originalFromDate
+          );
+        }
+      } catch (e) {
+        console.warn('[monthlyApply sync]', e?.message || e);
+      }
+    }
+
     // Populate for response
     await leave.populate([
       { path: 'employeeId', select: 'employee_name emp_no' },
@@ -1203,6 +1170,8 @@ exports.cancelLeave = async (req, res) => {
     });
 
     await leave.save();
+
+    leaveRegisterYearMonthlyApplyService.scheduleSyncMonthApply(leave.employeeId, leave.fromDate);
 
     res.status(200).json({
       success: true,
@@ -1514,22 +1483,6 @@ exports.processLeaveAction = async (req, res) => {
               if (resolvedLeaveSettings.dailyLimit && leave.numberOfDays > resolvedLeaveSettings.dailyLimit) {
                 approvalWarnings.push(`⚠️ Leave duration exceeds daily limit of ${resolvedLeaveSettings.dailyLimit}`);
               }
-              if (resolvedLeaveSettings.monthlyLimit) {
-                const from = new Date(leave.fromDate);
-                const startOfMonth = new Date(from.getFullYear(), from.getMonth(), 1);
-                const endOfMonth = new Date(from.getFullYear(), from.getMonth() + 1, 0, 23, 59, 59);
-                const existingLeaves = await Leave.find({
-                  employeeId: leave.employeeId,
-                  fromDate: { $gte: startOfMonth, $lte: endOfMonth },
-                  status: { $in: ['approved', 'hr_approved', 'hod_approved', 'manager_approved'] },
-                  isActive: true,
-                  _id: { $ne: leave._id }
-                });
-                const totalDays = existingLeaves.reduce((sum, l) => sum + (l.numberOfDays || 0), 0);
-                if (totalDays + leave.numberOfDays > resolvedLeaveSettings.monthlyLimit) {
-                  approvalWarnings.push(`⚠️ Monthly limit exceeded. New total: ${totalDays + leave.numberOfDays} (Limit: ${resolvedLeaveSettings.monthlyLimit})`);
-                }
-              }
             }
           } catch (err) { console.error("Limit check failed", err); }
         }
@@ -1653,6 +1606,23 @@ exports.processLeaveAction = async (req, res) => {
     leave.markModified('approvals');
 
     await leave.save();
+
+    // Monthly slot: await only for final approval or canonical final rejection (`rejected`).
+    // Intermediate pipeline outcomes (`hod_approved`, `hod_rejected`, etc.) use deferred sync.
+    const finalApprove = action === 'approve' && leave.status === 'approved';
+    const finalRejectCanonical = action === 'reject' && leave.status === 'rejected';
+    if (finalApprove || finalRejectCanonical) {
+      try {
+        await leaveRegisterYearMonthlyApplyService.syncStoredMonthApplyFieldsForEmployeeDate(
+          leave.employeeId,
+          leave.fromDate
+        );
+      } catch (e) {
+        console.warn('[monthlyApply sync]', e?.message || e);
+      }
+    } else {
+      leaveRegisterYearMonthlyApplyService.scheduleSyncMonthApply(leave.employeeId, leave.fromDate);
+    }
 
     // When leave is finally approved, record a DEBIT in the leave register
     if (action === 'approve' && leave.status === 'approved') {
@@ -1874,6 +1844,8 @@ exports.revokeLeaveApproval = async (req, res) => {
     leave.markModified('approvals');
     await leave.save();
 
+    leaveRegisterYearMonthlyApplyService.scheduleSyncMonthApply(leave.employeeId, leave.fromDate);
+
     res.status(200).json({
       success: true,
       message: `Leave ${originalStatus} revoked successfully`,
@@ -1916,6 +1888,8 @@ exports.deleteLeave = async (req, res) => {
 
     leave.isActive = false;
     await leave.save();
+
+    leaveRegisterYearMonthlyApplyService.scheduleSyncMonthApply(leave.employeeId, leave.fromDate);
 
     res.status(200).json({
       success: true,
@@ -2520,6 +2494,275 @@ exports.validateLeaveSplits = async (req, res) => {
     res.status(500).json({
       success: false,
       error: error.message || 'Failed to validate leave splits',
+    });
+  }
+};
+
+/**
+ * @desc    Stored monthly apply ceiling + consumption for the payroll period of fromDate (leave apply dialog)
+ * @route   GET /api/leaves/apply-period-context
+ * @query   fromDate (required), employeeId (optional — else current user’s employee), refresh=1 to force sync
+ */
+exports.getApplyPeriodContext = async (req, res) => {
+  try {
+    const { fromDate, employeeId: employeeIdQ, refresh } = req.query;
+    if (!fromDate || !String(fromDate).trim()) {
+      return res.status(400).json({ success: false, error: 'fromDate is required' });
+    }
+
+    let targetEmployeeId = employeeIdQ;
+    if (!targetEmployeeId || !mongoose.Types.ObjectId.isValid(String(targetEmployeeId))) {
+      targetEmployeeId = req.user?.employeeRef;
+    }
+    if (!targetEmployeeId || !mongoose.Types.ObjectId.isValid(String(targetEmployeeId))) {
+      return res.status(400).json({
+        success: false,
+        error: 'employeeId is required (or link your user to an employee profile)',
+      });
+    }
+
+    const empOid = new mongoose.Types.ObjectId(String(targetEmployeeId));
+    if (
+      employeeIdQ &&
+      String(employeeIdQ) !== String(req.user?.employeeRef || '')
+    ) {
+      const allowedRoles = ['hod', 'hr', 'sub_admin', 'super_admin', 'manager'];
+      const role = String(req.user?.role || '').toLowerCase();
+      if (!allowedRoles.includes(role)) {
+        return res.status(403).json({
+          success: false,
+          error: 'Not authorized to view apply context for another employee',
+        });
+      }
+      const emp = await Employee.findById(empOid).select('_id department_id division_id').lean();
+      if (!emp) {
+        return res.status(404).json({ success: false, error: 'Employee not found' });
+      }
+      const fullUser = req.scopedUser || req.user;
+      if (!checkJurisdiction(fullUser, { employeeId: emp._id, department_id: emp.department_id, division_id: emp.division_id })) {
+        return res.status(403).json({ success: false, error: 'Out of scope for this employee' });
+      }
+    }
+
+    const doRefresh = String(refresh) === '1' || String(refresh).toLowerCase() === 'true';
+    const ctx = await leaveRegisterYearMonthlyApplyService.getApplyPeriodContextForEmployee(
+      empOid,
+      fromDate,
+      { refresh: doRefresh }
+    );
+
+    return res.status(200).json({ success: true, data: ctx });
+  } catch (error) {
+    console.error('getApplyPeriodContext:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to load apply period context',
+    });
+  }
+};
+
+/**
+ * @desc    Paginated leave register list (per employee summaries for FY / payroll context)
+ * @route   GET /api/leaves/register
+ * @access  HOD, HR, Manager, Sub Admin, Super Admin (scoped)
+ */
+exports.listLeaveRegister = async (req, res) => {
+  try {
+    const user = req.scopedUser;
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    const {
+      financialYear,
+      month: monthQ,
+      year: yearQ,
+      departmentId,
+      divisionId,
+      search,
+      page = '1',
+      limit = '25',
+    } = req.query;
+
+    const pageNum = Math.max(1, parseInt(String(page), 10) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(String(limit), 10) || 25));
+
+    const today = new Date();
+    const monthNum =
+      monthQ != null && String(monthQ).trim() !== ''
+        ? parseInt(String(monthQ), 10)
+        : today.getMonth() + 1;
+    const yearNum =
+      yearQ != null && String(yearQ).trim() !== ''
+        ? parseInt(String(yearQ), 10)
+        : today.getFullYear();
+
+    const filters = {};
+    if (financialYear && String(financialYear).trim()) {
+      filters.financialYear = String(financialYear).trim();
+    }
+    if (departmentId && mongoose.Types.ObjectId.isValid(String(departmentId))) {
+      filters.departmentId = new mongoose.Types.ObjectId(String(departmentId));
+    }
+    if (divisionId && mongoose.Types.ObjectId.isValid(String(divisionId))) {
+      filters.divisionId = new mongoose.Types.ObjectId(String(divisionId));
+    }
+    if (search && String(search).trim()) {
+      filters.searchTerm = String(search).trim();
+    }
+
+    let groupedData = await leaveRegisterService.getLeaveRegister(filters, monthNum, yearNum);
+
+    const fullAccess =
+      user.role === 'super_admin' ||
+      user.role === 'sub_admin' ||
+      user.dataScope === 'all';
+
+    if (!fullAccess) {
+      const allowedIds = await getEmployeeIdsInScope(user);
+      const allowedSet = new Set(allowedIds.map((id) => id.toString()));
+      if (user.employeeRef) {
+        allowedSet.add(user.employeeRef.toString());
+      }
+      groupedData = groupedData.filter((row) => {
+        const id = row.employee?.id || row.employee?._id;
+        return id && allowedSet.has(id.toString());
+      });
+    }
+
+    const total = groupedData.length;
+    const start = (pageNum - 1) * limitNum;
+    const pageRows = groupedData.slice(start, start + limitNum);
+
+    const employees = pageRows.map((entry) => {
+      const subs = entry.monthlySubLedgers || [];
+      const last = subs.length > 0 ? subs[subs.length - 1] : null;
+      const first = subs.length > 0 ? subs[0] : null;
+      let transactionCount = 0;
+      subs.forEach((s) => {
+        transactionCount += (s.transactions && s.transactions.length) || 0;
+      });
+      return {
+        employee: entry.employee,
+        summary: {
+          clBalance: last?.casualLeave?.balance ?? 0,
+          elBalance: last?.earnedLeave?.balance ?? 0,
+          cclBalance: last?.compensatoryOff?.balance ?? 0,
+          totalPaidBalance: last?.totalPaidBalance ?? 0,
+          monthlyAllowedLimit: last?.monthlyAllowedLimit,
+        },
+        yearSnapshot: entry.yearSnapshot || null,
+        registerMonths: Array.isArray(entry.registerMonths) ? entry.registerMonths : [],
+        payrollMonthsCovered: subs.length,
+        transactionCount,
+        firstPeriod: first ? { month: first.month, year: first.year } : null,
+        lastPeriod: last ? { month: last.month, year: last.year } : null,
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        employees,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total,
+          pages: Math.max(1, Math.ceil(total / limitNum)),
+        },
+        context: {
+          financialYear: filters.financialYear || null,
+          month: monthNum,
+          year: yearNum,
+        },
+      },
+    });
+  } catch (error) {
+    console.error('Error listing leave register:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to list leave register',
+    });
+  }
+};
+
+/**
+ * @desc    Full leave register for one employee (ledger + optional LeaveRegisterYear)
+ * @route   GET /api/leaves/register/employee/:employeeId
+ * @access  HOD, HR, Manager, Sub Admin, Super Admin (scoped)
+ */
+exports.getEmployeeLeaveRegisterDetail = async (req, res) => {
+  try {
+    const user = req.scopedUser;
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    const { employeeId } = req.params;
+    const { financialYear, month: monthQ, year: yearQ } = req.query;
+
+    if (!mongoose.Types.ObjectId.isValid(String(employeeId))) {
+      return res.status(400).json({ success: false, message: 'Invalid employee id' });
+    }
+
+    const emp = await Employee.findById(employeeId)
+      .select('_id emp_no employee_name department_id division_id')
+      .lean();
+    if (!emp) {
+      return res.status(404).json({ success: false, message: 'Employee not found' });
+    }
+
+    const record = {
+      employeeId: emp._id,
+      department_id: emp.department_id,
+      division_id: emp.division_id,
+    };
+    if (!checkJurisdiction(user, record)) {
+      return res.status(403).json({ success: false, message: 'Not authorized to view this employee' });
+    }
+
+    const today = new Date();
+    const monthNum =
+      monthQ != null && String(monthQ).trim() !== ''
+        ? parseInt(String(monthQ), 10)
+        : today.getMonth() + 1;
+    const yearNum =
+      yearQ != null && String(yearQ).trim() !== ''
+        ? parseInt(String(yearQ), 10)
+        : today.getFullYear();
+
+    const filters = { employeeId: emp._id };
+    if (financialYear && String(financialYear).trim()) {
+      filters.financialYear = String(financialYear).trim();
+    }
+
+    const grouped = await leaveRegisterService.getLeaveRegister(filters, monthNum, yearNum);
+    const ledger = Array.isArray(grouped) && grouped[0] ? grouped[0] : null;
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        employee: {
+          id: emp._id,
+          empNo: emp.emp_no,
+          name: emp.employee_name,
+        },
+        ledger,
+        /** FY month grid: scheduled credits from LeaveRegisterYear + ledger balances + transactions per payroll month */
+        months: ledger?.months || [],
+        leaveRegisterYear: ledger?.leaveRegisterYear || null,
+        context: {
+          financialYear: filters.financialYear || null,
+          month: monthNum,
+          year: yearNum,
+        },
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching employee leave register:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to fetch leave register',
     });
   }
 };
