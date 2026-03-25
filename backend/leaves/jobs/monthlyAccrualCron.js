@@ -18,8 +18,9 @@
 const cron = require('node-cron');
 const accrualEngine = require('../services/accrualEngine');
 const dateCycleService = require('../services/dateCycleService');
+const monthlyPoolCarryForwardService = require('../services/monthlyPoolCarryForwardService');
 
-const CRON_IST = '10 0 * * *'; // 00:10 every day
+const CRON_IST = '55 23 * * *'; // 23:55 every day
 const TIMEZONE = 'Asia/Kolkata';
 
 let scheduledTask = null;
@@ -57,6 +58,24 @@ function startMonthlyAccrualCron() {
         );
         if (results.errors && results.errors.length > 0) {
           console.warn('[AccrualCron] Errors:', results.errors.slice(0, 5));
+        }
+
+        try {
+          const pool = await monthlyPoolCarryForwardService.processPayrollCycleCarryForward(month, year);
+          if (
+            pool.carriesPosted > 0 ||
+            pool.forfeitsPosted > 0 ||
+            pool.errors.length > 0
+          ) {
+            console.log(
+              `[AccrualCron] Monthly pool carry: processed=${pool.processed}, carriesPosted=${pool.carriesPosted}, forfeitsPosted=${pool.forfeitsPosted}, carriedEmployees=${pool.carriedEmployees}, skipped=${pool.skipped}, errors=${pool.errors.length}`
+            );
+          }
+          if (pool.errors.length > 0) {
+            console.warn('[AccrualCron] Pool carry errors:', pool.errors.slice(0, 8));
+          }
+        } catch (poolErr) {
+          console.error('[AccrualCron] Monthly pool carry-forward failed:', poolErr.message);
         }
       } catch (err) {
         console.error('[AccrualCron] Failed:', err.message);

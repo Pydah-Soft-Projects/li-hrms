@@ -29,6 +29,40 @@ const leavePolicySettingsSchema = new mongoose.Schema({
         }
     },
 
+    /**
+     * Max days an employee may apply (pending + approved pipeline) in one payroll period,
+     * counting CL + CCL + optionally EL. EL counts only when includeEL is true and EL is not paid in payroll.
+     */
+    monthlyLeaveApplicationCap: {
+        enabled: {
+            type: Boolean,
+            default: false,
+            description: 'Enforce a combined monthly (payroll-period) application limit'
+        },
+        maxDays: {
+            type: Number,
+            default: 0,
+            min: 0,
+            max: 62,
+            description: 'Maximum combined days per payroll period (0 = unlimited when disabled)'
+        },
+        includeEL: {
+            type: Boolean,
+            default: false,
+            description: 'Include EL in cap when useAsPaidInPayroll is false (leave-only EL)'
+        },
+        /**
+         * When not false: CL applications in a payroll period are capped by that period’s scheduled
+         * clCredits on LeaveRegisterYear, but only after the period has started (IST). No future-period
+         * credits are implied. Works alongside “Enforce cap” (combined maxDays) — both must pass.
+         */
+        clCapFromLeaveRegisterYear: {
+            type: Boolean,
+            default: true,
+            description: 'Cap CL per payroll period by register slot clCredits after period start (IST)'
+        }
+    },
+
     // Earned Leave (EL) Configuration
     earnedLeave: {
         enabled: {
@@ -42,12 +76,6 @@ const leavePolicySettingsSchema = new mongoose.Schema({
             enum: ['attendance_based', 'fixed'],
             default: 'attendance_based',
             description: 'How EL is earned - based on attendance, fixed amount'
-        },
-        // Whether EL should be included in monthly allowed leave limit (CL + CCL + optional EL)
-        includeInMonthlyLimit: {
-            type: Boolean,
-            default: true,
-            description: 'Include earned leave (EL) in monthly allowed limit (CL + CCL + EL when true)'
         },
         // Whether EL days availed count as paid days in payroll (salary for EL days)
         useAsPaidInPayroll: {
@@ -150,6 +178,15 @@ const leavePolicySettingsSchema = new mongoose.Schema({
                 type: Boolean,
                 default: true,
                 description: 'Carry forward unused CL to next financial year'
+            },
+            /**
+             * When true (default), unused CL shown as this payroll month’s scheduled credit (clCredits) stays in the balance (rolls with the pool).
+             * When false, at each payroll cycle end we forfeit max(0, scheduled − CL used in that month) via an EXPIRY ledger row.
+             */
+            carryMonthlyClCreditToNextPayrollMonth: {
+                type: Boolean,
+                default: true,
+                description: 'Roll unused monthly scheduled CL into next periods vs forfeit at cycle end'
             }
         },
         earnedLeave: {
@@ -176,6 +213,15 @@ const leavePolicySettingsSchema = new mongoose.Schema({
                 type: Boolean,
                 default: true,
                 description: 'Carry forward unused EL to next financial year'
+            },
+            /**
+             * When monthly cap includes EL (leave-only EL), unused scheduled EL in the apply pool for the month
+             * rolls into next month’s elCredits slot; when false, EXPIRY at cycle end. Ignored when EL is not in pool.
+             */
+            carryMonthlyPoolToNextPayrollMonth: {
+                type: Boolean,
+                default: true,
+                description: 'Roll unused monthly apply-pool EL to next payroll month vs expire at cycle end'
             }
         },
         compensatoryOff: {
@@ -202,6 +248,15 @@ const leavePolicySettingsSchema = new mongoose.Schema({
                 type: Boolean,
                 default: false,
                 description: 'Carry forward unused CO to next financial year'
+            },
+            /**
+             * When true, unused scheduled CCL in a payroll month’s apply pool (after CL→CCL→EL consumption)
+             * rolls into the next month’s compensatoryOffs slot; when false, forfeit (EXPIRY) on cycle end.
+             */
+            carryMonthlyPoolToNextPayrollMonth: {
+                type: Boolean,
+                default: true,
+                description: 'Roll unused monthly pool CCL to next payroll month vs expire at cycle end'
             }
         }
     },
@@ -323,13 +378,34 @@ const leavePolicySettingsSchema = new mongoose.Schema({
         casualLeaveByExperience: [{
             minYears: { type: Number, required: true, min: 0 },
             maxYears: { type: Number, required: true, min: 0 },
+            /** Annual display / fallback when monthlyClCredits not set; should match sum of 12 cells when grid is used. */
             casualLeave: { type: Number, required: true, min: 0 },
+            /** Twelve payroll months (leave year order): CL credited for each period at annual reset. */
+            monthlyClCredits: {
+                type: [Number],
+                default: undefined,
+                validate: {
+                    validator(v) {
+                        if (v == null || v === undefined) return true;
+                        return Array.isArray(v) && v.length === 12 && v.every((n) => typeof n === 'number' && n >= 0 && !Number.isNaN(n));
+                    },
+                    message: 'monthlyClCredits must be an array of 12 non-negative numbers'
+                }
+            },
             description: { type: String, default: '' }
         }],
         addCarryForward: {
             type: Boolean,
             default: true,
             description: 'Add unused CL carry forward to reset balance'
+        },
+        /** Max CL days that can be carried into the new leave year (capped by unused balance). Applied to first payroll month in LeaveRegisterYear. If unset, defaults to 12 in code. */
+        maxCarryForwardCl: {
+            type: Number,
+            default: 12,
+            min: 0,
+            max: 365,
+            description: 'Maximum CL days carried at annual reset; unused balance above this expires'
         },
         // When true: reset date = start of first payroll period of the year (e.g. 26 Dec when payroll is 26th–25th). Uses payroll cycle start day.
         usePayrollCycleForReset: {
@@ -370,7 +446,13 @@ leavePolicySettingsSchema.statics.getSettings = async function() {
 leavePolicySettingsSchema.statics.updateSettings = async function(updateData) {
     return this.findOneAndUpdate(
         {},
-        { $set: updateData },
+        {
+            $set: updateData,
+            $unset: {
+                monthlyLimitSettings: '',
+                'earnedLeave.includeInMonthlyLimit': '',
+            },
+        },
         { new: true, upsert: true }
     );
 };

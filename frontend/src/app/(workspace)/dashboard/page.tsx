@@ -14,7 +14,8 @@ import {
   FileText,
   Star,
   LayoutDashboard,
-  ChevronRight
+  ChevronRight,
+  Coffee
 } from 'lucide-react';
 
 interface DashboardStats {
@@ -30,7 +31,12 @@ interface DashboardStats {
   teamPendingApprovals?: number;
   efficiencyScore?: number;
   departmentFeed?: any[];
-  leaveBalance?: number
+  leaveBalance?: number;
+  /** Leave register FY: running CCL balance from ledger */
+  compensatoryOffBalance?: number | null;
+  yearlyClCreditDaysPosted?: number | null;
+  yearlyCclCreditDaysPosted?: number | null;
+  financialYearRegister?: string | null;
 }
 
 interface DashboardCardProps {
@@ -460,14 +466,32 @@ function HODDashboard({ stats }: { stats: DashboardStats }) {
 
 // Employee Dashboard Component
 function EmployeeDashboard({ stats }: { stats: DashboardStats }) {
+  const cco =
+    stats.compensatoryOffBalance != null && Number.isFinite(Number(stats.compensatoryOffBalance))
+      ? Number(stats.compensatoryOffBalance)
+      : null;
+  const fyLabel = stats.financialYearRegister || '';
+  const clPosted = stats.yearlyClCreditDaysPosted ?? null;
+  const cclPosted = stats.yearlyCclCreditDaysPosted ?? null;
+  const ccoDescription =
+    fyLabel && clPosted != null && cclPosted != null
+      ? `FY ${fyLabel}: ${clPosted} CL day(s) credited · ${cclPosted} CCL day(s) credited (ledger audit)`
+      : 'Balance from leave register (year row); credits this FY shown when register exists';
+
   return (
     <div className="space-y-8">
-      <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 md:gap-6">
         <DashboardCard
           title="Leave Balance"
           value={stats.leaveBalance || 0}
           description="Available days"
           icon={<Calendar className="w-full h-full" />}
+        />
+        <DashboardCard
+          title="Compensatory off (CCL)"
+          value={cco != null ? cco : '—'}
+          description={ccoDescription}
+          icon={<Coffee className="w-full h-full" />}
         />
         <DashboardCard
           title="Active Requests"

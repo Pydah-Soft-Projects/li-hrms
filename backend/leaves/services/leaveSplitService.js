@@ -1,5 +1,6 @@
 const Leave = require('../model/Leave');
 const LeaveSplit = require('../model/LeaveSplit');
+const leaveRegisterYearMonthlyApplyService = require('./leaveRegisterYearMonthlyApplyService');
 const LeaveSettings = require('../model/LeaveSettings');
 const Employee = require('../../employees/model/Employee');
 const { getFinancialYear, getLeaveNature } = require('./leaveBalanceService');
@@ -293,7 +294,7 @@ async function createSplits(leaveId, splits, approver) {
 
     // Create new splits
     const createdSplits = [];
-    const financialYear = getFinancialYear(new Date());
+    const financialYear = await getFinancialYear(new Date());
 
     for (const splitData of splits) {
       const splitDate = new Date(splitData.date);
@@ -386,6 +387,15 @@ async function createSplits(leaveId, splits, approver) {
         };
         await updateMonthlyRecordOnLeaveAction(tempLeave, 'approved');
       }
+    }
+
+    try {
+      await leaveRegisterYearMonthlyApplyService.syncStoredMonthApplyFieldsForEmployeeDate(
+        leave.employeeId,
+        leave.fromDate
+      );
+    } catch (e) {
+      console.warn('[monthlyApply sync after createSplits]', e?.message || e);
     }
 
     return {
@@ -508,7 +518,15 @@ async function deleteSplit(splitId) {
       return { success: false, errors: ['Split not found'] };
     }
 
+    const leave = await Leave.findById(split.leaveId).select('fromDate employeeId').lean();
     await LeaveSplit.findByIdAndDelete(splitId);
+
+    const empId = leave?.employeeId || split.employeeId;
+    const anchorDate = leave?.fromDate || split.date;
+    if (empId && anchorDate) {
+      leaveRegisterYearMonthlyApplyService.scheduleSyncMonthApply(empId, anchorDate);
+    }
+
     return { success: true };
   } catch (error) {
     console.error('Error deleting split:', error);
