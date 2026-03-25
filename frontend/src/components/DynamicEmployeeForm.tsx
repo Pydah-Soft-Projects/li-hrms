@@ -1266,16 +1266,15 @@ export default function DynamicEmployeeForm({
         case 'boolean':
           return (
             <>
-              <label className="flex cursor-pointer items-center gap-1.5">
-                <input
-                  type="checkbox"
-                  checked={!!value}
-                  onChange={(e) => handleQualificationChange(applicantRowIndex, field.id, e.target.checked)}
-                  disabled={isViewMode}
-                  className="h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500"
-                />
-                <span className="text-xs text-slate-500 dark:text-slate-400">Yes/No</span>
-              </label>
+              <select
+                value={value ? 'true' : 'false'}
+                onChange={(e) => handleQualificationChange(applicantRowIndex, field.id, e.target.value === 'true')}
+                disabled={isViewMode}
+                className={inputCls(!!error)}
+              >
+                <option value="true">Yes</option>
+                <option value="false">No</option>
+              </select>
               {error && <p className="mt-0.5 text-xs text-red-600 dark:text-red-400">{error}</p>}
             </>
           );
@@ -1382,16 +1381,15 @@ export default function DynamicEmployeeForm({
         case 'boolean':
           return (
             <>
-              <label className="flex cursor-pointer items-center gap-1.5">
-                <input
-                  type="checkbox"
-                  checked={!!value}
-                  onChange={(e) => onChange(e.target.checked)}
-                  disabled={isViewMode}
-                  className="h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500"
-                />
-                <span className="text-xs text-slate-500 dark:text-slate-400">Yes/No</span>
-              </label>
+              <select
+                value={value ? 'true' : 'false'}
+                onChange={(e) => onChange(e.target.value === 'true')}
+                disabled={isViewMode}
+                className={inputCls(!!error)}
+              >
+                <option value="true">Yes</option>
+                <option value="false">No</option>
+              </select>
               {error && <p className="mt-0.5 text-xs text-red-600 dark:text-red-400">{error}</p>}
             </>
           );
@@ -1408,8 +1406,11 @@ export default function DynamicEmployeeForm({
       const originalRow = originalDefaultRows[rowIndex] as Record<string, unknown> | undefined;
       if (!originalRow) return false;
       const v = originalRow[field.id];
-      if (v === undefined || v === null) return false;
-      if (field.type === 'boolean') return true;
+      if (v === undefined || v === null || v === '') return false;
+      const type = (field.type || '').toLowerCase();
+      if (type === 'boolean') {
+        return v === true || v === 'true';
+      }
       return String(v).trim() !== '';
     };
 
@@ -1437,7 +1438,7 @@ export default function DynamicEmployeeForm({
                     {field.isRequired && <span className="text-red-500"> *</span>}
                   </th>
                 ))}
-                {!isViewMode && <th className="w-24 px-3 py-2.5 font-semibold text-slate-700 dark:text-slate-300">Action</th>}
+                {!isViewMode && !isEditingExistingEmployee && <th className="w-24 px-3 py-2.5 font-semibold text-slate-700 dark:text-slate-300">Action</th>}
                 {certUploadEnabled && <th className="px-3 py-2.5 font-semibold text-slate-700 dark:text-slate-300">Certificate</th>}
               </tr>
             </thead>
@@ -1465,7 +1466,7 @@ export default function DynamicEmployeeForm({
                       )}
                     </td>
                   ))}
-                  {!isViewMode && <td className="align-top px-3 py-2 text-slate-400 dark:text-slate-500">—</td>}
+                  {!isViewMode && !isEditingExistingEmployee && <td className="align-top px-3 py-2 text-slate-400 dark:text-slate-500">—</td>}
                   {certUploadEnabled && (
                     <td className="align-top px-3 py-2">
                       {!isViewMode ? (
@@ -1506,7 +1507,7 @@ export default function DynamicEmployeeForm({
                         {renderQualificationCell(field, qualIndex, index)}
                       </td>
                     ))}
-                    {!isViewMode && (
+                    {!isViewMode && !isEditingExistingEmployee && (
                       <td className="align-top px-3 py-2">
                         <button
                           type="button"
@@ -1547,7 +1548,7 @@ export default function DynamicEmployeeForm({
             </tbody>
           </table>
         </div>
-        {!isViewMode && (
+        {!isViewMode && !isEditingExistingEmployee && (
           <button
             type="button"
             onClick={handleAddQualification}
