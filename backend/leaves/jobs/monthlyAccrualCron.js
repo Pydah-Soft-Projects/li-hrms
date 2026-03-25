@@ -18,7 +18,7 @@
 const cron = require('node-cron');
 const accrualEngine = require('../services/accrualEngine');
 const dateCycleService = require('../services/dateCycleService');
-const monthlyClScheduledCreditService = require('../services/monthlyClScheduledCreditService');
+const monthlyPoolCarryForwardService = require('../services/monthlyPoolCarryForwardService');
 
 const CRON_IST = '55 23 * * *'; // 23:55 every day
 const TIMEZONE = 'Asia/Kolkata';
@@ -61,17 +61,21 @@ function startMonthlyAccrualCron() {
         }
 
         try {
-          const clForfeit = await monthlyClScheduledCreditService.forfeitUnusedScheduledClIfNeeded(month, year);
-          if (clForfeit.forfeitsPosted > 0 || clForfeit.errors.length > 0) {
+          const pool = await monthlyPoolCarryForwardService.processPayrollCycleCarryForward(month, year);
+          if (
+            pool.carriesPosted > 0 ||
+            pool.forfeitsPosted > 0 ||
+            pool.errors.length > 0
+          ) {
             console.log(
-              `[AccrualCron] CL monthly scheduled forfeit: yearDocs=${clForfeit.processed}, posted=${clForfeit.forfeitsPosted}, skipped=${clForfeit.skipped}, errors=${clForfeit.errors.length}`
+              `[AccrualCron] Monthly pool carry: processed=${pool.processed}, carriesPosted=${pool.carriesPosted}, forfeitsPosted=${pool.forfeitsPosted}, carriedEmployees=${pool.carriedEmployees}, skipped=${pool.skipped}, errors=${pool.errors.length}`
             );
           }
-          if (clForfeit.errors.length > 0) {
-            console.warn('[AccrualCron] CL forfeit errors:', clForfeit.errors.slice(0, 5));
+          if (pool.errors.length > 0) {
+            console.warn('[AccrualCron] Pool carry errors:', pool.errors.slice(0, 8));
           }
-        } catch (forfeitErr) {
-          console.error('[AccrualCron] CL scheduled forfeit failed:', forfeitErr.message);
+        } catch (poolErr) {
+          console.error('[AccrualCron] Monthly pool carry-forward failed:', poolErr.message);
         }
       } catch (err) {
         console.error('[AccrualCron] Failed:', err.message);

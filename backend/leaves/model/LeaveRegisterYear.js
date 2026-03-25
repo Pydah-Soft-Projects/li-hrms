@@ -62,6 +62,24 @@ const monthSlotSchema = new mongoose.Schema(
     monthlyApplyLocked: { type: Number },
     monthlyApplyApproved: { type: Number },
     monthlyApplySyncedAt: { type: Date },
+    /**
+     * Payroll cycle close: cap consumption (monthlyApplyConsumed) allocated CL → CCL → EL;
+     * remainder may carry to next slot or forfeit (policy).
+     */
+    poolCarryForwardAllocation: { type: mongoose.Schema.Types.Mixed },
+    poolCarryForwardOut: {
+      cl: { type: Number, default: 0 },
+      ccl: { type: Number, default: 0 },
+      el: { type: Number, default: 0 },
+    },
+    poolCarryForwardOutAt: { type: Date },
+    /** Opening: amounts rolled into this slot from previous payroll month (audit; also added to clCredits/compensatoryOffs/elCredits). */
+    poolCarryForwardIn: {
+      cl: { type: Number, default: 0 },
+      ccl: { type: Number, default: 0 },
+      el: { type: Number, default: 0 },
+    },
+    poolCarryForwardFromLabel: { type: String, default: '' },
     /** All leave movements attributed to this payroll period (CL / EL / CCL / …). */
     transactions: { type: [monthMovementSchema], default: [] },
   },
@@ -121,6 +139,10 @@ const leaveRegisterYearSchema = new mongoose.Schema(
      * Also set from Employee snapshot when the FY row is first created.
      */
     earnedLeaveBalance: { type: Number, default: 0 },
+    /** FY audit: sum of days on CL CREDIT ledger rows (scheduled/monthly/manual). */
+    yearlyClCreditDaysPosted: { type: Number, default: 0 },
+    /** FY audit: sum of days on CCL CREDIT rows (e.g. holiday OD). */
+    yearlyCclCreditDaysPosted: { type: Number, default: 0 },
     months: { type: [monthSlotSchema], default: [] },
     yearlyTransactions: { type: [yearTransactionSchema], default: [] },
     resetAt: { type: Date },

@@ -5,6 +5,8 @@ const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
 const Department = require('../../departments/model/Department');
 const EmployeeApplication = require('../../employee-applications/model/EmployeeApplication');
 const OD = require('../../leaves/model/OD');
+const LeaveRegisterYear = require('../../leaves/model/LeaveRegisterYear');
+const dateCycleService = require('../../leaves/services/dateCycleService');
 const { getEmployeeIdsInScope } = require('../../shared/middleware/dataScopeMiddleware');
 
 /**
@@ -185,12 +187,50 @@ exports.getDashboardStats = async (req, res) => {
 
       const leaveBalance = myApprovedLeaves - myPendingLeaves;
 
+      let empMongoId = user.employeeRef || req.user?.employeeRef;
+      if (!empMongoId && user.employeeId) {
+        const e = await Employee.findOne({ emp_no: user.employeeId }).select('_id compensatoryOffs').lean();
+        empMongoId = e?._id;
+      }
+
+      let compensatoryOffBalance = null;
+      let yearlyClCreditDaysPosted = null;
+      let yearlyCclCreditDaysPosted = null;
+      let financialYearRegister = null;
+
+      if (empMongoId) {
+        const fy = await dateCycleService.getFinancialYearForDate(today);
+        financialYearRegister = fy.name;
+        const yDoc = await LeaveRegisterYear.findOne({
+          employeeId: empMongoId,
+          financialYear: fy.name,
+        })
+          .select(
+            'compensatoryOffBalance yearlyClCreditDaysPosted yearlyCclCreditDaysPosted financialYear'
+          )
+          .lean();
+        if (yDoc) {
+          compensatoryOffBalance = Number(yDoc.compensatoryOffBalance) || 0;
+          yearlyClCreditDaysPosted = Number(yDoc.yearlyClCreditDaysPosted) || 0;
+          yearlyCclCreditDaysPosted = Number(yDoc.yearlyCclCreditDaysPosted) || 0;
+        } else {
+          const empSnap = await Employee.findById(empMongoId).select('compensatoryOffs').lean();
+          compensatoryOffBalance = Number(empSnap?.compensatoryOffs) || 0;
+          yearlyClCreditDaysPosted = 0;
+          yearlyCclCreditDaysPosted = 0;
+        }
+      }
+
       stats = {
         myPendingLeaves,
         myApprovedLeaves,
         todayPresent: myAttendance,
         upcomingHolidays: 2,
-        leaveBalance
+        leaveBalance,
+        compensatoryOffBalance,
+        yearlyClCreditDaysPosted,
+        yearlyCclCreditDaysPosted,
+        financialYearRegister,
       };
     }
 

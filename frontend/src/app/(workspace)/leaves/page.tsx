@@ -528,6 +528,10 @@ export default function LeavesPage() {
   const [applyPeriodContext, setApplyPeriodContext] = useState<any | null>(null);
   const [loadingMessage, setLoadingMessage] = useState<string>('');
 
+  /** Same apply-period context while editing a leave (CL → monthly cap panel). */
+  const [editClCapLoading, setEditClCapLoading] = useState(false);
+  const [editClApplyContext, setEditClApplyContext] = useState<any | null>(null);
+
   // Form state
   const [formData, setFormData] = useState<{
     leaveType: string;
@@ -613,6 +617,17 @@ export default function LeavesPage() {
 
       // Photo Evidence & Location required for OD (typically mandatory in this system)
       if (!evidenceFile || !locationData) return false;
+    }
+
+    // 4. CL monthly-limit exhaustion
+    // The apply dialog already fetches CL monthly apply remaining (see getLeaveApplyPeriodContext).
+    // If the remaining limit is 0, disable Apply to prevent backend rejection.
+    if (applyType === 'leave') {
+      const isCL =
+        formData.leaveType === 'CL' || String(formData.leaveType || '').toUpperCase() === 'CL';
+      if (isCL && clBalanceForMonth !== null && clBalanceForMonth <= 0) {
+        return false;
+      }
     }
 
     return true;
@@ -1562,6 +1577,54 @@ export default function LeavesPage() {
     canFetchCLBalance,
     hasValidEmployeeId,
     targetEmployeeId,
+  ]);
+
+  const isEditCLSelected =
+    showEditDialog &&
+    detailType === 'leave' &&
+    (editFormData.leaveType === 'CL' || editFormData.leaveType?.toUpperCase() === 'CL');
+
+  useEffect(() => {
+    if (!showEditDialog || detailType !== 'leave' || !isEditCLSelected || !editFormData.fromDate) {
+      setEditClCapLoading(false);
+      setEditClApplyContext(null);
+      return;
+    }
+    const rawEmp = selectedItem?.employeeId as any;
+    const empId = rawEmp && typeof rawEmp === 'object' ? rawEmp._id : rawEmp;
+    const hasEmp = empId && String(empId).length === 24 && !String(empId).startsWith('current');
+    if (!hasEmp) {
+      setEditClCapLoading(false);
+      setEditClApplyContext(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setEditClCapLoading(true);
+      try {
+        const res = await api.getLeaveApplyPeriodContext({
+          fromDate: editFormData.fromDate,
+          employeeId: String(empId),
+        });
+        if (cancelled) return;
+        setEditClApplyContext(res?.success && res.data ? res.data : null);
+      } catch {
+        if (!cancelled) setEditClApplyContext(null);
+      } finally {
+        if (!cancelled) setEditClCapLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    showEditDialog,
+    detailType,
+    isEditCLSelected,
+    editFormData.fromDate,
+    editFormData.leaveType,
+    selectedItem?._id,
+    selectedItem?.employeeId,
   ]);
 
   const buildInitialSplits = (leave: LeaveApplication) => {
@@ -4669,6 +4732,74 @@ export default function LeavesPage() {
                     ))}
                   </select>
                 </div>
+
+                {detailType === 'leave' && isEditCLSelected && (
+                  <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30 overflow-hidden">
+                    <div className="bg-slate-100/50 dark:bg-slate-800/50 px-4 py-2 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                        Monthly apply cap (this period)
+                      </span>
+                      {editClCapLoading && <Loader2 className="w-3 h-3 animate-spin text-blue-500" />}
+                    </div>
+                    <div className="p-4 space-y-3">
+                      {!editFormData.fromDate ? (
+                        <p className="text-xs text-slate-500 dark:text-slate-400 italic text-center py-2">
+                          Set from date to load period limits (same as apply dialog).
+                        </p>
+                      ) : editClCapLoading ? (
+                        <div className="flex flex-col gap-2 py-2">
+                          <div className="h-3 w-full bg-slate-200 dark:bg-slate-700 rounded animate-pulse" />
+                          <div className="h-3 w-4/5 bg-slate-200 dark:bg-slate-700 rounded animate-pulse" />
+                        </div>
+                      ) : editClApplyContext && (!editClApplyContext.hasYearDoc || !editClApplyContext.hasSlot) ? (
+                        <p className="text-xs text-amber-700 dark:text-amber-300 text-center py-2 bg-amber-50 dark:bg-amber-900/20 rounded-lg">
+                          No leave register row for this payroll period yet.
+                        </p>
+                      ) : editClApplyContext && editClApplyContext.monthlyApplyRemaining != null ? (
+                        <>
+                          <div className="flex items-center justify-between mb-2 pb-2 border-b border-dashed border-slate-200 dark:border-slate-700">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">
+                              Remaining toward cap (after pending + approved)
+                            </span>
+                            <span className="text-lg font-black text-blue-600 dark:text-blue-400">
+                              {Number(editClApplyContext.monthlyApplyRemaining)} days
+                            </span>
+                          </div>
+                          {editClApplyContext.payrollLabel && (
+                            <div className="text-[10px] text-slate-500 font-medium">
+                              Period: {editClApplyContext.payrollLabel}
+                            </div>
+                          )}
+                          <div className="grid grid-cols-1 gap-2 text-xs">
+                            <div className="flex justify-between text-slate-600 dark:text-slate-300">
+                              <span>Ceiling (stored)</span>
+                              <span className="font-semibold">{editClApplyContext.monthlyApplyCeiling ?? '—'} days</span>
+                            </div>
+                            {(editClApplyContext.monthlyApplyLocked != null ||
+                              editClApplyContext.monthlyApplyApproved != null) && (
+                              <div className="flex justify-between text-[10px] text-slate-500 uppercase tracking-tight">
+                                <span>
+                                  Locked {editClApplyContext.monthlyApplyLocked ?? 0} · approved{' '}
+                                  {editClApplyContext.monthlyApplyApproved ?? 0}
+                                </span>
+                              </div>
+                            )}
+                            {Number(editClApplyContext.monthlyApplyLocked) > 0 && (
+                              <div className="flex items-center gap-1.5 text-[10px] text-orange-600 dark:text-orange-400">
+                                <AlertCircle className="w-3 h-3 shrink-0" />
+                                <span>Includes in-flight applications in this period.</span>
+                              </div>
+                            )}
+                          </div>
+                        </>
+                      ) : (
+                        <p className="text-xs text-slate-500 text-center py-2">
+                          Could not load apply-period context. Save may still be validated on the server.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {/* Dates */}
                 <div className="grid grid-cols-2 gap-4">

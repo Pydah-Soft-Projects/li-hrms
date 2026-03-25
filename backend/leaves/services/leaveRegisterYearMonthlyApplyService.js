@@ -9,8 +9,8 @@ const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
 const dateCycleService = require('./dateCycleService');
 const {
   CAP_COUNT_STATUSES,
-  countedDaysForLeave,
   computeScheduledPoolApplyCeiling,
+  sumCountedCapDaysForLeaveInPeriod,
 } = require('./monthlyApplicationCapService');
 
 function findSlotIndex(months, pcMonth, pcYear) {
@@ -59,14 +59,14 @@ async function syncStoredMonthApplyFieldsForEmployeeDate(employeeId, fromDate) {
     status: { $in: CAP_COUNT_STATUSES },
     fromDate: { $gte: start, $lte: end },
   })
-    .select('leaveType numberOfDays status')
+    .select('leaveType numberOfDays status splitStatus')
     .lean();
 
   let consumed = 0;
   let locked = 0;
   let approvedSum = 0;
   for (const l of leaves) {
-    const d = countedDaysForLeave(l, policy);
+    const d = await sumCountedCapDaysForLeaveInPeriod(l, policy, start, end);
     if (d <= 0) continue;
     consumed += d;
     if (String(l.status) === 'approved') approvedSum += d;

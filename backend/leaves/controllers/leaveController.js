@@ -1028,15 +1028,34 @@ exports.updateLeave = async (req, res) => {
 
     await leave.save();
 
-    leaveRegisterYearMonthlyApplyService.scheduleSyncMonthApply(leave.employeeId, leave.fromDate);
-    if (
-      originalFromDate &&
-      new Date(leave.fromDate).getTime() !== originalFromDate.getTime()
-    ) {
-      leaveRegisterYearMonthlyApplyService.scheduleSyncMonthApply(
-        leave.employeeId,
-        originalFromDate
-      );
+    const capAffectingFields = new Set([
+      'leaveType',
+      'fromDate',
+      'toDate',
+      'isHalfDay',
+      'halfDayType',
+      'status',
+    ]);
+    const affectsMonthlyApply = changes.some((c) => capAffectingFields.has(c.field));
+
+    if (affectsMonthlyApply) {
+      try {
+        await leaveRegisterYearMonthlyApplyService.syncStoredMonthApplyFieldsForEmployeeDate(
+          leave.employeeId,
+          leave.fromDate
+        );
+        if (
+          originalFromDate &&
+          new Date(leave.fromDate).getTime() !== originalFromDate.getTime()
+        ) {
+          await leaveRegisterYearMonthlyApplyService.syncStoredMonthApplyFieldsForEmployeeDate(
+            leave.employeeId,
+            originalFromDate
+          );
+        }
+      } catch (e) {
+        console.warn('[monthlyApply sync]', e?.message || e);
+      }
     }
 
     // Populate for response
@@ -1545,6 +1564,23 @@ exports.processLeaveAction = async (req, res) => {
 
     await leave.save();
 
+    // Monthly slot: await only for final approval or canonical final rejection (`rejected`).
+    // Intermediate pipeline outcomes (`hod_approved`, `hod_rejected`, etc.) use deferred sync.
+    const finalApprove = action === 'approve' && leave.status === 'approved';
+    const finalRejectCanonical = action === 'reject' && leave.status === 'rejected';
+    if (finalApprove || finalRejectCanonical) {
+      try {
+        await leaveRegisterYearMonthlyApplyService.syncStoredMonthApplyFieldsForEmployeeDate(
+          leave.employeeId,
+          leave.fromDate
+        );
+      } catch (e) {
+        console.warn('[monthlyApply sync]', e?.message || e);
+      }
+    } else {
+      leaveRegisterYearMonthlyApplyService.scheduleSyncMonthApply(leave.employeeId, leave.fromDate);
+    }
+
     // When leave is finally approved, record a DEBIT in the leave register
     if (action === 'approve' && leave.status === 'approved') {
       try {
@@ -1809,6 +1845,8 @@ exports.deleteLeave = async (req, res) => {
 
     leave.isActive = false;
     await leave.save();
+
+    leaveRegisterYearMonthlyApplyService.scheduleSyncMonthApply(leave.employeeId, leave.fromDate);
 
     res.status(200).json({
       success: true,
