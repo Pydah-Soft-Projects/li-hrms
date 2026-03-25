@@ -8,6 +8,13 @@ const Employee = require('../../employees/model/Employee');
 const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
 const dateCycleService = require('./dateCycleService');
 const leaveRegisterYearService = require('./leaveRegisterYearService');
+const leaveRegisterYearMonthlyApplyService = require('./leaveRegisterYearMonthlyApplyService');
+
+function roundHalf(x) {
+  const n = Number(x) || 0;
+  if (n <= 0) return 0;
+  return Math.round(n * 2) / 2;
+}
 
 function calculateClosingBalance(openingBalance, transactionData) {
   const { transactionType, days } = transactionData;
@@ -217,11 +224,17 @@ async function addTransaction(transactionData) {
   });
 
   doc.markModified(`months.${mi}.transactions`);
+  doc.markModified(`months.${mi}`);
   await doc.save();
 
   await recalculateRegisterBalances(
     transactionData.employeeId,
     transactionData.leaveType,
+    transactionData.startDate
+  );
+
+  leaveRegisterYearMonthlyApplyService.scheduleSyncMonthApply(
+    transactionData.employeeId,
     transactionData.startDate
   );
 

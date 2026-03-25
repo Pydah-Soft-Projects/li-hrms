@@ -7,8 +7,8 @@ const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
 const { extractISTComponents, createISTDate } = require('../../shared/utils/dateUtils');
 const {
     CAP_COUNT_STATUSES,
-    countedDaysForLeave,
     computeScheduledPoolApplyCeiling,
+    addLeaveCapToMonthlyBuckets,
 } = require('./monthlyApplicationCapService');
 
 /**
@@ -627,35 +627,42 @@ class LeaveRegisterService {
                 capPolicy = {};
             }
 
-            const monthsToProcess = [];
-            const fyIst = extractISTComponents(fyStart);
-            const targetIst = extractISTComponents(midOfMonth);
-            let fyCursor = createISTDate(`${fyIst.year}-${String(fyIst.month).padStart(2, '0')}-15`);
-            while (true) {
-                const cIst = extractISTComponents(fyCursor);
-                monthsToProcess.push({ month: cIst.month, year: cIst.year });
-                if (cIst.year > targetIst.year || (cIst.year === targetIst.year && cIst.month >= targetIst.month)) {
-                    break;
+            // Build payroll windows keyed exactly like the register grid month keys:
+            // `${sub.year}-${sub.month}` (so per-type locked columns cannot drift).
+            const uniqueSubMonths = new Map();
+            for (const entry of groupedData) {
+                for (const sub of entry.monthlySubLedgers || []) {
+                    if (sub?.year == null || sub?.month == null) continue;
+                    const key = `${sub.year}-${sub.month}`;
+                    if (!uniqueSubMonths.has(key)) {
+                        uniqueSubMonths.set(key, { year: Number(sub.year), month: Number(sub.month) });
+                    }
                 }
-                const nextMonth = cIst.month === 12 ? 1 : cIst.month + 1;
-                const nextYear = cIst.month === 12 ? cIst.year + 1 : cIst.year;
-                fyCursor = createISTDate(`${nextYear}-${String(nextMonth).padStart(2, '0')}-15`);
             }
 
             const monthPayrollWindows = [];
-                for (const mInfo of monthsToProcess) {
-                    const mid = new Date(mInfo.year, mInfo.month - 1, 15);
-                    const pInfo = await dateCycleService.getPeriodInfo(mid);
-                    monthPayrollWindows.push({
-                        month: mInfo.month,
-                        year: mInfo.year,
-                        key: `${mInfo.year}-${mInfo.month}`,
-                        start: pInfo.payrollCycle.startDate,
-                    end: pInfo.payrollCycle.endDate,
-                    });
+            for (const { year: smYear, month: smMonth } of uniqueSubMonths.values()) {
+                const mid = new Date(smYear, smMonth - 1, 15);
+                const pInfo = await dateCycleService.getPeriodInfo(mid);
+                const pc = pInfo?.payrollCycle || {};
+                monthPayrollWindows.push({
+                    month: smMonth,
+                    year: smYear,
+                    key: `${smYear}-${smMonth}`,
+                    start: pc.startDate,
+                    end: pc.endDate,
+                });
             }
-            const windowStartMs = monthPayrollWindows.length > 0 ? monthPayrollWindows[0].start.getTime() : null;
-            const windowEndMs = monthPayrollWindows.length > 0 ? monthPayrollWindows[monthPayrollWindows.length - 1].end.getTime() : null;
+
+            // Ensure deterministic ordering for window min/max computation.
+            monthPayrollWindows.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+
+            const windowStartMs =
+                monthPayrollWindows.length > 0 ? new Date(monthPayrollWindows[0].start).getTime() : null;
+            const windowEndMs =
+                monthPayrollWindows.length > 0
+                    ? new Date(monthPayrollWindows[monthPayrollWindows.length - 1].end).getTime()
+                    : null;
 
             for (const entry of groupedData) {
                 const empId = entry.employee?.id || entry.employee?._id;
@@ -673,35 +680,11 @@ class LeaveRegisterService {
                         status: { $in: CAP_COUNT_STATUSES },
                         isActive: true,
                     })
-                        .select('leaveType numberOfDays fromDate status')
+                        .select('leaveType numberOfDays fromDate status splitStatus')
                         .lean();
 
                     for (const l of capLeaves) {
-                        const leaveFromMs = new Date(l.fromDate).getTime();
-                        const capDays = countedDaysForLeave(l, capPolicy);
-                        if (capDays <= 0) continue;
-                        let bucketed = false;
-                        for (const w of monthPayrollWindows) {
-                            const startMs = w.start.getTime();
-                            const endMs = w.end.getTime();
-                            if (leaveFromMs >= startMs && leaveFromMs <= endMs) {
-                                const b = pendingByMonthKey[w.key];
-                                b.capConsumedDays += capDays;
-                                const st = String(l.status || '');
-                                if (st === 'approved') b.capApprovedDays += capDays;
-                                else b.capLockedDays += capDays;
-                                if (st !== 'approved') {
-                                    b.pendingCapDaysInFlight += capDays;
-                                    const u = String(l.leaveType || '').toUpperCase();
-                                    if (u === 'CL') b.pendingCLDays += capDays;
-                                    else if (u === 'CCL') b.pendingCclDays += capDays;
-                                    else if (u === 'EL') b.pendingElDays += capDays;
-                                }
-                                bucketed = true;
-                                break;
-                            }
-                        }
-                        if (!bucketed) continue;
+                        await addLeaveCapToMonthlyBuckets(l, capPolicy, monthPayrollWindows, pendingByMonthKey);
                     }
                 }
 
@@ -947,6 +930,8 @@ class LeaveRegisterService {
                 const cclL = m.ledger?.compensatoryOff || {};
                 const clCredited =
                     (Number(clL.accruedThisMonth) || 0) + (Number(clL.earnedCCL) || 0);
+                const clReversal = Number(clL.reversalCreditThisMonth) || 0;
+                const clCreditedNet = Math.max(0, clCredited - clReversal);
                 const st = m.storedMonthlyApply;
                 const hasStored =
                     st &&
@@ -998,17 +983,17 @@ class LeaveRegisterService {
                     capApprovedDays,
                     monthlyApplySource: hasStored ? 'stored' : 'live',
                     cl: {
-                        credited: clCredited,
+                        credited: clCreditedNet,
                         used: Number(clL.usedThisMonth) || 0,
                         locked: sub != null ? Number(sub.pendingLockedCL) || 0 : null,
                     },
                     ccl: {
-                        credited: Number(cclL.earned) || 0,
+                        credited: Math.max(0, (Number(cclL.earned) || 0) - (Number(cclL.reversalCreditThisMonth) || 0)),
                         used: Number(cclL.used) || 0,
                         locked: sub != null ? Number(sub.pendingLockedCCL) || 0 : null,
                     },
                     el: {
-                        credited: Number(elL.accruedThisMonth) || 0,
+                        credited: Math.max(0, (Number(elL.accruedThisMonth) || 0) - (Number(elL.reversalCreditThisMonth) || 0)),
                         used: Number(elL.usedThisMonth) || 0,
                         locked: sub != null ? Number(sub.pendingLockedEL) || 0 : null,
                     },
@@ -1238,9 +1223,39 @@ class LeaveRegisterService {
                 grouped[empKey].months[monthKey] = {
                     month: monthNum,
                     year: yearNum,
-                    casualLeave: { openingBalance: 0, accruedThisMonth: 0, earnedCCL: 0, usedThisMonth: 0, expired: 0, balance: 0, carryForward: 0, adjustments: 0 },
-                    earnedLeave: { openingBalance: 0, accruedThisMonth: 0, usedThisMonth: 0, balance: 0, adjustments: 0 },
-                    compensatoryOff: { openingBalance: 0, earned: 0, used: 0, expired: 0, balance: 0, adjustments: 0 },
+                    // usedThisMonth is what UI shows as "Used".
+                    // We keep usedThisMonthRaw so balance math stays correct when we compute net-used.
+                    casualLeave: {
+                      openingBalance: 0,
+                      accruedThisMonth: 0,
+                      earnedCCL: 0,
+                      usedThisMonth: 0,
+                      usedThisMonthRaw: 0,
+                      reversalCreditThisMonth: 0,
+                      expired: 0,
+                      balance: 0,
+                      carryForward: 0,
+                      adjustments: 0,
+                    },
+                    earnedLeave: {
+                      openingBalance: 0,
+                      accruedThisMonth: 0,
+                      usedThisMonth: 0,
+                      usedThisMonthRaw: 0,
+                      reversalCreditThisMonth: 0,
+                      balance: 0,
+                      adjustments: 0,
+                    },
+                    compensatoryOff: {
+                      openingBalance: 0,
+                      earned: 0,
+                      used: 0,
+                      usedRaw: 0,
+                      reversalCreditThisMonth: 0,
+                      expired: 0,
+                      balance: 0,
+                      adjustments: 0,
+                    },
                     totalPaidBalance: 0,
                     transactions: []
                 };
@@ -1253,6 +1268,8 @@ class LeaveRegisterService {
             const type = transaction.transactionType;
             const days = transaction.days;
 
+            const isReversalCredit = type === 'CREDIT' && String(transaction.reason || '').includes('Leave Application Cancelled/Reversed');
+
             if (leaveType === 'CL') {
                 const cl = monthData.casualLeave;
                 cl.balance = transaction.closingBalance;
@@ -1260,21 +1277,24 @@ class LeaveRegisterService {
                     if (transaction.autoGeneratedType === 'INITIAL_BALANCE') cl.accruedThisMonth += days;
                     else if (transaction.reason?.includes('CCL')) cl.earnedCCL += days;
                     else cl.accruedThisMonth += days;
+                    if (isReversalCredit) cl.reversalCreditThisMonth += days;
                 }
-                else if (type === 'DEBIT') cl.usedThisMonth += days;
+                else if (type === 'DEBIT') cl.usedThisMonthRaw += days;
                 else if (type === 'EXPIRY') cl.expired += days;
                 else if (type === 'ADJUSTMENT') cl.adjustments += days;
             } else if (leaveType === 'EL') {
                 const el = monthData.earnedLeave;
                 el.balance = transaction.closingBalance;
                 if (type === 'CREDIT') el.accruedThisMonth += days;
-                else if (type === 'DEBIT') el.usedThisMonth += days;
+                if (type === 'CREDIT' && isReversalCredit) el.reversalCreditThisMonth += days;
+                else if (type === 'DEBIT') el.usedThisMonthRaw += days;
                 else if (type === 'ADJUSTMENT') el.adjustments += days;
             } else if (leaveType === 'CCL') {
                 const ccl = monthData.compensatoryOff;
                 ccl.balance = transaction.closingBalance;
                 if (type === 'CREDIT') ccl.earned += days;
-                else if (type === 'DEBIT') ccl.used += days;
+                if (type === 'CREDIT' && isReversalCredit) ccl.reversalCreditThisMonth += days;
+                else if (type === 'DEBIT') ccl.usedRaw += days;
                 else if (type === 'EXPIRY') ccl.expired += days;
                 else if (type === 'ADJUSTMENT') ccl.adjustments += days;
             }
@@ -1351,9 +1371,25 @@ class LeaveRegisterService {
                         m.earnedLeave.balance = m.earnedLeave.openingBalance;
                         m.compensatoryOff.balance = m.compensatoryOff.openingBalance;
                     } else {
-                        const deltaCL = m.casualLeave.accruedThisMonth + m.casualLeave.earnedCCL - m.casualLeave.usedThisMonth - m.casualLeave.expired + m.casualLeave.adjustments;
-                        const deltaEL = m.earnedLeave.accruedThisMonth - m.earnedLeave.usedThisMonth + m.earnedLeave.adjustments;
-                        const deltaCCL = m.compensatoryOff.earned - m.compensatoryOff.used - m.compensatoryOff.expired + m.compensatoryOff.adjustments;
+                        // UI should show USED as net (DEBIT - reversal CREDIT).
+                        // Balance math must still use raw debits, because reversal credits are counted as credits.
+                        const clUsedRaw = Number(m.casualLeave.usedThisMonthRaw) || 0;
+                        const clReversal = Number(m.casualLeave.reversalCreditThisMonth) || 0;
+                        m.casualLeave.usedThisMonth = Math.max(0, clUsedRaw - clReversal);
+
+                        const elUsedRaw = Number(m.earnedLeave.usedThisMonthRaw) || 0;
+                        const elReversal = Number(m.earnedLeave.reversalCreditThisMonth) || 0;
+                        m.earnedLeave.usedThisMonth = Math.max(0, elUsedRaw - elReversal);
+
+                        const cclUsedRaw = Number(m.compensatoryOff.usedRaw) || 0;
+                        const cclReversal = Number(m.compensatoryOff.reversalCreditThisMonth) || 0;
+                        m.compensatoryOff.used = Math.max(0, cclUsedRaw - cclReversal);
+
+                        const deltaCL =
+                          m.casualLeave.accruedThisMonth + m.casualLeave.earnedCCL - clUsedRaw - m.casualLeave.expired + m.casualLeave.adjustments;
+                        const deltaEL = m.earnedLeave.accruedThisMonth - elUsedRaw + m.earnedLeave.adjustments;
+                        const deltaCCL =
+                          m.compensatoryOff.earned - cclUsedRaw - m.compensatoryOff.expired + m.compensatoryOff.adjustments;
                         
                         m.casualLeave.balance = m.casualLeave.openingBalance + deltaCL;
                         m.earnedLeave.balance = m.earnedLeave.openingBalance + deltaEL;

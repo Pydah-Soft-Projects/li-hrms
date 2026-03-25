@@ -1498,17 +1498,31 @@ export default function LeavesPage() {
       setDetailType(type);
       setShowDetailDialog(true);
 
-      // Check if revocation is possible: only by the approver of the last step, within 3 hours
+      // Check if revocation is possible:
+      // - Backend allows revocation by the original actor OR higher authority (HR/Super Admin) within a time window.
       const wf = (enrichedItem as any).workflow;
       const chain = wf?.approvalChain || [];
       const approvedSteps = chain.filter((s: any) => s.status === 'approved');
       const lastApproved = approvedSteps[approvedSteps.length - 1];
-      const userId = (auth.getUser() as any)?._id;
-      if (lastApproved && userId) {
-        const approverId = (lastApproved.actionBy?._id || lastApproved.actionBy)?.toString?.() || String(lastApproved.actionBy);
-        const approvedAt = lastApproved.updatedAt || (enrichedItem as any).approvals?.[lastApproved.role || lastApproved.stepRole]?.approvedAt;
+      const user = auth.getUser() as any;
+      // `auth.getUser()` stores the user id under `id` (not `_id`) in this codebase.
+      const userId = user?._id || user?.id || user?.userId;
+      const userRole = user?.role;
+
+      if (lastApproved) {
+        const approverId =
+          (lastApproved.actionBy?._id || lastApproved.actionBy)?.toString?.() ||
+          String(lastApproved.actionBy || '');
+        const approvedAt =
+          lastApproved.updatedAt ||
+          (enrichedItem as any).approvals?.[lastApproved.role || lastApproved.stepRole]?.approvedAt;
         const hoursSince = approvedAt ? (Date.now() - new Date(approvedAt).getTime()) / (1000 * 60 * 60) : 999;
-        setCanRevoke(approverId === userId && hoursSince <= 3);
+
+        const isHigherAuthority = ['super_admin', 'hr'].includes(userRole || '');
+        const isOriginalActor = userId ? approverId === String(userId) : false;
+
+        // Keep aligned with backend `revocationWindow = 48` hours.
+        setCanRevoke((isHigherAuthority || isOriginalActor) && hoursSince <= 48);
       } else {
         setCanRevoke(false);
       }

@@ -213,6 +213,15 @@ const leavePolicySettingsSchema = new mongoose.Schema({
                 type: Boolean,
                 default: true,
                 description: 'Carry forward unused EL to next financial year'
+            },
+            /**
+             * When monthly cap includes EL (leave-only EL), unused scheduled EL in the apply pool for the month
+             * rolls into next month’s elCredits slot; when false, EXPIRY at cycle end. Ignored when EL is not in pool.
+             */
+            carryMonthlyPoolToNextPayrollMonth: {
+                type: Boolean,
+                default: true,
+                description: 'Roll unused monthly apply-pool EL to next payroll month vs expire at cycle end'
             }
         },
         compensatoryOff: {
@@ -239,6 +248,15 @@ const leavePolicySettingsSchema = new mongoose.Schema({
                 type: Boolean,
                 default: false,
                 description: 'Carry forward unused CO to next financial year'
+            },
+            /**
+             * When true, unused scheduled CCL in a payroll month’s apply pool (after CL→CCL→EL consumption)
+             * rolls into the next month’s compensatoryOffs slot; when false, forfeit (EXPIRY) on cycle end.
+             */
+            carryMonthlyPoolToNextPayrollMonth: {
+                type: Boolean,
+                default: true,
+                description: 'Roll unused monthly pool CCL to next payroll month vs expire at cycle end'
             }
         }
     },

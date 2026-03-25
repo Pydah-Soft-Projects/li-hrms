@@ -146,6 +146,11 @@ router.post('/initial-cl-sync/apply', authorize('hr', 'sub_admin', 'super_admin'
 // ACCRUAL ROUTES (run monthly CL/EL accrual; no cron – call manually or from external scheduler)
 // ==========================================
 router.post('/accrual/run-monthly', authorize('hr', 'sub_admin', 'super_admin'), accrualController.runMonthlyAccruals);
+router.post(
+  '/accrual/run-monthly-pool-carry',
+  authorize('hr', 'sub_admin', 'super_admin'),
+  accrualController.runMonthlyPoolCarryForward
+);
 
 // ==========================================
 // LEAVE ROUTES

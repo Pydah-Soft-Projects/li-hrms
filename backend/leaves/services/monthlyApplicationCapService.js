@@ -4,12 +4,17 @@
  */
 
 const Leave = require('../model/Leave');
+const LeaveSplit = require('../model/LeaveSplit');
 const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
 const LeaveRegisterYear = require('../model/LeaveRegisterYear');
 const dateCycleService = require('./dateCycleService');
 const { extractISTComponents } = require('../../shared/utils/dateUtils');
 
-/** Statuses where the leave still consumes quota (in-flight or approved). */
+/**
+ * Statuses where the leave still consumes monthly apply quota (in-flight pipeline or fully approved).
+ * Rejected (`rejected`, `*_rejected`), cancelled, draft, etc. are omitted — those days no longer
+ * count as locked or approved, so the payroll-period credit is available for new applications.
+ */
 const CAP_COUNT_STATUSES = [
   'pending',
   'reporting_manager_approved',
@@ -169,7 +174,7 @@ async function assertWithinMonthlyApplicationCap(employeeId, fromDate, leaveType
     status: { $in: CAP_COUNT_STATUSES },
     fromDate: { $gte: start, $lte: end },
   })
-    .select('leaveType numberOfDays')
+    .select('leaveType numberOfDays splitStatus')
     .lean();
 
   const add = countedDaysForLeave({ leaveType, numberOfDays }, policy);
@@ -180,9 +185,7 @@ async function assertWithinMonthlyApplicationCap(employeeId, fromDate, leaveType
   if (lt === 'CL' && registerClCap != null) {
     let usedCL = 0;
     for (const row of existing) {
-      if (String(row.leaveType || '').toUpperCase() === 'CL') {
-        usedCL += countedDaysForLeave(row, policy);
-      }
+      usedCL += await sumClDaysForLeaveInPeriod(row, policy, start, end);
     }
     if (usedCL + add > registerClCap) {
       return {
@@ -198,7 +201,7 @@ async function assertWithinMonthlyApplicationCap(employeeId, fromDate, leaveType
 
   let usedTowardCeiling = 0;
   for (const row of existing) {
-    usedTowardCeiling += countedDaysForLeave(row, policy);
+    usedTowardCeiling += await sumCountedCapDaysForLeaveInPeriod(row, policy, start, end);
   }
 
   if (usedTowardCeiling + add > pooledCeiling) {
@@ -212,12 +215,123 @@ async function assertWithinMonthlyApplicationCap(employeeId, fromDate, leaveType
   return { ok: true };
 }
 
+/**
+ * Days counting toward monthly apply cap for one leave row in a payroll window.
+ * For split-approved leaves, only approved split segments whose date falls in [start,end]
+ * and whose leave type counts (CL/CCL/EL rules) are included — LOP slices do not consume cap.
+ */
+async function sumCountedCapDaysForLeaveInPeriod(leave, policy, start, end) {
+  if (String(leave.splitStatus || '') === 'split_approved' && leave._id) {
+    const splits = await LeaveSplit.find({
+      leaveId: leave._id,
+      status: 'approved',
+      date: { $gte: start, $lte: end },
+    })
+      .select('leaveType numberOfDays')
+      .lean();
+    let sum = 0;
+    for (const s of splits) {
+      sum += countedDaysForLeave({ leaveType: s.leaveType, numberOfDays: s.numberOfDays }, policy);
+    }
+    return sum;
+  }
+  return countedDaysForLeave(leave, policy);
+}
+
+/** CL-only days in period (register CL cap / messaging). Split-aware. */
+async function sumClDaysForLeaveInPeriod(leave, policy, start, end) {
+  if (String(leave.splitStatus || '') === 'split_approved' && leave._id) {
+    const splits = await LeaveSplit.find({
+      leaveId: leave._id,
+      status: 'approved',
+      date: { $gte: start, $lte: end },
+    })
+      .select('leaveType numberOfDays')
+      .lean();
+    let sum = 0;
+    for (const s of splits) {
+      if (String(s.leaveType || '').toUpperCase() !== 'CL') continue;
+      sum += countedDaysForLeave({ leaveType: s.leaveType, numberOfDays: s.numberOfDays }, policy);
+    }
+    return sum;
+  }
+  if (String(leave.leaveType || '').toUpperCase() === 'CL') {
+    return countedDaysForLeave(leave, policy);
+  }
+  return 0;
+}
+
+/**
+ * Add one leave’s cap contributions into pendingByMonthKey buckets (register grid “locked/approved”).
+ * Split rows are bucketed by each segment’s date; non-split by application fromDate.
+ */
+async function addLeaveCapToMonthlyBuckets(leave, policy, monthPayrollWindows, pendingByMonthKey) {
+  const st = String(leave.status || '');
+  const isApproved = st === 'approved';
+  const contributions = [];
+
+  if (String(leave.splitStatus || '') === 'split_approved' && leave._id) {
+    const splits = await LeaveSplit.find({
+      leaveId: leave._id,
+      status: 'approved',
+    })
+      .select('date leaveType numberOfDays')
+      .lean();
+    for (const s of splits) {
+      const capDays = countedDaysForLeave(
+        { leaveType: s.leaveType, numberOfDays: s.numberOfDays },
+        policy
+      );
+      if (capDays <= 0) continue;
+      const splitMs = new Date(s.date).getTime();
+      for (const w of monthPayrollWindows) {
+        const startMs = w.start.getTime();
+        const endMs = w.end.getTime();
+        if (splitMs >= startMs && splitMs <= endMs) {
+          contributions.push({ key: w.key, capDays, leaveType: s.leaveType });
+          break;
+        }
+      }
+    }
+  } else {
+    const capDays = countedDaysForLeave(leave, policy);
+    if (capDays <= 0) return;
+    const leaveFromMs = new Date(leave.fromDate).getTime();
+    for (const w of monthPayrollWindows) {
+      const startMs = w.start.getTime();
+      const endMs = w.end.getTime();
+      if (leaveFromMs >= startMs && leaveFromMs <= endMs) {
+        contributions.push({ key: w.key, capDays, leaveType: leave.leaveType });
+        break;
+      }
+    }
+  }
+
+  for (const c of contributions) {
+    const b = pendingByMonthKey[c.key];
+    if (!b) continue;
+    b.capConsumedDays += c.capDays;
+    if (isApproved) b.capApprovedDays += c.capDays;
+    else {
+      b.capLockedDays += c.capDays;
+      b.pendingCapDaysInFlight += c.capDays;
+      const u = String(c.leaveType || '').toUpperCase();
+      if (u === 'CL') b.pendingCLDays += c.capDays;
+      else if (u === 'CCL') b.pendingCclDays += c.capDays;
+      else if (u === 'EL') b.pendingElDays += c.capDays;
+    }
+  }
+}
+
 module.exports = {
   assertWithinMonthlyApplicationCap,
   getRegisterClApplicationCap,
   countedDaysForLeave,
   computeScheduledPoolApplyCeiling,
   resolvePooledMonthlyApplyCeiling,
+  sumCountedCapDaysForLeaveInPeriod,
+  sumClDaysForLeaveInPeriod,
+  addLeaveCapToMonthlyBuckets,
   CAP_COUNT_STATUSES,
   PENDING_PIPELINE_STATUSES,
 };
