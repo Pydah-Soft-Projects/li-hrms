@@ -5,41 +5,10 @@
 
 const Employee = require('../../employees/model/Employee');
 const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
-const leaveRegisterService = require('./leaveRegisterService');
 const dateCycleService = require('./dateCycleService');
-const { createISTDate } = require('../../shared/utils/dateUtils');
-
-/**
- * Full years of experience from DOJ to asOfDate (inclusive of asOfDate).
- * Copied from annualCLResetService.js for consistency
- */
-function yearsOfExperience(doj, asOfDate) {
-    if (!doj) return 0;
-    const start = new Date(doj);
-    const end = new Date(asOfDate);
-    if (end < start) return 0;
-    const years = (end.getFullYear() - start.getFullYear()) +
-        ((end.getMonth() - start.getMonth()) * 12 + (end.getDate() - start.getDate())) / 365.25;
-    return Math.floor(years);
-}
-
-/**
- * Get casual leave entitlement for employee: from experience tiers if configured, else default.
- * Copied from annualCLResetService.js for consistency
- */
-function getCasualLeaveEntitlement(settings, doj, asOfDate) {
-    const defaultCL = settings.annualCLReset.resetToBalance ?? 12;
-    const tiers = settings.annualCLReset.casualLeaveByExperience;
-    if (!Array.isArray(tiers) || tiers.length === 0) return defaultCL;
-    const years = yearsOfExperience(doj, asOfDate);
-    const sorted = [...tiers].sort((a, b) => (a.minYears || 0) - (b.minYears || 0));
-    for (const t of sorted) {
-        const min = t.minYears ?? 0;
-        const max = t.maxYears ?? 999;
-        if (years >= min && years < max) return t.casualLeave ?? defaultCL;
-    }
-    return defaultCL;
-}
+const leaveRegisterYearService = require('./leaveRegisterYearService');
+const leaveRegisterYearLedgerService = require('./leaveRegisterYearLedgerService');
+const { getInitialSyncEntitlement, getCasualLeaveEntitlement } = require('./annualCLResetService');
 
 /**
  * Calculate remaining months in financial year from a given date
@@ -101,7 +70,7 @@ async function initializeEmployeeCL(employeeId) {
 
         // Get employee details
         const employee = await Employee.findById(employeeId)
-            .select('_id emp_no employee_name department_id division_id doj designation department')
+            .select('_id emp_no employee_name department_id division_id doj designation department compensatoryOffs is_active')
             .populate('department_id', 'name')
             .populate('division_id', 'name');
 
@@ -122,79 +91,93 @@ async function initializeEmployeeCL(employeeId) {
             return { success: false, message: 'Annual CL reset is disabled' };
         }
 
-        // Calculate remaining months in financial year
-        const { remainingMonths, totalMonthsInFY } = await calculateRemainingMonthsInFY(employee.doj);
+        // Same FY grid + payroll-cycle rules as initial CL sync / LeaveRegisterYear (default: full cell if > half pay period remains after join)
+        const { entitlement, proration, months, financialYear } = await getInitialSyncEntitlement(
+            settings,
+            employee.doj,
+            employee.doj
+        );
 
-        if (remainingMonths <= 0) {
-            console.log(`[EmployeeLeaveInit] No remaining months in FY for employee ${employee.emp_no}`);
-            return { success: true, message: 'No prorated CL needed - FY already ended', proratedCL: 0 };
-        }
-
-        // Get full annual entitlement
-        const fullAnnualEntitlement = getCasualLeaveEntitlement(settings, employee.doj, employee.doj);
-
-        // Calculate prorated CL (raw calculation)
-        const rawProratedCL = (fullAnnualEntitlement * remainingMonths / totalMonthsInFY);
-
-        // Round to nearest 0.5 increment to get clean decimal values
-        // 0.6, 0.7, 0.8, 0.2, 0.3, 0.4 become 0.5 or 1.0
-        const proratedCL = Math.round(rawProratedCL * 2) / 2;
-
-        // Apply monthly limit constraints from leave policy settings
-        const monthlyLimitSettings = settings.monthlyLimitSettings || {};
-        const maxUsableLimit = monthlyLimitSettings.maxUsableLimit || 4; // Default master cap
-        const defaultMonthlyCap = monthlyLimitSettings.defaultMonthlyCap || 1; // Default monthly cap
-
-        // Ensure prorated CL doesn't exceed reasonable monthly usage limits
-        // For prorated allocation, we allow up to the max usable limit per month
-        const maxReasonableProrated = Math.min(proratedCL, maxUsableLimit * remainingMonths);
-
-        // Final prorated CL (capped and rounded)
-        const finalProratedCL = Math.min(proratedCL, maxReasonableProrated);
-
-        console.log(`[EmployeeLeaveInit] Employee ${employee.emp_no}: Full entitlement=${fullAnnualEntitlement}, Remaining months=${remainingMonths}/${totalMonthsInFY}, Raw prorated=${rawProratedCL.toFixed(2)}, Rounded=${proratedCL}, Capped=${finalProratedCL}`);
-
-        // Check if employee already has CL transactions (avoid duplicate initialization)
-        const existingCLTransactions = await leaveRegisterService.getLeaveRegister(employeeId, 'CL');
-        if (existingCLTransactions && existingCLTransactions.length > 0) {
-            console.log(`[EmployeeLeaveInit] Employee ${employee.emp_no} already has CL transactions, skipping initialization`);
+        if (financialYear && (await leaveRegisterYearService.hasEmployeeOnboardingYear(employee._id, financialYear))) {
+            console.log(`[EmployeeLeaveInit] Employee ${employee.emp_no} already has onboarding FY row (${financialYear}), skipping`);
             return { success: true, message: 'CL already initialized', proratedCL: 0 };
         }
 
-        // Create initial CL transaction
-        await leaveRegisterService.addTransaction({
+        if (!entitlement || entitlement <= 0) {
+            console.log(`[EmployeeLeaveInit] Zero CL entitlement for ${employee.emp_no} (${proration?.reason || 'policy'})`);
+            return {
+                success: true,
+                message: 'No CL entitlement for this join date in FY',
+                proratedCL: 0,
+                proration,
+                financialYear,
+            };
+        }
+
+        const fullAnnualEntitlement = getCasualLeaveEntitlement(settings, employee.doj, employee.doj);
+
+        console.log(
+            `[EmployeeLeaveInit] Employee ${employee.emp_no}: Grid annual=${fullAnnualEntitlement}, opening CL=${entitlement}, FY=${financialYear || '—'}, proration=${proration?.reason}`
+        );
+
+        const yearlyGridSum = Array.isArray(months) ? leaveRegisterYearService.sumScheduledCl(months) : 0;
+        const monthsPayload = Array.isArray(months) ? months.map((m) => ({ ...m, transactions: [...(m.transactions || [])] })) : [];
+        const doj = new Date(employee.doj);
+        const joinSlot =
+            monthsPayload.find(
+                (m) => doj >= new Date(m.payPeriodStart) && doj <= new Date(m.payPeriodEnd)
+            ) || monthsPayload[0];
+        if (joinSlot) {
+            joinSlot.transactions.push({
+                at: doj,
+                leaveType: 'CL',
+                transactionType: 'ADJUSTMENT',
+                days: entitlement,
+                openingBalance: 0,
+                closingBalance: entitlement,
+                startDate: doj,
+                endDate: doj,
+                reason: `New employee CL: ${entitlement} day(s) from policy payroll-month grid (joining payroll cycle has no credit; ${proration?.reason || 'policy'})`,
+                status: 'APPROVED',
+                autoGenerated: true,
+                autoGeneratedType: 'NEW_EMPLOYEE_PRORATED_CL',
+            });
+        }
+
+        const cco = Number(employee.compensatoryOffs);
+        await leaveRegisterYearService.upsertLeaveRegisterYear({
             employeeId: employee._id,
             empNo: employee.emp_no,
-            employeeName: employee.employee_name,
-            designation: employee.designation || 'N/A',
-            department: employee.department_id?.name || employee.department || 'N/A',
-            divisionId: employee.division_id?._id,
-            departmentId: employee.department_id?._id,
-            dateOfJoining: employee.doj,
-            employmentStatus: employee.is_active ? 'active' : 'inactive',
-            leaveType: 'CL',
-            transactionType: 'ADJUSTMENT',
-            startDate: employee.doj,
-            endDate: employee.doj,
-            days: finalProratedCL,
-            reason: `New Employee CL Allocation: ${finalProratedCL} days prorated for ${remainingMonths} remaining months in FY (${fullAnnualEntitlement} annual entitlement, rounded to nearest 0.5)`,
-            status: 'APPROVED',
-            autoGenerated: true,
-            autoGeneratedType: 'NEW_EMPLOYEE_PRORATED_CL'
+            employeeName: employee.employee_name || '',
+            resetDate: employee.doj,
+            casualBalance: entitlement,
+            compensatoryOffBalance: Number.isFinite(cco) ? cco : 0,
+            months: monthsPayload,
+            yearlyPolicyClScheduledTotal: yearlyGridSum,
+            yearlyTransactions: [
+                {
+                    transactionKind: 'ADJUSTMENT',
+                    leaveType: 'CL',
+                    days: entitlement,
+                    reason: `New employee CL pool (${financialYear || '—'}): sum of scheduled payroll credits (${proration?.reason || 'policy'})`,
+                    meta: { autoGeneratedType: 'NEW_EMPLOYEE_PRORATED_CL' },
+                },
+            ],
+            source: 'EMPLOYEE_ONBOARDING',
         });
 
-        console.log(`[EmployeeLeaveInit] Successfully initialized ${finalProratedCL} prorated CL for employee ${employee.emp_no}`);
+        await leaveRegisterYearLedgerService.recalculateRegisterBalances(employee._id, 'CL', null);
+
+        console.log(`[EmployeeLeaveInit] Successfully initialized ${entitlement} CL for employee ${employee.emp_no}`);
 
         return {
             success: true,
-            message: `Prorated CL initialized: ${finalProratedCL} days`,
-            proratedCL: finalProratedCL,
+            message: `CL initialized: ${entitlement} day(s) from monthly policy grid`,
+            proratedCL: entitlement,
             fullAnnualEntitlement,
-            remainingMonths,
-            totalMonthsInFY,
-            rawProratedCL: rawProratedCL.toFixed(2),
-            roundedProratedCL: proratedCL,
-            cappedProratedCL: finalProratedCL
+            proration,
+            financialYear,
+            payrollMonthSlots: months,
         };
 
     } catch (error) {

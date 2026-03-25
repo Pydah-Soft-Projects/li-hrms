@@ -133,6 +133,9 @@ router.get('/annual-reset/next-date', authorize('employee', 'manager', 'hod', 'h
 // Preview annual CL reset
 router.post('/annual-reset/preview', authorize('hr', 'sub_admin', 'super_admin'), annualCLResetController.previewReset);
 
+// Per-employee leave register snapshot for one financial year (months + yearly transactions)
+router.get('/leave-register-year/:employeeId', authorize('hr', 'sub_admin', 'super_admin'), annualCLResetController.getLeaveRegisterYear);
+
 // Apply initial CL balance from policy to all employees (manual; not annual reset)
 router.post('/initial-cl-sync', authorize('hr', 'sub_admin', 'super_admin'), annualCLResetController.performInitialCLSync);
 router.get('/initial-cl-sync/preview', authorize('hr', 'sub_admin', 'super_admin'), annualCLResetController.previewInitialCLSync);
@@ -150,6 +153,14 @@ router.post('/accrual/run-monthly', authorize('hr', 'sub_admin', 'super_admin'),
 
 // Get my leaves
 router.get('/my', leaveController.getMyLeaves);
+
+// Leave apply dialog: stored monthly cap / balances for payroll period of fromDate
+router.get(
+  '/apply-period-context',
+  authorize('employee', 'manager', 'hod', 'hr', 'sub_admin', 'super_admin'),
+  applyScopeFilter,
+  leaveController.getApplyPeriodContext
+);
 
 // Get pending approvals
 router.get('/pending-approvals', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), leaveController.getPendingApprovals);
@@ -171,6 +182,20 @@ router.post('/:id/revoke-for-attendance', authorize('manager', 'super_admin', 's
 
 // Update leave for attendance (multi-day leave adjustments)
 router.post('/:id/update-for-attendance', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), leaveController.updateLeaveForAttendance);
+
+// Leave register listing & employee detail (must be before /:id so "register" is not parsed as id)
+router.get(
+  '/register/employee/:employeeId',
+  authorize('hod', 'hr', 'manager', 'sub_admin', 'super_admin'),
+  applyScopeFilter,
+  leaveController.getEmployeeLeaveRegisterDetail
+);
+router.get(
+  '/register',
+  authorize('hod', 'hr', 'manager', 'sub_admin', 'super_admin'),
+  applyScopeFilter,
+  leaveController.listLeaveRegister
+);
 
 // Get all leaves (with filters) - employee allowed; applyScopeFilter restricts to own/scope
 router.get('/', authorize('employee', 'manager', 'hod', 'hr', 'sub_admin', 'super_admin'), applyScopeFilter, leaveController.getLeaves);
