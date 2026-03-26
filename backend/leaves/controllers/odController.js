@@ -1481,6 +1481,19 @@ exports.processODAction = async (req, res) => {
     const currentApprover = activeStep.role;
     const requiredRole = currentApprover;
 
+    // --- Intermediate Rejection Override Check ---
+    if (od.status.endsWith('_rejected') && od.status !== 'rejected') {
+      const { getWorkflowSettings } = require('../../settings/services/workflowSettingsService');
+      const workflowSettings = await getWorkflowSettings();
+      const allowHigher = workflowSettings?.workflow?.allowHigherAuthorityToApproveLowerLevels === true;
+      if (!allowHigher) {
+        return res.status(403).json({
+          success: false,
+          error: `OD application was rejected by ${od.status.replace('_rejected', '').toUpperCase()}. Overrides are disabled in settings.`,
+        });
+      }
+    }
+
     // --- Authorization Check (Scoped) ---
     // Use req.scopedUser if available (from middleware), otherwise fetch full User record
     const fullUser = req.scopedUser || await User.findById(req.user.userId || req.user._id);
@@ -1594,6 +1607,7 @@ exports.processODAction = async (req, res) => {
           const nextStep = od.workflow.approvalChain[activeStepIndex + 1];
           nextStep.isCurrent = true;
 
+          od.workflow.isCompleted = false;
           od.workflow.currentStepRole = nextStep.role;
           od.workflow.nextApprover = nextStep.role;
           od.workflow.nextApproverRole = nextStep.role;

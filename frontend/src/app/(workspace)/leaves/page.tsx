@@ -2296,6 +2296,22 @@ export default function LeavesPage() {
     // Strict check: nextApproverRole must match user.role (current step = user's turn)
     const nextRole = String((item as any).workflow?.nextApproverRole || (item as any).workflow?.nextApprover || '').toLowerCase().trim();
     const userRole = String(currentUser.role || '').toLowerCase().trim();
+
+    if (allowHigher && item.status.endsWith('_rejected') && item.status !== 'rejected') {
+      const rejectingRole = item.status.replace('_rejected', '');
+      if (roleOrder.length > 0) {
+        const rejectIdx = roleOrder.indexOf(rejectingRole);
+        let userIdx = roleOrder.indexOf(userRole);
+        if (userIdx === -1 && (userRole === 'hr' || userRole === 'super_admin')) userIdx = roleOrder.length;
+        if (userIdx === -1 && userRole === 'manager') {
+          const reportingIdx = roleOrder.indexOf('reporting_manager');
+          const hrIdx = roleOrder.indexOf('hr');
+          userIdx = reportingIdx >= 0 ? reportingIdx : (hrIdx >= 0 ? hrIdx : roleOrder.length);
+        }
+        if (rejectIdx >= 0 && userIdx > rejectIdx) return true;
+      }
+    }
+
     if (nextRole) {
       if (userRole === nextRole) return true;
       if (nextRole === 'final_authority' && userRole === 'hr') return true;
