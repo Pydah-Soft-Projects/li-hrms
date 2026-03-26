@@ -3,6 +3,11 @@
 import { useState, useEffect, useRef, useCallback, useMemo, type MouseEvent } from 'react';
 import { api } from '@/lib/api';
 import { formatHighlightContribution, highlightBadgeSubtitle } from '@/lib/attendanceHighlight';
+import {
+  normalizeCompleteSummaryColumns,
+  superadminVisibleCompleteKeys,
+  type SuperadminCompleteAggregateKey,
+} from '@/lib/attendanceCompleteAggregateColumns';
 import { toast } from 'react-toastify';
 import { format, parseISO } from 'date-fns';
 import { alertSuccess, alertError, alertConfirm, alertLoading } from '@/lib/customSwal';
@@ -183,6 +188,9 @@ interface Designation {
 
 export default function AttendancePage() {
   const [tableType, setTableType] = useState<'complete' | 'present_absent' | 'in_out' | 'leaves' | 'od' | 'ot'>('complete');
+  const [orgCompleteSummaryColumns, setOrgCompleteSummaryColumns] = useState<
+    Record<SuperadminCompleteAggregateKey, boolean>
+  >(() => normalizeCompleteSummaryColumns(undefined));
 
   // Robust time formatter
   const formatTime = (timeStr: string | null, showDateIfDifferent?: boolean, recordDate?: string) => {
@@ -520,6 +528,9 @@ export default function AttendancePage() {
             allowAttendanceUpload: ff.allowAttendanceUpload !== false,
             allowShiftChange: ff.allowShiftChange !== false,
           });
+        }
+        if (res?.data?.completeSummaryColumns) {
+          setOrgCompleteSummaryColumns(normalizeCompleteSummaryColumns(res.data.completeSummaryColumns));
         }
       } catch {
         // keep defaults
@@ -1951,6 +1962,23 @@ export default function AttendancePage() {
     return dates;
   }, [cycleDates.startDate, cycleDates.endDate]);
 
+  const visibleSuperadminCompleteKeys = useMemo(
+    () => superadminVisibleCompleteKeys(orgCompleteSummaryColumns),
+    [orgCompleteSummaryColumns]
+  );
+
+  const superadminTrailingSummaryCount = useMemo(() => {
+    if (tableType === 'complete') return Math.max(1, visibleSuperadminCompleteKeys.length);
+    if (tableType === 'present_absent') return 2;
+    if (tableType === 'in_out') return 1;
+    if (tableType === 'leaves') return 4;
+    if (tableType === 'od') return 2;
+    if (tableType === 'ot') return 2;
+    return 0;
+  }, [tableType, visibleSuperadminCompleteKeys.length]);
+
+  const superadminTableEmptyColSpan = 1 + daysArray.length + superadminTrailingSummaryCount;
+
   // Virtualized row component
 
 
@@ -2243,46 +2271,117 @@ export default function AttendancePage() {
                     </th>
                   );
                 })}
-                {tableType === 'complete' && (
-                  <>
-                    <th className="border-r border-slate-200 bg-blue-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-blue-700 dark:border-slate-700 dark:bg-blue-900/20 w-[60px] min-w-[60px]">
-                      Pres
-                    </th>
-                    <th className="border-r border-slate-200 bg-amber-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-amber-700 dark:border-slate-700 dark:bg-amber-900/20 w-[60px] min-w-[60px]">
-                      Leaves
-                    </th>
-                    <th className="border-r border-slate-200 bg-red-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-red-700 dark:border-slate-700 dark:bg-red-900/20 w-[60px] min-w-[60px]">
-                      Abs
-                    </th>
-                    <th className="border-r border-slate-200 bg-orange-100 px-1 py-3 text-center text-[9px] font-bold uppercase text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 w-[60px] min-w-[60px]">
-                      WO
-                    </th>
-                    <th className="border-r border-slate-200 bg-red-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-red-700 dark:border-slate-700 dark:bg-red-900/20 w-[60px] min-w-[60px]">
-                      Hol
-                    </th>
-                    <th className="border-r border-slate-200 bg-orange-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 w-[60px] min-w-[60px]">
-                      OT
-                    </th>
-                    <th className="border-r border-slate-200 bg-purple-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-purple-700 dark:border-slate-700 dark:bg-purple-900/20 w-[60px] min-w-[60px]">
-                      Extra
-                    </th>
-                    <th className="border-r border-slate-200 bg-cyan-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-cyan-700 dark:border-slate-700 dark:bg-cyan-900/20 w-[80px] min-w-[80px]">
-                      Perms
-                    </th>
-                    <th className="border-r border-slate-200 bg-rose-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-rose-700 dark:border-slate-700 dark:bg-rose-900/20 w-[70px] min-w-[70px]">
-                      Lates+
-                    </th>
-                    <th
-                      className="border-r border-slate-200 bg-violet-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-violet-800 dark:border-slate-700 dark:bg-violet-900/25 w-[64px] min-w-[64px]"
-                      title="Policy attendance deduction days (late/early + absent extra), same as payroll"
-                    >
-                      Att ded
-                    </th>
-                    <th className="bg-green-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-green-700 dark:border-slate-700 dark:bg-green-900/20 w-[70px] min-w-[70px]">
-                      Payable
-                    </th>
-                  </>
-                )}
+                {tableType === 'complete' &&
+                  visibleSuperadminCompleteKeys.map((colKey, idx) => {
+                    const isLast = idx === visibleSuperadminCompleteKeys.length - 1;
+                    const edge = isLast ? '' : 'border-r border-slate-200';
+                    const base =
+                      'px-1 py-3 text-center text-[9px] font-bold uppercase dark:border-slate-700';
+                    switch (colKey) {
+                      case 'present':
+                        return (
+                          <th
+                            key={colKey}
+                            className={`${edge} ${base} bg-blue-50 text-blue-700 dark:bg-blue-900/20 w-[60px] min-w-[60px]`}
+                          >
+                            Pres
+                          </th>
+                        );
+                      case 'leaves':
+                        return (
+                          <th
+                            key={colKey}
+                            className={`${edge} ${base} bg-amber-50 text-amber-700 dark:bg-amber-900/20 w-[60px] min-w-[60px]`}
+                          >
+                            Leaves
+                          </th>
+                        );
+                      case 'absent':
+                        return (
+                          <th
+                            key={colKey}
+                            className={`${edge} ${base} bg-red-50 text-red-700 dark:bg-red-900/20 w-[60px] min-w-[60px]`}
+                          >
+                            Abs
+                          </th>
+                        );
+                      case 'weekOffs':
+                        return (
+                          <th
+                            key={colKey}
+                            className={`${edge} ${base} bg-orange-100 text-orange-700 dark:bg-orange-900/20 w-[60px] min-w-[60px]`}
+                          >
+                            WO
+                          </th>
+                        );
+                      case 'holidays':
+                        return (
+                          <th
+                            key={colKey}
+                            className={`${edge} ${base} bg-red-50 text-red-700 dark:bg-red-900/20 w-[60px] min-w-[60px]`}
+                          >
+                            Hol
+                          </th>
+                        );
+                      case 'otHours':
+                        return (
+                          <th
+                            key={colKey}
+                            className={`${edge} ${base} bg-orange-50 text-orange-700 dark:bg-orange-900/20 w-[60px] min-w-[60px]`}
+                          >
+                            OT
+                          </th>
+                        );
+                      case 'extraHours':
+                        return (
+                          <th
+                            key={colKey}
+                            className={`${edge} ${base} bg-purple-50 text-purple-700 dark:bg-purple-900/20 w-[60px] min-w-[60px]`}
+                          >
+                            Extra
+                          </th>
+                        );
+                      case 'permissions':
+                        return (
+                          <th
+                            key={colKey}
+                            className={`${edge} ${base} bg-cyan-50 text-cyan-700 dark:bg-cyan-900/20 w-[80px] min-w-[80px]`}
+                          >
+                            Perms
+                          </th>
+                        );
+                      case 'lateEarly':
+                        return (
+                          <th
+                            key={colKey}
+                            className={`${edge} ${base} bg-rose-50 text-rose-700 dark:bg-rose-900/20 w-[70px] min-w-[70px]`}
+                          >
+                            Lates+
+                          </th>
+                        );
+                      case 'attDed':
+                        return (
+                          <th
+                            key={colKey}
+                            className={`${edge} ${base} bg-violet-50 text-violet-800 dark:bg-violet-900/25 w-[64px] min-w-[64px]`}
+                            title="Policy attendance deduction days (late/early + absent extra), same as payroll"
+                          >
+                            Att ded
+                          </th>
+                        );
+                      case 'payableShifts':
+                        return (
+                          <th
+                            key={colKey}
+                            className={`bg-green-50 ${base} text-green-700 dark:bg-green-900/20 w-[70px] min-w-[70px]`}
+                          >
+                            Payable
+                          </th>
+                        );
+                      default:
+                        return null;
+                    }
+                  })}
                 {tableType === 'present_absent' && (
                   <>
                     <th className="border-r border-slate-200 bg-green-50 px-1 py-3 text-center text-[9px] font-bold uppercase text-green-700 w-[60px] min-w-[60px]">P</th>
@@ -2332,43 +2431,48 @@ export default function AttendancePage() {
                           <div className="h-8 w-full animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
                         </td>
                       ))}
-                      {tableType === 'complete' && (
-                        <>
-                          <td className="border-r border-slate-200 bg-blue-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-blue-900/20 w-[60px] min-w-[60px]">
-                            <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                          </td>
-                          <td className="border-r border-slate-200 bg-amber-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-amber-900/20 w-[60px] min-w-[60px]">
-                            <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                          </td>
-                          <td className="border-r border-slate-200 bg-red-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-red-900/20 w-[60px] min-w-[60px]">
-                            <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                          </td>
-                          <td className="border-r border-slate-200 bg-orange-100 px-2 py-2 text-center dark:border-slate-700 dark:bg-orange-900/20 w-[60px] min-w-[60px]">
-                            <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                          </td>
-                          <td className="border-r border-slate-200 bg-red-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-red-900/20 w-[60px] min-w-[60px]">
-                            <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                          </td>
-                          <td className="border-r border-slate-200 bg-orange-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-orange-900/20 w-[60px] min-w-[60px]">
-                            <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                          </td>
-                          <td className="border-r border-slate-200 bg-purple-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-purple-900/20 w-[60px] min-w-[60px]">
-                            <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                          </td>
-                          <td className="border-r border-slate-200 bg-cyan-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-cyan-900/20 w-[80px] min-w-[80px]">
-                            <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                          </td>
-                          <td className="border-r border-slate-200 bg-rose-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-rose-900/20 w-[70px] min-w-[70px]">
-                            <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                          </td>
-                          <td className="border-r border-slate-200 bg-violet-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-violet-900/25 w-[64px] min-w-[64px]">
-                            <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                          </td>
-                          <td className="bg-green-50 px-2 py-2 text-center dark:border-slate-700 dark:bg-green-900/20 w-[70px] min-w-[70px]">
-                            <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
-                          </td>
-                        </>
-                      )}
+                      {tableType === 'complete' &&
+                        visibleSuperadminCompleteKeys.map((colKey, skIdx) => {
+                          const isLast = skIdx === visibleSuperadminCompleteKeys.length - 1;
+                          const edge = isLast ? '' : 'border-r border-slate-200';
+                          const bg =
+                            colKey === 'present'
+                              ? 'bg-blue-50 dark:bg-blue-900/20'
+                              : colKey === 'leaves'
+                                ? 'bg-amber-50 dark:bg-amber-900/20'
+                                : colKey === 'absent'
+                                  ? 'bg-red-50 dark:bg-red-900/20'
+                                  : colKey === 'weekOffs'
+                                    ? 'bg-orange-100 dark:bg-orange-900/20'
+                                    : colKey === 'holidays'
+                                      ? 'bg-red-50 dark:bg-red-900/20'
+                                      : colKey === 'otHours'
+                                        ? 'bg-orange-50 dark:bg-orange-900/20'
+                                        : colKey === 'extraHours'
+                                          ? 'bg-purple-50 dark:bg-purple-900/20'
+                                          : colKey === 'permissions'
+                                            ? 'bg-cyan-50 dark:bg-cyan-900/20'
+                                            : colKey === 'lateEarly'
+                                              ? 'bg-rose-50 dark:bg-rose-900/20'
+                                              : colKey === 'attDed'
+                                                ? 'bg-violet-50 dark:bg-violet-900/25'
+                                                : 'bg-green-50 dark:bg-green-900/20';
+                          const w =
+                            colKey === 'permissions'
+                              ? 'w-[80px] min-w-[80px]'
+                              : colKey === 'lateEarly'
+                                ? 'w-[70px] min-w-[70px]'
+                                : colKey === 'attDed'
+                                  ? 'w-[64px] min-w-[64px]'
+                                  : colKey === 'payableShifts'
+                                    ? 'w-[70px] min-w-[70px]'
+                                    : 'w-[60px] min-w-[60px]';
+                          return (
+                            <td key={colKey} className={`${edge} border-slate-200 px-2 py-2 text-center dark:border-slate-700 ${bg} ${w}`}>
+                              <div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div>
+                            </td>
+                          );
+                        })}
                       {tableType === 'present_absent' && (
                         <>
                           <td className="border-r border-slate-200 bg-green-50 px-2 py-2 text-center dark:border-slate-700 w-[60px] min-w-[60px]"><div className="h-4 w-8 mx-auto animate-pulse rounded bg-slate-200 dark:bg-slate-700"></div></td>
@@ -2403,7 +2507,7 @@ export default function AttendancePage() {
                 </>
               ) : filteredMonthlyData.length === 0 ? (
                 <tr>
-                  <td colSpan={daysArray.length + (tableType === 'complete' ? 13 : tableType === 'leaves' || tableType === 'od' ? 9 : 8)} className="p-8 text-center text-slate-500 min-h-[400px]">
+                  <td colSpan={superadminTableEmptyColSpan} className="p-8 text-center text-slate-500 min-h-[400px]">
                     No employees found matching the selected filters.
                   </td>
                 </tr>
@@ -2640,80 +2744,129 @@ export default function AttendancePage() {
                           </td>
                         );
                       })}
-                      {tableType === 'complete' && (
-                        <>
-                          <td
-                            onClick={() => item.employee && handleSummaryClick(item.employee._id, 'present')}
-                            className={`border-r border-slate-200 bg-blue-50 px-2 py-2 text-center text-[11px] font-bold text-blue-700 dark:border-slate-700 dark:bg-blue-900/20 dark:text-blue-300 w-[60px] min-w-[60px] cursor-pointer hover:bg-blue-100 transition-all duration-300 ${activeHighlight?.employeeId === item.employee?._id && activeHighlight?.category === 'present' ? 'ring-2 ring-blue-400 ring-inset bg-white dark:bg-blue-900/40 shadow-inner scale-[0.98]' : ''}`}
-                          >
-                            {daysPresent}
-                          </td>
-                          <td
-                            onClick={() => item.employee && handleSummaryClick(item.employee._id, 'leaves')}
-                            className={`border-r border-slate-200 bg-amber-50 px-2 py-2 text-center text-[11px] font-bold text-amber-700 dark:border-slate-700 dark:bg-amber-900/20 dark:text-amber-300 w-[60px] min-w-[60px] cursor-pointer hover:bg-amber-100 transition-all duration-300 ${activeHighlight?.employeeId === item.employee?._id && activeHighlight?.category === 'leaves' ? 'ring-2 ring-amber-400 ring-inset bg-white dark:bg-amber-900/40 shadow-inner scale-[0.98]' : ''}`}
-                          >
-                            {totalLeaves}
-                          </td>
-                          <td
-                            onClick={() => item.employee && handleSummaryClick(item.employee._id, 'absent')}
-                            className={`border-r border-slate-200 bg-red-50 px-2 py-2 text-center text-[11px] font-bold text-red-700 dark:border-slate-700 dark:bg-red-900/20 dark:text-red-300 w-[60px] min-w-[60px] cursor-pointer hover:bg-red-100 transition-all duration-300 ${activeHighlight?.employeeId === item.employee?._id && activeHighlight?.category === 'absent' ? 'ring-2 ring-red-400 ring-inset bg-white dark:bg-red-900/40 shadow-inner scale-[0.98]' : ''}`}
-                          >
-                            {monthAbsent}
-                          </td>
-                          <td
-                            onClick={() => item.employee && handleSummaryClick(item.employee._id, 'weeklyOffs')}
-                            className={`border-r border-slate-200 bg-orange-100 px-2 py-2 text-center text-[11px] font-bold text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 dark:text-orange-300 w-[60px] min-w-[60px] cursor-pointer hover:bg-orange-200 transition-all duration-300 ${activeHighlight?.employeeId === item.employee?._id && activeHighlight?.category === 'weeklyOffs' ? 'ring-2 ring-orange-400 ring-inset bg-white dark:bg-orange-900/40 shadow-inner scale-[0.98]' : ''}`}
-                          >
-                            {weekOffsCount}
-                          </td>
-                          <td
-                            onClick={() => item.employee && handleSummaryClick(item.employee._id, 'holidays')}
-                            className={`border-r border-slate-200 bg-red-50 px-2 py-2 text-center text-[11px] font-bold text-red-700 dark:border-slate-700 dark:bg-red-900/20 dark:text-red-300 w-[60px] min-w-[60px] cursor-pointer hover:bg-red-100 transition-all duration-300 ${activeHighlight?.employeeId === item.employee?._id && activeHighlight?.category === 'holidays' ? 'ring-2 ring-red-400 ring-inset bg-white dark:bg-red-900/40 shadow-inner scale-[0.98]' : ''}`}
-                          >
-                            {holidaysCount}
-                          </td>
-                          <td
-                            onClick={() => item.employee && handleSummaryClick(item.employee._id, 'otHours')}
-                            className={`border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 dark:text-orange-300 w-[60px] min-w-[60px] cursor-pointer hover:bg-orange-100 transition-all duration-300 ${activeHighlight?.employeeId === item.employee?._id && activeHighlight?.category === 'otHours' ? 'ring-2 ring-orange-400 ring-inset bg-white dark:bg-orange-900/40 shadow-inner scale-[0.98]' : ''}`}
-                          >
-                            {formatHours(dailyValues.reduce((sum, record: any) => sum + (record?.otHours || 0), 0))}
-                          </td>
-                          <td
-                            onClick={() => item.employee && handleSummaryClick(item.employee._id, 'extraHours')}
-                            className={`border-r border-slate-200 bg-purple-50 px-2 py-2 text-center text-[11px] font-bold text-purple-700 dark:border-slate-700 dark:bg-purple-900/20 dark:text-purple-300 w-[60px] min-w-[60px] cursor-pointer hover:bg-purple-100 transition-all duration-300 ${activeHighlight?.employeeId === item.employee?._id && activeHighlight?.category === 'extraHours' ? 'ring-2 ring-purple-400 ring-inset bg-white dark:bg-purple-900/40 shadow-inner scale-[0.98]' : ''}`}
-                          >
-                            {formatHours(dailyValues.reduce((sum, record: any) => sum + (record?.extraHours || 0), 0))}
-                          </td>
-                          <td
-                            onClick={() => item.employee && handleSummaryClick(item.employee._id, 'permissions')}
-                            className={`border-r border-slate-200 bg-cyan-50 px-2 py-2 text-center text-[11px] font-bold text-cyan-700 dark:border-slate-700 dark:bg-cyan-900/20 dark:text-cyan-300 w-[80px] min-w-[80px] cursor-pointer hover:bg-cyan-100 transition-all duration-300 ${activeHighlight?.employeeId === item.employee?._id && activeHighlight?.category === 'permissions' ? 'ring-2 ring-cyan-400 ring-inset bg-white dark:bg-cyan-900/40 shadow-inner scale-[0.98]' : ''}`}
-                          >
-                            {dailyValues.reduce((sum, record: any) => sum + (record?.permissionCount || 0), 0)}
-                          </td>
-                          <td
-                            onClick={() => item.employee && handleSummaryClick(item.employee._id, 'lateIn')}
-                            className={`border-r border-slate-200 bg-rose-50 px-2 py-2 text-center text-[11px] font-bold text-rose-700 dark:border-slate-700 dark:bg-rose-900/20 dark:text-rose-300 w-[70px] min-w-[70px] cursor-pointer hover:bg-rose-100 transition-all duration-300 ${activeHighlight?.employeeId === item.employee?._id && activeHighlight?.category === 'lateIn' ? 'ring-2 ring-rose-400 ring-inset bg-white dark:bg-rose-900/40 shadow-inner scale-[0.98]' : ''}`}
-                          >
-                            {item.summary?.lateOrEarlyCount ?? 0}
-                          </td>
-                          <td
-                            onClick={(e) => openAttendanceDeductionInfo(e, item)}
-                            className="border-r border-slate-200 bg-violet-50 px-1 py-2 text-center text-[10px] font-bold text-violet-900 dark:border-slate-700 dark:bg-violet-900/25 dark:text-violet-200 w-[64px] min-w-[64px] cursor-pointer hover:bg-violet-100/80 dark:hover:bg-violet-900/40"
-                            title="Click to view deduction breakdown (late/early vs absent)"
-                          >
-                            {Number(item.summary?.totalAttendanceDeductionDays ?? 0).toLocaleString('en-IN', {
-                              minimumFractionDigits: 0,
-                              maximumFractionDigits: 2,
-                            })}
-                          </td>
-                          <td
-                            onClick={() => item.employee && handleSummaryClick(item.employee._id, 'payableShifts')}
-                            className={`bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:border-slate-700 dark:bg-green-900/20 dark:text-green-300 w-[70px] min-w-[70px] cursor-pointer hover:bg-green-100 transition-all duration-300 ${activeHighlight?.employeeId === item.employee?._id && activeHighlight?.category === 'payableShifts' ? 'ring-2 ring-green-400 ring-inset bg-white dark:bg-green-900/40 shadow-inner scale-[0.98]' : ''}`}
-                          >
-                            {payableShifts.toFixed(2)}
-                          </td>
-                        </>
-                      )}
+                      {tableType === 'complete' &&
+                        visibleSuperadminCompleteKeys.map((colKey, cIdx) => {
+                          const isLast = cIdx === visibleSuperadminCompleteKeys.length - 1;
+                          const edge = isLast ? '' : 'border-r border-slate-200';
+                          switch (colKey) {
+                            case 'present':
+                              return (
+                                <td
+                                  key={colKey}
+                                  onClick={() => item.employee && handleSummaryClick(item.employee._id, 'present')}
+                                  className={`${edge} border-slate-200 bg-blue-50 px-2 py-2 text-center text-[11px] font-bold text-blue-700 dark:border-slate-700 dark:bg-blue-900/20 dark:text-blue-300 w-[60px] min-w-[60px] cursor-pointer hover:bg-blue-100 transition-all duration-300 ${activeHighlight?.employeeId === item.employee?._id && activeHighlight?.category === 'present' ? 'ring-2 ring-blue-400 ring-inset bg-white dark:bg-blue-900/40 shadow-inner scale-[0.98]' : ''}`}
+                                >
+                                  {daysPresent}
+                                </td>
+                              );
+                            case 'leaves':
+                              return (
+                                <td
+                                  key={colKey}
+                                  onClick={() => item.employee && handleSummaryClick(item.employee._id, 'leaves')}
+                                  className={`${edge} border-slate-200 bg-amber-50 px-2 py-2 text-center text-[11px] font-bold text-amber-700 dark:border-slate-700 dark:bg-amber-900/20 dark:text-amber-300 w-[60px] min-w-[60px] cursor-pointer hover:bg-amber-100 transition-all duration-300 ${activeHighlight?.employeeId === item.employee?._id && activeHighlight?.category === 'leaves' ? 'ring-2 ring-amber-400 ring-inset bg-white dark:bg-amber-900/40 shadow-inner scale-[0.98]' : ''}`}
+                                >
+                                  {totalLeaves}
+                                </td>
+                              );
+                            case 'absent':
+                              return (
+                                <td
+                                  key={colKey}
+                                  onClick={() => item.employee && handleSummaryClick(item.employee._id, 'absent')}
+                                  className={`${edge} border-slate-200 bg-red-50 px-2 py-2 text-center text-[11px] font-bold text-red-700 dark:border-slate-700 dark:bg-red-900/20 dark:text-red-300 w-[60px] min-w-[60px] cursor-pointer hover:bg-red-100 transition-all duration-300 ${activeHighlight?.employeeId === item.employee?._id && activeHighlight?.category === 'absent' ? 'ring-2 ring-red-400 ring-inset bg-white dark:bg-red-900/40 shadow-inner scale-[0.98]' : ''}`}
+                                >
+                                  {monthAbsent}
+                                </td>
+                              );
+                            case 'weekOffs':
+                              return (
+                                <td
+                                  key={colKey}
+                                  onClick={() => item.employee && handleSummaryClick(item.employee._id, 'weeklyOffs')}
+                                  className={`${edge} border-slate-200 bg-orange-100 px-2 py-2 text-center text-[11px] font-bold text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 dark:text-orange-300 w-[60px] min-w-[60px] cursor-pointer hover:bg-orange-200 transition-all duration-300 ${activeHighlight?.employeeId === item.employee?._id && activeHighlight?.category === 'weeklyOffs' ? 'ring-2 ring-orange-400 ring-inset bg-white dark:bg-orange-900/40 shadow-inner scale-[0.98]' : ''}`}
+                                >
+                                  {weekOffsCount}
+                                </td>
+                              );
+                            case 'holidays':
+                              return (
+                                <td
+                                  key={colKey}
+                                  onClick={() => item.employee && handleSummaryClick(item.employee._id, 'holidays')}
+                                  className={`${edge} border-slate-200 bg-red-50 px-2 py-2 text-center text-[11px] font-bold text-red-700 dark:border-slate-700 dark:bg-red-900/20 dark:text-red-300 w-[60px] min-w-[60px] cursor-pointer hover:bg-red-100 transition-all duration-300 ${activeHighlight?.employeeId === item.employee?._id && activeHighlight?.category === 'holidays' ? 'ring-2 ring-red-400 ring-inset bg-white dark:bg-red-900/40 shadow-inner scale-[0.98]' : ''}`}
+                                >
+                                  {holidaysCount}
+                                </td>
+                              );
+                            case 'otHours':
+                              return (
+                                <td
+                                  key={colKey}
+                                  onClick={() => item.employee && handleSummaryClick(item.employee._id, 'otHours')}
+                                  className={`${edge} border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 dark:border-slate-700 dark:bg-orange-900/20 dark:text-orange-300 w-[60px] min-w-[60px] cursor-pointer hover:bg-orange-100 transition-all duration-300 ${activeHighlight?.employeeId === item.employee?._id && activeHighlight?.category === 'otHours' ? 'ring-2 ring-orange-400 ring-inset bg-white dark:bg-orange-900/40 shadow-inner scale-[0.98]' : ''}`}
+                                >
+                                  {formatHours(dailyValues.reduce((sum, record: any) => sum + (record?.otHours || 0), 0))}
+                                </td>
+                              );
+                            case 'extraHours':
+                              return (
+                                <td
+                                  key={colKey}
+                                  onClick={() => item.employee && handleSummaryClick(item.employee._id, 'extraHours')}
+                                  className={`${edge} border-slate-200 bg-purple-50 px-2 py-2 text-center text-[11px] font-bold text-purple-700 dark:border-slate-700 dark:bg-purple-900/20 dark:text-purple-300 w-[60px] min-w-[60px] cursor-pointer hover:bg-purple-100 transition-all duration-300 ${activeHighlight?.employeeId === item.employee?._id && activeHighlight?.category === 'extraHours' ? 'ring-2 ring-purple-400 ring-inset bg-white dark:bg-purple-900/40 shadow-inner scale-[0.98]' : ''}`}
+                                >
+                                  {formatHours(dailyValues.reduce((sum, record: any) => sum + (record?.extraHours || 0), 0))}
+                                </td>
+                              );
+                            case 'permissions':
+                              return (
+                                <td
+                                  key={colKey}
+                                  onClick={() => item.employee && handleSummaryClick(item.employee._id, 'permissions')}
+                                  className={`${edge} border-slate-200 bg-cyan-50 px-2 py-2 text-center text-[11px] font-bold text-cyan-700 dark:border-slate-700 dark:bg-cyan-900/20 dark:text-cyan-300 w-[80px] min-w-[80px] cursor-pointer hover:bg-cyan-100 transition-all duration-300 ${activeHighlight?.employeeId === item.employee?._id && activeHighlight?.category === 'permissions' ? 'ring-2 ring-cyan-400 ring-inset bg-white dark:bg-cyan-900/40 shadow-inner scale-[0.98]' : ''}`}
+                                >
+                                  {dailyValues.reduce((sum, record: any) => sum + (record?.permissionCount || 0), 0)}
+                                </td>
+                              );
+                            case 'lateEarly':
+                              return (
+                                <td
+                                  key={colKey}
+                                  onClick={() => item.employee && handleSummaryClick(item.employee._id, 'lateIn')}
+                                  className={`${edge} border-slate-200 bg-rose-50 px-2 py-2 text-center text-[11px] font-bold text-rose-700 dark:border-slate-700 dark:bg-rose-900/20 dark:text-rose-300 w-[70px] min-w-[70px] cursor-pointer hover:bg-rose-100 transition-all duration-300 ${activeHighlight?.employeeId === item.employee?._id && activeHighlight?.category === 'lateIn' ? 'ring-2 ring-rose-400 ring-inset bg-white dark:bg-rose-900/40 shadow-inner scale-[0.98]' : ''}`}
+                                >
+                                  {item.summary?.lateOrEarlyCount ?? 0}
+                                </td>
+                              );
+                            case 'attDed':
+                              return (
+                                <td
+                                  key={colKey}
+                                  onClick={(e) => openAttendanceDeductionInfo(e, item)}
+                                  className={`${edge} border-slate-200 bg-violet-50 px-1 py-2 text-center text-[10px] font-bold text-violet-900 dark:border-slate-700 dark:bg-violet-900/25 dark:text-violet-200 w-[64px] min-w-[64px] cursor-pointer hover:bg-violet-100/80 dark:hover:bg-violet-900/40`}
+                                  title="Click to view deduction breakdown (late/early vs absent)"
+                                >
+                                  {Number(item.summary?.totalAttendanceDeductionDays ?? 0).toLocaleString('en-IN', {
+                                    minimumFractionDigits: 0,
+                                    maximumFractionDigits: 2,
+                                  })}
+                                </td>
+                              );
+                            case 'payableShifts':
+                              return (
+                                <td
+                                  key={colKey}
+                                  onClick={() => item.employee && handleSummaryClick(item.employee._id, 'payableShifts')}
+                                  className={`bg-green-50 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:border-slate-700 dark:bg-green-900/20 dark:text-green-300 w-[70px] min-w-[70px] cursor-pointer hover:bg-green-100 transition-all duration-300 ${activeHighlight?.employeeId === item.employee?._id && activeHighlight?.category === 'payableShifts' ? 'ring-2 ring-green-400 ring-inset bg-white dark:bg-green-900/40 shadow-inner scale-[0.98]' : ''}`}
+                                >
+                                  {payableShifts.toFixed(2)}
+                                </td>
+                              );
+                            default:
+                              return null;
+                          }
+                        })}
                       {tableType === 'present_absent' && (
                         <>
                           <td

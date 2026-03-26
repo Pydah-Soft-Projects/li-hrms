@@ -137,6 +137,21 @@ const attendanceSettingsSchema = new mongoose.Schema(
       allowAttendanceUpload: { type: Boolean, default: true },
       allowShiftChange: { type: Boolean, default: true },
     },
+
+    // Which Complete-table aggregate columns all users see (workspace + superadmin attendance grid)
+    completeSummaryColumns: {
+      present: { type: Boolean, default: true },
+      leaves: { type: Boolean, default: true },
+      absent: { type: Boolean, default: true },
+      weekOffs: { type: Boolean, default: true },
+      holidays: { type: Boolean, default: true },
+      otHours: { type: Boolean, default: true },
+      extraHours: { type: Boolean, default: true },
+      permissions: { type: Boolean, default: true },
+      lateEarly: { type: Boolean, default: true },
+      attDed: { type: Boolean, default: true },
+      payableShifts: { type: Boolean, default: true },
+    },
   },
   {
     timestamps: true,
