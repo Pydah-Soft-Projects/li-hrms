@@ -14,6 +14,7 @@ const availableModules: { id: string; label: string }[] = [
   { id: 'RESIGNATION', label: 'Resignations' },
   { id: 'ATTENDANCE', label: 'Attendance' },
   { id: 'LEAVE_OD', label: 'Leave & OD' },
+  { id: 'LEAVE_REGISTER', label: 'Leave Register' },
   { id: 'OT_PERMISSIONS', label: 'OT & Permissions' },
   { id: 'SHIFTS', label: 'Shifts' },
   { id: 'DEPARTMENTS', label: 'Departments' },

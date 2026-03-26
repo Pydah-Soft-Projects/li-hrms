@@ -191,13 +191,13 @@ router.post('/:id/update-for-attendance', authorize('manager', 'super_admin', 's
 // Leave register listing & employee detail (must be before /:id so "register" is not parsed as id)
 router.get(
   '/register/employee/:employeeId',
-  authorize('hod', 'hr', 'manager', 'sub_admin', 'super_admin'),
+  authorize('employee', 'hod', 'hr', 'manager', 'sub_admin', 'super_admin'),
   applyScopeFilter,
   leaveController.getEmployeeLeaveRegisterDetail
 );
 router.get(
   '/register',
-  authorize('hod', 'hr', 'manager', 'sub_admin', 'super_admin'),
+  authorize('employee', 'hod', 'hr', 'manager', 'sub_admin', 'super_admin'),
   applyScopeFilter,
   leaveController.listLeaveRegister
 );

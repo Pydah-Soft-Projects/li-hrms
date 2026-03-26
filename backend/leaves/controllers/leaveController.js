@@ -2580,6 +2580,9 @@ exports.listLeaveRegister = async (req, res) => {
       year: yearQ,
       departmentId,
       divisionId,
+      designationId,
+      employeeId,
+      empNo,
       search,
       page = '1',
       limit = '25',
@@ -2598,21 +2601,15 @@ exports.listLeaveRegister = async (req, res) => {
         ? parseInt(String(yearQ), 10)
         : today.getFullYear();
 
-    const filters = {};
-    if (financialYear && String(financialYear).trim()) {
-      filters.financialYear = String(financialYear).trim();
-    }
-    if (departmentId && mongoose.Types.ObjectId.isValid(String(departmentId))) {
-      filters.departmentId = new mongoose.Types.ObjectId(String(departmentId));
-    }
-    if (divisionId && mongoose.Types.ObjectId.isValid(String(divisionId))) {
-      filters.divisionId = new mongoose.Types.ObjectId(String(divisionId));
-    }
-    if (search && String(search).trim()) {
-      filters.searchTerm = String(search).trim();
-    }
-
-    let groupedData = await leaveRegisterService.getLeaveRegister(filters, monthNum, yearNum);
+    const filters = {
+      financialYear: financialYear && String(financialYear).trim() ? String(financialYear).trim() : undefined,
+      divisionId: divisionId && mongoose.Types.ObjectId.isValid(String(divisionId)) ? new mongoose.Types.ObjectId(String(divisionId)) : undefined,
+      departmentId: departmentId && mongoose.Types.ObjectId.isValid(String(departmentId)) ? new mongoose.Types.ObjectId(String(departmentId)) : undefined,
+      designationId: designationId && mongoose.Types.ObjectId.isValid(String(designationId)) ? new mongoose.Types.ObjectId(String(designationId)) : undefined,
+      employeeId: employeeId && mongoose.Types.ObjectId.isValid(String(employeeId)) ? new mongoose.Types.ObjectId(String(employeeId)) : undefined,
+      empNo: empNo && String(empNo).trim() ? String(empNo).trim() : undefined,
+      searchTerm: search && String(search).trim() ? String(search).trim() : undefined,
+    };
 
     const fullAccess =
       user.role === 'super_admin' ||
@@ -2620,16 +2617,20 @@ exports.listLeaveRegister = async (req, res) => {
       user.dataScope === 'all';
 
     if (!fullAccess) {
-      const allowedIds = await getEmployeeIdsInScope(user);
-      const allowedSet = new Set(allowedIds.map((id) => id.toString()));
+      filters.employeeIds = await getEmployeeIdsInScope(user);
       if (user.employeeRef) {
-        allowedSet.add(user.employeeRef.toString());
+        // Ensure the current user's employeeRef is always included if they are not fullAccess
+        // and it's not already in the scoped list.
+        const userEmployeeRef = user.employeeRef.toString();
+        if (!filters.employeeIds.some(id => id.toString() === userEmployeeRef)) {
+          filters.employeeIds.push(user.employeeRef);
+        }
       }
-      groupedData = groupedData.filter((row) => {
-        const id = row.employee?.id || row.employee?._id;
-        return id && allowedSet.has(id.toString());
-      });
     }
+
+    let groupedData = await leaveRegisterService.getLeaveRegister(filters, monthNum, yearNum);
+
+    // Legacy post-filtering was here; now handled by passing filters.employeeIds to the service.
 
     const total = groupedData.length;
     const start = (pageNum - 1) * limitNum;

@@ -342,12 +342,19 @@ function flattenYearDocsToLegacyTransactions(yearDocs, employeeById) {
 
 async function findYearDocsForRegisterFilters(filters, fyName) {
   const q = { financialYear: fyName };
-  if (filters.employeeId) q.employeeId = filters.employeeId;
+  
+  if (filters.employeeIds && Array.isArray(filters.employeeIds)) {
+    q.employeeId = { $in: filters.employeeIds };
+  } else if (filters.employeeId) {
+    q.employeeId = filters.employeeId;
+  }
+
   if (filters.empNo) {
     const e = await Employee.findOne({ emp_no: filters.empNo }).select('_id').lean();
     if (e) q.employeeId = e._id;
     else return [];
   }
+
   let docs = await LeaveRegisterYear.find(q).lean();
   if (filters.divisionId || filters.departmentId) {
     const empQ = { is_active: true };
