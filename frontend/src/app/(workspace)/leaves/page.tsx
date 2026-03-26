@@ -2213,16 +2213,16 @@ export default function LeavesPage() {
       };
     };
 
-    const leavesStats = calc(leaves, pendingLeaves);
-    const odsStats = calc(ods, pendingODs);
+    const leavesStats = calc(filteredLeaves, filteredPendingLeaves);
+    const odsStats = calc(filteredODs, filteredPendingODs);
 
     return {
       leaves: leavesStats,
       ods: odsStats,
-      totalMyActions: pendingLeaves.length + pendingODs.length,
+      totalMyActions: filteredPendingLeaves.length + filteredPendingODs.length,
       totalInProgress: leavesStats.inProgress + odsStats.inProgress
     };
-  }, [leaves, ods, pendingLeaves, pendingODs]);
+  }, [filteredLeaves, filteredODs, filteredPendingLeaves, filteredPendingODs, currentUser]);
 
   const totalMyActions = stats.totalMyActions;
   const totalInProgress = stats.totalInProgress;

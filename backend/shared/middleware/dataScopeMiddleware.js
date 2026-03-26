@@ -282,8 +282,8 @@ const applyScopeFilter = async (req, res, next) => {
 function checkJurisdiction(user, record) {
     if (!user || !record) return false;
 
-    // 1. Global Bypass (Super Admin / Sub Admin / Global HR)
-    if (user.role === 'super_admin' || user.role === 'sub_admin' || user.dataScope === 'all') {
+    // 1. Global Bypass (Super Admin / Global scope)
+    if (user.role === 'super_admin' || user.dataScope === 'all') {
         return true;
     }
 
@@ -343,8 +343,10 @@ function checkJurisdiction(user, record) {
 async function getEmployeeIdsInScope(user) {
     if (!user) return [];
 
+    const scope = user.dataScope || getDefaultScope(user.role);
+
     // Super Admins see everything
-    if (user.role === 'super_admin' || user.role === 'sub_admin') {
+    if (user.role === 'super_admin' || (user.role === 'sub_admin' && scope === 'all')) {
         const employees = await Employee.find({ is_active: true }).select('_id');
         return employees.map(e => e._id);
     }
@@ -384,10 +386,10 @@ function buildMetadataScopeFilter(user, modelName, selectedDivisionId = null) {
     if (!user) return { _id: null };
 
     const scope = user.dataScope || getDefaultScope(user.role);
-    const isAdmin = user.role === 'super_admin' || user.role === 'sub_admin';
+    const isSuperAdmin = user.role === 'super_admin';
 
-    // Super Admin / Sub Admin / Global scope sees transparency
-    if (isAdmin || scope === 'all') {
+    // Super Admin / Global scope sees transparency
+    if (isSuperAdmin || scope === 'all') {
         const filter = {};
         if (selectedDivisionId) {
             if (modelName === 'Division') filter._id = toObjectId(selectedDivisionId);

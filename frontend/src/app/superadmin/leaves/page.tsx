@@ -836,7 +836,7 @@ export default function LeavesPage() {
     setPendingLeavesPage(1);
     setPendingODsPage(1);
     loadPendingData(1, 1);
-  }, [activeTab, leaveFilters, searchTerm]);
+  }, [activeTab, leaveFilters, searchTerm, dateRange.from, dateRange.to]);
 
   // Shared filters for Leaves and OD tabs (used for API calls) — includes backend date range
   const getLeavesODFilters = () => ({
@@ -953,6 +953,7 @@ export default function LeavesPage() {
       return;
     }
     loadData();
+    loadDashboardStats();
   }, [searchTerm, leaveFilters]);
 
   const getPendingFilters = () => ({
@@ -960,6 +961,8 @@ export default function LeavesPage() {
     department: leaveFilters.department.length > 0 ? leaveFilters.department : undefined,
     division: leaveFilters.division.length > 0 ? leaveFilters.division : undefined,
     designation: leaveFilters.designation.length > 0 ? leaveFilters.designation : undefined,
+    fromDate: dateRange.from || undefined,
+    toDate: dateRange.to || undefined,
   });
 
   const loadPendingData = async (leavePage = pendingLeavesPage, odPage = pendingODsPage, limitOverride?: number) => {

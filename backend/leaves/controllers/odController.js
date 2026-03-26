@@ -1333,24 +1333,22 @@ exports.getPendingApprovals = async (req, res) => {
       appliedBy: { $ne: req.user._id }
     };
 
-    if (['sub_admin', 'super_admin'].includes(userRole)) {
+    // 1. Super Admin: View all non-final ODs globally
+    if (['super_admin'].includes(userRole)) {
       filter.status = { $nin: ['approved', 'rejected', 'cancelled'] };
     }
-    else if (['hod', 'hr', 'manager'].includes(userRole)) {
-      const roleVariants = [userRole];
-      if (userRole === 'hr') roleVariants.push('final_authority');
-      filter['$or'] = [
-        { 'workflow.approvalChain': { $elemMatch: { role: { $in: roleVariants }, status: 'pending' } } },
-        { 'workflow.reportingManagerIds': req.user._id.toString() }
-      ];
+    // 2, 3, 4, 5: Scoped Roles (Sub Admin, HOD, HR, Manager)
+    else if (['sub_admin', 'hod', 'hr', 'manager'].includes(userRole)) {
+      filter.status = { $nin: ['approved', 'rejected', 'cancelled'] };
+      
       const employeeIds = await getEmployeeIdsInScope(req.user);
       if (employeeIds.length > 0) {
         filter.employeeId = { $in: employeeIds };
       } else {
         filter.employeeId = { $in: [] };
       }
-      filter.status = { $nin: ['approved', 'rejected', 'cancelled'] };
     }
+    // Fallback for any other roles
     else {
       filter['$or'] = [
         { 'workflow.approvalChain': { $elemMatch: { role: userRole, status: 'pending' } } },

@@ -612,20 +612,17 @@ exports.getPendingApprovals = async (req, res) => {
       status: { $nin: ['approved', 'rejected', 'cancelled'] },
     };
 
-    if (['sub_admin', 'super_admin'].includes(userRole)) {
+    // 1. Super Admin: View all non-final CCLs globally
+    if (['super_admin'].includes(userRole)) {
       // no extra filter
-    } else if (['hod', 'hr', 'manager'].includes(userRole)) {
-      const roleVariants = [userRole];
-      if (userRole === 'hr') roleVariants.push('final_authority');
-
-      filter['$or'] = [
-        { 'workflow.approvalChain': { $elemMatch: { role: { $in: roleVariants }, status: 'pending' } } },
-        { 'workflow.reportingManagerIds': req.user._id.toString() }
-      ];
-
+    } 
+    // 2, 3, 4, 5: Scoped Roles (Sub Admin, HOD, HR, Manager)
+    else if (['sub_admin', 'hod', 'hr', 'manager'].includes(userRole)) {
       const employeeIds = await getEmployeeIdsInScope(req.user);
       filter.employeeId = employeeIds.length > 0 ? { $in: employeeIds } : { $in: [] };
-    } else {
+    } 
+    // Fallback for any other roles
+    else {
       // Check if user is a reporting manager even if they don't have an admin role
       filter['$or'] = [
         { 'workflow.approvalChain': { $elemMatch: { role: userRole, status: 'pending' } } },
