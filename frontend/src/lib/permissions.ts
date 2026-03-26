@@ -88,6 +88,11 @@ export const PAGE_PERMISSIONS: Record<string, UserRole[]> = {
 };
 
 export function canAccessPage(user: User, pagePath: string): boolean {
+    // Hard stop: only super_admin can access any superadmin route.
+    if (pagePath.startsWith('/superadmin')) {
+        return user.role === 'super_admin';
+    }
+
     const allowedRoles = PAGE_PERMISSIONS[pagePath];
     if (!allowedRoles) return true; // Default allow if not specified
     return hasAnyRole(user, allowedRoles);
