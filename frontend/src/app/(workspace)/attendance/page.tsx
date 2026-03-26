@@ -3531,6 +3531,15 @@ export default function AttendancePage() {
                                 Leaves
                               </th>
                             );
+                          case 'od':
+                            return (
+                              <th
+                                key={colKey}
+                                className={`w-[70px] ${edge} border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-indigo-700 dark:border-slate-700 dark:bg-indigo-900/20 bg-indigo-50`}
+                              >
+                                OD
+                              </th>
+                            );
                           case 'weekOffs':
                             return (
                               <th
@@ -3956,6 +3965,17 @@ export default function AttendancePage() {
                                           className={`${edge} border-slate-200 bg-amber-50 px-2 py-2 text-center text-[11px] font-bold text-amber-700 dark:border-slate-700 dark:bg-amber-900/20 dark:text-amber-300 cursor-pointer hover:bg-amber-100 ${activeHighlight?.employeeId === item.employee._id && activeHighlight?.category === 'leaves' ? 'ring-2 ring-amber-500 ring-inset shadow-inner' : ''}`}
                                         >
                                           {totalLeaves}
+                                        </td>
+                                      );
+                                    case 'od':
+                                      return (
+                                        <td
+                                          key={colKey}
+                                          title="Click: highlight OD dates"
+                                          onClick={() => handleSummaryClick(item.employee._id, 'ods')}
+                                          className={`${edge} border-slate-200 bg-indigo-50 px-2 py-2 text-center text-[11px] font-bold text-indigo-700 dark:border-slate-700 dark:bg-indigo-900/20 dark:text-indigo-300 cursor-pointer hover:bg-indigo-100 ${activeHighlight?.employeeId === item.employee._id && activeHighlight?.category === 'ods' ? 'ring-2 ring-indigo-500 ring-inset shadow-inner' : ''}`}
+                                        >
+                                          {totalODs}
                                         </td>
                                       );
                                     case 'weekOffs':

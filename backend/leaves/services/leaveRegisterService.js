@@ -524,6 +524,12 @@ class LeaveRegisterService {
             if (!filters.employeeId && !filters.empNo && month && year) {
                 const existingIds = new Set(groupedData.map((entry) => entry.employee?.id?.toString() || entry.employee?._id?.toString()).filter(Boolean));
                 const empQuery = { is_active: true };
+                
+                // --- Apply data scope to extra employees ---
+                if (filters.employeeIds && Array.isArray(filters.employeeIds)) {
+                    empQuery._id = { $in: filters.employeeIds };
+                }
+                
                 if (filters.divisionId) empQuery.division_id = filters.divisionId;
                 if (filters.departmentId) empQuery.department_id = filters.departmentId;
                 

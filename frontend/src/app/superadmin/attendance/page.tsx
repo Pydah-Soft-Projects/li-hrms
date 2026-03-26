@@ -2296,6 +2296,15 @@ export default function AttendancePage() {
                             Leaves
                           </th>
                         );
+                      case 'od':
+                        return (
+                          <th
+                            key={colKey}
+                            className={`${edge} ${base} bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 w-[60px] min-w-[60px]`}
+                          >
+                            OD
+                          </th>
+                        );
                       case 'absent':
                         return (
                           <th
@@ -2440,23 +2449,25 @@ export default function AttendancePage() {
                               ? 'bg-blue-50 dark:bg-blue-900/20'
                               : colKey === 'leaves'
                                 ? 'bg-amber-50 dark:bg-amber-900/20'
-                                : colKey === 'absent'
-                                  ? 'bg-red-50 dark:bg-red-900/20'
-                                  : colKey === 'weekOffs'
-                                    ? 'bg-orange-100 dark:bg-orange-900/20'
-                                    : colKey === 'holidays'
-                                      ? 'bg-red-50 dark:bg-red-900/20'
-                                      : colKey === 'otHours'
-                                        ? 'bg-orange-50 dark:bg-orange-900/20'
-                                        : colKey === 'extraHours'
-                                          ? 'bg-purple-50 dark:bg-purple-900/20'
-                                          : colKey === 'permissions'
-                                            ? 'bg-cyan-50 dark:bg-cyan-900/20'
-                                            : colKey === 'lateEarly'
-                                              ? 'bg-rose-50 dark:bg-rose-900/20'
-                                              : colKey === 'attDed'
-                                                ? 'bg-violet-50 dark:bg-violet-900/25'
-                                                : 'bg-green-50 dark:bg-green-900/20';
+                                : colKey === 'od'
+                                  ? 'bg-indigo-50 dark:bg-indigo-900/20'
+                                  : colKey === 'absent'
+                                    ? 'bg-red-50 dark:bg-red-900/20'
+                                    : colKey === 'weekOffs'
+                                      ? 'bg-orange-100 dark:bg-orange-900/20'
+                                      : colKey === 'holidays'
+                                        ? 'bg-red-50 dark:bg-red-900/20'
+                                        : colKey === 'otHours'
+                                          ? 'bg-orange-50 dark:bg-orange-900/20'
+                                          : colKey === 'extraHours'
+                                            ? 'bg-purple-50 dark:bg-purple-900/20'
+                                            : colKey === 'permissions'
+                                              ? 'bg-cyan-50 dark:bg-cyan-900/20'
+                                              : colKey === 'lateEarly'
+                                                ? 'bg-rose-50 dark:bg-rose-900/20'
+                                                : colKey === 'attDed'
+                                                  ? 'bg-violet-50 dark:bg-violet-900/25'
+                                                  : 'bg-green-50 dark:bg-green-900/20';
                           const w =
                             colKey === 'permissions'
                               ? 'w-[80px] min-w-[80px]'
@@ -2767,6 +2778,17 @@ export default function AttendancePage() {
                                   className={`${edge} border-slate-200 bg-amber-50 px-2 py-2 text-center text-[11px] font-bold text-amber-700 dark:border-slate-700 dark:bg-amber-900/20 dark:text-amber-300 w-[60px] min-w-[60px] cursor-pointer hover:bg-amber-100 transition-all duration-300 ${activeHighlight?.employeeId === item.employee?._id && activeHighlight?.category === 'leaves' ? 'ring-2 ring-amber-400 ring-inset bg-white dark:bg-amber-900/40 shadow-inner scale-[0.98]' : ''}`}
                                 >
                                   {totalLeaves}
+                                </td>
+                              );
+                            case 'od':
+                              const odsCount = dailyValues.filter((r: any) => r?.status === 'OD' || r?.hasOD).length;
+                              return (
+                                <td
+                                  key={colKey}
+                                  onClick={() => item.employee && handleSummaryClick(item.employee._id, 'ods')}
+                                  className={`${edge} border-slate-200 bg-indigo-50 px-2 py-2 text-center text-[11px] font-bold text-indigo-700 dark:border-slate-700 dark:bg-indigo-900/20 dark:text-indigo-300 w-[60px] min-w-[60px] cursor-pointer hover:bg-indigo-100 transition-all duration-300 ${activeHighlight?.employeeId === item.employee?._id && activeHighlight?.category === 'ods' ? 'ring-2 ring-indigo-400 ring-inset bg-white dark:bg-indigo-900/40 shadow-inner scale-[0.98]' : ''}`}
+                                >
+                                  {odsCount}
                                 </td>
                               );
                             case 'absent':

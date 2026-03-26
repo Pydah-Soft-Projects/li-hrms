@@ -21,13 +21,13 @@ const seedSettings = async () => {
             },
             {
                 key: 'feature_control_hod',
-                value: { activeModules: ['DASHBOARD', 'LEAVE', 'OD', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS', 'REPORTS'] },
+                value: { activeModules: ['DASHBOARD', 'LEAVE', 'OD', 'LEAVE_REGISTER', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS', 'REPORTS'] },
                 description: 'Active modules for HOD role',
                 category: 'feature_control',
             },
             {
                 key: 'feature_control_hr',
-                value: { activeModules: ['DASHBOARD', 'LEAVE', 'OD', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS', 'EMPLOYEES', 'REPORTS'] },
+                value: { activeModules: ['DASHBOARD', 'LEAVE', 'OD', 'LEAVE_REGISTER', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS', 'EMPLOYEES', 'REPORTS'] },
                 description: 'Active modules for HR role',
                 category: 'feature_control',
             },

@@ -3,6 +3,7 @@
 export const WORKSPACE_COMPLETE_AGGREGATE_KEYS = [
   'present',
   'leaves',
+  'od',
   'weekOffs',
   'holidays',
   'otHours',
@@ -18,6 +19,7 @@ export type WorkspaceCompleteAggregateKey = (typeof WORKSPACE_COMPLETE_AGGREGATE
 export const SUPERADMIN_COMPLETE_AGGREGATE_KEYS = [
   'present',
   'leaves',
+  'od',
   'absent',
   'weekOffs',
   'holidays',
@@ -34,6 +36,7 @@ export type SuperadminCompleteAggregateKey = (typeof SUPERADMIN_COMPLETE_AGGREGA
 export const WORKSPACE_COMPLETE_AGGREGATE_LABELS: Record<WorkspaceCompleteAggregateKey, string> = {
   present: 'Days present',
   leaves: 'Leaves',
+  od: 'OD',
   weekOffs: 'Week offs',
   holidays: 'Holidays',
   otHours: 'OT hours',
@@ -47,6 +50,7 @@ export const WORKSPACE_COMPLETE_AGGREGATE_LABELS: Record<WorkspaceCompleteAggreg
 export const SUPERADMIN_COMPLETE_AGGREGATE_LABELS: Record<SuperadminCompleteAggregateKey, string> = {
   present: 'Days present',
   leaves: 'Leaves',
+  od: 'OD',
   absent: 'Absent',
   weekOffs: 'Week offs',
   holidays: 'Holidays',
