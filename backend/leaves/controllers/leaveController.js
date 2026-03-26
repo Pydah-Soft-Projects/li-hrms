@@ -1356,6 +1356,19 @@ exports.processLeaveAction = async (req, res) => {
 
     const requiredRole = activeStep.role;
 
+    // --- Intermediate Rejection Override Check ---
+    if (leave.status.endsWith('_rejected') && leave.status !== 'rejected') {
+      const { getWorkflowSettings } = require('../../settings/services/workflowSettingsService');
+      const workflowSettings = await getWorkflowSettings();
+      const allowHigher = workflowSettings?.workflow?.allowHigherAuthorityToApproveLowerLevels === true;
+      if (!allowHigher) {
+        return res.status(403).json({
+          success: false,
+          error: `Leave application was rejected by ${leave.status.replace('_rejected', '').toUpperCase()}. Overrides are disabled in settings.`,
+        });
+      }
+    }
+
     // --- Authorization Check ---
     let canProcess = false;
 
@@ -1539,6 +1552,7 @@ exports.processLeaveAction = async (req, res) => {
           const nextStep = leave.workflow.approvalChain[activeStepIndex + 1];
           nextStep.isCurrent = true;
 
+          leave.workflow.isCompleted = false;
           leave.workflow.currentStepRole = nextStep.role;
           leave.workflow.nextApprover = nextStep.role;
           leave.workflow.nextApproverRole = nextStep.role;

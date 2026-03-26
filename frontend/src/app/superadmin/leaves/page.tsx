@@ -1948,6 +1948,22 @@ export default function LeavesPage() {
     const roleOrder = itemRoleOrder.length > 0 ? itemRoleOrder : globalRoleOrder;
     const next = String((item as any).workflow?.nextApproverRole || (item as any).workflow?.nextApprover || '').toLowerCase();
     const role = String(user.role || '').toLowerCase();
+
+    if (allowHigher && item.status.endsWith('_rejected') && item.status !== 'rejected') {
+      const rejectingRole = item.status.replace('_rejected', '');
+      if (roleOrder.length > 0) {
+        const rejectIdx = roleOrder.indexOf(rejectingRole);
+        let userIdx = roleOrder.indexOf(role);
+        if (userIdx === -1 && (role === 'hr' || role === 'super_admin')) userIdx = roleOrder.length;
+        if (userIdx === -1 && role === 'manager') {
+          const reportingIdx = roleOrder.indexOf('reporting_manager');
+          const hrIdx = roleOrder.indexOf('hr');
+          userIdx = reportingIdx >= 0 ? reportingIdx : (hrIdx >= 0 ? hrIdx : roleOrder.length);
+        }
+        if (rejectIdx >= 0 && userIdx > rejectIdx) return true;
+      }
+    }
+
     if (!next) return false;
     if (role === next || (next === 'final_authority' && role === 'hr') || (next === 'reporting_manager' && ['manager', 'hod'].includes(role))) return true;
     if (allowHigher && roleOrder.length > 0) {
