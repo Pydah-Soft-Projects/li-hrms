@@ -70,10 +70,21 @@ exports.createRequest = async (req, res) => {
             }
         } else {
             // Self-service (Employee initiated, use session)
-            if (mongoose.Types.ObjectId.isValid(req.user.employeeId)) {
-                query.$or.push({ _id: req.user.employeeId });
+            if (req.user?.employeeRef && mongoose.Types.ObjectId.isValid(req.user.employeeRef)) {
+                query.$or.push({ _id: req.user.employeeRef });
             }
-            if (req.user.emp_no) {
+
+            // employeeId may contain either ObjectId or emp_no based on auth source
+            if (req.user?.employeeId) {
+                if (mongoose.Types.ObjectId.isValid(req.user.employeeId)) {
+                    query.$or.push({ _id: req.user.employeeId });
+                } else {
+                    query.$or.push({ emp_no: req.user.employeeId });
+                }
+            }
+
+            // Backward compatibility with any older middleware payload
+            if (req.user?.emp_no) {
                 query.$or.push({ emp_no: req.user.emp_no });
             }
         }

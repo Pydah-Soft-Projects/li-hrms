@@ -499,6 +499,13 @@ function buildMetadataScopeFilter(user, modelName, selectedDivisionId = null) {
  */
 const applyMetadataScopeFilter = (modelName) => async (req, res, next) => {
     try {
+        // Explicit bypass used by option dropdowns that must show full org master data.
+        // Keep this limited to metadata entities.
+        if (req.query?.includeAll === 'true' && (modelName === 'Division' || modelName === 'Department')) {
+            req.metadataScopeFilter = {};
+            return next();
+        }
+
         const userId = req.user.userId || req.user._id;
         let user = await User.findById(userId);
 
