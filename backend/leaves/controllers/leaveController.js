@@ -22,6 +22,14 @@ const leaveRegisterService = require('../services/leaveRegisterService');
 const dateCycleService = require('../services/dateCycleService');
 const leaveRegisterYearMonthlyApplyService = require('../services/leaveRegisterYearMonthlyApplyService');
 const leaveRegisterYearService = require('../services/leaveRegisterYearService');
+const MONTH_SLOT_EDIT_PERMISSION = 'LEAVE_REGISTER_MONTH_EDIT:write';
+
+function canEditLeaveRegisterMonthSlot(user) {
+  if (!user) return false;
+  if (user.role === 'super_admin') return true;
+  const featureControl = Array.isArray(user.featureControl) ? user.featureControl : [];
+  return featureControl.includes(MONTH_SLOT_EDIT_PERMISSION) || featureControl.includes('LEAVE_REGISTER_MONTH_EDIT');
+}
 const PDFDocument = require('pdfkit');
 const XLSX = require('xlsx');
 const dayjs = require('dayjs');
@@ -2845,6 +2853,12 @@ exports.patchLeaveRegisterYearMonthSlot = async (req, res) => {
     if (!user) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
+    if (!canEditLeaveRegisterMonthSlot(user)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized: leave register month-slot edit privilege is required',
+      });
+    }
     const { employeeId } = req.params;
     if (!mongoose.Types.ObjectId.isValid(String(employeeId))) {
       return res.status(400).json({ success: false, message: 'Invalid employee id' });
@@ -2910,6 +2924,12 @@ exports.syncLeaveRegisterYearMonthApply = async (req, res) => {
     const user = req.scopedUser || req.user;
     if (!user) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+    if (!canEditLeaveRegisterMonthSlot(user)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized: leave register month-slot edit privilege is required',
+      });
     }
     const { employeeId } = req.params;
     if (!mongoose.Types.ObjectId.isValid(String(employeeId))) {
