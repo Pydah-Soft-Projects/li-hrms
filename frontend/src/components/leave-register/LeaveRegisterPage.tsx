@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '@/lib/api';
+import { auth } from '@/lib/auth';
 import { toast } from 'react-toastify';
 import {
   Search,
@@ -171,7 +172,14 @@ export default function LeaveRegisterPage({
   allowAdminMonthEdits,
 }: LeaveRegisterPageProps) {
   const isSuperadmin = variant === 'superadmin';
-  const canEditMonths = allowAdminMonthEdits ?? isSuperadmin;
+  const currentUser = useMemo(() => auth.getUser(), []);
+  const hasMonthEditPrivilege = useMemo(() => {
+    if (!currentUser) return false;
+    if (currentUser.role === 'super_admin') return true;
+    const fc = Array.isArray(currentUser.featureControl) ? currentUser.featureControl : [];
+    return fc.includes('LEAVE_REGISTER_MONTH_EDIT:write') || fc.includes('LEAVE_REGISTER_MONTH_EDIT');
+  }, [currentUser]);
+  const canEditMonths = (allowAdminMonthEdits ?? isSuperadmin) && hasMonthEditPrivilege;
   const now = useMemo(() => new Date(), []);
   const fallbackFinancialYear = useMemo(
     () =>

@@ -93,6 +93,7 @@ const ROLES = [
   { value: 'hod', label: 'HOD', color: 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400' },
   { value: 'employee', label: 'Employee', color: 'bg-slate-100 text-slate-700 dark:bg-slate-900/30 dark:text-slate-400' },
 ];
+const MONTH_SLOT_EDIT_PERMISSION = 'LEAVE_REGISTER_MONTH_EDIT:write';
 
 const getRoleColor = (role: string) => {
   return ROLES.find((r) => r.value === role)?.color || 'bg-slate-100 text-slate-700';
@@ -101,6 +102,9 @@ const getRoleColor = (role: string) => {
 const getRoleLabel = (role: string) => {
   return ROLES.find((r) => r.value === role)?.label || role;
 };
+
+const hasMonthSlotEditPermission = (featureControl?: string[]) =>
+  !!featureControl?.includes(MONTH_SLOT_EDIT_PERMISSION) || !!featureControl?.includes('LEAVE_REGISTER_MONTH_EDIT');
 
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
@@ -1531,6 +1535,36 @@ export default function UsersPage() {
                               </select>
                             </div>
                           </div>
+
+                          <div className="rounded-xl border border-indigo-100 bg-indigo-50/70 p-3 dark:border-indigo-900/40 dark:bg-indigo-950/20">
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <p className="text-xs font-semibold text-indigo-900 dark:text-indigo-200">
+                                  Leave register month edit privilege
+                                </p>
+                                <p className="text-[11px] text-indigo-700/90 dark:text-indigo-300/90">
+                                  Allows admin month-slot edits in leave register.
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const current = formData.featureControl || [];
+                                  const has = hasMonthSlotEditPermission(current);
+                                  const next = has
+                                    ? current.filter((f) => f !== MONTH_SLOT_EDIT_PERMISSION && f !== 'LEAVE_REGISTER_MONTH_EDIT')
+                                    : [...current, MONTH_SLOT_EDIT_PERMISSION];
+                                  setFormData({ ...formData, featureControl: next });
+                                }}
+                                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${hasMonthSlotEditPermission(formData.featureControl)
+                                  ? 'bg-indigo-600 text-white'
+                                  : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
+                                  }`}
+                              >
+                                {hasMonthSlotEditPermission(formData.featureControl) ? 'Enabled' : 'Disabled'}
+                              </button>
+                            </div>
+                          </div>
                         </div>
                       </div>
 
@@ -1973,6 +2007,36 @@ export default function UsersPage() {
                             </select>
                           </div>
                         </div>
+
+                        <div className="rounded-xl border border-indigo-100 bg-indigo-50/70 p-3 dark:border-indigo-900/40 dark:bg-indigo-950/20">
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <p className="text-xs font-semibold text-indigo-900 dark:text-indigo-200">
+                                Leave register month edit privilege
+                              </p>
+                              <p className="text-[11px] text-indigo-700/90 dark:text-indigo-300/90">
+                                Allows admin month-slot edits in leave register.
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const current = employeeFormData.featureControl || [];
+                                const has = hasMonthSlotEditPermission(current);
+                                const next = has
+                                  ? current.filter((f) => f !== MONTH_SLOT_EDIT_PERMISSION && f !== 'LEAVE_REGISTER_MONTH_EDIT')
+                                  : [...current, MONTH_SLOT_EDIT_PERMISSION];
+                                setEmployeeFormData({ ...employeeFormData, featureControl: next });
+                              }}
+                              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${hasMonthSlotEditPermission(employeeFormData.featureControl)
+                                ? 'bg-indigo-600 text-white'
+                                : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
+                                }`}
+                            >
+                              {hasMonthSlotEditPermission(employeeFormData.featureControl) ? 'Enabled' : 'Disabled'}
+                            </button>
+                          </div>
+                        </div>
                       </div>
                     </div>
 
@@ -2311,6 +2375,36 @@ export default function UsersPage() {
                             {selectedUser.role === 'super_admin' && (
                               <p className="text-xs text-amber-600 dark:text-amber-500">Super Admin role cannot be changed</p>
                             )}
+                          </div>
+
+                          <div className="rounded-xl border border-indigo-100 bg-indigo-50/70 p-3 dark:border-indigo-900/40 dark:bg-indigo-950/20">
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <p className="text-xs font-semibold text-indigo-900 dark:text-indigo-200">
+                                  Leave register month edit privilege
+                                </p>
+                                <p className="text-[11px] text-indigo-700/90 dark:text-indigo-300/90">
+                                  Allows admin month-slot edits in leave register.
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const current = formData.featureControl || [];
+                                  const has = hasMonthSlotEditPermission(current);
+                                  const next = has
+                                    ? current.filter((f) => f !== MONTH_SLOT_EDIT_PERMISSION && f !== 'LEAVE_REGISTER_MONTH_EDIT')
+                                    : [...current, MONTH_SLOT_EDIT_PERMISSION];
+                                  setFormData({ ...formData, featureControl: next });
+                                }}
+                                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${hasMonthSlotEditPermission(formData.featureControl)
+                                  ? 'bg-indigo-600 text-white'
+                                  : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300'
+                                  }`}
+                              >
+                                {hasMonthSlotEditPermission(formData.featureControl) ? 'Enabled' : 'Disabled'}
+                              </button>
+                            </div>
                           </div>
                         </div>
                       </div>
