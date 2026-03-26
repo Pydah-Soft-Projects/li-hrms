@@ -18,6 +18,54 @@ const LocationMap = dynamic(() => import('@/components/LocationMap'), { ssr: fal
 
 
 // Stat Card Component
+// Detailed Stat Card Component
+const DetailedStatCard = ({ 
+  title, 
+  total, 
+  breakdown, 
+  icon: Icon, 
+  colorClass, 
+  loading 
+}: { 
+  title: string, 
+  total: number, 
+  breakdown: Array<{ label: string, value: number, color: string }>, 
+  icon: any, 
+  colorClass: string, 
+  loading?: boolean 
+}) => (
+  <div className="relative overflow-hidden rounded-[2.5rem] border border-white/20 dark:border-slate-800 bg-white/70 dark:bg-slate-900/70 backdrop-blur-2xl p-6 sm:p-8 transition-all hover:shadow-2xl hover:shadow-slate-200/50 dark:hover:shadow-none group">
+    <div className="relative z-10">
+      <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center gap-4">
+          <div className={`flex h-12 w-12 items-center justify-center rounded-2xl shadow-lg ${colorClass} text-white`}>
+            <Icon className="h-6 w-6" />
+          </div>
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">{title}</p>
+            <h3 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight mt-1">
+              {loading ? "..." : total} <span className="text-xs font-bold text-slate-400 uppercase tracking-widest ml-1">Total</span>
+            </h3>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+        {breakdown.map((item, idx) => (
+          <div key={idx} className="relative p-4 rounded-3xl bg-slate-50/50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50 transition-all hover:scale-[1.02]">
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-1">{item.label}</p>
+            <div className="flex items-center gap-2">
+              <div className={`w-1.5 h-1.5 rounded-full ${item.color}`} />
+              <p className="text-xl font-black text-slate-900 dark:text-white">{loading ? "..." : item.value}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+    <div className={`absolute -right-12 -top-12 h-48 w-48 rounded-full opacity-[0.03] group-hover:opacity-[0.05] transition-opacity ${colorClass}`} />
+  </div>
+);
+
 const StatCard = ({ title, value, icon: Icon, bgClass, iconClass, dekorClass, loading }: { title: string, value: number | string, icon: any, bgClass: string, iconClass: string, dekorClass?: string, loading?: boolean }) => (
   <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 sm:p-6 transition-all hover:shadow-xl dark:border-slate-800 dark:bg-slate-900 group">
     <div className="flex items-center justify-between gap-4">
@@ -456,7 +504,12 @@ export default function LeavesPage() {
   const [odsTotal, setODsTotal] = useState(0);
 
   // Dashboard stats (global when no filter, filtered when filter present)
-  const [dashboardStats, setDashboardStats] = useState({ totalLeaves: 0, totalODs: 0, totalPending: 0, totalApproved: 0 });
+  const [dashboardStats, setDashboardStats] = useState({ 
+    totalLeaves: 0, totalODs: 0, totalPending: 0, totalApproved: 0, 
+    totalApprovedLeaves: 0, totalApprovedODs: 0, 
+    totalPendingLeaves: 0, totalPendingODs: 0,
+    totalRejectedLeaves: 0, totalRejectedODs: 0
+  });
   const [loadingStats, setLoadingStats] = useState(true);
 
   // Dialog states
@@ -718,6 +771,12 @@ export default function LeavesPage() {
         setDashboardStats({
           totalLeaves: data.totalLeaves ?? 0,
           totalODs: data.totalODs ?? 0,
+          totalPendingLeaves: data.totalPendingLeaves ?? 0,
+          totalPendingODs: data.totalPendingODs ?? 0,
+          totalApprovedLeaves: data.totalApprovedLeaves ?? 0,
+          totalApprovedODs: data.totalApprovedODs ?? 0,
+          totalRejectedLeaves: data.totalRejectedLeaves ?? 0,
+          totalRejectedODs: data.totalRejectedODs ?? 0,
           totalPending: data.totalPending ?? 0,
           totalApproved: data.totalApproved ?? 0,
         });
@@ -1830,20 +1889,64 @@ export default function LeavesPage() {
               Manage leave applications and on-duty requests
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            {/* Pay Period / Date Range — drives backend fetch */}
+            <div className="hidden lg:flex items-center gap-2 border-r border-slate-200 dark:border-slate-700 pr-4 mr-2">
+              <div className="flex items-center gap-1 shrink-0">
+                {[
+                  { label: 'Month', get: () => getDefaultDateRange(payCycleStartDay) },
+                  { label: 'Last', get: () => getPreviousPayCycle(payCycleStartDay) }
+                ].map(preset => {
+                  const r = preset.get();
+                  const isActive = dateRange.from === r.from && dateRange.to === r.to;
+                  return (
+                    <button
+                      key={preset.label}
+                      onClick={() => setDateRange(r)}
+                      className={`h-8 px-2 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all border ${isActive
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                        : 'bg-white dark:bg-slate-800 text-slate-500 border-slate-200 hover:border-blue-400'}`}
+                    >
+                      {preset.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="flex items-center gap-1.5 px-2 h-9 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm shrink-0">
+                <CalendarIcon />
+                <input
+                  type="date"
+                  value={dateRange.from}
+                  onChange={(e) => setDateRange(prev => ({ ...prev, from: e.target.value }))}
+                  className="bg-transparent border-0 text-[10px] font-bold text-slate-900 dark:text-white focus:ring-0 p-0 cursor-pointer w-24"
+                />
+                <span className="text-slate-400 text-[10px] px-0.5">→</span>
+                <input
+                  type="date"
+                  value={dateRange.to}
+                  onChange={(e) => setDateRange(prev => ({ ...prev, to: e.target.value }))}
+                  className="bg-transparent border-0 text-[10px] font-bold text-slate-900 dark:text-white focus:ring-0 p-0 cursor-pointer w-24"
+                />
+                {loading && (
+                    <div className="w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin shrink-0" />
+                )}
+              </div>
+            </div>
+
             <button
               onClick={openExportPDFDialog}
-              className="group flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-all active:scale-[0.98]"
+              className="group flex items-center gap-2 h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-all active:scale-[0.98]"
             >
               <FileText className="w-4 h-4" />
-              Download PDF
+              <span className="hidden sm:inline">Download PDF</span>
             </button>
             <button
               onClick={() => openApplyDialog('leave')}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-r from-green-500 to-green-600 text-white text-xs font-semibold shadow-sm hover:shadow-md transition-all active:scale-[0.98]"
+              className="flex items-center gap-2 h-9 px-3 rounded-lg bg-gradient-to-r from-green-500 to-green-600 text-white text-xs font-semibold shadow-sm hover:shadow-md transition-all active:scale-[0.98]"
             >
               <PlusIcon />
-              Apply Leave / OD
+              <span className="hidden sm:inline">Apply Leave / OD</span>
             </button>
           </div>
         </div>
@@ -1851,42 +1954,30 @@ export default function LeavesPage() {
 
 
       {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <StatCard
-          title="Total Leaves"
-          value={dashboardStats.totalLeaves}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        <DetailedStatCard
+          title="Leave Statistics"
+          total={dashboardStats.totalLeaves}
           icon={Calendar}
-          bgClass="bg-blue-500/10"
-          iconClass="text-blue-600 dark:text-blue-400"
-          dekorClass="bg-blue-500/5"
+          colorClass="bg-gradient-to-br from-blue-500 to-blue-600"
           loading={loadingStats}
+          breakdown={[
+            { label: 'Approved', value: dashboardStats.totalApprovedLeaves, color: 'bg-emerald-500' },
+            { label: 'Pending', value: dashboardStats.totalPendingLeaves, color: 'bg-amber-500' },
+            { label: 'Rejected', value: dashboardStats.totalRejectedLeaves, color: 'bg-rose-500' },
+          ]}
         />
-        <StatCard
-          title="Total ODs"
-          value={dashboardStats.totalODs}
+        <DetailedStatCard
+          title="OD Statistics"
+          total={dashboardStats.totalODs}
           icon={Briefcase}
-          bgClass="bg-purple-500/10"
-          iconClass="text-purple-600 dark:text-purple-400"
-          dekorClass="bg-purple-500/5"
+          colorClass="bg-gradient-to-br from-purple-500 to-purple-600"
           loading={loadingStats}
-        />
-        <StatCard
-          title="Actions Required"
-          value={totalPending}
-          icon={Clock3}
-          bgClass="bg-amber-500/10"
-          iconClass="text-amber-600 dark:text-amber-400"
-          dekorClass="bg-amber-500/5"
-          loading={loadingStats}
-        />
-        <StatCard
-          title="Approved"
-          value={dashboardStats.totalApproved}
-          icon={CheckCircle2}
-          bgClass="bg-emerald-500/10"
-          iconClass="text-emerald-600 dark:text-emerald-400"
-          dekorClass="bg-emerald-500/5"
-          loading={loadingStats}
+          breakdown={[
+            { label: 'Approved', value: dashboardStats.totalApprovedODs, color: 'bg-emerald-500' },
+            { label: 'Pending', value: dashboardStats.totalPendingODs, color: 'bg-amber-500' },
+            { label: 'Rejected', value: dashboardStats.totalRejectedODs, color: 'bg-rose-500' },
+          ]}
         />
       </div>
 
@@ -1982,45 +2073,6 @@ export default function LeavesPage() {
             />
           </div>
 
-          <div className="h-6 w-px bg-slate-300 dark:bg-slate-700 mx-1 shrink-0" />
-
-          <div className="flex items-center gap-1 shrink-0">
-            {[
-              { label: 'Month', get: () => getDefaultDateRange(payCycleStartDay) },
-              { label: 'Last', get: () => getPreviousPayCycle(payCycleStartDay) }
-            ].map(preset => {
-              const r = preset.get();
-              const isActive = dateRange.from === r.from && dateRange.to === r.to;
-              return (
-                <button
-                  key={preset.label}
-                  onClick={() => setDateRange(r)}
-                  className={`h-8 px-2 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all border ${isActive
-                    ? 'bg-blue-600 text-white border-blue-600'
-                    : 'bg-white dark:bg-slate-800 text-slate-500 border-slate-200 hover:border-blue-400'}`}
-                >
-                  {preset.label}
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="flex items-center gap-1.5 px-2 h-9 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm shrink-0">
-            <CalendarIcon />
-            <input
-              type="date"
-              value={dateRange.from}
-              onChange={(e) => setDateRange(prev => ({ ...prev, from: e.target.value }))}
-              className="bg-transparent border-0 text-[10px] font-bold text-slate-900 dark:text-white focus:ring-0 p-0 cursor-pointer w-24"
-            />
-            <span className="text-slate-400 text-[10px] px-0.5">→</span>
-            <input
-              type="date"
-              value={dateRange.to}
-              onChange={(e) => setDateRange(prev => ({ ...prev, to: e.target.value }))}
-              className="bg-transparent border-0 text-[10px] font-bold text-slate-900 dark:text-white focus:ring-0 p-0 cursor-pointer w-24"
-            />
-          </div>
         </div>
       </div>
 

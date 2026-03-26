@@ -58,7 +58,55 @@ import {
 // Custom Stat Card
 // Custom Stat Card
 // Custom Stat Card
-const StatCard = ({ title, value, icon: Icon, bgClass, iconClass, dekorClass, trend, loading }: { title: string, value: number | string, icon: any, bgClass: string, iconClass: string, dekorClass?: string, trend?: { value: string, positive: boolean }, loading?: boolean }) => (
+// Detailed Stat Card Component
+const DetailedStatCard = ({ 
+  title, 
+  total, 
+  breakdown, 
+  icon: Icon, 
+  colorClass, 
+  loading 
+}: { 
+  title: string, 
+  total: number, 
+  breakdown: Array<{ label: string, value: number, color: string }>, 
+  icon: any, 
+  colorClass: string, 
+  loading?: boolean 
+}) => (
+  <div className="relative overflow-hidden rounded-[2.5rem] border border-white/20 dark:border-slate-800 bg-white/70 dark:bg-slate-900/70 backdrop-blur-2xl p-6 sm:p-8 transition-all hover:shadow-2xl hover:shadow-slate-200/50 dark:hover:shadow-none group">
+    <div className="relative z-10">
+      <div className="flex items-center justify-between mb-8">
+        <div className="flex items-center gap-4">
+          <div className={`flex h-12 w-12 items-center justify-center rounded-2xl shadow-lg ${colorClass} text-white`}>
+            <Icon className="h-6 w-6" />
+          </div>
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">{title}</p>
+            <h3 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight mt-1">
+              {loading ? "..." : total} <span className="text-xs font-bold text-slate-400 uppercase tracking-widest ml-1">Total</span>
+            </h3>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        {breakdown.map((item, idx) => (
+          <div key={idx} className="relative p-4 rounded-3xl bg-slate-50/50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50 transition-all hover:scale-[1.02]">
+            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-1">{item.label}</p>
+            <div className="flex items-center gap-2">
+              <div className={`w-1.5 h-1.5 rounded-full ${item.color}`} />
+              <p className="text-xl font-black text-slate-900 dark:text-white">{loading ? "..." : item.value}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+    <div className={`absolute -right-12 -top-12 h-48 w-48 rounded-full opacity-[0.03] group-hover:opacity-[0.05] transition-opacity ${colorClass}`} />
+  </div>
+);
+
+const StatCard = ({ title, value, icon: Icon, bgClass, iconClass, dekorClass, loading }: { title: string, value: number | string, icon: any, bgClass: string, iconClass: string, dekorClass?: string, loading?: boolean }) => (
   <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 transition-all hover:shadow-xl dark:border-slate-800 dark:bg-slate-900 group">
     <div className="flex items-center justify-between gap-3 sm:gap-4">
       <div className="flex-1 min-w-0">
@@ -68,11 +116,6 @@ const StatCard = ({ title, value, icon: Icon, bgClass, iconClass, dekorClass, tr
             <div className="h-8 w-16 bg-slate-200 dark:bg-slate-700 rounded animate-pulse"></div>
           ) : (
             <h3 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">{value}</h3>
-          )}
-          {!loading && trend && (
-            <span className={`text-[9px] sm:text-[10px] font-black px-1.5 py-0.5 rounded-md ${trend.positive ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'}`}>
-              {trend.value}
-            </span>
           )}
         </div>
       </div>
@@ -2046,22 +2089,42 @@ export default function LeavesPage() {
       const pendingIds = new Set(pendingList.map(p => p._id));
       const userId = currentUser?.id || currentUser?._id;
 
-      const inProgress = items.filter(i => {
-        if (['approved', 'rejected', 'cancelled'].includes(i.status) || pendingIds.has(i._id)) return false;
+      const rejectedStatuses = [
+        'rejected',
+        'hod_rejected',
+        'hr_rejected',
+        'manager_rejected',
+        'reporting_manager_rejected',
+        'principal_rejected',
+        'cancelled',
+      ];
+
+      const approvedCount = items.filter(i => i.status === 'approved').length;
+      const rejectedCount = items.filter(i => rejectedStatuses.includes(i.status)).length;
+      
+      const myActionsCount = pendingList.length;
+      
+      const inProgressItems = items.filter(i => {
+        if (['approved', ...rejectedStatuses].includes(i.status) || pendingIds.has(i._id)) return false;
         const chain = (i as any).workflow?.approvalChain || [];
         return chain.some((s: any) =>
           (s.status === 'approved' || s.status === 'rejected') &&
           ((s.actionBy?._id || s.actionBy)?.toString() === String(userId))
         );
       });
+      const inProgressCount = inProgressItems.length;
+
+      // Others Pending = Total - Approved - Rejected - MyActions - InProgress
+      const othersPendingCount = items.length - approvedCount - rejectedCount - myActionsCount - inProgressCount;
 
       return {
         total: items.length,
-        approved: items.filter(i => i.status === 'approved').length,
-        myActions: pendingList.length,
-        inProgress: inProgress.length,
-        totalPending: pendingList.length + inProgress.length,
-        rejected: items.filter(i => ['rejected', 'hod_rejected', 'hr_rejected', 'cancelled'].includes(i.status)).length,
+        approved: approvedCount,
+        rejected: rejectedCount,
+        myActions: myActionsCount,
+        inProgress: inProgressCount,
+        totalPending: othersPendingCount + myActionsCount + inProgressCount, // For labels that want "Total Pending"
+        othersPending: othersPendingCount,
       };
     };
 
@@ -2231,11 +2294,60 @@ export default function LeavesPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-3 w-auto overflow-x-auto hide-scrollbar">
-
+          <div className="flex items-center gap-2 sm:gap-4 w-auto overflow-x-auto hide-scrollbar">
+            {/* Pay Period / Date Range — drives backend fetch */}
+            <div className="hidden lg:flex items-center gap-3 border-r border-slate-200 dark:border-slate-800 pr-4 mr-2">
+              {/* Quick Presets */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                {[
+                  {
+                    label: 'This Month',
+                    get: () => getDefaultDateRange(payCycleStartDay)
+                  },
+                  {
+                    label: 'Last Month',
+                    get: () => getPreviousPayCycle(payCycleStartDay)
+                  }
+                ].map(preset => {
+                  const r = preset.get();
+                  const isActive = dateRange.from === r.from && dateRange.to === r.to;
+                  return (
+                    <button
+                      key={preset.label}
+                      onClick={() => setDateRange(r)}
+                      className={`h-7 px-2.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all border ${isActive
+                        ? 'bg-blue-500 text-white border-blue-500 shadow-md shadow-blue-500/20'
+                        : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:border-blue-300 hover:text-blue-600'}`}
+                    >
+                      {preset.label}
+                    </button>
+                  );
+                })}
+              </div>
+              {/* Custom range inputs */}
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-inner shrink-0">
+                <Calendar className="w-3 h-3 text-slate-400 shrink-0" />
+                <input
+                  type="date"
+                  value={dateRange.from}
+                  onChange={(e) => setDateRange(prev => ({ ...prev, from: e.target.value }))}
+                  className="bg-transparent text-[10px] font-black text-slate-600 dark:text-slate-300 outline-none cursor-pointer w-[95px]"
+                />
+                <span className="text-slate-300 dark:text-slate-600 font-bold shrink-0">→</span>
+                <input
+                  type="date"
+                  value={dateRange.to}
+                  onChange={(e) => setDateRange(prev => ({ ...prev, to: e.target.value }))}
+                  className="bg-transparent text-[10px] font-black text-slate-600 dark:text-slate-300 outline-none cursor-pointer w-[95px]"
+                />
+                {loading && (
+                  <div className="w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin shrink-0" />
+                )}
+              </div>
+            </div>
 
             {hasManagePermission && (canApplyForSelf || canApplyForOthers || currentUser?.role === 'employee' || ['manager', 'hod', 'hr', 'super_admin', 'sub_admin'].includes(currentUser?.role)) && (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
                 <button
                   onClick={() => {
                     setExportPDFOptions({
@@ -2244,16 +2356,16 @@ export default function LeavesPage() {
                     });
                     setShowExportPDFDialog(true);
                   }}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-all active:scale-[0.98]"
+                  className="flex items-center gap-2 h-9 sm:h-11 px-3 sm:px-4 rounded-xl sm:rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-black uppercase tracking-widest shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-all active:scale-[0.98]"
                 >
                   <FileText className="w-4 h-4" />
-                  <span className="hidden sm:inline">Download PDF</span>
+                  <span className="hidden lg:inline">Download PDF</span>
                 </button>
                 <button
                   onClick={() => openApplyDialog('leave')}
-                  className="group h-7 sm:h-11 p-1 sm:px-6 rounded-full sm:rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-[9px] sm:text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-slate-900/10 dark:shadow-white/10 shrink-0"
+                  className="group h-9 sm:h-11 px-4 sm:px-6 rounded-xl sm:rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-xl shadow-slate-900/10 dark:shadow-white/10 shrink-0"
                 >
-                  <Plus className="w-5 h-5 sm:w-3.5 sm:h-3.5" />
+                  <Plus className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
                   <span className="hidden sm:inline">Apply Request</span>
                 </button>
               </div>
@@ -2267,60 +2379,35 @@ export default function LeavesPage() {
 
         {/* Stats Grid */}
         {/* Stats Grid - Desktop */}
-        <div className="hidden md:grid mb-8 grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-          <StatCard
-            title="Approved Leaves"
-            value={stats.leaves.approved}
-            icon={CheckCircle2}
-            bgClass="bg-emerald-500/10"
-            iconClass="text-emerald-600 dark:text-emerald-400"
-            dekorClass="bg-emerald-500/5"
+        {/* Stats Grid - Desktop */}
+        <div className="hidden md:grid mb-8 grid-cols-1 lg:grid-cols-2 gap-6">
+          <DetailedStatCard
+            title="Leave Statistics"
+            total={stats.leaves.total}
+            icon={Calendar}
+            colorClass="bg-gradient-to-br from-blue-500 to-blue-600"
             loading={loading}
+            breakdown={[
+              { label: 'Approved', value: stats.leaves.approved, color: 'bg-emerald-500' },
+              { label: 'Action Required', value: stats.leaves.myActions, color: 'bg-amber-500' },
+              { label: 'In Progress', value: stats.leaves.inProgress, color: 'bg-blue-400' },
+              { label: 'Pending (Others)', value: stats.leaves.othersPending, color: 'bg-slate-400' },
+              { label: 'Rejected', value: stats.leaves.rejected, color: 'bg-rose-500' },
+            ]}
           />
-          <StatCard
-            title="Pending Leaves"
-            value={stats.leaves.totalPending}
-            icon={Clock3}
-            bgClass="bg-amber-500/10"
-            iconClass="text-amber-600 dark:text-amber-400"
-            dekorClass="bg-amber-500/5"
+          <DetailedStatCard
+            title="OD Statistics"
+            total={stats.ods.total}
+            icon={Briefcase}
+            colorClass="bg-gradient-to-br from-purple-500 to-purple-600"
             loading={loading}
-          />
-          <StatCard
-            title="Rejected Leaves"
-            value={stats.leaves.rejected}
-            icon={XCircle}
-            bgClass="bg-rose-500/10"
-            iconClass="text-rose-600 dark:text-rose-400"
-            dekorClass="bg-rose-500/5"
-            loading={loading}
-          />
-          <StatCard
-            title="Approved ODs"
-            value={stats.ods.approved}
-            icon={ShieldCheck}
-            bgClass="bg-blue-500/10"
-            iconClass="text-blue-600 dark:text-blue-400"
-            dekorClass="bg-blue-500/5"
-            loading={loading}
-          />
-          <StatCard
-            title="Pending ODs"
-            value={stats.ods.totalPending}
-            icon={Clock}
-            bgClass="bg-violet-500/10"
-            iconClass="text-violet-600 dark:text-violet-400"
-            dekorClass="bg-violet-500/5"
-            loading={loading}
-          />
-          <StatCard
-            title="Rejected ODs"
-            value={stats.ods.rejected}
-            icon={X}
-            bgClass="bg-slate-500/10"
-            iconClass="text-slate-600 dark:text-slate-400"
-            dekorClass="bg-slate-500/5"
-            loading={loading}
+            breakdown={[
+              { label: 'Approved', value: stats.ods.approved, color: 'bg-emerald-500' },
+              { label: 'Action Required', value: stats.ods.myActions, color: 'bg-amber-500' },
+              { label: 'In Progress', value: stats.ods.inProgress, color: 'bg-purple-400' },
+              { label: 'Pending (Others)', value: stats.ods.othersPending, color: 'bg-slate-400' },
+              { label: 'Rejected', value: stats.ods.rejected, color: 'bg-rose-500' },
+            ]}
           />
         </div>
 
@@ -2490,60 +2577,6 @@ export default function LeavesPage() {
                     className="w-full md:w-32 xl:w-40"
                   />
                 )}
-                {/* Pay Period / Date Range — drives backend fetch */}
-                <div className="col-span-2 flex flex-col sm:flex-row items-start sm:items-center gap-2">
-                  {/* Quick Presets */}
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    {[
-                      {
-                        label: 'This Month',
-                        get: () => getDefaultDateRange(payCycleStartDay)
-                      },
-                      {
-                        label: 'Last Month',
-                        get: () => getPreviousPayCycle(payCycleStartDay)
-                      },
-                      {
-                        label: 'Last 3M',
-                        get: () => getLast3MonthsPayCycle(payCycleStartDay)
-                      }
-                    ].map(preset => {
-                      const r = preset.get();
-                      const isActive = dateRange.from === r.from && dateRange.to === r.to;
-                      return (
-                        <button
-                          key={preset.label}
-                          onClick={() => setDateRange(r)}
-                          className={`h-7 px-2.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all border ${isActive
-                            ? 'bg-blue-500 text-white border-blue-500 shadow-md shadow-blue-500/20'
-                            : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:border-blue-300 hover:text-blue-600'}`}
-                        >
-                          {preset.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {/* Custom range inputs */}
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-                    <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                    <input
-                      type="date"
-                      value={dateRange.from}
-                      onChange={(e) => setDateRange(prev => ({ ...prev, from: e.target.value }))}
-                      className="bg-transparent text-xs font-bold text-slate-600 dark:text-slate-300 outline-none cursor-pointer w-[110px]"
-                    />
-                    <span className="text-slate-300 dark:text-slate-600 font-bold shrink-0">→</span>
-                    <input
-                      type="date"
-                      value={dateRange.to}
-                      onChange={(e) => setDateRange(prev => ({ ...prev, to: e.target.value }))}
-                      className="bg-transparent text-xs font-bold text-slate-600 dark:text-slate-300 outline-none cursor-pointer w-[110px]"
-                    />
-                    {loading && (
-                      <div className="w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin shrink-0" />
-                    )}
-                  </div>
-                </div>
               </div>
             </div>
           </div>
