@@ -135,6 +135,18 @@ router.post('/annual-reset/preview', authorize('hr', 'sub_admin', 'super_admin')
 
 // Per-employee leave register snapshot for one financial year (months + yearly transactions)
 router.get('/leave-register-year/:employeeId', authorize('hr', 'sub_admin', 'super_admin'), annualCLResetController.getLeaveRegisterYear);
+router.patch(
+  '/leave-register-year/:employeeId/month-slot',
+  authorize('hr', 'sub_admin', 'super_admin'),
+  applyScopeFilter,
+  leaveController.patchLeaveRegisterYearMonthSlot
+);
+router.post(
+  '/leave-register-year/:employeeId/sync-month-apply',
+  authorize('hr', 'sub_admin', 'super_admin'),
+  applyScopeFilter,
+  leaveController.syncLeaveRegisterYearMonthApply
+);
 
 // Apply initial CL balance from policy to all employees (manual; not annual reset)
 router.post('/initial-cl-sync', authorize('hr', 'sub_admin', 'super_admin'), annualCLResetController.performInitialCLSync);

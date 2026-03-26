@@ -77,15 +77,113 @@ function countedDaysForLeave(leave, policy) {
  * Scheduled credits pool for the payroll period: CL + CCL + EL (EL only when it counts toward monthly cap).
  * If policy monthly cap is enabled → min(pool, maxDays); otherwise → pool (register-only ceiling).
  */
+function elCountsTowardMonthlyPool(policy) {
+  const capCfg = policy?.monthlyLeaveApplicationCap;
+  const includeEL = !!capCfg?.includeEL;
+  const elPaidInPayroll = policy?.earnedLeave?.useAsPaidInPayroll !== false;
+  return !!policy?.earnedLeave?.enabled && includeEL && !elPaidInPayroll;
+}
+
+/** Allocate consumption U against scheduled pool: CL credits first, then CCL, then EL (same as payroll close). */
+function allocateMonthlyPoolConsumptionClFirst(U, clS, cclS, elS) {
+  const cl = Math.max(0, Number(clS) || 0);
+  const ccl = Math.max(0, Number(cclS) || 0);
+  const el = Math.max(0, Number(elS) || 0);
+  const u = Math.max(0, Number(U) || 0);
+  const clAlloc = Math.min(u, cl);
+  let r = u - clAlloc;
+  const cclAlloc = Math.min(r, ccl);
+  r -= cclAlloc;
+  const elAlloc = Math.min(r, el);
+  return { clAlloc, cclAlloc, elAlloc };
+}
+
+/** CCL-typed applications: draw CCL pool first, then CL, then EL. */
+function allocateMonthlyPoolConsumptionCclFirst(U, clS, cclS, elS) {
+  const cl = Math.max(0, Number(clS) || 0);
+  const ccl = Math.max(0, Number(cclS) || 0);
+  const el = Math.max(0, Number(elS) || 0);
+  const u = Math.max(0, Number(U) || 0);
+  const cclAlloc = Math.min(u, ccl);
+  let r = u - cclAlloc;
+  const clAlloc = Math.min(r, cl);
+  r -= clAlloc;
+  const elAlloc = Math.min(r, el);
+  return { clAlloc, cclAlloc, elAlloc };
+}
+
+/** EL-typed applications (when EL counts toward cap): EL pool first, then CL, then CCL. */
+function allocateMonthlyPoolConsumptionElFirst(U, clS, cclS, elS) {
+  const cl = Math.max(0, Number(clS) || 0);
+  const ccl = Math.max(0, Number(cclS) || 0);
+  const el = Math.max(0, Number(elS) || 0);
+  const u = Math.max(0, Number(U) || 0);
+  const elAlloc = Math.min(u, el);
+  let r = u - elAlloc;
+  const clAlloc = Math.min(r, cl);
+  r -= clAlloc;
+  const cclAlloc = Math.min(r, ccl);
+  return { clAlloc, cclAlloc, elAlloc };
+}
+
+/**
+ * Map in-flight leave days to register "Lk" columns using monthly pool hierarchy.
+ * CL applications consume scheduled CL → CCL → EL; native CCL/EL apps prefer their tier first.
+ * Approved consumption is applied first so remainder for locks matches substitution order.
+ */
+function finalizePendingLockedDisplayByPool(bucket, slot, policy) {
+  if (!bucket || !slot || slot.payPeriodStart == null) return false;
+  const clS = Math.max(0, Number(slot.clCredits) || 0);
+  const cclS = Math.max(0, Number(slot.compensatoryOffs) || 0);
+  const elS = elCountsTowardMonthlyPool(policy) ? Math.max(0, Number(slot.elCredits) || 0) : 0;
+
+  const A = Math.max(0, Number(bucket.capApprovedDays) || 0);
+  const allocA = allocateMonthlyPoolConsumptionClFirst(A, clS, cclS, elS);
+  let remCl = clS - allocA.clAlloc;
+  let remCcl = cclS - allocA.cclAlloc;
+  let remEl = elS - allocA.elAlloc;
+
+  let plc = 0;
+  let plcc = 0;
+  let ple = 0;
+
+  const lockedCLapp = Math.max(0, Number(bucket.lockedClAppDays) || 0);
+  const a1 = allocateMonthlyPoolConsumptionClFirst(lockedCLapp, remCl, remCcl, remEl);
+  plc += a1.clAlloc;
+  plcc += a1.cclAlloc;
+  ple += a1.elAlloc;
+  remCl -= a1.clAlloc;
+  remCcl -= a1.cclAlloc;
+  remEl -= a1.elAlloc;
+
+  const lockedCCLapp = Math.max(0, Number(bucket.lockedCclAppDays) || 0);
+  const a2 = allocateMonthlyPoolConsumptionCclFirst(lockedCCLapp, remCl, remCcl, remEl);
+  plc += a2.clAlloc;
+  plcc += a2.cclAlloc;
+  ple += a2.elAlloc;
+  remCl -= a2.clAlloc;
+  remCcl -= a2.cclAlloc;
+  remEl -= a2.elAlloc;
+
+  const lockedELapp = Math.max(0, Number(bucket.lockedElAppDays) || 0);
+  const a3 = allocateMonthlyPoolConsumptionElFirst(lockedELapp, remCl, remCcl, remEl);
+  plc += a3.clAlloc;
+  plcc += a3.cclAlloc;
+  ple += a3.elAlloc;
+
+  bucket.pendingLockedCL = plc;
+  bucket.pendingLockedCCL = plcc;
+  bucket.pendingLockedEL = ple;
+  return true;
+}
+
 function computeScheduledPoolApplyCeiling(scheduled, policy) {
   if (!scheduled || typeof scheduled !== 'object') return null;
   const cl = Number(scheduled.clCredits) || 0;
   const cco = Number(scheduled.compensatoryOffs) || 0;
   const el = Number(scheduled.elCredits) || 0;
   const capCfg = policy?.monthlyLeaveApplicationCap;
-  const includeEL = !!capCfg?.includeEL;
-  const elPaidInPayroll = policy?.earnedLeave?.useAsPaidInPayroll !== false;
-  const elInPool = policy?.earnedLeave?.enabled && includeEL && !elPaidInPayroll;
+  const elInPool = elCountsTowardMonthlyPool(policy);
   const pool = cl + cco + (elInPool ? el : 0);
   const policyCapEnabled = !!capCfg?.enabled;
   const maxDays = Number(capCfg?.maxDays);
@@ -176,22 +274,9 @@ async function assertWithinMonthlyApplicationCap(employeeId, fromDate, leaveType
   const add = countedDaysForLeave({ leaveType, numberOfDays }, policy);
   if (add <= 0) return { ok: true };
 
-  const lt = String(leaveType || '').toUpperCase();
-  const registerClCap = await getRegisterClApplicationCap(employeeId, fromDate, policy);
-  if (lt === 'CL' && registerClCap != null) {
-    let usedCL = 0;
-    for (const row of existing) {
-      usedCL += await sumClDaysForLeaveInPeriod(row, policy, start, end);
-    }
-    if (usedCL + add > registerClCap) {
-      return {
-        ok: false,
-        error: `This payroll period’s CL application limit from the leave register is ${registerClCap} day(s) (scheduled for the period). Already applied (CL) in this period: ${usedCL} day(s); this request: ${add} day(s).`,
-      };
-    }
-  }
-
-  /** In-flight (“locked”) + approved both deduct from the same period ceiling (min(pool, cap) or policy-only cap). */
+  /** Period limit is the pooled register ceiling (scheduled CL + CCL in slot + optional EL), not CL credits alone.
+   * A separate CL-only cap would block valid applies when CCL extends the pool (substitution / shared monthly cap).
+   */
   const pooledCeiling = await resolvePooledMonthlyApplyCeiling(employeeId, fromDate, policy);
   if (pooledCeiling == null) return { ok: true };
 
@@ -312,9 +397,9 @@ async function addLeaveCapToMonthlyBuckets(leave, policy, monthPayrollWindows, p
       b.capLockedDays += c.capDays;
       b.pendingCapDaysInFlight += c.capDays;
       const u = String(c.leaveType || '').toUpperCase();
-      if (u === 'CL') b.pendingCLDays += c.capDays;
-      else if (u === 'CCL') b.pendingCclDays += c.capDays;
-      else if (u === 'EL') b.pendingElDays += c.capDays;
+      if (u === 'CL') b.lockedClAppDays = (Number(b.lockedClAppDays) || 0) + c.capDays;
+      else if (u === 'CCL') b.lockedCclAppDays = (Number(b.lockedCclAppDays) || 0) + c.capDays;
+      else if (u === 'EL') b.lockedElAppDays = (Number(b.lockedElAppDays) || 0) + c.capDays;
     }
   }
 }
@@ -328,6 +413,7 @@ module.exports = {
   sumCountedCapDaysForLeaveInPeriod,
   sumClDaysForLeaveInPeriod,
   addLeaveCapToMonthlyBuckets,
+  finalizePendingLockedDisplayByPool,
   CAP_COUNT_STATUSES,
   PENDING_PIPELINE_STATUSES,
 };
