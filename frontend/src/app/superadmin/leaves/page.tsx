@@ -1962,9 +1962,9 @@ export default function LeavesPage() {
               Manage leave applications and on-duty requests
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            {/* Pay Period / Date Range — drives backend fetch */}
-            <div className="hidden lg:flex items-center gap-2 border-r border-slate-200 dark:border-slate-700 pr-4 mr-2">
+          <div className="flex items-center gap-3 overflow-x-auto hide-scrollbar">
+            {/* Pay Period / Date Range — Desktop Only */}
+            <div className="hidden lg:flex items-center gap-2 border-r border-slate-200 dark:border-slate-700 pr-4 mr-2 shrink-0">
               <div className="flex items-center gap-1 shrink-0">
                 {[
                   { label: 'Month', get: () => getDefaultDateRange(payCycleStartDay) },
@@ -2009,14 +2009,14 @@ export default function LeavesPage() {
 
             <button
               onClick={openExportPDFDialog}
-              className="group flex items-center gap-2 h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-all active:scale-[0.98]"
+              className="group flex items-center gap-2 h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-all active:scale-[0.98] shrink-0"
             >
               <FileText className="w-4 h-4" />
               <span className="hidden sm:inline">Download PDF</span>
             </button>
             <button
               onClick={() => openApplyDialog('leave')}
-              className="flex items-center gap-2 h-9 px-3 rounded-lg bg-gradient-to-r from-green-500 to-green-600 text-white text-xs font-semibold shadow-sm hover:shadow-md transition-all active:scale-[0.98]"
+              className="flex items-center gap-2 h-9 px-3 rounded-lg bg-gradient-to-r from-green-500 to-green-600 text-white text-xs font-semibold shadow-sm hover:shadow-md transition-all active:scale-[0.98] shrink-0"
             >
               <PlusIcon />
               <span className="hidden sm:inline">Apply Leave / OD</span>
@@ -2025,6 +2025,52 @@ export default function LeavesPage() {
         </div>
       </div>
 
+      {/* Date Filter — Mobile Only */}
+      <div className="lg:hidden mb-6">
+        <div className="flex flex-col gap-3 p-4 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Pay Period</span>
+            <div className="flex gap-1.5">
+              {[
+                { label: 'Month', get: () => getDefaultDateRange(payCycleStartDay) },
+                { label: 'Last', get: () => getPreviousPayCycle(payCycleStartDay) }
+              ].map(preset => {
+                const r = preset.get();
+                const isActive = dateRange.from === r.from && dateRange.to === r.to;
+                return (
+                  <button
+                    key={preset.label}
+                    onClick={() => setDateRange(r)}
+                    className={`h-7 px-2.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all border ${isActive
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-slate-50 dark:bg-slate-900 text-slate-500 border-slate-200 dark:border-slate-800'}`}
+                  >
+                    {preset.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div className="flex items-center gap-2 p-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
+            <CalendarIcon />
+            <div className="flex flex-1 items-center justify-between">
+              <input
+                type="date"
+                value={dateRange.from}
+                onChange={(e) => setDateRange(prev => ({ ...prev, from: e.target.value }))}
+                className="bg-transparent border-0 text-[11px] font-bold text-slate-900 dark:text-white focus:ring-0 p-0 cursor-pointer w-full"
+              />
+              <span className="text-slate-400 px-2">→</span>
+              <input
+                type="date"
+                value={dateRange.to}
+                onChange={(e) => setDateRange(prev => ({ ...prev, to: e.target.value }))}
+                className="bg-transparent border-0 text-[11px] font-bold text-slate-900 dark:text-white focus:ring-0 p-0 cursor-pointer text-right w-full"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* Stats */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">

@@ -2363,7 +2363,7 @@ export default function LeavesPage() {
       {/* Sticky Header */}
       <div className="sticky px-2 top-4 z-40 md:px-4 mb-2 md:mb-8">
         <div className="max-w-[1920px] mx-auto md:bg-white/70 md:dark:bg-slate-900/70 md:backdrop-blur-2xl md:rounded-[2.5rem] md:border md:border-white/20 md:dark:border-slate-800 md:shadow-2xl md:shadow-slate-200/50 md:dark:shadow-none min-h-[4.5rem] flex flex-row items-center 
-         justify-between gap-4 px-0 sm:px-8 py-2 md:py-0">
+         justify-between gap-4 px-4 sm:px-8 py-2 md:py-0">
           <div className="flex items-center gap-4">
             <div className="hidden md:flex h-10 w-10 rounded-xl bg-gradient-to-br from-green-500 to-green-600 items-center justify-center text-white shadow-lg shadow-green-500/20">
               <Calendar className="w-5 h-5" />
@@ -2379,8 +2379,8 @@ export default function LeavesPage() {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-4 w-auto overflow-x-auto hide-scrollbar">
-            {/* Pay Period / Date Range — drives backend fetch */}
-            <div className="hidden lg:flex items-center gap-3 border-r border-slate-200 dark:border-slate-800 pr-4 mr-2">
+            {/* Pay Period / Date Range — Desktop Only */}
+            <div className="hidden md:flex items-center gap-3 border-r border-slate-200 dark:border-slate-800 pr-4 mr-2 shrink-0">
               {/* Quick Presets */}
               <div className="flex items-center gap-1.5 shrink-0">
                 {[
@@ -2454,6 +2454,53 @@ export default function LeavesPage() {
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      </div>
+      
+      {/* Date Filter — Mobile Only */}
+      <div className="md:hidden px-4 mb-4">
+        <div className="flex flex-col gap-3 p-4 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Pay Period</span>
+            <div className="flex gap-1.5">
+              {[
+                { label: 'This Month', get: () => getDefaultDateRange(payCycleStartDay) },
+                { label: 'Last Month', get: () => getPreviousPayCycle(payCycleStartDay) }
+              ].map(preset => {
+                const r = preset.get();
+                const isActive = dateRange.from === r.from && dateRange.to === r.to;
+                return (
+                  <button
+                    key={preset.label}
+                    onClick={() => setDateRange(r)}
+                    className={`h-7 px-2.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all border ${isActive
+                      ? 'bg-blue-500 text-white border-blue-500'
+                      : 'bg-slate-50 dark:bg-slate-900 text-slate-500 border-slate-200 dark:border-slate-800'}`}
+                  >
+                    {preset.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div className="flex items-center gap-2 p-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
+            <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
+            <div className="flex flex-1 items-center justify-between">
+              <input
+                type="date"
+                value={dateRange.from}
+                onChange={(e) => setDateRange(prev => ({ ...prev, from: e.target.value }))}
+                className="bg-transparent text-[11px] font-bold text-slate-600 dark:text-slate-300 outline-none w-full"
+              />
+              <span className="text-slate-300 px-2">→</span>
+              <input
+                type="date"
+                value={dateRange.to}
+                onChange={(e) => setDateRange(prev => ({ ...prev, to: e.target.value }))}
+                className="bg-transparent text-[11px] font-bold text-slate-600 dark:text-slate-300 outline-none text-right w-full"
+              />
+            </div>
           </div>
         </div>
       </div>
