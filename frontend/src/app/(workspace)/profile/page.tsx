@@ -607,8 +607,8 @@ export default function ProfilePage() {
 
               {/* PROFILE TAB */}
               {activeTab === 'profile' && (
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 animate-in fade-in zoom-in-95 duration-300">
-                  <div className="flex items-center justify-between mb-8">
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 animate-in fade-in zoom-in-95 duration-300">
+                  <div className="flex items-center justify-between mb-5">
                     <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
                       Personal Information
                     </h3>
@@ -748,7 +748,7 @@ export default function ProfilePage() {
                   </div>
 
                   {employee ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
                       <div>
                         <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Employee ID</label>
                         <p className="text-lg font-bold text-slate-900 font-mono tracking-tight">{employee.emp_no}</p>
@@ -793,9 +793,13 @@ export default function ProfilePage() {
                       </div>
                       {/* Requestable Fields Display Area */}
                       {user.role === 'employee' && updateConfig?.enabled && (
-                        <div className="md:col-span-2 pt-8 mt-8 border-t border-slate-100">
-                          <h4 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] mb-6">Requestable Profile Details</h4>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
+                        <div className="md:col-span-2 pt-5 mt-4 border-t border-slate-100">
+                          <div className="flex items-center justify-between mb-3">
+                            <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.18em]">Requestable Profile Details</h4>
+                            <span className="text-[10px] text-slate-400">Scrollable panel</span>
+                          </div>
+                          <div className="max-h-64 overflow-y-auto pr-1">
+                          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-x-4 gap-y-3">
                             {updateConfig.requestableFields.map((fieldId: string, idx: number) => {
                               // Find field label from formGroups
                               let label = fieldId;
@@ -808,14 +812,15 @@ export default function ProfilePage() {
 
                               return (
                                 <div key={`${fieldId}-${idx}`} className="group">
-                                  <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">{label}</label>
-                                  <div className="text-base font-medium text-slate-800 flex items-center justify-between group-hover:bg-slate-50 p-2 rounded-lg transition-colors">
+                                  <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">{label}</label>
+                                  <div className="text-sm font-medium text-slate-800 flex items-center justify-between group-hover:bg-slate-50 p-2 rounded-lg transition-colors">
                                     <span>{formatFieldValue(value)}</span>
                                     <span className="text-[9px] font-bold text-emerald-600 uppercase tracking-tight bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 opacity-0 group-hover:opacity-100 transition-opacity">Editable</span>
                                   </div>
                                 </div>
                               );
                             })}
+                          </div>
                           </div>
                         </div>
                       )}
@@ -954,7 +959,7 @@ export default function ProfilePage() {
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-6 space-y-8">
+              <div className="flex-1 overflow-y-auto p-5 space-y-5">
                 {/* Requestable Fields */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {formGroups.map((group, groupIdx) => {
@@ -962,11 +967,11 @@ export default function ProfilePage() {
                     if (allowedFieldsInGroup.length === 0) return null;
 
                     return (
-                      <div key={group._id || `group-${groupIdx}`} className="md:col-span-2 space-y-4">
+                      <div key={group._id || `group-${groupIdx}`} className="md:col-span-2 space-y-2">
                         <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-50 pb-2">{group.name}</h4>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                           {allowedFieldsInGroup.map((field: any, fieldIdx: number) => (
-                            <div key={field.id || `field-${fieldIdx}`} className="space-y-1.5">
+                            <div key={field.id || `field-${fieldIdx}`} className="space-y-1">
                               <label className="text-[11px] font-bold text-slate-600 uppercase tracking-tight">{field.label}</label>
                               {field.type === 'select' || field.type === 'dropdown' ? (
                                 (() => {
@@ -1016,9 +1021,9 @@ export default function ProfilePage() {
                     if (missingFieldIds.length === 0) return null;
 
                     return (
-                      <div className="md:col-span-2 space-y-4">
+                      <div className="md:col-span-2 space-y-2">
                         <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-50 pb-2">Other Requestable Fields</h4>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                           {missingFieldIds.map((fieldId: string, idx: number) => (
                             <div key={`${fieldId}-${idx}`} className="space-y-1.5">
                               <label className="text-[11px] font-bold text-slate-600 uppercase tracking-tight">{fieldId.replace(/_/g, ' ')}</label>
@@ -1038,7 +1043,7 @@ export default function ProfilePage() {
 
                   {/* Qualifications Section */}
                   {updateConfig?.allowQualifications && (
-                    <div className="md:col-span-2 space-y-4">
+                    <div className="md:col-span-2 space-y-2">
                       <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-50 pb-2">Qualifications</h4>
                       <p className="text-xs text-slate-500 italic">Please describe the education or certification changes you wish to request.</p>
                       <textarea
