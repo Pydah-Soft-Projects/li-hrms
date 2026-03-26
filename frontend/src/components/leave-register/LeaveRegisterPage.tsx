@@ -23,6 +23,7 @@ type MonthLeaveBucket = {
   credited?: number;
   used?: number;
   locked?: number | null;
+  transfer?: number | null;
 };
 
 type RegisterMonthLite = {
@@ -100,6 +101,62 @@ function formatNullableNum(n: unknown): string {
   return formatNum(n);
 }
 
+function computeFinancialYearNameFromPolicy(settings: any, date: Date): string {
+  const fy = settings?.financialYear || {};
+  const useCalendarYear = !!fy?.useCalendarYear;
+
+  if (useCalendarYear) {
+    return `${date.getFullYear()}`;
+  }
+
+  const startMonth = Number.isFinite(Number(fy?.startMonth)) ? Number(fy.startMonth) : 4; // April
+  const startDay = Number.isFinite(Number(fy?.startDay)) ? Number(fy.startDay) : 1;
+  const month1Based = date.getMonth() + 1;
+  const day = date.getDate();
+
+  // Matches backend DateCycleService.getFinancialYearForDate.
+  const fyStartYear =
+    month1Based > startMonth || (month1Based === startMonth && day >= startDay)
+      ? date.getFullYear()
+      : date.getFullYear() - 1;
+
+  return `${fyStartYear}-${fyStartYear + 1}`;
+}
+
+function buildFinancialYearOptions(settings: any, date: Date): string[] {
+  const fy = settings?.financialYear || {};
+  const useCalendarYear = !!fy?.useCalendarYear;
+  const current = computeFinancialYearNameFromPolicy(settings, date);
+
+  if (useCalendarYear) {
+    const currentYear = Number(current) || date.getFullYear();
+    return [
+      currentYear - 5,
+      currentYear - 4,
+      currentYear - 3,
+      currentYear - 2,
+      currentYear - 1,
+      currentYear,
+      currentYear + 1,
+    ]
+      .map((y) => String(y))
+      .filter((v, i, arr) => arr.indexOf(v) === i);
+  }
+
+  const currentStartYear = Number(String(current).split('-')[0]) || date.getFullYear();
+  return [
+    currentStartYear - 5,
+    currentStartYear - 4,
+    currentStartYear - 3,
+    currentStartYear - 2,
+    currentStartYear - 1,
+    currentStartYear,
+    currentStartYear + 1,
+  ]
+    .map((y) => `${y}-${y + 1}`)
+    .filter((v, i, arr) => arr.indexOf(v) === i);
+}
+
 export type LeaveRegisterPageVariant = 'default' | 'superadmin';
 
 export type LeaveRegisterPageProps = {
@@ -116,11 +173,18 @@ export default function LeaveRegisterPage({
   const isSuperadmin = variant === 'superadmin';
   const canEditMonths = allowAdminMonthEdits ?? isSuperadmin;
   const now = useMemo(() => new Date(), []);
+  const fallbackFinancialYear = useMemo(
+    () =>
+      computeFinancialYearNameFromPolicy(
+        { financialYear: { useCalendarYear: false, startMonth: 4, startDay: 1 } },
+        now
+      ),
+    [now]
+  );
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [financialYear, setFinancialYear] = useState('');
-  const [month, setMonth] = useState(now.getMonth() + 1);
-  const [year, setYear] = useState(now.getFullYear());
+  const [financialYear, setFinancialYear] = useState(fallbackFinancialYear);
+  const [financialYearOptions, setFinancialYearOptions] = useState<string[]>([fallbackFinancialYear]);
   const [divisionId, setDivisionId] = useState('');
   const [departmentId, setDepartmentId] = useState('');
   const [divisions, setDivisions] = useState<{ _id: string; name: string }[]>([]);
@@ -150,6 +214,8 @@ export default function LeaveRegisterPage({
     open: boolean;
     employeeId: string;
     employeeName: string;
+    /** FY string sent to API (from filter and/or row year snapshot). */
+    financialYearForApi: string;
     payrollCycleMonth: number;
     payrollCycleYear: number;
     label: string;
@@ -157,6 +223,11 @@ export default function LeaveRegisterPage({
     compensatoryOffs: string;
     elCredits: string;
     lockedCredits: string;
+    validateWithRecords: boolean;
+    carryUnusedToNextMonth: boolean;
+    clUsed: string;
+    compensatoryOffsUsed: string;
+    elUsed: string;
     reason: string;
     saving: boolean;
   } | null>(null);
@@ -186,8 +257,33 @@ export default function LeaveRegisterPage({
   }, [divisionId]);
 
   useEffect(() => {
+    // Auto-select current financial year from backend policy settings.
+    // If the user already changed FY away from the fallback, we won't overwrite.
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.getLeavePolicySettings();
+        if (cancelled || !res?.success) return;
+        const computed = computeFinancialYearNameFromPolicy(res.data, now);
+        const options = buildFinancialYearOptions(res.data, now);
+        setFinancialYearOptions(options.length > 0 ? options : [computed]);
+        setFinancialYear((prev) => {
+          const t = prev.trim();
+          if (options.includes(t)) return t;
+          return computed;
+        });
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [fallbackFinancialYear, now]);
+
+  useEffect(() => {
     setPage(1);
-  }, [debouncedSearch, financialYear, month, year, departmentId, divisionId]);
+  }, [debouncedSearch, financialYear, departmentId, divisionId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -196,8 +292,6 @@ export default function LeaveRegisterPage({
       try {
         const res = await api.listLeaveRegister({
           financialYear: financialYear.trim() || undefined,
-          month,
-          year,
           departmentId: departmentId || undefined,
           divisionId: divisionId || undefined,
           search: debouncedSearch || undefined,
@@ -232,13 +326,13 @@ export default function LeaveRegisterPage({
     return () => {
       cancelled = true;
     };
-  }, [debouncedSearch, financialYear, month, year, departmentId, divisionId, page]);
+  }, [debouncedSearch, financialYear, departmentId, divisionId, page]);
 
   useEffect(() => {
     detailCacheRef.current = new Map();
     detailInflightRef.current = new Map();
     setExpandedIds([]);
-  }, [debouncedSearch, financialYear, month, year, departmentId, divisionId]);
+  }, [debouncedSearch, financialYear, departmentId, divisionId]);
 
   const prefetchRowDetail = async (employeeId: string) => {
     if (detailCacheRef.current.has(employeeId)) return;
@@ -249,8 +343,6 @@ export default function LeaveRegisterPage({
       try {
         const res = await api.getEmployeeLeaveRegisterDetail(employeeId, {
           financialYear: financialYear.trim() || undefined,
-          month,
-          year,
         });
         if (res.success && res.data) {
           detailCacheRef.current.set(employeeId, res.data);
@@ -327,9 +419,9 @@ export default function LeaveRegisterPage({
 
   const saveSlotEdit = async () => {
     if (!slotEditModal) return;
-    const fy = financialYear.trim();
+    const fy = slotEditModal.financialYearForApi.trim();
     if (!fy) {
-      toast.error('Set Financial year in filters first.');
+      toast.error('Could not resolve financial year. Enter it in filters (e.g. 2025-2026).');
       return;
     }
     const reason = slotEditModal.reason.trim();
@@ -346,13 +438,30 @@ export default function LeaveRegisterPage({
       compensatoryOffs?: number;
       elCredits?: number;
       lockedCredits?: number;
+      validateWithRecords?: boolean;
+      carryUnusedToNextMonth?: boolean;
+      usedCl?: number;
+      usedCcl?: number;
+      usedEl?: number;
     } = {
       financialYear: fy,
       payrollCycleMonth: slotEditModal.payrollCycleMonth,
       payrollCycleYear: slotEditModal.payrollCycleYear,
       reason,
+      validateWithRecords: !!slotEditModal.validateWithRecords,
+      carryUnusedToNextMonth: !!slotEditModal.carryUnusedToNextMonth,
     };
     const push = (key: 'clCredits' | 'compensatoryOffs' | 'elCredits' | 'lockedCredits', raw: string) => {
+      const t = raw.trim();
+      if (t === '') return;
+      const n = Number(t);
+      if (!Number.isFinite(n) || n < 0) {
+        throw new Error(`Invalid number for ${key}`);
+      }
+      body[key] = n;
+    };
+
+    const pushUsed = (key: 'usedCl' | 'usedCcl' | 'usedEl', raw: string) => {
       const t = raw.trim();
       if (t === '') return;
       const n = Number(t);
@@ -366,6 +475,9 @@ export default function LeaveRegisterPage({
       push('compensatoryOffs', slotEditModal.compensatoryOffs);
       push('elCredits', slotEditModal.elCredits);
       push('lockedCredits', slotEditModal.lockedCredits);
+      pushUsed('usedCl', slotEditModal.clUsed);
+      pushUsed('usedCcl', slotEditModal.compensatoryOffsUsed);
+      pushUsed('usedEl', slotEditModal.elUsed);
     } catch (e: any) {
       toast.error(e?.message || 'Invalid input');
       return;
@@ -396,9 +508,9 @@ export default function LeaveRegisterPage({
 
   const syncSlotApplyOnly = async () => {
     if (!slotEditModal) return;
-    const fy = financialYear.trim();
+    const fy = slotEditModal.financialYearForApi.trim();
     if (!fy) {
-      toast.error('Set Financial year in filters first.');
+      toast.error('Could not resolve financial year. Enter it in filters (e.g. 2025-2026).');
       return;
     }
     setSlotEditModal((m) => (m ? { ...m, saving: true } : null));
@@ -445,11 +557,6 @@ export default function LeaveRegisterPage({
       total: row.summary?.totalPaidBalance,
     };
   }
-
-  const yearOptions = useMemo(() => {
-    const y = now.getFullYear();
-    return [y - 1, y, y + 1];
-  }, [now]);
 
   const inputClass =
     'w-full px-2.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 dark:focus:border-blue-400';
@@ -545,41 +652,17 @@ export default function LeaveRegisterPage({
                     <CalendarRange className="h-3.5 w-3.5 shrink-0" />
                     Payroll context
                   </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                    <div className="sm:col-span-3">
+                  <div className="grid grid-cols-1 gap-2.5">
+                    <div>
                       <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Financial year</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. 2025 or 2025-2026"
+                      <select
                         value={financialYear}
                         onChange={(e) => setFinancialYear(e.target.value)}
                         className={`mt-1 ${inputClass}`}
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Payroll month</label>
-                      <select
-                        value={month}
-                        onChange={(e) => setMonth(parseInt(e.target.value, 10))}
-                        className={`mt-1 ${inputClass}`}
                       >
-                        {Array.from({ length: 12 }, (_, i) => (
-                          <option key={i + 1} value={i + 1}>
-                            {new Date(0, i).toLocaleString('default', { month: 'long' })}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Year</label>
-                      <select
-                        value={year}
-                        onChange={(e) => setYear(parseInt(e.target.value, 10))}
-                        className={`mt-1 ${inputClass}`}
-                      >
-                        {yearOptions.map((y) => (
-                          <option key={y} value={y}>
-                            {y}
+                        {financialYearOptions.map((fy) => (
+                          <option key={fy} value={fy}>
+                            {fy}
                           </option>
                         ))}
                       </select>
@@ -636,7 +719,7 @@ export default function LeaveRegisterPage({
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               <div className="lg:col-span-2">
                 <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400">Search</label>
                 <div className="relative mt-1">
@@ -655,38 +738,14 @@ export default function LeaveRegisterPage({
                   <CalendarRange className="h-3.5 w-3.5" />
                   Financial year
                 </label>
-                <input
-                  type="text"
-                  placeholder="e.g. 2025 or 2025-2026"
+                <select
                   value={financialYear}
                   onChange={(e) => setFinancialYear(e.target.value)}
                   className="mt-1 w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-sm"
-                />
-              </div>
-              <div>
-                <label className="text-[11px] font-medium text-slate-500">Payroll month</label>
-                <select
-                  value={month}
-                  onChange={(e) => setMonth(parseInt(e.target.value, 10))}
-                  className="mt-1 w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-sm"
                 >
-                  {Array.from({ length: 12 }, (_, i) => (
-                    <option key={i + 1} value={i + 1}>
-                      {new Date(0, i).toLocaleString('default', { month: 'long' })}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-[11px] font-medium text-slate-500">Year</label>
-                <select
-                  value={year}
-                  onChange={(e) => setYear(parseInt(e.target.value, 10))}
-                  className="mt-1 w-full px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-sm"
-                >
-                  {yearOptions.map((y) => (
-                    <option key={y} value={y}>
-                      {y}
+                  {financialYearOptions.map((fy) => (
+                    <option key={fy} value={fy}>
+                      {fy}
                     </option>
                   ))}
                 </select>
@@ -976,7 +1035,7 @@ export default function LeaveRegisterPage({
                                         >
                                           Month
                                         </th>
-                                        <th colSpan={3} className="text-center font-semibold px-1 py-1 border-l border-slate-200 dark:border-slate-600">
+                                        <th colSpan={4} className="text-center font-semibold px-1 py-1 border-l border-slate-200 dark:border-slate-600">
                                           CL
                                         </th>
                                         <th colSpan={3} className="text-center font-semibold px-1 py-1 border-l border-slate-200 dark:border-slate-600">
@@ -1003,6 +1062,12 @@ export default function LeaveRegisterPage({
                                           title="Locked: pending / in-flight (not yet final approved)"
                                         >
                                           Lk
+                                        </th>
+                                        <th
+                                          className="text-right font-medium px-1 py-1 border-l border-slate-200 dark:border-slate-600"
+                                          title="Transferred unused pool to next month"
+                                        >
+                                          Transfer
                                         </th>
                                         <th className="text-right font-medium px-1 py-1 border-l border-slate-200 dark:border-slate-600">
                                           Cr
@@ -1071,16 +1136,26 @@ export default function LeaveRegisterPage({
                                                 · Txns {m.transactionCount ?? 0}
                                               </div>
                                             </div>
-                                            {canEditMonths && financialYear.trim() ? (
+                                            {canEditMonths ? (
                                               <button
                                                 type="button"
                                                 onClick={(e) => {
                                                   e.stopPropagation();
+                                                  const fyResolved =
+                                                    financialYear.trim() ||
+                                                    String(row.yearSnapshot?.financialYear || '').trim();
+                                                  if (!fyResolved) {
+                                                    toast.info(
+                                                      'Enter Financial year in filters (e.g. 2025-2026), or open row when FY snapshot loads.'
+                                                    );
+                                                    return;
+                                                  }
                                                   setSlotEditModal({
                                                     open: true,
                                                     employeeId: idStr,
                                                     employeeName:
                                                       row.employee?.name || row.employee?.empNo || 'Employee',
+                                                    financialYearForApi: fyResolved,
                                                     payrollCycleMonth: m.month,
                                                     payrollCycleYear: m.year,
                                                     label: m.label || `${m.month}/${m.year}`,
@@ -1092,6 +1167,11 @@ export default function LeaveRegisterPage({
                                                       m.scheduledEl != null ? String(m.scheduledEl) : '',
                                                     lockedCredits:
                                                       m.lockedCredits != null ? String(m.lockedCredits) : '',
+                                                    validateWithRecords: true,
+                                                    carryUnusedToNextMonth: false,
+                                                    clUsed: '',
+                                                    compensatoryOffsUsed: '',
+                                                    elUsed: '',
                                                     reason: '',
                                                     saving: false,
                                                   });
@@ -1107,6 +1187,9 @@ export default function LeaveRegisterPage({
                                           </td>
                                           <td className="text-right px-1 py-1.5">{formatNullableNum(m.cl?.used)}</td>
                                           <td className="text-right px-1 py-1.5">{formatNullableNum(m.cl?.locked)}</td>
+                                          <td className="text-right px-1 py-1.5 border-l border-slate-200 dark:border-slate-600">
+                                            {formatNullableNum(m.cl?.transfer)}
+                                          </td>
                                           <td className="text-right px-1 py-1.5 border-l border-slate-200 dark:border-slate-600">
                                             {formatNullableNum(m.ccl?.credited)}
                                           </td>
@@ -1337,7 +1420,8 @@ export default function LeaveRegisterPage({
                   Edit scheduled pool
                 </h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  {slotEditModal.employeeName} · {slotEditModal.label} · FY {financialYear.trim() || '—'}
+                  {slotEditModal.employeeName} · {slotEditModal.label} · FY{' '}
+                  {slotEditModal.financialYearForApi.trim() || '—'}
                 </p>
               </div>
               <button
@@ -1405,6 +1489,42 @@ export default function LeaveRegisterPage({
                     className="mt-0.5 w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm"
                   />
                 </label>
+                <label className="col-span-2 text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                  Used CL (override)
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={slotEditModal.clUsed}
+                    onChange={(e) =>
+                      setSlotEditModal((m) => (m ? { ...m, clUsed: e.target.value } : null))
+                    }
+                    className="mt-0.5 w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm"
+                  />
+                </label>
+                <label className="col-span-2 text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                  Used CCL (override)
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={slotEditModal.compensatoryOffsUsed}
+                    onChange={(e) =>
+                      setSlotEditModal((m) => (m ? { ...m, compensatoryOffsUsed: e.target.value } : null))
+                    }
+                    className="mt-0.5 w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm"
+                  />
+                </label>
+                <label className="col-span-2 text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                  Used EL (override)
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={slotEditModal.elUsed}
+                    onChange={(e) =>
+                      setSlotEditModal((m) => (m ? { ...m, elUsed: e.target.value } : null))
+                    }
+                    className="mt-0.5 w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm"
+                  />
+                </label>
               </div>
               <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
                 Reason (audit) *
@@ -1418,6 +1538,44 @@ export default function LeaveRegisterPage({
                   placeholder="Why are you changing this month?"
                 />
               </label>
+              <div className="space-y-1">
+                <label className="flex items-start gap-2 text-[11px] text-slate-600 dark:text-slate-300">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300"
+                    checked={slotEditModal.validateWithRecords}
+                    onChange={(e) =>
+                      setSlotEditModal((m) =>
+                        m ? { ...m, validateWithRecords: e.target.checked } : null
+                      )
+                    }
+                  />
+                  <span>
+                    Validate with records
+                    <span className="block text-[10px] text-slate-500">
+                      Prevent save if scheduled values are less than already used days.
+                    </span>
+                  </span>
+                </label>
+                <label className="flex items-start gap-2 text-[11px] text-slate-600 dark:text-slate-300">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300"
+                    checked={slotEditModal.carryUnusedToNextMonth}
+                    onChange={(e) =>
+                      setSlotEditModal((m) =>
+                        m ? { ...m, carryUnusedToNextMonth: e.target.checked } : null
+                      )
+                    }
+                  />
+                  <span>
+                    Carry unused to next month
+                    <span className="block text-[10px] text-slate-500">
+                      Moves this month&apos;s unused edited pool to the immediate next slot.
+                    </span>
+                  </span>
+                </label>
+              </div>
               <div className="flex flex-wrap gap-2 pt-1">
                 <button
                   type="button"

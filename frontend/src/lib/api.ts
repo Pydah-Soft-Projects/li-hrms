@@ -4138,6 +4138,11 @@ export const api = {
       compensatoryOffs?: number;
       elCredits?: number;
       lockedCredits?: number;
+      validateWithRecords?: boolean;
+      carryUnusedToNextMonth?: boolean;
+      usedCl?: number;
+      usedCcl?: number;
+      usedEl?: number;
       reason: string;
     }
   ) => {

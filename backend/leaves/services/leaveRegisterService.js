@@ -446,9 +446,38 @@ class LeaveRegisterService {
             // Determine the financial year
             let fyName = filters.financialYear || periodInfo.financialYear.name;
             filters.financialYear = fyName;
-            const fyStart = periodInfo.financialYear.startDate;
 
             const yearDocs = await leaveRegisterYearLedgerService.findYearDocsForRegisterFilters(filters, fyName);
+
+            // IMPORTANT: month ordering for register view must follow the selected FY, not current payroll context.
+            let fyStart = null;
+            if (Array.isArray(yearDocs) && yearDocs.length > 0 && yearDocs[0]?.financialYearStart) {
+                fyStart = new Date(yearDocs[0].financialYearStart);
+            } else {
+                try {
+                    const policy = await LeavePolicySettings.getSettings();
+                    const useCalendarYear = !!policy?.financialYear?.useCalendarYear;
+                    const startMonth = Number(policy?.financialYear?.startMonth) || 4;
+                    const startDay = Number(policy?.financialYear?.startDay) || 1;
+                    const fyText = String(fyName || '').trim();
+                    if (fyText) {
+                        if (useCalendarYear) {
+                            const y = parseInt(fyText, 10);
+                            if (Number.isFinite(y)) fyStart = new Date(y, 0, 1);
+                        } else {
+                            const startYear = parseInt(fyText.split('-')[0], 10);
+                            if (Number.isFinite(startYear)) {
+                                fyStart = new Date(startYear, Math.max(0, startMonth - 1), Math.max(1, startDay));
+                            }
+                        }
+                    }
+                } catch {
+                    fyStart = null;
+                }
+            }
+            if (!fyStart) {
+                fyStart = periodInfo.financialYear.startDate;
+            }
 
             const idSet = new Set(yearDocs.map((d) => d.employeeId.toString()));
             if (filters.employeeId) idSet.add(filters.employeeId.toString());
@@ -891,6 +920,7 @@ class LeaveRegisterService {
                             elCredits: slot.elCredits,
                             compensatoryOffs: slot.compensatoryOffs,
                             lockedCredits: slot.lockedCredits,
+                            poolCarryForwardOut: slot.poolCarryForwardOut,
                         },
                         ledger: sub
                             ? ledgerSlice(sub)
@@ -963,6 +993,7 @@ class LeaveRegisterService {
                     (Number(clL.accruedThisMonth) || 0) + (Number(clL.earnedCCL) || 0);
                 const clReversal = Number(clL.reversalCreditThisMonth) || 0;
                 const clCreditedNet = Math.max(0, clCredited - clReversal);
+                const policyLock = Math.max(0, Number(m.scheduled?.lockedCredits) || 0);
                 const st = m.storedMonthlyApply;
                 const hasStored =
                     st &&
@@ -976,12 +1007,15 @@ class LeaveRegisterService {
                 const consumed = hasStored && st.consumed != null && Number.isFinite(Number(st.consumed))
                     ? Number(st.consumed)
                     : Number(sub?.capConsumedDays) || 0;
+                const effectiveConsumed = Math.max(0, consumed + policyLock);
                 const capLockedDays =
                     hasStored && st.locked != null && Number.isFinite(Number(st.locked))
                         ? Number(st.locked)
                         : sub != null
                           ? Number(sub.capLockedDays) || 0
                           : null;
+                const capLockedWithPolicy =
+                    capLockedDays == null ? policyLock : Math.max(0, Number(capLockedDays) + policyLock);
                 const capApprovedDays =
                     hasStored && st.approved != null && Number.isFinite(Number(st.approved))
                         ? Number(st.approved)
@@ -989,7 +1023,8 @@ class LeaveRegisterService {
                           ? Number(sub.capApprovedDays) || 0
                           : null;
                 const monthlyApplyRemaining =
-                    applyLimit != null ? Math.max(0, applyLimit - consumed) : null;
+                    applyLimit != null ? Math.max(0, applyLimit - effectiveConsumed) : null;
+                const clLockedDisplay = (sub != null ? Number(sub.pendingLockedCL) || 0 : 0) + policyLock;
                 return {
                     payrollMonthIndex: m.payrollMonthIndex,
                     label: m.label,
@@ -1009,14 +1044,15 @@ class LeaveRegisterService {
                     transactionCount: m.transactionCount,
                     monthlyApplyLimit: applyLimit,
                     monthlyApplyRemaining,
-                    capConsumedDays: consumed,
-                    capLockedDays,
+                    capConsumedDays: effectiveConsumed,
+                    capLockedDays: capLockedWithPolicy,
                     capApprovedDays,
                     monthlyApplySource: hasStored ? 'stored' : 'live',
                     cl: {
                         credited: clCreditedNet,
                         used: Number(clL.usedThisMonth) || 0,
-                        locked: sub != null ? Number(sub.pendingLockedCL) || 0 : null,
+                        locked: sub != null ? clLockedDisplay : policyLock,
+                        transfer: Number(m.scheduled?.poolCarryForwardOut?.cl) || 0,
                     },
                     ccl: {
                         credited: Math.max(0, (Number(cclL.earned) || 0) - (Number(cclL.reversalCreditThisMonth) || 0)),
@@ -1300,6 +1336,9 @@ class LeaveRegisterService {
             const days = transaction.days;
 
             const isReversalCredit = type === 'CREDIT' && String(transaction.reason || '').includes('Leave Application Cancelled/Reversed');
+            const isMonthlyPoolTransferOut =
+                type === 'DEBIT' &&
+                String(transaction.autoGeneratedType || '').startsWith('MONTHLY_POOL_TRANSFER_OUT_');
 
             if (leaveType === 'CL') {
                 const cl = monthData.casualLeave;
@@ -1310,7 +1349,7 @@ class LeaveRegisterService {
                     else cl.accruedThisMonth += days;
                     if (isReversalCredit) cl.reversalCreditThisMonth += days;
                 }
-                else if (type === 'DEBIT') cl.usedThisMonthRaw += days;
+                else if (type === 'DEBIT' && !isMonthlyPoolTransferOut) cl.usedThisMonthRaw += days;
                 else if (type === 'EXPIRY') cl.expired += days;
                 else if (type === 'ADJUSTMENT') cl.adjustments += days;
             } else if (leaveType === 'EL') {
@@ -1318,14 +1357,14 @@ class LeaveRegisterService {
                 el.balance = transaction.closingBalance;
                 if (type === 'CREDIT') el.accruedThisMonth += days;
                 if (type === 'CREDIT' && isReversalCredit) el.reversalCreditThisMonth += days;
-                else if (type === 'DEBIT') el.usedThisMonthRaw += days;
+                else if (type === 'DEBIT' && !isMonthlyPoolTransferOut) el.usedThisMonthRaw += days;
                 else if (type === 'ADJUSTMENT') el.adjustments += days;
             } else if (leaveType === 'CCL') {
                 const ccl = monthData.compensatoryOff;
                 ccl.balance = transaction.closingBalance;
                 if (type === 'CREDIT') ccl.earned += days;
                 if (type === 'CREDIT' && isReversalCredit) ccl.reversalCreditThisMonth += days;
-                else if (type === 'DEBIT') ccl.usedRaw += days;
+                else if (type === 'DEBIT' && !isMonthlyPoolTransferOut) ccl.usedRaw += days;
                 else if (type === 'EXPIRY') ccl.expired += days;
                 else if (type === 'ADJUSTMENT') ccl.adjustments += days;
             }

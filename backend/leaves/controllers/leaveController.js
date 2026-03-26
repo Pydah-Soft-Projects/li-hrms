@@ -2589,15 +2589,14 @@ exports.listLeaveRegister = async (req, res) => {
     const pageNum = Math.max(1, parseInt(String(page), 10) || 1);
     const limitNum = Math.min(100, Math.max(1, parseInt(String(limit), 10) || 25));
 
-    const today = new Date();
     const monthNum =
       monthQ != null && String(monthQ).trim() !== ''
         ? parseInt(String(monthQ), 10)
-        : today.getMonth() + 1;
+        : null;
     const yearNum =
       yearQ != null && String(yearQ).trim() !== ''
         ? parseInt(String(yearQ), 10)
-        : today.getFullYear();
+        : null;
 
     const filters = {};
     if (financialYear && String(financialYear).trim()) {
@@ -2723,15 +2722,14 @@ exports.getEmployeeLeaveRegisterDetail = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Not authorized to view this employee' });
     }
 
-    const today = new Date();
     const monthNum =
       monthQ != null && String(monthQ).trim() !== ''
         ? parseInt(String(monthQ), 10)
-        : today.getMonth() + 1;
+        : null;
     const yearNum =
       yearQ != null && String(yearQ).trim() !== ''
         ? parseInt(String(yearQ), 10)
-        : today.getFullYear();
+        : null;
 
     const filters = { employeeId: emp._id };
     if (financialYear && String(financialYear).trim()) {
@@ -2802,6 +2800,11 @@ exports.patchLeaveRegisterYearMonthSlot = async (req, res) => {
       compensatoryOffs,
       elCredits,
       lockedCredits,
+      usedCl,
+      usedCcl,
+      usedEl,
+      validateWithRecords,
+      carryUnusedToNextMonth,
       reason,
     } = req.body || {};
 
@@ -2811,6 +2814,11 @@ exports.patchLeaveRegisterYearMonthSlot = async (req, res) => {
       payrollCycleMonth,
       payrollCycleYear,
       patch: { clCredits, compensatoryOffs, elCredits, lockedCredits },
+      usedCl,
+      usedCcl,
+      usedEl,
+      validateWithRecords: !!validateWithRecords,
+      carryUnusedToNextMonth: !!carryUnusedToNextMonth,
       reason,
       actorUserId: user._id,
     });
