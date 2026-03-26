@@ -1140,10 +1140,11 @@ export const api = {
   },
 
   // Departments
-  getDepartments: async (isActive?: boolean, divisionId?: string) => {
+  getDepartments: async (isActive?: boolean, divisionId?: string, includeAll?: boolean) => {
     const params = new URLSearchParams();
     if (isActive !== undefined) params.append('isActive', String(isActive));
     if (divisionId) params.append('division', divisionId);
+    if (includeAll) params.append('includeAll', 'true');
     const query = params.toString() ? `?${params.toString()}` : '';
     return apiRequest<Department[]>(`/departments${query}`, { method: 'GET' });
   },
@@ -1167,10 +1168,11 @@ export const api = {
 
 
   // Divisions
-  getDivisions: async (isActive?: boolean, divisionId?: string) => {
+  getDivisions: async (isActive?: boolean, divisionId?: string, includeAll?: boolean) => {
     const params = new URLSearchParams();
     if (isActive !== undefined) params.append('isActive', String(isActive));
     if (divisionId) params.append('division', divisionId);
+    if (includeAll) params.append('includeAll', 'true');
     const query = params.toString() ? `?${params.toString()}` : '';
     return apiRequest<Division[]>(`/divisions${query}`, { method: 'GET' });
   },

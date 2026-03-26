@@ -64,6 +64,9 @@ export default function ProfilePage() {
   // Profile Update Request state
   const [updateConfig, setUpdateConfig] = useState<any>(null);
   const [formGroups, setFormGroups] = useState<any[]>([]);
+  const [allDivisions, setAllDivisions] = useState<any[]>([]);
+  const [allDepartments, setAllDepartments] = useState<any[]>([]);
+  const [allDesignations, setAllDesignations] = useState<any[]>([]);
   const [showRequestModal, setShowRequestModal] = useState(false);
   const [requestedChanges, setRequestedChanges] = useState<any>({});
   const [requestComments, setRequestComments] = useState('');
@@ -113,14 +116,32 @@ export default function ProfilePage() {
 
     // Fetch Profile Update Configuration
     try {
-      const configRes = await api.getSetting('profile_update_request_config');
+      const [configRes, formRes, divisionsRes, departmentsRes, designationsRes] = await Promise.all([
+        api.getSetting('profile_update_request_config'),
+        api.getFormSettings(),
+        api.getDivisions(undefined, undefined, true),
+        api.getDepartments(undefined, undefined, true),
+        api.getAllDesignations()
+      ]);
+
       if (configRes.success && configRes.data) {
         setUpdateConfig(configRes.data.value);
       }
 
-      const formRes = await api.getFormSettings();
       if (formRes.success && formRes.data) {
         setFormGroups(formRes.data.groups);
+      }
+
+      if (divisionsRes.success && Array.isArray(divisionsRes.data)) {
+        setAllDivisions(divisionsRes.data);
+      }
+
+      if (departmentsRes.success && Array.isArray(departmentsRes.data)) {
+        setAllDepartments(departmentsRes.data);
+      }
+
+      if (designationsRes.success && Array.isArray(designationsRes.data)) {
+        setAllDesignations(designationsRes.data);
       }
     } catch (err) {
       console.error('Error fetching update config:', err);
@@ -137,9 +158,10 @@ export default function ProfilePage() {
     // Filter only fields that have actually changed
     const filteredChanges: any = {};
     Object.keys(requestedChanges).forEach(key => {
-      const currentValue = (user as any)?.[key] || (employee as any)?.[key] || (employee as any)?.dynamicFields?.[key];
-      // Compare as strings to handle null/undefined/empty string cases simply
-      if (String(requestedChanges[key] || '') !== String(currentValue || '')) {
+      const currentRawValue = getRawFieldValue(key);
+      const normalizedCurrent = normalizeFieldValueForInput(key, currentRawValue);
+      const normalizedRequested = normalizeFieldValueForInput(key, requestedChanges[key]);
+      if (String(normalizedRequested ?? '') !== String(normalizedCurrent ?? '')) {
         filteredChanges[key] = requestedChanges[key];
       }
     });
@@ -273,6 +295,143 @@ export default function ProfilePage() {
       day: 'numeric',
       ...(includeTime && { hour: '2-digit', minute: '2-digit' }),
     });
+  };
+
+  const isDateLike = (value: string) => {
+    if (!value) return false;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return true;
+    if (/^\d{4}-\d{2}-\d{2}T/.test(value)) return true;
+    return false;
+  };
+
+  const getPrimitiveValue = (value: any): string => {
+    if (value === null || value === undefined || value === '') return '';
+    if (typeof value === 'string' || typeof value === 'number') return String(value);
+    if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+    if (Array.isArray(value)) {
+      return value
+        .map((item) => getPrimitiveValue(item))
+        .filter(Boolean)
+        .join(', ');
+    }
+    if (typeof value === 'object') {
+      const preferredKeys = ['name', 'label', 'title', 'employee_name', 'emp_no', 'code', 'value'];
+      for (const key of preferredKeys) {
+        if (value[key] !== undefined && value[key] !== null && value[key] !== '') {
+          return String(value[key]);
+        }
+      }
+      return '';
+    }
+    return String(value);
+  };
+
+  const formatFieldValue = (value: any): string => {
+    const primitive = getPrimitiveValue(value);
+    if (!primitive) return '—';
+    if (isDateLike(primitive)) return formatDate(primitive, false);
+    return primitive;
+  };
+
+  const getFieldDefinition = (fieldId: string) => {
+    for (const group of formGroups) {
+      const field = group?.fields?.find((f: any) => f.id === fieldId);
+      if (field) return field;
+    }
+    return null;
+  };
+
+  const fieldAliases: Record<string, string[]> = {
+    phone: ['phone_number', 'contact_number', 'mobile_number'],
+    phone_number: ['phone', 'contact_number', 'mobile_number'],
+    contact_number: ['phone_number', 'phone', 'mobile_number'],
+    personal_email: ['email'],
+    email: ['personal_email'],
+    date_of_birth: ['dob', 'birth_date'],
+    dob: ['date_of_birth', 'birth_date'],
+    joining_date: ['doj', 'date_of_joining'],
+    doj: ['joining_date', 'date_of_joining'],
+    designation: ['designation_id'],
+    designation_id: ['designation'],
+    department: ['department_id'],
+    department_id: ['department'],
+    division: ['division_id'],
+    division_id: ['division'],
+  };
+
+  const firstDefined = (...values: any[]) => {
+    for (const value of values) {
+      if (value !== undefined && value !== null && value !== '') return value;
+    }
+    return undefined;
+  };
+
+  const getRawFieldValue = (fieldId: string): any => {
+    const aliases = fieldAliases[fieldId] || [];
+    const candidateKeys = [fieldId, ...aliases];
+
+    for (const key of candidateKeys) {
+      const value = firstDefined(
+        (user as any)?.[key],
+        (employee as any)?.[key],
+        (employee as any)?.dynamicFields?.[key]
+      );
+      if (value !== undefined) return value;
+    }
+    return undefined;
+  };
+
+  const toDateInputValue = (value: any): string => {
+    const raw = getPrimitiveValue(value);
+    if (!raw) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    const date = new Date(raw);
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toISOString().split('T')[0];
+  };
+
+  const toSelectInputValue = (rawValue: any, field: any): string => {
+    const options = getFieldOptionsForRequest(field);
+    const primitive = getPrimitiveValue(rawValue);
+    const objectCandidates = rawValue && typeof rawValue === 'object'
+      ? [rawValue._id, rawValue.id, rawValue.value, rawValue.code, rawValue.name, rawValue.label]
+      : [];
+    const candidates = [...objectCandidates, primitive]
+      .filter((v) => v !== undefined && v !== null && v !== '')
+      .map((v) => String(v).trim().toLowerCase());
+
+    if (candidates.length === 0) return '';
+    const matched = options.find((opt: any) => {
+      const optValue = String(opt?.value ?? '').trim().toLowerCase();
+      const optLabel = String(opt?.label ?? '').trim().toLowerCase();
+      return candidates.includes(optValue) || candidates.includes(optLabel);
+    });
+
+    if (matched) return String(matched.value ?? '');
+    return primitive || '';
+  };
+
+  const normalizeFieldValueForInput = (fieldId: string, rawValue: any): string => {
+    const field = getFieldDefinition(fieldId);
+    if (!field) return getPrimitiveValue(rawValue);
+
+    if (field.type === 'date') return toDateInputValue(rawValue);
+    if (field.type === 'select' || field.type === 'dropdown') return toSelectInputValue(rawValue, field);
+    return getPrimitiveValue(rawValue);
+  };
+
+  const getFieldOptionsForRequest = (field: any) => {
+    const fieldId = String(field?.id || '').toLowerCase();
+    if (fieldId === 'division' || fieldId === 'division_id') {
+      return allDivisions.map((d: any) => ({ value: String(d._id), label: d.name || d.code || String(d._id) }));
+    }
+    if (fieldId === 'department' || fieldId === 'department_id') {
+      return allDepartments.map((d: any) => ({ value: String(d._id), label: d.name || d.code || String(d._id) }));
+    }
+    if (fieldId === 'designation' || fieldId === 'designation_id') {
+      return allDesignations.map((d: any) => ({ value: String(d._id), label: d.name || d.code || String(d._id) }));
+    }
+    return field?.options || [];
   };
 
   if (loading) {
@@ -569,8 +728,10 @@ export default function ProfilePage() {
                           // Pre-fill requestedChanges with current values
                           const initialChanges: any = {};
                           updateConfig.requestableFields.forEach((fieldId: string) => {
-                            const value = (user as any)?.[fieldId] || (employee as any)?.[fieldId] || (employee as any)?.dynamicFields?.[fieldId];
-                            if (value !== undefined) initialChanges[fieldId] = value;
+                            const rawValue = getRawFieldValue(fieldId);
+                            if (rawValue !== undefined) {
+                              initialChanges[fieldId] = normalizeFieldValueForInput(fieldId, rawValue);
+                            }
                           });
                           if (updateConfig.allowQualifications && employee?.blood_group) {
                             // Qualifications handles specially
@@ -643,13 +804,13 @@ export default function ProfilePage() {
                                 if (f) label = f.label;
                               });
 
-                              const value = (user as any)?.[fieldId] || (employee as any)?.[fieldId] || (employee as any)?.dynamicFields?.[fieldId];
+                              const value = getRawFieldValue(fieldId);
 
                               return (
                                 <div key={`${fieldId}-${idx}`} className="group">
                                   <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">{label}</label>
                                   <div className="text-base font-medium text-slate-800 flex items-center justify-between group-hover:bg-slate-50 p-2 rounded-lg transition-colors">
-                                    <span>{typeof value === 'object' ? JSON.stringify(value) : (value || '—')}</span>
+                                    <span>{formatFieldValue(value)}</span>
                                     <span className="text-[9px] font-bold text-emerald-600 uppercase tracking-tight bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100 opacity-0 group-hover:opacity-100 transition-opacity">Editable</span>
                                   </div>
                                 </div>
@@ -808,20 +969,29 @@ export default function ProfilePage() {
                             <div key={field.id || `field-${fieldIdx}`} className="space-y-1.5">
                               <label className="text-[11px] font-bold text-slate-600 uppercase tracking-tight">{field.label}</label>
                               {field.type === 'select' || field.type === 'dropdown' ? (
+                                (() => {
+                                  const fieldOptions = getFieldOptionsForRequest(field);
+                                  return (
                                 <select
-                                  value={requestedChanges[field.id] || ''}
+                                  value={requestedChanges[field.id] ?? ''}
                                   onChange={(e) => setRequestedChanges({ ...requestedChanges, [field.id]: e.target.value })}
                                   className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
                                 >
                                   <option value="">Select Option</option>
-                                  {field.options?.map((opt: any, optIdx: number) => (
+                                  {requestedChanges[field.id] &&
+                                    !fieldOptions?.some((opt: any) => String(opt?.value) === String(requestedChanges[field.id])) && (
+                                      <option value={requestedChanges[field.id]}>{requestedChanges[field.id]}</option>
+                                    )}
+                                  {fieldOptions?.map((opt: any, optIdx: number) => (
                                     <option key={`${opt.value}-${optIdx}`} value={opt.value}>{opt.label}</option>
                                   ))}
                                 </select>
+                                  );
+                                })()
                               ) : (
                                 <input
                                   type={field.type === 'date' ? 'date' : field.type === 'number' ? 'number' : 'text'}
-                                  value={requestedChanges[field.id] || ''}
+                                  value={requestedChanges[field.id] ?? ''}
                                   onChange={(e) => setRequestedChanges({ ...requestedChanges, [field.id]: e.target.value })}
                                   className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
                                   placeholder={`Enter ${field.label}...`}
@@ -833,6 +1003,38 @@ export default function ProfilePage() {
                       </div>
                     );
                   })}
+
+                  {(() => {
+                    const renderedIds = new Set(
+                      formGroups.flatMap((g: any) =>
+                        (g.fields || [])
+                          .filter((f: any) => updateConfig?.requestableFields?.includes(f.id))
+                          .map((f: any) => f.id)
+                      )
+                    );
+                    const missingFieldIds = (updateConfig?.requestableFields || []).filter((id: string) => !renderedIds.has(id));
+                    if (missingFieldIds.length === 0) return null;
+
+                    return (
+                      <div className="md:col-span-2 space-y-4">
+                        <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-50 pb-2">Other Requestable Fields</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {missingFieldIds.map((fieldId: string, idx: number) => (
+                            <div key={`${fieldId}-${idx}`} className="space-y-1.5">
+                              <label className="text-[11px] font-bold text-slate-600 uppercase tracking-tight">{fieldId.replace(/_/g, ' ')}</label>
+                              <input
+                                type={fieldId.toLowerCase().includes('date') || fieldId === 'dob' || fieldId === 'doj' ? 'date' : 'text'}
+                                value={requestedChanges[fieldId] ?? ''}
+                                onChange={(e) => setRequestedChanges({ ...requestedChanges, [fieldId]: e.target.value })}
+                                className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                                placeholder={`Enter ${fieldId.replace(/_/g, ' ')}...`}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* Qualifications Section */}
                   {updateConfig?.allowQualifications && (
