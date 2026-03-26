@@ -2,6 +2,13 @@
 
 import React, { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
+import {
+    SUPERADMIN_COMPLETE_AGGREGATE_KEYS,
+    SUPERADMIN_COMPLETE_AGGREGATE_LABELS,
+    WORKSPACE_COMPLETE_AGGREGATE_KEYS,
+    normalizeCompleteSummaryColumns,
+    type SuperadminCompleteAggregateKey,
+} from '@/lib/attendanceCompleteAggregateColumns';
 import { toast } from 'react-toastify';
 import Spinner from '@/components/Spinner';
 import { SettingsSkeleton } from './SettingsSkeleton';
@@ -47,6 +54,7 @@ const AttendanceSettings = () => {
                         allowAttendanceUpload: featureFlags.allowAttendanceUpload !== false,
                         allowShiftChange: featureFlags.allowShiftChange !== false,
                     },
+                    completeSummaryColumns: normalizeCompleteSummaryColumns(data.completeSummaryColumns),
                 });
             }
         } catch (err) {
@@ -79,6 +87,7 @@ const AttendanceSettings = () => {
                     allowAttendanceUpload: true,
                     allowShiftChange: true,
                 },
+                completeSummaryColumns: normalizeCompleteSummaryColumns(attendanceSettings.completeSummaryColumns),
             };
             const res = await api.updateAttendanceSettings(payload);
             if (res.success) {
@@ -134,6 +143,19 @@ const AttendanceSettings = () => {
     const pm = attendanceSettings.processingMode || PROCESSING_MODE_DEFAULTS;
     const setProcessingMode = (updates: Partial<typeof pm>) =>
         setAttendanceSettings({ ...attendanceSettings, processingMode: { ...pm, ...updates } });
+
+    const completeSummaryCols = normalizeCompleteSummaryColumns(attendanceSettings.completeSummaryColumns);
+
+    const toggleOrgCompleteSummaryColumn = (key: SuperadminCompleteAggregateKey) => {
+        setAttendanceSettings((prev: any) => {
+            if (!prev) return prev;
+            const cols = normalizeCompleteSummaryColumns(prev.completeSummaryColumns);
+            const next = { ...cols, [key]: !cols[key] };
+            if (!WORKSPACE_COMPLETE_AGGREGATE_KEYS.some((k) => next[k])) return prev;
+            if (!SUPERADMIN_COMPLETE_AGGREGATE_KEYS.some((k) => next[k])) return prev;
+            return { ...prev, completeSummaryColumns: next };
+        });
+    };
 
     return (
         <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -432,6 +454,58 @@ const AttendanceSettings = () => {
                                     <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${(attendanceSettings.featureFlags?.allowAttendanceUpload !== false) ? 'translate-x-6' : 'translate-x-1'}`} />
                                 </button>
                             </div>
+                        </div>
+                    </section>
+
+                    {/* Complete table — organization summary columns */}
+                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden p-4 sm:p-6 lg:p-8">
+                        <div className="px-8 py-6 border-b border-gray-100 dark:border-gray-800">
+                            <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">
+                                Complete table totals
+                            </h3>
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 max-w-2xl">
+                                Choose which aggregate columns appear on the monthly Complete attendance grid for everyone (workspace and admin). Users cannot change this on the attendance page.
+                            </p>
+                        </div>
+                        <div className="p-8 space-y-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                {SUPERADMIN_COMPLETE_AGGREGATE_KEYS.map((k) => (
+                                    <label
+                                        key={k}
+                                        className="flex items-center justify-between gap-3 p-3 rounded-xl bg-gray-50/50 dark:bg-black/10 border border-gray-100 dark:border-gray-800 cursor-pointer"
+                                    >
+                                        <span className="text-xs font-semibold text-gray-800 dark:text-gray-200">
+                                            {SUPERADMIN_COMPLETE_AGGREGATE_LABELS[k]}
+                                        </span>
+                                        <input
+                                            type="checkbox"
+                                            checked={completeSummaryCols[k]}
+                                            onChange={() => toggleOrgCompleteSummaryColumn(k)}
+                                            className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500/30"
+                                        />
+                                    </label>
+                                ))}
+                            </div>
+                            <p className="text-[10px] text-gray-400 dark:text-gray-500">
+                                At least one column must stay enabled for workspace and for the full column set (including Absent on the admin grid).
+                            </p>
+                            <button
+                                type="button"
+                                onClick={() =>
+                                    setAttendanceSettings({
+                                        ...attendanceSettings,
+                                        completeSummaryColumns: normalizeCompleteSummaryColumns(
+                                            Object.fromEntries(SUPERADMIN_COMPLETE_AGGREGATE_KEYS.map((key) => [key, true])) as Record<
+                                                string,
+                                                boolean
+                                            >
+                                        ),
+                                    })
+                                }
+                                className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"
+                            >
+                                Enable all totals
+                            </button>
                         </div>
                     </section>
 

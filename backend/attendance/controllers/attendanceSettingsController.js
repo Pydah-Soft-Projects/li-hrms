@@ -5,6 +5,7 @@
 
 const AttendanceSettings = require('../model/AttendanceSettings');
 const { isSQLAvailable } = require('../config/attendanceSQLHelper');
+const { normalizeCompleteSummaryColumns } = require('../constants/completeSummaryColumns');
 
 /**
  * @desc    Get attendance settings
@@ -14,6 +15,11 @@ const { isSQLAvailable } = require('../config/attendanceSQLHelper');
 exports.getSettings = async (req, res) => {
   try {
     const settings = await AttendanceSettings.getSettings();
+    let rawCompleteCols = settings.completeSummaryColumns;
+    if (rawCompleteCols && typeof rawCompleteCols.toObject === 'function') {
+      rawCompleteCols = rawCompleteCols.toObject();
+    }
+    const completeSummaryColumns = normalizeCompleteSummaryColumns(rawCompleteCols);
 
     // Check MSSQL availability if configured
     let mssqlAvailable = false;
@@ -25,10 +31,13 @@ exports.getSettings = async (req, res) => {
       }
     }
 
+    const dataObj = settings.toObject();
+    dataObj.completeSummaryColumns = completeSummaryColumns;
+
     res.status(200).json({
       success: true,
       data: {
-        ...settings.toObject(),
+        ...dataObj,
         mssqlAvailable,
       },
     });
@@ -64,6 +73,7 @@ exports.updateSettings = async (req, res) => {
       previousDayLinking,
       processingMode,
       featureFlags,
+      completeSummaryColumns: bodyCompleteSummaryColumns,
     } = req.body;
 
     const settings = await AttendanceSettings.getSettings();
@@ -158,6 +168,14 @@ exports.updateSettings = async (req, res) => {
         if (!settings.featureFlags) settings.featureFlags = {};
         settings.featureFlags.allowShiftChange = featureFlags.allowShiftChange;
       }
+    }
+
+    if (bodyCompleteSummaryColumns !== undefined && bodyCompleteSummaryColumns !== null) {
+      const normalized = normalizeCompleteSummaryColumns(bodyCompleteSummaryColumns);
+      if (!settings.completeSummaryColumns) {
+        settings.completeSummaryColumns = {};
+      }
+      Object.assign(settings.completeSummaryColumns, normalized);
     }
 
     await settings.save();
