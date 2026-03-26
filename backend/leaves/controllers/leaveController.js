@@ -2087,22 +2087,37 @@ exports.getDashboardStats = async (req, res) => {
       odFilter.employeeId = idFilter;
     }
 
-    const pendingStatusFilter = { status: { $nin: ['approved', 'rejected', 'cancelled'] } };
+    const rejectedStatuses = [
+      'rejected',
+      'hod_rejected',
+      'hr_rejected',
+      'manager_rejected',
+      'reporting_manager_rejected',
+      'principal_rejected',
+      'cancelled',
+    ];
+
+    const pendingStatusFilter = { status: { $nin: ['approved', ...rejectedStatuses] } };
+    const rejectedStatusFilter = { status: { $in: rejectedStatuses } };
 
     const [
       totalLeaves,
       totalApprovedLeaves,
       totalPendingLeaves,
+      totalRejectedLeaves,
       totalODs,
       totalApprovedODs,
-      totalPendingODs
+      totalPendingODs,
+      totalRejectedODs
     ] = await Promise.all([
       Leave.countDocuments(leaveFilter),
       Leave.countDocuments({ ...leaveFilter, status: 'approved' }),
       Leave.countDocuments({ ...leaveFilter, ...pendingStatusFilter }),
+      Leave.countDocuments({ ...leaveFilter, ...rejectedStatusFilter }),
       OD.countDocuments(odFilter),
       OD.countDocuments({ ...odFilter, status: 'approved' }),
-      OD.countDocuments({ ...odFilter, ...pendingStatusFilter })
+      OD.countDocuments({ ...odFilter, ...pendingStatusFilter }),
+      OD.countDocuments({ ...odFilter, ...rejectedStatusFilter })
     ]);
 
     res.status(200).json({
@@ -2114,8 +2129,11 @@ exports.getDashboardStats = async (req, res) => {
         totalPendingODs,
         totalApprovedLeaves,
         totalApprovedODs,
+        totalRejectedLeaves,
+        totalRejectedODs,
         totalPending: totalPendingLeaves + totalPendingODs,
-        totalApproved: totalApprovedLeaves + totalApprovedODs
+        totalApproved: totalApprovedLeaves + totalApprovedODs,
+        totalRejected: totalRejectedLeaves + totalRejectedODs
       }
     });
   } catch (error) {
