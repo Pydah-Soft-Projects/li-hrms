@@ -1373,8 +1373,9 @@ export const api = {
   },
 
   // Department-specific designation endpoints
-  getDesignations: async (departmentId: string) => {
-    return apiRequest<any[]>(`/departments/${departmentId}/designations`, { method: 'GET' });
+  getDesignations: async (departmentId?: string) => {
+    const url = departmentId ? `/departments/${departmentId}/designations` : '/departments/designations';
+    return apiRequest<any[]>(url, { method: 'GET' });
   },
 
   getDesignation: async (id: string) => {
@@ -1853,9 +1854,10 @@ export const api = {
     });
   },
 
-  approveEmployeeUpdateRequest: async (id: string) => {
+  approveEmployeeUpdateRequest: async (id: string, selectedFields?: string[]) => {
     return apiRequest<any>(`/employee-updates/${id}/approve`, {
       method: 'PUT',
+      body: selectedFields ? JSON.stringify({ selectedFields }) : undefined,
     });
   },
 
