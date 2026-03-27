@@ -46,6 +46,11 @@ const leavePolicySettingsSchema = new mongoose.Schema({
             max: 62,
             description: 'Maximum combined days per payroll period (0 = unlimited when disabled)'
         },
+        maxDaysByType: {
+            CL: { type: Number, default: 0, min: 0, max: 62 },
+            CCL: { type: Number, default: 0, min: 0, max: 62 },
+            EL: { type: Number, default: 0, min: 0, max: 62 },
+        },
         includeEL: {
             type: Boolean,
             default: false,
@@ -60,6 +65,33 @@ const leavePolicySettingsSchema = new mongoose.Schema({
             type: Boolean,
             default: true,
             description: 'Cap CL per payroll period by register slot clCredits after period start (IST)'
+        }
+    },
+    /**
+     * Granular controls for manual Leave Register month-slot edits.
+     * If a flag is false, the corresponding field cannot be patched via month-slot edit API.
+     */
+    leaveRegisterMonthSlotEdit: {
+        /**
+         * Default edit controls applied to all payroll month slots unless overridden below.
+         */
+        defaults: {
+            allowEditClCredits: { type: Boolean, default: true },
+            allowEditCclCredits: { type: Boolean, default: true },
+            allowEditElCredits: { type: Boolean, default: true },
+            allowEditPolicyLock: { type: Boolean, default: true },
+            allowEditUsedCl: { type: Boolean, default: true },
+            allowEditUsedCcl: { type: Boolean, default: true },
+            allowEditUsedEl: { type: Boolean, default: true },
+            allowCarryUnusedToNextMonth: { type: Boolean, default: true }
+        },
+        /**
+         * Optional per-payroll-month override map (keys "1".."12").
+         * Each value can contain a partial subset of defaults.
+         */
+        byPayrollMonthIndex: {
+            type: mongoose.Schema.Types.Mixed,
+            default: {}
         }
     },
 

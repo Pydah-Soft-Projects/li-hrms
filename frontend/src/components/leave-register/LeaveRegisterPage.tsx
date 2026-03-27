@@ -54,10 +54,84 @@ type RegisterMonthLite = {
   capLockedDays?: number | null;
   /** Subtotal: final-approved days toward the period cap. */
   capApprovedDays?: number | null;
+  monthEditPolicy?: MonthSlotEditPolicy | null;
   cl?: MonthLeaveBucket;
   ccl?: MonthLeaveBucket;
   el?: MonthLeaveBucket;
 };
+
+type MonthSlotEditPolicy = {
+  allowEditClCredits: boolean;
+  allowEditCclCredits: boolean;
+  allowEditElCredits: boolean;
+  allowEditPolicyLock: boolean;
+  allowEditUsedCl: boolean;
+  allowEditUsedCcl: boolean;
+  allowEditUsedEl: boolean;
+  allowCarryUnusedToNextMonth: boolean;
+};
+
+type MonthSlotEditPolicyConfig = {
+  defaults?: Partial<MonthSlotEditPolicy>;
+  byPayrollMonthIndex?: Record<string, Partial<MonthSlotEditPolicy>>;
+} | null;
+
+function resolveMonthSlotEditPolicy(
+  cfg: MonthSlotEditPolicyConfig,
+  payrollMonthIndex?: number | null
+): MonthSlotEditPolicy {
+  const allow = (v: unknown) => v !== false;
+  const flat = (cfg || {}) as Partial<MonthSlotEditPolicy>;
+  const base: MonthSlotEditPolicy = {
+    allowEditClCredits: true,
+    allowEditCclCredits: true,
+    allowEditElCredits: true,
+    allowEditPolicyLock: true,
+    allowEditUsedCl: true,
+    allowEditUsedCcl: true,
+    allowEditUsedEl: true,
+    allowCarryUnusedToNextMonth: true,
+  };
+  const d = cfg?.defaults || {};
+  const merged: MonthSlotEditPolicy = {
+    // Backward-compatible: read new `defaults` shape first, then legacy flat flags.
+    allowEditClCredits: allow(d.allowEditClCredits ?? flat.allowEditClCredits),
+    allowEditCclCredits: allow(d.allowEditCclCredits ?? flat.allowEditCclCredits),
+    allowEditElCredits: allow(d.allowEditElCredits ?? flat.allowEditElCredits),
+    allowEditPolicyLock: allow(d.allowEditPolicyLock ?? flat.allowEditPolicyLock),
+    allowEditUsedCl: allow(d.allowEditUsedCl ?? flat.allowEditUsedCl),
+    allowEditUsedCcl: allow(d.allowEditUsedCcl ?? flat.allowEditUsedCcl),
+    allowEditUsedEl: allow(d.allowEditUsedEl ?? flat.allowEditUsedEl),
+    allowCarryUnusedToNextMonth: allow(
+      d.allowCarryUnusedToNextMonth ?? flat.allowCarryUnusedToNextMonth
+    ),
+  };
+  if (!Number.isFinite(Number(payrollMonthIndex))) return merged;
+  const k = String(Number(payrollMonthIndex));
+  const ov = cfg?.byPayrollMonthIndex?.[k];
+  if (!ov || typeof ov !== 'object') return merged;
+  return {
+    ...merged,
+    allowEditClCredits:
+      ov.allowEditClCredits == null ? merged.allowEditClCredits : allow(ov.allowEditClCredits),
+    allowEditCclCredits:
+      ov.allowEditCclCredits == null ? merged.allowEditCclCredits : allow(ov.allowEditCclCredits),
+    allowEditElCredits:
+      ov.allowEditElCredits == null ? merged.allowEditElCredits : allow(ov.allowEditElCredits),
+    allowEditPolicyLock:
+      ov.allowEditPolicyLock == null ? merged.allowEditPolicyLock : allow(ov.allowEditPolicyLock),
+    allowEditUsedCl:
+      ov.allowEditUsedCl == null ? merged.allowEditUsedCl : allow(ov.allowEditUsedCl),
+    allowEditUsedCcl:
+      ov.allowEditUsedCcl == null ? merged.allowEditUsedCcl : allow(ov.allowEditUsedCcl),
+    allowEditUsedEl:
+      ov.allowEditUsedEl == null ? merged.allowEditUsedEl : allow(ov.allowEditUsedEl),
+    allowCarryUnusedToNextMonth:
+      ov.allowCarryUnusedToNextMonth == null
+        ? merged.allowCarryUnusedToNextMonth
+        : allow(ov.allowCarryUnusedToNextMonth),
+  };
+}
 
 type ListRow = {
   employee: {
@@ -218,6 +292,7 @@ export default function LeaveRegisterPage({
   } | null>(null);
 
   const [registerListRefresh, setRegisterListRefresh] = useState(0);
+  const [monthSlotEditPolicyConfig, setMonthSlotEditPolicyConfig] = useState<MonthSlotEditPolicyConfig>(null);
   const [slotEditModal, setSlotEditModal] = useState<{
     open: boolean;
     employeeId: string;
@@ -227,6 +302,8 @@ export default function LeaveRegisterPage({
     payrollCycleMonth: number;
     payrollCycleYear: number;
     label: string;
+    payrollMonthIndex: number;
+    monthEditPolicy?: MonthSlotEditPolicy | null;
     clCredits: string;
     compensatoryOffs: string;
     elCredits: string;
@@ -274,6 +351,8 @@ export default function LeaveRegisterPage({
         if (cancelled || !res?.success) return;
         const computed = computeFinancialYearNameFromPolicy(res.data, now);
         const options = buildFinancialYearOptions(res.data, now);
+        const editCfg = (res.data?.leaveRegisterMonthSlotEdit || null) as MonthSlotEditPolicyConfig;
+        setMonthSlotEditPolicyConfig(editCfg);
         setFinancialYearOptions(options.length > 0 ? options : [computed]);
         setFinancialYear((prev) => {
           const t = prev.trim();
@@ -288,6 +367,16 @@ export default function LeaveRegisterPage({
       cancelled = true;
     };
   }, [fallbackFinancialYear, now]);
+
+  const effectiveMonthSlotEditPolicy = useMemo(
+    () =>
+      (slotEditModal?.monthEditPolicy || null) ??
+      resolveMonthSlotEditPolicy(
+        monthSlotEditPolicyConfig,
+        slotEditModal?.payrollMonthIndex ?? null
+      ),
+    [monthSlotEditPolicyConfig, slotEditModal?.payrollMonthIndex, slotEditModal?.monthEditPolicy]
+  );
 
   useEffect(() => {
     setPage(1);
@@ -457,8 +546,10 @@ export default function LeaveRegisterPage({
       payrollCycleYear: slotEditModal.payrollCycleYear,
       reason,
       validateWithRecords: !!slotEditModal.validateWithRecords,
-      carryUnusedToNextMonth: !!slotEditModal.carryUnusedToNextMonth,
     };
+    if (effectiveMonthSlotEditPolicy.allowCarryUnusedToNextMonth) {
+      body.carryUnusedToNextMonth = !!slotEditModal.carryUnusedToNextMonth;
+    }
     const push = (key: 'clCredits' | 'compensatoryOffs' | 'elCredits' | 'lockedCredits', raw: string) => {
       const t = raw.trim();
       if (t === '') return;
@@ -479,13 +570,13 @@ export default function LeaveRegisterPage({
       body[key] = n;
     };
     try {
-      push('clCredits', slotEditModal.clCredits);
-      push('compensatoryOffs', slotEditModal.compensatoryOffs);
-      push('elCredits', slotEditModal.elCredits);
-      push('lockedCredits', slotEditModal.lockedCredits);
-      pushUsed('usedCl', slotEditModal.clUsed);
-      pushUsed('usedCcl', slotEditModal.compensatoryOffsUsed);
-      pushUsed('usedEl', slotEditModal.elUsed);
+      if (effectiveMonthSlotEditPolicy.allowEditClCredits) push('clCredits', slotEditModal.clCredits);
+      if (effectiveMonthSlotEditPolicy.allowEditCclCredits) push('compensatoryOffs', slotEditModal.compensatoryOffs);
+      if (effectiveMonthSlotEditPolicy.allowEditElCredits) push('elCredits', slotEditModal.elCredits);
+      if (effectiveMonthSlotEditPolicy.allowEditPolicyLock) push('lockedCredits', slotEditModal.lockedCredits);
+      if (effectiveMonthSlotEditPolicy.allowEditUsedCl) pushUsed('usedCl', slotEditModal.clUsed);
+      if (effectiveMonthSlotEditPolicy.allowEditUsedCcl) pushUsed('usedCcl', slotEditModal.compensatoryOffsUsed);
+      if (effectiveMonthSlotEditPolicy.allowEditUsedEl) pushUsed('usedEl', slotEditModal.elUsed);
     } catch (e: any) {
       toast.error(e?.message || 'Invalid input');
       return;
@@ -494,9 +585,13 @@ export default function LeaveRegisterPage({
       body.clCredits === undefined &&
       body.compensatoryOffs === undefined &&
       body.elCredits === undefined &&
-      body.lockedCredits === undefined
+      body.lockedCredits === undefined &&
+      body.usedCl === undefined &&
+      body.usedCcl === undefined &&
+      body.usedEl === undefined &&
+      body.carryUnusedToNextMonth !== true
     ) {
-      toast.error('Enter at least one value to update (scheduled CL, CCL, EL, or policy lock).');
+      toast.error('Enter at least one value to update in allowed fields.');
       return;
     }
     setSlotEditModal((m) => (m ? { ...m, saving: true } : null));
@@ -1167,6 +1262,9 @@ export default function LeaveRegisterPage({
                                                     payrollCycleMonth: m.month,
                                                     payrollCycleYear: m.year,
                                                     label: m.label || `${m.month}/${m.year}`,
+                                                    payrollMonthIndex:
+                                                      Number(m.payrollMonthIndex) || (idx + 1),
+                                                    monthEditPolicy: m.monthEditPolicy || null,
                                                     clCredits:
                                                       m.scheduledCl != null ? String(m.scheduledCl) : '',
                                                     compensatoryOffs:
@@ -1455,10 +1553,11 @@ export default function LeaveRegisterPage({
                     type="text"
                     inputMode="decimal"
                     value={slotEditModal.clCredits}
+                    disabled={!effectiveMonthSlotEditPolicy.allowEditClCredits}
                     onChange={(e) =>
                       setSlotEditModal((m) => (m ? { ...m, clCredits: e.target.value } : null))
                     }
-                    className="mt-0.5 w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm"
+                    className="mt-0.5 w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   />
                 </label>
                 <label className="col-span-2 text-[11px] font-medium text-slate-600 dark:text-slate-300">
@@ -1467,10 +1566,11 @@ export default function LeaveRegisterPage({
                     type="text"
                     inputMode="decimal"
                     value={slotEditModal.compensatoryOffs}
+                    disabled={!effectiveMonthSlotEditPolicy.allowEditCclCredits}
                     onChange={(e) =>
                       setSlotEditModal((m) => (m ? { ...m, compensatoryOffs: e.target.value } : null))
                     }
-                    className="mt-0.5 w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm"
+                    className="mt-0.5 w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   />
                 </label>
                 <label className="col-span-2 text-[11px] font-medium text-slate-600 dark:text-slate-300">
@@ -1479,10 +1579,11 @@ export default function LeaveRegisterPage({
                     type="text"
                     inputMode="decimal"
                     value={slotEditModal.elCredits}
+                    disabled={!effectiveMonthSlotEditPolicy.allowEditElCredits}
                     onChange={(e) =>
                       setSlotEditModal((m) => (m ? { ...m, elCredits: e.target.value } : null))
                     }
-                    className="mt-0.5 w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm"
+                    className="mt-0.5 w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   />
                 </label>
                 <label className="col-span-2 text-[11px] font-medium text-slate-600 dark:text-slate-300">
@@ -1491,10 +1592,11 @@ export default function LeaveRegisterPage({
                     type="text"
                     inputMode="decimal"
                     value={slotEditModal.lockedCredits}
+                    disabled={!effectiveMonthSlotEditPolicy.allowEditPolicyLock}
                     onChange={(e) =>
                       setSlotEditModal((m) => (m ? { ...m, lockedCredits: e.target.value } : null))
                     }
-                    className="mt-0.5 w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm"
+                    className="mt-0.5 w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   />
                 </label>
                 <label className="col-span-2 text-[11px] font-medium text-slate-600 dark:text-slate-300">
@@ -1503,10 +1605,11 @@ export default function LeaveRegisterPage({
                     type="text"
                     inputMode="decimal"
                     value={slotEditModal.clUsed}
+                    disabled={!effectiveMonthSlotEditPolicy.allowEditUsedCl}
                     onChange={(e) =>
                       setSlotEditModal((m) => (m ? { ...m, clUsed: e.target.value } : null))
                     }
-                    className="mt-0.5 w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm"
+                    className="mt-0.5 w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   />
                 </label>
                 <label className="col-span-2 text-[11px] font-medium text-slate-600 dark:text-slate-300">
@@ -1515,10 +1618,11 @@ export default function LeaveRegisterPage({
                     type="text"
                     inputMode="decimal"
                     value={slotEditModal.compensatoryOffsUsed}
+                    disabled={!effectiveMonthSlotEditPolicy.allowEditUsedCcl}
                     onChange={(e) =>
                       setSlotEditModal((m) => (m ? { ...m, compensatoryOffsUsed: e.target.value } : null))
                     }
-                    className="mt-0.5 w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm"
+                    className="mt-0.5 w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   />
                 </label>
                 <label className="col-span-2 text-[11px] font-medium text-slate-600 dark:text-slate-300">
@@ -1527,10 +1631,11 @@ export default function LeaveRegisterPage({
                     type="text"
                     inputMode="decimal"
                     value={slotEditModal.elUsed}
+                    disabled={!effectiveMonthSlotEditPolicy.allowEditUsedEl}
                     onChange={(e) =>
                       setSlotEditModal((m) => (m ? { ...m, elUsed: e.target.value } : null))
                     }
-                    className="mt-0.5 w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm"
+                    className="mt-0.5 w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   />
                 </label>
               </div>
@@ -1570,6 +1675,7 @@ export default function LeaveRegisterPage({
                     type="checkbox"
                     className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300"
                     checked={slotEditModal.carryUnusedToNextMonth}
+                    disabled={!effectiveMonthSlotEditPolicy.allowCarryUnusedToNextMonth}
                     onChange={(e) =>
                       setSlotEditModal((m) =>
                         m ? { ...m, carryUnusedToNextMonth: e.target.checked } : null

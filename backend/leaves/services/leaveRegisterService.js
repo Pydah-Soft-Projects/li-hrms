@@ -54,6 +54,83 @@ function ensureMonthlySubLedgerShape(sub) {
     return sub;
 }
 
+/** Payroll cycle end is labeled by (year, month). Positive if (yA,mA) is strictly after (yB,mB). */
+function comparePayrollCyclePeriod(yearA, monthA, yearB, monthB) {
+    if (yearA !== yearB) return yearA - yearB;
+    return monthA - monthB;
+}
+
+/** True when this slot is a payroll period after `cap` (typically today's cycle) — no running balance carry into these rows for UI. */
+function isPayrollPeriodStrictlyAfter(month, year, cap) {
+    if (!cap || cap.month == null || cap.year == null) return false;
+    return comparePayrollCyclePeriod(year, month, cap.year, cap.month) > 0;
+}
+
+function resolveMonthSlotEditFlags(policyDoc, payrollMonthIndex) {
+    const allow = (v) => v !== false;
+    const cfg = policyDoc?.leaveRegisterMonthSlotEdit || {};
+    const flat = cfg || {};
+    const defaults = cfg?.defaults || {};
+    const base = {
+        allowEditClCredits: allow(defaults.allowEditClCredits ?? flat.allowEditClCredits),
+        allowEditCclCredits: allow(defaults.allowEditCclCredits ?? flat.allowEditCclCredits),
+        allowEditElCredits: allow(defaults.allowEditElCredits ?? flat.allowEditElCredits),
+        allowEditPolicyLock: allow(defaults.allowEditPolicyLock ?? flat.allowEditPolicyLock),
+        allowEditUsedCl: allow(defaults.allowEditUsedCl ?? flat.allowEditUsedCl),
+        allowEditUsedCcl: allow(defaults.allowEditUsedCcl ?? flat.allowEditUsedCcl),
+        allowEditUsedEl: allow(defaults.allowEditUsedEl ?? flat.allowEditUsedEl),
+        allowCarryUnusedToNextMonth: allow(
+            defaults.allowCarryUnusedToNextMonth ?? flat.allowCarryUnusedToNextMonth
+        ),
+    };
+    const key = String(Number(payrollMonthIndex) || '');
+    const override =
+        key &&
+        cfg?.byPayrollMonthIndex &&
+        typeof cfg.byPayrollMonthIndex === 'object'
+            ? cfg.byPayrollMonthIndex[key]
+            : null;
+    if (!override || typeof override !== 'object') return base;
+    return {
+        ...base,
+        allowEditClCredits: allow(
+            override.allowEditClCredits != null ? override.allowEditClCredits : base.allowEditClCredits
+        ),
+        allowEditCclCredits: allow(
+            override.allowEditCclCredits != null ? override.allowEditCclCredits : base.allowEditCclCredits
+        ),
+        allowEditElCredits: allow(
+            override.allowEditElCredits != null ? override.allowEditElCredits : base.allowEditElCredits
+        ),
+        allowEditPolicyLock: allow(
+            override.allowEditPolicyLock != null ? override.allowEditPolicyLock : base.allowEditPolicyLock
+        ),
+        allowEditUsedCl: allow(
+            override.allowEditUsedCl != null ? override.allowEditUsedCl : base.allowEditUsedCl
+        ),
+        allowEditUsedCcl: allow(
+            override.allowEditUsedCcl != null ? override.allowEditUsedCcl : base.allowEditUsedCcl
+        ),
+        allowEditUsedEl: allow(
+            override.allowEditUsedEl != null ? override.allowEditUsedEl : base.allowEditUsedEl
+        ),
+        allowCarryUnusedToNextMonth: allow(
+            override.allowCarryUnusedToNextMonth != null
+                ? override.allowCarryUnusedToNextMonth
+                : base.allowCarryUnusedToNextMonth
+        ),
+    };
+}
+
+function derivePolicyMonthIndexFromCycleMonth(slot, policyDoc) {
+    const startMonth = Number(policyDoc?.financialYear?.startMonth) || 4; // default Apr
+    const pcm = Number(slot?.payrollCycleMonth);
+    if (!Number.isFinite(pcm) || pcm < 1 || pcm > 12) {
+        return Number(slot?.payrollMonthIndex) || 1;
+    }
+    return ((pcm - startMonth + 12) % 12) + 1;
+}
+
 /**
  * Leave Register Service
  * Manages complete ledger of all leave transactions with audit transparency
@@ -547,7 +624,13 @@ class LeaveRegisterService {
                 monthsInOrderOverride = null;
             }
 
-            let groupedData = this.groupByEmployeeYearly(populatedData, fyStart, monthsInOrderOverride);
+            const todayPeriodInfoForCarry = await dateCycleService.getPeriodInfo(today);
+            let groupedData = this.groupByEmployeeYearly(
+                populatedData,
+                fyStart,
+                monthsInOrderOverride,
+                todayPeriodInfoForCarry.payrollCycle
+            );
 
 
 
@@ -890,8 +973,18 @@ class LeaveRegisterService {
 
             if (yd && Array.isArray(yd.months) && yd.months.length > 0) {
                 const matchedKeys = new Set();
+                const slotsOrdered = [...yd.months].sort((a, b) => {
+                    const sa = new Date(a?.payPeriodStart || a?.payPeriodEnd || 0).getTime();
+                    const sb = new Date(b?.payPeriodStart || b?.payPeriodEnd || 0).getTime();
+                    if (sa !== sb) return sa - sb;
+                    const ea = new Date(a?.payPeriodEnd || a?.payPeriodStart || 0).getTime();
+                    const eb = new Date(b?.payPeriodEnd || b?.payPeriodStart || 0).getTime();
+                    return ea - eb;
+                });
 
-                for (const slot of yd.months) {
+                for (let orderedIdx = 0; orderedIdx < slotsOrdered.length; orderedIdx++) {
+                    const slot = slotsOrdered[orderedIdx];
+                    const policyMonthIndex = derivePolicyMonthIndexFromCycleMonth(slot, policy);
                     const pcm = slot.payrollCycleMonth;
                     const pcy = slot.payrollCycleYear;
                     const sub = matchSub(subs, pcm, pcy);
@@ -908,8 +1001,8 @@ class LeaveRegisterService {
                     const txCount = sub?.transactions?.length ?? 0;
 
                     monthsOut.push({
-                        payrollMonthIndex: slot.payrollMonthIndex,
-                        label: slot.label || `Period ${slot.payrollMonthIndex}`,
+                        payrollMonthIndex: policyMonthIndex,
+                        label: slot.label || `Period ${policyMonthIndex}`,
                         payPeriodStart: slot.payPeriodStart,
                         payPeriodEnd: slot.payPeriodEnd,
                         payrollCycleMonth: pcm,
@@ -1010,23 +1103,28 @@ class LeaveRegisterService {
                 const applyLimit = hasStored && st.ceiling != null && Number.isFinite(Number(st.ceiling))
                     ? Math.max(0, Number(st.ceiling))
                     : computeScheduledPoolApplyCeiling(m.scheduled, policy);
-                const consumed = hasStored && st.consumed != null && Number.isFinite(Number(st.consumed))
-                    ? Number(st.consumed)
-                    : Number(sub?.capConsumedDays) || 0;
+                // Register view should reflect latest Leave statuses (locked/approved/rejected) immediately.
+                // Prefer live recomputation from monthly buckets; use stored slot values only as fallback.
+                const consumed =
+                    sub != null && Number.isFinite(Number(sub?.capConsumedDays))
+                        ? Number(sub.capConsumedDays)
+                        : hasStored && st.consumed != null && Number.isFinite(Number(st.consumed))
+                          ? Number(st.consumed)
+                          : 0;
                 const effectiveConsumed = Math.max(0, consumed + policyLock);
                 const capLockedDays =
-                    hasStored && st.locked != null && Number.isFinite(Number(st.locked))
-                        ? Number(st.locked)
-                        : sub != null
-                          ? Number(sub.capLockedDays) || 0
+                    sub != null && Number.isFinite(Number(sub?.capLockedDays))
+                        ? Number(sub.capLockedDays)
+                        : hasStored && st.locked != null && Number.isFinite(Number(st.locked))
+                          ? Number(st.locked)
                           : null;
                 const capLockedWithPolicy =
                     capLockedDays == null ? policyLock : Math.max(0, Number(capLockedDays) + policyLock);
                 const capApprovedDays =
-                    hasStored && st.approved != null && Number.isFinite(Number(st.approved))
-                        ? Number(st.approved)
-                        : sub != null
-                          ? Number(sub.capApprovedDays) || 0
+                    sub != null && Number.isFinite(Number(sub?.capApprovedDays))
+                        ? Number(sub.capApprovedDays)
+                        : hasStored && st.approved != null && Number.isFinite(Number(st.approved))
+                          ? Number(st.approved)
                           : null;
                 const monthlyApplyRemaining =
                     applyLimit != null ? Math.max(0, applyLimit - effectiveConsumed) : null;
@@ -1054,6 +1152,7 @@ class LeaveRegisterService {
                     capLockedDays: capLockedWithPolicy,
                     capApprovedDays,
                     monthlyApplySource: hasStored ? 'stored' : 'live',
+                    monthEditPolicy: resolveMonthSlotEditFlags(policy, m.payrollMonthIndex),
                     cl: {
                         credited: clCreditedNet,
                         used: Number(clL.usedThisMonth) || 0,
@@ -1168,7 +1267,14 @@ class LeaveRegisterService {
             }
 
             // Use the yearly grouping logic
-            const grouped = this.groupByEmployeeYearly(allTransactions, fyStart, monthsInOrderOverride);
+            const dateCycleServiceForCarry = require('./dateCycleService');
+            const carryCapPayrollCycle = (await dateCycleServiceForCarry.getPeriodInfo(new Date())).payrollCycle;
+            const grouped = this.groupByEmployeeYearly(
+                allTransactions,
+                fyStart,
+                monthsInOrderOverride,
+                carryCapPayrollCycle
+            );
 
             let employeeLedger = grouped[0] || {
                 employeeId,
@@ -1264,8 +1370,10 @@ class LeaveRegisterService {
      */
     /**
      * Group transactions by employee with monthly sub-ledgers and individual transactions.
+     * @param {{ month: number, year: number }|null} balanceCarryCapPayrollCycle - Do not chain closing→opening balances
+     *        into months strictly after this payroll cycle (usually today's cycle). Omit/null = chain entire FY (legacy).
      */
-    groupByEmployeeYearly(transactions, fyStart = null, monthsInOrderOverride = null) {
+    groupByEmployeeYearly(transactions, fyStart = null, monthsInOrderOverride = null, balanceCarryCapPayrollCycle = null) {
         const grouped = {};
 
         // 1. Group transactions by employee

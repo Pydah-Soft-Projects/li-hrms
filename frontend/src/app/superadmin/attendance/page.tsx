@@ -180,6 +180,13 @@ function getAbsentCountForRow(item: MonthlyAttendanceData, dailyValues: any[]): 
   return dailyValues.filter((r: any) => r?.status === 'ABSENT').length;
 }
 
+function getPresentExcludingOD(summary?: MonthlyAttendanceData['summary'] | null): number | null {
+  if (!summary) return null;
+  const present = Number(summary.totalPresentDays) || 0;
+  const od = Number(summary.totalODs) || 0;
+  return Math.max(0, Math.round((present - od) * 10) / 10);
+}
+
 interface Designation {
   _id: string;
   name: string;
@@ -2587,14 +2594,17 @@ export default function AttendancePage() {
 
                   const dailyValues: any[] = safeGetValues(dailyAttendance);
 
-                  const daysPresent = item.presentDays !== undefined
-                    ? item.presentDays
-                    : dailyValues.reduce((sum, record: any) => {
-                      if (!record) return sum;
-                      if (record.status === 'PRESENT' || record.status === 'PARTIAL') return sum + 1;
-                      if (record.status === 'HALF_DAY') return sum + 0.5;
-                      return sum;
-                    }, 0);
+                  const presentFromSummary = getPresentExcludingOD(item.summary);
+                  const daysPresent = presentFromSummary != null
+                    ? presentFromSummary
+                    : item.presentDays !== undefined
+                      ? item.presentDays
+                      : dailyValues.reduce((sum, record: any) => {
+                        if (!record) return sum;
+                        if (record.status === 'PRESENT' || record.status === 'PARTIAL') return sum + 1;
+                        if (record.status === 'HALF_DAY') return sum + 0.5;
+                        return sum;
+                      }, 0);
 
                   const payableShifts = item.payableShifts !== undefined ? item.payableShifts : 0;
                   const monthPresent = dailyValues.reduce((sum, r: any) => {
@@ -4050,7 +4060,9 @@ export default function AttendancePage() {
                             <td className="border border-slate-300 px-4 py-2 text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.monthName || `${monthNames[month - 1]} ${year}`}</td>
                             <td className="border border-slate-300 px-4 py-2 text-right text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalLeaves || 0}</td>
                             <td className="border border-slate-300 px-4 py-2 text-right text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalODs || 0}</td>
-                            <td className="border border-slate-300 px-4 py-2 text-right text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalPresentDays || 0}</td>
+                            <td className="border border-slate-300 px-4 py-2 text-right text-slate-900 dark:border-slate-600 dark:text-white">
+                              {Math.max(0, (Number(monthlySummary.totalPresentDays) || 0) - (Number(monthlySummary.totalODs) || 0))}
+                            </td>
                             <td className="border border-slate-300 px-4 py-2 text-right text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalDaysInMonth || 0}</td>
                             <td className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalPayableShifts?.toFixed(2) || '0.00'}</td>
                             <td className="border border-slate-300 px-4 py-2 text-right font-semibold text-purple-800 dark:text-purple-200">{Number(monthlySummary.totalAttendanceDeductionDays ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</td>

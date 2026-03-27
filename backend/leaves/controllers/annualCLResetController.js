@@ -228,6 +228,11 @@ exports.applyInitialCLSync = async (req, res) => {
         const scopeNorm = scope === 'all' ? 'all' : 'listed';
         const reasonStr = reason ? String(reason).trim() : '';
         const adjReason = `Initial policy sync${reasonStr ? `: ${reasonStr}` : ''}`;
+        const clSyncOptions = {
+            creditAllPayrollMonths: true,
+            includeApprovedClUsageDebits: true,
+            carryUnusedClToNextMonth: true,
+        };
 
         const settings = await LeavePolicySettings.getSettings();
         const effectiveDate = createISTDate(getTodayISTDateString());
@@ -248,7 +253,7 @@ exports.applyInitialCLSync = async (req, res) => {
 
             for (const emp of employeesAll) {
                 try {
-                    const syncResult = await syncEmployeeCLFromPolicy(emp, settings, effectiveDate, {});
+                    const syncResult = await syncEmployeeCLFromPolicy(emp, settings, effectiveDate, clSyncOptions);
                     if (!syncResult.success) {
                         throw new Error(syncResult.error || 'CL sync failed');
                     }
@@ -298,7 +303,12 @@ exports.applyInitialCLSync = async (req, res) => {
                     targetCL != null && targetCL !== '' && Number.isFinite(Number(targetCL))
                         ? { targetCL: Number(targetCL) }
                         : {};
-                const syncResult = await syncEmployeeCLFromPolicy(emp, settings, effectiveDate, clOpts);
+                const syncResult = await syncEmployeeCLFromPolicy(
+                    emp,
+                    settings,
+                    effectiveDate,
+                    { ...clSyncOptions, ...clOpts }
+                );
                 if (!syncResult.success) {
                     throw new Error(syncResult.error || 'CL sync failed');
                 }

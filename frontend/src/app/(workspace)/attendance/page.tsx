@@ -260,6 +260,13 @@ interface MonthlyAttendanceData {
 
 }
 
+function getPresentExcludingOD(summary?: MonthlyAttendanceData['summary'] | null): number | null {
+  if (!summary) return null;
+  const present = Number(summary.totalPresentDays) || 0;
+  const od = Number(summary.totalODs) || 0;
+  return Math.max(0, Math.round((present - od) * 10) / 10);
+}
+
 
 
 interface Department {
@@ -3288,7 +3295,7 @@ export default function AttendancePage() {
               id: 'present',
               column: 'present',
               label: 'Present',
-              value: s?.totalPresentDays ?? item.presentDays ?? 0,
+              value: getPresentExcludingOD(s) ?? item.presentDays ?? 0,
               color: 'text-slate-900 dark:text-white',
               bcolor: 'bg-slate-50 dark:bg-slate-700/30',
             },
@@ -3783,11 +3790,14 @@ export default function AttendancePage() {
                         </tr>
                       ) : (
                         filteredMonthlyData.map((item) => {
-                          const daysPresent = item.presentDays !== undefined
-                            ? item.presentDays
-                            : Object.values(item.dailyAttendance).filter(
-                              (record) => record && (record.status === 'PRESENT' || record.status === 'PARTIAL')
-                            ).length;
+                          const presentFromSummary = getPresentExcludingOD(item.summary);
+                          const daysPresent = presentFromSummary != null
+                            ? presentFromSummary
+                            : item.presentDays !== undefined
+                              ? item.presentDays
+                              : Object.values(item.dailyAttendance).filter(
+                                (record) => record && (record.status === 'PRESENT' || record.status === 'PARTIAL')
+                              ).length;
                           const payableShifts = item.payableShifts !== undefined ? item.payableShifts : 0;
 
                           // Helper calculations for specific tables
@@ -5312,7 +5322,9 @@ export default function AttendancePage() {
                             <td className="border border-slate-300 px-4 py-2 text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.monthName || `${monthNames[month - 1]} ${year}`}</td>
                             <td className="border border-slate-300 px-4 py-2 text-right text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalLeaves || 0}</td>
                             <td className="border border-slate-300 px-4 py-2 text-right text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalODs || 0}</td>
-                            <td className="border border-slate-300 px-4 py-2 text-right text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalPresentDays || 0}</td>
+                            <td className="border border-slate-300 px-4 py-2 text-right text-slate-900 dark:border-slate-600 dark:text-white">
+                              {Math.max(0, (Number(monthlySummary.totalPresentDays) || 0) - (Number(monthlySummary.totalODs) || 0))}
+                            </td>
                             <td className="border border-slate-300 px-4 py-2 text-right text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalDaysInMonth || 0}</td>
                             <td className="border border-slate-300 px-4 py-2 text-right font-semibold text-slate-900 dark:border-slate-600 dark:text-white">{monthlySummary.totalPayableShifts?.toFixed(2) || '0.00'}</td>
                             <td className="border border-slate-300 px-4 py-2 text-right font-semibold text-purple-800 dark:text-purple-200">{Number(monthlySummary.totalAttendanceDeductionDays ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</td>

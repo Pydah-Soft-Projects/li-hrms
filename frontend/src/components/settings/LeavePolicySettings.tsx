@@ -82,7 +82,25 @@ interface LeavePolicySettings {
     monthlyLeaveApplicationCap: {
         enabled: boolean;
         maxDays: number;
+        maxDaysByType: {
+            CL: number;
+            CCL: number;
+            EL: number;
+        };
         includeEL: boolean;
+    };
+    leaveRegisterMonthSlotEdit: {
+        defaults: {
+            allowEditClCredits: boolean;
+            allowEditCclCredits: boolean;
+            allowEditElCredits: boolean;
+            allowEditPolicyLock: boolean;
+            allowEditUsedCl: boolean;
+            allowEditUsedCcl: boolean;
+            allowEditUsedEl: boolean;
+            allowCarryUnusedToNextMonth: boolean;
+        };
+        byPayrollMonthIndex?: Record<string, Partial<LeavePolicySettings['leaveRegisterMonthSlotEdit']['defaults']>>;
     };
 }
 
@@ -158,6 +176,12 @@ function sumMonthlyClCredits(tier: { monthlyClCredits?: number[] }): number {
     return m.reduce((s, n) => s + (Number(n) || 0), 0);
 }
 
+function getPayrollMonthDisplayNames(startMonth: number): string[] {
+    const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const s = Math.min(12, Math.max(1, Number(startMonth) || 1));
+    return Array.from({ length: 12 }, (_, i) => names[(s - 1 + i) % 12]);
+}
+
 const LeavePolicySettings = () => {
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -168,6 +192,7 @@ const LeavePolicySettings = () => {
     const [initialSyncExpandedEmployeeId, setInitialSyncExpandedEmployeeId] = useState<string | null>(null);
     const [syncPreviewSearch, setSyncPreviewSearch] = useState('');
     const [syncApplyReason, setSyncApplyReason] = useState('');
+    const [slotEditMonthIndex, setSlotEditMonthIndex] = useState<number>(1);
 
     useEffect(() => {
         loadSettings();
@@ -237,7 +262,25 @@ const LeavePolicySettings = () => {
         monthlyLeaveApplicationCap: {
             enabled: false,
             maxDays: 4,
+            maxDaysByType: {
+                CL: 0,
+                CCL: 0,
+                EL: 0,
+            },
             includeEL: false
+        },
+        leaveRegisterMonthSlotEdit: {
+            defaults: {
+                allowEditClCredits: true,
+                allowEditCclCredits: true,
+                allowEditElCredits: true,
+                allowEditPolicyLock: true,
+                allowEditUsedCl: true,
+                allowEditUsedCcl: true,
+                allowEditUsedEl: true,
+                allowCarryUnusedToNextMonth: true,
+            },
+            byPayrollMonthIndex: {},
         }
     });
 
@@ -286,11 +329,29 @@ const LeavePolicySettings = () => {
                     monthlyLeaveApplicationCap: {
                         ...defaults.monthlyLeaveApplicationCap,
                         ...(data.monthlyLeaveApplicationCap || {}),
+                        maxDaysByType: {
+                            ...defaults.monthlyLeaveApplicationCap.maxDaysByType,
+                            ...(data.monthlyLeaveApplicationCap?.maxDaysByType || {}),
+                            CL: Math.max(0, Number(data.monthlyLeaveApplicationCap?.maxDaysByType?.CL) || 0),
+                            CCL: Math.max(0, Number(data.monthlyLeaveApplicationCap?.maxDaysByType?.CCL) || 0),
+                            EL: Math.max(0, Number(data.monthlyLeaveApplicationCap?.maxDaysByType?.EL) || 0),
+                        },
                         maxDays:
                             data.monthlyLeaveApplicationCap != null &&
                             data.monthlyLeaveApplicationCap.maxDays != null
                                 ? Math.max(0, Number(data.monthlyLeaveApplicationCap.maxDays) || 0)
                                 : defaults.monthlyLeaveApplicationCap.maxDays
+                    },
+                    leaveRegisterMonthSlotEdit: {
+                        defaults: {
+                            ...defaults.leaveRegisterMonthSlotEdit.defaults,
+                            ...(data.leaveRegisterMonthSlotEdit?.defaults || data.leaveRegisterMonthSlotEdit || {}),
+                        },
+                        byPayrollMonthIndex:
+                            data.leaveRegisterMonthSlotEdit?.byPayrollMonthIndex &&
+                            typeof data.leaveRegisterMonthSlotEdit.byPayrollMonthIndex === 'object'
+                                ? data.leaveRegisterMonthSlotEdit.byPayrollMonthIndex
+                                : {},
                     }
                 });
             } else {
@@ -599,6 +660,147 @@ const LeavePolicySettings = () => {
                         </div>
                     </section>
 
+                    {/* Leave register month-slot manual edit controls */}
+                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
+                        <div className="px-6 sm:px-8 py-6 border-b border-gray-100 dark:border-gray-800">
+                            <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">
+                                Leave register month edit controls
+                            </h3>
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                                Configure default edit permissions, then override them for a specific payroll month (1–12).
+                            </p>
+                        </div>
+                        {(() => {
+                            const defs = settings.leaveRegisterMonthSlotEdit?.defaults || {};
+                            const fyStartMonth = Number(settings?.financialYear?.startMonth) || 1;
+                            const monthNames = getPayrollMonthDisplayNames(fyStartMonth);
+                            const monthKey = String(slotEditMonthIndex);
+                            const byMonth = settings.leaveRegisterMonthSlotEdit?.byPayrollMonthIndex || {};
+                            const overrideObj = (byMonth[monthKey] && typeof byMonth[monthKey] === 'object')
+                                ? byMonth[monthKey]
+                                : {};
+                            const hasOverride = Object.keys(overrideObj).length > 0;
+                            const keys: Array<[keyof LeavePolicySettings['leaveRegisterMonthSlotEdit']['defaults'], string]> = [
+                                ['allowEditClCredits', 'Allow edit: Scheduled CL (clCredits)'],
+                                ['allowEditCclCredits', 'Allow edit: Scheduled CCL (compensatoryOffs)'],
+                                ['allowEditElCredits', 'Allow edit: Scheduled EL (elCredits)'],
+                                ['allowEditPolicyLock', 'Allow edit: Policy lock (lockedCredits)'],
+                                ['allowEditUsedCl', 'Allow edit: Used CL override (usedCl)'],
+                                ['allowEditUsedCcl', 'Allow edit: Used CCL override (usedCcl)'],
+                                ['allowEditUsedEl', 'Allow edit: Used EL override (usedEl)'],
+                                ['allowCarryUnusedToNextMonth', 'Allow action: Carry unused to next month'],
+                            ];
+
+                            const toggleDefault = (k: keyof LeavePolicySettings['leaveRegisterMonthSlotEdit']['defaults']) => {
+                                updateSettings(
+                                    `leaveRegisterMonthSlotEdit.defaults.${String(k)}`,
+                                    '',
+                                    !(defs?.[k] !== false)
+                                );
+                            };
+
+                            const toggleOverride = (k: keyof LeavePolicySettings['leaveRegisterMonthSlotEdit']['defaults']) => {
+                                const current = overrideObj?.[k];
+                                const nextVal = !(current != null ? current !== false : defs?.[k] !== false);
+                                setSettings((prev: any) => {
+                                    const prevByMonth = prev?.leaveRegisterMonthSlotEdit?.byPayrollMonthIndex || {};
+                                    const nextMonth = { ...(prevByMonth[monthKey] || {}), [k]: nextVal };
+                                    return {
+                                        ...prev,
+                                        leaveRegisterMonthSlotEdit: {
+                                            ...(prev.leaveRegisterMonthSlotEdit || {}),
+                                            byPayrollMonthIndex: {
+                                                ...prevByMonth,
+                                                [monthKey]: nextMonth,
+                                            },
+                                        },
+                                    };
+                                });
+                            };
+
+                            return (
+                                <div className="p-6 sm:p-8 space-y-4">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <div className="space-y-1.5">
+                                            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">
+                                                Override payroll month
+                                            </label>
+                                            <select
+                                                value={slotEditMonthIndex}
+                                                onChange={(e) => setSlotEditMonthIndex(Math.max(1, Math.min(12, parseInt(e.target.value, 10) || 1)))}
+                                                className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm font-medium text-gray-900 dark:text-white"
+                                            >
+                                                {Array.from({ length: 12 }).map((_, i) => (
+                                                    <option key={i + 1} value={i + 1}>
+                                                        {monthNames[i]} (Month {i + 1})
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div className="flex items-end">
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    if (!hasOverride) return;
+                                                    setSettings((prev: any) => {
+                                                        const prevByMonth = { ...(prev?.leaveRegisterMonthSlotEdit?.byPayrollMonthIndex || {}) };
+                                                        delete prevByMonth[monthKey];
+                                                        return {
+                                                            ...prev,
+                                                            leaveRegisterMonthSlotEdit: {
+                                                                ...(prev.leaveRegisterMonthSlotEdit || {}),
+                                                                byPayrollMonthIndex: prevByMonth,
+                                                            },
+                                                        };
+                                                    });
+                                                }}
+                                                disabled={!hasOverride}
+                                                className="w-full sm:w-auto px-3 py-2 rounded-lg text-xs font-semibold border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 disabled:opacity-40"
+                                            >
+                                                Clear override for {monthNames[slotEditMonthIndex - 1]} (Month {slotEditMonthIndex})
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                        <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-3">
+                                            <p className="text-[11px] font-bold text-gray-700 dark:text-gray-300 mb-2">Default (all months)</p>
+                                            <div className="space-y-2">
+                                                {keys.map(([k, label]) => (
+                                                    <div key={`def-${String(k)}`} className="flex items-center justify-between gap-3 p-2 rounded-lg bg-gray-50/60 dark:bg-gray-800/30">
+                                                        <span className="text-xs text-gray-700 dark:text-gray-300">{label}</span>
+                                                        <button type="button" role="switch" aria-checked={defs?.[k] !== false} onClick={() => toggleDefault(k)} className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full ${defs?.[k] !== false ? 'bg-indigo-600' : 'bg-gray-300 dark:bg-gray-700'}`}>
+                                                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${defs?.[k] !== false ? 'translate-x-6' : 'translate-x-1'}`} />
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        <div className="rounded-xl border border-gray-100 dark:border-gray-700 p-3">
+                                            <p className="text-[11px] font-bold text-gray-700 dark:text-gray-300 mb-2">
+                                                Override: {monthNames[slotEditMonthIndex - 1]} (Month {slotEditMonthIndex})
+                                            </p>
+                                            <div className="space-y-2">
+                                                {keys.map(([k, label]) => {
+                                                    const effective = overrideObj?.[k] != null ? overrideObj[k] !== false : defs?.[k] !== false;
+                                                    return (
+                                                        <div key={`ov-${String(k)}`} className="flex items-center justify-between gap-3 p-2 rounded-lg bg-gray-50/60 dark:bg-gray-800/30">
+                                                            <span className="text-xs text-gray-700 dark:text-gray-300">{label}</span>
+                                                            <button type="button" role="switch" aria-checked={effective} onClick={() => toggleOverride(k)} className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full ${effective ? 'bg-indigo-600' : 'bg-gray-300 dark:bg-gray-700'}`}>
+                                                                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${effective ? 'translate-x-6' : 'translate-x-1'}`} />
+                                                            </button>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })()}
+                    </section>
+
                     {/* Monthly application cap (payroll period) */}
                     <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
                         <div className="px-6 sm:px-8 py-6 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
@@ -608,7 +810,7 @@ const LeavePolicySettings = () => {
                             <div>
                                 <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Monthly application cap</h3>
                                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                                    Limits how many days can be applied per payroll period (pending + approved), even if balances are higher. Counts CL + CCL; EL only when enabled below and EL is leave-only (not paid in payroll).
+                                    Set payroll-period cap per leave type. When enforce cap is ON, <strong>0 means zero allowed</strong>.
                                 </p>
                             </div>
                         </div>
@@ -627,16 +829,28 @@ const LeavePolicySettings = () => {
                             </div>
                             {settings.monthlyLeaveApplicationCap?.enabled && (
                                 <>
-                                    <div className="space-y-1.5">
-                                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Max days per payroll period (CL + CCL …)</label>
-                                        <input
-                                            type="number"
-                                            min={1}
-                                            max={62}
-                                            value={settings.monthlyLeaveApplicationCap?.maxDays ?? 1}
-                                            onChange={(e) => updateSettings('monthlyLeaveApplicationCap.maxDays', '', Math.max(1, parseInt(e.target.value, 10) || 1))}
-                                            className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
-                                        />
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                        {(['CL', 'CCL', 'EL'] as const).map((lt) => (
+                                            <div key={lt} className="space-y-1.5">
+                                                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">
+                                                    {lt} cap (0 = zero when enforce cap ON)
+                                                </label>
+                                                <input
+                                                    type="number"
+                                                    min={0}
+                                                    max={62}
+                                                    value={settings.monthlyLeaveApplicationCap?.maxDaysByType?.[lt] ?? 0}
+                                                    onChange={(e) =>
+                                                        updateSettings(
+                                                            `monthlyLeaveApplicationCap.maxDaysByType.${lt}`,
+                                                            '',
+                                                            Math.max(0, parseInt(e.target.value, 10) || 0)
+                                                        )
+                                                    }
+                                                    className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                                                />
+                                            </div>
+                                        ))}
                                     </div>
                                     <div className="flex items-center justify-between gap-4 p-3 rounded-xl border border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30">
                                         <div>

@@ -317,6 +317,93 @@ function numOrUndef(v) {
   return Number.isFinite(n) ? n : undefined;
 }
 
+function resolveMonthSlotEditFlags(policyDoc, payrollMonthIndex) {
+  const allow = (v) => v !== false;
+  const base = {
+    allowEditClCredits: true,
+    allowEditCclCredits: true,
+    allowEditElCredits: true,
+    allowEditPolicyLock: true,
+    allowEditUsedCl: true,
+    allowEditUsedCcl: true,
+    allowEditUsedEl: true,
+    allowCarryUnusedToNextMonth: true,
+  };
+  const cfg = policyDoc?.leaveRegisterMonthSlotEdit || {};
+  // Backward compatibility with older flat shape.
+  const mergedDefaults = {
+    ...base,
+    allowEditClCredits: allow(cfg.defaults?.allowEditClCredits ?? cfg.allowEditClCredits),
+    allowEditCclCredits: allow(cfg.defaults?.allowEditCclCredits ?? cfg.allowEditCclCredits),
+    allowEditElCredits: allow(cfg.defaults?.allowEditElCredits ?? cfg.allowEditElCredits),
+    allowEditPolicyLock: allow(cfg.defaults?.allowEditPolicyLock ?? cfg.allowEditPolicyLock),
+    allowEditUsedCl: allow(cfg.defaults?.allowEditUsedCl ?? cfg.allowEditUsedCl),
+    allowEditUsedCcl: allow(cfg.defaults?.allowEditUsedCcl ?? cfg.allowEditUsedCcl),
+    allowEditUsedEl: allow(cfg.defaults?.allowEditUsedEl ?? cfg.allowEditUsedEl),
+    allowCarryUnusedToNextMonth: allow(
+      cfg.defaults?.allowCarryUnusedToNextMonth ?? cfg.allowCarryUnusedToNextMonth
+    ),
+  };
+  const key = String(Number(payrollMonthIndex) || '');
+  const monthOverride =
+    key && cfg?.byPayrollMonthIndex && typeof cfg.byPayrollMonthIndex === 'object'
+      ? cfg.byPayrollMonthIndex[key]
+      : null;
+  if (!monthOverride || typeof monthOverride !== 'object') return mergedDefaults;
+  return {
+    ...mergedDefaults,
+    allowEditClCredits: allow(
+      monthOverride.allowEditClCredits != null
+        ? monthOverride.allowEditClCredits
+        : mergedDefaults.allowEditClCredits
+    ),
+    allowEditCclCredits: allow(
+      monthOverride.allowEditCclCredits != null
+        ? monthOverride.allowEditCclCredits
+        : mergedDefaults.allowEditCclCredits
+    ),
+    allowEditElCredits: allow(
+      monthOverride.allowEditElCredits != null
+        ? monthOverride.allowEditElCredits
+        : mergedDefaults.allowEditElCredits
+    ),
+    allowEditPolicyLock: allow(
+      monthOverride.allowEditPolicyLock != null
+        ? monthOverride.allowEditPolicyLock
+        : mergedDefaults.allowEditPolicyLock
+    ),
+    allowEditUsedCl: allow(
+      monthOverride.allowEditUsedCl != null
+        ? monthOverride.allowEditUsedCl
+        : mergedDefaults.allowEditUsedCl
+    ),
+    allowEditUsedCcl: allow(
+      monthOverride.allowEditUsedCcl != null
+        ? monthOverride.allowEditUsedCcl
+        : mergedDefaults.allowEditUsedCcl
+    ),
+    allowEditUsedEl: allow(
+      monthOverride.allowEditUsedEl != null
+        ? monthOverride.allowEditUsedEl
+        : mergedDefaults.allowEditUsedEl
+    ),
+    allowCarryUnusedToNextMonth: allow(
+      monthOverride.allowCarryUnusedToNextMonth != null
+        ? monthOverride.allowCarryUnusedToNextMonth
+        : mergedDefaults.allowCarryUnusedToNextMonth
+    ),
+  };
+}
+
+function derivePolicyMonthIndexFromCycleMonth(slot, policyDoc) {
+  const startMonth = Number(policyDoc?.financialYear?.startMonth) || 4; // default Apr
+  const pcm = Number(slot?.payrollCycleMonth);
+  if (!Number.isFinite(pcm) || pcm < 1 || pcm > 12) {
+    return Number(slot?.payrollMonthIndex) || 1;
+  }
+  return ((pcm - startMonth + 12) % 12) + 1;
+}
+
 function round2(v) {
   const n = Number(v) || 0;
   return Math.round(n * 100) / 100;
@@ -479,6 +566,23 @@ async function patchMonthSlotScheduledCredits({
   if (!Array.isArray(slot.transactions)) slot.transactions = [];
   const anchorAt =
     slot.payPeriodStart || slot.payPeriodEnd || new Date(py, pm - 1, 15);
+  const policy = await LeavePolicySettings.getSettings().catch(() => ({}));
+  const policyMonthIndex = derivePolicyMonthIndexFromCycleMonth(slot, policy);
+  const editFlags = resolveMonthSlotEditFlags(policy, policyMonthIndex);
+  const disallowed = [];
+  if (patch.clCredits !== undefined && !editFlags.allowEditClCredits) disallowed.push('clCredits');
+  if (patch.compensatoryOffs !== undefined && !editFlags.allowEditCclCredits) disallowed.push('compensatoryOffs');
+  if (patch.elCredits !== undefined && !editFlags.allowEditElCredits) disallowed.push('elCredits');
+  if (patch.lockedCredits !== undefined && !editFlags.allowEditPolicyLock) disallowed.push('lockedCredits');
+  if (usedCl !== undefined && !editFlags.allowEditUsedCl) disallowed.push('usedCl');
+  if (usedCcl !== undefined && !editFlags.allowEditUsedCcl) disallowed.push('usedCcl');
+  if (usedEl !== undefined && !editFlags.allowEditUsedEl) disallowed.push('usedEl');
+  if (carryUnusedToNextMonth === true && !editFlags.allowCarryUnusedToNextMonth) {
+    disallowed.push('carryUnusedToNextMonth');
+  }
+  if (disallowed.length > 0) {
+    throw new Error(`Not allowed by month-slot edit policy for payroll month ${policyMonthIndex}: ${disallowed.join(', ')}`);
+  }
 
   // Optional manual "Used" override:
   // Create DEBIT transactions so UI used columns + monthly apply "Left" update even without Leave rows.
@@ -551,7 +655,6 @@ async function patchMonthSlotScheduledCredits({
     }
   }
 
-  const policy = await LeavePolicySettings.getSettings().catch(() => ({}));
   const ceilingRaw = computeScheduledPoolApplyCeiling(
     {
       clCredits: slot.clCredits,

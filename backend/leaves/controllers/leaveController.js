@@ -30,6 +30,7 @@ function canEditLeaveRegisterMonthSlot(user) {
   const featureControl = Array.isArray(user.featureControl) ? user.featureControl : [];
   return featureControl.includes(MONTH_SLOT_EDIT_PERMISSION) || featureControl.includes('LEAVE_REGISTER_MONTH_EDIT');
 }
+
 const PDFDocument = require('pdfkit');
 const XLSX = require('xlsx');
 const dayjs = require('dayjs');
@@ -951,6 +952,18 @@ exports.updateLeave = async (req, res) => {
     }
 
     const originalFromDate = leave.fromDate ? new Date(leave.fromDate) : null;
+    const originalApprovedSnapshot = {
+      _id: leave._id,
+      employeeId: leave.employeeId,
+      leaveType: leave.leaveType,
+      fromDate: leave.fromDate ? new Date(leave.fromDate) : null,
+      toDate: leave.toDate ? new Date(leave.toDate) : null,
+      numberOfDays: Number(leave.numberOfDays) || 0,
+      purpose: leave.purpose,
+      createdAt: leave.createdAt,
+      updatedAt: leave.updatedAt,
+      status: leave.status,
+    };
 
     // Check if can edit - Allow editing for pending, hod_approved, hr_approved (not final approved)
     // Super Admin can edit any status except final approved
@@ -1105,6 +1118,36 @@ exports.updateLeave = async (req, res) => {
         }
       } catch (e) {
         console.warn('[monthlyApply sync]', e?.message || e);
+      }
+    }
+
+    // Keep leave register ledger in sync when an approved leave is edited.
+    // Examples:
+    // - CL -> EL: reverse old CL debit and post new EL debit.
+    // - Date/day changes on approved leave: reverse old debit amount/dates and post updated debit.
+    // - Approved -> non-approved: reverse old debit only.
+    // - non-approved -> approved (admin status edit): post debit.
+    const ledgerAffectingFields = new Set([
+      'leaveType',
+      'fromDate',
+      'toDate',
+      'isHalfDay',
+      'halfDayType',
+      'status',
+    ]);
+    const affectsLedger = changes.some((c) => ledgerAffectingFields.has(c.field));
+    const wasApprovedBefore = originalApprovedSnapshot.status === 'approved';
+    const isApprovedNow = leave.status === 'approved';
+    if (affectsLedger || wasApprovedBefore !== isApprovedNow) {
+      try {
+        if (wasApprovedBefore && (!isApprovedNow || affectsLedger)) {
+          await leaveRegisterService.reverseLeaveDebit(originalApprovedSnapshot, req.user._id);
+        }
+        if (isApprovedNow && (!wasApprovedBefore || affectsLedger)) {
+          await leaveRegisterService.addLeaveDebit(leave, req.user._id);
+        }
+      } catch (err) {
+        console.error('Failed to sync leave register during leave update:', err);
       }
     }
 
@@ -1373,7 +1416,6 @@ exports.processLeaveAction = async (req, res) => {
 
     // --- Intermediate Rejection Override Check ---
     if (leave.status.endsWith('_rejected') && leave.status !== 'rejected') {
-      const { getWorkflowSettings } = require('../../settings/services/workflowSettingsService');
       const workflowSettings = await getWorkflowSettings();
       const allowHigher = workflowSettings?.workflow?.allowHigherAuthorityToApproveLowerLevels === true;
       if (!allowHigher) {
@@ -2581,7 +2623,7 @@ exports.validateLeaveSplits = async (req, res) => {
  */
 exports.getApplyPeriodContext = async (req, res) => {
   try {
-    const { fromDate, employeeId: employeeIdQ, refresh } = req.query;
+    const { fromDate, employeeId: employeeIdQ, refresh, leaveType } = req.query;
     if (!fromDate || !String(fromDate).trim()) {
       return res.status(400).json({ success: false, error: 'fromDate is required' });
     }
@@ -2624,7 +2666,7 @@ exports.getApplyPeriodContext = async (req, res) => {
     const ctx = await leaveRegisterYearMonthlyApplyService.getApplyPeriodContextForEmployee(
       empOid,
       fromDate,
-      { refresh: doRefresh }
+      { refresh: doRefresh, leaveType: String(leaveType || 'CL').toUpperCase() }
     );
 
     return res.status(200).json({ success: true, data: ctx });
@@ -2710,10 +2752,20 @@ exports.listLeaveRegister = async (req, res) => {
     const start = (pageNum - 1) * limitNum;
     const pageRows = groupedData.slice(start, start + limitNum);
 
+    const todayPeriodForSummary = await dateCycleService.getPeriodInfo(new Date());
+    const summaryCycleMonth = todayPeriodForSummary.payrollCycle.month;
+    const summaryCycleYear = todayPeriodForSummary.payrollCycle.year;
+
     const employees = pageRows.map((entry) => {
       const subs = entry.monthlySubLedgers || [];
       const last = subs.length > 0 ? subs[subs.length - 1] : null;
       const first = subs.length > 0 ? subs[0] : null;
+      const summarySub =
+        subs.find(
+          (s) =>
+            Number(s.month) === Number(summaryCycleMonth) &&
+            Number(s.year) === Number(summaryCycleYear)
+        ) || last;
       let transactionCount = 0;
       subs.forEach((s) => {
         transactionCount += (s.transactions && s.transactions.length) || 0;
@@ -2721,11 +2773,11 @@ exports.listLeaveRegister = async (req, res) => {
       return {
         employee: entry.employee,
         summary: {
-          clBalance: last?.casualLeave?.balance ?? 0,
-          elBalance: last?.earnedLeave?.balance ?? 0,
-          cclBalance: last?.compensatoryOff?.balance ?? 0,
-          totalPaidBalance: last?.totalPaidBalance ?? 0,
-          monthlyAllowedLimit: last?.monthlyAllowedLimit,
+          clBalance: summarySub?.casualLeave?.balance ?? 0,
+          elBalance: summarySub?.earnedLeave?.balance ?? 0,
+          cclBalance: summarySub?.compensatoryOff?.balance ?? 0,
+          totalPaidBalance: summarySub?.totalPaidBalance ?? 0,
+          monthlyAllowedLimit: summarySub?.monthlyAllowedLimit,
         },
         yearSnapshot: entry.yearSnapshot || null,
         registerMonths: Array.isArray(entry.registerMonths) ? entry.registerMonths : [],

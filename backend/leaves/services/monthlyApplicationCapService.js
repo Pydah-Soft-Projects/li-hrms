@@ -28,6 +28,20 @@ const CAP_COUNT_STATUSES = [
 /** Subset of {@link CAP_COUNT_STATUSES}: still in workflow — not final `approved` (days show as "locked" on the register). */
 const PENDING_PIPELINE_STATUSES = CAP_COUNT_STATUSES.filter((s) => s !== 'approved');
 
+function getConfiguredMonthlyTypeCap(policy, leaveType) {
+  const lt = String(leaveType || '').toUpperCase();
+  const capCfg = policy?.monthlyLeaveApplicationCap || {};
+  const byType = capCfg?.maxDaysByType || {};
+  const v = Number(byType?.[lt]);
+  if (Number.isFinite(v) && v >= 0) return v;
+  // Backward-compat: if old maxDays exists, treat it as CL cap only.
+  if (lt === 'CL') {
+    const old = Number(capCfg?.maxDays);
+    if (Number.isFinite(old) && old >= 0) return old;
+  }
+  return 0;
+}
+
 function parseFromDateForPeriod(fromDate) {
   const fromDateStr = String(fromDate || '').trim();
   let fromForPeriod = new Date(fromDate);
@@ -255,7 +269,9 @@ async function getRegisterClApplicationCap(employeeId, fromDate, policy) {
  */
 async function assertWithinMonthlyApplicationCap(employeeId, fromDate, leaveType, numberOfDays) {
   const policy = await LeavePolicySettings.getSettings();
-  const capCfg = policy?.monthlyLeaveApplicationCap;
+  const requestedType = String(leaveType || '').toUpperCase();
+  const capEnabled = !!policy?.monthlyLeaveApplicationCap?.enabled;
+  const typeCap = getConfiguredMonthlyTypeCap(policy, requestedType);
 
   const fromForPeriod = parseFromDateForPeriod(fromDate);
   const periodInfo = await dateCycleService.getPeriodInfo(fromForPeriod);
@@ -273,24 +289,20 @@ async function assertWithinMonthlyApplicationCap(employeeId, fromDate, leaveType
 
   const add = countedDaysForLeave({ leaveType, numberOfDays }, policy);
   if (add <= 0) return { ok: true };
+  // Cap toggle off => no cap enforcement.
+  if (!capEnabled) return { ok: true };
+  // Cap toggle on => exact configured value applies (including 0).
+  if (!Number.isFinite(typeCap) || typeCap < 0) return { ok: true };
 
-  /** Period limit is the pooled register ceiling (scheduled CL + CCL in slot + optional EL), not CL credits alone.
-   * A separate CL-only cap would block valid applies when CCL extends the pool (substitution / shared monthly cap).
-   */
-  const pooledCeiling = await resolvePooledMonthlyApplyCeiling(employeeId, fromDate, policy);
-  if (pooledCeiling == null) return { ok: true };
-
-  let usedTowardCeiling = 0;
+  let usedTowardTypeCap = 0;
   for (const row of existing) {
-    usedTowardCeiling += await sumCountedCapDaysForLeaveInPeriod(row, policy, start, end);
+    usedTowardTypeCap += await sumLeaveTypeDaysForLeaveInPeriod(row, requestedType, start, end);
   }
 
-  if (usedTowardCeiling + add > pooledCeiling) {
-    const elPart =
-      capCfg?.includeEL && policy?.earnedLeave?.useAsPaidInPayroll === false ? ', EL' : '';
+  if (usedTowardTypeCap + add > typeCap) {
     return {
       ok: false,
-      error: `Payroll-period apply ceiling is ${pooledCeiling} day(s) (scheduled pool and policy cap when set; CL + CCL${elPart}). Days already counting (pending + approved): ${usedTowardCeiling}; this request: ${add}.`,
+      error: `${requestedType} payroll-period cap is ${typeCap} day(s). ${requestedType} days already counting (pending + approved): ${usedTowardTypeCap}; this request: ${add}.`,
     };
   }
   return { ok: true };
@@ -340,6 +352,28 @@ async function sumClDaysForLeaveInPeriod(leave, policy, start, end) {
     return countedDaysForLeave(leave, policy);
   }
   return 0;
+}
+
+async function sumLeaveTypeDaysForLeaveInPeriod(leave, leaveType, start, end) {
+  const lt = String(leaveType || '').toUpperCase();
+  if (!['CL', 'CCL', 'EL'].includes(lt)) return 0;
+  if (String(leave.splitStatus || '') === 'split_approved' && leave._id) {
+    const splits = await LeaveSplit.find({
+      leaveId: leave._id,
+      status: 'approved',
+      date: { $gte: start, $lte: end },
+    })
+      .select('leaveType numberOfDays')
+      .lean();
+    let sum = 0;
+    for (const s of splits) {
+      if (String(s.leaveType || '').toUpperCase() !== lt) continue;
+      sum += Math.max(0, Number(s.numberOfDays) || 0);
+    }
+    return sum;
+  }
+  if (String(leave.leaveType || '').toUpperCase() !== lt) return 0;
+  return Math.max(0, Number(leave.numberOfDays) || 0);
 }
 
 /**
@@ -416,4 +450,6 @@ module.exports = {
   finalizePendingLockedDisplayByPool,
   CAP_COUNT_STATUSES,
   PENDING_PIPELINE_STATUSES,
+  getConfiguredMonthlyTypeCap,
+  sumLeaveTypeDaysForLeaveInPeriod,
 };
