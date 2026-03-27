@@ -37,7 +37,7 @@ export default function EmployeeExportDialog({
       if (res.success && res.data) {
         setGroups(res.data.groups || []);
         // Default select some important fields
-        const defaultFields = ['emp_no', 'employee_name', 'division_id', 'department_id', 'designation_id', 'doj'];
+        const defaultFields = ['emp_no', 'employee_name', 'division_id', 'department_id', 'designation_id', 'employee_group_id', 'doj'];
         setSelectedFields(defaultFields);
       }
     } catch (error) {
@@ -70,7 +70,7 @@ export default function EmployeeExportDialog({
     const allFieldIds: string[] = [];
     groups.forEach(g => g.fields.forEach((f: any) => allFieldIds.push(f.id)));
     // Add common fields
-    allFieldIds.push('emp_no', 'employee_name', 'division_id', 'department_id', 'designation_id', 'doj', 'is_active');
+    allFieldIds.push('emp_no', 'employee_name', 'division_id', 'department_id', 'designation_id', 'employee_group_id', 'doj', 'is_active');
     setSelectedFields([...new Set(allFieldIds)]);
   };
 
@@ -168,6 +168,7 @@ export default function EmployeeExportDialog({
                     { id: 'division_id', label: 'Division' },
                     { id: 'department_id', label: 'Department' },
                     { id: 'designation_id', label: 'Designation' },
+                    { id: 'employee_group_id', label: 'Employee Group' },
                     { id: 'doj', label: 'Joining Date' },
                     { id: 'is_active', label: 'Status' },
                   ].map(field => (
