@@ -4,6 +4,7 @@
  */
 
 const Employee = require('../model/Employee');
+const EmployeeUpdateApplication = require('../../employee-updates/model/EmployeeUpdateApplication');
 const Department = require('../../departments/model/Department');
 const Designation = require('../../departments/model/Designation');
 const Division = require('../../departments/model/Division');
@@ -953,6 +954,114 @@ exports.updateEmployee = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: groupErrUpdate.error,
+      });
+    }
+
+    // NEW Profile Request Logic: 
+    // If not super_admin and not the employee themselves, create a request instead of direct update
+    // We check both role (string) and roles (array) for robust permission check
+    const isSuperAdmin = req.user.role === 'super_admin' || (req.user.roles && req.user.roles.includes('super_admin'));
+    const isOwner = req.user.employeeRef && req.user.employeeRef.toString() === existingEmployee._id.toString();
+
+    // Check if user has explicit EMPLOYEES:edit permission (grants direct update without review queue)
+    const User = require('../../users/model/User');
+    const requestingUser = await User.findById(req.user._id).select('featureControl').lean();
+    const hasEditPermission = !!(requestingUser?.featureControl?.includes('EMPLOYEES:edit'));
+
+    if (!isSuperAdmin && !isOwner && !hasEditPermission) {
+      console.log(`[updateEmployee] Redirecting to Profile Request for user: ${req.user.name} (${req.user.role})`);
+
+      const existingObj = existingEmployee.toObject({ virtuals: false });
+      const requestedChanges = {};
+      const previousValues = {};
+
+      // Fields to explicitly exclude from profile requests (internal or large objects)
+      const excludeFields = [
+        'AllData', 'AllAllowanceDeductions', 'GenQualifications',
+        'allData', 'division', 'department', 'designation', 'employeeGroup', 'employee_group',
+        '_id', 'createdAt', 'updatedAt', '__v', 'dynamicFields',
+        'payroll_stats', 'leave_stats', 'password', 'plain_password',
+        'isProfileRequest', 'status', 'is_active'
+      ];
+
+      for (const key in employeeData) {
+        if (excludeFields.includes(key)) continue;
+
+        // Field mapping for comparison (e.g. proposedSalary should be checked against gross_salary)
+        const targetKey = (key === 'proposedSalary') ? 'gross_salary' : key;
+
+        // Determine the actual stored value for comparison
+        let currentValue = existingObj[targetKey];
+        if (currentValue === undefined && existingObj.dynamicFields) {
+          currentValue = existingObj.dynamicFields[targetKey];
+        }
+
+        const newValue = employeeData[key];
+
+        // Special Handling: If newValue is a JSON string (e.g. from FormData), parse it for comparison
+        let processedNewValue = newValue;
+        if (typeof newValue === 'string' && (newValue.trim().startsWith('[') || newValue.trim().startsWith('{'))) {
+          try {
+            processedNewValue = JSON.parse(newValue);
+          } catch (e) {
+            // Keep as string if not valid JSON
+          }
+        }
+
+        // Normalize values for comparison (handle null, undefined, empty string/array/object as same)
+        // Also handle ObjectIds to string conversion for consistent comparison
+        const normalize = (v) => {
+          if (v === null || v === undefined || v === '' || v === 0 || v === '0') return null;
+          if (v && typeof v === 'object' && v._id) return v._id.toString();
+          if (v && v.constructor && v.constructor.name === 'ObjectID') return v.toString();
+
+          // Treat numeric strings as numbers for comparison
+          if (typeof v === 'string' && !isNaN(Number(v)) && v.trim() !== '') return Number(v);
+          
+          // Treat empty arrays/objects as null (phantom changes)
+          if (Array.isArray(v) && v.length === 0) return null;
+          if (v && typeof v === 'object' && Object.keys(v).length === 0 && !(v instanceof Date)) return null;
+          
+          return v;
+        };
+        
+        const normCurrent = normalize(currentValue);
+        const normNew = normalize(processedNewValue);
+
+        // Comparison logic (handling objects/arrays simply but more robustly)
+        const isChanged = JSON.stringify(normCurrent) !== JSON.stringify(normNew);
+
+        if (isChanged) {
+          requestedChanges[key] = processedNewValue;
+          previousValues[key] = currentValue !== undefined ? currentValue : null;
+        }
+      }
+
+      // If no actual changes found after filtering, just return success
+      if (Object.keys(requestedChanges).length === 0) {
+        return res.status(200).json({
+          success: true,
+          message: 'No changes detected in profile'
+        });
+      }
+
+      // Create the update request
+      const request = await EmployeeUpdateApplication.create({
+        employeeId: existingEmployee._id,
+        emp_no: existingEmployee.emp_no,
+        requestedChanges,
+        previousValues,
+        status: 'pending',
+        type: 'profile',
+        createdBy: req.user._id,
+        comments: 'Employee profile edit submitted for approval'
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: 'Profile update request has been submitted for approval',
+        requestId: request._id,
+        isRequest: true
       });
     }
 

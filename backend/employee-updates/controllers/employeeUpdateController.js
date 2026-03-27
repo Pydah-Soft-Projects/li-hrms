@@ -135,6 +135,63 @@ exports.createRequest = async (req, res) => {
             comments: comments || ''
         });
 
+        // AUTO-APPROVE: super_admin always bypasses review; others need explicit EMPLOYEES:edit permission
+        const requestingUser = await require('../../users/model/User').findById(req.user._id).select('featureControl role');
+        const hasEditPermission = requestingUser?.featureControl?.includes('EMPLOYEES:edit');
+        const isSuperAdmin = (requestingUser?.role || req.user?.role) === 'super_admin';
+
+        if (hasEditPermission || isSuperAdmin) {
+            // Apply the changes immediately (same logic as approveRequest)
+            const permanentFields = [
+                'employee_name', 'email', 'phone_number', 'address',
+                'blood_group', 'qualifications', 'dob', 'doj',
+                'gender', 'marital_status',
+                'bank_account_no', 'bank_name', 'bank_place', 'ifsc_code', 'salary_mode',
+                'paidLeaves', 'allottedLeaves', 'casualLeaves', 'sickLeaves', 'maternityLeaves', 'onDutyLeaves', 'compensatoryOffs',
+                'gross_salary', 'ctcSalary', 'calculatedSalary', 'pf_number', 'esi_number',
+                'is_active', 'leftDate', 'leftReason', 'applyProfessionTax', 'applyESI', 'applyPF',
+                'applyAttendanceDeduction', 'deductLateIn', 'deductEarlyOut', 'deductPermission', 'deductAbsent'
+            ];
+            const fieldMapping = {
+                'personal_email': 'email',
+                'phone': 'phone_number',
+                'date_of_birth': 'dob',
+                'joining_date': 'doj'
+            };
+
+            const permanentUpdates = {};
+            const dynamicUpdates = { ...(employee.dynamicFields || {}) };
+
+            for (let key in filteredChanges) {
+                const actualKey = fieldMapping[key] || key;
+                const value = filteredChanges[key];
+                if (permanentFields.includes(actualKey)) {
+                    permanentUpdates[actualKey] = value;
+                } else {
+                    dynamicUpdates[actualKey] = value;
+                }
+            }
+
+            if (Object.keys(permanentUpdates).length > 0) Object.assign(employee, permanentUpdates);
+            if (Object.keys(dynamicUpdates).length > Object.keys(employee.dynamicFields || {}).length || JSON.stringify(dynamicUpdates) !== JSON.stringify(employee.dynamicFields || {})) {
+                employee.dynamicFields = dynamicUpdates;
+                employee.markModified('dynamicFields');
+            }
+            if (permanentUpdates.qualifications) employee.markModified('qualifications');
+            await employee.save();
+
+            request.status = 'approved';
+            request.approvedBy = req.user._id;
+            await request.save();
+
+            return res.status(201).json({
+                success: true,
+                data: request,
+                autoApproved: true,
+                message: 'Update applied automatically (Edit permission granted)'
+            });
+        }
+
         res.status(201).json({
             success: true,
             data: request,
@@ -161,7 +218,7 @@ exports.getRequests = async (req, res) => {
         if (status) query.status = status;
 
         const requests = await EmployeeUpdateApplication.find(query)
-            .populate('employeeId', 'employee_name profilePhoto department designation dynamicFields email phone_number address blood_group qualifications dob doj gender marital_status')
+            .populate('employeeId', 'employee_name profilePhoto department designation dynamicFields email phone_number address blood_group qualifications dob doj gender marital_status gross_salary bank_account_no bank_name bank_place ifsc_code pf_number esi_number salary_mode ctcSalary calculatedSalary paidLeaves allottedLeaves casualLeaves sickLeaves maternityLeaves onDutyLeaves compensatoryOffs second_salary is_active leftDate leftReason applyProfessionTax applyESI applyPF applyAttendanceDeduction deductLateIn deductEarlyOut deductPermission deductAbsent')
             .populate('createdBy', 'name')
             .sort({ createdAt: -1 });
 
@@ -203,7 +260,11 @@ exports.approveRequest = async (req, res) => {
             'employee_name', 'email', 'phone_number', 'address',
             'blood_group', 'qualifications', 'dob', 'doj',
             'gender', 'marital_status',
-            'bank_account_no', 'bank_name', 'bank_place', 'ifsc_code', 'salary_mode'
+            'bank_account_no', 'bank_name', 'bank_place', 'ifsc_code', 'salary_mode',
+            'paidLeaves', 'allottedLeaves', 'casualLeaves', 'sickLeaves', 'maternityLeaves', 'onDutyLeaves', 'compensatoryOffs', 
+            'gross_salary', 'ctcSalary', 'calculatedSalary', 'pf_number', 'esi_number',
+            'is_active', 'leftDate', 'leftReason', 'applyProfessionTax', 'applyESI', 'applyPF', 
+            'applyAttendanceDeduction', 'deductLateIn', 'deductEarlyOut', 'deductPermission', 'deductAbsent'
         ];
 
         // Mapping for frontend aliases
@@ -214,7 +275,20 @@ exports.approveRequest = async (req, res) => {
             'joining_date': 'doj'
         };
 
-        const updates = { ...request.requestedChanges };
+        const { selectedFields } = req.body;
+        let updates = { ...request.requestedChanges };
+
+        // If granular approval is requested, filter the changes
+        if (selectedFields && Array.isArray(selectedFields)) {
+            const filteredUpdates = {};
+            selectedFields.forEach(field => {
+                if (updates.hasOwnProperty(field)) {
+                    filteredUpdates[field] = updates[field];
+                }
+            });
+            updates = filteredUpdates;
+        }
+
         const permanentUpdates = {};
         const dynamicUpdates = { ...(employee.dynamicFields || {}) };
         let hasPermanent = false;
