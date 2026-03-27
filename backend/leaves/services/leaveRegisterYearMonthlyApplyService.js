@@ -11,6 +11,8 @@ const {
   CAP_COUNT_STATUSES,
   computeScheduledPoolApplyCeiling,
   sumCountedCapDaysForLeaveInPeriod,
+  sumLeaveTypeDaysForLeaveInPeriod,
+  getConfiguredMonthlyTypeCap,
 } = require('./monthlyApplicationCapService');
 
 function findSlotIndex(months, pcMonth, pcYear) {
@@ -115,7 +117,8 @@ async function syncStoredMonthApplyFieldsForEmployeeDate(employeeId, fromDate) {
  * @param {boolean} [options.refresh] - force sync before read
  */
 async function getApplyPeriodContextForEmployee(employeeId, fromDate, options = {}) {
-  const { refresh = false } = options;
+  const { refresh = false, leaveType = 'CL' } = options;
+  const requestedType = String(leaveType || 'CL').toUpperCase();
   if (!employeeId || !fromDate) {
     return { ok: false, error: 'employeeId and fromDate required' };
   }
@@ -191,6 +194,38 @@ async function getApplyPeriodContextForEmployee(employeeId, fromDate, options = 
     !!policy?.monthlyLeaveApplicationCap?.includeEL &&
     policy?.earnedLeave?.useAsPaidInPayroll === false;
 
+  const typeScheduledMap = {
+    CL: Number(slotFresh.clCredits) || 0,
+    CCL: Number(slotFresh.compensatoryOffs) || 0,
+    EL: includeEL ? Number(slotFresh.elCredits) || 0 : 0,
+  };
+  const typeBalanceMap = {
+    CL: Number(doc.casualBalance) || 0,
+    CCL: Number(doc.compensatoryOffBalance) || 0,
+    EL: includeEL ? Number(doc.earnedLeaveBalance) || 0 : 0,
+  };
+  const leaves = await Leave.find({
+    employeeId,
+    isActive: true,
+    status: { $in: CAP_COUNT_STATUSES },
+    fromDate: { $gte: start, $lte: end },
+  })
+    .select('_id leaveType numberOfDays status splitStatus')
+    .lean();
+  let typeApproved = 0;
+  let typeLocked = 0;
+  for (const row of leaves) {
+    const d = await sumLeaveTypeDaysForLeaveInPeriod(row, requestedType, start, end);
+    if (d <= 0) continue;
+    if (String(row.status) === 'approved' && String(row.splitStatus || '') !== 'pending_split') typeApproved += d;
+    else typeLocked += d;
+  }
+  const typeConsumed = typeApproved + typeLocked;
+  const typeCap = getConfiguredMonthlyTypeCap(policy, requestedType);
+  const typeCapEnabled = !!policy?.monthlyLeaveApplicationCap?.enabled;
+  const typeCapValue = Number.isFinite(typeCap) && Number(typeCap) >= 0 ? Number(typeCap) : 0;
+  const typeRemaining = typeCapEnabled ? Math.max(0, typeCapValue - typeConsumed) : null;
+
   return {
     ok: true,
     hasYearDoc: true,
@@ -213,6 +248,18 @@ async function getApplyPeriodContextForEmployee(employeeId, fromDate, options = 
       el: includeEL ? doc.earnedLeaveBalance : null,
     },
     includeELInMonthlyPool: includeEL,
+    leaveType: requestedType,
+    selectedType: {
+      leaveType: requestedType,
+      scheduled: typeScheduledMap[requestedType] ?? 0,
+      balance: typeBalanceMap[requestedType] ?? 0,
+      cap: typeCapValue,
+      capEnabled: typeCapEnabled,
+      approved: typeApproved,
+      locked: typeLocked,
+      consumed: typeConsumed,
+      remaining: typeRemaining,
+    },
   };
 }
 

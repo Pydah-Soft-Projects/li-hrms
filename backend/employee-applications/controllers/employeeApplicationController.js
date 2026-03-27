@@ -23,6 +23,8 @@ const { resolveQualificationLabels } = require('../services/fieldMappingService'
 const { applicationQueue } = require('../../shared/jobs/queueManager');
 const Settings = require('../../settings/model/Settings');
 const { getNextEmpNo, getNextEmpNos } = require('../../employees/services/empNoService');
+const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
+const { syncEmployeeCLFromPolicy } = require('../../leaves/services/annualCLResetService');
 const {
   isCustomEmployeeGroupingEnabled,
   stripEmployeeGroupIfDisabled,
@@ -717,14 +719,44 @@ const verifySingleApplicationInternal = async (applicationId, approver) => {
   };
 
   const results = { mongodb: false, mssql: false };
+  let leaveInitialization = null;
 
   // Generate and set password
   const password = await generatePassword(employeeData, null);
   employeeData.password = password;
 
   try {
-    await Employee.create(employeeData);
+    const createdEmployee = await Employee.create(employeeData);
     results.mongodb = true;
+
+    // Ensure leave register is created using the same pay-period monthly grid sync logic.
+    const leaveSettings = await LeavePolicySettings.getSettings();
+    console.log(
+      `[VerifyApplication] Starting leave register initialization for emp=${createdEmployee.emp_no} doj=${new Date(finalDOJ).toISOString()}`
+    );
+    const leaveSyncResult = await syncEmployeeCLFromPolicy(
+      createdEmployee,
+      leaveSettings,
+      new Date(finalDOJ),
+      {}
+    );
+    leaveInitialization = leaveSyncResult;
+    if (leaveSyncResult?.success) {
+      console.log(
+        `[VerifyApplication] Leave register initialized for emp=${createdEmployee.emp_no} syncPeriod=${leaveSyncResult.syncPeriodLabel || 'n/a'} pastCleared=${leaveSyncResult.pastClearedCreditsTotal} zeroedPeriods=${leaveSyncResult.zeroedPastPeriods} pool=${leaveSyncResult.newBalance}`
+      );
+    }
+
+    if (!leaveSyncResult?.success) {
+      console.error(
+        `[VerifyApplication] Leave register initialization failed for emp=${createdEmployee.emp_no}: ${leaveSyncResult?.error || 'unknown error'}`
+      );
+      await Employee.deleteOne({ _id: createdEmployee._id }).catch((cleanupError) => {
+        console.error('[VerifyApplication] Cleanup failed after leave init error:', cleanupError.message);
+      });
+      throw new Error(leaveSyncResult?.error || 'Leave register initialization failed');
+    }
+
     await application.save();
 
     // Log History
@@ -768,7 +800,7 @@ const verifySingleApplicationInternal = async (applicationId, approver) => {
     console.error(`[VerifyApplication] Notification error:`, notifError.message);
   }
 
-  return { application, results, notificationResults };
+  return { application, results, notificationResults, leaveInitialization };
 };
 
 /**
@@ -887,7 +919,12 @@ const approveSingleApplicationInternal = async (applicationId, approvalData, app
   // We can opt to make this call both verify and approve salary sequentially for backward compatibility
   const verifyResult = await verifySingleApplicationInternal(applicationId, approver);
   const approveResult = await approveSalaryInternal(applicationId, approvalData, approver);
-  return { application: approveResult, results: verifyResult.results, notificationResults: verifyResult.notificationResults };
+  return {
+    application: approveResult,
+    results: verifyResult.results,
+    notificationResults: verifyResult.notificationResults,
+    leaveInitialization: verifyResult.leaveInitialization,
+  };
 };
 
 /**
@@ -913,6 +950,7 @@ exports.verifyApplication = async (req, res) => {
       data: result.application,
       results: result.results,
       notificationResults: result.notificationResults,
+      leaveInitialization: result.leaveInitialization,
     });
   } catch (error) {
     console.error('Error verifying application:', error);

@@ -4170,11 +4170,13 @@ export const api = {
     fromDate: string;
     employeeId?: string;
     refresh?: boolean;
+    leaveType?: string;
   }) => {
     const q = new URLSearchParams();
     q.set('fromDate', params.fromDate);
     if (params.employeeId) q.set('employeeId', params.employeeId);
     if (params.refresh) q.set('refresh', '1');
+    if (params.leaveType) q.set('leaveType', params.leaveType);
     return apiRequest<any>(`/leaves/apply-period-context?${q}`, { method: 'GET' });
   },
 

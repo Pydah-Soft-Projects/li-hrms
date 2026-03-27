@@ -1489,7 +1489,6 @@ exports.processODAction = async (req, res) => {
 
     // --- Intermediate Rejection Override Check ---
     if (od.status.endsWith('_rejected') && od.status !== 'rejected') {
-      const { getWorkflowSettings } = require('../../settings/services/workflowSettingsService');
       const workflowSettings = await getWorkflowSettings();
       const allowHigher = workflowSettings?.workflow?.allowHigherAuthorityToApproveLowerLevels === true;
       if (!allowHigher) {
