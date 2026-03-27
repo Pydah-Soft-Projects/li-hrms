@@ -251,6 +251,19 @@ export default function EmployeesPage() {
   const [isResending, setIsResending] = useState<string | null>(null);
   const [isResetting, setIsResetting] = useState<string | null>(null);
 
+  const isProfileRequest = useMemo(() => {
+    const user = auth.getUser();
+    if (!user || !editingEmployee) return false;
+    
+    // Admins and users with explicit Edit permission bypass profile requests
+    if (user.role === 'super_admin' || user.role === 'sub_admin' || user.featureControl?.includes('EMPLOYEES:edit')) {
+      return false;
+    }
+    
+    // Regular users can only update their own profile without request
+    return String(user.id) !== String(editingEmployee._id);
+  }, [editingEmployee]);
+
   const SENSITIVE_FIELDS = [
     'gross_salary',
     'pf_number',
@@ -1408,8 +1421,65 @@ export default function EmployeesPage() {
       // Construct FormData for multipart/form-data submission
       const payload = new FormData();
 
+      // OPTIMIZATION: If it's a profile request, only send fields that have actually changed
+      // This solves the "entire data" issue reported by the user.
+      let finalSubmitData = submitData;
+      if (isProfileRequest && editingEmployee) {
+        payload.append('isProfileRequest', 'true');
+        const changedData: any = {};
+        const original = editingEmployee as any;
+
+        Object.entries(submitData).forEach(([key, value]) => {
+          // Always include core identifying fields
+          if (key === 'emp_no' || key === 'employee_name') {
+            changedData[key] = value;
+            return;
+          }
+
+          // Fields to skip in comparison (internal/meta/redundant objects)
+          const skipFields = [
+            '_id', 'createdAt', 'updatedAt', '__v', 'status', 'is_active', 'isProfileRequest',
+            'allData', 'division', 'department', 'designation', 'employee_group', 'employeeGroup',
+            'AllData', 'Division', 'Department', 'Designation', 'EmployeeGroup',
+            'lastLogin', 'last_login', 'updated_at', 'created_at', 'v', '_v'
+          ];
+          if (skipFields.some(sf => sf.toLowerCase() === key.toLowerCase())) return;
+
+          // Field mapping for comparison (e.g. proposedSalary should be checked against gross_salary)
+          const fieldMappings: Record<string, string> = {
+            'proposedSalary': 'gross_salary',
+          };
+          const targetKey = fieldMappings[key] || key;
+
+          // Resolve original value (handle nested dynamicFields)
+          let origValue = original[targetKey];
+          if (origValue === undefined && original.dynamicFields) {
+            origValue = original.dynamicFields[targetKey];
+          }
+
+          // Normalize for comparison
+          const normalize = (v: any) => {
+            if (v === null || v === undefined || v === '' || v === 0 || v === '0') return null;
+            if (typeof v === 'string' && !isNaN(Number(v)) && v.trim() !== '') return Number(v);
+            // Handle empty arrays/objects correctly (redundant changes)
+            if (Array.isArray(v) && v.length === 0) return null;
+            if (typeof v === 'object' && Object.keys(v).length === 0 && !(v instanceof Date)) return null;
+            return v;
+          };
+
+          const normOrig = normalize(origValue);
+          const normNew = normalize(value);
+
+          // Deep comparison using stringify for arrays/objects
+          if (JSON.stringify(normOrig) !== JSON.stringify(normNew)) {
+            changedData[key] = value;
+          }
+        });
+        finalSubmitData = changedData;
+      }
+
       // Append standard fields
-      Object.entries(submitData).forEach(([key, value]) => {
+      Object.entries(finalSubmitData).forEach(([key, value]) => {
         if (key === 'qualifications') return; // Handle separately
         if (value === undefined || value === null) return;
 
@@ -1457,7 +1527,29 @@ export default function EmployeesPage() {
       }
 
       if (response.success) {
-        setSuccess(response.message || (editingEmployee ? 'Employee updated successfully!' : 'Employee created successfully!'));
+        // Professional notification using Swal.fire
+        if ((response as any).isRequest || (editingEmployee && isProfileRequest)) {
+          Swal.fire({
+            title: 'Request Sent!',
+            text: response.message || 'Your profile update request has been submitted for approval.',
+            icon: 'success',
+            confirmButtonText: 'OK',
+            confirmButtonColor: '#10b981',
+            background: document.documentElement.classList.contains('dark') ? '#0f172a' : '#ffffff',
+            color: document.documentElement.classList.contains('dark') ? '#f1f5f9' : '#0f172a',
+          });
+        } else {
+          Swal.fire({
+            title: 'Success!',
+            text: response.message || (editingEmployee ? 'Employee updated successfully!' : 'Employee created successfully!'),
+            icon: 'success',
+            confirmButtonText: 'OK',
+            confirmButtonColor: '#10b981',
+            background: document.documentElement.classList.contains('dark') ? '#0f172a' : '#ffffff',
+            color: document.documentElement.classList.contains('dark') ? '#f1f5f9' : '#0f172a',
+          });
+        }
+
         setShowDialog(false);
         setEditingEmployee(null);
         setFormData(initialFormState);
@@ -5049,7 +5141,7 @@ export default function EmployeesPage() {
                     type="submit"
                     className="flex-1 rounded-2xl bg-gradient-to-r from-green-500 to-green-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
                   >
-                    {editingEmployee ? 'Update Employee' : 'Create Employee'}
+                    {editingEmployee ? (isProfileRequest ? 'Send Profile Request' : 'Update Employee') : 'Create Employee'}
                   </button>
                   <button
                     type="button"
