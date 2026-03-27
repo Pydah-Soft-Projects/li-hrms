@@ -79,10 +79,32 @@ interface UpdateRequest {
   requestedChanges: Record<string, any>;
   previousValues?: Record<string, any>;
   status: 'pending' | 'approved' | 'rejected';
-  createdBy?: { name: string };
+  createdBy?: { 
+    name: string;
+    employee_name?: string;
+    role?: string;
+  };
   comments?: string;
   createdAt: string;
 }
+
+const normalizeValue = (v: any) => {
+  if (v === null || v === undefined || v === '' || v === 0 || v === '0') return null;
+  if (typeof v === 'string' && !isNaN(Number(v)) && v.trim() !== '') return Number(v);
+  if (Array.isArray(v) && v.length === 0) return null;
+  if (typeof v === 'object' && Object.keys(v).length === 0 && !(v instanceof Date)) return null;
+  return v;
+};
+
+const formatValue = (val: any) => {
+  if (val === null || val === undefined || val === '') return '—';
+  if (typeof val === 'object') {
+    if (Array.isArray(val)) return val.length > 0 ? `List (${val.length})` : '—';
+    if ((val as any).name) return (val as any).name;
+    return Object.keys(val).length > 0 ? 'Object' : '—';
+  }
+  return String(val);
+};
 
 interface FormSettings {
   groups: Array<{
@@ -1265,16 +1287,18 @@ export default function EmployeesPage() {
     }
   };
 
-  const handleApproveUpdateRequest = async (id: string) => {
+  const handleApproveUpdateRequest = async (id: string, selectedFields?: string[]) => {
     const result = await alertConfirm(
       'Approve Changes?',
-      'Are you sure you want to approve these changes? The employee profile will be updated immediately.'
+      selectedFields && selectedFields.length > 0 
+        ? `Are you sure you want to approve these ${selectedFields.length} selected changes?`
+        : 'Are you sure you want to approve these changes? The employee profile will be updated immediately.'
     );
     if (!result.isConfirmed) return;
 
     try {
       setProcessingUpdateRequest(true);
-      const res = await api.approveEmployeeUpdateRequest(id);
+      const res = await api.approveEmployeeUpdateRequest(id, selectedFields);
       if (res.success) {
         await alertSuccess('Approved!', 'Request approved successfully');
         setSelectedUpdateRequest(null);
@@ -1652,8 +1676,69 @@ export default function EmployeesPage() {
       // Construct FormData for multipart/form-data submission
       const payload = new FormData();
 
+      // OPTIMIZATION: If it's a profile request, only send fields that have actually changed
+      // This solves the redundant data issue in profile requests.
+      const user = auth.getUser();
+      const userRole = user?.role;
+      const hasEditPermission = !!user?.featureControl?.includes('EMPLOYEES:edit');
+      const isProfileRequest = (userRole === 'hr' || userRole === 'sub_admin') && !hasEditPermission && editingEmployee;
+
+      let finalSubmitData = submitData;
+      if (isProfileRequest && editingEmployee) {
+        payload.append('isProfileRequest', 'true');
+        const changedData: any = {};
+        const original = editingEmployee as any;
+
+        Object.entries(submitData).forEach(([key, value]) => {
+          // Always include core identifying fields
+          if (key === 'emp_no' || key === 'employee_name') {
+            changedData[key] = value;
+            return;
+          }
+
+          // Fields to skip in comparison (internal/meta/redundant objects)
+          const skipFields = [
+            '_id', 'createdAt', 'updatedAt', '__v', 'status', 'is_active', 'isProfileRequest',
+            'allData', 'division', 'department', 'designation', 'employee_group', 'employeeGroup',
+            'AllData', 'Division', 'Department', 'Designation', 'EmployeeGroup',
+            'lastLogin', 'last_login', 'updated_at', 'created_at', 'v', '_v'
+          ];
+          if (skipFields.some(sf => sf.toLowerCase() === key.toLowerCase())) return;
+
+          // Field mapping for comparison (e.g. proposedSalary should be checked against gross_salary)
+          const fieldMappings: Record<string, string> = {
+            'proposedSalary': 'gross_salary',
+          };
+          const targetKey = fieldMappings[key] || key;
+
+          // Resolve original value (handle nested dynamicFields)
+          let origValue = original[targetKey];
+          if (origValue === undefined && original.dynamicFields) {
+            origValue = original.dynamicFields[targetKey];
+          }
+
+          // Normalize for comparison
+          const normalize = (v: any) => {
+            if (v === null || v === undefined || v === '') return null;
+            // Handle empty arrays/objects correctly (redundant changes)
+            if (Array.isArray(v) && v.length === 0) return null;
+            if (typeof v === 'object' && Object.keys(v).length === 0 && !(v instanceof Date)) return null;
+            return v;
+          };
+
+          const normOrig = normalize(origValue);
+          const normNew = normalize(value);
+
+          // Deep comparison using stringify for arrays/objects
+          if (JSON.stringify(normOrig) !== JSON.stringify(normNew)) {
+            changedData[key] = value;
+          }
+        });
+        finalSubmitData = changedData;
+      }
+
       // Append standard fields
-      Object.entries(submitData).forEach(([key, value]) => {
+      Object.entries(finalSubmitData).forEach(([key, value]) => {
         if (key === 'qualifications') return; // Handle separately
         if (value === undefined || value === null) return;
 
@@ -1713,7 +1798,13 @@ export default function EmployeesPage() {
       }
 
       if (response.success) {
-        setSuccess(response.message || (editingEmployee ? 'Employee updated successfully!' : 'Employee created successfully!'));
+        const isRequest = !!(response as any).isRequest;
+        
+        setSuccess(response.message || (editingEmployee ? (isRequest ? 'Profile update request sent for approval!' : 'Employee updated successfully!') : 'Employee created successfully!'));
+        
+        if (isRequest) {
+          alertSuccess('Request Sent!', response.message || 'Profile update request has been submitted for approval.');
+        }
         setShowDialog(false);
         setEditingEmployee(null);
         setFormData(initialFormState);
@@ -2548,14 +2639,14 @@ export default function EmployeesPage() {
             {/* Tab Slider */}
             <div className="relative flex h-10 items-center rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
               <div
-                className={`absolute h-8 rounded-lg bg-white shadow-sm transition-all duration-300 ease-in-out dark:bg-slate-700 ${activeTab === 'employees' ? 'left-1 w-[calc(33.33%-4px)]' :
-                  activeTab === 'applications' ? 'left-[calc(33.33%)] w-[calc(33.33%-4px)]' :
-                    'left-[calc(66.66%)] w-[calc(33.33%-4px)]'
+                className={`absolute h-8 w-36 rounded-lg bg-white shadow-sm transition-all duration-300 ease-in-out dark:bg-slate-700 ${activeTab === 'employees' ? 'left-1' :
+                  activeTab === 'applications' ? 'left-[calc(9rem+4px)]' :
+                    'left-[calc(18rem+8px)]'
                   }`}
               />
               <button
                 onClick={() => setActiveTab('employees')}
-                className={`relative z-10 w-32 px-4 py-1.5 text-sm font-semibold transition-colors ${activeTab === 'employees'
+                className={`relative z-10 w-36 px-4 py-1.5 text-sm font-semibold transition-colors ${activeTab === 'employees'
                   ? 'text-slate-900 dark:text-slate-100'
                   : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
                   }`}
@@ -2564,7 +2655,7 @@ export default function EmployeesPage() {
               </button>
               <button
                 onClick={() => setActiveTab('applications')}
-                className={`relative z-10 w-32 px-4 py-1.5 text-sm font-semibold transition-colors flex items-center justify-center gap-2 ${activeTab === 'applications'
+                className={`relative z-10 w-36 px-4 py-1.5 text-sm font-semibold transition-colors flex items-center justify-center gap-2 ${activeTab === 'applications'
                   ? 'text-slate-900 dark:text-slate-100'
                   : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
                   }`}
@@ -2578,12 +2669,12 @@ export default function EmployeesPage() {
               </button>
               <button
                 onClick={() => setActiveTab('requests')}
-                className={`relative z-10 w-36 px-4 py-1.5 text-sm font-semibold transition-colors flex items-center justify-center gap-2 ${activeTab === 'requests'
+                className={`relative z-10 w-36 px-2 py-1.5 text-sm font-semibold transition-colors flex items-center justify-center gap-1.5 ${activeTab === 'requests'
                   ? 'text-slate-900 dark:text-slate-100'
                   : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300'
                   }`}
               >
-                Updates
+                Profile Requests
                 {pendingUpdateRequests.length > 0 && (
                   <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[10px] bg-indigo-500 text-white">
                     {pendingUpdateRequests.length}
@@ -3282,12 +3373,12 @@ export default function EmployeesPage() {
             {loadingUpdateRequests ? (
               <div className="flex flex-col items-center justify-center py-20">
                 <Spinner className="h-10 w-10 text-indigo-600" />
-                <p className="mt-4 text-slate-500">Loading updates...</p>
+                <p className="mt-4 text-slate-500">Loading profile requests...</p>
               </div>
             ) : updateRequests.length === 0 ? (
               <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50/50 p-12 text-center dark:border-slate-700 dark:bg-slate-900/50">
-                <p className="text-lg font-medium text-slate-600 dark:text-slate-400">No profile updates found</p>
-                <p className="mt-1 text-sm text-slate-500">New profile update requests from employees will appear here.</p>
+                <p className="text-lg font-medium text-slate-600 dark:text-slate-400">No profile requests found</p>
+                <p className="mt-1 text-sm text-slate-500">New profile requests from employees will appear here.</p>
               </div>
             ) : updateRequestViewMode === 'list' ? (
               <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
@@ -3296,7 +3387,7 @@ export default function EmployeesPage() {
                     <thead>
                       <tr className="border-b border-slate-100 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-900/50">
                         <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Employee</th>
-                        <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Requested Changes</th>
+                        <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Requested By</th>
                         <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Date</th>
                         <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Status</th>
                         <th className="px-6 py-4 text-right text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Actions</th>
@@ -3304,7 +3395,11 @@ export default function EmployeesPage() {
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                       {updateRequests.map((req) => (
-                        <tr key={req._id} className="group transition-colors hover:bg-slate-50/50 dark:hover:bg-slate-900/50">
+                        <tr 
+                          key={req._id} 
+                          className="group transition-colors hover:bg-slate-50/50 dark:hover:bg-slate-900/50 cursor-pointer"
+                          onClick={() => setSelectedUpdateRequest(req)}
+                        >
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-3">
                               {req.employeeId?.profilePhoto ? (
@@ -3320,21 +3415,91 @@ export default function EmployeesPage() {
                               </div>
                             </div>
                           </td>
-                          <td className="px-6 py-4">
-                            <div className="max-w-[300px] flex flex-wrap gap-1.5">
-                              {Object.entries(req.requestedChanges).map(([field, newValue]) => {
-                                const oldValue = req.previousValues?.[field] ??
-                                  (req.employeeId as any)[field] ??
-                                  (req.employeeId.dynamicFields?.[field]);
-                                return (
-                                  <div key={field} className="flex items-center gap-1 rounded-lg bg-slate-50 px-2 py-1 text-[10px] ring-1 ring-slate-200 dark:bg-slate-800/50 dark:ring-slate-700">
-                                    <span className="font-bold text-indigo-600 dark:text-indigo-400 capitalize">{field.replace(/_/g, ' ')}:</span>
-                                    <span className="text-slate-400 line-through decoration-red-300/50">{String(oldValue || '—')}</span>
-                                    <ArrowRight className="h-2 w-2 text-slate-400" />
-                                    <span className="font-semibold text-slate-900 dark:text-slate-100">{String(newValue || '—')}</span>
-                                  </div>
+                          {/* <td className="px-6 py-4">
+                            <div className="max-w-[400px] flex flex-col gap-1.5">
+                              {(() => {
+                                const noiseFields = [
+                                  'allData', 'AllData', 'division', 'department', 'designation', 
+                                  'employeeGroup', 'employee_group', 'dynamicFields', 'GenQualifications', 
+                                  'AllAllowanceDeductions', 'leave_stats', 'payroll_stats', 
+                                  'employeeAllowances', 'employeeDeductions', 'isProfileRequest',
+                                  'getQualifications', 'setQualifications', 'updatedAt', 'lastLogin', 
+                                  'createdAt', 'updated_at', 'last_login', 'created_at',
+                                  'v', '_v', '__v'
+                                ];
+                                
+                                const normalize = (v: any) => {
+                                  if (v === null || v === undefined || v === '' || v === 0 || v === '0') return null;
+                                  if (typeof v === 'string' && !isNaN(Number(v)) && v.trim() !== '') return Number(v);
+                                  if (Array.isArray(v) && v.length === 0) return null;
+                                  if (typeof v === 'object' && Object.keys(v).length === 0 && !(v instanceof Date)) return null;
+                                  // Handle specific date/string normalization if needed
+                                  return v;
+                                };
+
+                                  const filteredChanges = Object.entries(req.requestedChanges).filter(([field, newValue]) => {
+                                    if (field.startsWith('_')) return false;
+                                    if (noiseFields.some(nf => nf.toLowerCase() === field.toLowerCase())) return false;
+                                    
+                                    const oldValue = req.previousValues?.[field] ??
+                                      (req.employeeId as any)[field] ??
+                                      (req.employeeId.dynamicFields?.[field]);
+                                      
+                                    const nOld = normalizeValue(oldValue);
+                                    const nNew = normalizeValue(newValue);
+                                    if (JSON.stringify(nOld) === JSON.stringify(nNew)) return false;
+                                    
+                                    const fOld = formatValue(oldValue);
+                                    const fNew = formatValue(newValue);
+                                    if (fOld === fNew && fOld !== 'Object' && !fOld.startsWith('List')) return false;
+                                    
+                                    return true;
+                                  });
+
+                                  return (
+                                    <>
+                                      {filteredChanges.slice(0, 4).map(([field, newValue]) => {
+                                        const oldValue = req.previousValues?.[field] ??
+                                          (req.employeeId as any)[field] ??
+                                          (req.employeeId.dynamicFields?.[field]);
+
+                                        return (
+                                          <div key={field} className="flex items-center gap-2 text-[10px] text-slate-600 dark:text-slate-400">
+                                            <span className="font-bold text-indigo-600 dark:text-indigo-400 whitespace-nowrap min-w-[80px]">
+                                              {getFieldLabel(field, formSettings)}:
+                                            </span>
+                                            <div className="flex items-center gap-1.5 overflow-hidden">
+                                              <span className="truncate max-w-[80px] text-slate-400 line-through decoration-red-300/50">{formatValue(oldValue)}</span>
+                                              <ArrowRight className="h-2.5 w-2.5 flex-shrink-0 text-slate-300" />
+                                              <span className="truncate max-w-[120px] font-bold text-slate-900 dark:text-slate-100">{formatValue(newValue)}</span>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    {filteredChanges.length > 4 && (
+                                      <button
+                                        onClick={() => setSelectedUpdateRequest(req)}
+                                        className="text-[10px] font-bold text-indigo-500 hover:text-indigo-600 dark:text-indigo-400 w-fit mt-1"
+                                      >
+                                        + {filteredChanges.length - 4} more ...
+                                      </button>
+                                    )}
+                                    {filteredChanges.length === 0 && (
+                                      <span className="text-[10px] italic text-slate-400">No significant changes</span>
+                                    )}
+                                  </>
                                 );
-                              })}
+                              })()}
+                            </div>
+                          </td> */}
+                          <td className="px-6 py-4">
+                            <div className="flex flex-col">
+                              <span className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                                {(req.createdBy as any)?.employee_name || (req.createdBy as any)?.name || 'Employee'}
+                              </span>
+                              <span className="text-[10px] text-slate-500 font-medium">
+                                {(req.createdBy as any)?.role?.toUpperCase() || 'USER'}
+                              </span>
                             </div>
                           </td>
                           <td className="whitespace-nowrap px-6 py-4 text-xs font-semibold text-slate-500 dark:text-slate-400">
@@ -3353,7 +3518,8 @@ export default function EmployeesPage() {
                               {req.status === 'pending' && (
                                 <>
                                   <button
-                                    onClick={() => {
+                                    onClick={(e) => {
+                                      e.stopPropagation();
                                       setSelectedUpdateRequest(req);
                                       setUpdateRequestRejectComments(''); // Reset comments
                                     }}
@@ -3363,7 +3529,10 @@ export default function EmployeesPage() {
                                     <XCircle className="h-4 w-4" />
                                   </button>
                                   <button
-                                    onClick={() => handleApproveUpdateRequest(req._id)}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleApproveUpdateRequest(req._id);
+                                    }}
                                     className="rounded-lg bg-indigo-50 p-2 text-indigo-600 transition-all hover:bg-indigo-100 dark:bg-indigo-900/20 dark:hover:bg-indigo-900/40"
                                     title="Approve"
                                   >
@@ -3371,13 +3540,6 @@ export default function EmployeesPage() {
                                   </button>
                                 </>
                               )}
-                              <button
-                                onClick={() => setSelectedUpdateRequest(req)}
-                                className="rounded-lg bg-slate-50 p-2 text-slate-600 transition-all hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700"
-                                title="View Details"
-                              >
-                                <Eye className="h-4 w-4" />
-                              </button>
                             </div>
                           </td>
                         </tr>
@@ -3391,11 +3553,12 @@ export default function EmployeesPage() {
                 {updateRequests.map((req) => (
                   <div
                     key={req._id}
-                    className="group relative overflow-hidden rounded-3xl border border-slate-200 bg-white transition-all hover:border-indigo-300 hover:shadow-xl dark:border-slate-800 dark:bg-slate-950"
+                    className="group relative overflow-hidden rounded-3xl border border-slate-200 bg-white transition-all hover:border-indigo-300 hover:shadow-xl dark:border-slate-800 dark:bg-slate-950 cursor-pointer"
+                    onClick={() => setSelectedUpdateRequest(req)}
                   >
                     <div className="p-6">
                       {/* Header with Employee Info */}
-                      <div className="mb-6 flex items-center justify-between">
+                      <div className="mb-4 flex items-center justify-between">
                         <div className="flex items-center gap-4">
                           {req.employeeId?.profilePhoto ? (
                             <img src={req.employeeId.profilePhoto} alt="" className="h-14 w-14 rounded-2xl object-cover ring-2 ring-slate-100 dark:ring-slate-800" />
@@ -3415,29 +3578,51 @@ export default function EmployeesPage() {
                         </span>
                       </div>
 
-                      {/* Content: Changes */}
-                      <div className="space-y-3">
-                        <h4 className="text-xs font-bold uppercase tracking-widest text-slate-400">Requested Changes</h4>
+                      {/* Requested By Info */}
+                      <div className="mb-6 flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 dark:bg-slate-900/50">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-xs font-bold text-indigo-500 shadow-sm dark:bg-slate-800">
+                          {req.createdBy?.employee_name?.charAt(0) || req.createdBy?.name?.charAt(0) || 'E'}
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Requested By</p>
+                          <p className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                            {req.createdBy?.employee_name || req.createdBy?.name || 'Employee'}
+                            <span className="ml-1.5 text-[10px] font-medium text-slate-400">({req.createdBy?.role || 'USER'})</span>
+                          </p>
+                        </div>
+                      </div>
+
                         <div className="grid gap-2">
-                          {Object.entries(req.requestedChanges).map(([field, newValue]) => {
+                          {Object.entries(req.requestedChanges)
+                            .filter(([field]) => !field.startsWith('_') && !['AllData', 'dynamicFields', 'GenQualifications', 'AllAllowanceDeductions', 'leave_stats', 'payroll_stats', 'employeeAllowances', 'employeeDeductions', 'isProfileRequest'].includes(field))
+                            .map(([field, newValue]) => {
+
                             const oldValue = req.previousValues?.[field] ??
                               (req.employeeId as any)[field] ??
                               (req.employeeId.dynamicFields?.[field]);
+
+                            const nOld = normalizeValue(oldValue);
+                            const nNew = normalizeValue(newValue);
+                            if (JSON.stringify(nOld) === JSON.stringify(nNew)) return null;
+
+                            const fOld = formatValue(oldValue);
+                            const fNew = formatValue(newValue);
+                            if (fOld === fNew && fOld !== 'Object' && !fOld.startsWith('List')) return null;
+
                             return (
                               <div key={field} className="rounded-xl border border-slate-100 bg-slate-50/50 p-3 transition-colors hover:border-indigo-100 hover:bg-white dark:border-slate-800 dark:bg-slate-900/50 dark:hover:bg-slate-900">
                                 <label className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
                                   {getFieldLabel(field, formSettings)}
                                 </label>
                                 <div className="flex items-center gap-3">
-                                  <div className="text-xs text-slate-400 line-through decoration-red-200">{String(oldValue || '—')}</div>
+                                  <div className="text-xs text-slate-400 line-through decoration-red-200">{formatValue(oldValue)}</div>
                                   <ArrowRight className="h-3 w-3 text-slate-300" />
-                                  <div className="text-xs font-bold text-slate-900 dark:text-slate-100">{String(newValue || '—')}</div>
+                                  <div className="text-xs font-bold text-slate-900 dark:text-slate-100">{formatValue(newValue)}</div>
                                 </div>
                               </div>
                             );
                           })}
                         </div>
-                      </div>
 
                       {/* Footer Actions */}
                       <div className="mt-8 flex items-center justify-between gap-4 border-t border-slate-100 pt-6 dark:border-slate-800">
@@ -3452,9 +3637,10 @@ export default function EmployeesPage() {
                             Details
                           </button>
                           {req.status === 'pending' && (
-                            <>
+                            <div className="flex gap-2">
                               <button
-                                onClick={() => {
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   setSelectedUpdateRequest(req);
                                   setUpdateRequestRejectComments('');
                                 }}
@@ -3463,12 +3649,15 @@ export default function EmployeesPage() {
                                 Reject
                               </button>
                               <button
-                                onClick={() => handleApproveUpdateRequest(req._id)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleApproveUpdateRequest(req._id);
+                                }}
                                 className="rounded-xl bg-indigo-600 px-6 py-2 text-xs font-bold text-white shadow-lg shadow-indigo-600/20 transition-all hover:bg-indigo-700 hover:shadow-indigo-600/40"
                               >
                                 Approve
                               </button>
-                            </>
+                            </div>
                           )}
                         </div>
                       </div>
@@ -5093,7 +5282,9 @@ export default function EmployeesPage() {
                       type="submit"
                       className="flex-1 rounded-2xl bg-gradient-to-r from-green-500 to-green-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-600 hover:to-green-600"
                     >
-                      {editingEmployee ? 'Update Employee' : 'Create Employee'}
+                      {editingEmployee
+                        ? (['super_admin', 'sub_admin', 'hr', 'manager', 'hod'].includes(auth.getUser()?.role || '') ? 'Update Employee' : 'Send Profile Request')
+                        : 'Create Employee'}
                     </button>
                     <button
                       type="button"
@@ -6534,11 +6725,15 @@ export default function EmployeesPage() {
             rejectComments={updateRequestRejectComments}
             setRejectComments={setUpdateRequestRejectComments}
             processingUpdateRequest={processingUpdateRequest}
-            formSettings={formSettings}
+            formGroups={formSettings}
             getFieldLabel={getFieldLabel}
             onApprove={handleApproveUpdateRequest}
             onReject={handleRejectUpdateRequest}
             onClose={() => setSelectedUpdateRequest(null)}
+            divisions={divisions}
+            departments={departments}
+            designations={designations as any}
+            employeeGroups={employeeGroups}
           />
         )}
 

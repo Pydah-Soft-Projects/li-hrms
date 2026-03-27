@@ -1800,6 +1800,28 @@ export default function UsersPage() {
                                             Bank
                                           </button>
                                         )}
+                                        {/* Edit Toggle — only for editable modules (e.g. EMPLOYEES): auto-approves profile requests */}
+                                        {(module as any).editable && (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const currentFeatures = formData.featureControl || [];
+                                              const editPerm = `${module.code}:edit`;
+                                              const hasEdit = currentFeatures.includes(editPerm);
+                                              const newFeatures = hasEdit
+                                                ? currentFeatures.filter(f => f !== editPerm)
+                                                : [...currentFeatures, editPerm];
+                                              setFormData({ ...formData, featureControl: newFeatures });
+                                            }}
+                                            title="Edit: profile update requests from this user are auto-approved without Super Admin review."
+                                            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${formData.featureControl?.includes(`${module.code}:edit`)
+                                              ? 'bg-rose-500 text-white shadow-sm'
+                                              : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                              }`}
+                                          >
+                                            Edit
+                                          </button>
+                                        )}
                                       </div>
                                     </div>
                                   );
@@ -2238,6 +2260,28 @@ export default function UsersPage() {
                                           Bank
                                         </button>
                                       )}
+                                      {/* Edit Toggle — auto-approves profile requests */}
+                                      {(module as any).editable && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const currentFeatures = employeeFormData.featureControl || [];
+                                            const editPerm = `${module.code}:edit`;
+                                            const hasEdit = currentFeatures.includes(editPerm);
+                                            const newFeatures = hasEdit
+                                              ? currentFeatures.filter(f => f !== editPerm)
+                                              : [...currentFeatures, editPerm];
+                                            setEmployeeFormData({ ...employeeFormData, featureControl: newFeatures });
+                                          }}
+                                          title="Edit: profile update requests from this user are auto-approved without Super Admin review."
+                                          className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${employeeFormData.featureControl?.includes(`${module.code}:edit`)
+                                            ? 'bg-rose-500 text-white shadow-sm'
+                                            : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                            }`}
+                                        >
+                                          Edit
+                                        </button>
+                                      )}
                                     </div>
                                   </div>
                                 );
@@ -2592,6 +2636,28 @@ export default function UsersPage() {
                                               }`}
                                           >
                                             Bank
+                                          </button>
+                                        )}
+                                        {/* Edit Toggle — auto-approves profile requests */}
+                                        {(module as any).editable && (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const currentFeatures = formData.featureControl || [];
+                                              const editPerm = `${module.code}:edit`;
+                                              const hasEdit = currentFeatures.includes(editPerm);
+                                              const newFeatures = hasEdit
+                                                ? currentFeatures.filter(f => f !== editPerm)
+                                                : [...currentFeatures, editPerm];
+                                              setFormData({ ...formData, featureControl: newFeatures });
+                                            }}
+                                            title="Edit: profile update requests from this user are auto-approved without Super Admin review."
+                                            className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${formData.featureControl?.includes(`${module.code}:edit`)
+                                              ? 'bg-rose-500 text-white shadow-sm'
+                                              : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                              }`}
+                                          >
+                                            Edit
                                           </button>
                                         )}
                                       </div>
