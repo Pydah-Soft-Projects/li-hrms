@@ -141,6 +141,12 @@ router.patch(
   applyScopeFilter,
   leaveController.patchLeaveRegisterYearMonthSlot
 );
+router.patch(
+  '/leave-register-year/:employeeId/bulk-month-slots',
+  authorize('hr', 'sub_admin', 'super_admin'),
+  applyScopeFilter,
+  leaveController.patchLeaveRegisterYearBulkMonthSlots
+);
 router.post(
   '/leave-register-year/:employeeId/sync-month-apply',
   authorize('hr', 'sub_admin', 'super_admin'),
@@ -199,6 +205,18 @@ router.post('/:id/revoke-for-attendance', authorize('manager', 'super_admin', 's
 router.post('/:id/update-for-attendance', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), leaveController.updateLeaveForAttendance);
 
 // Leave register listing & employee detail (must be before /:id so "register" is not parsed as id)
+router.get(
+  '/register/export/pdf',
+  authorize('employee', 'hod', 'hr', 'manager', 'sub_admin', 'super_admin'),
+  applyScopeFilter,
+  leaveController.exportLeaveRegisterPDF
+);
+router.get(
+  '/register/export/xlsx',
+  authorize('employee', 'hod', 'hr', 'manager', 'sub_admin', 'super_admin'),
+  applyScopeFilter,
+  leaveController.exportLeaveRegisterXLSX
+);
 router.get(
   '/register/employee/:employeeId',
   authorize('employee', 'hod', 'hr', 'manager', 'sub_admin', 'super_admin'),

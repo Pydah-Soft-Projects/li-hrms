@@ -4156,6 +4156,33 @@ export const api = {
     });
   },
 
+  /** Admin: adjust many FY payroll slots in one save; optional unused-pool carry through closed periods (IST). */
+  patchLeaveRegisterYearBulkMonthSlots: async (
+    employeeId: string,
+    body: {
+      financialYear: string;
+      slots: Array<{
+        payrollCycleMonth: number;
+        payrollCycleYear: number;
+        clCredits?: number;
+        compensatoryOffs?: number;
+        elCredits?: number;
+        lockedCredits?: number;
+        usedCl?: number;
+        usedCcl?: number;
+        usedEl?: number;
+      }>;
+      validateWithRecords?: boolean;
+      carryForwardUnused?: boolean;
+      reason: string;
+    }
+  ) => {
+    return apiRequest<any>(`/leaves/leave-register-year/${employeeId}/bulk-month-slots`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+  },
+
   /** Admin: refresh monthlyApply* from Leave rows only (same FY month slot). */
   syncLeaveRegisterYearMonthApply: async (
     employeeId: string,
@@ -4203,6 +4230,95 @@ export const api = {
     if (params?.limit != null) q.set('limit', String(params.limit));
     const qs = q.toString();
     return apiRequest<any>(`/leaves/register${qs ? `?${qs}` : ''}`, { method: 'GET' });
+  },
+
+  /** A4 landscape PDF; same query filters as listLeaveRegister (exports all matches, not one page). */
+  downloadLeaveRegisterPdf: async (params?: {
+    financialYear?: string;
+    month?: number;
+    year?: number;
+    departmentId?: string;
+    divisionId?: string;
+    search?: string;
+    /** Omit or true = include; set false to exclude that leave block from every month column. */
+    includeCL?: boolean;
+    includeCCL?: boolean;
+    includeEL?: boolean;
+  }) => {
+    const q = new URLSearchParams();
+    if (params?.financialYear) q.set('financialYear', params.financialYear);
+    if (params?.month != null) q.set('month', String(params.month));
+    if (params?.year != null) q.set('year', String(params.year));
+    if (params?.departmentId) q.set('departmentId', params.departmentId);
+    if (params?.divisionId) q.set('divisionId', params.divisionId);
+    if (params?.search) q.set('search', params.search);
+    if (params?.includeCL === false) q.set('includeCL', 'false');
+    if (params?.includeCCL === false) q.set('includeCCL', 'false');
+    if (params?.includeEL === false) q.set('includeEL', 'false');
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const response = await fetch(`${API_BASE_URL}/leaves/register/export/pdf?${q.toString()}`, {
+      method: 'GET',
+      credentials: 'include',
+      headers,
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      let errorMsg = 'Failed to download leave register PDF';
+      try {
+        const json = JSON.parse(text);
+        errorMsg = json.message || errorMsg;
+      } catch {
+        /* ignore */
+      }
+      throw new Error(errorMsg);
+    }
+    return await response.blob();
+  },
+
+  /** Excel workbook: About sheet + one sheet per selected leave type; same filters as list. */
+  downloadLeaveRegisterXlsx: async (params?: {
+    financialYear?: string;
+    month?: number;
+    year?: number;
+    departmentId?: string;
+    divisionId?: string;
+    search?: string;
+    includeCL?: boolean;
+    includeCCL?: boolean;
+    includeEL?: boolean;
+  }) => {
+    const q = new URLSearchParams();
+    if (params?.financialYear) q.set('financialYear', params.financialYear);
+    if (params?.month != null) q.set('month', String(params.month));
+    if (params?.year != null) q.set('year', String(params.year));
+    if (params?.departmentId) q.set('departmentId', params.departmentId);
+    if (params?.divisionId) q.set('divisionId', params.divisionId);
+    if (params?.search) q.set('search', params.search);
+    if (params?.includeCL === false) q.set('includeCL', 'false');
+    if (params?.includeCCL === false) q.set('includeCCL', 'false');
+    if (params?.includeEL === false) q.set('includeEL', 'false');
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const response = await fetch(`${API_BASE_URL}/leaves/register/export/xlsx?${q.toString()}`, {
+      method: 'GET',
+      credentials: 'include',
+      headers,
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      let errorMsg = 'Failed to download leave register Excel';
+      try {
+        const json = JSON.parse(text);
+        errorMsg = json.message || errorMsg;
+      } catch {
+        /* ignore */
+      }
+      throw new Error(errorMsg);
+    }
+    return await response.blob();
   },
 
   getEmployeeLeaveRegisterDetail: async (
