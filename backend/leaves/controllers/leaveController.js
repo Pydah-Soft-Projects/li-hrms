@@ -2767,13 +2767,30 @@ exports.listLeaveRegister = async (req, res) => {
       }
     }
 
-    let groupedData = await leaveRegisterService.getLeaveRegister(filters, monthNum, yearNum);
+    // Server-side pagination: cap + hydrate only the requested page (sorted by name).
+    const useServerPage = !filters.employeeId && !filters.empNo && !filters.balanceAsOf;
+    let groupedData;
+    let serverPaginationMeta = null;
+    if (useServerPage) {
+      const result = await leaveRegisterService.getLeaveRegister(filters, monthNum, yearNum, {
+        listPagination: { page: pageNum, limit: limitNum },
+      });
+      if (result && !Array.isArray(result) && Array.isArray(result.entries)) {
+        groupedData = result.entries;
+        serverPaginationMeta = result.listPaginationMeta;
+      } else {
+        groupedData = Array.isArray(result) ? result : [];
+      }
+    } else {
+      groupedData = await leaveRegisterService.getLeaveRegister(filters, monthNum, yearNum);
+    }
 
     // Legacy post-filtering was here; now handled by passing filters.employeeIds to the service.
 
-    const total = groupedData.length;
-    const start = (pageNum - 1) * limitNum;
-    const pageRows = groupedData.slice(start, start + limitNum);
+    const total = serverPaginationMeta ? serverPaginationMeta.total : groupedData.length;
+    const pageRows = serverPaginationMeta
+      ? groupedData
+      : groupedData.slice((pageNum - 1) * limitNum, (pageNum - 1) * limitNum + limitNum);
 
     const todayPeriodForSummary = await dateCycleService.getPeriodInfo(new Date());
     const summaryCycleMonth = todayPeriodForSummary.payrollCycle.month;

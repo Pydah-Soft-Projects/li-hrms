@@ -93,7 +93,10 @@ async function resolveLeaveRegisterExportRequest(req) {
     }
   }
 
-  const groupedData = await leaveRegisterService.getLeaveRegister(filters, monthNum, yearNum);
+  const registerResult = await leaveRegisterService.getLeaveRegister(filters, monthNum, yearNum);
+  const groupedData = Array.isArray(registerResult)
+    ? registerResult
+    : registerResult?.entries || [];
 
   const filterParts = [
     `Exported (India time): ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`,
