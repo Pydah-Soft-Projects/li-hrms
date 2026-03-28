@@ -387,7 +387,9 @@ class LeaveRegisterService {
                     periodInfo.payrollCycle.month,
                     periodInfo.payrollCycle.year
                 );
-                const registerList = (Array.isArray(registerResult) ? registerResult : (registerResult?.data || []));
+                const registerList = Array.isArray(registerResult)
+                    ? registerResult
+                    : registerResult?.entries || registerResult?.data || [];
                 const empEntry = registerList[0]; // We filtered by employeeId
                 clEntry = empEntry?.monthlySubLedgers?.find(s => s.month === periodInfo.payrollCycle.month && s.year === periodInfo.payrollCycle.year);
 
@@ -692,8 +694,13 @@ class LeaveRegisterService {
     /**
      * Get leave register with filters
      */
-    async getLeaveRegister(filters = {}, month = null, year = null) {
+    /**
+     * @param {object} [options]
+     * @param {{ page: number; limit: number }} [options.listPagination] — When set (and not single-employee), cap/hydrate only that page after sorting by name. Returns `{ entries, listPaginationMeta }` instead of a plain array.
+     */
+    async getLeaveRegister(filters = {}, month = null, year = null, options = {}) {
         try {
+            const { listPagination: listPaginationOpt } = options || {};
             const dateCycleService = require('./dateCycleService');
             const today = new Date();
             const baseYearNum = (year != null && year !== '') ? Number(year) : today.getFullYear();
@@ -791,20 +798,21 @@ class LeaveRegisterService {
             // For UI month labels we must follow payroll-cycle month/year, not just calendar month.
             let monthsInOrderOverride = null;
             try {
-                const dateCycleService = require('./dateCycleService');
                 if (fyStart) {
                     const base = new Date(fyStart);
                     base.setDate(15);
-                    monthsInOrderOverride = [];
-                    for (let i = 0; i < 12; i++) {
+                    const monthPromises = Array.from({ length: 12 }, (_, i) => {
                         const repDate = new Date(base);
                         repDate.setMonth(base.getMonth() + i);
                         repDate.setDate(15);
-                        const periodInfo = await dateCycleService.getPeriodInfo(repDate);
+                        return dateCycleService.getPeriodInfo(repDate);
+                    });
+                    const periodResults = await Promise.all(monthPromises);
+                    monthsInOrderOverride = periodResults.map((periodInfo) => {
                         const m = periodInfo.payrollCycle.month;
                         const y = periodInfo.payrollCycle.year;
-                        monthsInOrderOverride.push({ month: m, year: y, key: `${y}-${m}` });
-                    }
+                        return { month: m, year: y, key: `${y}-${m}` };
+                    });
                 }
             } catch (e) {
                 // Fallback to old behavior if period resolution fails.
@@ -916,6 +924,27 @@ class LeaveRegisterService {
                 }
             }
 
+            /** Cap + hydrate only this slice for paginated list API (sorted by employee name). */
+            let entriesForHeavyWork = groupedData;
+            let listPaginationMeta = null;
+            const canPaginate =
+                listPaginationOpt &&
+                !filters.employeeId &&
+                !filters.empNo &&
+                !filters.balanceAsOf;
+            if (canPaginate) {
+                const page = Math.max(1, parseInt(String(listPaginationOpt.page), 10) || 1);
+                const limit = Math.min(100, Math.max(1, parseInt(String(listPaginationOpt.limit), 10) || 25));
+                const sorted = [...groupedData].sort((a, b) => {
+                    const na = String(a.employee?.name || '').toLowerCase();
+                    const nb = String(b.employee?.name || '').toLowerCase();
+                    return na.localeCompare(nb);
+                });
+                const start = (page - 1) * limit;
+                entriesForHeavyWork = sorted.slice(start, start + limit);
+                listPaginationMeta = { total: sorted.length, page, limit };
+            }
+
             // Pending / in-flight leaves by payroll month (FY start → selected month).
             // "Locked" = not final `approved`, still counts toward monthly apply cap (same rules as monthlyApplicationCapService).
             const emptyCapBucket = () => ({
@@ -942,35 +971,44 @@ class LeaveRegisterService {
                 capPolicy = {};
             }
 
-            // Build payroll windows keyed exactly like the register grid month keys:
-            // `${sub.year}-${sub.month}` (so per-type locked columns cannot drift).
+            // Build payroll windows keyed like the register grid (`${year}-${month}`).
+            // Prefer FY month order (12 cycles) so window range is stable and we avoid scanning every employee.
             const uniqueSubMonths = new Map();
-            for (const entry of groupedData) {
-                for (const sub of entry.monthlySubLedgers || []) {
-                    if (sub?.year == null || sub?.month == null) continue;
-                    const key = `${sub.year}-${sub.month}`;
-                    if (!uniqueSubMonths.has(key)) {
-                        uniqueSubMonths.set(key, { year: Number(sub.year), month: Number(sub.month) });
+            if (Array.isArray(monthsInOrderOverride) && monthsInOrderOverride.length > 0) {
+                for (const mo of monthsInOrderOverride) {
+                    if (mo?.year == null || mo?.month == null) continue;
+                    const y = Number(mo.year);
+                    const m = Number(mo.month);
+                    uniqueSubMonths.set(`${y}-${m}`, { year: y, month: m });
+                }
+            } else {
+                for (const entry of groupedData) {
+                    for (const sub of entry.monthlySubLedgers || []) {
+                        if (sub?.year == null || sub?.month == null) continue;
+                        const key = `${sub.year}-${sub.month}`;
+                        if (!uniqueSubMonths.has(key)) {
+                            uniqueSubMonths.set(key, { year: Number(sub.year), month: Number(sub.month) });
+                        }
                     }
                 }
             }
 
-            const monthPayrollWindows = [];
-            for (const { year: smYear, month: smMonth } of uniqueSubMonths.values()) {
-                const mid = new Date(smYear, smMonth - 1, 15);
-                const pInfo = await dateCycleService.getPeriodInfo(mid);
-                const pc = pInfo?.payrollCycle || {};
-                monthPayrollWindows.push({
-                    month: smMonth,
-                    year: smYear,
-                    key: `${smYear}-${smMonth}`,
-                    start: pc.startDate,
-                    end: pc.endDate,
-                });
-            }
-
-            // Ensure deterministic ordering for window min/max computation.
-            monthPayrollWindows.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+            const monthPayrollWindows = (
+                await Promise.all(
+                    [...uniqueSubMonths.values()].map(async ({ year: smYear, month: smMonth }) => {
+                        const mid = new Date(smYear, smMonth - 1, 15);
+                        const pInfo = await dateCycleService.getPeriodInfo(mid);
+                        const pc = pInfo?.payrollCycle || {};
+                        return {
+                            month: smMonth,
+                            year: smYear,
+                            key: `${smYear}-${smMonth}`,
+                            start: pc.startDate,
+                            end: pc.endDate,
+                        };
+                    })
+                )
+            ).sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
 
             const windowStartMs =
                 monthPayrollWindows.length > 0 ? new Date(monthPayrollWindows[0].start).getTime() : null;
@@ -981,9 +1019,48 @@ class LeaveRegisterService {
 
             const fyForSlots = filters.financialYear && String(filters.financialYear).trim();
 
-            for (const entry of groupedData) {
+            const empIdsHeavy = entriesForHeavyWork
+                .map((e) => e.employee?.id || e.employee?._id)
+                .filter(Boolean);
+
+            /** @type {Map<string, import('mongoose').Types.ObjectId>} */
+            const yearDocByEmp = new Map();
+            if (fyForSlots && empIdsHeavy.length > 0) {
+                const ydocs = await LeaveRegisterYear.find({
+                    employeeId: { $in: empIdsHeavy },
+                    financialYear: fyForSlots,
+                })
+                    .select('employeeId months')
+                    .lean();
+                for (const d of ydocs) {
+                    const eid = d.employeeId;
+                    if (eid == null) continue;
+                    yearDocByEmp.set(eid.toString ? eid.toString() : String(eid), d);
+                }
+            }
+
+            /** @type {Map<string, object[]>} */
+            const leavesByEmp = new Map();
+            if (windowStartMs != null && windowEndMs != null && empIdsHeavy.length > 0) {
+                const allCapLeaves = await Leave.find({
+                    employeeId: { $in: empIdsHeavy },
+                    fromDate: { $gte: new Date(windowStartMs), $lte: new Date(windowEndMs) },
+                    status: { $in: CAP_COUNT_STATUSES },
+                    isActive: true,
+                })
+                    .select('employeeId leaveType numberOfDays fromDate status splitStatus')
+                    .lean();
+                for (const l of allCapLeaves) {
+                    const idStr = (l.employeeId && l.employeeId.toString()) || String(l.employeeId);
+                    if (!leavesByEmp.has(idStr)) leavesByEmp.set(idStr, []);
+                    leavesByEmp.get(idStr).push(l);
+                }
+            }
+
+            for (const entry of entriesForHeavyWork) {
                 const empId = entry.employee?.id || entry.employee?._id;
                 if (!empId) continue;
+                const empIdStr = empId.toString();
 
                 const pendingByMonthKey = {};
                 for (const w of monthPayrollWindows) {
@@ -991,29 +1068,13 @@ class LeaveRegisterService {
                 }
 
                 if (windowStartMs != null && windowEndMs != null) {
-                    const capLeaves = await Leave.find({
-                        employeeId: empId,
-                        fromDate: { $gte: new Date(windowStartMs), $lte: new Date(windowEndMs) },
-                        status: { $in: CAP_COUNT_STATUSES },
-                        isActive: true,
-                    })
-                        .select('leaveType numberOfDays fromDate status splitStatus')
-                        .lean();
-
+                    const capLeaves = leavesByEmp.get(empIdStr) || [];
                     for (const l of capLeaves) {
                         await addLeaveCapToMonthlyBuckets(l, capPolicy, monthPayrollWindows, pendingByMonthKey);
                     }
                 }
 
-                let yearDocLean = null;
-                if (fyForSlots) {
-                    yearDocLean = await LeaveRegisterYear.findOne({
-                        employeeId: empId,
-                        financialYear: fyForSlots,
-                    })
-                        .select('months')
-                        .lean();
-                }
+                const yearDocLean = fyForSlots ? yearDocByEmp.get(empIdStr) || null : null;
 
                 for (const sub of entry.monthlySubLedgers || []) {
                     ensureMonthlySubLedgerShape(sub);
@@ -1060,11 +1121,14 @@ class LeaveRegisterService {
                 }
             }
 
-            await this.hydrateRegisterYearView(groupedData, filters.financialYear, {
+            await this.hydrateRegisterYearView(entriesForHeavyWork, filters.financialYear, {
                 lite: registerLite,
             });
 
-            return groupedData;
+            if (listPaginationMeta) {
+                return { entries: entriesForHeavyWork, listPaginationMeta };
+            }
+            return entriesForHeavyWork;
         } catch (error) {
             console.error('Error getting leave register:', error);
             throw error;
