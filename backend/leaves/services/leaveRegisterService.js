@@ -5,7 +5,8 @@ const Leave = require('../model/Leave');
 const LeaveSplit = require('../model/LeaveSplit');
 const LeaveSettings = require('../model/LeaveSettings');
 const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
-const { extractISTComponents, createISTDate } = require('../../shared/utils/dateUtils');
+const { extractISTComponents, createISTDate, getTodayISTDateString } = require('../../shared/utils/dateUtils');
+const leaveRegisterYearService = require('./leaveRegisterYearService');
 const LeaveRegisterYear = require('../model/LeaveRegisterYear');
 const {
     CAP_COUNT_STATUSES,
@@ -79,7 +80,7 @@ function gateMonthSlotEditFlags(flags) {
             allowEditUsedCl: false,
             allowEditUsedCcl: false,
             allowEditUsedEl: false,
-            allowCarryUnusedToNextMonth: false,
+            allowCarryUnusedToNextMonth: flags.allowCarryUnusedToNextMonth !== false,
         };
     }
     return { ...flags, allowEditMonth: flags.allowEditMonth !== false };
@@ -1087,6 +1088,7 @@ class LeaveRegisterService {
         } catch {
             policy = {};
         }
+        const asOfRegisterXfer = createISTDate(getTodayISTDateString());
         const fy = financialYear && String(financialYear).trim();
         const LeaveRegisterYear = require('../model/LeaveRegisterYear');
         let byEmp = new Map();
@@ -1359,6 +1361,18 @@ class LeaveRegisterService {
                         ? (Number(sub.approvedElCapDays) || 0) + (Number(sub.lockedElAppDays) || 0)
                         : 0;
 
+                const xferOut = leaveRegisterYearService.computeRegisterMonthPoolTransferOutDisplay(
+                    {
+                        payPeriodEnd: m.payPeriodEnd,
+                        scheduled: m.scheduled,
+                        usedCl: Number(clL.usedThisMonth) || 0,
+                        usedCcl: Number(cclL.used) || 0,
+                        usedEl: Number(elL.usedThisMonth) || 0,
+                    },
+                    asOfRegisterXfer,
+                    policy
+                );
+
                 return {
                     payrollMonthIndex: m.payrollMonthIndex,
                     label: m.label,
@@ -1387,7 +1401,7 @@ class LeaveRegisterService {
                         credited: clCreditedNet,
                         used: Number(clL.usedThisMonth) || 0,
                         locked: sub != null ? clLockedDisplay : policyLock,
-                        transfer: Number(m.scheduled?.poolCarryForwardOut?.cl) || 0,
+                        transfer: xferOut.cl,
                         typeApplyCap: clTypeOn ? clTypeCap : null,
                         typeApplyConsumed: clTypeOn ? clNativeApp : null,
                         typeApplyRemaining: clTypeOn ? Math.max(0, clTypeCap - clNativeApp) : null,
@@ -1398,6 +1412,7 @@ class LeaveRegisterService {
                         credited: Math.max(0, (Number(cclL.earned) || 0) - (Number(cclL.reversalCreditThisMonth) || 0)),
                         used: Number(cclL.used) || 0,
                         locked: sub != null ? Number(sub.pendingLockedCCL) || 0 : null,
+                        transfer: xferOut.ccl,
                         typeApplyCap: cclTypeOn ? cclTypeCap : null,
                         typeApplyConsumed: cclTypeOn ? cclNativeApp : null,
                         typeApplyRemaining: cclTypeOn ? Math.max(0, cclTypeCap - cclNativeApp) : null,
@@ -1406,6 +1421,7 @@ class LeaveRegisterService {
                         credited: Math.max(0, (Number(elL.accruedThisMonth) || 0) - (Number(elL.reversalCreditThisMonth) || 0)),
                         used: Number(elL.usedThisMonth) || 0,
                         locked: sub != null ? Number(sub.pendingLockedEL) || 0 : null,
+                        transfer: xferOut.el,
                         typeApplyCap: elTypeOn ? elTypeCap : null,
                         typeApplyConsumed: elTypeOn ? elNativeApp : null,
                         typeApplyRemaining: elTypeOn ? Math.max(0, elTypeCap - elNativeApp) : null,
