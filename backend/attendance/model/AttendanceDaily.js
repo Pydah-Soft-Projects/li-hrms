@@ -386,7 +386,13 @@ attendanceDailySchema.pre('save', async function () {
           }
           // else: same half → don't add (employee was present for that half)
         } else if (workedHalf === null && this.shifts && this.shifts.length > 0) {
-          // Full day worked (both halves) → do not add OD; day is already complete
+          // If "Full Day" touched but duration is short (<90%), we should still allow OD credit
+          // to fill the gap and potentially reach PRESENT status.
+          const totalWorked = this.shifts.reduce((acc, s) => acc + (Number(s.punchHours) || 0), 0);
+          const totalExpected = this.shifts.reduce((acc, s) => acc + (Number(s.expectedHours) || 8), 0);
+          if (totalWorked < totalExpected * 0.9) {
+            odPayableContribution += 0.5;
+          }
         } else {
           odPayableContribution += 0.5; // No punches or no half info: treat as OD-only half day
         }
@@ -440,25 +446,36 @@ attendanceDailySchema.pre('save', async function () {
         const shiftStartDate = timeStrToDate(shift.shiftStartTime, this.date, false);
         const shiftEndDate = timeStrToDate(shift.shiftEndTime, this.date, isOvernight);
         let addedOdMinutes = 0;
-        for (const od of hourBasedODs) {
-          const odEndNextDay = timeStrToMins(od.odEndTime) <= timeStrToMins(od.odStartTime);
-          const odStart = timeStrToDate(od.odStartTime, this.date, false);
-          const odEnd = timeStrToDate(od.odEndTime, this.date, odEndNextDay);
-          const odInShiftOverlap = getOverlapMinutes(shiftStartDate, shiftEndDate, odStart, odEnd);
-          let odInPunchOverlap = 0;
-          if (punchIn && punchOut) {
-            odInPunchOverlap = getOverlapMinutes(punchIn, punchOut, odStart, odEnd);
-          }
-          addedOdMinutes += Math.max(0, odInShiftOverlap - odInPunchOverlap);
-          // Waive early-out when approved OD end covers shift end (OD covers time after punch-out)
-          if (shift.isEarlyOut && punchOut && odStart <= punchOut && odEnd >= shiftEndDate) {
-            shift.isEarlyOut = false;
-            shift.earlyOutMinutes = 0;
-          }
-          // Waive late-in when approved OD start is at or before shift start (OD covers time before punch-in)
-          if (shift.isLateIn && punchIn && odStart <= shiftStartDate && odEnd >= punchIn) {
-            shift.isLateIn = false;
-            shift.lateInMinutes = 0;
+        for (const od of approvedODs) {
+          if (od.odType_extended === 'hours' && od.odStartTime && od.odEndTime) {
+            const odEndNextDay = timeStrToMins(od.odEndTime) <= timeStrToMins(od.odStartTime);
+            const odStart = timeStrToDate(od.odStartTime, this.date, false);
+            const odEnd = timeStrToDate(od.odEndTime, this.date, odEndNextDay);
+            const odInShiftOverlap = getOverlapMinutes(shiftStartDate, shiftEndDate, odStart, odEnd);
+            let odInPunchOverlap = 0;
+            if (punchIn && punchOut) {
+              odInPunchOverlap = getOverlapMinutes(punchIn, punchOut, odStart, odEnd);
+            }
+            addedOdMinutes += Math.max(0, odInShiftOverlap - odInPunchOverlap);
+            // Waive early-out when approved OD end covers shift end (OD covers time after punch-out)
+            if (shift.isEarlyOut && punchOut && odStart <= punchOut && odEnd >= shiftEndDate) {
+              shift.isEarlyOut = false;
+              shift.earlyOutMinutes = 0;
+            }
+            // Waive late-in when approved OD start is at or before shift start (OD covers time before punch-in)
+            if (shift.isLateIn && punchIn && odStart <= shiftStartDate && odEnd >= punchIn) {
+              shift.isLateIn = false;
+              shift.lateInMinutes = 0;
+            }
+          } else if (od.odType_extended === 'half_day' || od.isHalfDay) {
+            // Waive penalties based on half-day type
+            if (od.halfDayType === 'first_half' && shift.isLateIn) {
+              shift.isLateIn = false;
+              shift.lateInMinutes = 0;
+            } else if (od.halfDayType === 'second_half' && shift.isEarlyOut) {
+              shift.isEarlyOut = false;
+              shift.earlyOutMinutes = 0;
+            }
           }
         }
         const addedOdHours = Math.round((addedOdMinutes / 60) * 100) / 100;
@@ -541,10 +558,16 @@ attendanceDailySchema.pre('save', async function () {
       // totalWorkingHours, shifts (punch in/out), late/early etc. are already set above – unchanged
     } else {
       this.payableShifts = Math.round(totalPayableWithOD * 100) / 100;
-      if (hasPresentShift || totalPayableWithOD >= 0.95) {
-        this.status = 'PRESENT'; // e.g. half-day punch + half-day OD = 1.0 -> PRESENT
-      } else if (hasHalfDayShift || totalPayableWithOD >= 0.45) {
-        this.status = 'HALF_DAY'; // e.g. half-day OD only -> 0.5 -> HALF_DAY
+      
+      // NEW LOGIC: Status should reflect the "Work" quality. 
+      // If punches < 90%, keep it as HALF_DAY even if OD makes it 1.0 payable.
+      const punchOnlyDuration = this.shifts.reduce((acc, s) => acc + (Number(s.punchHours) || 0), 0);
+      const punchDurationRatio = totalExpected > 0 ? punchOnlyDuration / totalExpected : 0;
+      
+      if (hasPresentShift || (totalPayableWithOD >= 0.95 && punchDurationRatio >= 0.95)) {
+        this.status = 'PRESENT';
+      } else if (totalPayableWithOD >= 0.45) {
+        this.status = 'HALF_DAY';
       } else {
         this.status = hasPunches ? 'PARTIAL' : 'ABSENT';
       }

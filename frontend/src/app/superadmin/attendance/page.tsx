@@ -31,6 +31,8 @@ interface AttendanceRecord {
     otHours: number;
     earlyOutMinutes?: number;
     lateInMinutes?: number;
+    shiftStartTime?: string;
+    shiftEndTime?: string;
   }[];
   isLateIn?: boolean;
   isEarlyOut?: boolean;
@@ -183,9 +185,9 @@ function getAbsentCountForRow(item: MonthlyAttendanceData, dailyValues: any[]): 
 
 function getPresentExcludingOD(summary?: MonthlyAttendanceData['summary'] | null): number | null {
   if (!summary) return null;
-  const present = Number(summary.totalPresentDays) || 0;
-  const od = Number(summary.totalODs) || 0;
-  return Math.max(0, Math.round((present - od) * 10) / 10);
+  // Backend now provides totalPresentDays with OD already excluded/separated.
+  // We just return it directly with 2-decimal precision.
+  return Math.max(0, Math.round((Number(summary.totalPresentDays) || 0) * 100) / 100);
 }
 
 interface Designation {
@@ -266,6 +268,21 @@ export default function AttendancePage() {
     return 'A';
   };
 
+  const timeToMins = (t: any): number => {
+    if (!t) return 0;
+    if (t instanceof Date) return t.getHours() * 60 + t.getMinutes();
+    const str = String(t);
+    if (str.includes('AM') || str.includes('PM')) {
+      const [time, modifier] = str.split(' ');
+      let [hours, minutes] = time.split(':').map(Number);
+      if (modifier === 'PM' && hours < 12) hours += 12;
+      if (modifier === 'AM' && hours === 12) hours = 0;
+      return hours * 60 + minutes;
+    }
+    const [h, m] = str.split(':').map(Number);
+    return (h || 0) * 60 + (m || 0);
+  };
+
   const buildSplitCellStatus = (record: AttendanceRecord | null) => {
     if (!record) return null;
     const leaveInfo = record.leaveInfo;
@@ -287,7 +304,26 @@ export default function AttendancePage() {
     else if (record.status === 'HALF_DAY') {
       const eo = Number(record.earlyOutMinutes) || 0;
       const li = Number(record.lateInMinutes) || 0;
-      const workedHalf = eo > 120 ? 'first' : li > 120 ? 'second' : 'first';
+      let workedHalf: 'first' | 'second' = (eo > li) ? 'first' : (li > eo) ? 'second' : 'first';
+
+      // NEW: Punch-Gap Fallback (Failsafe for waived penalties)
+      if (eo === li && record.shifts && record.shifts.length > 0) {
+        const s = record.shifts[0];
+        const sStart = s.shiftStartTime || (typeof s.shiftId === 'object' ? s.shiftId?.startTime : null);
+        const sEnd = s.shiftEndTime || (typeof s.shiftId === 'object' ? s.shiftId?.endTime : null);
+        if (s.inTime && sStart && s.outTime && sEnd) {
+          const inDiff = Math.max(0, timeToMins(s.inTime) - timeToMins(sStart));
+          const outDiff = Math.max(0, timeToMins(sEnd) - timeToMins(s.outTime));
+          if (inDiff > outDiff) workedHalf = 'second';
+          else if (outDiff > inDiff) workedHalf = 'first';
+        }
+      }
+
+      // OD Fallback (if still tied)
+      if (eo === li && record.odInfo?.halfDayType) {
+        workedHalf = record.odInfo.halfDayType === 'first_half' ? 'second' : 'first';
+      }
+
       if (workedHalf === 'first') { top = 'HD'; bottom = 'A'; } else { top = 'A'; bottom = 'HD'; }
     }
     if (hasFullLeave && leaveMarker) {
