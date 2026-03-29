@@ -47,6 +47,9 @@ router.put('/statutory-config', authorize('manager', 'super_admin', 'sub_admin',
 // Export payroll payslips as Excel (with scope filtering)
 router.get('/export', applyScopeFilter, payrollController.exportPayrollExcel);
 
+// Paysheet bundle: Regular + 2nd salary + Comparison Excel (must be before /paysheet)
+router.get('/paysheet/export-bundle', applyScopeFilter, payrollController.exportPaysheetBundleExcel);
+
 // Get paysheet data (headers + rows) for table – uses config output columns (with scope filtering)
 router.get('/paysheet', applyScopeFilter, payrollController.getPaysheetData);
 

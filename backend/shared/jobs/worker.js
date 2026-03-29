@@ -96,21 +96,40 @@ const startWorkers = () => {
                 const Department = require('../../departments/model/Department');
                 const allowanceDeductionResolverService = require('../../payroll/services/allowanceDeductionResolverService');
                 const PayrollBatchService = require('../../payroll/services/payrollBatchService');
+                const { buildPayrollBulkEmployeeQuery } = require('../../payroll/services/payrollEmployeeQueryHelper');
+                const { EJSON } = require('bson');
+                const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
 
                 let employees;
-                if (job.data.employeeIds && Array.isArray(job.data.employeeIds) && job.data.employeeIds.length > 0) {
+                const { year: curYear, month: curMonth } = extractISTComponents(new Date());
+                const [year, monthNum] = month ? month.split('-').map(Number) : [curYear, curMonth];
+                const { startDate, endDate } = month ? await getPayrollDateRange(year, monthNum) : { startDate: null, endDate: null };
+                const leftStart = startDate && endDate ? new Date(startDate + 'T00:00:00.000Z') : null;
+                const leftEnd = startDate && endDate ? new Date(endDate + 'T23:59:59.999Z') : null;
+
+                const legacyEmployeeIds =
+                    job.data.employeeIds && Array.isArray(job.data.employeeIds) && job.data.employeeIds.length > 0;
+                if (!legacyEmployeeIds && leftStart && leftEnd) {
+                    const scopeDeserialized =
+                        job.data.scopeFilter != null ? EJSON.deserialize(job.data.scopeFilter) : null;
+                    const empQuery = buildPayrollBulkEmployeeQuery(
+                        scopeDeserialized,
+                        divisionId,
+                        departmentId,
+                        leftStart,
+                        leftEnd
+                    );
+                    employees = await Employee.find(empQuery);
+                    console.log(`[Worker] Bulk calculating payroll for ${employees.length} employees (bulk employee query)`);
+                } else if (legacyEmployeeIds) {
                     employees = await Employee.find({ _id: { $in: job.data.employeeIds } });
-                    console.log(`[Worker] Bulk calculating payroll for ${employees.length} employees (from controller list)`);
+                    console.log(`[Worker] Bulk calculating payroll for ${employees.length} employees (legacy job: employeeIds)`);
                 } else {
                     const { getRegularPayrollEmployeeQuery } = require('../../payroll/services/payrollEmployeeQueryHelper');
-                    const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
-                    const { year: curYear, month: curMonth } = extractISTComponents(new Date());
-                    const [year, monthNum] = month ? month.split('-').map(Number) : [curYear, curMonth];
-                    const { startDate, endDate } = month ? await getPayrollDateRange(year, monthNum) : { startDate: null, endDate: null };
                     const leftDateRange = (startDate && endDate) ? { start: new Date(startDate), end: new Date(endDate) } : undefined;
                     const query = getRegularPayrollEmployeeQuery({ departmentId, divisionId, leftDateRange });
                     employees = await Employee.find(query);
-                    console.log(`[Worker] Bulk calculating payroll for ${employees.length} employees (from query)`);
+                    console.log(`[Worker] Bulk calculating payroll for ${employees.length} employees (legacy job: dept/div query)`);
                 }
 
                 // Optimization: Pre-fetch department and settings for context
@@ -134,6 +153,9 @@ const startWorkers = () => {
                 const payrollFromOutputColumns = useOutputColumnsEngine
                     ? require('../../payroll/services/payrollCalculationFromOutputColumnsService')
                     : null;
+
+                const secondSalaryEmployees = employees.filter((e) => Number(e.second_salary) > 0);
+                const overallTotal = employees.length + secondSalaryEmployees.length;
 
                 for (let i = 0; i < employees.length; i++) {
                     const employee = employees[i];
@@ -160,12 +182,15 @@ const startWorkers = () => {
                         console.error(`[Worker] Failed bulk payroll for ${employee.emp_no || employee._id}:`, err.message);
                     }
 
-                    // Update progress
+                    const overallProcessed = i + 1;
                     await job.updateProgress({
+                        phase: 'regular',
                         processed: i + 1,
                         total: employees.length,
-                        percentage: Math.round(((i + 1) / employees.length) * 100),
-                        currentEmployee: employee.employee_name
+                        overallProcessed,
+                        overallTotal,
+                        percentage: overallTotal ? Math.round((overallProcessed / overallTotal) * 100) : 100,
+                        currentEmployee: employee.employee_name,
                     });
                 }
 
@@ -173,7 +198,44 @@ const startWorkers = () => {
                 for (const bId of batchIds) {
                     await PayrollBatchService.recalculateBatchTotals(bId);
                 }
-                console.log(`[Worker] Bulk payroll calculation complete`);
+                console.log(`[Worker] Bulk regular payroll calculation complete`);
+
+                const { calculateSecondSalaryForPayRegister } = require('../../payroll/services/secondSalaryCalculationService');
+                const SecondSalaryBatchService = require('../../payroll/services/secondSalaryBatchService');
+                const secondBatchIds = new Set();
+
+                for (let j = 0; j < secondSalaryEmployees.length; j++) {
+                    const employee = secondSalaryEmployees[j];
+                    try {
+                        const result = await calculateSecondSalaryForPayRegister(
+                            employee._id.toString(),
+                            month,
+                            userId,
+                            job.data.strategy || 'new',
+                            sharedContext
+                        );
+                        const bid = result?.batchId;
+                        if (bid) secondBatchIds.add(bid.toString());
+                    } catch (err) {
+                        console.error(`[Worker] Failed 2nd salary after bulk for ${employee.emp_no || employee._id}:`, err.message);
+                    }
+
+                    const overallProcessed = employees.length + j + 1;
+                    await job.updateProgress({
+                        phase: 'second_salary',
+                        processed: j + 1,
+                        total: secondSalaryEmployees.length,
+                        overallProcessed,
+                        overallTotal,
+                        percentage: overallTotal ? Math.round((overallProcessed / overallTotal) * 100) : 100,
+                        currentEmployee: employee.employee_name,
+                    });
+                }
+
+                for (const bId of secondBatchIds) {
+                    await SecondSalaryBatchService.recalculateBatchTotals(bId);
+                }
+                console.log(`[Worker] Bulk payroll + 2nd salary calculation complete`);
             } else {
                 await PayrollCalculationService.calculatePayrollNew(employeeId, month, userId, { source: 'payregister' });
             }

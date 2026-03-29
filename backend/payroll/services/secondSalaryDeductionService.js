@@ -123,7 +123,7 @@ function calculateDaysToDeduct(multiplier, remainder, threshold, deductionType, 
 /**
  * Calculate attendance deduction (late-ins + early-outs) for Second Salary.
  * Respects employee flags: applyAttendanceDeduction (master), deductLateIn, deductEarlyOut (default true).
- * @param {Object} [options] - Optional: { employee }. If employee.applyAttendanceDeduction === false, return 0; deductLateIn/deductEarlyOut false zero that count.
+ * @param {Object} [options] - Optional: { employee, ignoreMonthlySummary, forceRecalculate }. Same flags as regular payroll deductionService.
  */
 async function calculateAttendanceDeduction(employeeId, month, departmentId, perDayBasicPay, divisionId = null, options = {}) {
     try {
@@ -139,10 +139,57 @@ async function calculateAttendanceDeduction(employeeId, month, departmentId, per
                     freeAllowedPerMonth: 0,
                     effectiveCount: 0,
                     daysDeducted: 0,
+                    lateEarlyDaysDeducted: 0,
+                    absentExtraDays: 0,
+                    absentDays: 0,
+                    lopDaysPerAbsent: null,
                     deductionType: null,
                     calculationMode: null,
                 },
             };
+        }
+
+        const skipStoredMonthlySummary =
+            options.ignoreMonthlySummary === true || options.forceRecalculate === true;
+        if (!skipStoredMonthlySummary) {
+            try {
+                const MonthlyAttendanceSummary = require('../../attendance/model/MonthlyAttendanceSummary');
+                const mas = await MonthlyAttendanceSummary.findOne({ employeeId, month }).lean();
+                const hasFullSummary =
+                    mas &&
+                    mas.contributingDates != null &&
+                    typeof mas.contributingDates === 'object' &&
+                    mas.attendanceDeductionBreakdown != null &&
+                    typeof mas.attendanceDeductionBreakdown === 'object';
+                if (hasFullSummary) {
+                    const br = mas.attendanceDeductionBreakdown;
+                    const rawDays =
+                        br.daysDeducted != null && br.daysDeducted !== ''
+                            ? Number(br.daysDeducted)
+                            : Number(mas.totalAttendanceDeductionDays) || 0;
+                    const safeDays = Number.isFinite(rawDays) ? Math.max(0, rawDays) : 0;
+                    const attendanceDeduction = Math.round(safeDays * perDayBasicPay * 100) / 100;
+                    return {
+                        attendanceDeduction,
+                        breakdown: {
+                            lateInsCount: Number(br.lateInsCount) || 0,
+                            earlyOutsCount: Number(br.earlyOutsCount) || 0,
+                            combinedCount: Number(br.combinedCount) || 0,
+                            freeAllowedPerMonth: Number(br.freeAllowedPerMonth) || 0,
+                            effectiveCount: Number(br.effectiveCount) || 0,
+                            daysDeducted: safeDays,
+                            lateEarlyDaysDeducted: Number(br.lateEarlyDaysDeducted) || 0,
+                            absentExtraDays: Number(br.absentExtraDays) || 0,
+                            absentDays: Number(br.absentDays) || 0,
+                            lopDaysPerAbsent: br.lopDaysPerAbsent != null ? Number(br.lopDaysPerAbsent) : null,
+                            deductionType: br.deductionType != null ? String(br.deductionType) : null,
+                            calculationMode: br.calculationMode != null ? String(br.calculationMode) : null,
+                        },
+                    };
+                }
+            } catch (e) {
+                console.warn('[SecondSalaryDeduction] MonthlyAttendanceSummary read failed, using live calc:', e.message);
+            }
         }
 
         const PayRegisterSummary = require('../../pay-register/model/PayRegisterSummary');

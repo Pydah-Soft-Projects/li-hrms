@@ -1053,11 +1053,11 @@ export default function PayRegisterPage() {
   };
 
   const handleCalculatePayrollForAll = async () => {
-    if (!payRegisters || payRegisters.length === 0) {
+    if (paginationTotal <= 0 && (!payRegisters || payRegisters.length === 0)) {
       Swal.fire({
         icon: 'info',
         title: 'No Employees',
-        text: 'No employees to calculate payroll for.',
+        text: 'No employees match the selected month and filters.',
         timer: 2000,
         showConfirmButton: false,
         toast: true,
@@ -1074,8 +1074,11 @@ export default function PayRegisterPage() {
     Swal.fire({
       icon: 'info',
       title: 'Calculating',
-      text: 'Calculating payroll for listed employees...',
-      timer: 2000,
+      text:
+        paginationTotal > 0
+          ? `Queuing payroll for all ${paginationTotal} employee(s) matching these filters (not only this page).`
+          : 'Queuing payroll for all employees matching these filters...',
+      timer: 2500,
       showConfirmButton: false,
       toast: true,
       position: 'top-end'
@@ -1538,31 +1541,60 @@ export default function PayRegisterPage() {
         </div>
 
         {/* Progress Bar for Bulk Calculation */}
-        {calculationProgress && (
+        {calculationProgress && (() => {
+          const phase = calculationProgress.phase as string | undefined;
+          const phaseLabel =
+            phase === 'second_salary'
+              ? '2nd salary'
+              : phase === 'regular'
+                ? 'Regular payroll'
+                : 'Payroll';
+          const showOverall =
+            typeof calculationProgress.overallProcessed === 'number' &&
+            typeof calculationProgress.overallTotal === 'number' &&
+            calculationProgress.overallTotal > 0;
+          const pct =
+            typeof calculationProgress.percentage === 'number'
+              ? calculationProgress.percentage
+              : showOverall
+                ? Math.round(
+                    (calculationProgress.overallProcessed / calculationProgress.overallTotal) * 100
+                  )
+                : 0;
+          const countLine = showOverall
+            ? `${calculationProgress.overallProcessed} / ${calculationProgress.overallTotal} overall · phase ${calculationProgress.processed} / ${calculationProgress.total}`
+            : `${calculationProgress.processed} / ${calculationProgress.total}`;
+          return (
           <div className="mb-6 animate-fade-in relative z-20">
             <div className="mt-6 space-y-3 p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl border border-indigo-100 dark:border-indigo-900/30 shadow-sm backdrop-blur-sm">
+              <div className="text-xs font-semibold uppercase tracking-wide text-indigo-600 dark:text-indigo-400">
+                {phaseLabel}
+              </div>
               <div className="flex justify-between items-center text-sm font-medium">
                 <span className="text-indigo-700 dark:text-indigo-300 flex items-center gap-2">
                   <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
-                  {calculationProgress.currentEmployee ? `Calculating for: ${calculationProgress.currentEmployee}` : 'Processing bulk payroll...'}
+                  {calculationProgress.currentEmployee
+                    ? `Calculating for: ${calculationProgress.currentEmployee}`
+                    : 'Processing bulk payroll...'}
                 </span>
                 <span className="text-indigo-600 dark:text-indigo-400 font-bold">
                   {calculatingJobId && <span className="mr-3 opacity-50 font-mono text-[10px] font-normal">ID: {calculatingJobId}</span>}
-                  {calculationProgress.processed} / {calculationProgress.total} ({calculationProgress.percentage}%)
+                  {countLine} ({pct}%)
                 </span>
               </div>
               <div className="w-full bg-indigo-200/50 dark:bg-indigo-900/50 rounded-full h-2.5 overflow-hidden">
                 <div
                   className="bg-indigo-600 h-2.5 rounded-full transition-all duration-500 ease-out shadow-sm"
-                  style={{ width: `${calculationProgress.percentage}%` }}
+                  style={{ width: `${pct}%` }}
                 ></div>
               </div>
             </div>
           </div>
-        )}
+          );
+        })()}
 
         {/* Permission Request Modal */}
         {showPermissionModal && (

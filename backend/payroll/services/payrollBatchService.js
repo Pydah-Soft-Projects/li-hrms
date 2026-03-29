@@ -130,6 +130,25 @@ class PayrollBatchService {
     }
 
     /**
+     * Mirror regular payroll batch status onto the matching 2nd salary batch (same department, division, month).
+     */
+    static async syncSecondSalaryBatchStatusForRegularBatch(regularBatch, newStatus, userId, reason = '') {
+        try {
+            const SecondSalaryBatch = require('../model/SecondSalaryBatch');
+            const secondSalaryService = require('./secondSalaryService');
+            const dept = regularBatch.department;
+            const div = regularBatch.division;
+            const month = regularBatch.month;
+            if (!dept || !div || !month) return;
+            const ssBatch = await SecondSalaryBatch.findOne({ department: dept, division: div, month });
+            if (!ssBatch || ssBatch.status === newStatus) return;
+            await secondSalaryService.updateBatchStatus(ssBatch._id.toString(), newStatus, userId, reason || '');
+        } catch (e) {
+            console.error('[PayrollBatchService] syncSecondSalaryBatchStatusForRegularBatch:', e.message);
+        }
+    }
+
+    /**
      * Change batch status
      */
     static async changeStatus(batchId, newStatus, userId, reason = '') {
@@ -185,6 +204,8 @@ class PayrollBatchService {
             }
 
             await batch.save();
+
+            await PayrollBatchService.syncSecondSalaryBatchStatusForRegularBatch(batch, newStatus, userId, reason);
 
             // When batch is completed: debit EL used in payroll, then settle arrears and deductions
             if (newStatus === 'complete') {

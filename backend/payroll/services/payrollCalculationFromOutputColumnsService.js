@@ -9,6 +9,9 @@ const Employee = require('../../employees/model/Employee');
 const PayrollConfiguration = require('../model/PayrollConfiguration');
 const PayrollRecord = require('../model/PayrollRecord');
 const PayrollBatch = require('../model/PayrollBatch');
+const SecondSalaryRecord = require('../model/SecondSalaryRecord');
+const SecondSalaryBatch = require('../model/SecondSalaryBatch');
+const SecondSalaryBatchService = require('./secondSalaryBatchService');
 const basicPayService = require('./basicPayService');
 const otPayService = require('./otPayService');
 const allowanceService = require('./allowanceService');
@@ -734,6 +737,15 @@ async function resolveFieldValue(fieldPath, employee, employeeId, month, payRegi
     record.deductions.attendanceDeduction = amt;
     record.deductions.attendanceDeductionBreakdown = attendanceDeductionResult.breakdown || {};
     record.attendance.attendanceDeductionDays = attendanceDeductionResult.breakdown?.daysDeducted ?? 0;
+    const br = record.deductions.attendanceDeductionBreakdown || {};
+    if (path === 'deductions.attendanceDeductionBreakdown.daysDeducted') {
+      return Number(br.daysDeducted ?? 0);
+    }
+    if (path.startsWith('deductions.attendanceDeductionBreakdown.')) {
+      const sub = path.slice('deductions.attendanceDeductionBreakdown.'.length);
+      const v = br[sub];
+      return typeof v === 'number' && !Number.isNaN(v) ? v : (Number(v) || 0);
+    }
     return amt;
   }
 
@@ -919,9 +931,101 @@ async function resolveFieldValue(fieldPath, employee, employeeId, month, payRegi
   return getValueByPath(record, path) ?? 0;
 }
 
+/** Use second_salary as gross_salary for dynamic-engine proration (plain object for services). */
+function employeeForSecondSalaryBasis(employee) {
+  const base = employee && typeof employee.toObject === 'function' ? employee.toObject() : { ...(employee || {}) };
+  base.gross_salary = Number(employee.second_salary) || 0;
+  return base;
+}
+
+function buildAttendancePatchForSecondSalary(recordAttendance, payRegisterSummary, earnedFallback) {
+  const prsTotals = payRegisterSummary?.totals || {};
+  const att = recordAttendance || {};
+  return {
+    totalDaysInMonth: att.totalDaysInMonth ?? payRegisterSummary?.totalDaysInMonth ?? 30,
+    presentDays: att.presentDays ?? 0,
+    paidLeaveDays: att.paidLeaveDays ?? 0,
+    odDays: att.odDays ?? 0,
+    weeklyOffs: att.weeklyOffs ?? prsTotals.totalWeeklyOffs ?? 0,
+    holidays: att.holidays ?? prsTotals.totalHolidays ?? 0,
+    absentDays: att.absentDays ?? 0,
+    payableShifts: att.payableShifts ?? prsTotals.totalPayableShifts ?? 0,
+    extraDays: att.extraDays ?? 0,
+    totalPaidDays: att.totalPaidDays ?? 0,
+    paidDays: att.paidDays ?? att.totalPaidDays ?? 0,
+    otHours: att.otHours ?? prsTotals.totalOTHours ?? 0,
+    otDays: att.otDays ?? 0,
+    earnedSalary: att.earnedSalary ?? earnedFallback ?? 0,
+    lopDays: att.lopDays ?? 0,
+    elUsedInPayroll: att.elUsedInPayroll ?? 0,
+  };
+}
+
+async function persistSecondSalaryFromOutputColumns(record, employee, userId, month, payRegisterSummary) {
+  const [yearStr, monthStr] = month.split('-');
+  const year = parseInt(yearStr, 10);
+  const monthNum = parseInt(monthStr, 10);
+  const monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December',
+  ];
+  const monthName = `${monthNames[monthNum - 1]} ${year}`;
+  const employeeId = employee._id;
+  const totalDaysInMonth = record.attendance?.totalDaysInMonth ?? payRegisterSummary?.totalDaysInMonth ?? 30;
+  const secondAmt = Number(employee.second_salary) || 0;
+
+  let ssRecord = await SecondSalaryRecord.findOne({ employeeId, month });
+  if (!ssRecord) {
+    ssRecord = new SecondSalaryRecord({
+      employeeId,
+      emp_no: employee.emp_no,
+      month,
+      monthName,
+      year,
+      monthNumber: monthNum,
+      totalDaysInMonth,
+    });
+  } else {
+    ssRecord.monthName = monthName;
+    ssRecord.totalDaysInMonth = totalDaysInMonth;
+  }
+
+  const earnedFallback = Number(record.earnings?.payableAmount ?? record.earnings?.earnedSalary) || 0;
+  ssRecord.set('netSalary', Number(record.netSalary) || 0);
+  ssRecord.set('roundOff', Number(record.roundOff) || 0);
+  ssRecord.set('payableAmountBeforeAdvance', Number(record.earnings?.grossSalary) || 0);
+  ssRecord.set('status', 'calculated');
+  const divId = employee.division_id?._id ?? employee.division_id;
+  const deptId = employee.department_id?._id ?? employee.department_id;
+  ssRecord.set('division_id', divId);
+  ssRecord.set('totalPayableShifts', record.attendance?.payableShifts ?? payRegisterSummary?.totals?.totalPayableShifts ?? 0);
+  ssRecord.set('attendance', buildAttendancePatchForSecondSalary(record.attendance, payRegisterSummary, earnedFallback));
+  ssRecord.set('earnings', {
+    ...(record.earnings || {}),
+    secondSalaryAmount: secondAmt,
+    basicPay: record.earnings?.basicPay ?? secondAmt,
+  });
+  ssRecord.set('deductions', record.deductions || {});
+  ssRecord.set('loanAdvance', record.loanAdvance || {});
+  await ssRecord.save();
+
+  let batch = null;
+  if (deptId && divId) {
+    batch = await SecondSalaryBatch.findOne({ department: deptId, division: divId, month });
+    if (!batch) {
+      batch = await SecondSalaryBatchService.createBatch(deptId, divId, month, userId);
+    }
+    if (batch) {
+      await SecondSalaryBatchService.addPayrollToBatch(batch._id, ssRecord._id);
+    }
+  }
+  return { secondSalaryRecord: ssRecord, batchId: batch?._id };
+}
+
 /**
  * Calculate payroll for one employee using config.outputColumns as steps.
  * Persists PayrollRecord and returns { payrollRecord, payslip, row }.
+ * options.secondSalaryBasis: use employee.second_salary as gross basis and persist SecondSalaryRecord (not PayrollRecord).
  */
 async function calculatePayrollFromOutputColumns(employeeId, month, userId, options = {}) {
   const employee = await Employee.findById(employeeId).populate('department_id designation_id division_id');
@@ -929,6 +1033,9 @@ async function calculatePayrollFromOutputColumns(employeeId, month, userId, opti
 
   const payRegisterSummary = await PayRegisterSummary.findOne({ employeeId, month });
   if (!payRegisterSummary) throw new Error('Pay register not found for this month');
+
+  const secondSalaryBasis = !!options.secondSalaryBasis;
+  const calcEmployee = secondSalaryBasis ? employeeForSecondSalaryBasis(employee) : employee;
 
   const config = await PayrollConfiguration.get();
   const outputColumns = Array.isArray(config?.outputColumns) ? config.outputColumns : [];
@@ -972,12 +1079,12 @@ async function calculatePayrollFromOutputColumns(employeeId, month, userId, opti
   };
 
   // Basic pay from employee model; standard days from pay register (already in record.attendance).
-  const employeeBasicPay = Number(employee.gross_salary) || 0;
+  const employeeBasicPay = Number(calcEmployee.gross_salary) || 0;
   record.earnings.basicPay = employeeBasicPay;
   record.earnings.basic_pay = employeeBasicPay;
 
   const required = getRequiredServices(sorted);
-  await runRequiredServices(required, record, employee, employeeId, month, payRegisterSummary, attendanceSummary, departmentId, divisionId, config);
+  await runRequiredServices(required, record, calcEmployee, employeeId, month, payRegisterSummary, attendanceSummary, departmentId, divisionId, config);
 
   // When pay register passes selected arrears, use that sum so config/formulas see the correct amount
   const arrearsSettlements = options.arrearsSettlements || [];
@@ -1014,7 +1121,7 @@ async function calculatePayrollFromOutputColumns(employeeId, month, userId, opti
       // Always resolve from services (and options when provided), not from the in-memory payslip/record
       val = fieldPath
         ? await resolveFieldValue(
-          fieldPath, employee, employeeId, month, payRegisterSummary,
+          fieldPath, calcEmployee, employeeId, month, payRegisterSummary,
           record, attendanceSummary, departmentId, divisionId,
           {
             context,
@@ -1055,6 +1162,24 @@ async function calculatePayrollFromOutputColumns(employeeId, month, userId, opti
   } else if (record.netSalary === 0) {
     record.netSalary = Math.ceil(gross);
     record.roundOff = 0;
+  }
+
+  if (secondSalaryBasis) {
+    const { secondSalaryRecord, batchId } = await persistSecondSalaryFromOutputColumns(
+      record,
+      employee,
+      userId,
+      month,
+      payRegisterSummary
+    );
+    return {
+      success: true,
+      payrollRecord: null,
+      secondSalaryRecord,
+      batchId,
+      payslip: record,
+      row,
+    };
   }
 
   // Persist PayrollRecord (same shape as previous calculation)

@@ -1,6 +1,17 @@
+const mongoose = require('mongoose');
 const PayrollRecord = require('../model/PayrollRecord');
 const PayrollTransaction = require('../model/PayrollTransaction');
+const SecondSalaryRecord = require('../model/SecondSalaryRecord');
 const Employee = require('../../employees/model/Employee');
+const { buildSecondSalaryPaysheetData, buildSecondSalaryExcelRowsNormalized } = require('../utils/secondSalaryPaysheetRows');
+const {
+  payrollRecordToPayslipShape,
+  secondSalaryRecordToPayslipShape,
+  normalizeOutputColumns,
+  buildOutputColumnRows,
+  buildSecondSalaryPaysheetFromOutputColumns,
+  writeBundleBuffer,
+} = require('../utils/paysheetBundleExport');
 const User = require('../../users/model/User');
 const Settings = require('../../settings/model/Settings');
 const Loan = require('../../loans/model/Loan');
@@ -338,6 +349,142 @@ function buildPayslipExcelRows(payslip) {
   return [buildPayslipExcelRowsNormalized(payslip, allAllowanceNames, allDeductionNames, 1)];
 }
 
+/**
+ * Build payslip objects from stored payroll records (same shape as payroll Excel export).
+ */
+async function buildPayslipsFromStoredPayrollRecords(payrollRecords, month) {
+  if (!payrollRecords || payrollRecords.length === 0) return [];
+  const employeeIdList = payrollRecords.map((pr) => pr.employeeId?._id || pr.employeeId);
+  const [summaries, attendanceSummaries] = await Promise.all([
+    PayRegisterSummary.find({ month, employeeId: { $in: employeeIdList } }).lean(),
+    MonthlyAttendanceSummary.find({ month, employeeId: { $in: employeeIdList } }).lean(),
+  ]);
+  const summaryMap = new Map(summaries.map((s) => [s.employeeId.toString(), s]));
+  const attMap = new Map(attendanceSummaries.map((a) => [a.employeeId.toString(), a]));
+
+  return payrollRecords.map((payrollRecord) => {
+    try {
+      const employee = payrollRecord.employeeId;
+      const employeeIdStr = (employee?._id || employee)?.toString();
+      if (!employeeIdStr) return null;
+
+      const payRegisterSummary = summaryMap.get(employeeIdStr);
+      const attendanceSummary = attMap.get(employeeIdStr);
+
+      const departmentName = employee?.department_id?.name || 'N/A';
+      const divisionName = employee?.division_id?.name || 'N/A';
+      const designationName = employee?.designation_id?.name || 'N/A';
+
+      const perDay = payrollRecord.earnings?.perDayBasicPay || 0;
+      const payableShifts = payrollRecord.totalPayableShifts || 0;
+      const presentDays =
+        payRegisterSummary?.totals?.totalPresentDays ?? attendanceSummary?.totalPresentDays ?? null;
+      const paidLeaveDays =
+        payRegisterSummary?.totals?.totalPaidLeaveDays ??
+        attendanceSummary?.paidLeaves ??
+        attendanceSummary?.totalPaidLeaveDays ??
+        null;
+      const odDays =
+        payRegisterSummary?.totals?.totalODDays ?? attendanceSummary?.totalODs ?? null;
+      const otHours =
+        payRegisterSummary?.totals?.totalOTHours ??
+        attendanceSummary?.totalOTHours ??
+        payrollRecord.earnings?.otHours ??
+        0;
+      const monthDays = payrollRecord.totalDaysInMonth;
+
+      const incentiveDays =
+        presentDays !== null && paidLeaveDays !== null
+          ? Math.max(0, payableShifts - presentDays - (paidLeaveDays || 0))
+          : (payrollRecord.attendance?.extraDays || 0);
+
+      const earnedSalary =
+        presentDays !== null ? perDay * presentDays : (payrollRecord.earnings?.payableAmount || 0);
+      const paidLeaveSalary = paidLeaveDays !== null ? perDay * paidLeaveDays : 0;
+      const odSalary = 0;
+      const incentive = incentiveDays !== null ? perDay * incentiveDays : (payrollRecord.earnings?.incentive || 0);
+
+      const totalAllowances = payrollRecord.earnings?.totalAllowances || 0;
+      const otPay = payrollRecord.earnings?.otPay || 0;
+
+      const paidDays = payrollRecord.attendance?.paidDays || (
+        (presentDays || 0) +
+        (payRegisterSummary?.totals?.totalWeeklyOffs || 0) +
+        (payRegisterSummary?.totals?.totalHolidays || 0) +
+        (paidLeaveDays || 0)
+      );
+      const attendanceDeductionDays = (payrollRecord.deductions?.attendanceDeductionBreakdown?.daysDeducted ?? 0);
+      const finalPaidDays = Math.max(0, paidDays - attendanceDeductionDays);
+
+      return {
+        month: payrollRecord.monthName,
+        monthNumber: payrollRecord.monthNumber,
+        year: payrollRecord.year,
+        employee: {
+          emp_no: payrollRecord.emp_no,
+          name: employee?.employee_name || 'N/A',
+          department: departmentName,
+          division: divisionName,
+          designation: designationName,
+          location: employee?.location || '',
+          bank_account_no: employee?.bank_account_no || '',
+          bank_name: employee?.bank_name || '',
+          bank_place: employee?.bank_place || '',
+          ifsc_code: employee?.ifsc_code || '',
+          payment_mode: employee?.salary_mode || '',
+          date_of_joining: employee?.doj || '',
+          pf_number: employee?.pf_number || '',
+          esi_number: employee?.esi_number || '',
+        },
+        attendance: {
+          totalDaysInMonth: payrollRecord.attendance?.totalDaysInMonth || monthDays,
+          presentDays: payrollRecord.attendance?.presentDays || presentDays,
+          paidLeaveDays: payrollRecord.attendance?.paidLeaveDays || paidLeaveDays,
+          odDays: payrollRecord.attendance?.odDays || odDays,
+          weeklyOffs: payrollRecord.attendance?.weeklyOffs || 0,
+          holidays: payrollRecord.attendance?.holidays || 0,
+          absentDays: payrollRecord.attendance?.absentDays || 0,
+          payableShifts: payrollRecord.attendance?.payableShifts || payableShifts,
+          extraDays: payrollRecord.attendance?.extraDays || 0,
+          totalPaidDays: payrollRecord.attendance?.totalPaidDays || 0,
+          attendanceDeductionDays,
+          finalPaidDays,
+          otHours: payrollRecord.attendance?.otHours || otHours,
+          otDays: payrollRecord.attendance?.otDays || 0,
+          earnedSalary: payrollRecord.attendance?.earnedSalary || earnedSalary,
+          lopDays: payRegisterSummary?.totals?.totalLopDays || 0,
+          elUsedInPayroll: payrollRecord.elUsedInPayroll ?? 0,
+        },
+        earnings: {
+          ...payrollRecord.earnings,
+          earnedSalary,
+          paidLeaveSalary,
+          odSalary,
+          incentive,
+          otPay,
+          totalAllowances,
+          grossSalary: (earnedSalary + paidLeaveSalary + odSalary + incentive + otPay + totalAllowances),
+        },
+        deductions: payrollRecord.deductions || {},
+        loanAdvance: payrollRecord.loanAdvance || {},
+        arrears: {
+          arrearsAmount: payrollRecord.arrearsAmount || 0,
+          arrearsSettlements: payrollRecord.arrearsSettlements || [],
+        },
+        netSalary: payrollRecord.netSalary,
+        roundOff: payrollRecord.roundOff || 0,
+        paidDays,
+        attendanceDeductionDays,
+        finalPaidDays,
+        status: payrollRecord.status,
+      };
+    } catch (err) {
+      console.error(`Error processing payslip for export (Emp: ${payrollRecord.emp_no}):`, err);
+      return null;
+    }
+  }).filter(Boolean);
+}
+
 // OLD FUNCTION (kept for reference, not used)
 function buildPayslipExcelRowsOld(payslip) {
   // Build row with dynamic allowances and deductions
@@ -473,6 +620,25 @@ exports.calculatePayroll = async (req, res) => {
         deductionSettlements: req.body.deductions || [],
       };
       result = await payrollCalculationService.calculatePayrollNew(employeeId, month, req.user._id, options);
+    }
+
+    try {
+      const emp = await Employee.findById(employeeId).select('second_salary');
+      if (emp && Number(emp.second_salary) > 0) {
+        const { calculateSecondSalaryForPayRegister } = require('../services/secondSalaryCalculationService');
+        const SecondSalaryBatchService = require('../services/secondSalaryBatchService');
+        const sec = await calculateSecondSalaryForPayRegister(
+          employeeId,
+          month,
+          req.user._id,
+          strategy,
+          null
+        );
+        const bid = sec?.batchId;
+        if (bid) await SecondSalaryBatchService.recalculateBatchTotals(bid.toString());
+      }
+    } catch (e2) {
+      console.error('[calculatePayroll] Second salary follow-up failed:', e2.message);
     }
 
     // If export is requested, return Excel immediately
@@ -681,142 +847,7 @@ exports.exportPayrollExcel = async (req, res) => {
       });
     }
 
-    // Bulk fetch summaries for performance
-    const employeeIdList = payrollRecords.map(pr => pr.employeeId?._id || pr.employeeId);
-    const [summaries, attendanceSummaries] = await Promise.all([
-      PayRegisterSummary.find({ month, employeeId: { $in: employeeIdList } }).lean(),
-      MonthlyAttendanceSummary.find({ month, employeeId: { $in: employeeIdList } }).lean()
-    ]);
-
-    // Create maps for quick lookup
-    const summaryMap = new Map(summaries.map(s => [s.employeeId.toString(), s]));
-    const attMap = new Map(attendanceSummaries.map(a => [a.employeeId.toString(), a]));
-
-    // Step 1: Build all payslip data objects in-memory (no DB calls here)
-    const payslips = payrollRecords.map((payrollRecord) => {
-      try {
-        const employee = payrollRecord.employeeId;
-        const employeeIdStr = (employee?._id || employee)?.toString();
-        if (!employeeIdStr) return null;
-
-        const payRegisterSummary = summaryMap.get(employeeIdStr);
-        const attendanceSummary = attMap.get(employeeIdStr);
-
-        // Department/Division/Designation names
-        const departmentName = employee?.department_id?.name || 'N/A';
-        const divisionName = employee?.division_id?.name || 'N/A';
-        const designationName = employee?.designation_id?.name || 'N/A';
-
-        const perDay = payrollRecord.earnings?.perDayBasicPay || 0;
-        const payableShifts = payrollRecord.totalPayableShifts || 0;
-        const presentDays =
-          payRegisterSummary?.totals?.totalPresentDays ?? attendanceSummary?.totalPresentDays ?? null;
-        const paidLeaveDays =
-          payRegisterSummary?.totals?.totalPaidLeaveDays ??
-          attendanceSummary?.paidLeaves ??
-          attendanceSummary?.totalPaidLeaveDays ??
-          null;
-        const odDays =
-          payRegisterSummary?.totals?.totalODDays ?? attendanceSummary?.totalODs ?? null;
-        const otHours =
-          payRegisterSummary?.totals?.totalOTHours ??
-          attendanceSummary?.totalOTHours ??
-          payrollRecord.earnings?.otHours ??
-          0;
-        const monthDays = payrollRecord.totalDaysInMonth;
-
-        const incentiveDays =
-          presentDays !== null && paidLeaveDays !== null
-            ? Math.max(0, payableShifts - presentDays - (paidLeaveDays || 0))
-            : (payrollRecord.attendance?.extraDays || 0);
-
-        const earnedSalary =
-          presentDays !== null ? perDay * presentDays : (payrollRecord.earnings?.payableAmount || 0);
-        const paidLeaveSalary = paidLeaveDays !== null ? perDay * paidLeaveDays : 0;
-        // Present days already include OD; do not add OD again (no separate odSalary in gross).
-        const odSalary = 0;
-        const incentive = incentiveDays !== null ? perDay * incentiveDays : (payrollRecord.earnings?.incentive || 0);
-
-        const totalAllowances = payrollRecord.earnings?.totalAllowances || 0;
-        const otPay = payrollRecord.earnings?.otPay || 0;
-
-        // Present days already include OD; do not add OD again in paid days.
-        const paidDays = payrollRecord.attendance?.paidDays || (
-          (presentDays || 0) +
-          (payRegisterSummary?.totals?.totalWeeklyOffs || 0) +
-          (payRegisterSummary?.totals?.totalHolidays || 0) +
-          (paidLeaveDays || 0)
-        );
-        const attendanceDeductionDays = (payrollRecord.deductions?.attendanceDeductionBreakdown?.daysDeducted ?? 0);
-        const finalPaidDays = Math.max(0, paidDays - attendanceDeductionDays);
-
-        return {
-          month: payrollRecord.monthName,
-          monthNumber: payrollRecord.monthNumber,
-          year: payrollRecord.year,
-          employee: {
-            emp_no: payrollRecord.emp_no,
-            name: employee?.employee_name || 'N/A',
-            department: departmentName,
-            division: divisionName,
-            designation: designationName,
-            location: employee?.location || '',
-            bank_account_no: employee?.bank_account_no || '',
-            bank_name: employee?.bank_name || '',
-            bank_place: employee?.bank_place || '',
-            ifsc_code: employee?.ifsc_code || '',
-            payment_mode: employee?.salary_mode || '',
-            date_of_joining: employee?.doj || '',
-            pf_number: employee?.pf_number || '',
-            esi_number: employee?.esi_number || '',
-          },
-          attendance: {
-            totalDaysInMonth: payrollRecord.attendance?.totalDaysInMonth || monthDays,
-            presentDays: payrollRecord.attendance?.presentDays || presentDays,
-            paidLeaveDays: payrollRecord.attendance?.paidLeaveDays || paidLeaveDays,
-            odDays: payrollRecord.attendance?.odDays || odDays,
-            weeklyOffs: payrollRecord.attendance?.weeklyOffs || 0,
-            holidays: payrollRecord.attendance?.holidays || 0,
-            absentDays: payrollRecord.attendance?.absentDays || 0,
-            payableShifts: payrollRecord.attendance?.payableShifts || payableShifts,
-            extraDays: payrollRecord.attendance?.extraDays || 0,
-            totalPaidDays: payrollRecord.attendance?.totalPaidDays || 0,
-            attendanceDeductionDays: attendanceDeductionDays,
-            finalPaidDays: finalPaidDays,
-            otHours: payrollRecord.attendance?.otHours || otHours,
-            otDays: payrollRecord.attendance?.otDays || 0,
-            earnedSalary: payrollRecord.attendance?.earnedSalary || earnedSalary,
-            lopDays: payRegisterSummary?.totals?.totalLopDays || 0,
-            elUsedInPayroll: payrollRecord.elUsedInPayroll ?? 0,
-          },
-          earnings: {
-            ...payrollRecord.earnings,
-            earnedSalary,
-            paidLeaveSalary,
-            odSalary,
-            incentive,
-            otPay,
-            totalAllowances,
-            grossSalary: (earnedSalary + paidLeaveSalary + odSalary + incentive + otPay + totalAllowances) // odSalary is 0 (present includes OD)
-          },
-          deductions: payrollRecord.deductions || {},
-          loanAdvance: payrollRecord.loanAdvance || {},
-          arrears: {
-            arrearsAmount: payrollRecord.arrearsAmount || 0,
-            arrearsSettlements: payrollRecord.arrearsSettlements || [],
-          },
-          netSalary: payrollRecord.netSalary,
-          roundOff: payrollRecord.roundOff || 0,
-          paidDays: paidDays,
-          attendanceDeductionDays: attendanceDeductionDays,
-          finalPaidDays: finalPaidDays,
-          status: payrollRecord.status,
-        };
-      } catch (err) {
-        console.error(`Error processing payslip for export (Emp: ${payrollRecord.emp_no}):`, err);
-        return null;
-      }
-    }).filter(Boolean);
+    const payslips = await buildPayslipsFromStoredPayrollRecords(payrollRecords, month);
 
     if (payslips.length === 0) {
       return res.status(404).json({
@@ -902,6 +933,12 @@ function recordToPayslip(record) {
   const emp = record.employeeId || {};
   const toObj = (x) => (x && typeof x.toObject === 'function' ? x.toObject() : x);
   const empObj = toObj(emp);
+  const rawAtt = record.attendance && typeof record.attendance.toObject === 'function' ? record.attendance.toObject() : (record.attendance || {});
+  const ded = record.deductions && typeof record.deductions.toObject === 'function' ? record.deductions.toObject() : (record.deductions || {});
+  const daysFromBreakdown = Number(ded?.attendanceDeductionBreakdown?.daysDeducted);
+  const attendanceDeductionDays = Number.isFinite(daysFromBreakdown)
+    ? daysFromBreakdown
+    : (Number(rawAtt.attendanceDeductionDays) || 0);
   return {
     employee: {
       emp_no: record.emp_no || empObj?.emp_no || '',
@@ -909,10 +946,24 @@ function recordToPayslip(record) {
       designation: empObj?.designation_id?.name || empObj?.designation_id || '',
       department: empObj?.department_id?.name || empObj?.department_id || 'N/A',
       division: empObj?.division_id?.name || empObj?.division_id || 'N/A',
+      // Match calculatePayrollFromOutputColumns record.employee so output-column fields resolve the same as 2nd salary / fresh calc
+      location: empObj?.location || '',
+      bank_account_no: empObj?.bank_account_no || '',
+      bank_name: empObj?.bank_name || '',
+      bank_place: empObj?.bank_place || '',
+      ifsc_code: empObj?.ifsc_code || '',
+      payment_mode: empObj?.salary_mode || '',
+      date_of_joining: empObj?.doj || '',
+      pf_number: empObj?.pf_number || '',
+      esi_number: empObj?.esi_number || '',
     },
-    attendance: record.attendance && typeof record.attendance.toObject === 'function' ? record.attendance.toObject() : (record.attendance || {}),
+    attendance: {
+      ...rawAtt,
+      attendanceDeductionDays,
+    },
+    attendanceDeductionDays,
     earnings: record.earnings && typeof record.earnings.toObject === 'function' ? record.earnings.toObject() : (record.earnings || {}),
-    deductions: record.deductions && typeof record.deductions.toObject === 'function' ? record.deductions.toObject() : (record.deductions || {}),
+    deductions: ded,
     loanAdvance: record.loanAdvance && typeof record.loanAdvance.toObject === 'function' ? record.loanAdvance.toObject() : (record.loanAdvance || {}),
     arrears: record.arrears && typeof record.arrears === 'object'
       ? (record.arrears.toObject ? record.arrears.toObject() : { ...record.arrears })
@@ -932,17 +983,135 @@ function recordToPayslip(record) {
  *          source=existing: return existing PayrollRecords for the month (no calculation). Filters applied on data.
  *          No source or source=calculate: run dynamic/legacy calculation for scope and return fresh data.
  * @route   GET /api/payroll/paysheet
- * @query   month (YYYY-MM), departmentId?, divisionId?, status?, search?, employeeIds?, source? (existing | calculate)
+ * @query   month (YYYY-MM), departmentId?, divisionId?, status?, search?, employeeIds?, source? (existing | calculate), secondSalary? (1|true)
  * @access  Private
  */
 exports.getPaysheetData = async (req, res) => {
   try {
     const { month, departmentId, divisionId, status, search, employeeIds, source } = req.query;
+    const secondSalary = ['1', 'true', 'yes'].includes(String(req.query.secondSalary || '').toLowerCase());
 
     if (!month || !/^\d{4}-\d{2}$/.test(month)) {
       return res.status(400).json({
         success: false,
         message: 'Month (YYYY-MM) is required',
+      });
+    }
+
+    if (secondSalary) {
+      let targetEmployeeIds = [];
+      if (employeeIds) {
+        targetEmployeeIds = String(employeeIds)
+          .split(',')
+          .map((id) => id.trim())
+          .filter(Boolean);
+      } else {
+        const { buildPaysheetEmployeeFilter } = require('../services/payrollEmployeeQueryHelper');
+        const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
+        const [y, m] = month.split('-').map(Number);
+        const { startDate: startStr, endDate: endStr } = await getPayrollDateRange(y, m);
+        const rangeStart = new Date(`${startStr}T00:00:00.000Z`);
+        const rangeEnd = new Date(`${endStr}T23:59:59.999Z`);
+        const scope =
+          req.scopeFilter && typeof req.scopeFilter === 'object' && Object.keys(req.scopeFilter).length > 0
+            ? req.scopeFilter
+            : null;
+        const divF = divisionId && divisionId !== 'all' ? divisionId : undefined;
+        const depF = departmentId && departmentId !== 'all' ? departmentId : undefined;
+        const employeeQuery = buildPaysheetEmployeeFilter(scope, divF, depF, rangeStart, rangeEnd, {
+          status: status || undefined,
+          search: search || undefined,
+        });
+        const emps = await Employee.find(employeeQuery).select('_id');
+        targetEmployeeIds = emps.map((e) => e._id.toString());
+      }
+
+      if (targetEmployeeIds.length === 0) {
+        return res.status(200).json({
+          success: true,
+          data: { headers: [], rows: [] },
+          message: 'No employees in scope for this view.',
+          source: 'existing',
+          secondSalary: true,
+        });
+      }
+
+      const idList = targetEmployeeIds
+        .map((id) => {
+          try {
+            return new mongoose.Types.ObjectId(id);
+          } catch {
+            return null;
+          }
+        })
+        .filter(Boolean);
+
+      const records = await SecondSalaryRecord.find({
+        month,
+        employeeId: { $in: idList },
+      })
+        .populate({
+          path: 'employeeId',
+          select:
+            'employee_name first_name last_name emp_no department_id division_id designation_id gross_salary location bank_account_no bank_name bank_place ifsc_code salary_mode doj pf_number esi_number leftDate',
+          populate: [
+            { path: 'department_id', select: 'name' },
+            { path: 'division_id', select: 'name' },
+            { path: 'designation_id', select: 'name' },
+          ],
+        })
+        .populate('division_id', 'name')
+        .sort({ emp_no: 1 })
+        .lean();
+
+      const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
+      const [yearNum, monthNum] = month.split('-').map(Number);
+      const { startDate: rangeStartStr, endDate: rangeEndStr } = await getPayrollDateRange(yearNum, monthNum);
+      const payrollRangeStart = new Date(`${rangeStartStr}T00:00:00.000Z`);
+      const payrollRangeEnd = new Date(`${rangeEndStr}T23:59:59.999Z`);
+
+      const filtered = records.filter((r) => {
+        const emp = r.employeeId;
+        if (!emp) return false;
+        const left = emp.leftDate;
+        if (!left) return true;
+        const leftDate = left instanceof Date ? left : new Date(left);
+        return leftDate >= payrollRangeStart && leftDate <= payrollRangeEnd;
+      });
+
+      const config2 = await PayrollConfiguration.get();
+      const outputCols2nd = normalizeOutputColumns(config2?.outputColumns);
+
+      let headers;
+      let rows;
+      if (outputCols2nd.length > 0 && filtered.length > 0) {
+        const built = buildSecondSalaryPaysheetFromOutputColumns(filtered, outputCols2nd);
+        if (built.rows.length > 0) {
+          headers = built.headers;
+          rows = built.rows;
+        }
+      }
+      if (!rows) {
+        const built = buildSecondSalaryPaysheetData(filtered);
+        headers = built.headers;
+        rows = built.rows;
+      }
+
+      if (rows.length === 0) {
+        return res.status(200).json({
+          success: true,
+          data: { headers: [], rows: [] },
+          message:
+            'No 2nd salary records for this month. Run a cycle from 2nd Salary Payments, then refresh.',
+          source: 'existing',
+          secondSalary: true,
+        });
+      }
+      return res.status(200).json({
+        success: true,
+        data: { headers, rows },
+        source: 'existing',
+        secondSalary: true,
       });
     }
 
@@ -970,10 +1139,34 @@ exports.getPaysheetData = async (req, res) => {
       const payrollRangeStart = new Date(rangeStartStr + 'T00:00:00.000Z');
       const payrollRangeEnd = new Date(rangeEndStr + 'T23:59:59.999Z');
 
-      const records = await PayrollRecord.find({ month })
+      const { buildPaysheetEmployeeFilter } = require('../services/payrollEmployeeQueryHelper');
+      const scope =
+        req.scopeFilter && typeof req.scopeFilter === 'object' && Object.keys(req.scopeFilter).length > 0
+          ? req.scopeFilter
+          : null;
+      const divF = divisionId && divisionId !== 'all' ? divisionId : undefined;
+      const depF = departmentId && departmentId !== 'all' ? departmentId : undefined;
+      const empMatch = buildPaysheetEmployeeFilter(scope, divF, depF, payrollRangeStart, payrollRangeEnd, {
+        status: status || undefined,
+        search: search || undefined,
+      });
+      const inScopeEmps = await Employee.find(empMatch).select('_id').lean();
+      const inScopeIds = inScopeEmps.map((e) => e._id);
+
+      if (inScopeIds.length === 0) {
+        return res.status(200).json({
+          success: true,
+          data: { headers: ['S.No', ...outputColumns.map((c) => c.header || 'Column')], rows: [] },
+          message: 'No employees match filters for this month.',
+          source: 'existing',
+        });
+      }
+
+      const records = await PayrollRecord.find({ month, employeeId: { $in: inScopeIds } })
         .populate({
           path: 'employeeId',
-          select: 'employee_name emp_no first_name last_name department_id division_id designation_id leftDate',
+          select:
+            'employee_name first_name last_name emp_no department_id division_id designation_id location bank_account_no bank_name bank_place ifsc_code salary_mode doj pf_number esi_number leftDate',
           populate: [
             { path: 'department_id', select: 'name' },
             { path: 'division_id', select: 'name' },
@@ -984,22 +1177,6 @@ exports.getPaysheetData = async (req, res) => {
         .lean();
 
       let filtered = records;
-      // Filter by department, division, search
-      if (departmentId || divisionId || search) {
-        filtered = filtered.filter((r) => {
-          const emp = r.employeeId;
-          if (!emp) return false;
-          if (departmentId && (emp.department_id?._id?.toString() || emp.department_id?.toString()) !== departmentId) return false;
-          if (divisionId && (emp.division_id?._id?.toString() || emp.division_id?.toString()) !== divisionId) return false;
-          if (search) {
-            const term = String(search).toLowerCase();
-            const name = (emp.employee_name || [emp.first_name, emp.last_name].filter(Boolean).join(' ') || '').toLowerCase();
-            const no = (emp.emp_no || r.emp_no || '').toLowerCase();
-            if (!name.includes(term) && !no.includes(term)) return false;
-          }
-          return true;
-        });
-      }
       // Respect resignation: exclude employees who left before this payroll month
       filtered = filtered.filter((r) => {
         const emp = r.employeeId;
@@ -1058,33 +1235,22 @@ exports.getPaysheetData = async (req, res) => {
         .map((id) => id.trim())
         .filter(Boolean);
     } else {
-      const employeeQuery = { ...req.scopeFilter };
-      if (departmentId) employeeQuery.department_id = departmentId;
-      if (divisionId) employeeQuery.division_id = divisionId;
-      if (status === 'active') employeeQuery.is_active = true;
-      else if (status === 'inactive') employeeQuery.is_active = false;
-      // Respect resignation (same as pay register): only active or left in this payroll month; skip when status=inactive
-      if (status !== 'inactive') {
-        const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
-        const [y, m] = month.split('-').map(Number);
-        const { startDate: startStr, endDate: endStr } = await getPayrollDateRange(y, m);
-        const rangeStart = new Date(startStr + 'T00:00:00.000Z');
-        const rangeEnd = new Date(endStr + 'T23:59:59.999Z');
-        const resignationOr = { $or: [{ is_active: true, leftDate: null }, { leftDate: { $gte: rangeStart, $lte: rangeEnd } }] };
-        if (search) {
-          employeeQuery.$and = [
-            { $or: [{ employee_name: { $regex: search, $options: 'i' } }, { emp_no: { $regex: search, $options: 'i' } }] },
-            resignationOr,
-          ];
-        } else {
-          Object.assign(employeeQuery, resignationOr);
-        }
-      } else if (search) {
-        employeeQuery.$or = [
-          { employee_name: { $regex: search, $options: 'i' } },
-          { emp_no: { $regex: search, $options: 'i' } },
-        ];
-      }
+      const { buildPaysheetEmployeeFilter } = require('../services/payrollEmployeeQueryHelper');
+      const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
+      const [y, m] = month.split('-').map(Number);
+      const { startDate: startStr, endDate: endStr } = await getPayrollDateRange(y, m);
+      const rangeStart = new Date(startStr + 'T00:00:00.000Z');
+      const rangeEnd = new Date(endStr + 'T23:59:59.999Z');
+      const scope =
+        req.scopeFilter && typeof req.scopeFilter === 'object' && Object.keys(req.scopeFilter).length > 0
+          ? req.scopeFilter
+          : null;
+      const divF = divisionId && divisionId !== 'all' ? divisionId : undefined;
+      const depF = departmentId && departmentId !== 'all' ? departmentId : undefined;
+      const employeeQuery = buildPaysheetEmployeeFilter(scope, divF, depF, rangeStart, rangeEnd, {
+        status: status || undefined,
+        search: search || undefined,
+      });
       const emps = await Employee.find(employeeQuery).select('_id');
       targetEmployeeIds = emps.map((e) => e._id.toString());
     }
@@ -1186,6 +1352,196 @@ exports.getPaysheetData = async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message || 'Error loading paysheet',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * @desc    Export workbook: Regular sheet, 2nd salary sheet, Comparison (config columns + Regular/2nd sub-rows + Δ Net).
+ * @route   GET /api/payroll/paysheet/export-bundle
+ * @query   month, departmentId?, divisionId?, status?, search?, employeeIds?
+ * @access  Private
+ */
+exports.exportPaysheetBundleExcel = async (req, res) => {
+  try {
+    const { month, departmentId, divisionId, status, search, employeeIds } = req.query;
+
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Month (YYYY-MM) is required',
+      });
+    }
+
+    let targetEmployeeIds = [];
+    if (employeeIds) {
+      targetEmployeeIds = String(employeeIds)
+        .split(',')
+        .map((id) => id.trim())
+        .filter(Boolean);
+    } else {
+      const { buildPaysheetEmployeeFilter } = require('../services/payrollEmployeeQueryHelper');
+      const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
+      const [y, m] = month.split('-').map(Number);
+      const { startDate: startStr, endDate: endStr } = await getPayrollDateRange(y, m);
+      const rangeStart = new Date(`${startStr}T00:00:00.000Z`);
+      const rangeEnd = new Date(`${endStr}T23:59:59.999Z`);
+      const scope =
+        req.scopeFilter && typeof req.scopeFilter === 'object' && Object.keys(req.scopeFilter).length > 0
+          ? req.scopeFilter
+          : null;
+      const divF = divisionId && divisionId !== 'all' ? divisionId : undefined;
+      const depF = departmentId && departmentId !== 'all' ? departmentId : undefined;
+      const employeeQuery = buildPaysheetEmployeeFilter(scope, divF, depF, rangeStart, rangeEnd, {
+        status: status || undefined,
+        search: search || undefined,
+      });
+      const emps = await Employee.find(employeeQuery).select('_id');
+      targetEmployeeIds = emps.map((e) => e._id.toString());
+    }
+
+    if (targetEmployeeIds.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'No employees in scope for the selected filters.',
+      });
+    }
+
+    let payrollRecords = await PayrollRecord.find({ month, employeeId: { $in: targetEmployeeIds } })
+      .populate({
+        path: 'employeeId',
+        select:
+          'employee_name emp_no first_name last_name department_id division_id designation_id gross_salary location bank_account_no bank_name bank_place ifsc_code salary_mode doj pf_number esi_number leftDate',
+        populate: [
+          { path: 'department_id', select: 'name' },
+          { path: 'division_id', select: 'name' },
+          { path: 'designation_id', select: 'name' },
+        ],
+      })
+      .sort({ emp_no: 1 })
+      .lean();
+
+    const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
+    const [yearNum, monthNum] = month.split('-').map(Number);
+    const { startDate: rangeStartStr, endDate: rangeEndStr } = await getPayrollDateRange(yearNum, monthNum);
+    const payrollRangeStart = new Date(`${rangeStartStr}T00:00:00.000Z`);
+    const payrollRangeEnd = new Date(`${rangeEndStr}T23:59:59.999Z`);
+
+    payrollRecords = payrollRecords.filter((r) => {
+      const emp = r.employeeId;
+      if (!emp) return false;
+      const left = emp.leftDate;
+      if (!left) return true;
+      const leftDate = left instanceof Date ? left : new Date(left);
+      return leftDate >= payrollRangeStart && leftDate <= payrollRangeEnd;
+    });
+
+    if (!payrollRecords.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'No payroll records in scope. Calculate payroll for this month first.',
+      });
+    }
+
+    const prEmpIds = payrollRecords.map((pr) => (pr.employeeId?._id || pr.employeeId).toString());
+    const secondRecords = await SecondSalaryRecord.find({ month, employeeId: { $in: prEmpIds } })
+      .populate({
+        path: 'employeeId',
+        select: 'employee_name emp_no department_id division_id designation_id leftDate',
+        populate: [
+          { path: 'department_id', select: 'name' },
+          { path: 'division_id', select: 'name' },
+          { path: 'designation_id', select: 'name' },
+        ],
+      })
+      .populate('division_id', 'name')
+      .lean();
+    const secondByEmp = new Map(secondRecords.map((sr) => [(sr.employeeId?._id || sr.employeeId).toString(), sr]));
+
+    const config = await PayrollConfiguration.get();
+    const outputColumnsNormalized = normalizeOutputColumns(config?.outputColumns);
+
+    let regularRows;
+    let secondRows;
+    let netsReg = [];
+    let netsSec = [];
+
+    const IDENTITY_COPY_KEYS = new Set([
+      'S.No', 'Employee Code', 'Name', 'Designation', 'Department', 'Division',
+      'Date of Joining', 'Payment Mode', 'Bank Name', 'Bank Account No',
+    ]);
+
+    if (outputColumnsNormalized.length > 0) {
+      const payslipsReg = payrollRecords.map((r) => payrollRecordToPayslipShape(r));
+      const payslipsSec = payrollRecords.map((pr) => {
+        const id = (pr.employeeId?._id || pr.employeeId).toString();
+        const sr = secondByEmp.get(id);
+        return sr ? secondSalaryRecordToPayslipShape(sr) : null;
+      });
+      const built = buildOutputColumnRows(payslipsReg, payslipsSec, outputColumnsNormalized);
+      regularRows = built.regularRows;
+      secondRows = built.secondRows;
+      netsReg = payslipsReg.map((p) => Number(p.netSalary) || 0);
+      netsSec = payslipsSec.map((p) => (p ? Number(p.netSalary) || 0 : 0));
+    } else {
+      const payslips = await buildPayslipsFromStoredPayrollRecords(payrollRecords, month);
+      if (!payslips.length) {
+        return res.status(404).json({
+          success: false,
+          message: 'Could not build payslip data for bundle export.',
+        });
+      }
+      const allAllowanceNames = new Set();
+      const allDeductionNames = new Set();
+      payslips.forEach((p) => {
+        (p.earnings?.allowances || []).forEach((a) => { if (a?.name) allAllowanceNames.add(a.name); });
+        (p.deductions?.otherDeductions || []).forEach((d) => { if (d?.name) allDeductionNames.add(d.name); });
+      });
+      payrollRecords.forEach((pr) => {
+        const id = (pr.employeeId?._id || pr.employeeId).toString();
+        const sr = secondByEmp.get(id);
+        if (!sr) return;
+        (sr.earnings?.allowances || []).forEach((a) => { if (a?.name) allAllowanceNames.add(a.name); });
+        (sr.deductions?.otherDeductions || []).forEach((d) => { if (d?.name) allDeductionNames.add(d.name); });
+      });
+
+      regularRows = payslips.map((p, i) =>
+        buildPayslipExcelRowsNormalized(p, allAllowanceNames, allDeductionNames, i + 1)
+      );
+      secondRows = payrollRecords.map((pr, i) => {
+        const id = (pr.employeeId?._id || pr.employeeId).toString();
+        const sr = secondByEmp.get(id);
+        const regRow = regularRows[i];
+        if (sr) {
+          return buildSecondSalaryExcelRowsNormalized(sr, allAllowanceNames, allDeductionNames, i + 1);
+        }
+        const empty = {};
+        for (const k of Object.keys(regRow)) {
+          if (k === 'S.No') empty[k] = i + 1;
+          else if (IDENTITY_COPY_KEYS.has(k)) empty[k] = regRow[k];
+          else empty[k] = typeof regRow[k] === 'number' ? 0 : '';
+        }
+        return empty;
+      });
+      netsReg = payslips.map((p) => Number(p.netSalary) || 0);
+      netsSec = payrollRecords.map((pr) => {
+        const id = (pr.employeeId?._id || pr.employeeId).toString();
+        const sr = secondByEmp.get(id);
+        return sr ? Number(sr.netSalary) || 0 : 0;
+      });
+    }
+
+    const buf = writeBundleBuffer(regularRows, secondRows, (reg, sec, i) => netsSec[i] - netsReg[i]);
+    const filename = `paysheet_bundle_${month}${departmentId ? `_dept_${departmentId}` : ''}.xlsx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.send(buf);
+  } catch (error) {
+    console.error('Error exporting paysheet bundle:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Error exporting paysheet bundle',
       error: error.message,
     });
   }
@@ -1932,18 +2288,21 @@ exports.calculatePayrollBulk = async (req, res) => {
     const leftStart = new Date(startDate + 'T00:00:00.000Z');
     const leftEnd = new Date(endDate + 'T23:59:59.999Z');
 
-    console.log('[Bulk Payroll] Req.scopeFilter:', JSON.stringify(req.scopeFilter));
+    const { buildPayrollBulkEmployeeQuery } = require('../services/payrollEmployeeQueryHelper');
+    const { EJSON } = require('bson');
 
-    const query = { ...req.scopeFilter };
-    if (divisionId) query.division_id = divisionId;
-    if (departmentId) query.department_id = departmentId;
-    query.$or = [
-      { is_active: true, leftDate: null },
-      { leftDate: { $gte: leftStart, $lte: leftEnd } },
-    ];
+    const divF = divisionId && divisionId !== 'all' ? divisionId : undefined;
+    const depF = departmentId && departmentId !== 'all' ? departmentId : undefined;
 
-    console.log('[Bulk Payroll] Final Query (incl. left in month):', JSON.stringify(query));
-    console.log('[Bulk Payroll] Filters - Division:', divisionId, 'Department:', departmentId, 'Month:', month);
+    const scopeFilter =
+      req.scopeFilter && typeof req.scopeFilter === 'object' && Object.keys(req.scopeFilter).length > 0
+        ? req.scopeFilter
+        : null;
+
+    const query = buildPayrollBulkEmployeeQuery(scopeFilter, divF, depF, leftStart, leftEnd);
+
+    console.log('[Bulk Payroll] Req.scopeFilter keys:', req.scopeFilter ? Object.keys(req.scopeFilter).length : 0);
+    console.log('[Bulk Payroll] Filters - Division:', divF, 'Department:', depF, 'Month:', month);
 
     const employees = await Employee.find(query).select('_id');
 
@@ -1956,16 +2315,16 @@ exports.calculatePayrollBulk = async (req, res) => {
       });
     }
 
-    const employeeIds = employees.map((e) => e._id.toString());
+    const scopeFilterForJob = scopeFilter != null ? EJSON.serialize(scopeFilter) : null;
     const { payrollQueue } = require('../../shared/jobs/queueManager');
     const job = await payrollQueue.add('payroll_bulk_calculate', {
       action: 'payroll_bulk_calculate',
       month,
-      divisionId: divisionId === 'all' ? undefined : divisionId,
-      departmentId: departmentId === 'all' ? undefined : departmentId,
+      divisionId: divF,
+      departmentId: depF,
       strategy,
       userId: req.user._id,
-      employeeIds
+      scopeFilter: scopeFilterForJob,
     });
 
     res.status(202).json({

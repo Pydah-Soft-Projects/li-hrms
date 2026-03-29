@@ -449,6 +449,35 @@ async function calculateSecondSalary(employeeId, month, userId, sharedContext = 
     }
 }
 
+/**
+ * 2nd salary for pay register / bulk: use dynamic output-column engine when strategy=dynamic and config has columns;
+ * otherwise legacy second-salary pipeline.
+ */
+async function calculateSecondSalaryForPayRegister(employeeId, month, userId, strategy, sharedContext = null) {
+    const useDynamic = String(strategy || '').toLowerCase() === 'dynamic';
+    if (useDynamic) {
+        const PayrollConfiguration = require('../model/PayrollConfiguration');
+        const payrollCalculationFromOutputColumnsService = require('./payrollCalculationFromOutputColumnsService');
+        const config = await PayrollConfiguration.get();
+        const outputColumns = Array.isArray(config?.outputColumns) ? config.outputColumns : [];
+        if (outputColumns.length > 0) {
+            return payrollCalculationFromOutputColumnsService.calculatePayrollFromOutputColumns(
+                employeeId.toString(),
+                month,
+                userId,
+                {
+                    secondSalaryBasis: true,
+                    source: 'payregister',
+                    arrearsSettlements: [],
+                    deductionSettlements: [],
+                }
+            );
+        }
+    }
+    return calculateSecondSalary(employeeId, month, userId, sharedContext);
+}
+
 module.exports = {
     calculateSecondSalary,
+    calculateSecondSalaryForPayRegister,
 };

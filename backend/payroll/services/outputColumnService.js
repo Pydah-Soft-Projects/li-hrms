@@ -180,6 +180,26 @@ function getValueByPath(obj, path) {
       return 0;
     }
   }
+  // Avoid path walk returning '' when an intermediate is missing (e.g. no attendanceDeductionBreakdown subdoc yet)
+  if (trimmed === 'deductions.attendanceDeductionBreakdown.daysDeducted') {
+    const n = Number(obj?.deductions?.attendanceDeductionBreakdown?.daysDeducted);
+    return Number.isFinite(n) ? n : 0;
+  }
+  if (trimmed === 'attendance.attendanceDeductionDays' || trimmed === 'attendanceDeductionDays') {
+    const a = obj?.attendance?.attendanceDeductionDays;
+    if (a !== undefined && a !== null && a !== '') {
+      const n = Number(a);
+      if (Number.isFinite(n)) return n;
+    }
+    const root = obj?.attendanceDeductionDays;
+    if (root !== undefined && root !== null && root !== '') {
+      const n = Number(root);
+      if (Number.isFinite(n)) return n;
+    }
+    const dd = obj?.deductions?.attendanceDeductionBreakdown?.daysDeducted;
+    const n2 = Number(dd);
+    return Number.isFinite(n2) ? n2 : 0;
+  }
   const parts = trimmed.split('.').filter(Boolean);
   let val = obj;
   for (const p of parts) {
