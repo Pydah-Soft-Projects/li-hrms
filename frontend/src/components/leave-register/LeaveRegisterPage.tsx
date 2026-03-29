@@ -18,6 +18,8 @@ import {
   CalendarRange,
   Shield,
   Info,
+  Printer,
+  FileSpreadsheet,
 } from 'lucide-react';
 
 type MonthLeaveBucket = {
@@ -95,6 +97,87 @@ type MonthSlotEditPolicyConfig = {
   byPayrollMonthIndex?: Record<string, Partial<MonthSlotEditPolicy>>;
 } | null;
 
+type BulkSlotRow = {
+  payrollCycleMonth: number;
+  payrollCycleYear: number;
+  label: string;
+  payrollMonthIndex: number;
+  policy: MonthSlotEditPolicy;
+  clCredits: string;
+  compensatoryOffs: string;
+  elCredits: string;
+  lockedCredits: string;
+  /** Read-only: implied unused that would roll from closed periods (derived from current scheduled vs used). */
+  transferCl: string;
+  transferCcl: string;
+  transferEl: string;
+  clUsed: string;
+  compensatoryOffsUsed: string;
+  elUsed: string;
+};
+
+/**
+ * Employee register detail returns raw `months` (scheduled.*, payrollCycle*). List rows use `registerMonths`
+ * (month, scheduledCl, …). Normalize so bulk edit and sorting always see one shape.
+ */
+function normalizeRegisterMonthForBulk(
+  m: any,
+  monthSlotEditPolicyConfig: MonthSlotEditPolicyConfig,
+  idx: number
+): RegisterMonthLite {
+  const month = Number(m?.month);
+  const year = Number(m?.year);
+  if (Number.isFinite(month) && Number.isFinite(year)) {
+    return m as RegisterMonthLite;
+  }
+  const pcm = Number(m?.payrollCycleMonth);
+  const pcy = Number(m?.payrollCycleYear);
+  const sch = m?.scheduled && typeof m.scheduled === 'object' ? m.scheduled : {};
+  const pmi = Number(m?.payrollMonthIndex) || idx + 1;
+  const pco = sch.poolCarryForwardOut || {};
+  const policy = resolveMonthSlotEditPolicy(monthSlotEditPolicyConfig, pmi);
+  const clUsed = Number(m?.ledger?.casualLeave?.usedThisMonth);
+  const cclUsed = Number(m?.ledger?.compensatoryOff?.used);
+  const elUsed = Number(m?.ledger?.earnedLeave?.usedThisMonth);
+  const xferCl =
+    m?.cl != null && m.cl.transfer != null && Number.isFinite(Number(m.cl.transfer))
+      ? Number(m.cl.transfer)
+      : Number(pco.cl) || 0;
+  const xferCcl =
+    m?.ccl != null && m.ccl.transfer != null && Number.isFinite(Number(m.ccl.transfer))
+      ? Number(m.ccl.transfer)
+      : Number(pco.ccl) || 0;
+  const xferEl =
+    m?.el != null && m.el.transfer != null && Number.isFinite(Number(m.el.transfer))
+      ? Number(m.el.transfer)
+      : Number(pco.el) || 0;
+  return {
+    payrollMonthIndex: pmi,
+    label: m?.label || `${pcm}/${pcy}`,
+    month: pcm,
+    year: pcy,
+    payPeriodStart: m?.payPeriodStart ?? null,
+    payPeriodEnd: m?.payPeriodEnd ?? null,
+    scheduledCl: sch.clCredits ?? null,
+    scheduledCco: sch.compensatoryOffs ?? null,
+    scheduledEl: sch.elCredits ?? null,
+    lockedCredits: sch.lockedCredits ?? null,
+    monthEditPolicy: policy,
+    cl: {
+      used: Number.isFinite(clUsed) ? clUsed : undefined,
+      transfer: xferCl,
+    },
+    ccl: {
+      used: Number.isFinite(cclUsed) ? cclUsed : undefined,
+      transfer: xferCcl,
+    },
+    el: {
+      used: Number.isFinite(elUsed) ? elUsed : undefined,
+      transfer: xferEl,
+    },
+  };
+}
+
 function gateMonthSlotEditPolicy(flags: MonthSlotEditPolicy): MonthSlotEditPolicy {
   if (flags.allowEditMonth === false) {
     return {
@@ -106,7 +189,7 @@ function gateMonthSlotEditPolicy(flags: MonthSlotEditPolicy): MonthSlotEditPolic
       allowEditUsedCl: false,
       allowEditUsedCcl: false,
       allowEditUsedEl: false,
-      allowCarryUnusedToNextMonth: false,
+      allowCarryUnusedToNextMonth: flags.allowCarryUnusedToNextMonth !== false,
     };
   }
   return { ...flags, allowEditMonth: true };
@@ -334,6 +417,12 @@ export default function LeaveRegisterPage({
   const [rows, setRows] = useState<ListRow[]>([]);
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState({ page: 1, limit: PAGE_SIZE, total: 0, pages: 1 });
+  const [exportingPdf, setExportingPdf] = useState(false);
+  const [registerExportModalOpen, setRegisterExportModalOpen] = useState(false);
+  const [registerExportFormat, setRegisterExportFormat] = useState<'pdf' | 'xlsx'>('pdf');
+  const [pdfIncludeCasual, setPdfIncludeCasual] = useState(true);
+  const [pdfIncludeCompensatory, setPdfIncludeCompensatory] = useState(true);
+  const [pdfIncludeEarned, setPdfIncludeEarned] = useState(true);
   const [expandedIds, setExpandedIds] = useState<string[]>([]);
   const [rowDetailLoading, setRowDetailLoading] = useState<Record<string, boolean>>({});
   const detailCacheRef = useRef<Map<string, unknown>>(new Map());
@@ -376,6 +465,20 @@ export default function LeaveRegisterPage({
     elUsed: string;
     reason: string;
     saving: boolean;
+  } | null>(null);
+
+  const [bulkSlotModal, setBulkSlotModal] = useState<{
+    open: boolean;
+    employeeId: string;
+    employeeName: string;
+    financialYearForApi: string;
+    rows: BulkSlotRow[];
+    rowsInitial: BulkSlotRow[] | null;
+    validateWithRecords: boolean;
+    carryForwardUnused: boolean;
+    reason: string;
+    saving: boolean;
+    loading: boolean;
   } | null>(null);
 
   useEffect(() => {
@@ -486,6 +589,64 @@ export default function LeaveRegisterPage({
     };
   }, [debouncedSearch, financialYear, departmentId, divisionId, page]);
 
+  const openRegisterExportModal = (format: 'pdf' | 'xlsx') => {
+    const fy = financialYear.trim();
+    if (!fy) {
+      toast.info('Choose a financial year first.');
+      return;
+    }
+    setPdfIncludeCasual(true);
+    setPdfIncludeCompensatory(true);
+    setPdfIncludeEarned(true);
+    setRegisterExportFormat(format);
+    setRegisterExportModalOpen(true);
+  };
+
+  const confirmLeaveRegisterExport = async () => {
+    const format = registerExportFormat;
+    if (!pdfIncludeCasual && !pdfIncludeCompensatory && !pdfIncludeEarned) {
+      toast.info('Pick at least one leave type to include.');
+      return;
+    }
+    const fy = financialYear.trim();
+    if (!fy) {
+      toast.info('Choose a financial year first.');
+      return;
+    }
+    setExportingPdf(true);
+    try {
+      const common = {
+        financialYear: fy,
+        departmentId: departmentId || undefined,
+        divisionId: divisionId || undefined,
+        search: debouncedSearch || undefined,
+        includeCL: pdfIncludeCasual,
+        includeCCL: pdfIncludeCompensatory,
+        includeEL: pdfIncludeEarned,
+      };
+      const blob =
+        format === 'pdf'
+          ? await api.downloadLeaveRegisterPdf(common)
+          : await api.downloadLeaveRegisterXlsx(common);
+      setRegisterExportModalOpen(false);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const ext = format === 'pdf' ? 'pdf' : 'xlsx';
+      a.download = `leave_register_${fy.replace(/\s+/g, '_')}.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      a.remove();
+      toast.success(format === 'pdf' ? 'Leave register PDF downloaded.' : 'Leave register Excel downloaded.');
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Download failed';
+      toast.error(msg);
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
   useEffect(() => {
     detailCacheRef.current = new Map();
     detailInflightRef.current = new Map();
@@ -516,6 +677,13 @@ export default function LeaveRegisterPage({
     })();
     detailInflightRef.current.set(employeeId, p);
     return p;
+  };
+
+  /** Invalidate caches, refetch list, and warm detail for this employee so expanded UI shows fresh data. */
+  const refreshRegisterAfterSave = (employeeId: string) => {
+    detailCacheRef.current.delete(employeeId);
+    setRegisterListRefresh((x) => x + 1);
+    void prefetchRowDetail(employeeId);
   };
 
   const toggleRowExpand = (employeeId: string) => {
@@ -682,8 +850,7 @@ export default function LeaveRegisterPage({
       if (!res.success) throw new Error(res.message || 'Update failed');
       toast.success('Month slot saved; apply ceiling refreshed from leaves.');
       setSlotEditModal(null);
-      setRegisterListRefresh((x) => x + 1);
-      detailCacheRef.current.delete(empId);
+      refreshRegisterAfterSave(empId);
     } catch (e: any) {
       toast.error(e?.message || 'Update failed');
       setSlotEditModal((m) => (m ? { ...m, saving: false } : null));
@@ -708,11 +875,218 @@ export default function LeaveRegisterPage({
       if (!res.success) throw new Error(res.message || 'Sync failed');
       toast.success('Monthly apply fields synced from leave applications.');
       setSlotEditModal(null);
-      setRegisterListRefresh((x) => x + 1);
-      detailCacheRef.current.delete(empId);
+      refreshRegisterAfterSave(empId);
     } catch (e: any) {
       toast.error(e?.message || 'Sync failed');
       setSlotEditModal((m) => (m ? { ...m, saving: false } : null));
+    }
+  };
+
+  const openBulkSlotEdit = async (
+    employeeId: string,
+    employeeName: string,
+    financialYearForApi: string,
+    registerMonths: RegisterMonthLite[]
+  ) => {
+    if (!financialYearForApi.trim()) {
+      toast.info('Set Financial year in filters (e.g. 2025-2026).');
+      return;
+    }
+    setBulkSlotModal({
+      open: true,
+      employeeId,
+      employeeName,
+      financialYearForApi: financialYearForApi.trim(),
+      rows: [],
+      rowsInitial: null,
+      validateWithRecords: false,
+      carryForwardUnused: true,
+      reason: '',
+      saving: false,
+      loading: true,
+    });
+    detailCacheRef.current.delete(employeeId);
+    await prefetchRowDetail(employeeId);
+    const data = detailCacheRef.current.get(employeeId) as any;
+    const rawMonths =
+      Array.isArray(data?.registerMonths) && data.registerMonths.length > 0
+        ? data.registerMonths
+        : Array.isArray(data?.months) && data.months.length > 0
+          ? data.months
+          : registerMonths;
+    const sortedRaw = [...rawMonths].sort((a, b) => {
+      const ta = a.payPeriodStart ? new Date(a.payPeriodStart as string).getTime() : 0;
+      const tb = b.payPeriodStart ? new Date(b.payPeriodStart as string).getTime() : 0;
+      if (ta !== tb) return ta - tb;
+      const ya = Number(a.year) || 0;
+      const yb = Number(b.year) || 0;
+      if (ya !== yb) return ya - yb;
+      const ma = Number(a.month ?? a.payrollCycleMonth) || 0;
+      const mb = Number(b.month ?? b.payrollCycleMonth) || 0;
+      return ma - mb;
+    });
+    const sorted = sortedRaw.map((m, i) => normalizeRegisterMonthForBulk(m, monthSlotEditPolicyConfig, i));
+    const rows: BulkSlotRow[] = sorted.map((m, idx) => {
+      const pmi = Number(m.payrollMonthIndex) || idx + 1;
+      const policy =
+        m.monthEditPolicy || resolveMonthSlotEditPolicy(monthSlotEditPolicyConfig, pmi);
+      return {
+        payrollCycleMonth: m.month,
+        payrollCycleYear: m.year,
+        label: m.label || `${m.month}/${m.year}`,
+        payrollMonthIndex: pmi,
+        policy,
+        clCredits: m.scheduledCl != null ? String(m.scheduledCl) : '',
+        compensatoryOffs: m.scheduledCco != null ? String(m.scheduledCco) : '',
+        elCredits: m.scheduledEl != null ? String(m.scheduledEl) : '',
+        lockedCredits: m.lockedCredits != null ? String(m.lockedCredits) : '',
+        transferCl: formatNum(m.cl?.transfer),
+        transferCcl: formatNum(m.ccl?.transfer),
+        transferEl: formatNum(m.el?.transfer),
+        clUsed: m.cl?.used != null ? String(m.cl.used) : '',
+        compensatoryOffsUsed: m.ccl?.used != null ? String(m.ccl.used) : '',
+        elUsed: m.el?.used != null ? String(m.el.used) : '',
+      };
+    });
+    const rowsInitial = rows.map((r) => ({
+      ...r,
+      policy: { ...r.policy },
+    }));
+    setBulkSlotModal((prev) =>
+      prev
+        ? {
+            ...prev,
+            rows,
+            rowsInitial,
+            loading: false,
+          }
+        : null
+    );
+  };
+
+  const saveBulkSlotEdit = async () => {
+    if (!bulkSlotModal) return;
+    const fy = bulkSlotModal.financialYearForApi.trim();
+    if (!fy) {
+      toast.error('Financial year is required.');
+      return;
+    }
+    const reason = bulkSlotModal.reason.trim();
+    if (!reason) {
+      toast.error('Reason is required for audit.');
+      return;
+    }
+    const parseNum = (raw: string, label: string) => {
+      const t = raw.trim();
+      if (t === '') return undefined;
+      const n = Number(t);
+      if (!Number.isFinite(n) || n < 0) throw new Error(`Invalid number: ${label}`);
+      return n;
+    };
+    const slots: Array<{
+      payrollCycleMonth: number;
+      payrollCycleYear: number;
+      clCredits?: number;
+      compensatoryOffs?: number;
+      elCredits?: number;
+      lockedCredits?: number;
+      usedCl?: number;
+      usedCcl?: number;
+      usedEl?: number;
+    }> = [];
+    const initials = bulkSlotModal.rowsInitial;
+    try {
+      for (let ri = 0; ri < bulkSlotModal.rows.length; ri++) {
+        const row = bulkSlotModal.rows[ri];
+        const init = initials?.[ri];
+        if (!row.policy.allowEditMonth) continue;
+        const slot: (typeof slots)[0] = {
+          payrollCycleMonth: row.payrollCycleMonth,
+          payrollCycleYear: row.payrollCycleYear,
+        };
+        let anyField = false;
+        const changed = (cur: string, was: string | undefined) => cur.trim() !== (was ?? '').trim();
+        if (row.policy.allowEditClCredits && (!init || changed(row.clCredits, init.clCredits))) {
+          const v = parseNum(row.clCredits, `CL ${row.label}`);
+          if (v !== undefined) {
+            slot.clCredits = v;
+            anyField = true;
+          }
+        }
+        if (row.policy.allowEditCclCredits && (!init || changed(row.compensatoryOffs, init.compensatoryOffs))) {
+          const v = parseNum(row.compensatoryOffs, `CCL ${row.label}`);
+          if (v !== undefined) {
+            slot.compensatoryOffs = v;
+            anyField = true;
+          }
+        }
+        if (row.policy.allowEditElCredits && (!init || changed(row.elCredits, init.elCredits))) {
+          const v = parseNum(row.elCredits, `EL ${row.label}`);
+          if (v !== undefined) {
+            slot.elCredits = v;
+            anyField = true;
+          }
+        }
+        if (row.policy.allowEditPolicyLock && (!init || changed(row.lockedCredits, init.lockedCredits))) {
+          const v = parseNum(row.lockedCredits, `Lock ${row.label}`);
+          if (v !== undefined) {
+            slot.lockedCredits = v;
+            anyField = true;
+          }
+        }
+        if (row.policy.allowEditUsedCl && (!init || changed(row.clUsed, init.clUsed))) {
+          const v = parseNum(row.clUsed, `Used CL ${row.label}`);
+          if (v !== undefined) {
+            slot.usedCl = v;
+            anyField = true;
+          }
+        }
+        if (row.policy.allowEditUsedCcl && (!init || changed(row.compensatoryOffsUsed, init.compensatoryOffsUsed))) {
+          const v = parseNum(row.compensatoryOffsUsed, `Used CCL ${row.label}`);
+          if (v !== undefined) {
+            slot.usedCcl = v;
+            anyField = true;
+          }
+        }
+        if (row.policy.allowEditUsedEl && (!init || changed(row.elUsed, init.elUsed))) {
+          const v = parseNum(row.elUsed, `Used EL ${row.label}`);
+          if (v !== undefined) {
+            slot.usedEl = v;
+            anyField = true;
+          }
+        }
+        if (anyField) slots.push(slot);
+      }
+    } catch (e: any) {
+      toast.error(e?.message || 'Invalid input');
+      return;
+    }
+    if (slots.length === 0 && !bulkSlotModal.carryForwardUnused) {
+      toast.error('Change at least one allowed field, or enable carry forward unused.');
+      return;
+    }
+    setBulkSlotModal((m) => (m ? { ...m, saving: true } : null));
+    const empId = bulkSlotModal.employeeId;
+    try {
+      const res = await api.patchLeaveRegisterYearBulkMonthSlots(empId, {
+        financialYear: fy,
+        slots,
+        validateWithRecords: !!bulkSlotModal.validateWithRecords,
+        carryForwardUnused: !!bulkSlotModal.carryForwardUnused,
+        reason,
+      });
+      if (!res.success) throw new Error(res.message || 'Bulk update failed');
+      const edges = res.data?.carryEdgesApplied;
+      toast.success(
+        edges != null && edges > 0
+          ? `Saved ${res.data?.slotsUpdated ?? slots.length} slot(s); ${edges} carry edge(s) applied.`
+          : `Saved ${res.data?.slotsUpdated ?? slots.length} slot(s).`
+      );
+      setBulkSlotModal(null);
+      refreshRegisterAfterSave(empId);
+    } catch (e: any) {
+      toast.error(e?.message || 'Bulk update failed');
+      setBulkSlotModal((m) => (m ? { ...m, saving: false } : null));
     }
   };
 
@@ -760,7 +1134,7 @@ export default function LeaveRegisterPage({
             : 'border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900'
         }
       >
-        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-5">
+        <div className="w-full max-w-full mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-5">
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
             <div className="flex items-start gap-3">
               <div
@@ -798,7 +1172,7 @@ export default function LeaveRegisterPage({
         </div>
       </div>
 
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4">
+      <div className="w-full max-w-full mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4">
         <div
           className={
             isSuperadmin
@@ -975,6 +1349,47 @@ export default function LeaveRegisterPage({
               </div>
             </div>
           )}
+          <div className="mt-4 flex flex-wrap items-center justify-end gap-2 sm:gap-3 border-t border-slate-100 dark:border-slate-800 pt-3">
+            <p className="text-[10px] text-slate-500 dark:text-slate-400 max-w-md leading-snug w-full sm:w-auto sm:flex-1 sm:min-w-0 sm:mr-auto order-last sm:order-first">
+              Export uses list filters and all matching employees. PDF: A4 landscape. Excel: one sheet per leave type.
+            </p>
+            <div className="flex flex-wrap items-center justify-end gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => openRegisterExportModal('pdf')}
+                disabled={exportingPdf || !financialYear.trim()}
+                className={
+                  isSuperadmin
+                    ? 'inline-flex items-center gap-2 rounded-lg border border-blue-200 dark:border-blue-900/50 bg-blue-50 dark:bg-blue-950/40 px-3 py-2 text-xs font-medium text-blue-900 dark:text-blue-100 hover:bg-blue-100/80 dark:hover:bg-blue-950/70 disabled:opacity-50'
+                    : 'inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 px-3 py-2 text-xs font-medium text-slate-800 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-50'
+                }
+              >
+                {exportingPdf && registerExportFormat === 'pdf' ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+                ) : (
+                  <Printer className="h-3.5 w-3.5 shrink-0" />
+                )}
+                Export PDF
+              </button>
+              <button
+                type="button"
+                onClick={() => openRegisterExportModal('xlsx')}
+                disabled={exportingPdf || !financialYear.trim()}
+                className={
+                  isSuperadmin
+                    ? 'inline-flex items-center gap-2 rounded-lg border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50 dark:bg-emerald-950/40 px-3 py-2 text-xs font-medium text-emerald-900 dark:text-emerald-100 hover:bg-emerald-100/80 dark:hover:bg-emerald-950/70 disabled:opacity-50'
+                    : 'inline-flex items-center gap-2 rounded-xl border border-emerald-200 dark:border-emerald-800/50 bg-emerald-50/90 dark:bg-emerald-950/30 px-3 py-2 text-xs font-medium text-emerald-900 dark:text-emerald-100 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 disabled:opacity-50'
+                }
+              >
+                {exportingPdf && registerExportFormat === 'xlsx' ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+                ) : (
+                  <FileSpreadsheet className="h-3.5 w-3.5 shrink-0" />
+                )}
+                Export Excel
+              </button>
+            </div>
+          </div>
         </div>
 
         <div
@@ -1191,9 +1606,32 @@ export default function LeaveRegisterPage({
                               </p>
                             ) : (
                               <div className="space-y-1.5" onClick={(e) => e.stopPropagation()}>
-                                <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                                  Payroll months · click a month for transactions
-                                </p>
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                                    Payroll months · click a month for transactions
+                                  </p>
+                                  {canEditMonths ? (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        const fyResolved =
+                                          financialYear.trim() ||
+                                          String(row.yearSnapshot?.financialYear || '').trim();
+                                        void openBulkSlotEdit(
+                                          idStr,
+                                          row.employee?.name || row.employee?.empNo || 'Employee',
+                                          fyResolved,
+                                          months
+                                        );
+                                      }}
+                                      className="shrink-0 text-left text-[10px] font-semibold text-violet-600 dark:text-violet-400 hover:underline inline-flex items-center gap-1"
+                                    >
+                                      <Layers className="h-3 w-3" />
+                                      Bulk edit FY slots…
+                                    </button>
+                                  ) : null}
+                                </div>
                                 {isSuperadmin ? (
                                   <div className="flex gap-2 rounded-lg border border-blue-200/70 dark:border-blue-900/50 bg-blue-50/90 dark:bg-blue-950/25 px-2.5 py-2 text-[10px] leading-snug text-blue-950 dark:text-blue-100">
                                     <Info className="h-3.5 w-3.5 shrink-0 text-blue-600 dark:text-blue-400 mt-0.5" />
@@ -1211,7 +1649,7 @@ export default function LeaveRegisterPage({
                                 )}
                                 <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/60">
                                   <table
-                                    className={`w-full min-w-[760px] border-collapse ${isSuperadmin ? 'text-[10px]' : 'text-[11px]'}`}
+                                    className={`w-full min-w-[900px] border-collapse ${isSuperadmin ? 'text-[10px]' : 'text-[11px]'}`}
                                   >
                                     <thead>
                                       <tr className="bg-slate-100/90 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300">
@@ -1224,10 +1662,10 @@ export default function LeaveRegisterPage({
                                         <th colSpan={5} className="text-center font-semibold px-1 py-1 border-l border-slate-200 dark:border-slate-600">
                                           CL
                                         </th>
-                                        <th colSpan={4} className="text-center font-semibold px-1 py-1 border-l border-slate-200 dark:border-slate-600">
+                                        <th colSpan={5} className="text-center font-semibold px-1 py-1 border-l border-slate-200 dark:border-slate-600">
                                           CCL
                                         </th>
-                                        <th colSpan={4} className="text-center font-semibold px-1 py-1 border-l border-slate-200 dark:border-slate-600">
+                                        <th colSpan={5} className="text-center font-semibold px-1 py-1 border-l border-slate-200 dark:border-slate-600">
                                           EL
                                         </th>
                                       </tr>
@@ -1250,9 +1688,9 @@ export default function LeaveRegisterPage({
                                         </th>
                                         <th
                                           className="text-right font-medium px-1 py-1 border-l border-slate-200 dark:border-slate-600"
-                                          title="Transferred unused pool to next month"
+                                          title="Closed periods: implied unused CL (scheduled − used − policy lock) that would roll under global policy"
                                         >
-                                          Transfer
+                                          Xfer
                                         </th>
                                         <th className="text-right font-medium px-1 py-1 border-l border-slate-200 dark:border-slate-600">
                                           Cr
@@ -1270,6 +1708,12 @@ export default function LeaveRegisterPage({
                                         >
                                           Lk
                                         </th>
+                                        <th
+                                          className="text-right font-medium px-1 py-1 border-l border-slate-200 dark:border-slate-600"
+                                          title="Closed periods: implied unused CCL that would roll under global policy"
+                                        >
+                                          Xfer
+                                        </th>
                                         <th className="text-right font-medium px-1 py-1 border-l border-slate-200 dark:border-slate-600">
                                           Cr
                                         </th>
@@ -1285,6 +1729,12 @@ export default function LeaveRegisterPage({
                                           title="Locked (pending). Subtext: per-type apply limit when configured."
                                         >
                                           Lk
+                                        </th>
+                                        <th
+                                          className="text-right font-medium px-1 py-1 border-l border-slate-200 dark:border-slate-600"
+                                          title="Closed periods: implied unused EL that would roll under global policy"
+                                        >
+                                          Xfer
                                         </th>
                                       </tr>
                                     </thead>
@@ -1411,6 +1861,9 @@ export default function LeaveRegisterPage({
                                             <div>{formatNullableNum(m.ccl?.locked)}</div>
                                             <TypeApplyCapHint bucket={m.ccl} />
                                           </td>
+                                          <td className="text-right px-1 py-1.5 border-l border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-400">
+                                            {formatNullableNum(m.ccl?.transfer)}
+                                          </td>
                                           <td className="text-right px-1 py-1.5 border-l border-slate-200 dark:border-slate-600">
                                             {formatNullableNum(m.el?.credited)}
                                           </td>
@@ -1421,6 +1874,9 @@ export default function LeaveRegisterPage({
                                           <td className="text-right px-1 py-1.5 align-top">
                                             <div>{formatNullableNum(m.el?.locked)}</div>
                                             <TypeApplyCapHint bucket={m.el} />
+                                          </td>
+                                          <td className="text-right px-1 py-1.5 border-l border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-400">
+                                            {formatNullableNum(m.el?.transfer)}
                                           </td>
                                         </tr>
                                       ))}
@@ -1906,6 +2362,407 @@ export default function LeaveRegisterPage({
                   Cancel
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {registerExportModalOpen && (
+        <div
+          className="fixed inset-0 z-[201] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-[2px]"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="register-export-title"
+          onClick={() => !exportingPdf && setRegisterExportModalOpen(false)}
+        >
+          <div
+            className="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-2xl ring-1 ring-slate-200 dark:ring-slate-700 overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              className={
+                registerExportFormat === 'xlsx'
+                  ? 'px-5 py-4 bg-gradient-to-r from-emerald-600 to-teal-600 text-white'
+                  : 'px-5 py-4 bg-gradient-to-r from-indigo-600 to-violet-600 text-white'
+              }
+            >
+              <h2 id="register-export-title" className="text-base font-semibold">
+                {registerExportFormat === 'xlsx' ? 'Export Excel' : 'Export PDF'}
+              </h2>
+              <p className="text-xs text-white/90 mt-1 leading-snug">
+                {registerExportFormat === 'xlsx' ? (
+                  <>
+                    Choose leave types for separate worksheets (one sheet per type), plus an &quot;About export&quot;
+                    sheet. Same columns per month: credited, taken, balance (days).
+                  </>
+                ) : (
+                  <>
+                    Choose leave types for the landscape PDF. Each type uses a different colour band across the month
+                    columns.
+                  </>
+                )}
+              </p>
+            </div>
+            <div className="p-5 space-y-4">
+              <label className="flex items-start gap-3 rounded-xl border border-slate-200 dark:border-slate-600 p-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 has-[:checked]:ring-2 has-[:checked]:ring-blue-500/40 has-[:checked]:bg-blue-50/60 dark:has-[:checked]:bg-blue-950/30">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600"
+                  checked={pdfIncludeCasual}
+                  disabled={exportingPdf}
+                  onChange={(e) => setPdfIncludeCasual(e.target.checked)}
+                />
+                <span>
+                  <span className="inline-flex items-center gap-2 text-sm font-medium text-slate-900 dark:text-slate-100">
+                    <span className="h-2.5 w-2.5 rounded-full bg-blue-500" aria-hidden />
+                    Casual leave
+                  </span>
+                  <span className="block text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    Short-term / monthly casual days (three columns per month).
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-start gap-3 rounded-xl border border-slate-200 dark:border-slate-600 p-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 has-[:checked]:ring-2 has-[:checked]:ring-emerald-500/40 has-[:checked]:bg-emerald-50/60 dark:has-[:checked]:bg-emerald-950/30">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 rounded border-slate-300 text-emerald-600"
+                  checked={pdfIncludeCompensatory}
+                  disabled={exportingPdf}
+                  onChange={(e) => setPdfIncludeCompensatory(e.target.checked)}
+                />
+                <span>
+                  <span className="inline-flex items-center gap-2 text-sm font-medium text-slate-900 dark:text-slate-100">
+                    <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" aria-hidden />
+                    Compensatory leave
+                  </span>
+                  <span className="block text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    Extra hours / comp-off bank (three columns per month).
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-start gap-3 rounded-xl border border-slate-200 dark:border-slate-600 p-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 has-[:checked]:ring-2 has-[:checked]:ring-violet-500/40 has-[:checked]:bg-violet-50/60 dark:has-[:checked]:bg-violet-950/30">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 rounded border-slate-300 text-violet-600"
+                  checked={pdfIncludeEarned}
+                  disabled={exportingPdf}
+                  onChange={(e) => setPdfIncludeEarned(e.target.checked)}
+                />
+                <span>
+                  <span className="inline-flex items-center gap-2 text-sm font-medium text-slate-900 dark:text-slate-100">
+                    <span className="h-2.5 w-2.5 rounded-full bg-violet-500" aria-hidden />
+                    Earned leave
+                  </span>
+                  <span className="block text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    Longer-term accrued leave (three columns per month).
+                  </span>
+                </span>
+              </label>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2 px-5 py-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/40">
+              <button
+                type="button"
+                disabled={exportingPdf}
+                onClick={() => setRegisterExportModalOpen(false)}
+                className="rounded-lg px-3 py-2 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-700"
+              >
+                Cancel
+              </button>
+              {registerExportFormat === 'xlsx' ? (
+                <button
+                  type="button"
+                  disabled={exportingPdf || (!pdfIncludeCasual && !pdfIncludeCompensatory && !pdfIncludeEarned)}
+                  onClick={() => void confirmLeaveRegisterExport()}
+                  className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 text-white px-4 py-2 text-xs font-semibold hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  {exportingPdf ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <FileSpreadsheet className="h-3.5 w-3.5" />
+                  )}
+                  Download Excel
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={exportingPdf || (!pdfIncludeCasual && !pdfIncludeCompensatory && !pdfIncludeEarned)}
+                  onClick={() => void confirmLeaveRegisterExport()}
+                  className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 text-white px-4 py-2 text-xs font-semibold hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  {exportingPdf ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Printer className="h-3.5 w-3.5" />}
+                  Download PDF
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {bulkSlotModal?.open && (
+        <div
+          className="fixed inset-0 z-[202] flex items-end sm:items-center justify-center p-2 sm:p-6 bg-slate-900/55 backdrop-blur-[2px]"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="bulk-slot-edit-title"
+          onClick={() => !bulkSlotModal.saving && !bulkSlotModal.loading && setBulkSlotModal(null)}
+        >
+          <div
+            className="bg-white dark:bg-slate-900 w-full max-w-[min(96vw,1680px)] max-h-[94vh] rounded-2xl shadow-2xl ring-1 ring-slate-200/80 dark:ring-slate-700/80 flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start sm:items-center justify-between gap-3 px-4 sm:px-6 py-4 shrink-0 bg-gradient-to-r from-violet-600 to-indigo-600 text-white">
+              <div className="min-w-0">
+                <h2 id="bulk-slot-edit-title" className="text-base font-semibold tracking-tight">
+                  Bulk edit scheduled pools
+                </h2>
+                <p className="text-xs text-violet-100 mt-1 leading-snug">
+                  {bulkSlotModal.employeeName}
+                  <span className="text-violet-200/90"> · </span>
+                  FY {bulkSlotModal.financialYearForApi || '—'}
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={bulkSlotModal.saving || bulkSlotModal.loading}
+                onClick={() => setBulkSlotModal(null)}
+                className="shrink-0 p-2 rounded-xl bg-white/15 hover:bg-white/25 text-white disabled:opacity-50 transition-colors"
+                aria-label="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-4 sm:p-6 flex-1 min-h-0 flex flex-col gap-4 text-sm bg-slate-50/80 dark:bg-slate-950/40">
+              {bulkSlotModal.loading ? (
+                <div className="flex flex-col items-center gap-2 text-sm text-slate-500 py-16 justify-center">
+                  <Loader2 className="h-8 w-8 animate-spin text-violet-500" />
+                  Loading payroll periods…
+                </div>
+              ) : bulkSlotModal.rows.length === 0 ? (
+                <p className="text-sm text-slate-500 text-center py-10">
+                  No payroll months loaded. Set the financial year in filters and expand this row again.
+                </p>
+              ) : (
+                <>
+                  <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed max-w-4xl">
+                    Editable cells follow your leave policy per payroll month. <strong>Xfer</strong> columns show
+                    implied unused pool for <strong>closed</strong> payroll periods (scheduled minus used and policy lock
+                    for CL), from current numbers—not a stale saved marker. With <strong>Carry forward unused</strong>{' '}
+                    checked, the server also re-chains closed months using global roll toggles. Saving updates the list
+                    and detail cache immediately.
+                  </p>
+                  <div className="overflow-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm flex-1 min-h-[240px] max-h-[min(58vh,720px)]">
+                    <table className="w-full min-w-[1040px] text-xs sm:text-[13px] border-collapse">
+                      <thead className="sticky top-0 z-[1] shadow-sm">
+                        <tr className="bg-slate-100 dark:bg-slate-800/95 text-slate-700 dark:text-slate-200 border-b border-slate-200 dark:border-slate-600">
+                          <th
+                            rowSpan={2}
+                            className="text-left font-semibold px-3 py-2.5 align-bottom whitespace-nowrap sticky left-0 z-[2] bg-slate-100 dark:bg-slate-800 border-r border-slate-200 dark:border-slate-600"
+                          >
+                            Period
+                          </th>
+                          <th
+                            colSpan={2}
+                            className="text-center font-semibold px-1 py-2 border-l border-slate-200 dark:border-slate-600"
+                          >
+                            CL
+                          </th>
+                          <th
+                            colSpan={2}
+                            className="text-center font-semibold px-1 py-2 border-l border-slate-200 dark:border-slate-600"
+                          >
+                            CCL
+                          </th>
+                          <th
+                            colSpan={2}
+                            className="text-center font-semibold px-1 py-2 border-l border-slate-200 dark:border-slate-600"
+                          >
+                            EL
+                          </th>
+                          <th
+                            rowSpan={2}
+                            className="text-center font-semibold px-2 py-2 border-l border-slate-200 dark:border-slate-600 align-bottom"
+                          >
+                            Policy lock
+                          </th>
+                          <th
+                            colSpan={3}
+                            className="text-center font-semibold px-1 py-2 border-l border-slate-200 dark:border-slate-600"
+                          >
+                            Used (override)
+                          </th>
+                        </tr>
+                        <tr className="bg-slate-50 dark:bg-slate-800/80 text-slate-600 dark:text-slate-400 text-[10px] sm:text-xs border-b border-slate-200 dark:border-slate-600">
+                          <th className="text-center font-medium px-2 py-1.5 border-l border-slate-200 dark:border-slate-600">
+                            Sch
+                          </th>
+                          <th
+                            className="text-center font-medium px-2 py-1.5"
+                            title="Closed periods: implied unused (current scheduled vs used); open month shows 0"
+                          >
+                            Xfer
+                          </th>
+                          <th className="text-center font-medium px-2 py-1.5 border-l border-slate-200 dark:border-slate-600">
+                            Sch
+                          </th>
+                          <th
+                            className="text-center font-medium px-2 py-1.5"
+                            title="Closed periods: implied unused (current scheduled vs used); open month shows 0"
+                          >
+                            Xfer
+                          </th>
+                          <th className="text-center font-medium px-2 py-1.5 border-l border-slate-200 dark:border-slate-600">
+                            Sch
+                          </th>
+                          <th
+                            className="text-center font-medium px-2 py-1.5"
+                            title="Closed periods: implied unused (current scheduled vs used); open month shows 0"
+                          >
+                            Xfer
+                          </th>
+                          <th className="text-center font-medium px-2 py-1.5 border-l border-slate-200 dark:border-slate-600">
+                            CL
+                          </th>
+                          <th className="text-center font-medium px-2 py-1.5">CCL</th>
+                          <th className="text-center font-medium px-2 py-1.5">EL</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {bulkSlotModal.rows.map((r, i) => {
+                          const dis =
+                            bulkSlotModal.saving ||
+                            bulkSlotModal.loading ||
+                            !r.policy.allowEditMonth;
+                          const cell =
+                            (enabled: boolean, value: string, field: keyof BulkSlotRow) => (
+                              <td key={String(field)} className="px-1.5 py-1 align-middle">
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={value}
+                                  disabled={dis || !enabled}
+                                  onChange={(e) => {
+                                    const v = e.target.value;
+                                    setBulkSlotModal((m) => {
+                                      if (!m) return null;
+                                      const next = [...m.rows];
+                                      next[i] = { ...next[i], [field]: v };
+                                      return { ...m, rows: next };
+                                    });
+                                  }}
+                                  className="w-full min-w-[3.25rem] max-w-[6rem] h-8 rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 px-2 text-xs sm:text-sm tabular-nums disabled:opacity-45 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-violet-500/30 focus:border-violet-500 dark:focus:border-violet-400"
+                                />
+                              </td>
+                            );
+                          const xfer = (v: string) => (
+                            <td className="px-1.5 py-1 align-middle">
+                              <div className="h-8 flex items-center justify-center rounded-md bg-slate-100 dark:bg-slate-800/90 border border-transparent px-2 text-xs sm:text-sm tabular-nums text-slate-600 dark:text-slate-300">
+                                {v || '—'}
+                              </div>
+                            </td>
+                          );
+                          return (
+                            <tr
+                              key={`${r.payrollCycleYear}-${r.payrollCycleMonth}`}
+                              className={`border-b border-slate-100 dark:border-slate-800/90 align-top ${
+                                i % 2 === 0 ? 'bg-white dark:bg-slate-900' : 'bg-slate-50/60 dark:bg-slate-900/70'
+                              }`}
+                            >
+                              <td className="px-3 py-2 sticky left-0 z-[1] bg-inherit border-r border-slate-100 dark:border-slate-800">
+                                <div className="font-medium text-slate-900 dark:text-slate-100">{r.label}</div>
+                                {!r.policy.allowEditMonth ? (
+                                  <span className="text-[10px] text-amber-700 dark:text-amber-400 font-medium">
+                                    Locked (policy)
+                                  </span>
+                                ) : null}
+                              </td>
+                              {cell(r.policy.allowEditClCredits, r.clCredits, 'clCredits')}
+                              {xfer(r.transferCl)}
+                              {cell(r.policy.allowEditCclCredits, r.compensatoryOffs, 'compensatoryOffs')}
+                              {xfer(r.transferCcl)}
+                              {cell(r.policy.allowEditElCredits, r.elCredits, 'elCredits')}
+                              {xfer(r.transferEl)}
+                              {cell(r.policy.allowEditPolicyLock, r.lockedCredits, 'lockedCredits')}
+                              {cell(r.policy.allowEditUsedCl, r.clUsed, 'clUsed')}
+                              {cell(r.policy.allowEditUsedCcl, r.compensatoryOffsUsed, 'compensatoryOffsUsed')}
+                              {cell(r.policy.allowEditUsedEl, r.elUsed, 'elUsed')}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300">
+                    Reason (audit) *
+                    <textarea
+                      value={bulkSlotModal.reason}
+                      disabled={bulkSlotModal.saving}
+                      onChange={(e) =>
+                        setBulkSlotModal((m) => (m ? { ...m, reason: e.target.value } : null))
+                      }
+                      rows={2}
+                      className="mt-1.5 w-full rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-sm disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-violet-500/25"
+                      placeholder="Why are you changing these slots?"
+                    />
+                  </label>
+                  <div className="grid sm:grid-cols-2 gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/50 p-4">
+                    <label className="flex items-start gap-3 text-xs sm:text-sm text-slate-700 dark:text-slate-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5 h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
+                        checked={bulkSlotModal.carryForwardUnused}
+                        disabled={bulkSlotModal.saving}
+                        onChange={(e) =>
+                          setBulkSlotModal((m) => (m ? { ...m, carryForwardUnused: e.target.checked } : null))
+                        }
+                      />
+                      <span>
+                        <span className="font-medium text-slate-900 dark:text-slate-100">Carry forward unused</span>
+                        <span className="block text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
+                          After your edits, rebuild the FY transfer chain for every closed payroll period through today
+                          (IST), up to the current open period. Uses global leave policy roll toggles for CL / CCL / EL;
+                          per-month slot edit or carry flags are not used for this rebuild.
+                        </span>
+                      </span>
+                    </label>
+                    <label className="flex items-start gap-3 text-xs sm:text-sm text-slate-700 dark:text-slate-300 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5 h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
+                        checked={bulkSlotModal.validateWithRecords}
+                        disabled={bulkSlotModal.saving}
+                        onChange={(e) =>
+                          setBulkSlotModal((m) => (m ? { ...m, validateWithRecords: e.target.checked } : null))
+                        }
+                      />
+                      <span>
+                        <span className="font-medium text-slate-900 dark:text-slate-100">Validate against records</span>
+                        <span className="block text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
+                          Reject save if scheduled pool is below already-used days for any updated row.
+                        </span>
+                      </span>
+                    </label>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 pt-1 shrink-0">
+                    <button
+                      type="button"
+                      disabled={bulkSlotModal.saving || bulkSlotModal.loading}
+                      onClick={() => void saveBulkSlotEdit()}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-violet-600 text-white px-5 py-2.5 text-sm font-semibold hover:bg-violet-700 disabled:opacity-50 shadow-sm"
+                    >
+                      {bulkSlotModal.saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                      Save all changes
+                    </button>
+                    <button
+                      type="button"
+                      disabled={bulkSlotModal.saving || bulkSlotModal.loading}
+                      onClick={() => setBulkSlotModal(null)}
+                      className="inline-flex items-center justify-center rounded-xl border border-slate-200 dark:border-slate-600 px-4 py-2.5 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
