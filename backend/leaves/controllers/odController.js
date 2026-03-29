@@ -1864,8 +1864,8 @@ exports.processODAction = async (req, res) => {
   }
 };
 
-// @desc    Revoke OD approval (within 2-3 hours)
-// @route   PUT /api/od/:id/revoke
+// @desc    Revoke OD approval (last workflow step reset; no time window)
+// @route   PUT /api/leaves/od/:id/revoke
 // @access  Private (HOD, HR, Super Admin)
 exports.revokeODApproval = async (req, res) => {
   try {
@@ -1920,15 +1920,6 @@ exports.revokeODApproval = async (req, res) => {
       return res.status(400).json({
         success: false,
         error: 'No timestamp found for the last action',
-      });
-    }
-
-    const hoursSinceAction = (new Date() - new Date(updatedAt)) / (1000 * 60 * 60);
-    const revocationWindow = 48; // Extended to 48 hours
-    if (hoursSinceAction > revocationWindow) {
-      return res.status(400).json({
-        success: false,
-        error: `Action can only be revoked within ${revocationWindow} hours. ${hoursSinceAction.toFixed(1)} hours have passed.`,
       });
     }
 
@@ -1996,6 +1987,43 @@ exports.revokeODApproval = async (req, res) => {
     od.markModified('workflow');
     od.markModified('approvals');
     await od.save();
+
+    // Recalculate monthly summary after revocation, then refresh AttendanceDaily so status/payableShifts drop OD (full-day OD never re-saved the daily on approve).
+    try {
+      const { recalculateOnAttendanceUpdate } = require('../../attendance/services/summaryCalculationService');
+      const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
+      const formatDate = (date) => {
+        const d = new Date(date);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      };
+
+      const dateFrom = formatDate(od.fromDate);
+      const dateTo = formatDate(od.toDate);
+      const empNoUpper = od.emp_no ? String(od.emp_no).toUpperCase() : '';
+
+      if (empNoUpper) {
+        let d = new Date(dateFrom + 'T12:00:00');
+        const end = new Date(dateTo + 'T12:00:00');
+        while (d <= end) {
+          const attendanceDate = formatDate(d);
+          await recalculateOnAttendanceUpdate(empNoUpper, attendanceDate);
+          const att = await AttendanceDaily.findOne({
+            employeeNumber: empNoUpper,
+            date: attendanceDate,
+          });
+          if (att) {
+            try {
+              await att.save();
+            } catch (dailyErr) {
+              console.error('[OD revoke] AttendanceDaily refresh failed:', attendanceDate, dailyErr.message);
+            }
+          }
+          d.setDate(d.getDate() + 1);
+        }
+      }
+    } catch (recalcErr) {
+      console.error('Error recalculating monthly summary after OD revocation:', recalcErr);
+    }
 
     res.status(200).json({
       success: true,
