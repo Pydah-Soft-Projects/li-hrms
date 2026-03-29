@@ -5706,9 +5706,14 @@ export default function AttendancePage() {
                           const summary = typeSummaryData.item.summary;
                           if (summary && summary.contributingDates) {
                             const contrib = summary.contributingDates;
-                            if (typeSummaryData.type === 'present' && contrib.present) return contrib.present.some(c => c.date === dStr);
-                            if (typeSummaryData.type === 'od' && contrib.ods) return contrib.ods.some(c => c.date === dStr);
-                            if (typeSummaryData.type === 'leaves' && contrib.leaves) return contrib.leaves.some(c => c.date === dStr);
+                            const entryDate = (c: string | { date: string; value?: number; label?: string }) =>
+                              typeof c === 'string' ? c : c.date;
+                            if (typeSummaryData.type === 'present' && contrib.present)
+                              return contrib.present.some((c) => entryDate(c) === dStr);
+                            if (typeSummaryData.type === 'od' && contrib.ods)
+                              return contrib.ods.some((c) => entryDate(c) === dStr);
+                            if (typeSummaryData.type === 'leaves' && contrib.leaves)
+                              return contrib.leaves.some((c) => entryDate(c) === dStr);
                           }
 
                           // Fallback to dailyAttendance status if summary is not present or partial
