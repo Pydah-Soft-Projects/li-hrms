@@ -3,9 +3,11 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { api, Department } from '@/lib/api';
 import { toast } from 'react-toastify';
-import { ChevronLeft, ChevronRight, FileSpreadsheet, Search, Calendar, Building2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, FileSpreadsheet, Search, Calendar, Building2, Download } from 'lucide-react';
 
-const ROWS_PER_PAGE_OPTIONS = [10, 25, 50, 100] as const;
+/** Negative value = show all loaded rows (API returns full set; table was capped by page size before). */
+const ROWS_PER_PAGE_ALL = -1;
+const ROWS_PER_PAGE_OPTIONS = [10, 25, 50, 100, 250, 500, ROWS_PER_PAGE_ALL] as const;
 
 function formatCell(value: unknown): string {
   if (value == null) return '—';
@@ -26,13 +28,16 @@ export default function PaysheetPage() {
   const [selectedDepartment, setSelectedDepartment] = useState('');
   const [searchFilter, setSearchFilter] = useState('');
   const [dataSource, setDataSource] = useState<'existing' | 'calculated' | null>(null);
+  const [paysheetKind, setPaysheetKind] = useState<'regular' | 'second_salary'>('regular');
   const [page, setPage] = useState(1);
-  const [rowsPerPage, setRowsPerPage] = useState(25);
+  const [rowsPerPage, setRowsPerPage] = useState(100);
+  const [exportingBundle, setExportingBundle] = useState(false);
 
   const totalRows = rows.length;
-  const totalPages = Math.max(1, Math.ceil(totalRows / rowsPerPage));
-  const startRow = (page - 1) * rowsPerPage;
-  const endRow = Math.min(startRow + rowsPerPage, totalRows);
+  const effectivePerPage = rowsPerPage === ROWS_PER_PAGE_ALL ? Math.max(totalRows, 1) : rowsPerPage;
+  const totalPages = rowsPerPage === ROWS_PER_PAGE_ALL ? 1 : Math.max(1, Math.ceil(totalRows / effectivePerPage));
+  const startRow = rowsPerPage === ROWS_PER_PAGE_ALL ? 0 : (page - 1) * effectivePerPage;
+  const endRow = Math.min(startRow + effectivePerPage, totalRows);
   const paginatedRows = useMemo(
     () => rows.slice(startRow, endRow),
     [rows, startRow, endRow]
@@ -40,7 +45,7 @@ export default function PaysheetPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [rows.length, rowsPerPage, selectedMonth, selectedDepartment, searchFilter]);
+  }, [rows.length, rowsPerPage, selectedMonth, selectedDepartment, searchFilter, paysheetKind]);
 
   useEffect(() => {
     const today = new Date();
@@ -69,6 +74,7 @@ export default function PaysheetPage() {
         departmentId: selectedDepartment || undefined,
         search: searchFilter.trim() || undefined,
         source: 'existing',
+        secondSalary: paysheetKind === 'second_salary',
       });
       if (res?.success && res?.data) {
         setHeaders(res.data.headers || []);
@@ -89,13 +95,44 @@ export default function PaysheetPage() {
     } finally {
       setLoadingExisting(false);
     }
-  }, [selectedMonth, selectedDepartment, searchFilter]);
+  }, [selectedMonth, selectedDepartment, searchFilter, paysheetKind]);
 
   useEffect(() => {
     loadExisting();
   }, [loadExisting]);
 
+  const exportPaysheetBundle = async () => {
+    if (!selectedMonth) {
+      toast.warning('Please select a month');
+      return;
+    }
+    setExportingBundle(true);
+    try {
+      const blob = await api.exportPaysheetBundleExcel({
+        month: selectedMonth,
+        departmentId: selectedDepartment || undefined,
+        search: searchFilter.trim() || undefined,
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `paysheet_bundle_${selectedMonth}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success('Downloaded paysheet bundle (Regular, 2nd salary, Comparison)');
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Export failed';
+      toast.error(msg);
+    } finally {
+      setExportingBundle(false);
+    }
+  };
+
   const loadPaysheet = async () => {
+    if (paysheetKind === 'second_salary') {
+      toast.info('2nd salary view lists saved runs only. Calculate from 2nd Salary Payments, then refresh.');
+      return;
+    }
     if (!selectedMonth) {
       toast.warning('Please select a month');
       return;
@@ -149,10 +186,22 @@ export default function PaysheetPage() {
                 Paysheet
               </h1>
               <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
-                Payroll records by month. Columns follow Payroll Configuration.
+                {paysheetKind === 'second_salary'
+                  ? 'Saved 2nd salary by month. With Payroll Configuration output columns set, columns match regular paysheet; otherwise legacy 2nd-salary layout.'
+                  : 'Payroll records by month. Columns follow Payroll Configuration.'}
               </p>
             </div>
           </div>
+          <button
+            type="button"
+            onClick={exportPaysheetBundle}
+            disabled={!selectedMonth || exportingBundle}
+            className="inline-flex items-center justify-center gap-2 h-10 px-4 rounded-lg bg-violet-600 text-white text-sm font-semibold shadow-sm hover:bg-violet-700 disabled:opacity-50 disabled:pointer-events-none transition-colors"
+            title="Excel with Regular, 2nd salary, and Comparison (paired columns + net difference)"
+          >
+            <Download className="h-4 w-4 shrink-0" />
+            {exportingBundle ? 'Exporting…' : 'Export bundle'}
+          </button>
         </div>
       </div>
 
@@ -202,6 +251,33 @@ export default function PaysheetPage() {
               className="h-9 min-w-[160px] rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 focus:outline-none"
             />
           </div>
+          <div className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Paysheet</span>
+            <div className="flex h-9 items-center rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-100/90 p-0.5 dark:bg-slate-800/80">
+              <button
+                type="button"
+                onClick={() => setPaysheetKind('regular')}
+                className={`h-8 flex-1 rounded-md px-3 text-xs font-semibold transition-colors ${
+                  paysheetKind === 'regular'
+                    ? 'bg-white text-violet-700 shadow-sm dark:bg-slate-900 dark:text-violet-300'
+                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
+              >
+                Regular
+              </button>
+              <button
+                type="button"
+                onClick={() => setPaysheetKind('second_salary')}
+                className={`h-8 flex-1 rounded-md px-2 text-xs font-semibold transition-colors ${
+                  paysheetKind === 'second_salary'
+                    ? 'bg-white text-violet-700 shadow-sm dark:bg-slate-900 dark:text-violet-300'
+                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
+              >
+                2nd salary
+              </button>
+            </div>
+          </div>
           <button
             type="button"
             onClick={loadPaysheet}
@@ -231,10 +307,14 @@ export default function PaysheetPage() {
               <FileSpreadsheet className="h-8 w-8 text-slate-400 dark:text-slate-500" />
             </div>
             <p className="mt-4 text-sm font-medium text-slate-700 dark:text-slate-300">
-              No payroll records for this month
+              {paysheetKind === 'second_salary'
+                ? 'No 2nd salary records for this month'
+                : 'No payroll records for this month'}
             </p>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400 text-center max-w-sm">
-              Adjust month or filters to load data.
+              {paysheetKind === 'second_salary'
+                ? 'Run a cycle from 2nd Salary Payments for this month, then switch back here or refresh.'
+                : 'Adjust month or filters to load data.'}
             </p>
           </div>
         )}
@@ -304,7 +384,7 @@ export default function PaysheetPage() {
                     >
                       {ROWS_PER_PAGE_OPTIONS.map((n) => (
                         <option key={n} value={n}>
-                          {n}
+                          {n === ROWS_PER_PAGE_ALL ? 'All rows' : n}
                         </option>
                       ))}
                     </select>

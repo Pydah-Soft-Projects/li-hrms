@@ -1,10 +1,125 @@
 /**
  * Shared query builder for payroll employee selection.
  * Used by: shared/jobs/worker.js (bulk regular + second salary), secondSalaryService.js,
- * and scripts that need the same employee lists (e.g. payroll_division_employee_report.js).
+ * payrollController bulk calculate, and scripts that need the same employee lists.
  *
  * When leftDateRange is provided, includes: active employees OR employees who left in that month.
  */
+
+const mongoose = require('mongoose');
+
+function toObjectIdIfValid(id) {
+  if (id == null || id === '' || id === 'all') return null;
+  if (id instanceof mongoose.Types.ObjectId) return id;
+  const s = String(id);
+  if (mongoose.Types.ObjectId.isValid(s) && String(new mongoose.Types.ObjectId(s)) === s) {
+    return new mongoose.Types.ObjectId(s);
+  }
+  return null;
+}
+
+/**
+ * Full employee match for POST /payroll/bulk-calculate (and worker replay).
+ * Combines data-scope filter + division/department + payroll-month employment rule (active or left in period).
+ * Uses $and so req.scopeFilter.$or is preserved (spread + overwriting $or was incorrect).
+ *
+ * @param {Object|null|undefined} scopeFilter - req.scopeFilter from applyScopeFilter (may be {})
+ * @param {string|null|undefined} divisionId
+ * @param {string|null|undefined} departmentId
+ * @param {Date} rangeStart - UTC start (inclusive) of payroll period for leftDate
+ * @param {Date} rangeEnd - UTC end (inclusive) of payroll period for leftDate
+ * @returns {Object} MongoDB query for Employee.find()
+ */
+function buildPayrollBulkEmployeeQuery(scopeFilter, divisionId, departmentId, rangeStart, rangeEnd) {
+  const employmentOr = {
+    $or: [
+      { is_active: true, leftDate: null },
+      { leftDate: { $gte: rangeStart, $lte: rangeEnd } },
+    ],
+  };
+
+  const andParts = [];
+
+  if (scopeFilter && typeof scopeFilter === 'object' && Object.keys(scopeFilter).length > 0) {
+    andParts.push(scopeFilter);
+  }
+  andParts.push(employmentOr);
+
+  const div = toObjectIdIfValid(divisionId);
+  const dept = toObjectIdIfValid(departmentId);
+  if (div) andParts.push({ division_id: div });
+  if (dept) andParts.push({ department_id: dept });
+
+  if (andParts.length === 1) return andParts[0];
+  return { $and: andParts };
+}
+
+/**
+ * Employee filter for paysheet + export-bundle: same scoping as bulk payroll (scope + dept/div + employment rule).
+ * Avoids overwriting req.scopeFilter.$or when merging resignation rules.
+ *
+ * @param {Object|null|undefined} scopeFilter
+ * @param {string|null|undefined} divisionId
+ * @param {string|null|undefined} departmentId
+ * @param {Date} rangeStart
+ * @param {Date} rangeEnd
+ * @param {{ status?: string, search?: string }} [options]
+ */
+function buildPaysheetEmployeeFilter(scopeFilter, divisionId, departmentId, rangeStart, rangeEnd, options = {}) {
+  const { status, search } = options;
+  const divF = toObjectIdIfValid(divisionId);
+  const depF = toObjectIdIfValid(departmentId);
+
+  if (status === 'inactive') {
+    const parts = [];
+    if (scopeFilter && typeof scopeFilter === 'object' && Object.keys(scopeFilter).length > 0) {
+      parts.push(scopeFilter);
+    }
+    const deptDiv = {};
+    if (depF) deptDiv.department_id = depF;
+    if (divF) deptDiv.division_id = divF;
+    if (Object.keys(deptDiv).length > 0) parts.push(deptDiv);
+    parts.push({ is_active: false });
+    if (search && String(search).trim()) {
+      const term = String(search).trim();
+      parts.push({
+        $or: [
+          { employee_name: { $regex: term, $options: 'i' } },
+          { emp_no: { $regex: term, $options: 'i' } },
+        ],
+      });
+    }
+    if (parts.length === 1) return parts[0];
+    return { $and: parts };
+  }
+
+  const scope =
+    scopeFilter && typeof scopeFilter === 'object' && Object.keys(scopeFilter).length > 0 ? scopeFilter : null;
+  const divArg = divisionId && divisionId !== 'all' ? divisionId : undefined;
+  const depArg = departmentId && departmentId !== 'all' ? departmentId : undefined;
+  let q = buildPayrollBulkEmployeeQuery(scope, divArg, depArg, rangeStart, rangeEnd);
+
+  if (status === 'active') {
+    q = { $and: [q, { is_active: true }] };
+  }
+
+  if (search && String(search).trim()) {
+    const term = String(search).trim();
+    q = {
+      $and: [
+        q,
+        {
+          $or: [
+            { employee_name: { $regex: term, $options: 'i' } },
+            { emp_no: { $regex: term, $options: 'i' } },
+          ],
+        },
+      ],
+    };
+  }
+
+  return q;
+}
 
 /**
  * Query for regular (bulk) payroll: same as worker.js payroll_bulk_calculate
@@ -46,6 +161,8 @@ function getSecondSalaryEmployeeQuery(opts = {}) {
 }
 
 module.exports = {
+  buildPayrollBulkEmployeeQuery,
+  buildPaysheetEmployeeFilter,
   getRegularPayrollEmployeeQuery,
   getSecondSalaryEmployeeQuery,
 };
