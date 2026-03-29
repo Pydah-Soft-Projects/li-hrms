@@ -86,6 +86,13 @@ const monthlyAttendanceSummarySchema = new mongoose.Schema(
       min: 0,
     },
 
+    // Sum of payable-shift contributions on PARTIAL-status days in the pay period (same basis as totalPayableShifts for those days; not WO/HOL)
+    totalPartialDays: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
     // Days explicitly marked ABSENT (working days; excludes WO/HOL roster)
     totalAbsentDays: {
       type: Number,
@@ -241,11 +248,13 @@ const monthlyAttendanceSummarySchema = new mongoose.Schema(
     /**
      * Store lists of date strings (YYYY-MM-DD) that contributed to each summary metric.
      * This is used by the frontend to highlight relevant cells when a summary value is clicked.
+     * For `partial`, `value` is payable-shift contribution on that PARTIAL day (same basis as payableShifts).
      */
     contributingDates: {
       present: [{ date: String, value: Number, label: String }],
       leaves: [{ date: String, value: Number, label: String }],
       ods: [{ date: String, value: Number, label: String }],
+      partial: [{ date: String, value: Number, label: String }],
       weeklyOffs: [{ date: String, value: Number, label: String }],
       holidays: [{ date: String, value: Number, label: String }],
       payableShifts: [{ date: String, value: Number, label: String }],

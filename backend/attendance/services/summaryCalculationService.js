@@ -3,6 +3,7 @@ const Leave = require('../../leaves/model/Leave');
 const LeaveSplit = require('../../leaves/model/LeaveSplit');
 const OD = require('../../leaves/model/OD');
 const MonthlyAttendanceSummary = require('../model/MonthlyAttendanceSummary');
+const AttendanceSettings = require('../model/AttendanceSettings');
 const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
 const Shift = require('../../shifts/model/Shift');
 const { createISTDate, extractISTComponents, getAllDatesInRange } = require('../../shared/utils/dateUtils');
@@ -97,11 +98,19 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     summary.totalDaysInMonth = Math.round(periodDays);
     const todayIstStr = extractISTComponents(new Date()).dateStr;
 
+    const attendanceSettingsDoc = await AttendanceSettings.getSettings();
+    const processingModeIsSingleShift =
+      attendanceSettingsDoc?.processingMode?.mode === 'single_shift';
+    const partialDaysContributeToPayableShifts =
+      processingModeIsSingleShift &&
+      attendanceSettingsDoc?.featureFlags?.partialDaysContributeToPayableShifts === true;
+
     // Initialize contributing dates tracker
     const contributingDates = {
       present: [],
       leaves: [],
       ods: [],
+      partial: [],
       weeklyOffs: [],
       holidays: [],
       payableShifts: [],
@@ -129,7 +138,7 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         $lte: endDateStr,
       },
     })
-      .select('date status shifts totalWorkingHours extraHours totalLateInMinutes totalEarlyOutMinutes payableShifts earlyOutDeduction')
+      .select('date status shifts inTime outTime totalWorkingHours extraHours totalLateInMinutes totalEarlyOutMinutes payableShifts earlyOutDeduction')
       .populate('shifts.shiftId', 'payableShifts name')
       .lean();
     console.log('[OD-FLOW] calculateMonthlySummary loaded dailies', { emp_no: empNoNorm, period: `${startDateStr}..${endDateStr}`, count: attendanceRecords.length });
@@ -271,6 +280,8 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     let earlyOutCount = 0;
     let totalLeaveDays = 0;
     let totalODDays = 0;
+    /** Sum of payable-shift contributions on PARTIAL-status days (aligned with Payable column, not day-count). */
+    let totalPartialPayableContribution = 0;
 
     for (const [dStr, day] of dailyStatsMap) {
       // 1. Leaves (Priority - if leave is taken, it counts as leave)
@@ -309,6 +320,21 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
           if (eo > li) attFirst = 0.5;
           else if (li > eo) attSecond = 0.5;
           else attFirst = 0.5; // Default to first half if we can't tell
+        } else if (status === 'OD' && day.ods.length > 0) {
+          // Half-day OD while daily status is OD: credit the office half toward present (same intent as HD/OD in UI).
+          const halfOd = day.ods.find(
+            (o) =>
+              o.isHalfDay &&
+              o.odType_extended === 'half_day' &&
+              (o.halfDayType === 'first_half' || o.halfDayType === 'second_half')
+          );
+          if (halfOd) {
+            const shifts = Array.isArray(day.attendance.shifts) ? day.attendance.shifts : [];
+            const hasIn = shifts.some((s) => s && s.inTime) || !!day.attendance.inTime;
+            const hasOut = shifts.some((s) => s && s.outTime) || !!day.attendance.outTime;
+            if (halfOd.halfDayType === 'second_half' && hasIn) attFirst = 0.5;
+            else if (halfOd.halfDayType === 'first_half' && hasOut) attSecond = 0.5;
+          }
         }
         // PARTIAL/ABSENT: base is 0.0 per user request
       }
@@ -337,31 +363,48 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         totalODDays += (odFirst + odSecond);
       }
 
-      // Merge and Cap - this handles PARTIAL + OD correctly (0.0 + 0.5 = 0.5)
-      // dayPresent here will reflect the physical presence contribution for PRESENT category.
-      // If a half is covered by OD, we don't count it as a "Physical Present" unit in the count columns,
-      // though it still contributes to dayPayable.
+      // dayPresent: physical presence (PARTIAL status does not add to present; partial payable is tracked separately)
       const dayPresent = Math.min(Math.max(0, attFirst - odFirst) + Math.max(0, attSecond - odSecond), 1.0);
-      const dayOD = Math.min(odFirst + odSecond, 1.0);
-      
+
       const dayFirst = Math.max(attFirst, odFirst);
       const daySecond = Math.max(attSecond, odSecond);
       const mergedDailyCredit = Math.min(dayFirst + daySecond, 1.0);
-      
+
+      const isPartialDay =
+        day.attendance &&
+        day.attendance.status === 'PARTIAL' &&
+        !day.isWO &&
+        !day.isHOL;
+
+      let mergedForPayable = mergedDailyCredit;
+      if (isPartialDay && partialDaysContributeToPayableShifts) {
+        mergedForPayable = Math.max(mergedForPayable, 0.5);
+      }
+
       // Use AttendanceDaily payables as source of truth for aggregation.
-      let dayPayable = mergedDailyCredit;
+      let dayPayable = mergedForPayable;
       if (day.attendance && !day.isWO && !day.isHOL) {
         const attendancePayable = Number(day.attendance.payableShifts);
         const shifts = Array.isArray(day.attendance.shifts) ? day.attendance.shifts : [];
         const shiftLevelPayable = shifts.reduce((sum, s) => sum + (Number(s?.payableShift) || 0), 0);
-        const candidates = [mergedDailyCredit];
+        const candidates = [mergedForPayable];
         if (Number.isFinite(attendancePayable) && attendancePayable >= 0) candidates.push(attendancePayable);
         if (Number.isFinite(shiftLevelPayable) && shiftLevelPayable >= 0) candidates.push(shiftLevelPayable);
         dayPayable = Math.round(Math.max(...candidates) * 100) / 100;
       }
 
-      // Ensure single day credit is never > 1.0 even with merged logic
       dayPayable = Math.min(dayPayable, 1.0);
+
+      if (isPartialDay) {
+        if (!contributingDates.partial.some(cd => cd.date === dStr)) {
+          contributingDates.partial.push({
+            date: dStr,
+            value: dayPayable,
+            label: dayPayable > 0 ? `PT (${dayPayable})` : 'PARTIAL',
+          });
+        }
+        totalPartialPayableContribution += dayPayable;
+      }
 
       // 1. Handle Present Counts (Physical presence NOT on-duty)
       if (dayPresent > 0) {
@@ -467,6 +510,7 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     }
 
     summary.totalPresentDays = Math.round(totalPresentDays * 100) / 100;
+    summary.totalPartialDays = Math.round(totalPartialPayableContribution * 100) / 100;
     summary.totalPayableShifts = Math.round(totalPayableShifts * 100) / 100;
     summary.totalLeaves = Math.round(totalLeaveDays * 100) / 100;
     summary.totalODs = Math.round(totalODDays * 100) / 100;
@@ -597,6 +641,8 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
             enableAbsentDeduction: absentSettings.enableAbsentDeduction,
             lopDaysPerAbsent: absentSettings.lopDaysPerAbsent,
             employee,
+            periodStartDateStr: startDateStr,
+            periodEndDateStr: endDateStr,
           }
         );
         const b = attDed.breakdown || {};
@@ -669,6 +715,27 @@ async function calculateAllEmployeesSummary(year, monthNumber) {
     console.error(`Error calculating all employees summary for ${year}-${monthNumber}:`, error);
     throw error;
   }
+}
+
+/**
+ * Recalculate stored monthly summary for one employee.
+ * @param {string} emp_no - Employee number (any case)
+ * @param {string} yyyyMm - Payroll month label, e.g. "2026-03" (uses same anchor as UI: cycle containing the 15th of that month)
+ */
+async function calculateMonthlySummaryByEmpNo(emp_no, yyyyMm) {
+  const Employee = require('../../employees/model/Employee');
+  const empNoNorm = (emp_no && String(emp_no).trim()) ? String(emp_no).toUpperCase() : emp_no;
+  const employee = await Employee.findOne({ emp_no: empNoNorm });
+  if (!employee) {
+    throw new Error(`Employee not found for emp_no: ${emp_no}`);
+  }
+  const parts = String(yyyyMm).trim().split('-');
+  const year = parseInt(parts[0], 10);
+  const monthNumber = parseInt(parts[1], 10);
+  if (!year || !monthNumber || monthNumber < 1 || monthNumber > 12) {
+    throw new Error(`Invalid YYYY-MM: ${yyyyMm}`);
+  }
+  return calculateMonthlySummary(employee._id, employee.emp_no, year, monthNumber);
 }
 
 /**
@@ -847,6 +914,7 @@ async function deleteAllMonthlySummaries(options = {}) {
 module.exports = {
   calculateMonthlySummary,
   calculateAllEmployeesSummary,
+  calculateMonthlySummaryByEmpNo,
   recalculateOnAttendanceUpdate,
   recalculateOnLeaveApproval,
   recalculateOnODApproval,

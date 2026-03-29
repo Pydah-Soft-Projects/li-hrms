@@ -6,7 +6,12 @@ import { useState, useEffect, useRef, useMemo, type MouseEvent } from 'react';
 
 import { api } from '@/lib/api';
 
-import { formatHighlightContribution, highlightBadgeSubtitle } from '@/lib/attendanceHighlight';
+import {
+  formatHighlightContribution,
+  highlightBadgeSubtitle,
+  hasAttendancePunches,
+  isFullDayOdEligibleForConflictRevoke,
+} from '@/lib/attendanceHighlight';
 
 import {
   normalizeCompleteSummaryColumns,
@@ -14,6 +19,11 @@ import {
   type SuperadminCompleteAggregateKey,
   type WorkspaceCompleteAggregateKey,
 } from '@/lib/attendanceCompleteAggregateColumns';
+
+import {
+  getPartialColumnTotal,
+  getPartialRecordPayableContribution,
+} from '@/lib/attendancePartialContribution';
 
 import dynamic from 'next/dynamic';
 const LocationMap = dynamic(() => import('@/components/LocationMap'), { ssr: false });
@@ -177,8 +187,11 @@ interface AttendanceRecord {
     earlyOutMinutes?: number;
     shiftStartTime?: string;
     shiftEndTime?: string;
+    payableShift?: number;
 
   }>;
+
+  payableShifts?: number;
 
   isEdited?: boolean;
 
@@ -246,6 +259,9 @@ interface MonthlyAttendanceData {
 
     totalODs: number;
 
+    /** Sum of payable contributions on PARTIAL-status days (same basis as Payable). */
+    totalPartialDays?: number;
+
     totalWeeklyOffs?: number;
 
     totalHolidays?: number;
@@ -297,7 +313,32 @@ function getPresentExcludingOD(summary?: MonthlyAttendanceData['summary'] | null
   return Math.max(0, Math.round((Number(summary.totalPresentDays) || 0) * 100) / 100);
 }
 
+function contributingEntryMatchesDate(entry: string | { date?: string }, dStr: string): boolean {
+  if (typeof entry === 'string') return entry === dStr;
+  return entry?.date === dStr;
+}
 
+/** Same shape normalization as superadmin attendance (flat vs nested API rows). */
+function normalizeWorkspaceAttendanceData(data: unknown[]): MonthlyAttendanceData[] {
+  return (data || []).map((item: unknown) => {
+    const row = item as Record<string, unknown> & MonthlyAttendanceData;
+    if (row.employee && typeof row.employee === 'object' && row.dailyAttendance) {
+      return row as MonthlyAttendanceData;
+    }
+    return {
+      ...row,
+      employee: (row.employee as MonthlyAttendanceData['employee']) || {
+        _id: row._id as string,
+        emp_no: row.emp_no as string,
+        employee_name: row.employee_name as string,
+        department: { name: row.department_name as string },
+        designation: { name: row.designation_name as string },
+        division_id: row.division_id,
+      },
+      dailyAttendance: (row.dailyAttendance || row.attendance || {}) as MonthlyAttendanceData['dailyAttendance'],
+    } as MonthlyAttendanceData;
+  });
+}
 
 interface Department {
 
@@ -491,6 +532,14 @@ export default function AttendancePage() {
         top = 'A';
         bottom = 'HD';
       }
+    }
+
+    // Half-day OD while daily status is OD (not HALF_DAY): the non-OD half is office time — show HD, not A (matches punch / closeness intent).
+    if (hasHalfOD && record.status === 'OD') {
+      const hasIn = !!(record as any).inTime || (record.shifts?.length && record.shifts.some((s: any) => s.inTime));
+      const hasOut = !!(record as any).outTime || (record.shifts?.length && record.shifts.some((s: any) => s.outTime));
+      if (odInfo?.halfDayType === 'second_half' && hasIn) top = 'HD';
+      else if (odInfo?.halfDayType === 'first_half' && hasOut) bottom = 'HD';
     }
 
     if (hasFullLeave && leaveMarker) {
@@ -739,7 +788,7 @@ export default function AttendancePage() {
   const [loadingConflicts, setLoadingConflicts] = useState(false);
 
   const [revokingLeave, setRevokingLeave] = useState(false);
-
+  const [revokingOD, setRevokingOD] = useState(false);
   const [updatingLeave, setUpdatingLeave] = useState(false);
 
 
@@ -1693,6 +1742,76 @@ export default function AttendancePage() {
   };
 
 
+
+  const handleRevokeOD = async (odId: string) => {
+    if (!selectedEmployee || !selectedDate) return;
+
+    if (
+      !confirm(
+        'Revoke this OD approval? Monthly summary and daily attendance will be recalculated without this OD.'
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setRevokingOD(true);
+      setError('');
+      setSuccess('');
+
+      const response = await api.revokeODApproval(odId, 'Revoked: check-in/out present with full-day OD');
+
+      if (response.success) {
+        setSuccess('OD approval revoked successfully! Monthly summary and daily attendance have been updated.');
+
+        await loadMonthlyAttendance();
+
+        const monthRes = await api.getMonthlyAttendance(year, month, {
+          page,
+          limit,
+          search: searchQuery,
+          divisionId: selectedDivision,
+          departmentId: selectedDepartment,
+          designationId: selectedDesignation,
+          startDate: cycleDates.startDate || undefined,
+          endDate: cycleDates.endDate || undefined,
+        });
+        const detailRes = await api.getAttendanceDetail(selectedEmployee.emp_no, selectedDate);
+        if (detailRes.success) {
+          const list = monthRes.success ? normalizeWorkspaceAttendanceData(monthRes.data || []) : [];
+          const item = list.find((i) => i.employee._id === selectedEmployee._id);
+          const dayRecord = item?.dailyAttendance?.[selectedDate];
+          const base = detailRes.data;
+          if (dayRecord) {
+            setAttendanceDetail({
+              ...base,
+              hasLeave: dayRecord.hasLeave,
+              leaveInfo: dayRecord.leaveInfo,
+              hasOD: dayRecord.hasOD,
+              odInfo: dayRecord.odInfo,
+              isConflict: dayRecord.isConflict,
+              isEdited: dayRecord.isEdited,
+              editHistory: dayRecord.editHistory,
+              source: dayRecord.source,
+            });
+          } else {
+            setAttendanceDetail(base);
+          }
+        }
+
+        setTimeout(() => {
+          setSuccess('');
+        }, 3000);
+      } else {
+        setError((response as any).message || (response as any).error || 'Failed to revoke OD');
+      }
+    } catch (err: any) {
+      console.error('Error revoking OD:', err);
+      setError(err.message || 'An error occurred while revoking OD');
+    } finally {
+      setRevokingOD(false);
+    }
+  };
 
   const handleUpdateLeave = async (leaveId: string) => {
 
@@ -2970,6 +3089,15 @@ export default function AttendancePage() {
 
     }
 
+    if (activeHighlight.category === 'partial' && empData.dailyAttendance) {
+      for (const [dateStr, rec] of Object.entries(empData.dailyAttendance)) {
+        if (rec?.status === 'PARTIAL') {
+          const v = getPartialRecordPayableContribution(rec);
+          map.set(dateStr, { value: v, label: v > 0 ? `PT (${v})` : 'PARTIAL' });
+        }
+      }
+    }
+
     return map;
 
   }, [activeHighlight, monthlyData]);
@@ -3487,6 +3615,14 @@ export default function AttendancePage() {
               bcolor: 'bg-blue-50/50 dark:bg-blue-900/10',
             },
             {
+              id: 'partial',
+              column: 'partial',
+              label: 'Partial',
+              value: getPartialColumnTotal(s, item.dailyAttendance).toFixed(2),
+              color: 'text-amber-800 dark:text-amber-300',
+              bcolor: 'bg-amber-50/50 dark:bg-amber-900/10',
+            },
+            {
               id: 'period',
               column: null,
               label: 'Period Days',
@@ -3704,6 +3840,16 @@ export default function AttendancePage() {
                                   OD
                                 </th>
                               );
+                            case 'partial':
+                              return (
+                                <th
+                                  key={colKey}
+                                  className={`w-[70px] ${edge} border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-amber-900 dark:border-slate-700 dark:bg-amber-900/20 bg-amber-50`}
+                                            title="Payable contribution on PARTIAL days (same basis as Payable column)"
+                                >
+                                  Partial
+                                </th>
+                              );
                             case 'weekOffs':
                               return (
                                 <th
@@ -3836,21 +3982,25 @@ export default function AttendancePage() {
                                     ? 'bg-blue-50 dark:bg-blue-900/20'
                                     : colKey === 'leaves'
                                       ? 'bg-amber-50 dark:bg-amber-900/20'
-                                      : colKey === 'weekOffs'
-                                        ? 'bg-orange-100 dark:bg-orange-900/20'
-                                        : colKey === 'holidays'
-                                          ? 'bg-red-50 dark:bg-red-900/20'
-                                          : colKey === 'otHours'
-                                            ? 'bg-orange-50 dark:bg-orange-900/20'
-                                            : colKey === 'extraHours'
-                                              ? 'bg-purple-50 dark:bg-purple-900/20'
-                                              : colKey === 'permissions'
-                                                ? 'bg-cyan-50 dark:bg-cyan-900/20'
-                                                : colKey === 'lateEarly'
-                                                  ? 'bg-rose-50 dark:bg-rose-900/20'
-                                                  : colKey === 'attDed'
-                                                    ? 'bg-violet-50 dark:bg-violet-900/25'
-                                                    : 'bg-green-50 dark:bg-green-900/20';
+                                      : colKey === 'od'
+                                        ? 'bg-indigo-50 dark:bg-indigo-900/20'
+                                        : colKey === 'partial'
+                                          ? 'bg-amber-50 dark:bg-amber-900/20'
+                                          : colKey === 'weekOffs'
+                                            ? 'bg-orange-100 dark:bg-orange-900/20'
+                                            : colKey === 'holidays'
+                                              ? 'bg-red-50 dark:bg-red-900/20'
+                                              : colKey === 'otHours'
+                                                ? 'bg-orange-50 dark:bg-orange-900/20'
+                                                : colKey === 'extraHours'
+                                                  ? 'bg-purple-50 dark:bg-purple-900/20'
+                                                  : colKey === 'permissions'
+                                                    ? 'bg-cyan-50 dark:bg-cyan-900/20'
+                                                    : colKey === 'lateEarly'
+                                                      ? 'bg-rose-50 dark:bg-rose-900/20'
+                                                      : colKey === 'attDed'
+                                                        ? 'bg-violet-50 dark:bg-violet-900/25'
+                                                        : 'bg-green-50 dark:bg-green-900/20';
                                 return (
                                   <td
                                     key={colKey}
@@ -3906,11 +4056,13 @@ export default function AttendancePage() {
                                 ? item.presentDays
                                 : Object.values(item.dailyAttendance).reduce((sum, record: any) => {
                                   if (!record) return sum;
-                                  if (record.status === 'PRESENT' || record.status === 'PARTIAL') return sum + 1;
+                                  if (record.status === 'PRESENT') return sum + 1;
                                   if (record.status === 'HALF_DAY') return sum + 0.5;
                                   return sum;
                                 }, 0);
-                            const payableShifts = item.payableShifts !== undefined ? item.payableShifts : 0;
+                            const payableShifts = Number(
+                              item.summary?.totalPayableShifts ?? item.payableShifts ?? 0
+                            );
 
                             // Helper calculations for specific tables
                             const monthPresent = Object.values(item.dailyAttendance).filter(r => r?.status === 'PRESENT').length;
@@ -3928,6 +4080,11 @@ export default function AttendancePage() {
                             const paidLeaves = totalLeaves - lopCount;
 
                             const totalODs = item.summary?.totalODs ?? Object.values(item.dailyAttendance).filter(r => r?.status === 'OD' || r?.hasOD).length;
+
+                            const partialContributionTotal = getPartialColumnTotal(
+                              item.summary,
+                              item.dailyAttendance
+                            );
 
                             const isHighAbsenteeism = monthAbsent > 2;
 
@@ -4145,6 +4302,17 @@ export default function AttendancePage() {
                                             className={`${edge} border-slate-200 bg-indigo-50 px-2 py-2 text-center text-[11px] font-bold text-indigo-700 dark:border-slate-700 dark:bg-indigo-900/20 dark:text-indigo-300 cursor-pointer hover:bg-indigo-100 ${activeHighlight?.employeeId === item.employee._id && activeHighlight?.category === 'ods' ? 'ring-2 ring-indigo-500 ring-inset shadow-inner' : ''}`}
                                           >
                                             {totalODs}
+                                          </td>
+                                        );
+                                      case 'partial':
+                                        return (
+                                          <td
+                                            key={colKey}
+                                            title="Click: highlight PARTIAL days (payable contribution) • Alt+click: date list"
+                                            onClick={(e) => onSummaryMetricClick(e, item.employee._id, 'partial', 'partial', item)}
+                                            className={`${edge} border-slate-200 bg-amber-50 px-2 py-2 text-center text-[11px] font-bold text-amber-900 dark:border-slate-700 dark:bg-amber-900/20 dark:text-amber-200 cursor-pointer hover:bg-amber-100 ${activeHighlight?.employeeId === item.employee._id && activeHighlight?.category === 'partial' ? 'ring-2 ring-amber-500 ring-inset shadow-inner' : ''}`}
+                                          >
+                                            {partialContributionTotal.toFixed(2)}
                                           </td>
                                         );
                                       case 'weekOffs':
@@ -4990,6 +5158,39 @@ export default function AttendancePage() {
                     </div>
                   )}
 
+                  {/* OD + punches + full-day OD: offer revoke (status may be PRESENT, PARTIAL, OD, etc.) */}
+                  {hasAttendancePunches(attendanceDetail) &&
+                    isFullDayOdEligibleForConflictRevoke(attendanceDetail) && (
+                    <div className="mt-4 rounded-lg border border-indigo-300 bg-indigo-50 p-4 dark:border-indigo-800 dark:bg-indigo-900/20">
+                      <div className="mb-3 flex items-center gap-2">
+                        <Info className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+                        <h4 className="text-base font-semibold text-indigo-900 dark:text-indigo-200">OD Conflict Detected</h4>
+                      </div>
+                      <p className="mb-3 text-sm text-indigo-800 dark:text-indigo-300">
+                        Check-in/check-out is recorded and a full-day OD is still approved for this date. Revoke the OD if attendance alone should stand.
+                      </p>
+                      <div className="mb-1 rounded-lg border border-indigo-200 bg-white p-3 dark:border-indigo-700 dark:bg-slate-800">
+                        <div className="flex justify-between items-start mb-2">
+                          <div>
+                            <div className="text-sm font-bold text-indigo-900 dark:text-indigo-200">
+                              {attendanceDetail.odInfo.odType || 'OD'} - Full Day
+                            </div>
+                            <div className="text-xs text-slate-500 mt-1">
+                              Reason: {attendanceDetail.odInfo.reason || attendanceDetail.odInfo.purpose || 'Official Duty'}
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => handleRevokeOD(attendanceDetail.odInfo.odId)}
+                            disabled={revokingOD}
+                            className="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-bold text-white shadow-sm transition-all hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {revokingOD ? 'Revoking...' : 'Revoke OD'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Leave Information */}
                   {attendanceDetail.hasLeave && attendanceDetail.leaveInfo && (
                     <div className="mt-4 rounded-lg border border-orange-200 bg-orange-50 p-4 dark:border-orange-800 dark:bg-orange-900/20">
@@ -5629,6 +5830,7 @@ export default function AttendancePage() {
                           .filter(([_, record]) => {
                             if (!record) return false;
                             if (typeSummaryData.type === 'present') return record.status === 'PRESENT' || record.status === 'PARTIAL';
+                            if (typeSummaryData.type === 'partial') return record.status === 'PARTIAL';
                             if (typeSummaryData.type === 'absent') return record.status === 'ABSENT' || (!record.status && !record.hasLeave && !record.hasOD);
                             if (typeSummaryData.type === 'leaves') return record.hasLeave || record.status === 'LEAVE';
                             if (typeSummaryData.type === 'od') return record.hasOD || record.status === 'OD';
@@ -5706,9 +5908,18 @@ export default function AttendancePage() {
                           const summary = typeSummaryData.item.summary;
                           if (summary && summary.contributingDates) {
                             const contrib = summary.contributingDates;
-                            if (typeSummaryData.type === 'present' && contrib.present) return contrib.present.some(c => c.date === dStr);
-                            if (typeSummaryData.type === 'od' && contrib.ods) return contrib.ods.some(c => c.date === dStr);
-                            if (typeSummaryData.type === 'leaves' && contrib.leaves) return contrib.leaves.some(c => c.date === dStr);
+                            if (typeSummaryData.type === 'present' && contrib.present) {
+                              return contrib.present.some((c) => contributingEntryMatchesDate(c, dStr));
+                            }
+                            if (typeSummaryData.type === 'od' && contrib.ods) {
+                              return contrib.ods.some((c) => contributingEntryMatchesDate(c, dStr));
+                            }
+                            if (typeSummaryData.type === 'leaves' && contrib.leaves) {
+                              return contrib.leaves.some((c) => contributingEntryMatchesDate(c, dStr));
+                            }
+                            if (typeSummaryData.type === 'partial' && contrib.partial) {
+                              return contrib.partial.some((c) => contributingEntryMatchesDate(c, dStr));
+                            }
                           }
 
                           // Fallback to dailyAttendance status if summary is not present or partial
@@ -5719,6 +5930,7 @@ export default function AttendancePage() {
                           if (typeSummaryData.type === 'absent') return record.status === 'ABSENT' || (!record.status && !record.hasLeave && !record.hasOD);
                           if (typeSummaryData.type === 'leaves') return record.hasLeave || record.status === 'LEAVE';
                           if (typeSummaryData.type === 'od') return record.hasOD || record.status === 'OD';
+                          if (typeSummaryData.type === 'partial') return record.status === 'PARTIAL';
                           if (typeSummaryData.type === 'ot') return (record.otHours || 0) > 0;
                           if (typeSummaryData.type === 'extra') return (record.extraHours || 0) > 0;
                           if (typeSummaryData.type === 'permission') return (record.permissionCount || 0) > 0;

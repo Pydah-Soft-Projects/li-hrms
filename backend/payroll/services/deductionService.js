@@ -5,6 +5,8 @@ const PermissionDeductionSettings = require('../../permissions/model/PermissionD
 const AttendanceDeductionSettings = require('../../attendance/model/AttendanceDeductionSettings');
 const AllowanceDeductionMaster = require('../../allowances-deductions/model/AllowanceDeductionMaster');
 const cacheService = require('../../shared/services/cacheService');
+const dateCycleService = require('../../leaves/services/dateCycleService');
+const { extractISTComponents } = require('../../shared/utils/dateUtils');
 
 /**
  * Deduction Calculation Service
@@ -140,11 +142,13 @@ function calculateDaysToDeduct(multiplier, remainder, threshold, deductionType, 
  * Calculate attendance deduction (late-ins + early-outs + absent extra).
  * Respects employee flags: applyAttendanceDeduction (master), deductLateIn, deductEarlyOut, deductAbsent (default true = apply).
  * @param {String} employeeId - Employee ID
- * @param {String} month - Month in YYYY-MM format
+ * @param {String} month - Payroll month label YYYY-MM (same as PayRegisterSummary / summary; for custom cycles this is the cycle end month)
  * @param {String} departmentId - Department ID
  * @param {Number} perDayBasicPay - Per day basic pay
  * @param {String|null} divisionId - Division ID for rules
- * @param {Object} [options] - Optional: { absentDays, enableAbsentDeduction, lopDaysPerAbsent, employee }. employee: { applyAttendanceDeduction, deductLateIn, deductEarlyOut, deductAbsent }.
+ * @param {Object} [options] - Optional: { absentDays, enableAbsentDeduction, lopDaysPerAbsent, employee, periodStartDateStr, periodEndDateStr, forceRecalculate }.
+ *   When periodStartDateStr + periodEndDateStr (YYYY-MM-DD IST) are set, late/early counts use AttendanceDaily in that inclusive range. Otherwise the range is resolved from `month` using payroll cycle settings (not calendar month).
+ *   employee: { applyAttendanceDeduction, deductLateIn, deductEarlyOut, deductAbsent }.
  * @returns {Object} Attendance deduction result
  */
 async function calculateAttendanceDeduction(employeeId, month, departmentId, perDayBasicPay, divisionId = null, options = {}) {
@@ -181,9 +185,16 @@ async function calculateAttendanceDeduction(employeeId, month, departmentId, per
 
     // Priority 1: Always try to calculate from AttendanceDaily logs first (Real-time truth)
     const [y, mNum] = month.split('-').map(Number);
-    const startStr = `${y}-${String(mNum).padStart(2, '0')}-01`;
-    const lastD = new Date(y, mNum, 0).getDate();
-    const endStr = `${y}-${String(mNum).padStart(2, '0')}-${String(lastD).padStart(2, '0')}`;
+    let startStr;
+    let endStr;
+    if (options.periodStartDateStr && options.periodEndDateStr) {
+      startStr = options.periodStartDateStr;
+      endStr = options.periodEndDateStr;
+    } else {
+      const cycle = await dateCycleService.getPayrollCycleForMonth(y, mNum);
+      startStr = extractISTComponents(cycle.startDate).dateStr;
+      endStr = extractISTComponents(cycle.endDate).dateStr;
+    }
 
     const Employee = require('../../employees/model/Employee');
     const empDoc = await Employee.findById(employeeId).select('emp_no').lean();

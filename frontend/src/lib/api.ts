@@ -2516,7 +2516,7 @@ export const api = {
     });
   },
 
-  // Revoke OD approval (within 2-3 hours)
+  // Revoke OD approval (workflow step reset; server enforces role rules, no time window)
   revokeODApproval: async (id: string, reason?: string) => {
     return apiRequest<any>(`/leaves/od/${id}/revoke`, {
       method: 'PUT',

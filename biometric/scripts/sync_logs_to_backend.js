@@ -9,13 +9,21 @@ const axios = require('axios');
  * This script sends ALL attendance logs from the local 
  * biometric_logs database to the main backend HRMS application.
  * 
- * Usage (PowerShell - Windows):
- *   Specific Employee: $env:SYNC_EMP="1832"; $env:SYNC_MONTH="2026-03"; node sync_logs_to_backend.js
- *   All Employees:     $env:SYNC_MONTH="2026-03"; node scripts/sync_logs_to_backend.js
- *   Date Range:        $env:SYNC_START="2026-03-01"; $env:SYNC_END="2026-03-31"; node sync_logs_to_backend.js
- * 
+ * Usage (PowerShell - Windows) — run from biometric folder (where node resolves scripts/):
+ *   One employee + date range (inclusive):
+ *     $env:SYNC_EMP="1832"; $env:SYNC_START="2026-02-26"; $env:SYNC_END="2026-03-25"; node scripts/sync_logs_to_backend.js
+ *   One employee + full calendar month:
+ *     $env:SYNC_EMP="1832"; $env:SYNC_MONTH="2026-03"; node scripts/sync_logs_to_backend.js
+ *   All employees + date range:
+ *     $env:SYNC_START="2026-02-26"; $env:SYNC_END="2026-03-25"; node scripts/sync_logs_to_backend.js
+ *   All employees + calendar month:
+ *     $env:SYNC_MONTH="2026-03"; node scripts/sync_logs_to_backend.js
+ *
+ * Usage (cmd.exe):
+ *   set SYNC_EMP=1832&& set SYNC_START=2026-02-26&& set SYNC_END=2026-03-25&& node scripts\sync_logs_to_backend.js
+ *
  * Usage (Bash - Linux/macOS):
- *   Specific Employee: SYNC_EMP="1832" SYNC_MONTH="2026-03" node scripts/sync_logs_to_backend.js
+ *   SYNC_EMP="1832" SYNC_START="2026-02-26" SYNC_END="2026-03-25" node scripts/sync_logs_to_backend.js
  * ============================================================
  */
 

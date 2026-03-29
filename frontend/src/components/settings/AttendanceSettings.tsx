@@ -53,6 +53,8 @@ const AttendanceSettings = () => {
                         allowOutTimeEditing: featureFlags.allowOutTimeEditing !== false,
                         allowAttendanceUpload: featureFlags.allowAttendanceUpload !== false,
                         allowShiftChange: featureFlags.allowShiftChange !== false,
+                        partialDaysContributeToPayableShifts:
+                            featureFlags.partialDaysContributeToPayableShifts === true,
                     },
                     completeSummaryColumns: normalizeCompleteSummaryColumns(data.completeSummaryColumns),
                 });
@@ -78,15 +80,22 @@ const AttendanceSettings = () => {
             if (processingMode.mode === 'multi_shift') {
                 processingMode.strictCheckInOutOnly = true;
             }
-            const payload = {
-                ...attendanceSettings,
-                processingMode,
-                featureFlags: attendanceSettings.featureFlags || {
+            const featureFlags = {
+                ...(attendanceSettings.featureFlags || {
                     allowInTimeEditing: true,
                     allowOutTimeEditing: true,
                     allowAttendanceUpload: true,
                     allowShiftChange: true,
-                },
+                    partialDaysContributeToPayableShifts: false,
+                }),
+            };
+            if (processingMode.mode !== 'single_shift') {
+                featureFlags.partialDaysContributeToPayableShifts = false;
+            }
+            const payload = {
+                ...attendanceSettings,
+                processingMode,
+                featureFlags,
                 completeSummaryColumns: normalizeCompleteSummaryColumns(attendanceSettings.completeSummaryColumns),
             };
             const res = await api.updateAttendanceSettings(payload);
@@ -143,6 +152,10 @@ const AttendanceSettings = () => {
     const pm = attendanceSettings.processingMode || PROCESSING_MODE_DEFAULTS;
     const setProcessingMode = (updates: Partial<typeof pm>) =>
         setAttendanceSettings({ ...attendanceSettings, processingMode: { ...pm, ...updates } });
+
+    const partialPayableToggleEffectiveOn =
+        pm.mode === 'single_shift' &&
+        attendanceSettings.featureFlags?.partialDaysContributeToPayableShifts === true;
 
     const completeSummaryCols = normalizeCompleteSummaryColumns(attendanceSettings.completeSummaryColumns);
 
@@ -269,9 +282,19 @@ const AttendanceSettings = () => {
                                     value={pm.mode || 'multi_shift'}
                                     onChange={(e) => {
                                         const newMode = e.target.value as 'multi_shift' | 'single_shift';
-                                        setProcessingMode({
-                                            mode: newMode,
-                                            strictCheckInOutOnly: newMode === 'multi_shift' ? true : pm.strictCheckInOutOnly,
+                                        setAttendanceSettings({
+                                            ...attendanceSettings,
+                                            processingMode: {
+                                                ...pm,
+                                                mode: newMode,
+                                                strictCheckInOutOnly: newMode === 'multi_shift' ? true : pm.strictCheckInOutOnly,
+                                            },
+                                            featureFlags: {
+                                                ...(attendanceSettings.featureFlags || {}),
+                                                ...(newMode === 'multi_shift'
+                                                    ? { partialDaysContributeToPayableShifts: false }
+                                                    : {}),
+                                            },
                                         });
                                     }}
                                     className="w-full max-w-xs rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium dark:border-gray-700 dark:bg-[#0F172A] dark:text-white"
@@ -468,6 +491,61 @@ const AttendanceSettings = () => {
                             </p>
                         </div>
                         <div className="p-8 space-y-3">
+                            <div
+                                className={`flex items-center justify-between p-4 rounded-xl border mb-2 ${
+                                    pm.mode === 'single_shift'
+                                        ? 'bg-amber-50/50 dark:bg-amber-900/10 border-amber-100 dark:border-amber-900/30'
+                                        : 'bg-gray-50/40 dark:bg-black/10 border-gray-100 dark:border-gray-800 opacity-80'
+                                }`}
+                            >
+                                <div className="space-y-1 pr-4">
+                                    <p className="text-xs font-bold text-gray-900 dark:text-white uppercase tracking-tight">
+                                        Partial days count toward payable shifts
+                                    </p>
+                                    <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                                        {pm.mode === 'single_shift' ? (
+                                            <>
+                                                When ON, PARTIAL days use at least 0.5 toward monthly payable in the summary (after recalculation). Only available in{' '}
+                                                <span className="font-semibold">Single-Shift (1 per day)</span> mode.
+                                            </>
+                                        ) : (
+                                            <>
+                                                This option is only available when Processing Mode is{' '}
+                                                <span className="font-semibold">Single-Shift (1 per day)</span>. Switch mode above to enable it.
+                                            </>
+                                        )}
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    disabled={pm.mode !== 'single_shift'}
+                                    onClick={() => {
+                                        if (pm.mode !== 'single_shift') return;
+                                        setAttendanceSettings({
+                                            ...attendanceSettings,
+                                            featureFlags: {
+                                                ...(attendanceSettings.featureFlags || {}),
+                                                partialDaysContributeToPayableShifts: !(
+                                                    attendanceSettings.featureFlags?.partialDaysContributeToPayableShifts === true
+                                                ),
+                                            },
+                                        });
+                                    }}
+                                    className={`relative shrink-0 inline-flex h-6 w-11 items-center rounded-full transition-all ${
+                                        pm.mode !== 'single_shift'
+                                            ? 'cursor-not-allowed opacity-50 bg-gray-200 dark:bg-gray-800'
+                                            : partialPayableToggleEffectiveOn
+                                              ? 'bg-amber-600'
+                                              : 'bg-gray-200 dark:bg-gray-800'
+                                    }`}
+                                >
+                                    <span
+                                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                            partialPayableToggleEffectiveOn ? 'translate-x-6' : 'translate-x-1'
+                                        }`}
+                                    />
+                                </button>
+                            </div>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 {SUPERADMIN_COMPLETE_AGGREGATE_KEYS.map((k) => (
                                     <label
