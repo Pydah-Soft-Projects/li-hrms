@@ -19,6 +19,9 @@ const {
 const Department = require('../../departments/model/Department');
 const OD = require('../model/OD');
 const leaveRegisterService = require('../services/leaveRegisterService');
+const { streamLeaveRegisterPdf } = require('../services/leaveRegisterPdfExportService');
+const { resolveLeaveRegisterExportRequest } = require('../services/leaveRegisterExportShared');
+const { buildLeaveRegisterXlsxBuffer } = require('../services/leaveRegisterXlsxExportService');
 const dateCycleService = require('../services/dateCycleService');
 const leaveRegisterYearMonthlyApplyService = require('../services/leaveRegisterYearMonthlyApplyService');
 const leaveRegisterYearService = require('../services/leaveRegisterYearService');
@@ -2764,13 +2767,30 @@ exports.listLeaveRegister = async (req, res) => {
       }
     }
 
-    let groupedData = await leaveRegisterService.getLeaveRegister(filters, monthNum, yearNum);
+    // Server-side pagination: cap + hydrate only the requested page (sorted by name).
+    const useServerPage = !filters.employeeId && !filters.empNo && !filters.balanceAsOf;
+    let groupedData;
+    let serverPaginationMeta = null;
+    if (useServerPage) {
+      const result = await leaveRegisterService.getLeaveRegister(filters, monthNum, yearNum, {
+        listPagination: { page: pageNum, limit: limitNum },
+      });
+      if (result && !Array.isArray(result) && Array.isArray(result.entries)) {
+        groupedData = result.entries;
+        serverPaginationMeta = result.listPaginationMeta;
+      } else {
+        groupedData = Array.isArray(result) ? result : [];
+      }
+    } else {
+      groupedData = await leaveRegisterService.getLeaveRegister(filters, monthNum, yearNum);
+    }
 
     // Legacy post-filtering was here; now handled by passing filters.employeeIds to the service.
 
-    const total = groupedData.length;
-    const start = (pageNum - 1) * limitNum;
-    const pageRows = groupedData.slice(start, start + limitNum);
+    const total = serverPaginationMeta ? serverPaginationMeta.total : groupedData.length;
+    const pageRows = serverPaginationMeta
+      ? groupedData
+      : groupedData.slice((pageNum - 1) * limitNum, (pageNum - 1) * limitNum + limitNum);
 
     const todayPeriodForSummary = await dateCycleService.getPeriodInfo(new Date());
     const summaryCycleMonth = todayPeriodForSummary.payrollCycle.month;
@@ -2830,6 +2850,82 @@ exports.listLeaveRegister = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: error.message || 'Failed to list leave register',
+    });
+  }
+};
+
+/**
+ * @desc    Leave register as A4 landscape PDF (matches list filters; all rows, no pagination)
+ * @route   GET /api/leaves/register/export/pdf
+ * @access  Same as GET /api/leaves/register
+ */
+exports.exportLeaveRegisterPDF = async (req, res) => {
+  try {
+    const ctx = await resolveLeaveRegisterExportRequest(req);
+    if (!ctx.ok) {
+      return res.status(ctx.status).json({ success: false, message: ctx.message });
+    }
+    const { groupedData, filterParts, includeCL, includeCCL, includeEL, filters } = ctx;
+
+    const fySafe = (filters.financialYear || 'fy').replace(/[^\w\-]+/g, '_');
+    const filename = `leave_register_${fySafe}_${new Date().toISOString().slice(0, 10)}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+    streamLeaveRegisterPdf({
+      entries: groupedData,
+      financialYear: filters.financialYear || '',
+      filterSummaryParts: filterParts,
+      outStream: res,
+      includeCL,
+      includeCCL,
+      includeEL,
+    });
+  } catch (error) {
+    console.error('exportLeaveRegisterPDF:', error);
+    if (!res.headersSent) {
+      return res.status(500).json({
+        success: false,
+        message: error.message || 'Failed to export leave register PDF',
+      });
+    }
+  }
+};
+
+/**
+ * @desc    Leave register Excel — one sheet per leave type + About sheet (same filters as list)
+ * @route   GET /api/leaves/register/export/xlsx
+ * @access  Same as GET /api/leaves/register
+ */
+exports.exportLeaveRegisterXLSX = async (req, res) => {
+  try {
+    const ctx = await resolveLeaveRegisterExportRequest(req);
+    if (!ctx.ok) {
+      return res.status(ctx.status).json({ success: false, message: ctx.message });
+    }
+    const { groupedData, filterParts, includeCL, includeCCL, includeEL, filters } = ctx;
+
+    const buffer = buildLeaveRegisterXlsxBuffer({
+      entries: groupedData,
+      filterSummaryParts: filterParts,
+      includeCL,
+      includeCCL,
+      includeEL,
+    });
+
+    const fySafe = (filters.financialYear || 'fy').replace(/[^\w\-]+/g, '_');
+    const filename = `leave_register_${fySafe}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.status(200).send(buffer);
+  } catch (error) {
+    console.error('exportLeaveRegisterXLSX:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to export leave register Excel',
     });
   }
 };
@@ -2982,6 +3078,59 @@ exports.patchLeaveRegisterYearMonthSlot = async (req, res) => {
     return res.status(400).json({
       success: false,
       message: error.message || 'Failed to update month slot',
+    });
+  }
+};
+
+/**
+ * @desc    Adjust many FY payroll slots in one request; optional sequential unused-pool carry (closed periods only, IST)
+ * @route   PATCH /api/leaves/leave-register-year/:employeeId/bulk-month-slots
+ * @access  hr, sub_admin, super_admin (scoped)
+ */
+exports.patchLeaveRegisterYearBulkMonthSlots = async (req, res) => {
+  try {
+    const user = req.scopedUser || req.user;
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+    if (!canEditLeaveRegisterMonthSlot(user)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized: leave register month-slot edit privilege is required',
+      });
+    }
+    const { employeeId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(String(employeeId))) {
+      return res.status(400).json({ success: false, message: 'Invalid employee id' });
+    }
+    const emp = await Employee.findById(employeeId)
+      .select('_id emp_no employee_name department_id division_id')
+      .lean();
+    if (!emp) {
+      return res.status(404).json({ success: false, message: 'Employee not found' });
+    }
+    if (!checkJurisdiction(user, { department_id: emp.department_id, division_id: emp.division_id })) {
+      return res.status(403).json({ success: false, message: 'Not authorized for this employee' });
+    }
+
+    const { financialYear, slots, validateWithRecords, carryForwardUnused, reason } = req.body || {};
+
+    const result = await leaveRegisterYearService.patchBulkMonthSlotsScheduledCredits({
+      employeeId: emp._id,
+      financialYear,
+      slots: Array.isArray(slots) ? slots : [],
+      validateWithRecords: !!validateWithRecords,
+      carryForwardUnused: !!carryForwardUnused,
+      reason,
+      actorUserId: user._id,
+    });
+
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    console.error('patchLeaveRegisterYearBulkMonthSlots:', error);
+    return res.status(400).json({
+      success: false,
+      message: error.message || 'Failed to bulk-update month slots',
     });
   }
 };

@@ -255,6 +255,19 @@ const startServer = async () => {
 
     initSocket(server, allowedOrigins);
 
+    server.on('error', (err) => {
+      if (err && err.code === 'EADDRINUSE') {
+        console.error(`\n❌ Port ${PORT} is already in use (another process is listening).`);
+        console.error('   Fix: stop the other backend (close that terminal, or end the Node process),');
+        console.error('   or set a different PORT in backend/.env (e.g. PORT=5001).');
+        console.error(`   Windows: netstat -ano | findstr :${PORT}`);
+        console.error('   then: taskkill /PID <pid> /F\n');
+        process.exit(1);
+        return;
+      }
+      throw err;
+    });
+
     // Start server
     server.listen(PORT, () => {
       console.log(`🚀 HRMS Backend- before main merge multi shift git is running now  Server is running on port ${PORT}`);
