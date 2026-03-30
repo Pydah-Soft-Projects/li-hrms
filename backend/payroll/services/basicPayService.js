@@ -10,8 +10,8 @@
  * @returns {Object} Basic pay calculation result
  */
 function calculateBasicPay(employee, attendanceSummary) {
-  // Validate inputs
-  if (!employee || !employee.gross_salary) {
+  // Validate inputs (gross_salary may be 0, e.g. second-salary basis with no amount)
+  if (!employee || employee.gross_salary === undefined || employee.gross_salary === null) {
     throw new Error('Employee or gross_salary is missing');
   }
 
@@ -19,7 +19,7 @@ function calculateBasicPay(employee, attendanceSummary) {
     throw new Error('Attendance summary or totalDaysInMonth is missing');
   }
 
-  const basicPay = employee.gross_salary || 0;
+  const basicPay = Number(employee.gross_salary) || 0;
   const totalDaysInMonth = attendanceSummary.totalDaysInMonth;
   const totalPresentDays = attendanceSummary.totalPresentDays || 0;
   const totalODDays = attendanceSummary.totalODDays || 0;

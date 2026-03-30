@@ -3415,8 +3415,49 @@ export const api = {
     return apiRequest<any>(`/payroll${query ? `?${query}` : ''}`, { method: 'GET' });
   },
 
-  /** Paysheet table data: headers + rows from config output columns (same as Excel export) */
-  getPaysheetData: async (params: { month: string; departmentId?: string; divisionId?: string; status?: string; search?: string; employeeIds?: string[]; source?: 'existing' | 'calculate' }) => {
+  /** Paysheet table data: headers + rows from config output columns (same as Excel export). secondSalary=1 uses saved 2nd salary records (same columns as 2nd salary Excel export). */
+  /** Excel: sheets Regular, 2nd salary, Comparison (paired columns + Δ Net). */
+  exportPaysheetBundleExcel: async (params: {
+    month: string;
+    departmentId?: string;
+    divisionId?: string;
+    status?: string;
+    search?: string;
+    employeeIds?: string[];
+  }) => {
+    const queryParams = new URLSearchParams();
+    queryParams.append('month', params.month);
+    if (params.departmentId) queryParams.append('departmentId', params.departmentId);
+    if (params.divisionId) queryParams.append('divisionId', params.divisionId);
+    if (params.status) queryParams.append('status', params.status);
+    if (params.search) queryParams.append('search', params.search);
+    if (params.employeeIds?.length) queryParams.append('employeeIds', params.employeeIds.join(','));
+    const query = queryParams.toString();
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const response = await fetch(`${API_BASE_URL}/payroll/paysheet/export-bundle?${query}`, {
+      method: 'GET',
+      credentials: 'include',
+      headers,
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || 'Failed to export paysheet bundle');
+    }
+    return response.blob();
+  },
+
+  getPaysheetData: async (params: {
+    month: string;
+    departmentId?: string;
+    divisionId?: string;
+    status?: string;
+    search?: string;
+    employeeIds?: string[];
+    source?: 'existing' | 'calculate';
+    secondSalary?: boolean;
+  }) => {
     const queryParams = new URLSearchParams();
     if (params.month) queryParams.append('month', params.month);
     if (params.departmentId) queryParams.append('departmentId', params.departmentId);
@@ -3425,6 +3466,7 @@ export const api = {
     if (params.search) queryParams.append('search', params.search);
     if (params.employeeIds?.length) queryParams.append('employeeIds', params.employeeIds.join(','));
     if (params.source) queryParams.append('source', params.source);
+    if (params.secondSalary) queryParams.append('secondSalary', '1');
     const query = queryParams.toString();
     return apiRequest<{ headers: string[]; rows: Record<string, unknown>[] }>(
       `/payroll/paysheet${query ? `?${query}` : ''}`,

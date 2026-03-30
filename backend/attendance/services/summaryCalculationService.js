@@ -649,6 +649,7 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
             enableAbsentDeduction: absentSettings.enableAbsentDeduction,
             lopDaysPerAbsent: absentSettings.lopDaysPerAbsent,
             employee,
+            ignoreMonthlySummary: true,
             periodStartDateStr: startDateStr,
             periodEndDateStr: endDateStr,
           }

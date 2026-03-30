@@ -146,6 +146,10 @@ function calculateDaysToDeduct(multiplier, remainder, threshold, deductionType, 
  * @param {String} departmentId - Department ID
  * @param {Number} perDayBasicPay - Per day basic pay
  * @param {String|null} divisionId - Division ID for rules
+ * @param {Object} [options] - Optional: { absentDays, enableAbsentDeduction, lopDaysPerAbsent, employee, ignoreMonthlySummary, forceRecalculate }.
+ *   employee: { applyAttendanceDeduction, deductLateIn, deductEarlyOut, deductAbsent }.
+ *   ignoreMonthlySummary: when true, never read MonthlyAttendanceSummary (used while recalculating that summary).
+ *   forceRecalculate: when true, skip stored monthly summary and pay-register fallback shortcuts.
  * @param {Object} [options] - Optional: { absentDays, enableAbsentDeduction, lopDaysPerAbsent, employee, periodStartDateStr, periodEndDateStr, forceRecalculate }.
  *   When periodStartDateStr + periodEndDateStr (YYYY-MM-DD IST) are set, late/early counts use AttendanceDaily in that inclusive range. Otherwise the range is resolved from `month` using payroll cycle settings (not calendar month).
  *   employee: { applyAttendanceDeduction, deductLateIn, deductEarlyOut, deductAbsent }.
@@ -173,6 +177,49 @@ async function calculateAttendanceDeduction(employeeId, month, departmentId, per
           calculationMode: null,
         },
       };
+    }
+
+    const skipStoredMonthlySummary =
+      options.ignoreMonthlySummary === true || options.forceRecalculate === true;
+    if (!skipStoredMonthlySummary) {
+      try {
+        const MonthlyAttendanceSummary = require('../../attendance/model/MonthlyAttendanceSummary');
+        const mas = await MonthlyAttendanceSummary.findOne({ employeeId, month }).lean();
+        const hasFullSummary =
+          mas &&
+          mas.contributingDates != null &&
+          typeof mas.contributingDates === 'object' &&
+          mas.attendanceDeductionBreakdown != null &&
+          typeof mas.attendanceDeductionBreakdown === 'object';
+        if (hasFullSummary) {
+          const br = mas.attendanceDeductionBreakdown;
+          const rawDays =
+            br.daysDeducted != null && br.daysDeducted !== ''
+              ? Number(br.daysDeducted)
+              : Number(mas.totalAttendanceDeductionDays) || 0;
+          const safeDays = Number.isFinite(rawDays) ? Math.max(0, rawDays) : 0;
+          const attendanceDeduction = Math.round(safeDays * perDayBasicPay * 100) / 100;
+          return {
+            attendanceDeduction,
+            breakdown: {
+              lateInsCount: Number(br.lateInsCount) || 0,
+              earlyOutsCount: Number(br.earlyOutsCount) || 0,
+              combinedCount: Number(br.combinedCount) || 0,
+              freeAllowedPerMonth: Number(br.freeAllowedPerMonth) || 0,
+              effectiveCount: Number(br.effectiveCount) || 0,
+              daysDeducted: safeDays,
+              lateEarlyDaysDeducted: Number(br.lateEarlyDaysDeducted) || 0,
+              absentExtraDays: Number(br.absentExtraDays) || 0,
+              absentDays: Number(br.absentDays) || 0,
+              lopDaysPerAbsent: br.lopDaysPerAbsent != null ? Number(br.lopDaysPerAbsent) : null,
+              deductionType: br.deductionType != null ? String(br.deductionType) : null,
+              calculationMode: br.calculationMode != null ? String(br.calculationMode) : null,
+            },
+          };
+        }
+      } catch (e) {
+        console.warn('[Deduction] MonthlyAttendanceSummary read failed, using live calc:', e.message);
+      }
     }
 
     // 1. Fetch counts FIRST (so we can return them even if no deduction rules apply)

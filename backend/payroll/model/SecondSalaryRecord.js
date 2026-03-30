@@ -165,6 +165,11 @@ const secondSalaryRecordSchema = new mongoose.Schema(
                 default: 0,
                 min: 0,
             },
+            attendanceDeductionDays: {
+                type: Number,
+                default: 0,
+                min: 0,
+            },
         },
 
         // EARNINGS BREAKDOWN

@@ -522,12 +522,17 @@ export default function PayRegisterPage() {
   };
 
   const handleCalculatePayrollForAll = async () => {
-    if (!payRegisters || payRegisters.length === 0) {
-      toast.info('No employees to calculate payroll for.');
+    if (paginationTotal <= 0 && (!payRegisters || payRegisters.length === 0)) {
+      toast.info('No employees match the selected month and filters.');
       return;
     }
     setBulkCalculating(true);
-    toast.info('Calculating payroll for listed employees...', { autoClose: 2000 });
+    toast.info(
+      paginationTotal > 0
+        ? `Queuing payroll for all ${paginationTotal} employee(s) matching these filters (not only this page).`
+        : 'Queuing payroll for all employees matching these filters...',
+      { autoClose: 2500 }
+    );
 
     try {
       const requestData = {
