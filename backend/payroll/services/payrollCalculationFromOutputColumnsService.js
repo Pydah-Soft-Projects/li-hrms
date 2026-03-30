@@ -1101,21 +1101,6 @@ async function calculatePayrollFromOutputColumns(employeeId, month, userId, opti
   payrollRecord.markModified('loanAdvance');
   await payrollRecord.save();
 
-  // Process manual deduction settlement records (update DeductionRequest remainingAmount / status)
-  if (deductionSettlements.length > 0) {
-    try {
-      await DeductionIntegrationService.processDeductionSettlements(
-        employeeId,
-        month,
-        deductionSettlements,
-        userId,
-        payrollRecord._id.toString()
-      );
-    } catch (e) {
-      console.error('[PayrollFromOutputColumns] processDeductionSettlements error:', e.message);
-    }
-  }
-
   // Create or find batch and add this payroll record (same as legacy flow — batches created right after record save)
   let batchId = null;
   const deptId = employee.department_id?._id ?? employee.department_id;
