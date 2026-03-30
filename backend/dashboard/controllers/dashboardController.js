@@ -26,16 +26,21 @@ function toDateStr(date) {
 exports.getDashboardStats = async (req, res) => {
   try {
     const userId = req.user.userId;
-    const user = await User.findById(userId);
+    let user = await User.findById(userId);
+    /** JWT may reference an Employee record (same as GET /auth/me). */
+    let employeeDirect = null;
 
     if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found',
-      });
+      employeeDirect = await Employee.findById(userId).select('emp_no employee_name').lean();
+      if (!employeeDirect) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found',
+        });
+      }
     }
 
-    const role = user.role;
+    const role = user ? user.role : 'employee';
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const todayStr = toDateStr(today);
@@ -165,33 +170,52 @@ exports.getDashboardStats = async (req, res) => {
       stats.departmentFeed = recentPendingRequests;
     }
 
-    // 4. Employee - Personal Stats
+    // 4. Employee - Personal Stats (User with employee link OR Employee login)
     else {
-      const employeeId = user.employeeId;
+      let employeeIdStr;
+      let empMongoId;
 
-      if (!employeeId) {
+      if (employeeDirect) {
+        employeeIdStr = employeeDirect.emp_no;
+        empMongoId = employeeDirect._id;
+      } else {
+        employeeIdStr = user.employeeId;
+        empMongoId = user.employeeRef || req.user?.employeeRef;
+        if (!empMongoId && user.employeeId) {
+          const e = await Employee.findOne({ emp_no: user.employeeId }).select('_id compensatoryOffs').lean();
+          empMongoId = e?._id;
+        }
+      }
+
+      if (!employeeIdStr) {
         return res.json({ success: true, data: {} });
       }
 
       const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
       const startOfMonthStr = toDateStr(startOfMonth);
 
-      const myPendingLeaves = await Leave.countDocuments({ emp_no: employeeId, status: 'pending' });
-      const myApprovedLeaves = await Leave.countDocuments({ emp_no: employeeId, status: 'approved' });
+      const empNoUpper = String(employeeIdStr).trim().toUpperCase();
+      const leaveOr = [{ emp_no: employeeIdStr }, { emp_no: empNoUpper }];
+      if (empMongoId) {
+        leaveOr.push({ employeeId: empMongoId });
+      }
+
+      const myPendingLeaves = await Leave.countDocuments({
+        status: 'pending',
+        $or: leaveOr,
+      });
+      const myApprovedLeaves = await Leave.countDocuments({
+        status: 'approved',
+        $or: leaveOr,
+      });
 
       const myAttendance = await AttendanceDaily.countDocuments({
-        employeeNumber: employeeId,
+        employeeNumber: empNoUpper,
         date: { $gte: startOfMonthStr, $lte: todayStr },
         status: { $in: ['PRESENT', 'HALF_DAY'] }
       });
 
       const leaveBalance = myApprovedLeaves - myPendingLeaves;
-
-      let empMongoId = user.employeeRef || req.user?.employeeRef;
-      if (!empMongoId && user.employeeId) {
-        const e = await Employee.findOne({ emp_no: user.employeeId }).select('_id compensatoryOffs').lean();
-        empMongoId = e?._id;
-      }
 
       let compensatoryOffBalance = null;
       let yearlyClCreditDaysPosted = null;
