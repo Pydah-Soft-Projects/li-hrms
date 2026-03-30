@@ -1,6 +1,7 @@
 require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') });
 const mongoose = require('mongoose');
 const axios = require('axios');
+const readline = require('readline');
 
 /**
  * ============================================================
@@ -50,6 +51,17 @@ function escapeRegex(s) {
     return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/** Prompt helper */
+async function prompt(question) {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    return new Promise((resolve) => {
+        rl.question(question, (answer) => {
+            rl.close();
+            resolve(answer.trim());
+        });
+    });
+}
+
 /** Minimal HRMS models (read-only) — same collections as backend. */
 const hrmsDivisionSchema = new mongoose.Schema({
     name: String,
@@ -64,7 +76,7 @@ const hrmsDepartmentSchema = new mongoose.Schema({
 }, { collection: 'departments', strict: false });
 
 /** Uses division-specific departments on Division + Department.divisions for this division. */
-async function loadDivisionScope(hrmsConn, divisionName) {
+async function loadDivisionScope(hrmsConn, divisionName, deptFilter = null) {
     const Division = hrmsConn.models.HrmsDivision || hrmsConn.model('HrmsDivision', hrmsDivisionSchema);
     const Department = hrmsConn.models.HrmsDepartment || hrmsConn.model('HrmsDepartment', hrmsDepartmentSchema);
     const Employee = hrmsConn.models.HrmsEmployee || hrmsConn.model(
@@ -104,10 +116,34 @@ async function loadDivisionScope(hrmsConn, divisionName) {
             .sort({ name: 1 })
             .lean();
 
-    const employees = await Employee.find({
+    let targetDeptIds = [];
+    let activeDeptName = null;
+
+    if (deptFilter) {
+        const filterStr = String(deptFilter).trim().toUpperCase();
+        // Match against name OR code
+        const matchedDepts = departmentDetails.filter(d => 
+            (d.name || '').trim().toUpperCase() === filterStr || 
+            (d.code || '').trim().toUpperCase() === filterStr
+        );
+
+        if (matchedDepts.length === 0) {
+            throw new Error(`Department "${deptFilter}" not found in division "${division.name}". Check name or code.`);
+        }
+        targetDeptIds = matchedDepts.map(d => d._id);
+        activeDeptName = matchedDepts.map(d => d.name).join(', ');
+    }
+
+    const employeeQuery = {
         division_id: divId,
         is_active: { $ne: false },
-    })
+    };
+
+    if (targetDeptIds.length > 0) {
+        employeeQuery.department_id = { $in: targetDeptIds };
+    }
+
+    const employees = await Employee.find(employeeQuery)
         .select('emp_no')
         .lean();
 
@@ -117,6 +153,7 @@ async function loadDivisionScope(hrmsConn, divisionName) {
         division: { _id: divId, name: division.name || trimmed, code: division.code || '' },
         departments: departmentDetails.map((d) => ({ _id: d._id, name: d.name || '', code: d.code || '' })),
         employeeIds,
+        activeDeptName,
     };
 }
 
@@ -160,15 +197,40 @@ async function main() {
         await hrmsConn.asPromise();
         console.log(`✅ HRMS DB connected: ${hrmsMongoUri}\n`);
 
-        const SYNC_DIVISION_NAME = process.env.SYNC_DIVISION_NAME || 'PYDAHSOFT PVT LTD';
-        const scope = await loadDivisionScope(hrmsConn, SYNC_DIVISION_NAME);
+        const SYNC_DIVISION_NAME = process.env.SYNC_DIVISION_NAME || 'PYDAH COLLEGE OF ENGINEERING';
+        let SYNC_DEPT = process.env.SYNC_DEPT;
+        let scope = await loadDivisionScope(hrmsConn, SYNC_DIVISION_NAME, SYNC_DEPT);
 
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         console.log(`Division (sync scope): ${scope.division.name} [${scope.division.code || 'no code'}]`);
-        console.log(`Departments in this division (${scope.departments.length}):`);
-        for (const d of scope.departments) {
-            console.log(`   • ${d.name}${d.code ? ` (${d.code})` : ''}`);
+
+        if (scope.activeDeptName) {
+            console.log(`Department Filter     : ${scope.activeDeptName}`);
         }
+
+        console.log(`Departments in this division (${scope.departments.length}):`);
+        scope.departments.forEach((d, index) => {
+            console.log(`   ${String(index + 1).padStart(2)}. ${d.name}${d.code ? ` (${d.code})` : ''}`);
+        });
+
+        // Interactive selection if not provided in env
+        if (!SYNC_DEPT && process.stdin.isTTY) {
+            const input = await prompt(`\nSelect Department Number (1-${scope.departments.length}) or press Enter for ALL: `);
+            if (input && !isNaN(input)) {
+                const idx = parseInt(input) - 1;
+                if (scope.departments[idx]) {
+                    SYNC_DEPT = scope.departments[idx].name;
+                    console.log(`   ➜ Selected: ${SYNC_DEPT}`);
+                    // Refresh scope with specific department
+                    scope = await loadDivisionScope(hrmsConn, SYNC_DIVISION_NAME, SYNC_DEPT);
+                } else {
+                    console.log(`   ➜ Invalid index. Syncing all departments.`);
+                }
+            } else {
+                console.log(`   ➜ Syncing all departments.`);
+            }
+        }
+
         console.log(`Active employees in division: ${scope.employeeIds.length}`);
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
@@ -195,11 +257,9 @@ async function main() {
                 throw new Error('Invalid SYNC_MONTH. Use YYYY-MM (example: 2026-03)');
             }
             const { year, month } = monthCfg;
-            const startDateStr = `${year}-${String(month).padStart(2, '0')}-01T00:00:00.000Z`;
-            const endDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
-            const endDateStr = `${year}-${String(month).padStart(2, '0')}-${String(endDay).padStart(2, '0')}T23:59:59.999Z`;
-            START_DATE = new Date(startDateStr);
-            END_DATE = new Date(endDateStr);
+            // Payroll cycle: 26th of prev month to 25th of current month
+            START_DATE = new Date(Date.UTC(year, month - 2, 26, 0, 0, 0, 0));
+            END_DATE = new Date(Date.UTC(year, month - 1, 25, 23, 59, 59, 999));
         }
 
         const query = {
@@ -299,10 +359,10 @@ async function main() {
     } finally {
         console.log('\n🏁 Closing connection...');
         if (hrmsConn && hrmsConn.readyState !== 0) {
-            await hrmsConn.close().catch(() => {});
+            await hrmsConn.close().catch(() => { });
         }
         if (mongoose.connection.readyState !== 0) {
-            await mongoose.disconnect().catch(() => {});
+            await mongoose.disconnect().catch(() => { });
         }
         console.log('✅ Disconnected.');
     }
