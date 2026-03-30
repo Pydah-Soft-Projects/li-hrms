@@ -168,6 +168,11 @@ exports.updateSettings = async (req, res) => {
         if (!settings.featureFlags) settings.featureFlags = {};
         settings.featureFlags.allowShiftChange = featureFlags.allowShiftChange;
       }
+      if (featureFlags.partialDaysContributeToPayableShifts !== undefined) {
+        if (!settings.featureFlags) settings.featureFlags = {};
+        settings.featureFlags.partialDaysContributeToPayableShifts =
+          Boolean(featureFlags.partialDaysContributeToPayableShifts);
+      }
     }
 
     if (bodyCompleteSummaryColumns !== undefined && bodyCompleteSummaryColumns !== null) {
@@ -176,6 +181,12 @@ exports.updateSettings = async (req, res) => {
         settings.completeSummaryColumns = {};
       }
       Object.assign(settings.completeSummaryColumns, normalized);
+    }
+
+    // Partial→payable only applies in single-shift (1/day) processing; never in multi-shift.
+    if (settings.processingMode?.mode !== 'single_shift') {
+      if (!settings.featureFlags) settings.featureFlags = {};
+      settings.featureFlags.partialDaysContributeToPayableShifts = false;
     }
 
     await settings.save();

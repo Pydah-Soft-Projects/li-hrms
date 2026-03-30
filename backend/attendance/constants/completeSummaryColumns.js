@@ -2,6 +2,8 @@
 const COMPLETE_SUMMARY_COLUMN_KEYS = [
   'present',
   'leaves',
+  'od',
+  'partial',
   'absent',
   'weekOffs',
   'holidays',

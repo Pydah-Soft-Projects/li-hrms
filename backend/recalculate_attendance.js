@@ -1,8 +1,17 @@
 /**
  * Recalculate Attendance Script
- * 
- * Usage: node recalculate_attendance.js [employeeNumber] [date]
- * Example: node recalculate_attendance.js "EMP123" "2026-03-04"
+ *
+ * Usage: node recalculate_attendance.js [employeeNumber] [YYYY-MM-DD | YYYY-MM] [--dry-run]
+ *
+ * Examples:
+ *   node recalculate_attendance.js "EMP123" "2026-03-04"
+ *   node recalculate_attendance.js "EMP123" "2026-03"   (all days in that calendar month)
+ *   node recalculate_attendance.js "EMP123" "2026-02-26..2026-03-25"   (inclusive range)
+ *
+ * Pay cycle spanning two calendar months (e.g. 26 Feb–25 Mar): use range form above, or PowerShell:
+ *   $e="EMP123"; for ($d=[datetime]"2026-02-26"; $d -le [datetime]"2026-03-25"; $d=$d.AddDays(1)) {
+ *     node recalculate_attendance.js $e $d.ToString("yyyy-MM-dd")
+ *   }
  */
 
 require('dotenv').config();
@@ -11,6 +20,8 @@ const AttendanceSettings = require('./attendance/model/AttendanceSettings');
 const singleShiftService = require('./attendance/services/singleShiftProcessingService');
 const multiShiftService = require('./attendance/services/multiShiftProcessingService');
 const summaryCalculationService = require('./attendance/services/summaryCalculationService');
+const dateCycleService = require('./leaves/services/dateCycleService');
+const { getAllDatesInRange } = require('./shared/utils/dateUtils');
 
 async function run() {
   const args = process.argv.slice(2);
@@ -22,7 +33,7 @@ async function run() {
 
   if (!empNo || !dateStr) {
     console.log('Error: Missing arguments.');
-    console.log('Usage: node recalculate_attendance.js [employeeNumber] [YYYY-MM or YYYY-MM-DD] [--dry-run]');
+    console.log('Usage: node recalculate_attendance.js [employeeNumber] [YYYY-MM | YYYY-MM-DD | YYYY-MM-DD..YYYY-MM-DD] [--dry-run]');
     process.exit(1);
   }
 
@@ -35,17 +46,27 @@ async function run() {
     const settings = await AttendanceSettings.getSettings();
     const mode = settings.processingMode?.mode || 'multi_shift';
 
-    // Determine target dates
+    // Determine target dates (single day, calendar month, or inclusive range — not argv "range" unless you use ..)
     let dates = [];
-    if (dateStr.length === 7) { // YYYY-MM
+    if (dateStr.length === 7) {
+      // YYYY-MM → every calendar day in that month
       const [year, month] = dateStr.split('-').map(Number);
       const daysInMonth = new Date(year, month, 0).getDate();
       for (let d = 1; d <= daysInMonth; d++) {
         dates.push(`${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
       }
       console.log(`Targeting entire month: ${dateStr} (${dates.length} days)`);
+    } else if (dateStr.includes('..')) {
+      const parts = dateStr.split('..').map((s) => s.trim());
+      if (parts.length !== 2 || parts[0].length !== 10 || parts[1].length !== 10) {
+        console.log('Error: Range must be YYYY-MM-DD..YYYY-MM-DD (e.g. 2026-02-26..2026-03-25)');
+        process.exit(1);
+      }
+      dates = getAllDatesInRange(parts[0], parts[1]);
+      console.log(`Targeting date range: ${parts[0]} .. ${parts[1]} (${dates.length} days)`);
     } else {
       dates = [dateStr];
+      console.log(`Targeting single date: ${dateStr} (pass YYYY-MM or START..END for multiple days)`);
     }
 
     console.log(`\n--- ${dryRun ? 'DRY RUN' : 'EXECUTION'} ---`);
@@ -56,7 +77,9 @@ async function run() {
       if (dryRun) {
         const record = await AttendanceDaily.findOne({ employeeNumber: empNo.toUpperCase(), date: d }).populate('shifts.shiftId');
         if (!record) {
-          console.log(`   No record found for ${d}. Skipping.`);
+          console.log(
+            `   No AttendanceDaily row for ${empNo} on ${d}. Skipping dry-run. (Use execution without --dry-run to build from punches/logs if supported.)`
+          );
           continue;
         }
 
@@ -166,12 +189,20 @@ async function run() {
       }
     }
     
-    // Trigger Monthly Summary Recalculation after daily updates
+    // Monthly summary: one refresh per distinct payroll cycle touched (correct for 26–25 etc.; not just calendar YYYY-MM of dateStr)
     if (!dryRun) {
-      const monthToTrigger = dateStr.substring(0, 7); // Extract YYYY-MM
-      console.log(`\nTriggering Monthly Summary Refresh for ${empNo} in ${monthToTrigger}...`);
-      await summaryCalculationService.calculateMonthlySummaryByEmpNo(empNo, monthToTrigger);
-      console.log('Summary Refresh Complete.');
+      const seenCycleKeys = new Set();
+      const { recalculateOnAttendanceUpdate } = summaryCalculationService;
+      for (const d of dates) {
+        const periodInfo = await dateCycleService.getPeriodInfo(new Date(`${d}T12:00:00+05:30`));
+        const pc = periodInfo.payrollCycle;
+        const key = `${pc.year}-${pc.month}`;
+        if (seenCycleKeys.has(key)) continue;
+        seenCycleKeys.add(key);
+        console.log(`\nTriggering Monthly Summary Refresh for ${empNo} (payroll month ${key}, sample date ${d})...`);
+        await recalculateOnAttendanceUpdate(empNo.toUpperCase(), d);
+      }
+      console.log('Summary refresh complete for cycle(s):', [...seenCycleKeys].join(', ') || '(none)');
     }
 
   } catch (error) {
