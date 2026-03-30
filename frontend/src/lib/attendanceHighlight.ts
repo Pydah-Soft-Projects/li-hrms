@@ -2,6 +2,29 @@
  * Shared helpers for monthly summary → day-cell highlight badges (workspace + superadmin).
  */
 
+/** True if the attendance detail has at least one check-in or check-out (shift-level or legacy root fields). */
+export function hasAttendancePunches(detail: unknown): boolean {
+  const d = detail as Record<string, unknown> | null | undefined;
+  if (!d) return false;
+  const shifts = d.shifts as Array<{ inTime?: unknown; outTime?: unknown }> | undefined;
+  if (Array.isArray(shifts) && shifts.some((s) => s?.inTime || s?.outTime)) return true;
+  if (d.inTime || d.outTime) return true;
+  return false;
+}
+
+/**
+ * Full-day OD (not hour-based, not half-day) with an OD id we can revoke.
+ * Matches legacy rows where odType_extended is unset and isHalfDay is false.
+ */
+export function isFullDayOdEligibleForConflictRevoke(detail: unknown): boolean {
+  const d = detail as Record<string, unknown> | null | undefined;
+  const oi = d?.odInfo as Record<string, unknown> | undefined;
+  if (!d?.hasOD || !oi || !oi.odId) return false;
+  if (oi.odType_extended === 'hours') return false;
+  if (oi.odType_extended === 'half_day' || oi.isHalfDay) return false;
+  return oi.odType_extended === 'full_day' || !oi.isHalfDay;
+}
+
 export function formatHighlightContribution(v: number): string {
   const n = Number(v);
   if (!Number.isFinite(n)) return '—';
@@ -27,6 +50,7 @@ export function highlightBadgeSubtitle(
   if (category === 'present' && L === 'P') return null;
   if (category === 'payableShifts' && L === 'Pay') return null;
   if (category === 'ods' && L === 'OD') return null;
+  if (category === 'partial' && L === 'PARTIAL') return null;
   if (category === 'weeklyOffs' && (L === 'WO' || L === 'WEEK_OFF')) return null;
   if (category === 'holidays' && (L === 'HOL' || L === 'HOLIDAY')) return null;
   if (category === 'permissions' && L === 'Perm') return null;

@@ -136,12 +136,16 @@ const attendanceSettingsSchema = new mongoose.Schema(
       allowOutTimeEditing: { type: Boolean, default: true },
       allowAttendanceUpload: { type: Boolean, default: true },
       allowShiftChange: { type: Boolean, default: true },
+      /** When true AND processingMode.mode is single_shift, PARTIAL days floor payable at 0.5 in monthly summary calc */
+      partialDaysContributeToPayableShifts: { type: Boolean, default: false },
     },
 
     // Which Complete-table aggregate columns all users see (workspace + superadmin attendance grid)
     completeSummaryColumns: {
       present: { type: Boolean, default: true },
       leaves: { type: Boolean, default: true },
+      od: { type: Boolean, default: true },
+      partial: { type: Boolean, default: true },
       absent: { type: Boolean, default: true },
       weekOffs: { type: Boolean, default: true },
       holidays: { type: Boolean, default: true },
