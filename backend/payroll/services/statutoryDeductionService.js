@@ -79,17 +79,21 @@ async function calculateStatutoryDeductions({ basicPay = 0, grossSalary = 0, ear
 
   // Profession Tax: employee only; slab-based on basic pay (slab where basicPay falls → amount)
   if (applyPT && config.professionTax && config.professionTax.enabled && Array.isArray(config.professionTax.slabs) && config.professionTax.slabs.length > 0) {
+    // Requirement: first prorate the salary base using paidDays/totalDaysInMonth,
+    // then choose the slab using this prorated base.
     const basic = Number(basicPay) || 0;
+    const basicForSlab = prorate(basic);
     const sorted = [...config.professionTax.slabs].filter(s => s && typeof s.min === 'number').sort((a, b) => a.min - b.min);
     let amount = 0;
     for (const slab of sorted) {
       const max = slab.max == null || slab.max === undefined ? 1e9 : Number(slab.max);
-      if (basic >= Number(slab.min) && basic <= max) {
+      if (basicForSlab >= Number(slab.min) && basicForSlab <= max) {
         amount = Number(slab.amount) || 0;
         break;
       }
     }
-    amount = prorate(amount);
+    // IMPORTANT: do NOT prorate again after slab selection, because the slab
+    // is already chosen using the prorated base.
     totalEmployeeShare += amount;
     breakdown.push({
       name: 'Profession Tax',
