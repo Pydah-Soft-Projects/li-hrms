@@ -204,6 +204,12 @@ const payrollRecordSchema = new mongoose.Schema(
         default: 0,
         min: 0,
       },
+      // Late/early (and related) days deducted — mirrors deductions.attendanceDeductionBreakdown.daysDeducted for paysheet / export
+      attendanceDeductionDays: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
     },
 
     // EARNINGS BREAKDOWN
