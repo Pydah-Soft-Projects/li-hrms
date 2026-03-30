@@ -823,23 +823,6 @@ async function calculatePayroll(employeeId, month, userId) {
     await payrollRecord.save();
     console.log(`✓ Payroll record saved successfully! ID: ${payrollRecord._id}`);
 
-    // Process Arrears Settlements (After Save)
-    if (arrearsSettlements && arrearsSettlements.length > 0) {
-      try {
-        console.log('\n--- Processing Arrears Settlement Records ---');
-        await ArrearsIntegrationService.processArrearsSettlements(
-          employeeId,
-          month,
-          arrearsSettlements,
-          userId,
-          payrollRecord._id.toString()
-        );
-        console.log('✓ Arrears settlements processed successfully');
-      } catch (settlementError) {
-        console.error('Error processing arrears settlements:', settlementError);
-      }
-    }
-
     // Step 14: Create Transaction Logs
     await createTransactionLogs(payrollRecord._id, employeeId, employee.emp_no, month, userId, {
       basicPayResult,
@@ -1584,41 +1567,6 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     };
 
     await payrollRecord.save();
-
-    // Process arrears settlements after payroll is saved
-    if (arrearsSettlements && arrearsSettlements.length > 0) {
-      try {
-        console.log('\n--- Processing Arrears Settlement Records ---');
-        await ArrearsIntegrationService.processArrearsSettlements(
-          employeeId,
-          month,
-          arrearsSettlements,
-          userId,
-          payrollRecord._id.toString()
-        );
-        console.log('✓ Arrears settlements processed successfully');
-      } catch (settlementError) {
-        console.error('Error processing arrears settlements:', settlementError);
-        // Log but don't fail - payroll is already saved
-      }
-    }
-
-    // Process manual deduction settlements after payroll is saved
-    if (deductionSettlements && deductionSettlements.length > 0) {
-      try {
-        console.log('\n--- Processing Manual Deduction Settlement Records ---');
-        await DeductionIntegrationService.processDeductionSettlements(
-          employeeId,
-          month,
-          deductionSettlements,
-          userId,
-          payrollRecord._id.toString()
-        );
-        console.log('✓ Manual deduction settlements processed successfully');
-      } catch (settlementError) {
-        console.error('Error processing deduction settlements:', settlementError);
-      }
-    }
 
     let batchId = null;
     // Create or find batch and add this payroll record (same as dynamic engine — batches right after record save)
