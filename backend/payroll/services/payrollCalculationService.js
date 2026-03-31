@@ -1208,6 +1208,7 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
         earnedSalary,
         dearnessAllowance: 0,
         employee,
+        allSalaries: employee.dynamicFields?.salaries || {},
       });
       if (statutoryResult.breakdown && statutoryResult.breakdown.length > 0) {
         totalDeductions += statutoryResult.totalEmployeeShare;

@@ -14,6 +14,8 @@ const esiSchema = new mongoose.Schema({
   employerPercent: { type: Number, default: 3.25, min: 0, max: 100 },
   /** % of basic pay used as wage for ESI calculation (e.g. 50 = 50% of basic) */
   wageBasePercentOfBasic: { type: Number, default: 50, min: 0, max: 100 },
+  /** Reference to a field ID in 'Salaries' form settings to be used as wage base. If set, this overrides wageBasePercentOfBasic. */
+  wageBaseField: { type: String, default: null },
   /** Wage ceiling (₹/month) - only when enabled; ESI applicable when (basic * wageBasePercent/100) <= this. 0 = no ceiling. */
   wageCeiling: { type: Number, default: 21000, min: 0 },
 }, { _id: false });
@@ -28,6 +30,8 @@ const pfSchema = new mongoose.Schema({
   wageCeiling: { type: Number, default: 15000, min: 0 },
   /** Apply on: 'basic' (basic only) or 'basic_da' (basic + dearness allowance) */
   base: { type: String, enum: ['basic', 'basic_da'], default: 'basic' },
+  /** Reference to a field ID in 'Salaries' form settings. If set, this overrides 'base'. Value of this field will be used as contribution base. */
+  wageBaseField: { type: String, default: null },
 }, { _id: false });
 
 const ptSlabSchema = new mongoose.Schema({

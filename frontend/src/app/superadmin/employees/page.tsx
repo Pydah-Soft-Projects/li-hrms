@@ -5837,6 +5837,41 @@ export default function EmployeesPage() {
                         </div>
                       </div>
 
+                      {/* Dynamic Sections from Form Settings (e.g. Salaries) */}
+                      {formSettings?.groups?.filter(g => 
+                        g.isEnabled && 
+                        !['basic_info', 'personal_info', 'contact_info', 'bank_details', 'reporting_authority', 'professional', 'documents', 'experience', 'qualifications'].includes(g.id)
+                      ).map(group => {
+                        const groupFields = group.fields?.filter(f => f.isEnabled) || [];
+                        if (groupFields.length === 0) return null;
+
+                        // See if employee has data for this group
+                        const groupData = viewingEmployee.dynamicFields?.[group.id] || {};
+                        
+                        return (
+                          <div key={group.id} className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                            <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">{group.label}</h3>
+                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                              {groupFields.map(field => {
+                                const val = groupData[field.id];
+                                // Check if the field is from the 'salaries' group to add currency symbol
+                                const isCurrency = group.id === 'salaries' || field.label.toLowerCase().includes('salary') || field.label.toLowerCase().includes('allowance');
+                                const displayVal = (val === undefined || val === null || val === '') 
+                                  ? '-' 
+                                  : (isCurrency ? `₹${Number(val).toLocaleString()}` : String(val));
+                                
+                                return (
+                                  <div key={field.id}>
+                                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{field.label}</label>
+                                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{displayVal}</p>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+
                       {/* Deduction Preferences - Statutory & Attendance flags */}
                       <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
                         <h3 className="mb-2 text-lg font-semibold text-slate-900 dark:text-slate-100">Deduction Preferences</h3>

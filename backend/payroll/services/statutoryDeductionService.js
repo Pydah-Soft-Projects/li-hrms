@@ -15,7 +15,7 @@ const StatutoryDeductionConfig = require('../model/StatutoryDeductionConfig');
  * @param {number} [params.totalDaysInMonth] - Total days in month (pay cycle). When set with paidDays, statutory is prorated.
  * @returns {Promise<{ breakdown: Array<{ name, code, employeeAmount, employerAmount }>, totalEmployeeShare, totalEmployerShare }>}
  */
-async function calculateStatutoryDeductions({ basicPay = 0, grossSalary = 0, earnedSalary = 0, dearnessAllowance = 0, employee = null, paidDays = null, totalDaysInMonth = null }) {
+async function calculateStatutoryDeductions({ basicPay = 0, grossSalary = 0, earnedSalary = 0, dearnessAllowance = 0, employee = null, paidDays = null, totalDaysInMonth = null, allSalaries = {} }) {
   const config = await StatutoryDeductionConfig.get();
   const breakdown = [];
   let totalEmployeeShare = 0;
@@ -33,14 +33,24 @@ async function calculateStatutoryDeductions({ basicPay = 0, grossSalary = 0, ear
     return amount;
   };
 
-  // ESI: calculated on (wageBasePercentOfBasic % of basic). When enabled, wage ceiling applies: applicable when basic ≤ ceiling (0 = no ceiling).
+  // ESI: calculated on (wageBasePercentOfBasic % of basic) OR a specific wageBaseField. 
+  // When enabled, wage ceiling applies: applicable when basic ≤ ceiling (0 = no ceiling).
   if (applyESI && config.esi && config.esi.enabled) {
     const basic = Number(basicPay) || 0;
-    const wageBasePct = Math.min(100, Math.max(0, config.esi.wageBasePercentOfBasic ?? 50));
     const wageCeiling = config.esi.wageCeiling || 0;
     const empPct = config.esi.employeePercent ?? 0.75;
     const emprPct = config.esi.employerPercent ?? 3.25;
-    const esiWage = basic * (wageBasePct / 100);
+    
+    let esiWage = 0;
+    if (config.esi.wageBaseField && allSalaries && allSalaries[config.esi.wageBaseField] !== undefined) {
+      // Use the value from the specific salary field (direct amount, no percentage needed usually)
+      esiWage = Number(allSalaries[config.esi.wageBaseField]) || 0;
+    } else {
+      // Fallback to percentage of basic
+      const wageBasePct = Math.min(100, Math.max(0, config.esi.wageBasePercentOfBasic ?? 50));
+      esiWage = basic * (wageBasePct / 100);
+    }
+
     const applicable = basic > 0 && (wageCeiling <= 0 || basic <= wageCeiling);
     if (applicable) {
       const empAmount = prorate(Math.round((esiWage * empPct / 100) * 100) / 100);
@@ -59,13 +69,26 @@ async function calculateStatutoryDeductions({ basicPay = 0, grossSalary = 0, ear
   // PF: on Basic (or Basic + DA). Upper limit (wage ceiling): if salary ≥ ceiling, calculate on ceiling amount; else calculate on full basic. So contribution base = min(basic or basic+DA, wageCeiling).
   if (applyPF && config.pf && config.pf.enabled) {
     const base = (config.pf.base === 'basic_da') ? (Number(basicPay) || 0) + (Number(dearnessAllowance) || 0) : (Number(basicPay) || 0);
-    const wageCeiling = config.pf.wageCeiling || 15000;
-    const empPct = config.pf.employeePercent ?? 12;
     const emprPct = config.pf.employerPercent ?? 12;
-    const contributionBase = base > 0 ? Math.min(base, wageCeiling) : 0;
-    if (contributionBase > 0) {
-      const empAmount = prorate(Math.round((contributionBase * empPct / 100) * 100) / 100);
-      const emprAmount = prorate(Math.round((contributionBase * emprPct / 100) * 100) / 100);
+    
+    let contributionBase = 0;
+    if (config.pf.wageBaseField && allSalaries && allSalaries[config.pf.wageBaseField] !== undefined) {
+      // Use specific salary field as base
+      contributionBase = Number(allSalaries[config.pf.wageBaseField]) || 0;
+    } else {
+      // Fallback: Apply on Basic (or Basic + DA)
+      const base = (config.pf.base === 'basic_da') ? (Number(basicPay) || 0) + (Number(dearnessAllowance) || 0) : (Number(basicPay) || 0);
+      contributionBase = base;
+    }
+
+    // Apply wage ceiling: PF mandatory if base <= ceiling; above that optional/capped? 
+    // Common rule: if base > ceiling, contribution is on ceiling.
+    const wageCeiling = config.pf.wageCeiling || 15000;
+    const finalBase = contributionBase > 0 ? (wageCeiling > 0 ? Math.min(contributionBase, wageCeiling) : contributionBase) : 0;
+
+    if (finalBase > 0) {
+      const empAmount = prorate(Math.round((finalBase * empPct / 100) * 100) / 100);
+      const emprAmount = prorate(Math.round((finalBase * emprPct / 100) * 100) / 100);
       totalEmployeeShare += empAmount;
       totalEmployerShare += emprAmount;
       breakdown.push({

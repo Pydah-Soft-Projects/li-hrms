@@ -312,6 +312,7 @@ export interface StatutoryESI {
   employerPercent: number;
   wageBasePercentOfBasic: number;
   wageCeiling: number;
+  wageBaseField?: string | null;
 }
 export interface StatutoryPF {
   enabled: boolean;
@@ -319,6 +320,7 @@ export interface StatutoryPF {
   employerPercent: number;
   wageCeiling: number;
   base: 'basic' | 'basic_da';
+  wageBaseField?: string | null;
 }
 export interface ProfessionTaxSlab {
   min: number;

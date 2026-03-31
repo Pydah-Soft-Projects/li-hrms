@@ -1,15 +1,16 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { api, type ProfessionTaxSlab, type StatutoryPF } from '@/lib/api';
+import { api, type ProfessionTaxSlab, type StatutoryPF, type StatutoryESI } from '@/lib/api';
 import { toast } from 'react-toastify';
 import { Save, Shield, Building2, Briefcase, Plus, Trash2 } from 'lucide-react';
 
-const defaultEsi = {
+const defaultEsi: StatutoryESI = {
   enabled: false,
   employeePercent: 0.75,
   employerPercent: 3.25,
   wageBasePercentOfBasic: 50,
+  wageBaseField: '',
   wageCeiling: 21000,
 };
 const defaultPf: StatutoryPF = {
@@ -18,6 +19,7 @@ const defaultPf: StatutoryPF = {
   employerPercent: 12,
   wageCeiling: 15000,
   base: 'basic',
+  wageBaseField: '',
 };
 const defaultPtSlabs: ProfessionTaxSlab[] = [
   { min: 0, max: 14999, amount: 0 },
@@ -36,6 +38,7 @@ export default function StatutoryDeductionsPage() {
   const [esi, setEsi] = useState(defaultEsi);
   const [pf, setPf] = useState(defaultPf);
   const [professionTax, setProfessionTax] = useState(defaultPt);
+  const [salaryFields, setSalaryFields] = useState<any[]>([]);
 
   const loadConfig = async () => {
     setLoading(true);
@@ -54,6 +57,16 @@ export default function StatutoryDeductionsPage() {
               ? pt.slabs.map((s: ProfessionTaxSlab) => ({ min: Number(s.min) || 0, max: s.max == null ? null : Number(s.max), amount: Number(s.amount) || 0 }))
               : defaultPtSlabs,
           });
+        }
+      }
+
+      // Load form settings to get salary fields
+      const formSettingsRes = await api.getEmployeeFormSettings();
+      const settingsData = (formSettingsRes && (formSettingsRes as any).data !== undefined) ? (formSettingsRes as any).data : formSettingsRes;
+      if (settingsData && Array.isArray(settingsData.groups)) {
+        const salariesGroup = settingsData.groups.find((g: any) => g.id === 'salaries');
+        if (salariesGroup && Array.isArray(salariesGroup.fields)) {
+          setSalaryFields(salariesGroup.fields.filter((f: any) => f.isEnabled));
         }
       }
     } catch (e) {
@@ -155,18 +168,45 @@ export default function StatutoryDeductionsPage() {
                   className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm"
                 />
               </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">% of basic for ESI wage</label>
-                <input
-                  type="number"
-                  step="1"
-                  min="0"
-                  max="100"
-                  value={esi.wageBasePercentOfBasic ?? 50}
-                  onChange={(e) => setEsi((s) => ({ ...s, wageBasePercentOfBasic: Number(e.target.value) || 0 }))}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm"
-                />
-                <p className="mt-0.5 text-xs text-slate-400">e.g. 50 = ESI on 50% of basic</p>
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">ESI Wage Base (Calculation Method)</label>
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <div className="flex-1">
+                    <select
+                      value={esi.wageBaseField || ''}
+                      onChange={(e) => setEsi((s) => ({ ...s, wageBaseField: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm"
+                    >
+                      <option value="">Percentage of Basic Pay</option>
+                      {salaryFields.map((field) => (
+                        <option key={field.id} value={field.id}>
+                          Use {field.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {!esi.wageBaseField && (
+                    <div className="flex-1">
+                      <div className="relative">
+                        <input
+                          type="number"
+                          step="1"
+                          min="0"
+                          max="100"
+                          value={esi.wageBasePercentOfBasic ?? 50}
+                          onChange={(e) => setEsi((s) => ({ ...s, wageBasePercentOfBasic: Number(e.target.value) || 0 }))}
+                          className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm pr-8"
+                        />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">%</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <p className="mt-1 text-xs text-slate-400">
+                  {esi.wageBaseField 
+                    ? `ESI will be calculated on the full value of "${salaryFields.find(f => f.id === esi.wageBaseField)?.label || esi.wageBaseField}".`
+                    : `ESI will be calculated on ${esi.wageBasePercentOfBasic}% of the employee's Basic Salary.`}
+                </p>
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Wage ceiling (₹/month) – applicable when basic ≤ ceiling</label>
@@ -238,16 +278,41 @@ export default function StatutoryDeductionsPage() {
                 />
                 <p className="mt-0.5 text-xs text-slate-400">If basic ≥ this, PF calculated on this amount; else on full basic. e.g. 15000.</p>
               </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Base</label>
-                <select
-                  value={pf.base}
-                  onChange={(e) => setPf((s) => ({ ...s, base: e.target.value as 'basic' | 'basic_da' }))}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm"
-                >
-                  <option value="basic">Basic only</option>
-                  <option value="basic_da">Basic + DA</option>
-                </select>
+              <div className="flex flex-col gap-1.5">
+                <label className="block text-xs font-medium text-slate-500 dark:text-slate-400">Contribution Base (Calculated On)</label>
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <select
+                      value={pf.wageBaseField || ""}
+                      onChange={(e) => setPf((s) => ({ ...s, wageBaseField: e.target.value || null }))}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm"
+                    >
+                      <option value="">Use Standard Base (Basic/DA)</option>
+                      {salaryFields.map((field) => (
+                        <option key={field.id} value={field.id}>
+                          Use {field.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {!pf.wageBaseField && (
+                    <div className="flex-1">
+                      <select
+                        value={pf.base}
+                        onChange={(e) => setPf((s) => ({ ...s, base: e.target.value as 'basic' | 'basic_da' }))}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/50 text-sm"
+                      >
+                        <option value="basic">Basic only</option>
+                        <option value="basic_da">Basic + DA</option>
+                      </select>
+                    </div>
+                  )}
+                </div>
+                <p className="mt-1 text-xs text-slate-400">
+                  {pf.wageBaseField 
+                    ? `PF will be calculated on the full value of "${salaryFields.find(f => f.id === pf.wageBaseField)?.label || pf.wageBaseField}".`
+                    : `PF will be calculated on ${pf.base === 'basic' ? 'Basic Salary' : 'Basic + Dearness Allowance'}.`}
+                </p>
               </div>
             </div>
           </div>
