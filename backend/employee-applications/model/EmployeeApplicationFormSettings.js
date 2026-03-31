@@ -566,6 +566,17 @@ EmployeeApplicationFormSettingsSchema.statics.initializeDefault = async function
           },
         ],
       },
+      // Salaries Section (New)
+      {
+        id: 'salaries',
+        label: 'Salaries',
+        description: 'Salary components configuration',
+        isSystem: true,
+        isArray: false,
+        order: 6,
+        isEnabled: true,
+        fields: [],
+      },
     ],
     // Default Qualifications Configuration – table-like columns (predefined)
     qualifications: {
@@ -577,12 +588,29 @@ EmployeeApplicationFormSettingsSchema.statics.initializeDefault = async function
   };
 
   // Check if settings already exist
-  const existing = await this.findOne({ isActive: true });
-  if (existing) {
-    return existing;
+  let settings = await this.findOne({ isActive: true });
+  if (!settings) {
+    return this.create(defaultSettings);
   }
 
-  return this.create(defaultSettings);
+  // Ensure 'salaries' group is present for existing settings
+  if (!settings.groups.some((g) => g.id === 'salaries')) {
+    const salariesGroup = {
+      id: 'salaries',
+      label: 'Salaries',
+      description: 'Salary components configuration',
+      isSystem: true,
+      isArray: false,
+      order: 6,
+      isEnabled: true,
+      fields: [],
+    };
+    settings.groups.push(salariesGroup);
+    settings.groups.sort((a, b) => (a.order || 0) - (b.order || 0));
+    await settings.save();
+  }
+
+  return settings;
 };
 
 module.exports = mongoose.models.EmployeeApplicationFormSettings || mongoose.model('EmployeeApplicationFormSettings', EmployeeApplicationFormSettingsSchema);
