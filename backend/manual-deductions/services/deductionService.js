@@ -239,7 +239,15 @@ class DeductionService {
   static async getDeductionById(deductionId) {
     try {
       const deduction = await DeductionRequest.findById(deductionId)
-        .populate('employee', 'emp_no name')
+        .populate({
+          path: 'employee',
+          select: 'emp_no employee_name first_name last_name division_id department_id designation_id',
+          populate: [
+            { path: 'division_id', select: 'name code' },
+            { path: 'department_id', select: 'name code' },
+            { path: 'designation_id', select: 'name code title' }
+          ]
+        })
         .populate('createdBy updatedBy', 'name email')
         .populate('hodApproval.approvedBy hrApproval.approvedBy adminApproval.approvedBy', 'name email')
         .populate('settlementHistory.settledBy', 'name email')
@@ -263,7 +271,15 @@ class DeductionService {
         query.employee = { $in: employees.map(e => e._id) };
       }
       return await DeductionRequest.find(query)
-        .populate('employee', 'emp_no name')
+        .populate({
+          path: 'employee',
+          select: 'emp_no employee_name first_name last_name division_id department_id designation_id',
+          populate: [
+            { path: 'division_id', select: 'name code' },
+            { path: 'department_id', select: 'name code' },
+            { path: 'designation_id', select: 'name code title' }
+          ]
+        })
         .populate('createdBy', 'name email')
         .sort({ createdAt: -1 });
     } catch (error) {
@@ -271,15 +287,37 @@ class DeductionService {
     }
   }
 
-  static async cancelDeduction(deductionId, userId) {
+  static async cancelDeduction(deductionId, userId, reason = '') {
     try {
       const deduction = await DeductionRequest.findById(deductionId);
       if (!deduction) throw new Error('Deduction request not found');
-      if (!['draft', 'rejected'].includes(deduction.status)) {
-        throw new Error('Only draft or rejected deductions can be cancelled');
+      const cancellableStatuses = ['draft', 'rejected', 'pending_hod', 'pending_hr', 'pending_admin', 'approved'];
+      if (!cancellableStatuses.includes(deduction.status)) {
+        throw new Error('Only un-settled deductions can be deleted');
       }
+      const hasAnySettlement = Array.isArray(deduction.settlementHistory)
+        && deduction.settlementHistory.some((entry) => Number(entry.amount || 0) > 0);
+      if (hasAnySettlement || ['partially_settled', 'settled'].includes(deduction.status)) {
+        throw new Error('Cannot delete deductions that are already settled or partially settled');
+      }
+      const previousStatus = deduction.status;
+      const now = new Date();
       deduction.status = 'cancelled';
       deduction.updatedBy = userId;
+      deduction.cancellation = {
+        cancelledAt: now,
+        cancelledBy: userId,
+        reason: (reason || '').trim()
+      };
+      if (!deduction.statusHistory) deduction.statusHistory = [];
+      deduction.statusHistory.push({
+        changedAt: now,
+        changedBy: userId,
+        previousStatus,
+        newStatus: 'cancelled',
+        reason: `Deleted from manual deductions (${previousStatus} -> cancelled)`,
+        comments: (reason || '').trim()
+      });
       await deduction.save();
       return deduction;
     } catch (error) {

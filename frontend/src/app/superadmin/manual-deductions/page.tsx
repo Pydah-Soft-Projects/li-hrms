@@ -7,7 +7,7 @@ import 'react-toastify/dist/ReactToastify.css';
 import { api } from '@/lib/api';
 import DeductionForm from '@/components/ManualDeductions/DeductionForm';
 import Spinner from '@/components/Spinner';
-import { Plus, Search, Eye, CheckCircle, Clock, TrendingDown, XCircle, AlertCircle, Users, Loader2 } from 'lucide-react';
+import { Plus, Search, Eye, CheckCircle, Clock, TrendingDown, XCircle, AlertCircle, Users, Loader2, Trash2 } from 'lucide-react';
 
 const StatCard = ({ title, value, icon: Icon, bgClass, iconClass }: { title: string; value: number | string; icon: any; bgClass: string; iconClass: string }) => (
   <div className="rounded-3xl border border-slate-300 bg-slate-50/90 p-6 dark:border-slate-800 dark:bg-slate-900">
@@ -37,7 +37,16 @@ const getStatusLabel = (s: string) => ({ draft: 'Draft', pending_hod: 'Pending H
 interface Deduction {
   _id: string;
   type?: 'incremental' | 'direct';
-  employee: { _id: string; emp_no?: string; employee_name?: string; first_name?: string; last_name?: string };
+  employee: {
+    _id: string;
+    emp_no?: string;
+    employee_name?: string;
+    first_name?: string;
+    last_name?: string;
+    division_id?: { _id?: string; name?: string; code?: string } | string;
+    department_id?: { _id?: string; name?: string; code?: string } | string;
+    designation_id?: { _id?: string; name?: string; code?: string; title?: string } | string;
+  };
   startMonth?: string;
   endMonth?: string;
   totalAmount: number;
@@ -64,6 +73,7 @@ export function ManualDeductionsContent() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkApproving, setBulkApproving] = useState(false);
   const [bulkRejecting, setBulkRejecting] = useState(false);
+  const [removingId, setRemovingId] = useState<string | null>(null);
 
   // Bulk create
   const [divisions, setDivisions] = useState<any[]>([]);
@@ -74,12 +84,17 @@ export function ManualDeductionsContent() {
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkSaving, setBulkSaving] = useState(false);
   const [bulkSectionOpen, setBulkSectionOpen] = useState(false);
+  const [designations, setDesignations] = useState<any[]>([]);
+  const [filterDivisionId, setFilterDivisionId] = useState('');
+  const [filterDepartmentId, setFilterDepartmentId] = useState('');
+  const [filterDesignationId, setFilterDesignationId] = useState('');
 
   useEffect(() => { loadData(); }, []);
 
   useEffect(() => {
     api.getDivisions?.().then((r: any) => { if (r?.success && r?.data) setDivisions(r.data); if (Array.isArray(r)) setDivisions(r); }).catch(() => {});
     api.getDepartments?.().then((r: any) => { if (r?.success && r?.data) setDepartments(r.data); if (Array.isArray(r)) setDepartments(r); }).catch(() => {});
+    api.getDesignations?.().then((r: any) => { if (r?.success && r?.data) setDesignations(r.data); if (Array.isArray(r)) setDesignations(r); }).catch(() => {});
   }, []);
 
   const filteredBulkDepartments = useMemo(() => {
@@ -163,11 +178,26 @@ export function ManualDeductionsContent() {
     });
   };
 
+  const getEntityId = (entity: any) => (typeof entity === 'string' ? entity : entity?._id || '');
+  const getEntityName = (entity: any) => {
+    if (!entity) return '—';
+    if (typeof entity === 'string') return entity;
+    return entity.name || entity.title || entity.code || '—';
+  };
+
   const filtered = deductions.filter((d) => {
     const empName = (d.employee?.employee_name || d.employee?.first_name || d.employee?.emp_no || '').toString().toLowerCase();
     const empNo = (d.employee?.emp_no || '').toString().toLowerCase();
-    const matchSearch = !searchTerm || empName.includes(searchTerm.toLowerCase()) || empNo.includes(searchTerm.toLowerCase());
+    const divName = getEntityName(d.employee?.division_id).toLowerCase();
+    const deptName = getEntityName(d.employee?.department_id).toLowerCase();
+    const desigName = getEntityName(d.employee?.designation_id).toLowerCase();
+    const q = searchTerm.toLowerCase();
+    const matchSearch = !searchTerm || empName.includes(q) || empNo.includes(q) || divName.includes(q) || deptName.includes(q) || desigName.includes(q);
+    const matchDivision = !filterDivisionId || getEntityId(d.employee?.division_id) === filterDivisionId;
+    const matchDepartment = !filterDepartmentId || getEntityId(d.employee?.department_id) === filterDepartmentId;
+    const matchDesignation = !filterDesignationId || getEntityId(d.employee?.designation_id) === filterDesignationId;
     if (!matchSearch) return false;
+    if (!matchDivision || !matchDepartment || !matchDesignation) return false;
     if (activeTab === 'all') return true;
     if (activeTab === 'pending') return ['pending_hod', 'pending_hr', 'pending_admin'].includes(d.status);
     return d.status === activeTab;
@@ -184,6 +214,7 @@ export function ManualDeductionsContent() {
 
   const pendingStatuses = ['pending_hod', 'pending_hr', 'pending_admin'];
   const actionableStatuses = ['draft', ...pendingStatuses];
+  const removableStatuses = ['draft', ...pendingStatuses, 'approved', 'rejected'];
   const selectableFiltered = filtered.filter((d) => actionableStatuses.includes(d.status));
   const selectedSelectable = selectableFiltered.filter((d) => selectedIds.has(d._id));
   const toggleSelection = (id: string) => {
@@ -281,6 +312,29 @@ export function ManualDeductionsContent() {
       toast.error(e?.message || 'Bulk reject failed');
     } finally {
       setBulkRejecting(false);
+    }
+  };
+
+  const handleRemove = async (deduction: Deduction) => {
+    if (!removableStatuses.includes(deduction.status)) {
+      toast.warn('Only un-settled deductions can be removed');
+      return;
+    }
+    const confirmed = window.confirm('Remove this deduction request? It will be cancelled and kept for audit history.');
+    if (!confirmed) return;
+    setRemovingId(deduction._id);
+    try {
+      await api.removeDeduction(deduction._id);
+      toast.success('Deduction removed successfully');
+      if (selectedId === deduction._id) {
+        setDetailOpen(false);
+        setSelectedId(null);
+      }
+      loadData();
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to remove deduction');
+    } finally {
+      setRemovingId(null);
     }
   };
 
@@ -480,13 +534,43 @@ export function ManualDeductionsContent() {
                 )}
               </>
             )}
-            <div className="relative min-w-[200px]">
+            <select
+              value={filterDivisionId}
+              onChange={(e) => setFilterDivisionId(e.target.value)}
+              className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm dark:bg-slate-800 dark:text-white dark:border-slate-700 min-w-[160px]"
+            >
+              <option value="">All Divisions</option>
+              {divisions.map((d: any) => (
+                <option key={d._id} value={d._id}>{d.name || d.code || d._id}</option>
+              ))}
+            </select>
+            <select
+              value={filterDepartmentId}
+              onChange={(e) => setFilterDepartmentId(e.target.value)}
+              className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm dark:bg-slate-800 dark:text-white dark:border-slate-700 min-w-[170px]"
+            >
+              <option value="">All Departments</option>
+              {departments.map((d: any) => (
+                <option key={d._id} value={d._id}>{d.name || d.code || d._id}</option>
+              ))}
+            </select>
+            <select
+              value={filterDesignationId}
+              onChange={(e) => setFilterDesignationId(e.target.value)}
+              className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm dark:bg-slate-800 dark:text-white dark:border-slate-700 min-w-[170px]"
+            >
+              <option value="">All Designations</option>
+              {designations.map((d: any) => (
+                <option key={d._id} value={d._id}>{d.name || d.title || d.code || d._id}</option>
+              ))}
+            </select>
+            <div className="relative min-w-[220px]">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
               <input
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search employee..."
+                placeholder="Search employee / division / dept / designation..."
                 className="w-full rounded-xl border border-slate-300 bg-white py-2.5 pl-10 pr-4 text-sm dark:bg-slate-800 dark:text-white dark:border-slate-700"
               />
             </div>
@@ -540,7 +624,13 @@ export function ManualDeductionsContent() {
                         />
                       )}
                     </td>
-                    <td className="px-6 py-4 text-sm font-medium text-slate-950 dark:text-white">{getEmployeeName(d.employee)}</td>
+                    <td className="px-6 py-4 text-sm">
+                      <p className="font-medium text-slate-950 dark:text-white">{getEmployeeName(d.employee)}</p>
+                      <p className="text-xs text-slate-600 dark:text-slate-400">{d.employee?.emp_no || '—'}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                        {getEntityName(d.employee?.division_id)} / {getEntityName(d.employee?.department_id)} / {getEntityName(d.employee?.designation_id)}
+                      </p>
+                    </td>
                     <td className="px-6 py-4 text-sm text-slate-700 dark:text-slate-300">
                       {d.type === 'direct' ? 'Direct' : (d.startMonth && d.endMonth ? `${d.startMonth} – ${d.endMonth}` : '—')}
                     </td>
@@ -550,12 +640,24 @@ export function ManualDeductionsContent() {
                       <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${getStatusColor(d.status)}`}>{getStatusLabel(d.status)}</span>
                     </td>
                     <td className="px-6 py-4">
-                      <button
-                        onClick={() => { setSelectedId(d._id); setDetailOpen(true); }}
-                        className="inline-flex items-center gap-1 rounded-lg bg-slate-200 dark:bg-slate-700 px-2.5 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-600"
-                      >
-                        <Eye className="h-3.5 w-3.5" /> View
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => { setSelectedId(d._id); setDetailOpen(true); }}
+                          className="inline-flex items-center gap-1 rounded-lg bg-slate-200 dark:bg-slate-700 px-2.5 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-600"
+                        >
+                          <Eye className="h-3.5 w-3.5" /> View
+                        </button>
+                        {removableStatuses.includes(d.status) && (
+                          <button
+                            onClick={() => handleRemove(d)}
+                            disabled={removingId === d._id}
+                            className="inline-flex items-center gap-1 rounded-lg bg-rose-100 dark:bg-rose-900/30 px-2.5 py-1.5 text-xs font-medium text-rose-700 dark:text-rose-300 hover:bg-rose-200 dark:hover:bg-rose-900/50 disabled:opacity-60"
+                          >
+                            {removingId === d._id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                            Remove
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -588,7 +690,22 @@ function DeductionDetailModal({ deductionId, onClose, onUpdate }: { deductionId:
   const [deduction, setDeduction] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [removeLoading, setRemoveLoading] = useState(false);
   const [actionComment, setActionComment] = useState('');
+  const [editMode, setEditMode] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editForm, setEditForm] = useState({
+    startMonth: '',
+    endMonth: '',
+    monthlyAmount: '',
+    totalAmount: '',
+    reason: '',
+  });
+  const getEntityName = (entity: any) => {
+    if (!entity) return '—';
+    if (typeof entity === 'string') return entity;
+    return entity.name || entity.title || entity.code || '—';
+  };
 
   const refresh = () => {
     if (!deductionId) return;
@@ -603,10 +720,25 @@ function DeductionDetailModal({ deductionId, onClose, onUpdate }: { deductionId:
     if (deductionId) refresh();
   }, [deductionId]);
 
+  useEffect(() => {
+    if (!deduction) return;
+    setEditForm({
+      startMonth: deduction.startMonth || '',
+      endMonth: deduction.endMonth || '',
+      monthlyAmount: deduction.monthlyAmount != null ? String(deduction.monthlyAmount) : '',
+      totalAmount: deduction.totalAmount != null ? String(deduction.totalAmount) : '',
+      reason: deduction.reason || '',
+    });
+    setEditMode(false);
+  }, [deduction]);
+
   const pendingStatuses = ['pending_hod', 'pending_hr', 'pending_admin'];
   const actionableStatuses = ['draft', ...pendingStatuses];
+  const removableStatuses = ['draft', ...pendingStatuses, 'approved', 'rejected'];
   const canAct = deduction && actionableStatuses.includes(deduction.status);
   const isDraft = deduction?.status === 'draft';
+  const canEdit = deduction && !['settled', 'partially_settled', 'cancelled'].includes(deduction.status);
+  const canRemove = deduction && removableStatuses.includes(deduction.status);
 
   const handleAction = async (approved: boolean) => {
     if (!deductionId || actionLoading) return;
@@ -634,6 +766,69 @@ function DeductionDetailModal({ deductionId, onClose, onUpdate }: { deductionId:
     }
   };
 
+  const handleSaveEdit = async () => {
+    if (!deductionId || !deduction) return;
+    const payload: any = {
+      reason: editForm.reason.trim(),
+      totalAmount: Number(editForm.totalAmount),
+    };
+    if (!payload.reason) {
+      toast.error('Reason is required');
+      return;
+    }
+    if (!Number.isFinite(payload.totalAmount) || payload.totalAmount <= 0) {
+      toast.error('Valid total amount is required');
+      return;
+    }
+    if (deduction.type === 'incremental') {
+      if (!editForm.startMonth || !editForm.endMonth) {
+        toast.error('Start and end month are required');
+        return;
+      }
+      if (editForm.startMonth > editForm.endMonth) {
+        toast.error('Start month must be before or equal to end month');
+        return;
+      }
+      const monthlyAmount = Number(editForm.monthlyAmount);
+      if (!Number.isFinite(monthlyAmount) || monthlyAmount < 0) {
+        toast.error('Valid monthly amount is required');
+        return;
+      }
+      payload.startMonth = editForm.startMonth;
+      payload.endMonth = editForm.endMonth;
+      payload.monthlyAmount = monthlyAmount;
+    }
+    setSavingEdit(true);
+    try {
+      await api.editDeduction(deductionId, payload);
+      toast.success('Deduction request updated');
+      onUpdate();
+      await refresh();
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to update deduction');
+    } finally {
+      setSavingEdit(false);
+      setEditMode(false);
+    }
+  };
+
+  const handleRemove = async () => {
+    if (!deductionId || !canRemove || removeLoading) return;
+    const confirmed = window.confirm('Remove this deduction request? It will be cancelled and kept for audit history.');
+    if (!confirmed) return;
+    setRemoveLoading(true);
+    try {
+      await api.removeDeduction(deductionId);
+      toast.success('Deduction removed successfully');
+      onUpdate();
+      onClose();
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to remove deduction');
+    } finally {
+      setRemoveLoading(false);
+    }
+  };
+
   if (!deductionId) return null;
 
   return (
@@ -650,14 +845,142 @@ function DeductionDetailModal({ deductionId, onClose, onUpdate }: { deductionId:
           ) : deduction ? (
             <div className="space-y-4 text-sm">
               <p><span className="font-semibold text-slate-600 dark:text-slate-400">Employee:</span> {deduction.employee?.employee_name || deduction.employee?.emp_no || '—'}</p>
+              <p><span className="font-semibold text-slate-600 dark:text-slate-400">Employee code:</span> {deduction.employee?.emp_no || '—'}</p>
+              <p><span className="font-semibold text-slate-600 dark:text-slate-400">Division:</span> {getEntityName(deduction.employee?.division_id)}</p>
+              <p><span className="font-semibold text-slate-600 dark:text-slate-400">Department:</span> {getEntityName(deduction.employee?.department_id)}</p>
+              <p><span className="font-semibold text-slate-600 dark:text-slate-400">Designation:</span> {getEntityName(deduction.employee?.designation_id)}</p>
               <p><span className="font-semibold text-slate-600 dark:text-slate-400">Type:</span> {deduction.type === 'direct' ? 'Direct' : 'Incremental'}</p>
-              {deduction.type !== 'direct' && deduction.startMonth && deduction.endMonth && (
-                <p><span className="font-semibold text-slate-600 dark:text-slate-400">Period:</span> {deduction.startMonth} – {deduction.endMonth}</p>
+              {deduction.type !== 'direct' && (
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="text-xs">
+                    <span className="font-semibold text-slate-600 dark:text-slate-400">Start month</span>
+                    {editMode ? (
+                      <input
+                        type="month"
+                        value={editForm.startMonth}
+                        onChange={(e) => setEditForm((p) => ({ ...p, startMonth: e.target.value }))}
+                        className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white px-2 py-1.5"
+                      />
+                    ) : (
+                      <span className="block">{deduction.startMonth || '—'}</span>
+                    )}
+                  </label>
+                  <label className="text-xs">
+                    <span className="font-semibold text-slate-600 dark:text-slate-400">End month</span>
+                    {editMode ? (
+                      <input
+                        type="month"
+                        value={editForm.endMonth}
+                        onChange={(e) => setEditForm((p) => ({ ...p, endMonth: e.target.value }))}
+                        className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white px-2 py-1.5"
+                      />
+                    ) : (
+                      <span className="block">{deduction.endMonth || '—'}</span>
+                    )}
+                  </label>
+                </div>
               )}
-              <p><span className="font-semibold text-slate-600 dark:text-slate-400">Total amount:</span> <span className="text-rose-700 dark:text-rose-400 font-bold">₹{Number(deduction.totalAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></p>
+              {deduction.type !== 'direct' && (
+                <label className="text-xs block">
+                  <span className="font-semibold text-slate-600 dark:text-slate-400">Monthly amount</span>
+                  {editMode ? (
+                    <input
+                      type="number"
+                      min={0}
+                      step={0.01}
+                      value={editForm.monthlyAmount}
+                      onChange={(e) => setEditForm((p) => ({ ...p, monthlyAmount: e.target.value }))}
+                      className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white px-2 py-1.5"
+                    />
+                  ) : (
+                    <span className="block">₹{Number(deduction.monthlyAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                  )}
+                </label>
+              )}
+              <label className="text-xs block">
+                <span className="font-semibold text-slate-600 dark:text-slate-400">Total amount</span>
+                {editMode ? (
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    value={editForm.totalAmount}
+                    onChange={(e) => setEditForm((p) => ({ ...p, totalAmount: e.target.value }))}
+                    className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white px-2 py-1.5"
+                  />
+                ) : (
+                  <span className="block text-rose-700 dark:text-rose-400 font-bold">₹{Number(deduction.totalAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                )}
+              </label>
               <p><span className="font-semibold text-slate-600 dark:text-slate-400">Remaining:</span> ₹{Number(deduction.remainingAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
               <p><span className="font-semibold text-slate-600 dark:text-slate-400">Status:</span> {getStatusLabel(deduction.status)}</p>
-              <p><span className="font-semibold text-slate-600 dark:text-slate-400">Reason:</span> {deduction.reason || '—'}</p>
+              <label className="text-xs block">
+                <span className="font-semibold text-slate-600 dark:text-slate-400">Reason</span>
+                {editMode ? (
+                  <textarea
+                    value={editForm.reason}
+                    onChange={(e) => setEditForm((p) => ({ ...p, reason: e.target.value }))}
+                    rows={2}
+                    className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white px-3 py-2 resize-none"
+                  />
+                ) : (
+                  <span className="block">{deduction.reason || '—'}</span>
+                )}
+              </label>
+
+              {canEdit && (
+                <div className="flex flex-wrap gap-2">
+                  {!editMode ? (
+                    <button
+                      type="button"
+                      onClick={() => setEditMode(true)}
+                      className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 text-xs font-semibold"
+                    >
+                      Edit Request
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleSaveEdit}
+                        disabled={savingEdit}
+                        className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 text-xs font-semibold disabled:opacity-50"
+                      >
+                        {savingEdit ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                        Save Changes
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditMode(false);
+                          setEditForm({
+                            startMonth: deduction.startMonth || '',
+                            endMonth: deduction.endMonth || '',
+                            monthlyAmount: deduction.monthlyAmount != null ? String(deduction.monthlyAmount) : '',
+                            totalAmount: deduction.totalAmount != null ? String(deduction.totalAmount) : '',
+                            reason: deduction.reason || '',
+                          });
+                        }}
+                        disabled={savingEdit}
+                        className="inline-flex items-center gap-2 rounded-xl bg-slate-200 dark:bg-slate-700 px-4 py-2 text-xs font-semibold text-slate-800 dark:text-slate-100 disabled:opacity-50"
+                      >
+                        Cancel Edit
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+              {canRemove && (
+                <button
+                  type="button"
+                  onClick={handleRemove}
+                  disabled={removeLoading}
+                  className="inline-flex items-center gap-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 text-xs font-semibold disabled:opacity-50"
+                >
+                  {removeLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                  Remove Request
+                </button>
+              )}
 
               {/* Approval history: HOD → HR → Admin with comments */}
               {(deduction.hodApproval?.approved != null || deduction.hrApproval?.approved != null || deduction.adminApproval?.approved != null) && (
