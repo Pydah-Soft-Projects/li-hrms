@@ -62,6 +62,7 @@ export const MODULE_CATEGORIES = [
         modules: [
             { code: 'PAYMENTS', label: 'Payments', href: '/payments' },
             { code: 'PAY_REGISTER', label: 'Pay Register', href: '/pay-register' },
+            { code: 'PAYSHEET', label: 'Paysheet', href: '/payroll-sheet' },
             { code: 'PAYROLL_CONFIG', label: 'Payroll Configuration', href: '/payroll-config' },
             { code: 'STATUTORY_DEDUCTIONS', label: 'Statutory Deductions', href: '/statutory-deductions' },
             { code: 'PAYSLIPS', label: 'Payslips', href: '/payslips' },
