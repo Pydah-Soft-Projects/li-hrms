@@ -3,11 +3,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { api, Department } from '@/lib/api';
 import { toast } from 'react-toastify';
-import { ChevronLeft, ChevronRight, FileSpreadsheet, Search, Calendar, Building2 } from 'lucide-react';
-import { useAuth } from '@/contexts/AuthContext';
-import { useRoleAccess } from '@/hooks/useRoleAccess';
-import Spinner from '@/components/Spinner';
+import { ChevronLeft, ChevronRight, FileSpreadsheet, Search, Calendar, Building2, Download } from 'lucide-react';
 
+/** Negative value = show all loaded rows (API returns full set; table was capped by page size before). */
 const ROWS_PER_PAGE_ALL = -1;
 const ROWS_PER_PAGE_OPTIONS = [10, 25, 50, 100, 250, 500, ROWS_PER_PAGE_ALL] as const;
 
@@ -21,9 +19,6 @@ function formatCell(value: unknown): string {
 }
 
 export default function PaysheetPage() {
-  const { user, loading: authLoading } = useAuth();
-  const { isHR, isSubAdmin, isSuperAdmin, isHOD, department, departments: scopedDepartments, scope } = useRoleAccess();
-
   const [loading, setLoading] = useState(false);
   const [loadingExisting, setLoadingExisting] = useState(true);
   const [headers, setHeaders] = useState<string[]>([]);
@@ -36,6 +31,7 @@ export default function PaysheetPage() {
   const [paysheetKind, setPaysheetKind] = useState<'regular' | 'second_salary'>('regular');
   const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(100);
+  const [exportingBundle, setExportingBundle] = useState(false);
 
   const totalRows = rows.length;
   const effectivePerPage = rowsPerPage === ROWS_PER_PAGE_ALL ? Math.max(totalRows, 1) : rowsPerPage;
@@ -61,17 +57,11 @@ export default function PaysheetPage() {
   }, []);
 
   useEffect(() => {
-    if (!authLoading && (isHOD || scope === 'department') && department) {
-      setSelectedDepartment(department);
-    }
-  }, [authLoading, isHOD, scope, department]);
-
-  useEffect(() => {
     (async () => {
       try {
         const deptRes = await api.getDepartments().catch(() => ({ data: [] }));
         setDepartments(Array.isArray(deptRes?.data) ? deptRes.data : []);
-      } catch (_) { }
+      } catch (_) {}
     })();
   }, []);
 
@@ -110,6 +100,33 @@ export default function PaysheetPage() {
   useEffect(() => {
     loadExisting();
   }, [loadExisting]);
+
+  const exportPaysheetBundle = async () => {
+    if (!selectedMonth) {
+      toast.warning('Please select a month');
+      return;
+    }
+    setExportingBundle(true);
+    try {
+      const blob = await api.exportPaysheetBundleExcel({
+        month: selectedMonth,
+        departmentId: selectedDepartment || undefined,
+        search: searchFilter.trim() || undefined,
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `paysheet_bundle_${selectedMonth}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success('Downloaded paysheet bundle (Regular, 2nd salary, Comparison)');
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Export failed';
+      toast.error(msg);
+    } finally {
+      setExportingBundle(false);
+    }
+  };
 
   const loadPaysheet = async () => {
     if (paysheetKind === 'second_salary') {
@@ -151,11 +168,9 @@ export default function PaysheetPage() {
     }
   };
 
-  const isLoading = (loadingExisting && rows.length === 0) || authLoading;
-  const isEmpty = !loadingExisting && !authLoading && headers.length === 0 && rows.length === 0;
+  const isLoading = loadingExisting && rows.length === 0;
+  const isEmpty = !loadingExisting && headers.length === 0 && rows.length === 0;
   const hasData = headers.length > 0 && rows.length > 0;
-
-  if (authLoading) return <div className="flex items-center justify-center h-screen"><Spinner /></div>;
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 dark:bg-slate-950/50 -mx-4 w-[calc(100%+2rem)] sm:-mx-5 sm:w-[calc(100%+2.5rem)] lg:-mx-6 lg:w-[calc(100%+3rem)] px-4 sm:px-5 lg:px-6">
@@ -172,11 +187,21 @@ export default function PaysheetPage() {
               </h1>
               <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
                 {paysheetKind === 'second_salary'
-                  ? 'Saved 2nd salary amounts by month (same columns as 2nd salary export).'
+                  ? 'Saved 2nd salary by month. With Payroll Configuration output columns set, columns match regular paysheet; otherwise legacy 2nd-salary layout.'
                   : 'Payroll records by month. Columns follow Payroll Configuration.'}
               </p>
             </div>
           </div>
+          <button
+            type="button"
+            onClick={exportPaysheetBundle}
+            disabled={!selectedMonth || exportingBundle}
+            className="inline-flex items-center justify-center gap-2 h-10 px-4 rounded-lg bg-violet-600 text-white text-sm font-semibold shadow-sm hover:bg-violet-700 disabled:opacity-50 disabled:pointer-events-none transition-colors"
+            title="Excel with Regular, 2nd salary, and Comparison (paired columns + net difference)"
+          >
+            <Download className="h-4 w-4 shrink-0" />
+            {exportingBundle ? 'Exporting…' : 'Export bundle'}
+          </button>
         </div>
       </div>
 
@@ -203,22 +228,14 @@ export default function PaysheetPage() {
             <select
               value={selectedDepartment}
               onChange={(e) => setSelectedDepartment(e.target.value)}
-              disabled={isHOD || scope === 'department'}
-              className="h-9 min-w-[180px] rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 text-sm text-slate-900 dark:text-white focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 focus:outline-none disabled:opacity-60"
+              className="h-9 min-w-[180px] rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 text-sm text-slate-900 dark:text-white focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 focus:outline-none"
             >
-              {!(isHOD || scope === 'department') && <option value="">All departments</option>}
-              {departments
-                .filter(d => {
-                  if (isSuperAdmin || isSubAdmin || (isHR && scope === 'all')) return true;
-                  if (scope === 'scoped' && scopedDepartments) return scopedDepartments.includes(d._id);
-                  if (scope === 'department') return d._id === department;
-                  return true;
-                })
-                .map((d) => (
-                  <option key={d._id} value={d._id}>
-                    {d.name}
-                  </option>
-                ))}
+              <option value="">All departments</option>
+              {departments.map((d) => (
+                <option key={d._id} value={d._id}>
+                  {d.name}
+                </option>
+              ))}
             </select>
           </div>
           <div className="flex flex-col gap-1.5">
@@ -279,7 +296,7 @@ export default function PaysheetPage() {
           <div className="flex-1 flex flex-col items-center justify-center py-8">
             <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-200 border-t-violet-500 dark:border-slate-600" />
             <p className="mt-4 text-sm font-medium text-slate-600 dark:text-slate-400">
-              {paysheetKind === 'second_salary' ? 'Loading 2nd salary records…' : 'Loading payroll records…'}
+              Loading payroll records…
             </p>
           </div>
         )}

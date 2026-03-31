@@ -70,6 +70,7 @@ const moduleIcons: Record<string, any> = {
     ALLOWANCES_DEDUCTIONS: Calculator,
     PAYROLL_TRANSACTIONS: ArrowRightLeft,
     PAY_REGISTER: ScrollText,
+    PAYSHEET: Receipt,
     PAYSLIPS: Receipt,
     PAYROLL: BadgeDollarSign,
     LOANS_SALARY_ADVANCE: HandCoins,

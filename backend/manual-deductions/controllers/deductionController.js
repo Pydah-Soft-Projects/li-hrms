@@ -200,8 +200,9 @@ exports.processSettlement = async (req, res) => {
 
 exports.cancelDeduction = async (req, res) => {
   try {
-    const deduction = await DeductionService.cancelDeduction(req.params.id, uid(req));
-    res.status(200).json({ success: true, message: 'Deduction cancelled successfully', data: deduction });
+    const reason = req.body?.reason || req.body?.comments || req.query?.reason || '';
+    const deduction = await DeductionService.cancelDeduction(req.params.id, uid(req), reason);
+    res.status(200).json({ success: true, message: 'Deduction deleted successfully (audit record retained)', data: deduction });
   } catch (error) {
     res.status(400).json({ success: false, message: error.message });
   }
