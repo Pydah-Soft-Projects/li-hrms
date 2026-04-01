@@ -633,6 +633,8 @@ export default function PayRegisterPage() {
       const updatePayload = {
         ...editData,
         isSplit: isHalfDayMode,
+        isLate: editData.isLate,
+        isEarlyOut: editData.isEarlyOut,
       };
 
       // Now update the daily record
@@ -699,6 +701,8 @@ export default function PayRegisterPage() {
       shiftName: record.shiftName || null,
       otHours: record.otHours,
       remarks: record.remarks || null,
+      isLate: record.isLate || false,
+      isEarlyOut: record.isEarlyOut || false,
     });
     setShowEditModal(true);
   };
@@ -1972,8 +1976,11 @@ export default function PayRegisterPage() {
                         <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-green-50/80 dark:bg-green-900/30">
                           Paid Leaves
                         </th>
-                        <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-blue-50 dark:bg-blue-900/20" title="Payable Shifts + Week Offs + Holidays + Paid Leaves">
+                        <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-blue-50 dark:bg-blue-900/20" title="Payable Shifts + Week Offs + Holidays + Paid Leaves">
                           Paid Days
+                        </th>
+                        <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-amber-50 dark:bg-amber-900/20">
+                          Lates
                         </th>
                       </>
                     )}
@@ -2240,8 +2247,11 @@ export default function PayRegisterPage() {
                                 <td className="border-r border-slate-200 bg-green-50/80 dark:bg-green-900/30 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:text-green-400">
                                   {paidLeaves.toFixed(1)}
                                 </td>
-                                <td className="border-r-0 border-slate-200 bg-blue-50 dark:bg-blue-900/20 px-2 py-2 text-center text-[11px] font-bold text-blue-700 dark:text-blue-300" title="Payable + Week Offs + Holidays + Paid Leaves">
+                                <td className="border-r border-slate-200 bg-blue-50 dark:bg-blue-900/20 px-2 py-2 text-center text-[11px] font-bold text-blue-700 dark:text-blue-300" title="Payable + Week Offs + Holidays + Paid Leaves">
                                   {paidDays.toFixed(1)}
+                                </td>
+                                <td className="border-r-0 border-slate-200 bg-amber-50 dark:bg-amber-900/20 px-2 py-2 text-center text-[11px] font-bold text-amber-700 dark:text-amber-300">
+                                  {pr.totals?.lateCount || 0}
                                 </td>
                               </>
                             );
@@ -2812,6 +2822,34 @@ export default function PayRegisterPage() {
                       />
                     </div>
                   )}
+
+                  {/* Exceptions Overrides */}
+                  <div className="flex flex-wrap gap-6 p-4 bg-amber-50/50 dark:bg-amber-900/10 rounded-lg border border-amber-100 dark:border-amber-900/20">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="isLate"
+                        checked={editData.isLate || false}
+                        onChange={(e) => setEditData({ ...editData, isLate: e.target.checked })}
+                        className="h-4 w-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                      />
+                      <label htmlFor="isLate" className="text-sm font-medium text-slate-700 dark:text-slate-300 cursor-pointer">
+                        Late In
+                      </label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="isEarlyOut"
+                        checked={editData.isEarlyOut || false}
+                        onChange={(e) => setEditData({ ...editData, isEarlyOut: e.target.checked })}
+                        className="h-4 w-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                      />
+                      <label htmlFor="isEarlyOut" className="text-sm font-medium text-slate-700 dark:text-slate-300 cursor-pointer">
+                        Early Out
+                      </label>
+                    </div>
+                  </div>
 
                   {/* Remarks */}
                   <div>
