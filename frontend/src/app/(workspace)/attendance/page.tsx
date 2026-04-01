@@ -958,7 +958,7 @@ export default function AttendancePage() {
       loadMonthlyAttendance(true);
     }
     // Note: HR view is now handled by the [cycleDates.startDate] effect to avoid race conditions
-  }, [year, month, isEmployee, user]);
+  }, [cycleDates.startDate, isEmployee, user]);
 
 
 
@@ -981,7 +981,7 @@ export default function AttendancePage() {
       setHasMore(true);
       loadMonthlyAttendance(true);
     }
-  }, [selectedDivision, selectedDepartment, selectedDesignation, cycleDates.startDate, year, month]);
+  }, [selectedDivision, selectedDepartment, selectedDesignation, cycleDates.startDate]);
 
 
 
@@ -2119,25 +2119,17 @@ export default function AttendancePage() {
 
 
   const navigateMonth = (direction: 'prev' | 'next') => {
-
     setCurrentDate(prev => {
-
       const newDate = new Date(prev);
-
+      // Set to 15th to avoid month-end rollover issues (e.g. Mar 31 -> Feb 28)
+      newDate.setDate(15);
       if (direction === 'prev') {
-
         newDate.setMonth(newDate.getMonth() - 1);
-
       } else {
-
         newDate.setMonth(newDate.getMonth() + 1);
-
       }
-
       return newDate;
-
     });
-
   };
 
 
@@ -3351,13 +3343,10 @@ export default function AttendancePage() {
                   value={month}
 
                   onChange={(e) => {
-
                     const newDate = new Date(currentDate);
-
+                    newDate.setDate(15); // Prevent rollover
                     newDate.setMonth(parseInt(e.target.value) - 1);
-
                     setCurrentDate(newDate);
-
                   }}
 
                   className="bg-transparent border-0 text-[11px] font-bold text-slate-900 dark:text-white focus:ring-0 p-0 cursor-pointer"
@@ -3377,13 +3366,10 @@ export default function AttendancePage() {
                   value={year}
 
                   onChange={(e) => {
-
                     const newDate = new Date(currentDate);
-
+                    newDate.setDate(15); // Prevent rollover
                     newDate.setFullYear(parseInt(e.target.value));
-
                     setCurrentDate(newDate);
-
                   }}
 
                   className="bg-transparent border-0 text-[11px] font-bold text-slate-900 dark:text-white focus:ring-0 p-0 cursor-pointer"

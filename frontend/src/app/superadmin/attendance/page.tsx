@@ -591,7 +591,7 @@ export default function AttendancePage() {
 
   useEffect(() => {
     setActiveHighlight(null);
-  }, [year, month]);
+  }, [year, month, cycleDates.startDate, cycleDates.endDate]);
 
   useEffect(() => {
     loadDivisions();
@@ -688,7 +688,7 @@ export default function AttendancePage() {
     // Reset page when filters change
     setPage(1);
     loadMonthlyAttendance(true);
-  }, [year, month, selectedDivision, selectedDepartment, selectedDesignation, cycleDates.startDate]); // Removed tableType dependency
+  }, [selectedDivision, selectedDepartment, selectedDesignation, cycleDates.startDate]); // Removed tableType dependency
 
   // Handle Load More when page changes
   useEffect(() => {
@@ -1389,6 +1389,8 @@ export default function AttendancePage() {
   const navigateMonth = (direction: 'prev' | 'next') => {
     setCurrentDate(prev => {
       const newDate = new Date(prev);
+      // Set to 15th to avoid month-end rollover issues (e.g. Mar 31 -> Feb 28)
+      newDate.setDate(15);
       if (direction === 'prev') {
         newDate.setMonth(newDate.getMonth() - 1);
       } else {
@@ -2335,6 +2337,7 @@ export default function AttendancePage() {
                   value={month}
                   onChange={(e) => {
                     const newDate = new Date(currentDate);
+                    newDate.setDate(15); // Prevent rollover
                     newDate.setMonth(parseInt(e.target.value) - 1);
                     setCurrentDate(newDate);
                   }}
@@ -2348,6 +2351,7 @@ export default function AttendancePage() {
                   value={year}
                   onChange={(e) => {
                     const newDate = new Date(currentDate);
+                    newDate.setDate(15); // Prevent rollover
                     newDate.setFullYear(parseInt(e.target.value));
                     setCurrentDate(newDate);
                   }}
