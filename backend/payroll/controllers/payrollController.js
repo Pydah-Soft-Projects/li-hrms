@@ -24,6 +24,7 @@ const MonthlyAttendanceSummary = require('../../attendance/model/MonthlyAttendan
 const PayrollConfiguration = require('../model/PayrollConfiguration');
 const outputColumnService = require('../services/outputColumnService');
 const ArrearsPayrollIntegrationService = require('../../arrears/services/arrearsPayrollIntegrationService');
+const PayrollPayslipSnapshot = require('../model/PayrollPayslipSnapshot');
 const DeductionPayrollIntegrationService = require('../../manual-deductions/services/deductionPayrollIntegrationService');
 /**
  * Payroll Controller
@@ -1084,6 +1085,30 @@ exports.getPaysheetData = async (req, res) => {
         return leftDate >= payrollRangeStart && leftDate <= payrollRangeEnd;
       });
 
+      // Prefer frozen snapshots for historical stability (if available for all rows)
+      if (filtered.length > 0) {
+        try {
+          const empIds = filtered.map((r) => (r.employeeId?._id || r.employeeId)?.toString()).filter(Boolean);
+          const snaps = await PayrollPayslipSnapshot.find({ month, kind: 'second_salary', employeeId: { $in: empIds } }).lean();
+          const snapMap = new Map(snaps.map((s) => [String(s.employeeId), s]));
+          const allPresent = empIds.length > 0 && empIds.every((id) => snapMap.has(String(id)));
+          if (allPresent) {
+            const sample = snapMap.get(String(empIds[0]));
+            const hdrs = Array.isArray(sample?.headers) ? sample.headers : [];
+            const rowsSnap = empIds.map((id, index) => ({ 'S.No': index + 1, ...(snapMap.get(String(id))?.row || {}) }));
+            return res.status(200).json({
+              success: true,
+              data: { headers: ['S.No', ...hdrs], rows: rowsSnap },
+              source: 'existing',
+              secondSalary: true,
+              snapshot: true,
+            });
+          }
+        } catch (e) {
+          console.warn('[getPaysheetData] snapshot read (2nd salary) failed:', e.message);
+        }
+      }
+
       const config2 = await PayrollConfiguration.get();
       const outputCols2nd = normalizeOutputColumns(config2?.outputColumns);
       const statutoryCodesForSheet = await getStatutoryCodesForPaysheetExpansion();
@@ -1192,6 +1217,30 @@ exports.getPaysheetData = async (req, res) => {
         const leftDate = left instanceof Date ? left : new Date(left);
         return leftDate >= payrollRangeStart && leftDate <= payrollRangeEnd;
       });
+
+      // Prefer frozen snapshots for historical stability (if available for all rows)
+      if (filtered.length > 0) {
+        try {
+          const orderedEmpIds = filtered.map((r) => (r.employeeId?._id || r.employeeId)?.toString()).filter(Boolean);
+          const snaps = await PayrollPayslipSnapshot.find({ month, kind: 'regular', employeeId: { $in: orderedEmpIds } }).lean();
+          const snapMap = new Map(snaps.map((s) => [String(s.employeeId), s]));
+          const allPresent = orderedEmpIds.length > 0 && orderedEmpIds.every((id) => snapMap.has(String(id)));
+          if (allPresent) {
+            const sample = snapMap.get(String(orderedEmpIds[0]));
+            const hdrs = Array.isArray(sample?.headers) ? sample.headers : [];
+            const rowsSnap = orderedEmpIds.map((id, index) => ({ 'S.No': index + 1, ...(snapMap.get(String(id))?.row || {}) }));
+            return res.status(200).json({
+              success: true,
+              data: { headers: ['S.No', ...hdrs], rows: rowsSnap },
+              message: rowsSnap.length === 0 ? 'No existing payroll records for this month. Use "Load paysheet" to calculate.' : undefined,
+              source: 'existing',
+              snapshot: true,
+            });
+          }
+        } catch (e) {
+          console.warn('[getPaysheetData] snapshot read (regular) failed:', e.message);
+        }
+      }
 
       const payslips = filtered.map((r) => recordToPayslip(r));
       if (payslips.length === 0) {

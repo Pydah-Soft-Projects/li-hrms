@@ -160,9 +160,24 @@ async function calculateSecondSalary(employeeId, month, userId, sharedContext = 
             month
         });
 
-        if (existingBatch && ['approved', 'freeze', 'complete'].includes(existingBatch.status)) {
-            // Recalculation permission logic could be added here if needed
-            // For now, we follow the same pattern
+        if (existingBatch) {
+            if (['freeze', 'complete'].includes(existingBatch.status)) {
+                const error = new Error(`2nd Salary payroll for ${month} is ${existingBatch.status}. Recalculation is not allowed.`);
+                error.code = 'BATCH_LOCKED';
+                error.batchId = existingBatch._id;
+                throw error;
+            }
+            if (existingBatch.status === 'approved') {
+                if (!existingBatch.hasValidRecalculationPermission()) {
+                    const error = new Error(`2nd Salary payroll for ${month} is approved. Recalculation requires permission.`);
+                    error.code = 'BATCH_LOCKED';
+                    error.batchId = existingBatch._id;
+                    throw error;
+                }
+                // Single-use permission
+                existingBatch.consumeRecalculationPermission?.();
+                await existingBatch.save();
+            }
         }
 
         console.log(`\n========== SECOND SALARY CALCULATION START (${employee.emp_no}) ==========`);
