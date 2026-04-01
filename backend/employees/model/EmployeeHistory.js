@@ -52,6 +52,14 @@ const employeeHistorySchema = new mongoose.Schema(
                 // Automation
                 'system_auto_deactivation',
                 'status_deactivated',
+                // Promotion & transfer workflow
+                'promotion_transfer_submitted',
+                'promotion_transfer_step_approved',
+                'promotion_transfer_step_rejected',
+                'promotion_transfer_final_approved',
+                'promotion_transfer_rejected',
+                'promotion_transfer_cancelled',
+                'promotion_transfer_deleted',
             ],
             required: true,
         },

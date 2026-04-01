@@ -2617,6 +2617,62 @@ export const api = {
   },
 
   // ==========================================
+  // PROMOTIONS & TRANSFERS
+  // ==========================================
+  getPromotionTransferSettings: async () => {
+    return apiRequest<any>('/promotions-transfers/settings', { method: 'GET' });
+  },
+  savePromotionTransferSettings: async (data: { workflow?: any }) => {
+    return apiRequest<any>('/promotions-transfers/settings', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+  getPromotionTransferPayrollMonths: async (opts?: { count?: number; past?: number; future?: number }) => {
+    const params = new URLSearchParams();
+    if (opts?.past != null) params.append('past', String(opts.past));
+    if (opts?.future != null) params.append('future', String(opts.future));
+    if (opts?.count != null && !params.has('past') && !params.has('future')) {
+      params.append('count', String(opts.count));
+    }
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return apiRequest<any>(`/promotions-transfers/payroll-months${qs}`, { method: 'GET' });
+  },
+  createPromotionTransferRequest: async (data: Record<string, unknown>) => {
+    return apiRequest<any>('/promotions-transfers', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+  getPromotionTransferPendingApprovals: async () => {
+    return apiRequest<any>('/promotions-transfers/pending-approvals', { method: 'GET' });
+  },
+  getPromotionTransferRequests: async (params?: { emp_no?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.emp_no) q.append('emp_no', params.emp_no);
+    const qs = q.toString() ? `?${q.toString()}` : '';
+    return apiRequest<any>(`/promotions-transfers${qs}`, { method: 'GET' });
+  },
+  getPromotionTransferRequest: async (id: string) => {
+    return apiRequest<any>(`/promotions-transfers/${id}`, { method: 'GET' });
+  },
+  promotionTransferAction: async (id: string, data: { action: 'approve' | 'reject'; comments?: string }) => {
+    return apiRequest<any>(`/promotions-transfers/${id}/action`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+  cancelPromotionTransferRequest: async (id: string, data: { comments?: string }) => {
+    return apiRequest<any>(`/promotions-transfers/${id}/cancel`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+  deletePromotionTransferRequest: async (id: string) => {
+    return apiRequest<any>(`/promotions-transfers/${id}`, { method: 'DELETE' });
+  },
+
+  // ==========================================
   // LOAN & SALARY ADVANCE APIs
   // ==========================================
 

@@ -32,7 +32,8 @@ import {
   ScrollText,
   BadgeDollarSign,
   LogOut,
-  Receipt
+  Receipt,
+  TrendingUp
 } from 'lucide-react';
 import { cn } from '@/lib/utils'; // Assuming this exists, based on usual project structure
 
@@ -68,6 +69,7 @@ const moduleIcons: Record<string, any> = {
   LOANS_SALARY_ADVANCE: HandCoins,
   HOLIDAY_CALENDAR: CalendarHeart,
   RESIGNATION: LogOut,
+  PROMOTIONS_TRANSFERS: TrendingUp,
 };
 
 const shortModuleLabels: Record<string, string> = {
@@ -101,6 +103,7 @@ const shortModuleLabels: Record<string, string> = {
   LOANS_SALARY_ADVANCE: 'Adv',
   HOLIDAY_CALENDAR: 'Hols',
   RESIGNATION: 'Resign',
+  PROMOTIONS_TRANSFERS: 'Promo',
 };
 
 export default function MobileBottomNav() {
@@ -198,7 +201,8 @@ export default function MobileBottomNav() {
   const isActive = (href: string, code: string) => {
     return pathname === href ||
       (code === 'LEAVE_OD' && (pathname === '/leaves' || pathname === '/od')) ||
-      (code === 'CCL' && pathname === '/ccl');
+      (code === 'CCL' && pathname === '/ccl') ||
+      (code === 'PROMOTIONS_TRANSFERS' && pathname === '/promotions-transfers');
   };
 
   const handleLogout = () => {

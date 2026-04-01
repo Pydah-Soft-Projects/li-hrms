@@ -15,20 +15,26 @@ const seedSettings = async () => {
         const settingsToSeed = [
             {
                 key: 'feature_control_employee',
-                value: { activeModules: ['DASHBOARD', 'LEAVE', 'OD', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS'] },
+                value: { activeModules: ['DASHBOARD', 'LEAVE', 'OD', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS', 'PROMOTIONS_TRANSFERS'] },
                 description: 'Active modules for Employee role',
                 category: 'feature_control',
             },
             {
                 key: 'feature_control_hod',
-                value: { activeModules: ['DASHBOARD', 'LEAVE', 'OD', 'LEAVE_REGISTER', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS', 'REPORTS'] },
+                value: { activeModules: ['DASHBOARD', 'LEAVE', 'OD', 'LEAVE_REGISTER', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS', 'REPORTS', 'PROMOTIONS_TRANSFERS'] },
                 description: 'Active modules for HOD role',
                 category: 'feature_control',
             },
             {
                 key: 'feature_control_hr',
-                value: { activeModules: ['DASHBOARD', 'LEAVE', 'OD', 'LEAVE_REGISTER', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS', 'EMPLOYEES', 'REPORTS'] },
+                value: { activeModules: ['DASHBOARD', 'LEAVE', 'OD', 'LEAVE_REGISTER', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS', 'EMPLOYEES', 'REPORTS', 'PROMOTIONS_TRANSFERS'] },
                 description: 'Active modules for HR role',
+                category: 'feature_control',
+            },
+            {
+                key: 'feature_control_manager',
+                value: { activeModules: ['DASHBOARD', 'LEAVE', 'OD', 'LEAVE_REGISTER', 'ATTENDANCE', 'PROFILE', 'PAYSLIPS', 'REPORTS', 'PROMOTIONS_TRANSFERS'] },
+                description: 'Active modules for Manager role',
                 category: 'feature_control',
             },
             {
@@ -52,15 +58,16 @@ const seedSettings = async () => {
         ];
 
         for (const s of settingsToSeed) {
-            await Settings.findOneAndUpdate(
-                { key: s.key },
-                s,
-                { upsert: true, new: true }
-            );
-            console.log(`Updated setting: ${s.key}`);
+            const existing = await Settings.findOne({ key: s.key }).lean();
+            if (existing) {
+                console.log(`Skipped (already exists): ${s.key}`);
+                continue;
+            }
+            await Settings.create(s);
+            console.log(`Created setting: ${s.key}`);
         }
 
-        console.log('Successfully seeded all settings');
+        console.log('Successfully seeded missing settings only (existing rows unchanged)');
         process.exit(0);
     } catch (error) {
         console.error('Error seeding settings:', error);

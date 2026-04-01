@@ -81,6 +81,7 @@ export const PAGE_PERMISSIONS: Record<string, UserRole[]> = {
     '/confused-shifts': ['sub_admin', 'hr', 'hod', 'manager', 'employee'],
     '/holidays': ['sub_admin', 'hr', 'hod', 'manager', 'employee'],
     '/resignations': ['sub_admin', 'hr', 'hod', 'manager', 'employee'],
+    '/promotions-transfers': ['sub_admin', 'hr', 'hod', 'manager', 'employee', 'super_admin'],
     '/divisions': ['sub_admin', 'hr'],
     '/employee-updates': ['sub_admin', 'hr'],
     '/superadmin/holidays': ['sub_admin', 'hr', 'manager'],
@@ -347,6 +348,31 @@ export function canApplyResignation(user: User): boolean {
 
 export function canApproveResignation(user: User): boolean {
     return hasAnyRole(user, ['sub_admin', 'hr', 'hod', 'manager']) && canManageFeature(user, 'RESIGNATION');
+}
+
+// ==========================================
+// PROMOTIONS & TRANSFERS
+// ==========================================
+
+export function canViewPromotionTransfer(user: User): boolean {
+    if (user.role === 'super_admin') return true;
+    return hasAnyRole(user, ['sub_admin', 'hr', 'hod', 'manager', 'employee']) && canViewFeature(user, 'PROMOTIONS_TRANSFERS');
+}
+
+export function canCreatePromotionTransfer(user: User): boolean {
+    if (user.role === 'super_admin') return true;
+    return hasAnyRole(user, ['sub_admin', 'hr', 'hod', 'manager', 'employee']) && canManageFeature(user, 'PROMOTIONS_TRANSFERS');
+}
+
+export function canApprovePromotionTransfer(user: User): boolean {
+    if (user.role === 'super_admin') return true;
+    return hasAnyRole(user, ['sub_admin', 'hr', 'hod', 'manager']) && canManageFeature(user, 'PROMOTIONS_TRANSFERS');
+}
+
+/** Hard-delete requests (super/sub-admin only; server enforces scope and blocks approved rows). */
+export function canDeletePromotionTransferRequest(user: User): boolean {
+    if (user.role === 'super_admin') return true;
+    return user.role === 'sub_admin' && canManageFeature(user, 'PROMOTIONS_TRANSFERS');
 }
 
 // ==========================================

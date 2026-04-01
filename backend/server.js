@@ -154,6 +154,10 @@ app.use('/api/arrears', arrearsRoutes);
 const manualDeductionsRoutes = require('./manual-deductions/index.js');
 app.use('/api/manual-deductions', manualDeductionsRoutes);
 
+// Promotions & transfers
+const promotionTransferRoutes = require('./promotions-transfers/index.js');
+app.use('/api/promotions-transfers', promotionTransferRoutes);
+
 // PayrollBatch routes
 const payrollBatchRoutes = require('./payroll/routes/payrollBatchRoutes.js');
 app.use('/api/payroll-batch', payrollBatchRoutes);

@@ -378,6 +378,28 @@ const defaultModules = [
     ],
     defaultPermissions: { canView: true, canExport: false },
   },
+  {
+    name: 'Promotions & Transfers',
+    code: 'PROMOTIONS_TRANSFERS',
+    description: 'Salary promotions and internal transfers with approval workflow',
+    icon: 'trending-up',
+    route: '/promotions-transfers',
+    category: 'hr',
+    sortOrder: 18,
+    isSystem: true,
+    availablePermissions: [
+      { key: 'canView', label: 'View requests', description: 'Can view promotion and transfer requests' },
+      { key: 'canCreate', label: 'Create request', description: 'Can submit promotion or transfer requests' },
+      { key: 'canApprove', label: 'Approve', description: 'Can approve or reject in workflow' },
+    ],
+    availableScopes: [
+      { key: 'own', label: 'Own', description: 'Own requests only' },
+      { key: 'department', label: 'Department', description: 'Department scope' },
+      { key: 'assigned', label: 'Assigned', description: 'Assigned departments' },
+      { key: 'all', label: 'All', description: 'Organization-wide' },
+    ],
+    defaultPermissions: { canView: true, canCreate: true, canEdit: false, canDelete: false, canApprove: false },
+  },
 ];
 
 // Helper to get module ID by code
