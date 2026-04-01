@@ -39,7 +39,8 @@ import {
   LogOut,
   Menu,
   X,
-  Layers
+  Layers,
+  TrendingUp
 } from 'lucide-react';
 
 // Icon Components - Helper type not needed with Lucide, but keeping structure similar
@@ -58,6 +59,7 @@ const navItems: NavItem[] = [
   { href: '/superadmin/security/gate', label: 'Security Gate', icon: ShieldCheck, category: 'Main', moduleCode: 'SECURITY' },
   { href: '/superadmin/employees', label: 'Employees', icon: Users, category: 'Employee Management', moduleCode: 'EMPLOYEES' },
   { href: '/superadmin/resignations', label: 'Resignations', icon: LogOut, category: 'Employee Management', moduleCode: 'RESIGNATION' },
+  { href: '/promotions-transfers', label: 'Promotions & Transfers', icon: TrendingUp, category: 'Employee Management', moduleCode: 'PROMOTIONS_TRANSFERS' },
   { href: '/superadmin/employees/form-settings', label: 'Form Settings', icon: FileCog, category: 'Employee Management', moduleCode: 'EMPLOYEES' },
   { href: '/superadmin/attendance', label: 'Attendance', icon: CalendarClock, category: 'Time & Attendance', moduleCode: 'ATTENDANCE' },
   { href: '/superadmin/ot-permissions', label: 'OT & Permissions', icon: Clock, category: 'Time & Attendance', moduleCode: 'OT_PERMISSIONS' },

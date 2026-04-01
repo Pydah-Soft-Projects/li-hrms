@@ -39,7 +39,8 @@ import {
     ArrowRightLeft,
     ScrollText,
     BadgeDollarSign,
-    TrendingDown
+    TrendingDown,
+    TrendingUp
 } from 'lucide-react';
 
 // Module code to icon mapping
@@ -77,6 +78,7 @@ const moduleIcons: Record<string, any> = {
     MANUAL_DEDUCTIONS: TrendingDown,
     HOLIDAY_CALENDAR: CalendarHeart,
     RESIGNATION: LogOut,
+    PROMOTIONS_TRANSFERS: TrendingUp,
 };
 
 export default function WorkspaceSidebar() {
@@ -220,6 +222,7 @@ export default function WorkspaceSidebar() {
                                                 (module.code === 'LEAVE_REGISTER' && pathname === '/leave-register') ||
                                                 (module.code === 'CCL' && pathname === '/ccl') ||
                                                 (module.code === 'RESIGNATION' && pathname === '/resignations') ||
+                                                (module.code === 'PROMOTIONS_TRANSFERS' && pathname === '/promotions-transfers') ||
                                                 (module.code === 'EMPLOYEE_GROUPS' && pathname === '/employee-groups');
 
                                             const Icon = moduleIcons[module.code] || LayoutDashboard;

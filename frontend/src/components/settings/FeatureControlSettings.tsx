@@ -12,6 +12,7 @@ const availableModules: { id: string; label: string }[] = [
   { id: 'PROFILE', label: 'My Profile' },
   { id: 'EMPLOYEES', label: 'Employees' },
   { id: 'RESIGNATION', label: 'Resignations' },
+  { id: 'PROMOTIONS_TRANSFERS', label: 'Promotions & Transfers' },
   { id: 'ATTENDANCE', label: 'Attendance' },
   { id: 'LEAVE_OD', label: 'Leave & OD' },
   { id: 'LEAVE_REGISTER', label: 'Leave Register' },
