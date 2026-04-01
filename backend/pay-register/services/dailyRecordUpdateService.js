@@ -154,6 +154,10 @@ async function updateDailyRecord(payRegister, date, updateData, editedBy) {
       odIds: [],
       otIds: [],
       remarks: null,
+      isLate: false,
+      isEarlyOut: false,
+      lateInMinutes: 0,
+      earlyOutMinutes: 0,
     };
     payRegister.dailyRecords.push(dailyRecord);
   }
@@ -167,6 +171,8 @@ async function updateDailyRecord(payRegister, date, updateData, editedBy) {
     isOD: dailyRecord.isOD,
     otHours: dailyRecord.otHours,
     shiftId: dailyRecord.shiftId,
+    isLate: dailyRecord.isLate,
+    isEarlyOut: dailyRecord.isEarlyOut,
   };
 
   // Update firstHalf
@@ -274,6 +280,14 @@ async function updateDailyRecord(payRegister, date, updateData, editedBy) {
     dailyRecord.remarks = updateData.remarks;
   }
 
+  // Update late/early out flags if provided
+  if (updateData.isLate !== undefined) {
+    dailyRecord.isLate = updateData.isLate;
+  }
+  if (updateData.isEarlyOut !== undefined) {
+    dailyRecord.isEarlyOut = updateData.isEarlyOut;
+  }
+
   // Determine if split - use updateData.isSplit if provided, otherwise check if halves differ
   if (updateData.isSplit !== undefined) {
     dailyRecord.isSplit = updateData.isSplit;
@@ -332,6 +346,22 @@ async function updateDailyRecord(payRegister, date, updateData, editedBy) {
       field: 'shiftId',
       oldValue: oldValues.shiftId,
       newValue: dailyRecord.shiftId,
+    });
+  }
+
+  if (oldValues.isLate !== dailyRecord.isLate) {
+    changes.push({
+      field: 'isLate',
+      oldValue: oldValues.isLate,
+      newValue: dailyRecord.isLate,
+    });
+  }
+
+  if (oldValues.isEarlyOut !== dailyRecord.isEarlyOut) {
+    changes.push({
+      field: 'isEarlyOut',
+      oldValue: oldValues.isEarlyOut,
+      newValue: dailyRecord.isEarlyOut,
     });
   }
 
