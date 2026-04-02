@@ -120,8 +120,14 @@ app.all('*', async (req, res) => {
         logger.error(`Discovery Logging Failed: ${err.message}`);
     }
 
-    // Respond with a generic OK explicitly as text/plain (standard for ADMS devices)
-    res.type('text/plain').send('OK');
+    // Make the catch-all robust for any ADMS device hitting unknown URLs!
+    // Forces Status 200 and text/plain. If it's a registry request from a new device, answer correctly.
+    res.status(200).type('text/plain');
+    if (req.originalUrl.includes('registry')) {
+        res.send(`RegistryCode=${req.query.RegistryCode || '1'}`);
+    } else {
+        res.send('OK');
+    }
 });
 
 // Connect to MongoDB

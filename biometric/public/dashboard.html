@@ -420,6 +420,7 @@
                     style="border-color: #f43f5e; color: #f43f5e;">PDF Summary</button>
                 <button class="btn-refresh" onclick="exportUniqueUsersExcel()"
                     style="border-color: #10b981; color: #10b981;">Export Excel (Unique IDs)</button>
+                <button class="btn-refresh" onclick="openManualPullDialog()" style="background: var(--primary); border-color: var(--primary); color: white;">Test TCP Pull</button>
                 <button class="btn-refresh" onclick="refreshData()">Refresh Data</button>
             </div>
         </div>
@@ -526,6 +527,29 @@
         </div>
     </div>
 
+    <!-- Manual TCP Pull Dialog -->
+    <div class="dialog-overlay" id="manual-pull-dialog">
+        <div class="dialog-box">
+            <h3 id="pull-dialog-title">Manual TCP Pull Test</h3>
+            <p style="color: var(--text-dim); font-size: 0.85rem; margin-bottom: 20px;">
+                Directly connect to a device via its LAN IP address (Port 4370) to see if you can pull data from it independently of ADMS.
+            </p>
+            <div class="dialog-row">
+                <label>Device IP Address</label>
+                <input type="text" id="pull-ip" placeholder="e.g. 192.168.1.201">
+            </div>
+            <div class="dialog-row">
+                <label>Port</label>
+                <input type="text" id="pull-port" value="4370" placeholder="Default: 4370">
+            </div>
+            <div id="pull-status" style="margin-bottom: 10px; font-size: 0.85rem; color: var(--primary); white-space: pre-wrap;"></div>
+            <div class="dialog-actions">
+                <button class="btn-cancel" onclick="closeManualPullDialog()">Cancel</button>
+                <button class="btn-download" onclick="executeManualPull()">Test Connection</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         let selectedSN = null;
         let activeTable = 'USERINFO';
@@ -535,6 +559,51 @@
         let heartbeatStaleMs = 180000;
 
         const TZ_IST = 'Asia/Kolkata';
+
+        function openManualPullDialog() {
+            document.getElementById('manual-pull-dialog').classList.add('open');
+            document.getElementById('pull-status').innerText = '';
+        }
+
+        function closeManualPullDialog() {
+            document.getElementById('manual-pull-dialog').classList.remove('open');
+        }
+
+        async function executeManualPull() {
+            const ip = document.getElementById('pull-ip').value.trim();
+            const port = document.getElementById('pull-port').value.trim() || '4370';
+            const statusEl = document.getElementById('pull-status');
+
+            if (!ip) {
+                statusEl.innerText = '❌ Please enter an IP address';
+                statusEl.style.color = '#ef4444';
+                return;
+            }
+
+            statusEl.innerText = '⏳ Connecting... please wait up to 5 seconds...';
+            statusEl.style.color = 'var(--primary)';
+
+            try {
+                const res = await fetch('/api/devices/test-pull', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ip, port: parseInt(port) })
+                });
+                
+                const result = await res.json();
+                
+                if (result.success) {
+                    statusEl.innerText = `✅ Success! Connected.\nTime: ${result.data?.deviceTime}\nLogs readable: ${result.data?.logCountAvailable}`;
+                    statusEl.style.color = '#10b981';
+                } else {
+                    statusEl.innerText = '❌ Failed: ' + (result.message || result.error);
+                    statusEl.style.color = '#ef4444';
+                }
+            } catch(e) {
+                statusEl.innerText = '❌ Network Error: ' + e.message;
+                statusEl.style.color = '#ef4444';
+            }
+        }
 
         function formatISTShort(iso) {
             if (!iso) return '—';
