@@ -21,7 +21,8 @@ export default function LiquidEther({
   autoIntensity = 2.2,
   takeoverDuration = 0.25,
   autoResumeDelay = 1000,
-  autoRampDuration = 0.6
+  autoRampDuration = 0.6,
+  interactive = true
 }: {
   mouseForce?: number;
   cursorSize?: number;
@@ -42,6 +43,7 @@ export default function LiquidEther({
   takeoverDuration?: number;
   autoResumeDelay?: number;
   autoRampDuration?: number;
+  interactive?: boolean;
 }) {
   const mountRef = useRef<HTMLDivElement>(null);
   const webglRef = useRef<any>(null);
@@ -172,18 +174,21 @@ export default function LiquidEther({
         this._onDocumentLeave = this.onDocumentLeave.bind(this);
       }
 
-      init(container: HTMLElement) {
+      init(container: HTMLElement, interactive: boolean = true) {
         this.container = container;
         this.docTarget = container.ownerDocument || null;
         const defaultView = (this.docTarget && this.docTarget.defaultView) || (typeof window !== 'undefined' ? window : null);
         if (!defaultView) return;
         this.listenerTarget = defaultView as Window;
-        this.listenerTarget.addEventListener('mousemove', this._onMouseMove);
-        this.listenerTarget.addEventListener('touchstart', this._onTouchStart, { passive: true });
-        this.listenerTarget.addEventListener('touchmove', this._onTouchMove, { passive: true });
-        this.listenerTarget.addEventListener('touchend', this._onTouchEnd);
-        if (this.docTarget) {
-          this.docTarget.addEventListener('mouseleave', this._onDocumentLeave);
+        
+        if (interactive) {
+          this.listenerTarget.addEventListener('mousemove', this._onMouseMove);
+          this.listenerTarget.addEventListener('touchstart', this._onTouchStart, { passive: true });
+          this.listenerTarget.addEventListener('touchmove', this._onTouchMove, { passive: true });
+          this.listenerTarget.addEventListener('touchend', this._onTouchEnd);
+          if (this.docTarget) {
+            this.docTarget.addEventListener('mouseleave', this._onDocumentLeave);
+          }
         }
       }
 
@@ -1061,7 +1066,7 @@ export default function LiquidEther({
       constructor(props: any) {
         this.props = props;
         Common.init(props.$wrapper);
-        Mouse.init(props.$wrapper);
+        Mouse.init(props.$wrapper, props.interactive);
         Mouse.autoIntensity = props.autoIntensity;
         Mouse.takeoverDuration = props.takeoverDuration;
         this.lastUserInteraction = performance.now();
@@ -1158,7 +1163,8 @@ export default function LiquidEther({
       autoIntensity,
       takeoverDuration,
       autoResumeDelay,
-      autoRampDuration
+      autoRampDuration,
+      interactive
     });
     webglRef.current = webgl;
 
@@ -1253,7 +1259,8 @@ export default function LiquidEther({
     autoIntensity,
     takeoverDuration,
     autoResumeDelay,
-    autoRampDuration
+    autoRampDuration,
+    interactive
   ]);
 
   useEffect(() => {
@@ -1303,7 +1310,8 @@ export default function LiquidEther({
     autoIntensity,
     takeoverDuration,
     autoResumeDelay,
-    autoRampDuration
+    autoRampDuration,
+    interactive
   ]);
 
   return <div ref={mountRef} className={`liquid-ether-container ${className || ''}`} style={style} />;
