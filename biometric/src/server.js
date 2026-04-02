@@ -121,7 +121,7 @@ app.all('*', async (req, res) => {
     }
 
     // Respond with a generic OK explicitly as text/plain (standard for ADMS devices)
-    res.type('text/plain').send('OK');
+    res.status(200).type('text/plain').set('Cache-Control', 'no-store, no-cache').send('OK');
 });
 
 // Connect to MongoDB

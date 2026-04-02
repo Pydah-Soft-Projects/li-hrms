@@ -21,6 +21,9 @@ const ADMS_ERROR = "ERROR";
 router.use((req, res, next) => {
     if (req.path.endsWith('.aspx') || req.path.includes('registry')) {
         res.type('text/plain');
+        // Explicitly force Status 200 and disable caching to prevent ANY 304 Not Modified
+        res.status(200);
+        res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
     }
     next();
 });
