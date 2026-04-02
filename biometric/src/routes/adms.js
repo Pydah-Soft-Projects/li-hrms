@@ -52,10 +52,10 @@ router.options('*', (req, res) => {
 });
 
 /**
- * GET /iclock/getrequest.aspx
+ * GET /iclock/getrequest
  * Heartbeat, Options exchange, and Command polling
  */
-router.get('/getrequest.aspx', async (req, res) => {
+router.get(['/getrequest', '/getrequest.aspx'], async (req, res) => {
     const { SN, INFO, option } = req.query;
     const clientIp = getClientIp(req);
 
@@ -122,10 +122,10 @@ router.get('/getrequest.aspx', async (req, res) => {
 });
 
 /**
- * GET /iclock/cdata.aspx
- * ICLOCK990 uses this for handshake/options (instead of getrequest.aspx)
+ * GET /iclock/cdata
+ * ICLOCK990 uses this for handshake/options
  */
-router.get('/cdata.aspx', async (req, res) => {
+router.get(['/cdata', '/cdata.aspx'], async (req, res) => {
     const { SN, options, language, pushver } = req.query;
     const clientIp = getClientIp(req);
 
@@ -199,10 +199,10 @@ router.get('/cdata.aspx', async (req, res) => {
 });
 
 /**
- * POST /iclock/devicecmd.aspx
+ * POST /iclock/devicecmd
  * Device sends command execution results here
  */
-router.post('/devicecmd.aspx', async (req, res) => {
+router.post(['/devicecmd', '/devicecmd.aspx', '/devicecmd/return'], async (req, res) => {
     const { SN } = req.query;
     const clientIp = getClientIp(req);
     const body = req.body;
@@ -257,9 +257,9 @@ router.post('/devicecmd.aspx', async (req, res) => {
 });
 
 /**
- * POST /iclock/getrequest.aspx (Alternative upload)
+ * POST /iclock/getrequest (Alternative upload)
  */
-router.post('/getrequest.aspx', async (req, res) => {
+router.post(['/getrequest', '/getrequest.aspx'], async (req, res) => {
     const { SN } = req.query;
     const clientIp = getClientIp(req);
     logger.info(`ADMS Extra Info/Keep-alive: SN=${SN} from ${clientIp}`);
@@ -344,10 +344,10 @@ async function ensureDeviceRegistered(SN, clientIp) {
 }
 
 /**
- * POST /iclock/cdata.aspx
+ * POST /iclock/cdata
  * Primary data upload endpoint
  */
-router.post('/cdata.aspx', async (req, res) => {
+router.post(['/cdata', '/cdata.aspx', '/push'], async (req, res) => {
     const { SN, table } = req.query;
     const clientIp = getClientIp(req);
 
