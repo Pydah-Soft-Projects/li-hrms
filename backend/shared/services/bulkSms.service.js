@@ -100,7 +100,8 @@ const sendSmsThroughBulkSmsApps = async ({
         apikey: BULK_SMS_API_KEY,
         sender: senderId,
         number: sanitizedNumbers.join(','),
-        message,
+        message: message.trim(),
+        ...(arguments[0].templateId && { templateid: arguments[0].templateId }),
     };
 
     if (isUnicode) {

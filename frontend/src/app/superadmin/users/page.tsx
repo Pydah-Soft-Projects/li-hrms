@@ -35,7 +35,8 @@ import {
   Info,
   RefreshCw,
   Lock,
-  Clock
+  Clock,
+  Phone
 } from 'lucide-react';
 
 // Custom Stat Card for User Management
@@ -76,6 +77,7 @@ interface UserFormData {
   divisionMapping?: { division: string | Division; departments: (string | Department)[] }[];
   division?: string;
   employeeId?: string;
+  phone_number?: string;
   [key: string]: any;
 }
 
@@ -288,6 +290,7 @@ export default function UsersPage() {
         autoGeneratePassword: formData.autoGeneratePassword,
         assignWorkspace: true,
         division: formData.division,
+        phone_number: formData.phone_number,
       };
 
       if (!formData.autoGeneratePassword && formData.password) {
@@ -370,10 +373,11 @@ export default function UsersPage() {
     setError('');
 
     try {
-      const payload: { employeeId: string; role: string; autoGeneratePassword: boolean; email?: string; dataScope?: DataScope | string; department?: string | null; allowedDivisions?: string[]; divisionMapping?: { division: string | Division; departments: (string | Department)[] }[]; featureControl?: string[] } = {
+      const payload: { employeeId: string; role: string; autoGeneratePassword: boolean; email?: string; phone_number?: string; dataScope?: DataScope | string; department?: string | null; allowedDivisions?: string[]; divisionMapping?: { division: string | Division; departments: (string | Department)[] }[]; featureControl?: string[] } = {
         employeeId: employeeFormData.employeeId || '',
         role: employeeFormData.role,
         autoGeneratePassword: employeeFormData.autoGeneratePassword,
+        phone_number: employeeFormData.phone_number,
       };
 
       if (employeeFormData.email) {
@@ -462,6 +466,7 @@ export default function UsersPage() {
       const payload: any = {
         name: formData.name,
         role: formData.role,
+        phone_number: formData.phone_number,
       };
 
       // Handle scoping
@@ -677,6 +682,7 @@ export default function UsersPage() {
       allowedDivisions: user.allowedDivisions?.map(d => typeof d === 'string' ? d : d?._id) || [],
       divisionMapping: finalMapping,
       division: (user.role === 'hod' || user.role === 'manager') && mapping ? mapping.division : '',
+      phone_number: user.phone_number || '',
     });
     // Prevent useEffect from reloading defaults and overwriting user data
     previousRoleRef.current = user.role;
@@ -722,6 +728,7 @@ export default function UsersPage() {
       allowedDivisions: [],
       divisionMapping: [],
       division: '',
+      phone_number: '',
     });
     previousRoleRef.current = '';
   };
@@ -739,6 +746,7 @@ export default function UsersPage() {
       allowedDivisions: [],
       divisionMapping: [],
       division: '',
+      phone_number: '',
     });
     previousRoleRef.current = '';
   };
@@ -1477,19 +1485,38 @@ export default function UsersPage() {
                         </div>
 
                         <div className="space-y-4">
-                          <div className="space-y-2">
-                            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                              Full Name <span className="text-rose-500">*</span>
-                            </label>
-                            <input
-                              type="text"
-                              value={formData.name}
-                              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                              required
-                              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 placeholder-slate-400 transition-all focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                              placeholder="e.g. John Doe"
-                            />
-                          </div>
+                            <div className="space-y-2">
+                              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                                Full Name <span className="text-rose-500">*</span>
+                              </label>
+                              <div className="relative">
+                                <UserCircle className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                                <input
+                                  type="text"
+                                  value={formData.name}
+                                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                  required
+                                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 pl-11 text-sm font-medium text-slate-900 placeholder-slate-400 transition-all focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                  placeholder="e.g. John Doe"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="space-y-2">
+                              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                                Phone Number
+                              </label>
+                              <div className="relative">
+                                <Phone className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                                <input
+                                  type="tel"
+                                  value={formData.phone_number}
+                                  onChange={(e) => setFormData({ ...formData, phone_number: e.target.value })}
+                                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 pl-11 text-sm font-medium text-slate-900 placeholder-slate-400 transition-all focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                  placeholder="e.g. +91 9876543210"
+                                />
+                              </div>
+                            </div>
 
                           <div className="space-y-2">
                             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
@@ -1991,6 +2018,22 @@ export default function UsersPage() {
                       <div className="space-y-4">
                         <div className="space-y-2">
                           <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                            Phone Number
+                          </label>
+                          <div className="relative">
+                            <Phone className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                            <input
+                              type="tel"
+                              value={employeeFormData.phone_number}
+                              onChange={(e) => setEmployeeFormData({ ...employeeFormData, phone_number: e.target.value })}
+                              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 pl-11 text-sm font-medium text-slate-900 placeholder-slate-400 transition-all focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                              placeholder="e.g. +1 234 567 890"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
                             Login Email
                           </label>
                           <div className="relative">
@@ -2384,6 +2427,22 @@ export default function UsersPage() {
                                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                                 required
                                 className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 pl-11 text-sm font-medium text-slate-900 placeholder-slate-400 transition-all focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="space-y-2">
+                            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                              Phone Number
+                            </label>
+                            <div className="relative">
+                              <Phone className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                              <input
+                                type="tel"
+                                value={formData.phone_number}
+                                onChange={(e) => setFormData({ ...formData, phone_number: e.target.value })}
+                                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 pl-11 text-sm font-medium text-slate-900 placeholder-slate-400 transition-all focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                                placeholder="e.g. +91 9876543210"
                               />
                             </div>
                           </div>

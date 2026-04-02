@@ -239,6 +239,14 @@ function LoginContent() {
                   )}
                 </button>
               </div>
+              <div className="flex justify-end mt-1.5">
+                <Link
+                  href="/forgot-password"
+                  className="text-xs text-green-600 hover:text-green-700 font-medium transition-colors"
+                >
+                  Forgot Password?
+                </Link>
+              </div>
             </div>
 
             {/* Error Message */}

@@ -2,6 +2,7 @@ const User = require('../../users/model/User');
 const Employee = require('../../employees/model/Employee');
 const RoleAssignment = require('../../workspaces/model/RoleAssignment');
 const { generateToken } = require('../../users/controllers/userController');
+const passwordNotificationService = require('../../shared/services/passwordNotificationService');
 
 // @desc    Login user
 // @route   POST /api/auth/login
@@ -512,6 +513,204 @@ exports.changePassword = async (req, res) => {
       message: 'Error changing password',
       error: error.message,
     });
+  }
+};
+
+// @desc    Verify identifier - returns non-sensitive info for confirmation
+// @route   POST /api/auth/verify-identifier
+// @access  Public
+exports.verifyIdentifier = async (req, res) => {
+  try {
+    const { identifier } = req.body;
+    if (!identifier) {
+      return res.status(400).json({ success: false, message: 'Identifier is required' });
+    }
+
+    const User = require('../../users/model/User');
+    const Employee = require('../../employees/model/Employee');
+    const Department = require('../../departments/model/Department');
+
+    let record = await User.findOne({
+      $or: [
+        { email: identifier.toLowerCase() },
+        { name: identifier },
+        { employeeId: identifier.toUpperCase() }
+      ]
+    }).populate('employeeRef');
+
+    let type = 'user';
+    if (!record) {
+      record = await Employee.findOne({
+        $or: [
+          { emp_no: identifier.toUpperCase() },
+          { email: identifier.toLowerCase() },
+          { phone_number: identifier }
+        ]
+      }).populate('department_id');
+      type = 'employee';
+    }
+
+    if (!record) {
+      return res.status(404).json({ success: false, message: 'Account not found' });
+    }
+
+    // Masking helpers
+    const maskEmail = (email) => {
+      if (!email) return null;
+      const parts = email.split('@');
+      if (parts.length !== 2) return email;
+      const [name, domain] = parts;
+      return `${name.substring(0, 2)}****@${domain}`;
+    };
+    const maskPhone = (phone) => {
+      if (!phone) return null;
+      const p = String(phone);
+      return `${p.substring(0, 2)}******${p.slice(-2)}`;
+    };
+
+    let name, departmentName, email, phone;
+    if (type === 'user') {
+      name = record.name;
+      if (record.employeeRef) {
+        const emp = record.employeeRef;
+        const dept = await Department.findById(emp.department_id);
+        departmentName = dept ? dept.name : 'User';
+        email = emp.email || record.email;
+        phone = emp.phone_number;
+      } else {
+        departmentName = 'System User';
+        email = record.email;
+        phone = record.phone_number;
+      }
+    } else {
+      name = record.employee_name;
+      departmentName = record.department_id ? record.department_id.name : 'N/A';
+      email = record.email;
+      phone = record.phone_number;
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        name,
+        department: departmentName,
+        email: maskEmail(email),
+        phone: maskPhone(phone),
+        hasEmail: !!email,
+        hasPhone: !!phone
+      }
+    });
+  } catch (error) {
+    console.error('[VerifyIdentifier] Error:', error);
+    res.status(500).json({ success: false, message: 'Error verifying account' });
+  }
+};
+
+// @desc    Forgot password - reset and notify via Email and SMS
+// @route   POST /api/auth/forgot-password
+// @access  Public
+exports.forgotPassword = async (req, res) => {
+  try {
+    const { identifier } = req.body;
+
+    if (!identifier) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide email, username, emp_no, or phone number',
+      });
+    }
+
+    const User = require('../../users/model/User');
+    const Employee = require('../../employees/model/Employee');
+    const passwordNotificationService = require('../../shared/services/passwordNotificationService');
+
+    let userBase = await User.findOne({
+      $or: [
+        { email: identifier.toLowerCase() },
+        { name: identifier },
+        { employeeId: identifier.toUpperCase() }
+      ],
+    });
+
+    let userType = 'user';
+    if (!userBase) {
+      userBase = await Employee.findOne({
+        $or: [
+          { emp_no: identifier.toUpperCase() },
+          { email: identifier.toLowerCase() },
+          { phone_number: identifier }
+        ],
+      });
+      if (userBase) userType = 'employee';
+    }
+
+    if (!userBase) {
+      return res.status(404).json({ success: false, message: 'No account found' });
+    }
+
+    if (userType === 'user' ? !userBase.isActive : !userBase.is_active) {
+      return res.status(401).json({ success: false, message: 'Account is deactivated' });
+    }
+
+    // Generate new password
+    const newPassword = await passwordNotificationService.generatePassword(
+      userType === 'employee' ? userBase : (userBase.employeeRef ? await Employee.findById(userBase.employeeRef) : null)
+    );
+
+    // Update password
+    userBase.password = newPassword;
+    await userBase.save();
+
+    // Prepare notification data
+    let notificationEmployee = null;
+    if (userType === 'employee') {
+      notificationEmployee = userBase;
+    } else if (userBase.employeeRef) {
+      notificationEmployee = await Employee.findById(userBase.employeeRef);
+    } else {
+      notificationEmployee = {
+        employee_name: userBase.name,
+        email: userBase.email,
+        phone_number: userBase.phone_number,
+        emp_no: userBase.employeeId || userBase.name || 'User',
+      };
+    }
+
+    if (!notificationEmployee || (!notificationEmployee.email && !notificationEmployee.phone_number)) {
+       return res.status(400).json({
+         success: false,
+         message: 'No contact information (email or phone) associated with this account.',
+       });
+    }
+
+    // Try both Email and SMS
+    const deliveryResult = await passwordNotificationService.sendCredentials(
+      notificationEmployee,
+      newPassword,
+      { email: !!notificationEmployee.email, sms: !!notificationEmployee.phone_number },
+      true // isReset = true
+    );
+
+    const successfulChannels = [];
+    if (deliveryResult.email) successfulChannels.push('Email');
+    if (deliveryResult.sms) successfulChannels.push('SMS');
+
+    if (successfulChannels.length === 0) {
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to send notifications. Please contact support.',
+        error: deliveryResult.error
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Password reset successful. Check your ${successfulChannels.join(' and ')} for new credentials.`,
+    });
+
+  } catch (error) {
+    console.error('[ForgotPassword] Error:', error);
+    res.status(500).json({ success: false, message: 'Error during password reset' });
   }
 };
 

@@ -37,6 +37,7 @@ exports.registerUser = async (req, res) => {
       featureControl,
       dataScope,
       divisionMapping,
+      phone_number,
     } = req.body;
     const { department, division } = req.body;
 
@@ -114,6 +115,7 @@ exports.registerUser = async (req, res) => {
       createdBy: req.user?._id,
       dataScope: dataScope || undefined,
       divisionMapping: finalDivisionMapping,
+      phone_number: phone_number || null,
     };
 
     // Only add employeeId and employeeRef if they have values (sparse index)
@@ -211,6 +213,7 @@ exports.createUserFromEmployee = async (req, res) => {
       featureControl,
       dataScope,
       divisionMapping,
+      phone_number,
     } = req.body;
     const { departments, department, division } = req.body;
 
@@ -341,6 +344,7 @@ exports.createUserFromEmployee = async (req, res) => {
       dataScope: dataScope || undefined,
       divisionMapping: finalDivisionMapping,
       createdBy: req.user?._id,
+      phone_number: phone_number || employee.phone_number || null,
     });
 
     // Employee history: user created / promoted (from employee to role)
@@ -545,6 +549,7 @@ exports.updateUser = async (req, res) => {
       featureControl,
       dataScope,
       divisionMapping,
+      phone_number,
     } = req.body;
     const { department, division } = req.body;
 
@@ -587,6 +592,7 @@ exports.updateUser = async (req, res) => {
     });
 
     if (name !== undefined) user.name = name;
+    if (phone_number !== undefined) user.phone_number = phone_number;
     if (role !== undefined) {
       user.role = role;
       user.roles = roles || [role];
@@ -784,7 +790,7 @@ exports.resetPassword = async (req, res) => {
         employee_name: user.name,
         emp_no: user.employeeId || (employee ? employee.emp_no : 'User'),
         email: user.email,
-        phone_number: employee ? employee.phone_number : null
+        phone_number: user.phone_number || (employee ? employee.phone_number : null)
       };
 
       const notificationResult = await sendCredentials(deliveryInfo, password, null, true);

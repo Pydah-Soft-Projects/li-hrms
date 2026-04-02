@@ -114,6 +114,11 @@ const userSchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
+    phone_number: {
+      type: String,
+      trim: true,
+      default: null,
+    },
   },
   {
     timestamps: true,

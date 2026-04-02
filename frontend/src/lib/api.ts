@@ -623,6 +623,7 @@ export interface User {
   divisionMapping?: any[];
   isActive: boolean;
   featureControl?: string[];
+  phone_number?: string | null;
   lastLogin?: string;
   createdAt: string;
   updatedAt: string;
@@ -845,6 +846,27 @@ export const api = {
     return apiRequest<LoginResponse>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ identifier, email: identifier, password }),
+    });
+  },
+
+  forgotPassword: async (identifier: string) => {
+    return apiRequest<{ message: string }>('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ identifier }),
+    });
+  },
+
+  verifyIdentifier: async (identifier: string) => {
+    return apiRequest<{ 
+      name: string; 
+      department: string; 
+      email?: string; 
+      phone?: string;
+      hasEmail: boolean;
+      hasPhone: boolean;
+    }>('/auth/verify-identifier', {
+      method: 'POST',
+      body: JSON.stringify({ identifier }),
     });
   },
 
