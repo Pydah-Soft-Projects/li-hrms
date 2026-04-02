@@ -15,6 +15,30 @@ const ADMS_OK = "OK";
 const ADMS_ERROR = "ERROR";
 
 /**
+ * Middleware to ensure all ADMS protocol responses use text/plain
+ * Newer eSSL/ZK devices strictly require Content-Type: text/plain
+ */
+router.use((req, res, next) => {
+    // Blanket apply text/plain to ALL ADMS endpoints (solves the missing .aspx check)
+    // Removed Cache-Control because vintage devices (iClock) have tiny buffer sizes 
+    // for HTTP Headers and large headers cause them to instantly abort the connection.
+    res.type('text/plain');
+    next();
+});
+
+/**
+ * GET /iclock/registry
+ * Modern Push Protocol 3.0+ Handshake (used by AiFace series)
+ */
+router.get(['/registry', '/registry.aspx'], async (req, res) => {
+    const { SN, RegistryCode } = req.query;
+    logger.info(`ADMS Registry Handshake: SN=${SN || 'unknown'} from ${req.ip}`);
+    
+    // The device expects its registry code echoed back, or simply OK
+    res.send(`RegistryCode=${RegistryCode || '1'}`);
+});
+
+/**
  * OPTIONS /iclock/getrequest.aspx
  * Part of some ADMS handshake flows
  */
@@ -26,10 +50,10 @@ router.options('*', (req, res) => {
 });
 
 /**
- * GET /iclock/getrequest.aspx
+ * GET /iclock/getrequest
  * Heartbeat, Options exchange, and Command polling
  */
-router.get('/getrequest.aspx', async (req, res) => {
+router.get(['/getrequest', '/getrequest.aspx'], async (req, res) => {
     const { SN, INFO, option } = req.query;
     const clientIp = getClientIp(req);
 
@@ -96,10 +120,10 @@ router.get('/getrequest.aspx', async (req, res) => {
 });
 
 /**
- * GET /iclock/cdata.aspx
- * ICLOCK990 uses this for handshake/options (instead of getrequest.aspx)
+ * GET /iclock/cdata
+ * ICLOCK990 uses this for handshake/options
  */
-router.get('/cdata.aspx', async (req, res) => {
+router.get(['/cdata', '/cdata.aspx'], async (req, res) => {
     const { SN, options, language, pushver } = req.query;
     const clientIp = getClientIp(req);
 
@@ -153,7 +177,7 @@ router.get('/cdata.aspx', async (req, res) => {
                 'Realtime=1',
                 'Encrypt=0',
                 'ServerVer=3.4.1',
-                'PushProtVer=2.4.1',
+                `PushProtVer=${pushver || '3.4.1'}`,
                 'ErrorDelay=3',
                 'Delay=10',
                 'TransTimes=00:00;23:59',
@@ -173,10 +197,10 @@ router.get('/cdata.aspx', async (req, res) => {
 });
 
 /**
- * POST /iclock/devicecmd.aspx
+ * POST /iclock/devicecmd
  * Device sends command execution results here
  */
-router.post('/devicecmd.aspx', async (req, res) => {
+router.post(['/devicecmd', '/devicecmd.aspx', '/devicecmd/return'], async (req, res) => {
     const { SN } = req.query;
     const clientIp = getClientIp(req);
     const body = req.body;
@@ -231,9 +255,9 @@ router.post('/devicecmd.aspx', async (req, res) => {
 });
 
 /**
- * POST /iclock/getrequest.aspx (Alternative upload)
+ * POST /iclock/getrequest (Alternative upload)
  */
-router.post('/getrequest.aspx', async (req, res) => {
+router.post(['/getrequest', '/getrequest.aspx'], async (req, res) => {
     const { SN } = req.query;
     const clientIp = getClientIp(req);
     logger.info(`ADMS Extra Info/Keep-alive: SN=${SN} from ${clientIp}`);
@@ -318,10 +342,10 @@ async function ensureDeviceRegistered(SN, clientIp) {
 }
 
 /**
- * POST /iclock/cdata.aspx
+ * POST /iclock/cdata
  * Primary data upload endpoint
  */
-router.post('/cdata.aspx', async (req, res) => {
+router.post(['/cdata', '/cdata.aspx', '/push'], async (req, res) => {
     const { SN, table } = req.query;
     const clientIp = getClientIp(req);
 
