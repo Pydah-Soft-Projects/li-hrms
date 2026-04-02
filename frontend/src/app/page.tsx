@@ -59,22 +59,12 @@ export default function Home() {
   }
 
   return (
-    <div className="relative flex flex-col min-h-screen overflow-hidden bg-slate-50 text-slate-900">
-      {/* Hero Background Image with Overlay */}
-      <div className="fixed inset-0 z-0 w-full h-full pointer-events-none">
-        <img 
-          src="/images/hero_bg.png" 
-          alt="HRMS Background" 
-          className="w-full h-full object-cover opacity-80"
-        />
-        <div className="absolute inset-0 hero-bg-overlay" />
-      </div>
-
+    <div className="relative flex flex-col min-h-screen overflow-x-hidden bg-slate-50 text-slate-900">
       {/* Header */}
-      <header className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-md border-b border-black/5 h-20">
-        <div className="max-w-7xl mx-auto h-full px-6 flex items-center justify-between">
+      <header className="fixed top-0 left-0 right-0 z-50 bg-white/20 backdrop-blur-xl border-b border-white/20 h-20 shadow-sm">
+        <div className="max-w-7xl mx-auto h-full px-6 flex items-center justify-between w-full">
           <div className="flex items-center gap-2">
-            <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg">
+            <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg border border-white/20">
               <ShieldCheck className="text-white w-6 h-6" />
             </div>
             <span className="text-xl font-display font-bold tracking-tight text-slate-900">
@@ -84,18 +74,30 @@ export default function Home() {
           
           <Link
             href="/login"
-            className="inline-flex items-center justify-center px-5 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-all shadow-md hover:shadow-lg active:scale-95"
+            className="group relative inline-flex items-center justify-center px-5 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-all shadow-md hover:shadow-lg active:scale-95 border border-white/10 overflow-hidden"
           >
-            Sign In
+            <div className="shimmer-btn-overlay" />
+            <span className="relative z-10">Sign In</span>
           </Link>
         </div>
       </header>
 
-      {/* Hero Section */}
-      <main className="relative z-10 min-h-screen flex items-center justify-center pt-20 pb-12">
-        <div className="max-w-7xl mx-auto px-6 w-full">
+      {/* Hero Section - 100vh Independent */}
+      <main 
+        className="relative z-10 h-[100dvh] flex items-center justify-center px-6 overflow-hidden"
+        style={{
+          backgroundImage: 'url("/images/hero_bg.png")',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat'
+        }}
+      >
+        {/* Transparent Overlay to ensure contrast */}
+        <div className="absolute inset-0 z-0 hero-bg-overlay opacity-80" />
+
+        <div className="relative z-10 max-w-7xl mx-auto w-full">
           <div className="flex flex-col items-center text-center max-w-4xl mx-auto animate-fade-in-up">
-            <h1 className="text-5xl md:text-7xl font-display font-bold tracking-tight text-slate-900 leading-[1.1] mb-8">
+            <h1 className="text-4xl sm:text-5xl md:text-7xl font-display font-bold tracking-tight text-slate-900 leading-[1.1] mb-6 md:mb-8">
               Revolutionize your <br />
               <div className="h-[1.2em] relative flex justify-center">
                 {/* Outgoing Line */}
@@ -117,19 +119,22 @@ export default function Home() {
               </div>
             </h1>
             
-            <p className="text-lg md:text-xl text-slate-600 font-light mb-12 max-w-2xl leading-relaxed">
+            <p className="text-base md:text-xl text-slate-600 font-light mb-10 md:mb-12 max-w-2xl leading-relaxed">
               Experience a seamless, professional HRMS platform designed to empower your employees and streamline your management processes.
             </p>
 
             <div className="flex flex-col sm:flex-row items-center gap-4">
               <Link
                 href="/login"
-                className="group relative inline-flex items-center justify-center px-8 py-4 text-lg font-semibold text-white bg-slate-900 rounded-xl overflow-hidden transition-all shadow-xl hover:shadow-2xl hover:-translate-y-0.5 active:scale-95"
+                className="group relative inline-flex items-center justify-center px-7 md:px-8 py-3.5 md:py-4 text-base md:text-lg font-semibold text-white bg-slate-900 rounded-xl overflow-hidden transition-all shadow-xl hover:shadow-2xl hover:-translate-y-0.5 active:scale-95 animate-aura-glow"
               >
-                Get Started Now
-                <ChevronRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                <div className="shimmer-btn-overlay delay-2s" />
+                <span className="relative z-10 flex items-center">
+                  Get Started Now
+                  <ChevronRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                </span>
               </Link>
-              <button className="px-8 py-4 text-lg font-semibold text-slate-600 hover:text-emerald-600 transition-colors">
+              <button className="px-8 py-4 text-base md:text-lg font-semibold text-slate-600 hover:text-emerald-600 transition-colors">
                 View Live Demo
               </button>
             </div>
@@ -137,7 +142,7 @@ export default function Home() {
         </div>
       </main>
 
-      {/* Footer */}
+      {/* Footer - Revealed by Scroll */}
       <footer className="relative z-10 bg-white border-t border-slate-100 py-12">
         <div className="max-w-7xl mx-auto px-6 h-full">
           <div className="flex flex-col md:flex-row justify-between items-center gap-8">
@@ -151,7 +156,7 @@ export default function Home() {
               </p>
             </div>
             
-            <div className="flex gap-8 text-sm text-slate-500">
+            <div className="flex gap-8 text-sm text-slate-500 font-medium">
               <a href="#" className="hover:text-emerald-600 transition-colors">Solutions</a>
               <a href="#" className="hover:text-emerald-600 transition-colors">Privacy</a>
               <a href="#" className="hover:text-emerald-600 transition-colors">Contact</a>
@@ -162,7 +167,7 @@ export default function Home() {
                 © {new Date().getFullYear()} HRMS. All rights reserved.
               </p>
               <p className="text-[10px] text-slate-300 uppercase tracking-widest">
-                Designed & Developed by <span className="text-slate-400 font-medium">PydahSoft</span>
+                Developed by <span className="text-slate-400 font-medium">PydahSoft</span>
               </p>
             </div>
           </div>
