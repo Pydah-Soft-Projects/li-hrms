@@ -186,10 +186,84 @@ input[type="number"],
   width: 40%;
   height: 100%;
   background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.2), transparent);
-  animation: shimmer-sweep 4s infinite;
+  animation: shimmer-sweep 3s infinite;
   pointer-events: none;
 }
 
 .delay-2s {
   animation-delay: 2s !important;
+}
+
+/* Cinematic Absolute Shatter Animations */
+@keyframes anticipation-windup {
+  0% { transform: scale(1) rotate(0deg); filter: brightness(1); }
+  40% { transform: scale(1.05) rotate(1deg); filter: brightness(1.2); }
+  100% { transform: scale(0.95) rotate(-1deg); filter: brightness(1.5); }
+}
+
+@keyframes punch-impact {
+  0% { transform: scale(0.95); opacity: 1; }
+  100% { transform: scale(1.4); opacity: 0; }
+}
+
+@keyframes cinematic-shatter {
+  0% { transform: translate3d(0, 0, 0) scale(1) rotate(0deg); opacity: 1; filter: blur(0px); }
+  10% { transform: translate3d(0, 0, 0) scale(1.1); filter: blur(0px); }
+  100% { 
+    transform: 
+      translate3d(var(--tx), var(--ty), var(--tz)) 
+      rotateX(var(--rx)) 
+      rotateY(var(--ry)) 
+      rotateZ(var(--rz)) 
+      scale(var(--ts)); 
+    opacity: 0; 
+    filter: blur(var(--tb));
+  }
+}
+
+@keyframes ethereal-mist {
+  0% { transform: scale(0.5); opacity: 0; filter: blur(5px); }
+  20% { transform: scale(1); opacity: 0.4; filter: blur(10px); }
+  100% { transform: scale(1.8); opacity: 0; filter: blur(25px); }
+}
+
+@keyframes impact-ripple {
+  0% { transform: translate(-50%, -50%) scale(0); opacity: 0.8; border-width: 4px; }
+  100% { transform: translate(-50%, -50%) scale(2.5); opacity: 0; border-width: 0px; }
+}
+
+.animate-windup {
+  animation: anticipation-windup 0.2s ease-in-out forwards;
+}
+
+.animate-mist {
+  animation: ethereal-mist 2s ease-out forwards;
+}
+
+.animate-punch {
+  animation: punch-impact 0.6s cubic-bezier(0.19, 1, 0.22, 1) forwards;
+}
+
+.shatter-fragment {
+  position: absolute;
+  background: var(--color-accent);
+  background-image: linear-gradient(135deg, rgba(255,255,255,0.4) 0%, transparent 50%, rgba(0,0,0,0.2) 100%);
+  animation: cinematic-shatter 1s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  pointer-events: none;
+  z-index: 60;
+  box-shadow: 2px 2px 15px rgba(0,0,0,0.2);
+}
+
+.impact-ripple {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 100px;
+  height: 100px;
+  border: 4px solid white;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.4);
+  pointer-events: none;
+  z-index: 55;
+  animation: impact-ripple 0.4s ease-out forwards;
 }
