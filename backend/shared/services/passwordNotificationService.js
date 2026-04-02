@@ -176,14 +176,16 @@ async function _sendSms(employee, password, results, isReset = false) {
     return;
   }
   try {
-    console.log(`[NotificationService] Sending SMS to ${employee.phone_number} for employee ${employee.emp_no}...`);
     const smsMessage = isReset
-      ? `Hello ${employee.employee_name} your password has been created. Username: ${employee.emp_no} Password: ${password}. Login: li-hrms.vercel.app/login - Pydah College`
+      ? `Hello ${employee.employee_name} your password has been updated. Username: ${employee.emp_no} New Password: ${password}. Login: li-hrms.vercel.app/login - Pydah College`
       : `Hello ${employee.employee_name} your account has been created. Username: ${employee.emp_no} Password: ${password}. Login: li-hrms.vercel.app/login - Pydah College`;
+
+    const templateId = isReset ? '1707176526611076697' : undefined;
 
     await sendSmsThroughBulkSmsApps({
       numbers: [employee.phone_number],
-      message: smsMessage
+      message: smsMessage,
+      templateId
     });
     console.log(`[NotificationService] SMS sent successfully to ${employee.phone_number}`);
     results.sms = true;
