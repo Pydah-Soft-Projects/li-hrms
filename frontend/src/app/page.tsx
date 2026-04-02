@@ -13,6 +13,8 @@ export default function Home() {
   const [checking, setChecking] = useState(true);
   const [currentLine, setCurrentLine] = useState(0);
   const [prevLine, setPrevLine] = useState(-1);
+  const [isShattering, setShattering] = useState(false);
+  const [isCharging, setIsCharging] = useState(false);
 
   const lines = [
     "Workforce Potential",
@@ -124,17 +126,72 @@ export default function Home() {
             </p>
 
             <div className="flex flex-col sm:flex-row items-center gap-4">
-              <Link
-                href="/login"
-                className="group relative inline-flex items-center justify-center px-7 md:px-8 py-3.5 md:py-4 text-base md:text-lg font-semibold text-white bg-slate-900 rounded-xl overflow-hidden transition-all shadow-xl hover:shadow-2xl hover:-translate-y-0.5 active:scale-95 animate-aura-glow"
+              <div className="relative group">
+                <button
+                  onClick={() => {
+                    setIsCharging(true);
+                    setTimeout(() => {
+                      setIsCharging(false);
+                      setShattering(true);
+                      setTimeout(() => router.push('/login'), 500);
+                    }, 200);
+                  }}
+                  disabled={isShattering || isCharging}
+                  className={`relative inline-flex items-center justify-center px-7 md:px-8 py-3.5 md:py-4 text-base md:text-lg font-semibold text-white bg-slate-900 rounded-xl transition-all shadow-xl hover:shadow-2xl hover:-translate-y-0.5 active:scale-95 ${isCharging ? 'animate-windup' : ''} ${isShattering ? 'animate-punch pointer-events-none' : 'animate-aura-glow'}`}
+                >
+                  {!isShattering && !isCharging && <div className="shimmer-btn-overlay delay-2s" />}
+                  
+                  {isShattering && (
+                    <>
+                      <div className="impact-ripple" />
+                      <div className="absolute inset-0 animate-mist bg-emerald-500/20 rounded-xl blur-xl" />
+                      {[...Array(28)].map((_, i) => {
+                        const polygons = [
+                          'polygon(50% 0%, 0% 100%, 100% 100%)',
+                          'polygon(25% 0%, 100% 0%, 75% 100%, 0% 100%)',
+                          'polygon(0% 15%, 15% 0%, 100% 85%, 85% 100%)',
+                          'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)',
+                          'polygon(10% 25%, 90% 10%, 80% 90%, 20% 80%)'
+                        ];
+                        const size = Math.random() * 30 + 15;
+                        return (
+                          <div 
+                            key={i} 
+                            className="shatter-fragment"
+                            style={{
+                              width: size + 'px',
+                              height: size + 'px',
+                              clipPath: polygons[i % polygons.length],
+                              '--tx': (Math.random() - 0.5) * 800 + 'px',
+                              '--ty': (Math.random() - 0.5) * 800 + 'px',
+                              '--tz': (Math.random() * 1200 - 400) + 'px',
+                              '--rx': (Math.random() * 1080) + 'deg',
+                              '--ry': (Math.random() * 1080) + 'deg',
+                              '--rz': (Math.random() * 1080) + 'deg',
+                              '--ts': (Math.random() * 2 + 0.5),
+                              '--tb': (Math.random() > 0.6 ? '12px' : '0px'),
+                              left: (Math.random() * 100) + '%',
+                              top: (Math.random() * 100) + '%',
+                              background: i % 3 === 0 ? '#10b981' : i % 3 === 1 ? '#0f172a' : '#334155',
+                              animationDelay: (Math.random() * 0.2) + 's'
+                            } as any}
+                          />
+                        );
+                      })}
+                    </>
+                  )}
+
+                  <span className={`relative z-10 flex items-center transition-opacity duration-200 ${isShattering ? 'opacity-0' : 'opacity-100'}`}>
+                    Get Started Now
+                    <ChevronRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                  </span>
+                </button>
+              </div>
+              <button 
+                onClick={() => window.open('#', '_blank')}
+                className="px-8 py-4 text-base md:text-lg font-semibold text-slate-600 hover:text-emerald-600 transition-colors"
+                disabled={isShattering}
               >
-                <div className="shimmer-btn-overlay delay-2s" />
-                <span className="relative z-10 flex items-center">
-                  Get Started Now
-                  <ChevronRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" />
-                </span>
-              </Link>
-              <button className="px-8 py-4 text-base md:text-lg font-semibold text-slate-600 hover:text-emerald-600 transition-colors">
                 View Live Demo
               </button>
             </div>
