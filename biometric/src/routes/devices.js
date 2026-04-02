@@ -71,6 +71,58 @@ router.get('/:deviceId', async (req, res) => {
 });
 
 /**
+ * POST /api/devices/test-pull
+ * Manually test ZK TCP direct connection using IP and Port
+ */
+router.post('/test-pull', async (req, res) => {
+    try {
+        const { ip, port } = req.body;
+        if (!ip) {
+            return res.status(400).json({ success: false, error: 'IP address is required' });
+        }
+
+        const zkPort = port || 4370;
+        logger.info(`Testing direct TCP connection to ${ip}:${zkPort}`);
+
+        const ZKLib = require('node-zklib');
+        const zkInstance = new ZKLib(ip, zkPort, 5000, 4000); // 5 second timeout
+
+        try {
+            await zkInstance.createSocket();
+            
+            // Try fetching basic info to confirm readability
+            const time = await zkInstance.getTime().catch(() => 'Unknown Time');
+            
+            // Optional: try getting attendances to show pull works
+            // Note: If device is completely empty, it might return empty array.
+            const attendances = await zkInstance.getAttendances().catch(() => ({ data: [] }));
+
+            await zkInstance.disconnect();
+
+            res.json({
+                success: true,
+                message: `Successfully connected and pulled data from ${ip}:${zkPort}`,
+                data: {
+                    deviceTime: time,
+                    logCountAvailable: attendances?.data?.length || 0
+                }
+            });
+        } catch (innerError) {
+            // Ensure disconnect on fail
+            try { await zkInstance.disconnect(); } catch (e) {}
+            throw innerError;
+        }
+    } catch (error) {
+        logger.error(`TCP Connection Test Failed for ${req.body.ip}:`, error.message);
+        res.status(500).json({
+            success: false,
+            message: `Connection timed out or refused at ${req.body.ip}`,
+            error: error.message
+        });
+    }
+});
+
+/**
  * POST /api/devices
  * Add a new device
  */
