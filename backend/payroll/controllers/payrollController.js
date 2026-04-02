@@ -636,7 +636,7 @@ exports.calculatePayroll = async (req, res) => {
           month,
           req.user._id,
           strategy,
-          null
+          { arrearsSettlements: req.body.arrears || [], deductionSettlements: req.body.deductions || [] }
         );
         const bid = sec?.batchId;
         if (bid) await SecondSalaryBatchService.recalculateBatchTotals(bid.toString());

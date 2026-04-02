@@ -1071,7 +1071,7 @@ function buildAttendancePatchForSecondSalary(recordAttendance, payRegisterSummar
   };
 }
 
-async function persistSecondSalaryFromOutputColumns(record, employee, userId, month, payRegisterSummary) {
+async function persistSecondSalaryFromOutputColumns(record, employee, userId, month, payRegisterSummary, options = {}) {
   const [yearStr, monthStr] = month.split('-');
   const year = parseInt(yearStr, 10);
   const monthNum = parseInt(monthStr, 10);
@@ -1109,6 +1109,16 @@ async function persistSecondSalaryFromOutputColumns(record, employee, userId, mo
   const deptId = employee.department_id?._id ?? employee.department_id;
   ssRecord.set('division_id', divId);
   ssRecord.set('totalPayableShifts', record.attendance?.payableShifts ?? payRegisterSummary?.totals?.totalPayableShifts ?? 0);
+  ssRecord.set('arrearsAmount', Number(record.arrears?.arrearsAmount) || 0);
+  ssRecord.set('manualDeductionsAmount', Number(record.manualDeductionsAmount) || 0);
+  if (options.arrearsSettlements && options.arrearsSettlements.length > 0) {
+    ssRecord.set('arrearsSettlements', options.arrearsSettlements);
+    ssRecord.markModified('arrearsSettlements');
+  }
+  if (record.deductionSettlements && record.deductionSettlements.length > 0) {
+    ssRecord.set('deductionSettlements', record.deductionSettlements);
+    ssRecord.markModified('deductionSettlements');
+  }
   ssRecord.set('attendance', buildAttendancePatchForSecondSalary(record.attendance, payRegisterSummary, earnedFallback));
   ssRecord.set('earnings', {
     ...(record.earnings || {}),
@@ -1289,7 +1299,8 @@ async function calculatePayrollFromOutputColumns(employeeId, month, userId, opti
       employee,
       userId,
       month,
-      payRegisterSummary
+      payRegisterSummary,
+      options
     );
     try {
       const { expandedColumns, headers, rowData } = buildPaysheetSnapshotData(record, outputColumnsNormalized, config);

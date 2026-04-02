@@ -12,6 +12,10 @@ const secondSalaryLoanAdvanceService = require('./secondSalaryLoanAdvanceService
 const SecondSalaryBatchService = require('./secondSalaryBatchService');
 const allowanceDeductionResolverService = require('./allowanceDeductionResolverService');
 const statutoryDeductionService = require('./statutoryDeductionService');
+const ArrearsPayrollIntegrationService = require('../../arrears/services/arrearsPayrollIntegrationService');
+const DeductionPayrollIntegrationService = require('../../manual-deductions/services/deductionPayrollIntegrationService');
+const ArrearsIntegrationService = require('./arrearsIntegrationService');
+const DeductionIntegrationService = require('./deductionIntegrationService');
 
 /**
  * Normalize overrides (same logic as regular payroll)
@@ -44,7 +48,7 @@ const normalizeOverrides = (list, fallbackCategory) => {
 /**
  * Calculate second salary for an employee
  */
-async function calculateSecondSalary(employeeId, month, userId, sharedContext = null) {
+async function calculateSecondSalary(employeeId, month, userId, options = null) {
     try {
         const employee = await Employee.findById(employeeId).populate('department_id designation_id division_id');
         if (!employee) throw new Error('Employee not found');
@@ -108,8 +112,8 @@ async function calculateSecondSalary(employeeId, month, userId, sharedContext = 
 
         // Optimization: Use shared department object if available
         let department;
-        if (sharedContext && sharedContext.department && sharedContext.department._id.toString() === departmentId.toString()) {
-            department = sharedContext.department;
+        if (options && options.department && options.department._id.toString() === departmentId.toString()) {
+            department = options.department;
         } else {
             department = await Department.findById(departmentId);
         }
@@ -248,8 +252,8 @@ async function calculateSecondSalary(employeeId, month, userId, sharedContext = 
         // Merge with employee overrides
         // Optimization: Use shared includeMissing flag if available
         let includeMissing;
-        if (sharedContext && sharedContext.includeMissing !== undefined) {
-            includeMissing = sharedContext.includeMissing;
+        if (options && options.includeMissing !== undefined) {
+            includeMissing = options.includeMissing;
         } else {
             includeMissing = await allowanceDeductionResolverService.getIncludeMissingFlag(departmentId, divisionId);
         }
@@ -363,6 +367,60 @@ async function calculateSecondSalary(employeeId, month, userId, sharedContext = 
         const baseNet = Math.max(0, grossAmountSalary - totalDeductions);
         let netSalary = baseNet + incentiveAmount; // Add incentive (extra days pay)
 
+        // 7a. Arrears Integration
+        let arrearsSettlements = options?.arrearsSettlements || [];
+        if (arrearsSettlements.length === 0) {
+            try {
+                const pendingArrears = await ArrearsPayrollIntegrationService.getPendingArrearsForPayroll(employeeId);
+                if (pendingArrears && pendingArrears.length > 0) {
+                    arrearsSettlements = pendingArrears.map(ar => ({
+                        arrearId: ar.id,
+                        amount: ar.remainingAmount || 0
+                    }));
+                }
+            } catch (err) {
+                console.error(`[SecondSalary] Arrears fetch failed for ${employeeId}:`, err.message);
+            }
+        }
+
+        let arrearsAmount = 0;
+        if (arrearsSettlements.length > 0) {
+            const addedArrears = await ArrearsIntegrationService.addArrearsToPayroll(
+                { earnings: { grossSalary: grossAmountSalary + incentiveAmount }, netSalary },
+                arrearsSettlements,
+                employeeId
+            );
+            arrearsAmount = addedArrears.addedArrearsAmount;
+            netSalary += arrearsAmount;
+        }
+
+        // 7b. Manual Deductions Integration
+        let deductionSettlements = options?.deductionSettlements || [];
+        if (deductionSettlements.length === 0) {
+            try {
+                const pendingDeductions = await DeductionPayrollIntegrationService.getPendingDeductionsForPayroll(employeeId);
+                if (pendingDeductions && pendingDeductions.length > 0) {
+                    deductionSettlements = pendingDeductions.map(d => ({
+                        deductionId: d.id,
+                        amount: d.remainingAmount || 0
+                    }));
+                }
+            } catch (err) {
+                console.error(`[SecondSalary] Deductions fetch failed for ${employeeId}:`, err.message);
+            }
+        }
+
+        let manualDeductionsAmount = 0;
+        if (deductionSettlements.length > 0) {
+            const addedDeductions = await DeductionIntegrationService.addDeductionsToPayroll(
+                { deductions: { otherDeductions: mergedDeductions }, netSalary },
+                deductionSettlements,
+                employeeId
+            );
+            manualDeductionsAmount = addedDeductions.totalDeductionAmount;
+            netSalary -= manualDeductionsAmount;
+        }
+
         // Round off
         const exactNet = netSalary;
         const roundedNet = Math.ceil(exactNet);
@@ -402,6 +460,12 @@ async function calculateSecondSalary(employeeId, month, userId, sharedContext = 
         record.set('roundOff', roundOff);
         record.set('status', 'calculated');
         record.set('division_id', divisionId);
+
+        // Arrears & Deductions
+        record.set('arrearsAmount', arrearsAmount);
+        record.set('arrearsSettlements', arrearsSettlements);
+        record.set('manualDeductionsAmount', manualDeductionsAmount);
+        record.set('deductionSettlements', deductionSettlements);
 
         // Attendance Breakdown
         record.set('attendance', {
@@ -494,7 +558,7 @@ async function calculateSecondSalary(employeeId, month, userId, sharedContext = 
  * 2nd salary for pay register / bulk: use dynamic output-column engine when strategy=dynamic and config has columns;
  * otherwise legacy second-salary pipeline.
  */
-async function calculateSecondSalaryForPayRegister(employeeId, month, userId, strategy, sharedContext = null) {
+async function calculateSecondSalaryForPayRegister(employeeId, month, userId, strategy, options = null) {
     const useDynamic = String(strategy || '').toLowerCase() === 'dynamic';
     if (useDynamic) {
         const PayrollConfiguration = require('../model/PayrollConfiguration');
@@ -504,29 +568,36 @@ async function calculateSecondSalaryForPayRegister(employeeId, month, userId, st
         const config = await PayrollConfiguration.get();
         const outputColumns = Array.isArray(config?.outputColumns) ? config.outputColumns : [];
         if (outputColumns.length > 0) {
-            let arrearsSettlements = [];
-            let deductionSettlements = [];
-            try {
-                const pendingArrears = await ArrearsPayrollIntegrationService.getPendingArrearsForPayroll(employeeId);
-                if (pendingArrears && pendingArrears.length > 0) {
-                    arrearsSettlements = pendingArrears.map((ar) => ({
-                        arrearId: ar.id,
-                        amount: ar.remainingAmount || 0,
-                    }));
+            let arrearsSettlements = options?.arrearsSettlements || [];
+            let deductionSettlements = options?.deductionSettlements || [];
+
+            // If not provided in options, fetch all pending
+            if (arrearsSettlements.length === 0) {
+                try {
+                    const pendingArrears = await ArrearsPayrollIntegrationService.getPendingArrearsForPayroll(employeeId);
+                    if (pendingArrears && pendingArrears.length > 0) {
+                        arrearsSettlements = pendingArrears.map((ar) => ({
+                            arrearId: ar.id,
+                            amount: ar.remainingAmount || 0,
+                        }));
+                    }
+                } catch (err) {
+                    console.error(`[SecondSalary] Failed fetching pending arrears for ${employeeId}:`, err.message);
                 }
-            } catch (err) {
-                console.error(`[SecondSalary] Failed fetching pending arrears for ${employeeId}:`, err.message);
             }
-            try {
-                const pendingDeductions = await DeductionPayrollIntegrationService.getPendingDeductionsForPayroll(employeeId);
-                if (pendingDeductions && pendingDeductions.length > 0) {
-                    deductionSettlements = pendingDeductions.map((d) => ({
-                        deductionId: d.id,
-                        amount: d.remainingAmount || 0,
-                    }));
+
+            if (deductionSettlements.length === 0) {
+                try {
+                    const pendingDeductions = await DeductionPayrollIntegrationService.getPendingDeductionsForPayroll(employeeId);
+                    if (pendingDeductions && pendingDeductions.length > 0) {
+                        deductionSettlements = pendingDeductions.map((d) => ({
+                            deductionId: d.id,
+                            amount: d.remainingAmount || 0,
+                        }));
+                    }
+                } catch (err) {
+                    console.error(`[SecondSalary] Failed fetching pending deductions for ${employeeId}:`, err.message);
                 }
-            } catch (err) {
-                console.error(`[SecondSalary] Failed fetching pending deductions for ${employeeId}:`, err.message);
             }
 
             return payrollCalculationFromOutputColumnsService.calculatePayrollFromOutputColumns(
@@ -542,7 +613,7 @@ async function calculateSecondSalaryForPayRegister(employeeId, month, userId, st
             );
         }
     }
-    return calculateSecondSalary(employeeId, month, userId, sharedContext);
+    return calculateSecondSalary(employeeId, month, userId, options);
 }
 
 module.exports = {

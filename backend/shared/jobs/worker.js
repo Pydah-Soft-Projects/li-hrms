@@ -71,7 +71,9 @@ const startWorkers = () => {
                 // Optimization: Pre-fetch department and settings for context
                 const sharedContext = {
                     department: (departmentId && departmentId !== 'all') ? await Department.findById(departmentId) : null,
-                    includeMissing: (departmentId && departmentId !== 'all') ? await allowanceDeductionResolverService.getIncludeMissingFlag(departmentId, divisionId) : undefined
+                    includeMissing: (departmentId && departmentId !== 'all') ? await allowanceDeductionResolverService.getIncludeMissingFlag(departmentId, divisionId) : undefined,
+                    arrearsSettlements: [],
+                    deductionSettlements: []
                 };
 
                 const batchIds = new Set();
@@ -143,7 +145,9 @@ const startWorkers = () => {
                 // Optimization: Pre-fetch department and settings for context
                 const sharedContext = {
                     department: (departmentId && departmentId !== 'all') ? await Department.findById(departmentId) : null,
-                    includeMissing: (departmentId && departmentId !== 'all') ? await allowanceDeductionResolverService.getIncludeMissingFlag(departmentId, divisionId) : undefined
+                    includeMissing: (departmentId && departmentId !== 'all') ? await allowanceDeductionResolverService.getIncludeMissingFlag(departmentId, divisionId) : undefined,
+                    arrearsSettlements: [],
+                    deductionSettlements: []
                 };
 
                 const batchIds = new Set();
@@ -174,7 +178,7 @@ const startWorkers = () => {
                                 employee._id.toString(),
                                 month,
                                 userId,
-                                { source: 'payregister', arrearsSettlements: [] }
+                                { source: 'payregister', arrearsSettlements: [], deductionSettlements: [] }
                             );
                         } else {
                             result = await PayrollCalculationService.calculatePayrollNew(

@@ -310,19 +310,23 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     }
 
     // Sandwich absent rule:
-    // if one or more consecutive WO/HOL days are between two ABSENT working days,
+    // if one or more consecutive WO/HOL days are between two ABSENT or LEAVE working days,
     // convert those WO/HOL days to working days (so they are not counted as WO/HOL).
+    // If ANY of the boundary days is a LEAVE, the sandwiched days become UNPAID LEAVE (LOP).
     const isOutsideEmploymentBound = (dStr) => {
       if (dojStrBound && dStr < dojStrBound) return true;
       if (leftDateStrBound && dStr > leftDateStrBound) return true;
       return false;
     };
-    const isStrictAbsentWorkingDay = (dStr) => {
-      if (!dStr || dStr > todayIstStr || isOutsideEmploymentBound(dStr)) return false;
+
+    const getBoundaryStatus = (dStr) => {
+      if (!dStr || dStr > todayIstStr || isOutsideEmploymentBound(dStr)) return 'NONE';
       const d = dailyStatsMap.get(dStr);
-      if (!d) return false;
-      if (!d.attendance) return false;
-      return isAbsentStatus(d.attendance.status);
+      if (!d) return 'NONE';
+      // Prioritize leave over absent if both somehow exist (e.g. half-day leave + half-day absent)
+      if (d.leaves && d.leaves.length > 0) return 'LEAVE';
+      if (d.attendance && isAbsentStatus(d.attendance.status)) return 'ABSENT';
+      return 'NONE';
     };
 
     let idx = 0;
@@ -348,11 +352,20 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
 
       const prevDate = idx > 0 ? allDates[idx - 1] : null;
       const nextDate = endIdx + 1 < allDates.length ? allDates[endIdx + 1] : null;
-      if (isStrictAbsentWorkingDay(prevDate) && isStrictAbsentWorkingDay(nextDate)) {
+      
+      const prevStatus = getBoundaryStatus(prevDate);
+      const nextStatus = getBoundaryStatus(nextDate);
+
+      const isValidSandwichBoundary = (status) => status === 'ABSENT' || status === 'LEAVE';
+
+      if (isValidSandwichBoundary(prevStatus) && isValidSandwichBoundary(nextStatus)) {
+        const hasLeaveBoundary = (prevStatus === 'LEAVE' || nextStatus === 'LEAVE');
+
         for (let k = idx; k <= endIdx; k += 1) {
           const blockDate = allDates[k];
           const blockDay = dailyStatsMap.get(blockDate);
           if (!blockDay) continue;
+          
           if (blockDay.isWO) {
             blockDay.isWO = false;
             weekOffDates.delete(blockDate);
@@ -360,6 +373,16 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
           if (blockDay.isHOL) {
             blockDay.isHOL = false;
             holidayDates.delete(blockDate);
+          }
+
+          if (hasLeaveBoundary) {
+            // Convert the sandwiched day into an Unpaid Leave (LOP)
+            blockDay.leaves.push({
+              isHalfDay: false,
+              numberOfDays: 1,
+              leaveType: 'Sandwich LOP',
+              leaveNature: 'LOP',
+            });
           }
         }
       }
