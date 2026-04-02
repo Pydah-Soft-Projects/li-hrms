@@ -40,7 +40,7 @@ export default function Home() {
         // No token, show welcome page
         setChecking(false);
       }
-    }, 2000);
+    }, 1000);
 
     // Headline rotation interval
     const timer = setInterval(() => {
