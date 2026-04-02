@@ -3,7 +3,7 @@
 import { Suspense, useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, ShieldCheck, ArrowLeft, Lock, Mail, User } from "lucide-react";
 import { api } from "@/lib/api";
 import { auth } from "@/lib/auth";
 import { setWorkspaceDataFromLogin } from "@/contexts/WorkspaceContext";
@@ -118,10 +118,10 @@ function LoginContent() {
   // Show loading while checking authentication
   if (checking) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-white">
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
         <div className="flex flex-col items-center gap-4">
-          <div className="h-10 w-10 animate-spin rounded-full border-2 border-green-600 border-t-transparent"></div>
-          <p className="text-gray-600 font-light">Checking authentication...</p>
+          <div className="h-10 w-10 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent"></div>
+          <p className="text-slate-600 font-light">Authenticating...</p>
         </div>
       </div>
     );
@@ -130,170 +130,218 @@ function LoginContent() {
   // Show verifying state when logging in via SSO token
   if (ssoVerifying) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-white">
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
         <div className="flex flex-col items-center gap-4">
-          <div className="h-10 w-10 animate-spin rounded-full border-2 border-green-600 border-t-transparent"></div>
-          <p className="text-gray-600 font-light">Verifying SSO token...</p>
+          <div className="h-10 w-10 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent"></div>
+          <p className="text-slate-600 font-light">Verifying SSO token...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-white px-6 py-12">
-      {/* LiquidEther Background - Same as home page */}
-      {/* <div className="absolute inset-0 z-0 w-full h-full">
-        <LiquidEther
-          colors={['#22c55e', '#10b981', '#16a34a']}
-          mouseForce={20}
-          cursorSize={100}
-          isViscous={false}
-          viscous={30}
-          iterationsViscous={32}
-          iterationsPoisson={32}
-          resolution={0.5}
-          isBounce={false}
-          autoDemo={true}
-          autoSpeed={0.5}
-          autoIntensity={2.2}
-          takeoverDuration={0.25}
-          autoResumeDelay={3000}
-          autoRampDuration={0.6}
-        />
-      </div> */}
-
-      {/* Login Content */}
-      <div className="relative z-10 w-full max-w-md">
-        {/* Back to Home Link */}
-        <Link
-          href="/"
-          className="inline-flex items-center text-green-600 hover:text-green-700 mb-8 text-sm font-medium drop-shadow-md"
-        >
-          ← Back to Home
-        </Link>
-
-        {/* Login Card with Glass Effect */}
-        <div className="bg-white/80 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/20 p-8">
-          {/* Logo/Brand */}
-          <div className="text-center mb-8">
-            <div className="w-16 h-16 bg-gradient-to-br from-green-500 to-green-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
-              <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-              </svg>
+    <div className="flex min-h-screen bg-slate-50">
+      {/* Left Side: Branding (Hidden on mobile) */}
+      <div className="hidden lg:flex lg:w-1/2 relative bg-emerald-950 items-center justify-center overflow-hidden">
+        {/* Background Animation */}
+        <div className="absolute inset-0 z-0 opacity-40">
+          <LiquidEther
+            colors={['#10b981', '#34d399', '#059669']}
+            mouseForce={10}
+            cursorSize={60}
+            autoDemo={true}
+            autoSpeed={0.2}
+            autoIntensity={1.2}
+            resolution={0.4}
+          />
+        </div>
+        
+        <div className="relative z-10 p-12 max-w-xl text-white">
+          <div className="mb-8 p-3 w-fit bg-white/10 backdrop-blur-md rounded-2xl border border-white/10 shadow-2xl">
+            <ShieldCheck className="w-10 h-10 text-emerald-400" />
+          </div>
+          <h1 className="text-5xl font-display font-bold leading-tight mb-6">
+            Elevating your <span className="text-emerald-400">Workforce</span> Experience.
+          </h1>
+          <p className="text-xl text-emerald-100/70 font-light leading-relaxed">
+            Access your unified workspace to manage payroll, attendance, and employee relationships with enterprise-level security.
+          </p>
+          
+          <div className="mt-12 flex gap-4">
+            <div className="flex -space-x-3">
+              {[1, 2, 3, 4].map((i) => (
+                <div key={i} className="w-10 h-10 rounded-full border-2 border-emerald-900 bg-emerald-800 flex items-center justify-center text-[10px] font-bold">
+                  U{i}
+                </div>
+              ))}
             </div>
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">
-              Welcome Back
-            </h1>
-            <p className="text-gray-500">
-              Sign in to your HRMS account
+            <p className="text-sm text-emerald-200/50 flex items-center">
+              Trusted by 500+ departments
             </p>
           </div>
+        </div>
 
-          <form onSubmit={handleSubmit} className="space-y-5">
-            {/* Identifier Field */}
-            <div>
-              <label
-                htmlFor="identifier"
-                className="block text-sm font-medium text-gray-700 mb-1.5"
-              >
-                Email, Username or Employee No
-              </label>
-              <input
-                id="identifier"
-                type="text"
-                value={identifier}
-                onChange={(e) => setIdentifier(e.target.value)}
-                required
-                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all bg-white/50 backdrop-blur-sm focus:bg-white/80"
-                placeholder="Enter your credentials"
-              />
+        {/* Decorative elements */}
+        <div className="absolute bottom-10 right-10 opacity-10">
+          <svg className="w-40 h-40 text-white" viewBox="0 0 200 200" fill="currentColor">
+            <path d="M40 40h120v120H40z" opacity=".2"/>
+            <path d="M60 60h80v80H60z" opacity=".4"/>
+          </svg>
+        </div>
+      </div>
+
+      {/* Right Side: Login Form */}
+      <div className="w-full lg:w-1/2 flex flex-col items-center justify-center px-6 py-12 relative overflow-hidden">
+        {/* Mobile-only background decorative elements */}
+        <div className="absolute top-[-10%] right-[-10%] w-64 h-64 bg-emerald-500/5 rounded-full blur-3xl lg:hidden"></div>
+        <div className="absolute bottom-[-10%] left-[-10%] w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl lg:hidden"></div>
+
+        <div className="w-full max-w-md relative z-10">
+          {/* Back button */}
+          <Link
+            href="/"
+            className="group inline-flex items-center text-slate-500 hover:text-emerald-600 mb-8 text-sm font-medium transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4 mr-2 group-hover:-translate-x-1 transition-transform" />
+            Go Back
+          </Link>
+
+          {/* Small Screen Branding Header (Hidden on large screens) */}
+          <div className="lg:hidden flex flex-col items-center mb-10 animate-fade-in-up">
+            <div className="w-12 h-12 bg-emerald-600 rounded-xl flex items-center justify-center shadow-lg mb-4">
+              <ShieldCheck className="text-white w-7 h-7" />
+            </div>
+            <h1 className="text-xl font-display font-bold text-slate-900">
+              <span className="text-emerald-600">HRMS</span>
+            </h1>
+          </div>
+
+          <div className="animate-fade-in-up">
+            <div className="mb-10 text-center lg:text-left">
+              <h2 className="text-3xl font-display font-bold text-slate-900 mb-2">
+                Welcome back
+              </h2>
+              <p className="text-slate-500">
+                Please enter your credentials to continue
+              </p>
             </div>
 
-            {/* Password Field */}
-            <div>
-              <label
-                htmlFor="password"
-                className="block text-sm font-medium text-gray-700 mb-1.5"
-              >
-                Password
-              </label>
-              <div className="relative">
-                <input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all bg-white/50 backdrop-blur-sm focus:bg-white/80 pr-12"
-                  placeholder="Enter your password"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none p-1"
+            <form onSubmit={handleSubmit} className="space-y-6">
+              {/* Identifier Field */}
+              <div className="space-y-2">
+                <label
+                  htmlFor="identifier"
+                  className="text-sm font-medium text-slate-700 ml-1"
                 >
-                  {showPassword ? (
-                    <EyeOff className="w-5 h-5" />
-                  ) : (
-                    <Eye className="w-5 h-5" />
-                  )}
-                </button>
+                  Email or Employee ID
+                </label>
+                <div className="relative group">
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-500 transition-colors">
+                    <User className="w-5 h-5" />
+                  </div>
+                  <input
+                    id="identifier"
+                    type="text"
+                    value={identifier}
+                    onChange={(e) => setIdentifier(e.target.value)}
+                    required
+                    className="w-full pl-12 pr-4 py-3.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all font-sans text-slate-900 placeholder:text-slate-400 shadow-sm"
+                    placeholder="john.doe@company.com"
+                  />
+                </div>
               </div>
-              <div className="flex justify-end mt-1.5">
-                <Link
-                  href="/forgot-password"
-                  className="text-xs text-green-600 hover:text-green-700 font-medium transition-colors"
-                >
-                  Forgot Password?
-                </Link>
-              </div>
-            </div>
 
-            {/* Error Message */}
-            {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm flex items-center gap-2">
-                <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                {error}
+              {/* Password Field */}
+              <div className="space-y-2">
+                <div className="flex justify-between items-center px-1">
+                  <label
+                    htmlFor="password"
+                    className="text-sm font-medium text-slate-700"
+                  >
+                    Password
+                  </label>
+                  <Link
+                    href="/forgot-password"
+                    className="text-xs text-emerald-600 hover:text-emerald-700 font-semibold transition-colors"
+                  >
+                    Forgot password?
+                  </Link>
+                </div>
+                <div className="relative group">
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-500 transition-colors">
+                    <Lock className="w-5 h-5" />
+                  </div>
+                  <input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    className="w-full pl-12 pr-12 py-3.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all font-sans text-slate-900 placeholder:text-slate-400 shadow-sm"
+                    placeholder="••••••••"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors focus:outline-none p-1"
+                  >
+                    {showPassword ? (
+                      <EyeOff className="w-5 h-5" />
+                    ) : (
+                      <Eye className="w-5 h-5" />
+                    )}
+                  </button>
+                </div>
               </div>
-            )}
 
-            {/* Submit Button */}
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-3.5 px-4 bg-gradient-to-r from-green-600 to-green-600 text-white font-semibold rounded-xl hover:from-green-700 hover:to-green-700 transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              {loading ? (
-                <>
-                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  Signing in...
-                </>
-              ) : (
-                "Sign In"
+              {/* Error Message */}
+              {error && (
+                <div className="bg-red-50 border border-red-100 text-red-600 px-4 py-3 rounded-xl text-sm flex items-center gap-3 animate-shake">
+                  <div className="w-1.5 h-1.5 rounded-full bg-red-600"></div>
+                  {error}
+                </div>
               )}
-            </button>
-          </form>
 
-          {/* Demo Credentials (optional - for development) */}
-          <div className="mt-6 pt-6 border-t border-gray-100">
-            <p className="text-xs text-center text-gray-400">
-              HRMS - Human Resource Management System
-            </p>
+              {/* Submit Button */}
+              <button
+                type="submit"
+                disabled={loading}
+                className="group relative w-full py-4 bg-emerald-600 text-white font-bold rounded-xl hover:bg-emerald-700 transition-all shadow-lg hover:shadow-emerald-500/20 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden"
+              >
+                <div className="relative z-10 flex items-center justify-center gap-2">
+                  {loading ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Authenticating...
+                    </>
+                  ) : (
+                    "Sign In to Dashboard"
+                  )}
+                </div>
+                {/* Shine effect on hover */}
+                <div className="absolute top-0 -inset-full h-full w-1/2 z-5 block transform -skew-x-12 bg-gradient-to-r from-transparent to-white/10 opacity-40 group-hover:animate-shine" />
+              </button>
+            </form>
+
+            <div className="mt-12 text-center">
+              <p className="text-xs text-slate-400 uppercase tracking-widest font-semibold">
+                Enterprise HRMS Platform
+              </p>
+            </div>
           </div>
         </div>
       </div>
     </div>
   );
 }
+
 export default function LoginPage() {
   return (
     <Suspense fallback={
-      <div className="flex min-h-screen items-center justify-center bg-white">
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
         <div className="flex flex-col items-center gap-4">
-          <div className="h-10 w-10 animate-spin rounded-full border-2 border-green-600 border-t-transparent"></div>
-          <p className="text-gray-600 font-light">Loading...</p>
+          <div className="h-10 w-10 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent"></div>
+          <p className="text-slate-600 font-light">Loading...</p>
         </div>
       </div>
     }>
@@ -301,3 +349,4 @@ export default function LoginPage() {
     </Suspense>
   );
 }
+
