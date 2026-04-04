@@ -5,6 +5,20 @@ const Settings = require('../../settings/model/Settings');
 const crypto = require('crypto');
 
 /**
+ * Host + path for login line in SMS (no https://) — DLT 4th variable.
+ * Set PORTAL_LOGIN_SMS_URL (e.g. li-hrms.vercel.app/login) or FRONTEND_URL (https://host → host/login).
+ */
+function getSmsPortalLoginUrl() {
+  const explicit = process.env.PORTAL_LOGIN_SMS_URL?.trim();
+  if (explicit) {
+    return explicit.replace(/^https?:\/\//i, '').replace(/\/$/, '');
+  }
+  const front = (process.env.FRONTEND_URL || 'https://li-hrms.vercel.app').replace(/\/$/, '');
+  const host = front.replace(/^https?:\/\//i, '');
+  return `${host}/login`;
+}
+
+/**
  * Generate password based on requirements
  * @param {Object} employee - Employee object
  * @param {string} mode - 'random' or 'phone_empno'
@@ -176,10 +190,11 @@ async function _sendSms(employee, password, results, isReset = false) {
     return;
   }
   try {
+    const loginUrl = getSmsPortalLoginUrl();
     // Reset SMS must match DLT template 1707176526611076697: "Login: {#var#}- Pydah College" (no space before hyphen after URL).
     const smsMessage = isReset
-      ? `Hello ${employee.employee_name} your password has been updated. Username: ${employee.emp_no} New Password: ${password}. Login: li-hrms.vercel.app/login- Pydah College`
-      : `Hello ${employee.employee_name} your account has been created. Username: ${employee.emp_no} Password: ${password}. Login: li-hrms.vercel.app/login - Pydah College`;
+      ? `Hello ${employee.employee_name} your password has been updated. Username: ${employee.emp_no} New Password: ${password} Login: ${loginUrl}- Pydah College`
+      : `Hello ${employee.employee_name} your account has been created. Username: ${employee.emp_no} Password: ${password} Login: ${loginUrl} - Pydah College`;
 
     const templateId = isReset ? '1707176526611076697' : undefined;
 
