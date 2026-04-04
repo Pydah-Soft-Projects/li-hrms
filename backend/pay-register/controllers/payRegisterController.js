@@ -1,7 +1,11 @@
 const PayRegisterSummary = require('../model/PayRegisterSummary');
 const Employee = require('../../employees/model/Employee');
 const PayrollBatch = require('../../payroll/model/PayrollBatch');
-const { populatePayRegisterFromSources, getSummaryData } = require('../services/autoPopulationService');
+const {
+  populatePayRegisterFromSources,
+  getSummaryData,
+  applyPayRegisterParityFromMonthlySummary,
+} = require('../services/autoPopulationService');
 const { calculateTotals, ensureTotalsRespectRoster, syncTotalsFromMonthlySummary } = require('../services/totalsCalculationService');
 const { updateDailyRecord } = require('../services/dailyRecordUpdateService');
 const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
@@ -39,11 +43,23 @@ exports.getPayRegister = async (req, res) => {
       .populate('lastEditedBy', 'name email role')
       .populate('editedBy', 'name email role');
 
-    // Recalculate totals or Sync with Monthly Attendance Summary
+    // Sync totals + day-level WO/HOL with Monthly Attendance Summary (same rules as attendance module)
     if (payRegister) {
       const [year, monthNum] = month.split('-').map(Number);
       const summary = await getSummaryData(employeeId, payRegister.emp_no, year, monthNum);
-      
+
+      if (summary && Array.isArray(payRegister.dailyRecords) && payRegister.dailyRecords.length) {
+        await applyPayRegisterParityFromMonthlySummary(
+          payRegister.dailyRecords,
+          summary,
+          employeeId,
+          payRegister.emp_no,
+          year,
+          monthNum
+        );
+        payRegister.markModified('dailyRecords');
+      }
+
       if (summary) {
         syncTotalsFromMonthlySummary(payRegister, summary);
       } else {
@@ -102,6 +118,14 @@ exports.getPayRegister = async (req, res) => {
 
       const summary = await getSummaryData(employeeId, employee.emp_no, year, monthNum);
       if (summary) {
+        await applyPayRegisterParityFromMonthlySummary(
+          dailyRecords,
+          summary,
+          employeeId,
+          employee.emp_no,
+          year,
+          monthNum
+        );
         syncTotalsFromMonthlySummary(payRegisterObj, summary);
       } else {
         payRegisterObj.totals = calculateTotals(dailyRecords);
@@ -175,8 +199,24 @@ exports.createPayRegister = async (req, res) => {
       monthNum
     );
 
-    let totals = calculateTotals(dailyRecords);
-    await ensureTotalsRespectRoster(totals, employee.emp_no, startDate, endDate);
+    const summary = await getSummaryData(employeeId, employee.emp_no, year, monthNum);
+    let totals;
+    if (summary) {
+      await applyPayRegisterParityFromMonthlySummary(
+        dailyRecords,
+        summary,
+        employeeId,
+        employee.emp_no,
+        year,
+        monthNum
+      );
+      const tmp = { totals: {} };
+      syncTotalsFromMonthlySummary(tmp, summary);
+      totals = tmp.totals;
+    } else {
+      totals = calculateTotals(dailyRecords);
+      await ensureTotalsRespectRoster(totals, employee.emp_no, startDate, endDate);
+    }
 
     const payRegister = await PayRegisterSummary.create({
       employeeId,

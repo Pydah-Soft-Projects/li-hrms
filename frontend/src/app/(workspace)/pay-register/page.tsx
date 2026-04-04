@@ -121,7 +121,7 @@ export default function PayRegisterPage() {
   const [exportingExcel, setExportingExcel] = useState(false);
   const [calculatingJobId, setCalculatingJobId] = useState<string | null>(null);
   const [calculationProgress, setCalculationProgress] = useState<any>(null);
-  const [payrollStrategy, setPayrollStrategy] = useState<'new' | 'legacy' | 'dynamic'>('new');
+  const [payrollStrategy, setPayrollStrategy] = useState<'new' | 'legacy' | 'dynamic'>('dynamic');
 
 
 
@@ -1376,9 +1376,9 @@ export default function PayRegisterPage() {
                 onChange={(e) => setPayrollStrategy(e.target.value as any)}
                 className="h-8 pl-2 pr-6 text-[11px] font-semibold bg-blue-50 dark:bg-blue-900/20 border-0 rounded-lg focus:ring-2 focus:ring-blue-500/20 text-blue-700 dark:text-blue-400 shadow-sm"
               >
+                <option value="dynamic">Engine: Dynamic</option>
                 <option value="new">Engine: New</option>
                 <option value="legacy">Engine: Legacy</option>
-                <option value="dynamic">Engine: Dynamic</option>
               </select>
 
               {/* Search bar - filter employees by name, code, or department */}
