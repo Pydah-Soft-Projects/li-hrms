@@ -112,7 +112,10 @@ export default function UpdateRequestReviewModal({
             try {
                 const parsed = JSON.parse(val);
                 if (Array.isArray(parsed)) {
-                    if (fieldName.toLowerCase().includes('qualification')) {
+                    const isTabularGroup = fieldName.toLowerCase().includes('qualification') || 
+                                          (Array.isArray(formGroups?.groups) && formGroups.groups.some((g: any) => g.id === fieldName && g.isArray));
+                    
+                    if (isTabularGroup) {
                         return renderTableValue(parsed);
                     }
                     return `List (${parsed.length} items)`;
@@ -143,7 +146,10 @@ export default function UpdateRequestReviewModal({
 
         if (typeof val === 'object') {
             if (Array.isArray(val)) {
-                if (fieldName.toLowerCase().includes('qualification')) {
+                const isTabularGroup = fieldName.toLowerCase().includes('qualification') || 
+                                      (Array.isArray(formGroups?.groups) && formGroups.groups.some((g: any) => g.id === fieldName && g.isArray));
+                
+                if (isTabularGroup) {
                     return renderTableValue(val);
                 }
                 return `List (${val.length} items)`;

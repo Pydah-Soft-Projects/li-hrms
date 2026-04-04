@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { api } from '@/lib/api';
 import { CertificateUpload } from '@/components/CertificateUpload';
 import Spinner from '@/components/Spinner';
+import { Plus } from 'lucide-react';
 
 interface Field {
   id: string;
@@ -39,7 +40,7 @@ interface Group {
   label: string;
   description?: string;
   isSystem: boolean;
-  isArray: boolean;
+  isArray?: boolean;
   fields: Field[];
   order: number;
   isEnabled: boolean;
@@ -1102,6 +1103,233 @@ export default function DynamicEmployeeForm({
     contact_info: 3,
     bank_details: 4,
   };
+  const renderTabularCell = (
+    field: Field | QualificationsField,
+    rowIndex: number,
+    value: any,
+    error: any,
+    onChange: (index: number, fieldId: string, value: any) => void
+  ) => {
+    const inputCls = (hasError: boolean) =>
+      `w-full min-w-0 rounded-lg border px-2.5 py-1.5 text-sm transition-all focus:border-green-400 focus:outline-none focus:ring-1 focus:ring-green-400/20 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 ${hasError ? 'border-red-300 dark:border-red-700' : 'border-slate-200 bg-white'}`;
+
+    switch (field.type) {
+      case 'text':
+      case 'email':
+      case 'tel':
+        return (
+          <>
+            <input
+              type={field.type === 'tel' ? 'tel' : field.type === 'email' ? 'email' : 'text'}
+              value={value}
+              onChange={(e) => onChange(rowIndex, field.id, e.target.value)}
+              placeholder={(field as Field).placeholder}
+              required={field.isRequired}
+              disabled={isViewMode}
+              className={inputCls(!!error)}
+            />
+            {error && <p className="mt-0.5 text-xs text-red-600 dark:text-red-400">{error}</p>}
+          </>
+        );
+      case 'textarea':
+        return (
+          <>
+            <textarea
+              value={value}
+              onChange={(e) => onChange(rowIndex, field.id, e.target.value)}
+              placeholder={(field as Field).placeholder}
+              required={field.isRequired}
+              rows={2}
+              disabled={isViewMode}
+              className={inputCls(!!error)}
+            />
+            {error && <p className="mt-0.5 text-xs text-red-600 dark:text-red-400">{error}</p>}
+          </>
+        );
+      case 'number':
+        return (
+          <>
+            <input
+              type="number"
+              value={value}
+              onChange={(e) => onChange(rowIndex, field.id, parseFloat(e.target.value) || 0)}
+              placeholder={(field as Field).placeholder}
+              required={field.isRequired}
+              min={field.validation?.min}
+              max={field.validation?.max}
+              disabled={isViewMode}
+              className={inputCls(!!error)}
+            />
+            {error && <p className="mt-0.5 text-xs text-red-600 dark:text-red-400">{error}</p>}
+          </>
+        );
+      case 'date': {
+        const isMonthYear = field.id === 'month_year_of_pass';
+        const dateValue = value ?? '';
+        const monthInputValue = isMonthYear && dateValue ? String(dateValue).slice(0, 7) : dateValue;
+        return (
+          <>
+            <input
+              type={isMonthYear ? 'month' : 'date'}
+              value={isMonthYear ? (monthInputValue && monthInputValue.length >= 7 ? monthInputValue : '') : dateValue}
+              onChange={(e) => onChange(rowIndex, field.id, isMonthYear ? (e.target.value ? `${e.target.value}-01` : '') : e.target.value)}
+              required={field.isRequired}
+              disabled={isViewMode}
+              className={inputCls(!!error)}
+            />
+            {error && <p className="mt-0.5 text-xs text-red-600 dark:text-red-400">{error}</p>}
+          </>
+        );
+      }
+      case 'select':
+        return (
+          <>
+            <select
+              value={value}
+              onChange={(e) => onChange(rowIndex, field.id, e.target.value)}
+              required={field.isRequired}
+              disabled={isViewMode}
+              className={inputCls(!!error)}
+            >
+              <option value="">Select</option>
+              {field.options?.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            {error && <p className="mt-0.5 text-xs text-red-600 dark:text-red-400">{error}</p>}
+          </>
+        );
+      case 'boolean':
+        return (
+          <>
+            <select
+              value={value ? 'true' : 'false'}
+              onChange={(e) => onChange(rowIndex, field.id, e.target.value === 'true')}
+              disabled={isViewMode}
+              className={inputCls(!!error)}
+            >
+              <option value="true">Yes</option>
+              <option value="false">No</option>
+            </select>
+            {error && <p className="mt-0.5 text-xs text-red-600 dark:text-red-400">{error}</p>}
+          </>
+        );
+      default:
+        return null;
+    }
+  };
+
+  const renderTabularGroup = (group: Group) => {
+    const groupFields = group.fields
+      .filter((f) => f.isEnabled !== false)
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+    if (groupFields.length === 0) return null;
+
+    let groupDataRaw = formData[group.id];
+    if (typeof groupDataRaw === 'string' && (groupDataRaw.trim().startsWith('[') || groupDataRaw.trim().startsWith('{'))) {
+      try {
+        groupDataRaw = JSON.parse(groupDataRaw);
+      } catch (e) {}
+    }
+    const groupData = Array.isArray(groupDataRaw) ? groupDataRaw : [];
+
+    const handleGroupAddRow = () => {
+      const newRow = groupFields.reduce((acc, field) => {
+        if (field.type === 'number') acc[field.id] = 0;
+        else if (field.type === 'boolean') acc[field.id] = false;
+        else acc[field.id] = '';
+        return acc;
+      }, {} as any);
+      handleFieldChange(group.id, [...groupData, newRow]);
+    };
+
+    const handleGroupRemoveRow = (index: number) => {
+      const newData = groupData.filter((_: any, i: number) => i !== index);
+      handleFieldChange(group.id, newData);
+    };
+
+    const handleGroupChange = (index: number, fieldId: string, value: any) => {
+      const newData = [...groupData];
+      if (!newData[index]) newData[index] = {};
+      newData[index] = { ...newData[index], [fieldId]: value };
+      handleFieldChange(group.id, newData);
+    };
+
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+        <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+          {group.label}
+        </h3>
+        {group.description && (
+          <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">{group.description}</p>
+        )}
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[600px] border-collapse text-left text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 bg-slate-100/80 dark:border-slate-700 dark:bg-slate-800/80">
+                <th className="w-12 whitespace-nowrap px-3 py-2.5 font-semibold text-slate-700 dark:text-slate-300">S.No</th>
+                {groupFields.map((field) => (
+                  <th key={field.id} className="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-700 dark:text-slate-300">
+                    {field.label}
+                    {field.isRequired && <span className="text-red-500"> *</span>}
+                  </th>
+                ))}
+                {!isViewMode && <th className="w-24 px-3 py-2.5 font-semibold text-slate-700 dark:text-slate-300">Action</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {groupData.map((row: any, rowIndex: number) => (
+                <tr key={`${group.id}-${rowIndex}`} className="border-b border-slate-100 dark:border-slate-700/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
+                  <td className="px-3 py-2 text-slate-600 dark:text-slate-400">{rowIndex + 1}</td>
+                  {groupFields.map((field) => {
+                    const value = row[field.id] ?? (field.type === 'boolean' ? false : '');
+                    const error = errors[`${group.id}[${rowIndex}].${field.id}`];
+                    return (
+                      <td key={field.id} className="align-top px-3 py-2">
+                        {renderTabularCell(field, rowIndex, value, error, handleGroupChange)}
+                      </td>
+                    );
+                  })}
+                  {!isViewMode && (
+                    <td className="align-top px-3 py-2">
+                      <button
+                        type="button"
+                        onClick={() => handleGroupRemoveRow(rowIndex)}
+                        className="rounded px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
+                      >
+                        Remove
+                      </button>
+                    </td>
+                  )}
+                </tr>
+              ))}
+              {groupData.length === 0 && (
+                <tr>
+                  <td colSpan={groupFields.length + 2} className="px-3 py-8 text-center text-slate-500 dark:text-slate-400">
+                    No items added yet. Click "Add row" below.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        {!isViewMode && (
+          <button
+            type="button"
+            onClick={handleGroupAddRow}
+            className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-600 transition-colors hover:border-green-400 hover:bg-green-50 hover:text-green-600 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400 dark:hover:border-green-500 dark:hover:bg-green-900/20 dark:hover:text-green-400"
+          >
+            <Plus className="h-5 w-5" />
+            Add row
+          </button>
+        )}
+      </div>
+    );
+  };
+
   const sortedGroups = [...settings.groups]
     .filter((g) => g.isEnabled)
     .sort((a, b) => {
@@ -1599,43 +1827,49 @@ export default function DynamicEmployeeForm({
 
         return (
           <div key={group.id}>
-            <div
-              className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50"
-            >
-              <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                {group.label}
-              </h3>
-              {group.description && (
-                <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">{group.description}</p>
-              )}
-
-              <div
-                className={`grid grid-cols-1 gap-4 ${group.id === 'basic_info'
-                  ? 'sm:grid-cols-2 lg:grid-cols-3'
-                  : group.id === 'personal_info'
-                    ? 'sm:grid-cols-2 lg:grid-cols-4'
-                    : group.id === 'contact_info'
-                      ? 'sm:grid-cols-2 lg:grid-cols-4'
-                      : group.id === 'bank_details'
-                        ? 'sm:grid-cols-2 lg:grid-cols-4'
-                        : group.id === 'reporting_authority'
-                          ? 'sm:grid-cols-1'
-                          : 'sm:grid-cols-2'
-                  }`}
-              >
-                {sortedFields.map((field) => renderField(field, group.id))}
-                {group.id === 'basic_info' && shouldRenderEmployeeGroup && renderField({
-                  id: 'employee_group_id',
-                  label: 'Employee Group',
-                  type: 'select',
-                  dataType: 'string',
-                  isRequired: false,
-                  isSystem: true,
-                  order: 9999,
-                  isEnabled: true,
-                } as Field, group.id)}
+            {group.isArray ? (
+              <div className="mt-0">
+                {renderTabularGroup(group)}
               </div>
-            </div>
+            ) : (
+              <div
+                className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50"
+              >
+                <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  {group.label}
+                </h3>
+                {group.description && (
+                  <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">{group.description}</p>
+                )}
+
+                <div
+                  className={`grid grid-cols-1 gap-4 ${group.id === 'basic_info'
+                    ? 'sm:grid-cols-2 lg:grid-cols-3'
+                    : group.id === 'personal_info'
+                      ? 'sm:grid-cols-2 lg:grid-cols-4'
+                      : group.id === 'contact_info'
+                        ? 'sm:grid-cols-2 lg:grid-cols-4'
+                        : group.id === 'bank_details'
+                          ? 'sm:grid-cols-2 lg:grid-cols-4'
+                          : group.id === 'reporting_authority'
+                            ? 'sm:grid-cols-1'
+                            : 'sm:grid-cols-2'
+                    }`}
+                >
+                  {sortedFields.map((field) => renderField(field, group.id))}
+                  {group.id === 'basic_info' && shouldRenderEmployeeGroup && renderField({
+                    id: 'employee_group_id',
+                    label: 'Employee Group',
+                    type: 'select',
+                    dataType: 'string',
+                    isRequired: false,
+                    isSystem: true,
+                    order: 9999,
+                    isEnabled: true,
+                  } as Field, group.id)}
+                </div>
+              </div>
+            )}
 
             {/* Render qualifications immediately after personal info */}
             {group.id === 'personal_info' && qualificationsBlock && (
