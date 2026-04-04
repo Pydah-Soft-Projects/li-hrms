@@ -503,14 +503,13 @@ export default function PromotionsTransfersPage() {
               body.incrementAmount = Number(r.newGrossSalary);
             } else {
               body.newGrossSalary = Number(r.newGrossSalary);
-            }
-            
-            // Optional org structure change alongside promotion
-            if (r.toDivisionId && normalizeId(r.employee.division_id) !== r.toDivisionId) body.toDivisionId = r.toDivisionId;
-            if (r.toDepartmentId && normalizeId(r.employee.department_id) !== r.toDepartmentId) body.toDepartmentId = r.toDepartmentId;
-            if (r.toDesignationId && normalizeId(r.employee.designation_id) !== r.toDesignationId) {
-              body.proposedDesignationId = r.toDesignationId;
-              body.toDesignationId = r.toDesignationId;
+              // Optional org change — promotion/demotion only (not increment)
+              if (r.toDivisionId && normalizeId(r.employee.division_id) !== r.toDivisionId) body.toDivisionId = r.toDivisionId;
+              if (r.toDepartmentId && normalizeId(r.employee.department_id) !== r.toDepartmentId) body.toDepartmentId = r.toDepartmentId;
+              if (r.toDesignationId && normalizeId(r.employee.designation_id) !== r.toDesignationId) {
+                body.proposedDesignationId = r.toDesignationId;
+                body.toDesignationId = r.toDesignationId;
+              }
             }
           } else {
             // For transfer, backend requires all three
@@ -886,12 +885,14 @@ export default function PromotionsTransfersPage() {
           }
           body.newGrossSalary = nextGross;
         }
-        const orgPatch = orgDeltaForPromotionPayload(currentEmp, toDiv, toDept, toDesig);
-        if (orgPatch.toDivisionId) body.toDivisionId = orgPatch.toDivisionId;
-        if (orgPatch.toDepartmentId) body.toDepartmentId = orgPatch.toDepartmentId;
-        if (orgPatch.toDesignationId) {
-          body.proposedDesignationId = orgPatch.toDesignationId;
-          body.toDesignationId = orgPatch.toDesignationId;
+        if (formType !== 'increment') {
+          const orgPatch = orgDeltaForPromotionPayload(currentEmp, toDiv, toDept, toDesig);
+          if (orgPatch.toDivisionId) body.toDivisionId = orgPatch.toDivisionId;
+          if (orgPatch.toDepartmentId) body.toDepartmentId = orgPatch.toDepartmentId;
+          if (orgPatch.toDesignationId) {
+            body.proposedDesignationId = orgPatch.toDesignationId;
+            body.toDesignationId = orgPatch.toDesignationId;
+          }
         }
         const res = await api.createPromotionTransferRequest(body);
         if (!res?.success) throw new Error(res?.message || 'Failed');
@@ -921,6 +922,11 @@ export default function PromotionsTransfersPage() {
       return r.emp_no.toLowerCase().includes(q) || name.includes(q);
     });
   }, [list, pendingList, tab, search]);
+
+  const showBulkTargetOrgColumn = useMemo(
+    () => bulkRows.some((r) => r.requestType !== 'increment'),
+    [bulkRows]
+  );
 
   const openDetail = async (id: string) => {
     try {
@@ -1147,7 +1153,9 @@ export default function PromotionsTransfersPage() {
                         <tr>
                           <th className="px-3 py-3 text-left w-64">Employee</th>
                           <th className="px-3 py-3 text-left w-32">Type</th>
-                          <th className="px-3 py-3 text-left w-64">Target Org</th>
+                          {showBulkTargetOrgColumn && (
+                            <th className="px-3 py-3 text-left w-64">Target Org</th>
+                          )}
                           <th className="px-3 py-3 text-left min-w-[200px]">Details & Remarks</th>
                         </tr>
                       </thead>
@@ -1168,7 +1176,22 @@ export default function PromotionsTransfersPage() {
                             <td className="px-3 py-4">
                               <select
                                 value={row.requestType}
-                                onChange={(e) => updateBulkRow(idx, 'requestType', e.target.value as any)}
+                                onChange={(e) => {
+                                  const v = e.target.value as BulkPtRow['requestType'];
+                                  setBulkRows((prev) => {
+                                    const next = [...prev];
+                                    const cur = next[idx];
+                                    if (!cur) return prev;
+                                    next[idx] = {
+                                      ...cur,
+                                      requestType: v,
+                                      ...(v === 'increment'
+                                        ? { toDivisionId: '', toDepartmentId: '', toDesignationId: '' }
+                                        : {}),
+                                    };
+                                    return next;
+                                  });
+                                }}
                                 className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 text-[11px] focus:ring-1 focus:ring-indigo-500 outline-none transition-all font-medium"
                               >
                                 <option value="promotion">Promotion</option>
@@ -1177,44 +1200,52 @@ export default function PromotionsTransfersPage() {
                                 <option value="increment">Increment</option>
                               </select>
                             </td>
-                            <td className="px-3 py-4 space-y-2">
-                              <div className="space-y-0.5">
-                                <p className="text-[9px] font-bold text-slate-400 uppercase ml-0.5">Division</p>
-                                <select
-                                  value={row.toDivisionId}
-                                  onChange={(e) => {
-                                    updateBulkRow(idx, 'toDivisionId', e.target.value);
-                                    updateBulkRow(idx, 'toDepartmentId', '');
-                                  }}
-                                  className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 focus:ring-1 focus:ring-indigo-500 outline-none transition-all truncate"
-                                >
-                                  <option value="">Select Division…</option>
-                                  {divisions.map(d => <option key={d._id} value={d._id}>{d.name}</option>)}
-                                </select>
-                              </div>
-                              <div className="space-y-0.5">
-                                <p className="text-[9px] font-bold text-slate-400 uppercase ml-0.5">Department</p>
-                                <select
-                                  value={row.toDepartmentId}
-                                  onChange={(e) => updateBulkRow(idx, 'toDepartmentId', e.target.value)}
-                                  className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 focus:ring-1 focus:ring-indigo-500 outline-none transition-all truncate"
-                                >
-                                  <option value="">Select Department…</option>
-                                  {masterDepartments.filter(d => !row.toDivisionId || normalizeId(d.division_id) === row.toDivisionId).map(d => <option key={d._id} value={d._id}>{d.name}</option>)}
-                                </select>
-                              </div>
-                              <div className="space-y-0.5">
-                                <p className="text-[9px] font-bold text-slate-400 uppercase ml-0.5">Designation</p>
-                                <select
-                                  value={row.toDesignationId}
-                                  onChange={(e) => updateBulkRow(idx, 'toDesignationId', e.target.value)}
-                                  className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 focus:ring-1 focus:ring-indigo-500 outline-none transition-all truncate"
-                                >
-                                  <option value="">Select Designation…</option>
-                                  {allDesignations.map(d => <option key={d._id} value={d._id}>{d.name}</option>)}
-                                </select>
-                              </div>
-                            </td>
+                            {showBulkTargetOrgColumn && (
+                              <td className="px-3 py-4 space-y-2 align-top">
+                                {row.requestType === 'increment' ? (
+                                  <span className="text-[11px] text-slate-400 dark:text-slate-500">—</span>
+                                ) : (
+                                  <>
+                                    <div className="space-y-0.5">
+                                      <p className="text-[9px] font-bold text-slate-400 uppercase ml-0.5">Division</p>
+                                      <select
+                                        value={row.toDivisionId}
+                                        onChange={(e) => {
+                                          updateBulkRow(idx, 'toDivisionId', e.target.value);
+                                          updateBulkRow(idx, 'toDepartmentId', '');
+                                        }}
+                                        className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 focus:ring-1 focus:ring-indigo-500 outline-none transition-all truncate"
+                                      >
+                                        <option value="">Select Division…</option>
+                                        {divisions.map(d => <option key={d._id} value={d._id}>{d.name}</option>)}
+                                      </select>
+                                    </div>
+                                    <div className="space-y-0.5">
+                                      <p className="text-[9px] font-bold text-slate-400 uppercase ml-0.5">Department</p>
+                                      <select
+                                        value={row.toDepartmentId}
+                                        onChange={(e) => updateBulkRow(idx, 'toDepartmentId', e.target.value)}
+                                        className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 focus:ring-1 focus:ring-indigo-500 outline-none transition-all truncate"
+                                      >
+                                        <option value="">Select Department…</option>
+                                        {masterDepartments.filter(d => !row.toDivisionId || normalizeId(d.division_id) === row.toDivisionId).map(d => <option key={d._id} value={d._id}>{d.name}</option>)}
+                                      </select>
+                                    </div>
+                                    <div className="space-y-0.5">
+                                      <p className="text-[9px] font-bold text-slate-400 uppercase ml-0.5">Designation</p>
+                                      <select
+                                        value={row.toDesignationId}
+                                        onChange={(e) => updateBulkRow(idx, 'toDesignationId', e.target.value)}
+                                        className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 focus:ring-1 focus:ring-indigo-500 outline-none transition-all truncate"
+                                      >
+                                        <option value="">Select Designation…</option>
+                                        {allDesignations.map(d => <option key={d._id} value={d._id}>{d.name}</option>)}
+                                      </select>
+                                    </div>
+                                  </>
+                                )}
+                              </td>
+                            )}
                             <td className="px-3 py-4 space-y-3">
                               {(row.requestType === 'promotion' || row.requestType === 'demotion' || row.requestType === 'increment') && (
                                 <div className="grid grid-cols-2 gap-2">
@@ -1644,7 +1675,15 @@ export default function PromotionsTransfersPage() {
                 <select
                   className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
                   value={formType}
-                  onChange={(e) => setFormType(e.target.value as any)}
+                  onChange={(e) => {
+                    const v = e.target.value as typeof formType;
+                    setFormType(v);
+                    if (v === 'increment') {
+                      setToDiv('');
+                      setToDept('');
+                      setToDesig('');
+                    }
+                  }}
                 >
                   <option value="promotion">Promotion</option>
                   <option value="demotion">Demotion</option>
@@ -1795,58 +1834,60 @@ export default function PromotionsTransfersPage() {
                 </div>
               )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="text-xs font-semibold text-slate-500 uppercase">To division</label>
-                  <select
-                    className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
-                    value={toDiv}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setToDiv(v);
-                      setToDept('');
-                      void refreshModalDepartments(v, '');
-                    }}
-                  >
-                    <option value="">No change</option>
-                    {divisions.map((d) => (
-                      <option key={d._id} value={d._id}>
-                        {d.name}
-                      </option>
-                    ))}
-                  </select>
+              {formType !== 'increment' && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 uppercase">To division</label>
+                    <select
+                      className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                      value={toDiv}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setToDiv(v);
+                        setToDept('');
+                        void refreshModalDepartments(v, '');
+                      }}
+                    >
+                      <option value="">No change</option>
+                      {divisions.map((d) => (
+                        <option key={d._id} value={d._id}>
+                          {d.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 uppercase">To department</label>
+                    <select
+                      className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                      value={toDept}
+                      onChange={(e) => setToDept(e.target.value)}
+                    >
+                      <option value="">No change</option>
+                      {modalDepartments.map((d) => (
+                        <option key={d._id} value={d._id}>
+                          {d.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-500 uppercase">To designation</label>
+                    <select
+                      className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                      value={toDesig}
+                      onChange={(e) => setToDesig(e.target.value)}
+                    >
+                      <option value="">No change</option>
+                      {allDesignations.map((d) => (
+                        <option key={d._id} value={d._id}>
+                          {d.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
-                <div>
-                  <label className="text-xs font-semibold text-slate-500 uppercase">To department</label>
-                  <select
-                    className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
-                    value={toDept}
-                    onChange={(e) => setToDept(e.target.value)}
-                  >
-                    <option value="">No change</option>
-                    {modalDepartments.map((d) => (
-                      <option key={d._id} value={d._id}>
-                        {d.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-slate-500 uppercase">To designation</label>
-                  <select
-                    className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
-                    value={toDesig}
-                    onChange={(e) => setToDesig(e.target.value)}
-                  >
-                    <option value="">No change</option>
-                    {allDesignations.map((d) => (
-                      <option key={d._id} value={d._id}>
-                        {d.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+              )}
 
               <div>
                 <label className="text-xs font-semibold text-slate-500 uppercase">Remarks</label>
@@ -1944,7 +1985,7 @@ export default function PromotionsTransfersPage() {
                       {detail.effectivePayrollYear}-{String(detail.effectivePayrollMonth || '').padStart(2, '0')}
                     </span>
                   </div>
-                  {detail.proposedDesignationId?.name && (
+                  {detail.requestType !== 'increment' && detail.proposedDesignationId?.name && (
                     <div className="flex justify-between">
                       <span className="text-slate-500">Proposed designation</span>
                       <span>{detail.proposedDesignationId.name}</span>

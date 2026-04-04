@@ -3451,7 +3451,19 @@ export default function LeavesPage() {
                     {/* Mobile Cards: Pending Leaves */}
                     <div className="md:hidden grid grid-cols-1 gap-4">
                       {filteredPendingLeaves.map((leave) => (
-                        <div key={leave._id} className="group relative flex flex-col justify-between rounded-2xl border border-slate-200/60 bg-white p-5 shadow-sm transition-all hover:shadow-md hover:border-blue-200/60 dark:border-slate-800 dark:bg-slate-900">
+                        <div
+                          key={leave._id}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => openDetailDialog(leave, 'leave')}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              openDetailDialog(leave, 'leave');
+                            }
+                          }}
+                          className="group relative flex flex-col justify-between rounded-2xl border border-slate-200/60 bg-white p-5 shadow-sm transition-all hover:shadow-md hover:border-blue-200/60 dark:border-slate-800 dark:bg-slate-900 cursor-pointer"
+                        >
                           {/* Status Strip */}
                           <div className="absolute top-0 left-0 w-1 h-full bg-blue-500/80 rounded-l-2xl group-hover:w-1.5 transition-all" />
 
@@ -3530,10 +3542,14 @@ export default function LeavesPage() {
                           {/* Actions */}
 
                           {canPerformAction(leave, 'leave') && (hasManagePermission || hasManagePermission) && (
-                            <div className="flex items-center gap-2 mt-auto">
+                            <div className="flex items-center gap-2 mt-auto" onClick={(e) => e.stopPropagation()}>
                               {hasManagePermission && (
                                 <button
-                                  onClick={() => handleAction(leave._id, 'leave', 'approve')}
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleAction(leave._id, 'leave', 'approve');
+                                  }}
                                   className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-green-500/10 py-2 text-sm font-semibold text-green-600 transition-colors hover:bg-green-500 hover:text-white dark:bg-green-500/20 dark:text-green-400 dark:hover:bg-green-500 dark:hover:text-white"
                                   title="Approve Leave"
                                 >
@@ -3542,7 +3558,11 @@ export default function LeavesPage() {
                               )}
                               {hasManagePermission && (
                                 <button
-                                  onClick={() => handleAction(leave._id, 'leave', 'reject')}
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleAction(leave._id, 'leave', 'reject');
+                                  }}
                                   className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-500/10 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-500 hover:text-white dark:bg-red-500/20 dark:text-red-400 dark:hover:bg-red-500 dark:hover:text-white"
                                   title="Reject Leave"
                                 >
@@ -3640,7 +3660,19 @@ export default function LeavesPage() {
                     {/* Mobile Cards: Pending ODs */}
                     <div className="md:hidden grid grid-cols-1 gap-4">
                       {filteredPendingODs.map((od) => (
-                        <div key={od._id} className="group relative flex flex-col justify-between rounded-xl border border-slate-200 border-l-4 border-l-purple-500 bg-white p-5 shadow-sm transition-all hover:shadow-md dark:border-slate-700 dark:bg-slate-800">
+                        <div
+                          key={od._id}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => openDetailDialog(od, 'od')}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              openDetailDialog(od, 'od');
+                            }
+                          }}
+                          className="group relative flex flex-col justify-between rounded-xl border border-slate-200 border-l-4 border-l-purple-500 bg-white p-5 shadow-sm transition-all hover:shadow-md dark:border-slate-700 dark:bg-slate-800 cursor-pointer"
+                        >
 
                           {/* Header: name, division & department beside name (no labels), emp no, designation under name */}
                           <div className="flex items-start justify-between gap-3 mb-4">
@@ -3716,10 +3748,14 @@ export default function LeavesPage() {
 
                           {/* Actions */}
                           {canPerformAction(od, 'od') && (hasManagePermission || hasManagePermission) && (
-                            <div className="flex items-center gap-2 mt-auto">
+                            <div className="flex items-center gap-2 mt-auto" onClick={(e) => e.stopPropagation()}>
                               {hasManagePermission && (
                                 <button
-                                  onClick={() => handleAction(od._id, 'od', 'approve')}
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleAction(od._id, 'od', 'approve');
+                                  }}
                                   className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-green-500/10 py-2 text-sm font-semibold text-green-600 transition-colors hover:bg-green-500 hover:text-white dark:bg-green-500/20 dark:text-green-400 dark:hover:bg-green-500 dark:hover:text-white"
                                   title="Approve OD"
                                 >
@@ -3728,7 +3764,11 @@ export default function LeavesPage() {
                               )}
                               {hasManagePermission && (
                                 <button
-                                  onClick={() => handleAction(od._id, 'od', 'reject')}
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleAction(od._id, 'od', 'reject');
+                                  }}
                                   className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-500/10 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-500 hover:text-white dark:bg-red-500/20 dark:text-red-400 dark:hover:bg-red-500 dark:hover:text-white"
                                   title="Reject OD"
                                 >

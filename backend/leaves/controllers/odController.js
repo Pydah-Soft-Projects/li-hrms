@@ -16,6 +16,22 @@ const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
 const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
 const leaveRegisterService = require('../services/leaveRegisterService');
 
+/** Portal user submitted the OD, or system OD (null appliedBy) for this employee. */
+function isOdApplicantOwner(od, user) {
+  if (!od || !user) return false;
+  if (od.appliedBy) {
+    return od.appliedBy.toString() === user._id.toString();
+  }
+  const empId = od.employeeId?._id || od.employeeId;
+  if (user.employeeRef && empId && empId.toString() === user.employeeRef.toString()) return true;
+  if (user.employeeId && od.emp_no) {
+    const a = String(user.employeeId).trim().toLowerCase();
+    const b = String(od.emp_no).trim().toLowerCase();
+    if (a && b && a === b) return true;
+  }
+  return false;
+}
+
 /**
  * Get employee settings from database
  */
@@ -990,7 +1006,7 @@ exports.updateOD = async (req, res) => {
     }
 
     // Check ownership or admin permission
-    const isOwner = od.appliedBy.toString() === req.user._id.toString();
+    const isOwner = isOdApplicantOwner(od, req.user);
     const isAssigner = od.assignedBy?.toString() === req.user._id.toString();
     const isAdmin = ['hr', 'sub_admin', 'super_admin', 'manager', 'hod'].includes(req.user.role);
 
@@ -1275,7 +1291,7 @@ exports.cancelOD = async (req, res) => {
       });
     }
 
-    const isOwner = od.appliedBy.toString() === req.user._id.toString();
+    const isOwner = isOdApplicantOwner(od, req.user);
     const isAssigner = od.assignedBy?.toString() === req.user._id.toString();
     const isAdmin = ['hr', 'sub_admin', 'super_admin', 'manager', 'hod'].includes(req.user.role);
 
@@ -2058,8 +2074,7 @@ exports.deleteOD = async (req, res) => {
 
     // Authorization: Admin can delete any, employee can delete their own if pending
     const isAdmin = ['sub_admin', 'super_admin'].includes(req.user.role);
-    const isOwner = od.appliedBy?.toString() === req.user._id.toString() ||
-      (req.user.employeeRef && od.employeeId?.toString() === req.user.employeeRef.toString());
+    const isOwner = isOdApplicantOwner(od, req.user);
 
     if (!isAdmin && !isOwner) {
       return res.status(403).json({
@@ -2108,7 +2123,7 @@ exports.updateODOutcome = async (req, res) => {
     }
 
     // Check ownership or admin permission
-    const isOwner = od.appliedBy.toString() === req.user._id.toString();
+    const isOwner = isOdApplicantOwner(od, req.user);
     const isAdmin = ['hr', 'sub_admin', 'super_admin'].includes(req.user.role);
 
     if (!isOwner && !isAdmin) {

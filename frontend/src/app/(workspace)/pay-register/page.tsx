@@ -91,6 +91,9 @@ interface PayRegisterSummary {
   payrollId?: string;
   startDate?: string;
   endDate?: string;
+  isStub?: boolean;
+  summaryLocked?: boolean;
+  summaryLockedAt?: string | null;
 }
 
 interface Shift {
@@ -108,6 +111,21 @@ export default function PayRegisterPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<Record<string, boolean>>({});
   const [syncing, setSyncing] = useState(false);
+  const [showSyncAllModal, setShowSyncAllModal] = useState(false);
+  const [syncOverrideLockedIds, setSyncOverrideLockedIds] = useState<Set<string>>(new Set());
+  /** Full locked list for Sync All modal (all pages), from API — not just current payRegisters page */
+  const [syncModalLockedRows, setSyncModalLockedRows] = useState<
+    Array<{
+      employeeId: string;
+      employee_name: string;
+      emp_no: string;
+      division?: string;
+      department?: string;
+      designation?: string;
+    }>
+  >([]);
+  const [loadingSyncLockedList, setLoadingSyncLockedList] = useState(false);
+  const [savingSummaryLock, setSavingSummaryLock] = useState(false);
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [activeTable, setActiveTable] = useState<TableType>('all');
   const [departments, setDepartments] = useState<any[]>([]);
@@ -478,12 +496,59 @@ export default function PayRegisterPage() {
     loadPayRegisters(nextPage, true);
   };
 
-  const handleSyncAll = async () => {
+  const isPayRegisterStub = (pr: PayRegisterSummary) =>
+    !!(pr as PayRegisterSummary & { isStub?: boolean }).isStub || String(pr._id || '').startsWith('stub_');
+
+  const employeeIdString = (pr: PayRegisterSummary) => {
+    const e = pr.employeeId;
+    return typeof e === 'object' && e && '_id' in e ? String((e as { _id: string })._id) : String(e);
+  };
+
+  const beginSyncAll = async () => {
+    try {
+      setLoadingSyncLockedList(true);
+      const res = await api.getPayRegisterLockedEmployees(
+        monthStr,
+        selectedDepartment && selectedDepartment !== '' ? selectedDepartment : undefined,
+        selectedDivision && selectedDivision !== '' ? selectedDivision : undefined
+      );
+      const lockedRows =
+        res.success && Array.isArray(res.data) ? res.data : [];
+      setSyncModalLockedRows(lockedRows);
+      if (lockedRows.length === 0) {
+        setShowSyncAllModal(false);
+        await runSyncAllWithOverrides(new Set(), []);
+        return;
+      }
+      setSyncOverrideLockedIds(new Set());
+      setShowSyncAllModal(true);
+    } catch (err: any) {
+      console.error('[Pay Register] Failed to load locked summaries:', err);
+      Swal.fire({
+        icon: 'error',
+        title: 'Could not load locked list',
+        text: err.message || 'Failed to fetch locked summaries for sync.',
+      });
+    } finally {
+      setLoadingSyncLockedList(false);
+    }
+  };
+
+  const runSyncAllWithOverrides = async (
+    overrideLockedIds: Set<string>,
+    lockedRowsList: Array<{
+      employeeId: string;
+      employee_name: string;
+      emp_no: string;
+      division?: string;
+      department?: string;
+      designation?: string;
+    }> = []
+  ) => {
     try {
       setSyncing(true);
+      setShowSyncAllModal(false);
 
-      // 1. First trigger a global attendance sync for this payroll cycle's date range
-      // This ensures MongoDB records are updated from MSSQL/Biometric for the spanned dates
       if (payrollStartDate && payrollEndDate) {
         Swal.fire({
           icon: 'info',
@@ -503,19 +568,49 @@ export default function PayRegisterPage() {
         });
       }
 
-      // 2. Now sync individual pay registers from the updated MongoDB records
+      let synced = 0;
+      const syncedIds = new Set<string>();
       const syncPromises = payRegisters.map((pr) => {
-        const employeeId = typeof pr.employeeId === 'object' ? pr.employeeId._id : pr.employeeId;
-        return api.syncPayRegister(employeeId, monthStr);
+        const idStr = employeeIdString(pr);
+        if (pr.summaryLocked && !overrideLockedIds.has(idStr)) {
+          return Promise.resolve(null);
+        }
+        const force = !!(pr.summaryLocked && overrideLockedIds.has(idStr));
+        synced += 1;
+        syncedIds.add(idStr);
+        return api.syncPayRegister(idStr, monthStr, force ? { force: true } : undefined);
       });
 
       await Promise.all(syncPromises);
+
+      for (const row of lockedRowsList) {
+        const idStr = String(row.employeeId);
+        if (!overrideLockedIds.has(idStr)) continue;
+        if (syncedIds.has(idStr)) continue;
+        await api.syncPayRegister(idStr, monthStr, { force: true });
+        syncedIds.add(idStr);
+        synced += 1;
+      }
+
       await loadPayRegisters();
+
+      const skippedLocked =
+        lockedRowsList.length > 0
+          ? lockedRowsList.filter((r) => !overrideLockedIds.has(String(r.employeeId))).length
+          : payRegisters.filter(
+              (pr) =>
+                !isPayRegisterStub(pr) &&
+                pr.summaryLocked &&
+                !overrideLockedIds.has(employeeIdString(pr))
+            ).length;
+
+      const parts = [`${synced} employee(s) synced.`];
+      if (skippedLocked > 0) parts.push(`${skippedLocked} locked summary(ies) left unchanged.`);
       Swal.fire({
         icon: 'success',
         title: 'Synced',
-        text: 'All data synced successfully',
-        timer: 2000,
+        text: parts.join(' '),
+        timer: 2800,
         showConfirmButton: false,
         toast: true,
         position: 'top-end'
@@ -529,6 +624,45 @@ export default function PayRegisterPage() {
       });
     } finally {
       setSyncing(false);
+    }
+  };
+
+  const handleSaveSummaryLock = async (locked: boolean) => {
+    const ids = getFilteredPayRegisters()
+      .filter((pr) => !isPayRegisterStub(pr))
+      .map((pr) => employeeIdString(pr));
+    if (ids.length === 0) {
+      Swal.fire({
+        icon: 'info',
+        title: 'Nothing to update',
+        text: 'No pay register rows on this page yet. Sync or create registers first, then save lock.',
+      });
+      return;
+    }
+    try {
+      setSavingSummaryLock(true);
+      const res = await api.setPayRegisterSummaryLock(monthStr, { employeeIds: ids, locked });
+      if (!res.success) {
+        throw new Error(res.message || 'Request failed');
+      }
+      await loadPayRegisters();
+      Swal.fire({
+        icon: 'success',
+        title: locked ? 'Summaries locked' : 'Summaries unlocked',
+        text: `Updated ${res.modifiedCount ?? 0} record(s).`,
+        timer: 2200,
+        showConfirmButton: false,
+        toast: true,
+        position: 'top-end',
+      });
+    } catch (err: any) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Save failed',
+        text: err.message || 'Could not update summary lock',
+      });
+    } finally {
+      setSavingSummaryLock(false);
     }
   };
 
@@ -1476,14 +1610,14 @@ export default function PayRegisterPage() {
               Upload Summary
             </button>
             <button
-              onClick={handleSyncAll}
-              disabled={syncing}
+              onClick={() => void beginSyncAll()}
+              disabled={syncing || loadingSyncLockedList || payRegisters.length === 0}
               className="h-9 px-4 flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-sm disabled:opacity-50 transition-all"
             >
-              <svg className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className={`h-4 w-4 ${syncing || loadingSyncLockedList ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
-              {syncing ? 'Syncing...' : 'Sync All'}
+              {loadingSyncLockedList ? 'Loading…' : syncing ? 'Syncing...' : 'Sync All'}
             </button>
 
             {(() => {
@@ -1694,6 +1828,116 @@ export default function PayRegisterPage() {
             </div>
           </div>
         )}
+
+        {showSyncAllModal && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl max-w-5xl w-full max-h-[85vh] flex flex-col border border-slate-200 dark:border-slate-700">
+              <div className="p-6 pb-3 border-b border-slate-200 dark:border-slate-700">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Sync all pay registers</h3>
+                <p className="text-sm text-slate-600 dark:text-slate-400 mt-2">
+                  Everyone listed here has a locked summary for this month (using your division/department filters), not only the rows on the current page. Locked summaries are skipped by default. Check{' '}
+                  <span className="font-semibold">Override</span> to force a full sync for that employee.
+                </p>
+                <button
+                  type="button"
+                  className="mt-3 text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+                  onClick={() => {
+                    const all = new Set(syncModalLockedRows.map((r) => String(r.employeeId)));
+                    if (syncOverrideLockedIds.size === all.size && all.size > 0) {
+                      setSyncOverrideLockedIds(new Set());
+                    } else {
+                      setSyncOverrideLockedIds(all);
+                    }
+                  }}
+                >
+                  {syncModalLockedRows.length > 0 &&
+                  syncOverrideLockedIds.size === syncModalLockedRows.length
+                    ? 'Clear all overrides'
+                    : 'Select all overrides'}
+                </button>
+              </div>
+              <div className="overflow-auto flex-1 min-h-0 px-2 py-2">
+                <div className="rounded-lg border border-slate-200 dark:border-slate-600 overflow-x-auto">
+                  <table className="w-full border-collapse text-xs min-w-[640px]">
+                    <thead>
+                      <tr className="border-b border-slate-200 bg-slate-50 dark:bg-slate-800 dark:border-slate-700">
+                        <th className="w-10 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                          Override
+                        </th>
+                        <th className="px-2 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                          Employee
+                        </th>
+                        <th className="px-2 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                          Division
+                        </th>
+                        <th className="px-2 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                          Department
+                        </th>
+                        <th className="px-2 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                          Designation
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 dark:divide-slate-600">
+                      {syncModalLockedRows.map((row) => {
+                        const idStr = String(row.employeeId);
+                        return (
+                          <tr key={idStr} className="hover:bg-slate-50 dark:hover:bg-slate-700/30">
+                            <td className="px-2 py-2 text-center align-middle">
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                checked={syncOverrideLockedIds.has(idStr)}
+                                onChange={(e) => {
+                                  setSyncOverrideLockedIds((prev) => {
+                                    const next = new Set(prev);
+                                    if (e.target.checked) next.add(idStr);
+                                    else next.delete(idStr);
+                                    return next;
+                                  });
+                                }}
+                                aria-label={`Override sync for ${row.employee_name}`}
+                              />
+                            </td>
+                            <td className="px-2 py-2 align-middle">
+                              <div className="font-medium text-slate-900 dark:text-white">{row.employee_name}</div>
+                              <div className="text-[10px] text-slate-500 dark:text-slate-400">{row.emp_no}</div>
+                            </td>
+                            <td className="px-2 py-2 align-middle text-slate-700 dark:text-slate-300 max-w-[140px] truncate" title={row.division || undefined}>
+                              {row.division || '—'}
+                            </td>
+                            <td className="px-2 py-2 align-middle text-slate-700 dark:text-slate-300 max-w-[140px] truncate" title={row.department || undefined}>
+                              {row.department || '—'}
+                            </td>
+                            <td className="px-2 py-2 align-middle text-slate-700 dark:text-slate-300 max-w-[160px] truncate" title={row.designation || undefined}>
+                              {row.designation || '—'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div className="flex gap-3 p-6 pt-3 border-t border-slate-200 dark:border-slate-700">
+                <button
+                  type="button"
+                  className="flex-1 px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-700 dark:text-slate-300 font-medium hover:bg-slate-50 dark:hover:bg-slate-700"
+                  onClick={() => setShowSyncAllModal(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium shadow-sm"
+                  onClick={() => runSyncAllWithOverrides(syncOverrideLockedIds, syncModalLockedRows)}
+                >
+                  Run sync
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Summary Table - skeleton when loading */}
@@ -1807,9 +2051,14 @@ export default function PayRegisterPage() {
                       <td className="sticky left-0 z-10 border-r border-slate-200 bg-white px-3 py-2 text-[11px] font-medium text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white">
                         <div>
                           <div className="font-semibold truncate">{empName}</div>
-                          <div className="text-[9px] text-slate-500 dark:text-slate-400 truncate">
-                            {empNo}
-                            {department && ` • ${department}`}
+                          <div className="text-[9px] text-slate-500 dark:text-slate-400 flex flex-wrap items-center gap-1.5 truncate">
+                            <span className="truncate">{empNo}</span>
+                            {row.pr.summaryLocked && (
+                              <span className="shrink-0 font-bold uppercase tracking-wide text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800 rounded px-1 py-0" title="Summary locked — skipped on Sync All unless overridden">
+                                Locked
+                              </span>
+                            )}
+                            {department && <span className="truncate">• {department}</span>}
                           </div>
                           {leftDateStr && (
                             <div className="text-[9px] text-amber-600 dark:text-amber-400 font-medium mt-0.5" title="Left in this payroll period">
@@ -1873,9 +2122,17 @@ export default function PayRegisterPage() {
       )
       }
 
-      {/* Export button below summary table (similar to attendance page) */}
+      {/* Summary lock + export (below monthly summary table) */}
       {!loading && payRegisters.length > 0 && (
-        <div className="flex justify-end mb-4">
+        <div className="flex flex-wrap justify-end items-center gap-2 mb-4">
+          <button
+            type="button"
+            onClick={() => handleSaveSummaryLock(true)}
+            disabled={savingSummaryLock}
+            className="h-9 px-4 text-xs font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50 shadow-sm"
+          >
+            {savingSummaryLock ? 'Saving…' : 'Save & lock'}
+          </button>
           <button
             onClick={async () => {
               await downloadPayrollExcel();
@@ -1998,7 +2255,7 @@ export default function PayRegisterPage() {
                     {daysArray.map((day) => (
                       <th
                         key={day}
-                        className={'w-[calc((100%-180px-' + (activeTable === 'leaves' ? '320px' : activeTable === 'all' ? '480px' : '80px') + '/' + daysArray.length + ')] border-r border-slate-200 px-1 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'}
+                        className={'w-[calc((100%-180px-' + (activeTable === 'leaves' ? '320px' : activeTable === 'all' ? '560px' : '80px') + '/' + daysArray.length + ')] border-r border-slate-200 px-1 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'}
                       >
                         {parseInt(day.split('-')[2])}
                       </th>
@@ -2079,7 +2336,7 @@ export default function PayRegisterPage() {
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                   {getFilteredPayRegisters().length === 0 ? (
                     <tr>
-                      <td colSpan={daysArray.length + (activeTable === 'leaves' ? 4 : activeTable === 'all' ? 6 : 1)} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                      <td colSpan={daysArray.length + (activeTable === 'leaves' ? 4 : activeTable === 'all' ? 7 : 1)} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
                         No records found{activeTable !== 'all' ? ` for ${activeTable === 'shifts' ? 'shifts' : activeTable} table` : ''}
                       </td>
                     </tr>

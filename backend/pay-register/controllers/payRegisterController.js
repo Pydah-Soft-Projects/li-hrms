@@ -398,8 +398,9 @@ exports.updateDailyRecord = async (req, res) => {
 exports.syncPayRegister = async (req, res) => {
   try {
     const { employeeId, month } = req.params;
+    const force = req.body && req.body.force === true;
 
-    const payRegister = await manualSyncPayRegister(employeeId, month);
+    const payRegister = await manualSyncPayRegister(employeeId, month, { force });
 
     await payRegister.populate([
       { path: 'employeeId', select: 'employee_name emp_no department_id designation_id' },
@@ -416,6 +417,161 @@ exports.syncPayRegister = async (req, res) => {
     res.status(500).json({
       success: false,
       error: error.message || 'Failed to sync pay register',
+    });
+  }
+};
+
+// @desc    Lock or unlock monthly summary (pay register docs) for many employees
+// @route   POST /api/pay-register/summary-lock/:month
+// @access  Private (exclude employee)
+exports.setSummaryLock = async (req, res) => {
+  try {
+    const { month } = req.params;
+    const { employeeIds, locked } = req.body;
+
+    if (!/^\d{4}-\d{2}$/.test(month)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Month must be in YYYY-MM format',
+      });
+    }
+    if (!Array.isArray(employeeIds) || employeeIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'employeeIds array is required',
+      });
+    }
+    if (typeof locked !== 'boolean') {
+      return res.status(400).json({
+        success: false,
+        error: 'locked must be a boolean',
+      });
+    }
+
+    const mongoose = require('mongoose');
+    const validIds = employeeIds.filter((id) => mongoose.Types.ObjectId.isValid(String(id)));
+    if (validIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'No valid employee ObjectIds',
+      });
+    }
+
+    const update = locked
+      ? {
+          summaryLocked: true,
+          summaryLockedAt: new Date(),
+          summaryLockedBy: req.user._id,
+        }
+      : {
+          summaryLocked: false,
+          summaryLockedAt: null,
+          summaryLockedBy: null,
+        };
+
+    const result = await PayRegisterSummary.updateMany(
+      { employeeId: { $in: validIds }, month },
+      { $set: update }
+    );
+
+    res.status(200).json({
+      success: true,
+      modifiedCount: result.modifiedCount,
+      matchedCount: result.matchedCount,
+    });
+  } catch (error) {
+    console.error('Error setting summary lock:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to update summary lock',
+    });
+  }
+};
+
+// @desc    List employees with summaryLocked pay register for a month (scoped by division/department)
+// @route   GET /api/pay-register/locked-employees/:month
+// @access  Private (exclude employee)
+exports.getLockedSummaryEmployees = async (req, res) => {
+  try {
+    const { month } = req.params;
+    const { departmentId, divisionId } = req.query;
+
+    if (!/^\d{4}-\d{2}$/.test(month)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Month must be in YYYY-MM format',
+      });
+    }
+
+    const mongoose = require('mongoose');
+    const docs = await PayRegisterSummary.find({ month, summaryLocked: true })
+      .select('employeeId emp_no')
+      .populate({
+        path: 'employeeId',
+        select: 'employee_name emp_no department_id division_id designation_id',
+        populate: [
+          { path: 'department_id', select: 'name' },
+          { path: 'division_id', select: 'name' },
+          { path: 'designation_id', select: 'name' },
+        ],
+      })
+      .lean();
+
+    let divFilter = null;
+    if (divisionId && mongoose.Types.ObjectId.isValid(String(divisionId))) {
+      divFilter = new mongoose.Types.ObjectId(String(divisionId));
+    }
+    let deptFilter = null;
+    if (departmentId && mongoose.Types.ObjectId.isValid(String(departmentId))) {
+      deptFilter = new mongoose.Types.ObjectId(String(departmentId));
+    }
+
+    const refId = (ref) => {
+      if (!ref) return null;
+      if (typeof ref === 'object' && ref._id) return String(ref._id);
+      return String(ref);
+    };
+
+    const rows = [];
+    for (const d of docs) {
+      const emp = d.employeeId;
+      if (!emp || typeof emp !== 'object') continue;
+
+      if (divFilter) {
+        const divIdVal = refId(emp.division_id);
+        if (!divIdVal || divIdVal !== String(divFilter)) continue;
+      }
+      if (deptFilter) {
+        const deptIdVal = refId(emp.department_id);
+        if (!deptIdVal || deptIdVal !== String(deptFilter)) continue;
+      }
+
+      const divObj = emp.division_id;
+      const deptObj = emp.department_id;
+      const desigObj = emp.designation_id;
+
+      rows.push({
+        employeeId: String(emp._id),
+        emp_no: emp.emp_no || d.emp_no || '',
+        employee_name: emp.employee_name || '',
+        division: typeof divObj === 'object' && divObj !== null && divObj.name ? String(divObj.name) : '',
+        department: typeof deptObj === 'object' && deptObj !== null && deptObj.name ? String(deptObj.name) : '',
+        designation: typeof desigObj === 'object' && desigObj !== null && desigObj.name ? String(desigObj.name) : '',
+      });
+    }
+
+    rows.sort((a, b) => (a.employee_name || '').localeCompare(b.employee_name || '', undefined, { sensitivity: 'base' }));
+
+    res.status(200).json({
+      success: true,
+      data: rows,
+      count: rows.length,
+    });
+  } catch (error) {
+    console.error('Error listing locked summary employees:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to list locked summaries',
     });
   }
 };
@@ -557,7 +713,7 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
       month
     })
       .populate('employeeId', 'employee_name emp_no department_id designation_id leftDate leftReason')
-      .select('employeeId emp_no month status totals lastEditedAt dailyRecords startDate endDate totalDaysInMonth');
+      .select('employeeId emp_no month status totals lastEditedAt dailyRecords startDate endDate totalDaysInMonth summaryLocked summaryLockedAt');
 
     // Map for O(1) Access
     const prMap = new Map();
@@ -594,7 +750,9 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
           payrollId: payrollId || null,
           startDate: existingPR.startDate || startDate,
           endDate: existingPR.endDate || endDate,
-          totalDaysInMonth: existingPR.totalDaysInMonth || totalDays
+          totalDaysInMonth: existingPR.totalDaysInMonth || totalDays,
+          summaryLocked: !!existingPR.summaryLocked,
+          summaryLockedAt: existingPR.summaryLockedAt || null,
         };
       } else {
         // Return In-Memory Stub (Fast!)
@@ -633,7 +791,9 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
           isStub: true,
           startDate,
           endDate,
-          totalDaysInMonth: totalDays
+          totalDaysInMonth: totalDays,
+          summaryLocked: false,
+          summaryLockedAt: null,
         };
       }
     });
