@@ -131,6 +131,27 @@ function adjustPayRegisterHalvesForPartialDay(firstHalf, secondHalf, isPartialDa
   return { firstHalf, secondHalf };
 }
 
+/** Before DOJ / after last working day: no absent/WO/HOL — empty cells in pay register day grid. */
+function buildBlankPayRegisterDaySnapshot(dStr) {
+  const blankHalf = {
+    status: 'blank',
+    leaveType: null,
+    leaveNature: null,
+    isOD: false,
+    otHours: 0,
+  };
+  return {
+    date: dStr,
+    firstHalf: { ...blankHalf },
+    secondHalf: { ...blankHalf },
+    status: 'blank',
+    isSplit: false,
+    leaveType: null,
+    leaveNature: null,
+    isOD: false,
+  };
+}
+
 function buildPayRegisterDaySnapshotFromEngine(dStr, day, ctx) {
   const {
     leaveFirstAll,
@@ -276,6 +297,14 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     const dojStrBound = employeeInfoForBoundaries?.doj ? extractISTComponents(employeeInfoForBoundaries.doj).dateStr : null;
     const leftDateStrBound = employeeInfoForBoundaries?.leftDate ? extractISTComponents(employeeInfoForBoundaries.leftDate).dateStr : null;
 
+    /** Before DOJ or after last working day: blank employment — no WO/HOL, leave, OD, absent, or other metrics. */
+    const isOutsideEmploymentBound = (dStr) => {
+      if (!dStr) return false;
+      if (dojStrBound && dStr < dojStrBound) return true;
+      if (leftDateStrBound && dStr > leftDateStrBound) return true;
+      return false;
+    };
+
     // 1. Get all attendance records for this month (fresh from DB so we see latest status/payableShifts after OD updates)
     const attendanceRecords = await AttendanceDaily.find({
       employeeNumber: empNoNorm,
@@ -324,7 +353,7 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     const holidayDates = new Set();
     for (const row of rosterNonWorking) {
       const dateKey = toNormalizedDateStr(row?.date);
-      if (!dateKey) continue;
+      if (!dateKey || isOutsideEmploymentBound(dateKey)) continue;
       if (dailyStatsMap.has(dateKey)) {
         if (row.status === 'WO') {
           dailyStatsMap.get(dateKey).isWO = true;
@@ -436,11 +465,6 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     // Sandwich absent rule:
     // if one or more consecutive WO/HOL days are between two ABSENT working days,
     // convert those WO/HOL days to working days (so they are not counted as WO/HOL).
-    const isOutsideEmploymentBound = (dStr) => {
-      if (dojStrBound && dStr < dojStrBound) return true;
-      if (leftDateStrBound && dStr > leftDateStrBound) return true;
-      return false;
-    };
     const isStrictAbsentWorkingDay = (dStr) => {
       if (!dStr || dStr > todayIstStr || isOutsideEmploymentBound(dStr)) return false;
       const d = dailyStatsMap.get(dStr);
@@ -490,10 +514,36 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       idx = endIdx + 1;
     }
 
+    // Strip all calendar days outside [DOJ, last working day]: treat as blank (no roster WO/HOL, no dailies, no leave/OD).
+    for (const dStr of allDates) {
+      if (!isOutsideEmploymentBound(dStr)) continue;
+      const day = dailyStatsMap.get(dStr);
+      if (!day) continue;
+      day.isWO = false;
+      day.isHOL = false;
+      day.leaves = [];
+      day.ods = [];
+      day.attendance = null;
+      weekOffDates.delete(dStr);
+      holidayDates.delete(dStr);
+    }
+
+    // Defensive: drop any WO/HOL keys that are still outside employment (e.g. date string mismatch vs allDates).
+    for (const d of [...weekOffDates]) {
+      if (isOutsideEmploymentBound(d)) weekOffDates.delete(d);
+    }
+    for (const d of [...holidayDates]) {
+      if (isOutsideEmploymentBound(d)) holidayDates.delete(d);
+    }
+
     summary.totalWeeklyOffs = weekOffDates.size;
     summary.totalHolidays = holidayDates.size;
-    contributingDates.weeklyOffs = Array.from(weekOffDates).map(date => ({ date, value: 1, label: 'WO' }));
-    contributingDates.holidays = Array.from(holidayDates).map(date => ({ date, value: 1, label: 'HOL' }));
+    contributingDates.weeklyOffs = Array.from(weekOffDates)
+      .filter((date) => !isOutsideEmploymentBound(date))
+      .map((date) => ({ date, value: 1, label: 'WO' }));
+    contributingDates.holidays = Array.from(holidayDates)
+      .filter((date) => !isOutsideEmploymentBound(date))
+      .map((date) => ({ date, value: 1, label: 'HOL' }));
 
     const payRegisterDaySnapshots = [];
 
@@ -512,6 +562,10 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     let totalPartialPayableContribution = 0;
 
     for (const [dStr, day] of dailyStatsMap) {
+      if (isOutsideEmploymentBound(dStr)) {
+        payRegisterDaySnapshots.push(buildBlankPayRegisterDaySnapshot(dStr));
+        continue;
+      }
       // 1. Leaves (Priority - if leave is taken, it counts as leave)
       if (day.leaves.length > 0) {
         // Sum all leave units on the same date (multiple 0.5 leaves can make 1.0)
@@ -799,8 +853,9 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
 
     let totalOTHours = 0;
     for (const ot of approvedOTs) {
-      totalOTHours += ot.otHours || 0;
       const otDate = toNormalizedDateStr(ot.date);
+      if (otDate && isOutsideEmploymentBound(otDate)) continue;
+      totalOTHours += ot.otHours || 0;
       if (otDate && !contributingDates.otHours.some(cd => cd.date === otDate)) {
         contributingDates.otHours.push({
           date: otDate,
@@ -815,8 +870,9 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     let totalExtraHours = 0;
     for (const record of attendanceRecords) {
       if (record.extraHours > 0) {
-        totalExtraHours += record.extraHours || 0;
         const recordDate = toNormalizedDateStr(record.date);
+        if (recordDate && isOutsideEmploymentBound(recordDate)) continue;
+        totalExtraHours += record.extraHours || 0;
         if (!contributingDates.extraHours.some(cd => cd.date === recordDate)) {
           contributingDates.extraHours.push({
             date: recordDate,
@@ -839,14 +895,15 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
 
     let totalPermissionHours = 0;
     for (const permission of approvedPermissions) {
-      totalPermissionHours += permission.permissionHours || 0;
       const permDate = toNormalizedDateStr(permission.date);
+      if (permDate && isOutsideEmploymentBound(permDate)) continue;
+      totalPermissionHours += permission.permissionHours || 0;
       if (permDate && !contributingDates.permissions.some(cd => cd.date === permDate)) {
         contributingDates.permissions.push({ date: permDate, value: permission.permissionHours, label: 'Perm' });
       }
     }
     summary.totalPermissionHours = Math.round(totalPermissionHours * 100) / 100;
-    summary.totalPermissionCount = approvedPermissions.length;
+    summary.totalPermissionCount = contributingDates.permissions.length;
 
     // Early Out Deductions Summary
     let totalEarlyOutDeductionDays = 0;
@@ -854,6 +911,8 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     const earlyOutDeductionBreakdown = { quarter_day: 0, half_day: 0, full_day: 0, custom_amount: 0 };
 
     for (const rec of attendanceRecords) {
+      const recDate = toNormalizedDateStr(rec.date);
+      if (recDate && isOutsideEmploymentBound(recDate)) continue;
       const deduction = rec.earlyOutDeduction;
       if (deduction && deduction.deductionApplied) {
         totalEarlyOutDeductionDays += (Number(deduction.deductionDays) || 0);

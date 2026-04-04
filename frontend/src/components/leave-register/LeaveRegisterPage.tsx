@@ -104,14 +104,68 @@ type BulkSlotRow = {
   compensatoryOffs: string;
   elCredits: string;
   lockedCredits: string;
-  /** Read-only: implied unused that would roll from closed periods (derived from current scheduled vs used). */
-  transferCl: string;
-  transferCcl: string;
-  transferEl: string;
   clUsed: string;
   compensatoryOffsUsed: string;
   elUsed: string;
 };
+
+/** Match backend leaveRegisterService registerMonths CL credited (Cr column). */
+function ledgerClCreditedNetFromRaw(m: any): number | undefined {
+  const clL = m?.ledger?.casualLeave;
+  if (!clL || typeof clL !== 'object') return undefined;
+  const clCredited = (Number(clL.accruedThisMonth) || 0) + (Number(clL.earnedCCL) || 0);
+  const clReversal = Number(clL.reversalCreditThisMonth) || 0;
+  const v = Math.max(0, clCredited - clReversal);
+  return Number.isFinite(v) ? v : undefined;
+}
+
+function ledgerCclCreditedNetFromRaw(m: any): number | undefined {
+  const cclL = m?.ledger?.compensatoryOff;
+  if (!cclL || typeof cclL !== 'object') return undefined;
+  const v = Math.max(0, (Number(cclL.earned) || 0) - (Number(cclL.reversalCreditThisMonth) || 0));
+  return Number.isFinite(v) ? v : undefined;
+}
+
+function ledgerElCreditedNetFromRaw(m: any): number | undefined {
+  const elL = m?.ledger?.earnedLeave;
+  if (!elL || typeof elL !== 'object') return undefined;
+  const v = Math.max(0, (Number(elL.accruedThisMonth) || 0) - (Number(elL.reversalCreditThisMonth) || 0));
+  return Number.isFinite(v) ? v : undefined;
+}
+
+/** Ensure cl.credited / ccl / el for bulk prefill when list row omitted them but ledger is present. */
+function enrichRegisterMonthLiteCredits(m: RegisterMonthLite, raw?: any): RegisterMonthLite {
+  const src = raw ?? (m as any);
+  const pickCred = (direct: unknown, fromLedger: number | undefined): number | undefined => {
+    if (direct != null && Number.isFinite(Number(direct))) return Number(direct);
+    if (fromLedger !== undefined) return fromLedger;
+    return undefined;
+  };
+  const clN = pickCred(m.cl?.credited, ledgerClCreditedNetFromRaw(src));
+  const cclN = pickCred(m.ccl?.credited, ledgerCclCreditedNetFromRaw(src));
+  const elN = pickCred(m.el?.credited, ledgerElCreditedNetFromRaw(src));
+  return {
+    ...m,
+    cl: { ...m.cl, ...(Number.isFinite(Number(clN)) ? { credited: Number(clN) } : {}) },
+    ccl: { ...m.ccl, ...(Number.isFinite(Number(cclN)) ? { credited: Number(cclN) } : {}) },
+    el: { ...m.el, ...(Number.isFinite(Number(elN)) ? { credited: Number(elN) } : {}) },
+  };
+}
+
+/** Bulk/slot edit inputs: show same numbers as register table Cr column; fallback to scheduled slot. */
+function poolInputStringCreditsFirst(m: RegisterMonthLite, kind: 'cl' | 'ccl' | 'el'): string {
+  const sch = kind === 'cl' ? m.scheduledCl : kind === 'ccl' ? m.scheduledCco : m.scheduledEl;
+  const cred = kind === 'cl' ? m.cl?.credited : kind === 'ccl' ? m.ccl?.credited : m.el?.credited;
+  if (cred != null && Number.isFinite(Number(cred))) {
+    const n = Number(cred);
+    return Number.isInteger(n) ? String(n) : String(n);
+  }
+  if (sch != null && Number.isFinite(Number(sch))) {
+    const n = Number(sch);
+    return Number.isInteger(n) ? String(n) : String(n);
+  }
+  return '';
+}
 
 /**
  * Employee register detail returns raw `months` (scheduled.*, payrollCycle*). List rows use `registerMonths`
@@ -125,7 +179,7 @@ function normalizeRegisterMonthForBulk(
   const month = Number(m?.month);
   const year = Number(m?.year);
   if (Number.isFinite(month) && Number.isFinite(year)) {
-    return m as RegisterMonthLite;
+    return enrichRegisterMonthLiteCredits(m as RegisterMonthLite, m);
   }
   const pcm = Number(m?.payrollCycleMonth);
   const pcy = Number(m?.payrollCycleYear);
@@ -148,31 +202,40 @@ function normalizeRegisterMonthForBulk(
     m?.el != null && m.el.transfer != null && Number.isFinite(Number(m.el.transfer))
       ? Number(m.el.transfer)
       : Number(pco.el) || 0;
-  return {
-    payrollMonthIndex: pmi,
-    label: m?.label || `${pcm}/${pcy}`,
-    month: pcm,
-    year: pcy,
-    payPeriodStart: m?.payPeriodStart ?? null,
-    payPeriodEnd: m?.payPeriodEnd ?? null,
-    scheduledCl: sch.clCredits ?? null,
-    scheduledCco: sch.compensatoryOffs ?? null,
-    scheduledEl: sch.elCredits ?? null,
-    lockedCredits: sch.lockedCredits ?? null,
-    monthEditPolicy: policy,
-    cl: {
-      used: Number.isFinite(clUsed) ? clUsed : undefined,
-      transfer: xferCl,
+  const clCreditedNet = ledgerClCreditedNetFromRaw(m);
+  const cclCreditedNet = ledgerCclCreditedNetFromRaw(m);
+  const elCreditedNet = ledgerElCreditedNetFromRaw(m);
+  return enrichRegisterMonthLiteCredits(
+    {
+      payrollMonthIndex: pmi,
+      label: m?.label || `${pcm}/${pcy}`,
+      month: pcm,
+      year: pcy,
+      payPeriodStart: m?.payPeriodStart ?? null,
+      payPeriodEnd: m?.payPeriodEnd ?? null,
+      scheduledCl: sch.clCredits ?? null,
+      scheduledCco: sch.compensatoryOffs ?? null,
+      scheduledEl: sch.elCredits ?? null,
+      lockedCredits: sch.lockedCredits ?? null,
+      monthEditPolicy: policy,
+      cl: {
+        credited: clCreditedNet,
+        used: Number.isFinite(clUsed) ? clUsed : undefined,
+        transfer: xferCl,
+      },
+      ccl: {
+        credited: cclCreditedNet,
+        used: Number.isFinite(cclUsed) ? cclUsed : undefined,
+        transfer: xferCcl,
+      },
+      el: {
+        credited: elCreditedNet,
+        used: Number.isFinite(elUsed) ? elUsed : undefined,
+        transfer: xferEl,
+      },
     },
-    ccl: {
-      used: Number.isFinite(cclUsed) ? cclUsed : undefined,
-      transfer: xferCcl,
-    },
-    el: {
-      used: Number.isFinite(elUsed) ? elUsed : undefined,
-      transfer: xferEl,
-    },
-  };
+    m
+  );
 }
 
 function gateMonthSlotEditPolicy(flags: MonthSlotEditPolicy): MonthSlotEditPolicy {
@@ -936,13 +999,10 @@ export default function LeaveRegisterPage({
         label: m.label || `${m.month}/${m.year}`,
         payrollMonthIndex: pmi,
         policy,
-        clCredits: m.scheduledCl != null ? String(m.scheduledCl) : '',
-        compensatoryOffs: m.scheduledCco != null ? String(m.scheduledCco) : '',
-        elCredits: m.scheduledEl != null ? String(m.scheduledEl) : '',
+        clCredits: poolInputStringCreditsFirst(m, 'cl'),
+        compensatoryOffs: poolInputStringCreditsFirst(m, 'ccl'),
+        elCredits: poolInputStringCreditsFirst(m, 'el'),
         lockedCredits: m.lockedCredits != null ? String(m.lockedCredits) : '',
-        transferCl: formatNum(m.cl?.transfer),
-        transferCcl: formatNum(m.ccl?.transfer),
-        transferEl: formatNum(m.el?.transfer),
         clUsed: m.cl?.used != null ? String(m.cl.used) : '',
         compensatoryOffsUsed: m.ccl?.used != null ? String(m.ccl.used) : '',
         elUsed: m.el?.used != null ? String(m.el.used) : '',
@@ -1685,6 +1745,10 @@ export default function LeaveRegisterPage({
                                                     );
                                                     return;
                                                   }
+                                                  const mSlot = enrichRegisterMonthLiteCredits(
+                                                    m as RegisterMonthLite,
+                                                    m as any
+                                                  );
                                                   setSlotEditModal({
                                                     open: true,
                                                     employeeId: idStr,
@@ -1697,12 +1761,12 @@ export default function LeaveRegisterPage({
                                                     payrollMonthIndex:
                                                       Number(m.payrollMonthIndex) || (idx + 1),
                                                     monthEditPolicy: m.monthEditPolicy || null,
-                                                    clCredits:
-                                                      m.scheduledCl != null ? String(m.scheduledCl) : '',
-                                                    compensatoryOffs:
-                                                      m.scheduledCco != null ? String(m.scheduledCco) : '',
-                                                    elCredits:
-                                                      m.scheduledEl != null ? String(m.scheduledEl) : '',
+                                                    clCredits: poolInputStringCreditsFirst(mSlot, 'cl'),
+                                                    compensatoryOffs: poolInputStringCreditsFirst(
+                                                      mSlot,
+                                                      'ccl'
+                                                    ),
+                                                    elCredits: poolInputStringCreditsFirst(mSlot, 'el'),
                                                     lockedCredits:
                                                       m.lockedCredits != null ? String(m.lockedCredits) : '',
                                                     validateWithRecords: true,
@@ -1716,7 +1780,7 @@ export default function LeaveRegisterPage({
                                                 }}
                                                 className="mt-1 text-left text-[10px] font-semibold text-blue-600 dark:text-blue-400 hover:underline"
                                               >
-                                                Edit scheduled pool (admin)…
+                                                Edit month credits…
                                               </button>
                                             ) : canEditMonths ? (
                                               <p className="mt-1 text-[10px] text-slate-400 dark:text-slate-500">
@@ -2045,7 +2109,7 @@ export default function LeaveRegisterPage({
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800">
               <div>
                 <h2 id="slot-edit-title" className="text-sm font-semibold text-slate-900 dark:text-white">
-                  Edit scheduled pool
+                  Edit month credits
                 </h2>
                 <p className="text-xs text-slate-500 mt-0.5">
                   {slotEditModal.employeeName} · {slotEditModal.label} · FY{' '}
@@ -2069,13 +2133,13 @@ export default function LeaveRegisterPage({
                 </div>
               ) : null}
               <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
-                Updates <strong>scheduled</strong> credits on the FY month slot (initial sync / corrections).
-                Apply-cap consumption (locked/approved) is refreshed from leave rows after save; use{' '}
-                <strong>Sync apply only</strong> if you only fixed applications.
+                Values shown match the register table <strong>Cr</strong> column (ledger credits). Saving still updates
+                the FY <strong>scheduled</strong> slot. Apply-cap consumption is refreshed from leave rows after save;
+                use <strong>Sync apply only</strong> if you only fixed applications.
               </p>
               <div className="grid grid-cols-2 gap-2">
                 <label className="col-span-2 text-[11px] font-medium text-slate-600 dark:text-slate-300">
-                  Scheduled CL
+                  CL credits (Cr)
                   <input
                     type="text"
                     inputMode="decimal"
@@ -2088,7 +2152,7 @@ export default function LeaveRegisterPage({
                   />
                 </label>
                 <label className="col-span-2 text-[11px] font-medium text-slate-600 dark:text-slate-300">
-                  Scheduled CCL (pool)
+                  CCL credits (Cr)
                   <input
                     type="text"
                     inputMode="decimal"
@@ -2101,7 +2165,7 @@ export default function LeaveRegisterPage({
                   />
                 </label>
                 <label className="col-span-2 text-[11px] font-medium text-slate-600 dark:text-slate-300">
-                  Scheduled EL
+                  EL credits (Cr)
                   <input
                     type="text"
                     inputMode="decimal"
@@ -2432,14 +2496,13 @@ export default function LeaveRegisterPage({
               ) : (
                 <>
                   <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed max-w-4xl">
-                    Editable cells follow your leave policy per payroll month. <strong>Xfer</strong> columns show
-                    implied unused pool for <strong>closed</strong> payroll periods (scheduled minus used and policy lock
-                    for CL), from current numbers—not a stale saved marker. With <strong>Carry forward unused</strong>{' '}
-                    checked, the server also re-chains closed months using global roll toggles. Saving updates the list
-                    and detail cache immediately.
+                    <strong>Cr</strong> (CL / CCL / EL) matches the register table <strong>Cr</strong> column — ledger
+                    credits for that payroll month. Editing these values updates the FY <strong>scheduled</strong> slot on
+                    save (same as before). With <strong>Carry forward unused</strong> checked, the server re-chains
+                    closed months using global roll toggles. Saving refreshes the list and detail cache.
                   </p>
                   <div className="overflow-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm flex-1 min-h-[240px] max-h-[min(58vh,720px)]">
-                    <table className="w-full min-w-[1040px] text-xs sm:text-[13px] border-collapse">
+                    <table className="w-full min-w-[720px] text-xs sm:text-[13px] border-collapse">
                       <thead className="sticky top-0 z-[1] shadow-sm">
                         <tr className="bg-slate-100 dark:bg-slate-800/95 text-slate-700 dark:text-slate-200 border-b border-slate-200 dark:border-slate-600">
                           <th
@@ -2449,19 +2512,16 @@ export default function LeaveRegisterPage({
                             Period
                           </th>
                           <th
-                            colSpan={2}
                             className="text-center font-semibold px-1 py-2 border-l border-slate-200 dark:border-slate-600"
                           >
                             CL
                           </th>
                           <th
-                            colSpan={2}
                             className="text-center font-semibold px-1 py-2 border-l border-slate-200 dark:border-slate-600"
                           >
                             CCL
                           </th>
                           <th
-                            colSpan={2}
                             className="text-center font-semibold px-1 py-2 border-l border-slate-200 dark:border-slate-600"
                           >
                             EL
@@ -2480,32 +2540,23 @@ export default function LeaveRegisterPage({
                           </th>
                         </tr>
                         <tr className="bg-slate-50 dark:bg-slate-800/80 text-slate-600 dark:text-slate-400 text-[10px] sm:text-xs border-b border-slate-200 dark:border-slate-600">
-                          <th className="text-center font-medium px-2 py-1.5 border-l border-slate-200 dark:border-slate-600">
-                            Sch
+                          <th
+                            className="text-center font-medium px-2 py-1.5 border-l border-slate-200 dark:border-slate-600"
+                            title="Ledger credits this payroll month (same as register table Cr). Save writes FY scheduled slot."
+                          >
+                            Cr
                           </th>
                           <th
-                            className="text-center font-medium px-2 py-1.5"
-                            title="Closed periods: implied unused (current scheduled vs used); open month shows 0"
+                            className="text-center font-medium px-2 py-1.5 border-l border-slate-200 dark:border-slate-600"
+                            title="Ledger credits this payroll month (same as register table Cr). Save writes FY scheduled slot."
                           >
-                            Xfer
-                          </th>
-                          <th className="text-center font-medium px-2 py-1.5 border-l border-slate-200 dark:border-slate-600">
-                            Sch
+                            Cr
                           </th>
                           <th
-                            className="text-center font-medium px-2 py-1.5"
-                            title="Closed periods: implied unused (current scheduled vs used); open month shows 0"
+                            className="text-center font-medium px-2 py-1.5 border-l border-slate-200 dark:border-slate-600"
+                            title="Ledger credits this payroll month (same as register table Cr). Save writes FY scheduled slot."
                           >
-                            Xfer
-                          </th>
-                          <th className="text-center font-medium px-2 py-1.5 border-l border-slate-200 dark:border-slate-600">
-                            Sch
-                          </th>
-                          <th
-                            className="text-center font-medium px-2 py-1.5"
-                            title="Closed periods: implied unused (current scheduled vs used); open month shows 0"
-                          >
-                            Xfer
+                            Cr
                           </th>
                           <th className="text-center font-medium px-2 py-1.5 border-l border-slate-200 dark:border-slate-600">
                             CL
@@ -2541,13 +2592,6 @@ export default function LeaveRegisterPage({
                                 />
                               </td>
                             );
-                          const xfer = (v: string) => (
-                            <td className="px-1.5 py-1 align-middle">
-                              <div className="h-8 flex items-center justify-center rounded-md bg-slate-100 dark:bg-slate-800/90 border border-transparent px-2 text-xs sm:text-sm tabular-nums text-slate-600 dark:text-slate-300">
-                                {v || '—'}
-                              </div>
-                            </td>
-                          );
                           return (
                             <tr
                               key={`${r.payrollCycleYear}-${r.payrollCycleMonth}`}
@@ -2564,11 +2608,8 @@ export default function LeaveRegisterPage({
                                 ) : null}
                               </td>
                               {cell(r.policy.allowEditClCredits, r.clCredits, 'clCredits')}
-                              {xfer(r.transferCl)}
                               {cell(r.policy.allowEditCclCredits, r.compensatoryOffs, 'compensatoryOffs')}
-                              {xfer(r.transferCcl)}
                               {cell(r.policy.allowEditElCredits, r.elCredits, 'elCredits')}
-                              {xfer(r.transferEl)}
                               {cell(r.policy.allowEditPolicyLock, r.lockedCredits, 'lockedCredits')}
                               {cell(r.policy.allowEditUsedCl, r.clUsed, 'clUsed')}
                               {cell(r.policy.allowEditUsedCcl, r.compensatoryOffsUsed, 'compensatoryOffsUsed')}
