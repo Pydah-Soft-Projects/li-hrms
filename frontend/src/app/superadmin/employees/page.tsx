@@ -112,6 +112,7 @@ interface FormSettings {
     id: string;
     label: string;
     isEnabled: boolean;
+    isArray?: boolean;
     isSystem?: boolean;
     order?: number;
     fields: Array<{
@@ -5855,23 +5856,77 @@ export default function EmployeesPage() {
                         return (
                           <div key={group.id} className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
                             <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">{group.label}</h3>
-                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                              {groupFields.map(field => {
-                                const val = getEmployeeGroupedDynamicFieldValue(viewingEmployee, group.id, field.id);
-                                // Check if the field is from the 'salaries' group to add currency symbol
-                                const isCurrency = group.id === 'salaries' || field.label.toLowerCase().includes('salary') || field.label.toLowerCase().includes('allowance');
-                                const displayVal = (val === undefined || val === null || val === '') 
-                                  ? '-' 
-                                  : (isCurrency ? `₹${Number(val).toLocaleString()}` : String(val));
-                                
-                                return (
-                                  <div key={field.id}>
-                                    <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{field.label}</label>
-                                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{displayVal}</p>
-                                  </div>
-                                );
-                              })}
-                            </div>
+                            {group.isArray ? (
+                              <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+                                <table className="w-full text-left text-sm">
+                                  <thead>
+                                    <tr className="border-b border-slate-200 bg-slate-100/80 dark:border-slate-700 dark:bg-slate-800/80">
+                                      {groupFields.map(f => (
+                                        <th key={f.id} className="px-3 py-2 font-semibold text-slate-700 dark:text-slate-300">
+                                          {f.label}
+                                        </th>
+                                      ))}
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {(() => {
+                                      let rows = (viewingEmployee as any)?.[group.id] || viewingEmployee?.dynamicFields?.[group.id];
+                                      if (typeof rows === 'string') {
+                                        try {
+                                          rows = JSON.parse(rows);
+                                        } catch (e) {
+                                          rows = [];
+                                        }
+                                      }
+
+                                      if (!Array.isArray(rows) || rows.length === 0) {
+                                        return (
+                                          <tr>
+                                            <td colSpan={groupFields.length} className="px-3 py-4 text-center text-slate-500 italic">
+                                              No data provided.
+                                            </td>
+                                          </tr>
+                                        );
+                                      }
+                                      return rows.map((row: any, idx: number) => (
+                                        <tr key={idx} className="border-b border-slate-100 last:border-0 dark:border-slate-800">
+                                          {groupFields.map(f => {
+                                            const val = row[f.id];
+                                            const isCurrency = group.id === 'salaries' || f.label.toLowerCase().includes('salary') || f.label.toLowerCase().includes('allowance');
+                                            const displayVal = (val === undefined || val === null || val === '')
+                                              ? '-'
+                                              : (isCurrency ? `₹${Number(val).toLocaleString()}` : String(val));
+                                            return (
+                                              <td key={f.id} className="px-3 py-2 text-slate-900 dark:text-slate-100">
+                                                {displayVal}
+                                              </td>
+                                            );
+                                          })}
+                                        </tr>
+                                      ));
+                                    })()}
+                                  </tbody>
+                                </table>
+                              </div>
+                            ) : (
+                              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                                {groupFields.map(field => {
+                                  const val = getEmployeeGroupedDynamicFieldValue(viewingEmployee, group.id, field.id);
+                                  // Check if the field is from the 'salaries' group to add currency symbol
+                                  const isCurrency = group.id === 'salaries' || field.label.toLowerCase().includes('salary') || field.label.toLowerCase().includes('allowance');
+                                  const displayVal = (val === undefined || val === null || val === '')
+                                    ? '-'
+                                    : (isCurrency ? `₹${Number(val).toLocaleString()}` : String(val));
+
+                                  return (
+                                    <div key={field.id}>
+                                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{field.label}</label>
+                                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{displayVal}</p>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
                           </div>
                         );
                       })}
@@ -6633,34 +6688,87 @@ export default function EmployeesPage() {
                     !g.isSystem
                   )
                     .sort((a, b) => (a.order || 0) - (b.order || 0))
-                    .map(group => (
-                      <div key={group.id} className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                        <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">{group.label}</h3>
-                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                          {group.fields
-                            ?.filter(f => f.isEnabled !== false)
-                            .sort((a, b) => (a.order || 0) - (b.order || 0))
-                            .map(field => {
-                              const value = getEmployeeGroupedDynamicFieldValue(viewingEmployee, group.id, field.id);
-                              return (
-                                <div key={field.id}>
-                                  <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{field.label}</label>
-                                  <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
-                                    {value != null && value !== '' ? (
-                                      typeof value === 'object' ? JSON.stringify(value) : String(value)
-                                    ) : '-'}
-                                  </p>
-                                  {field.description && (
-                                    <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
-                                      {field.description}
-                                    </p>
-                                  )}
-                                </div>
-                              );
-                            })}
+                    .map(group => {
+                      const groupFields = group.fields?.filter(f => f.isEnabled !== false) || [];
+                      return (
+                        <div key={group.id} className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
+                          <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">{group.label}</h3>
+                          {group.isArray ? (
+                            <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+                              <table className="w-full text-left text-sm">
+                                <thead>
+                                  <tr className="border-b border-slate-200 bg-slate-100/80 dark:border-slate-700 dark:bg-slate-800/80">
+                                    {groupFields.sort((a, b) => (a.order || 0) - (b.order || 0)).map(f => (
+                                      <th key={f.id} className="px-3 py-2 font-semibold text-slate-700 dark:text-slate-300">
+                                        {f.label}
+                                      </th>
+                                    ))}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {(() => {
+                                    let rows = (viewingEmployee as any)?.[group.id] || viewingEmployee?.dynamicFields?.[group.id];
+                                    if (typeof rows === 'string') {
+                                      try {
+                                        rows = JSON.parse(rows);
+                                      } catch (e) {
+                                        rows = [];
+                                      }
+                                    }
+                                    
+                                    if (!Array.isArray(rows) || rows.length === 0) {
+                                      return (
+                                        <tr>
+                                          <td colSpan={groupFields.length} className="px-3 py-4 text-center text-slate-500 italic">
+                                            No data provided.
+                                          </td>
+                                        </tr>
+                                      );
+                                    }
+                                    return rows.map((row: any, idx: number) => (
+                                      <tr key={idx} className="border-b border-slate-100 last:border-0 dark:border-slate-800">
+                                        {groupFields.sort((a, b) => (a.order || 0) - (b.order || 0)).map(f => {
+                                          const val = row[f.id];
+                                          const displayVal = (val === undefined || val === null || val === '') ? '-' : String(val);
+                                          return (
+                                            <td key={f.id} className="px-3 py-2 text-slate-900 dark:text-slate-100">
+                                              {displayVal}
+                                            </td>
+                                          );
+                                        })}
+                                      </tr>
+                                    ));
+                                  })()}
+                                </tbody>
+                              </table>
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                              {groupFields
+                                .sort((a, b) => (a.order || 0) - (b.order || 0))
+                                .map(field => {
+                                  const value = getEmployeeGroupedDynamicFieldValue(viewingEmployee, group.id, field.id);
+                                  return (
+                                    <div key={field.id}>
+                                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{field.label}</label>
+                                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                                        {value != null && value !== '' ? (
+                                          typeof value === 'object' ? JSON.stringify(value) : String(value)
+                                        ) : '-'}
+                                      </p>
+                                      {field.description && (
+                                        <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                                          {field.description}
+                                        </p>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
 
                       {/* Reporting Authority */}
                       {((viewingEmployee as any).reporting_to || (viewingEmployee as any).reporting_to_) && (
