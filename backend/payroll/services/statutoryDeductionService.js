@@ -57,8 +57,8 @@ async function calculateStatutoryDeductions({ basicPay = 0, grossSalary = 0, ear
     return amount;
   };
 
-  // ESI: calculated on (wageBasePercentOfBasic % of basic) OR a specific wageBaseField. 
-  // When enabled, wage ceiling applies: applicable when basic ≤ ceiling (0 = no ceiling).
+  // ESI: calculated on (wageBasePercentOfBasic % of basic) OR a specific wageBaseField.
+  // When enabled, wage ceiling applies to that esiWage (0 = no ceiling).
   if (applyESI && config.esi && config.esi.enabled) {
     const basic = Number(basicPay) || 0;
     const wageCeiling = config.esi.wageCeiling || 0;
@@ -75,7 +75,8 @@ async function calculateStatutoryDeductions({ basicPay = 0, grossSalary = 0, ear
       esiWage = basic * (wageBasePct / 100);
     }
 
-    const applicable = basic > 0 && (wageCeiling <= 0 || basic <= wageCeiling);
+    // Eligibility must follow the ESI wage (field or % of basic), not full contractual basic — see StatutoryDeductionConfig esiSchema comment.
+    const applicable = esiWage > 0 && (wageCeiling <= 0 || esiWage <= wageCeiling);
     if (applicable) {
       const empAmount = prorate(Math.round((esiWage * empPct / 100) * 100) / 100);
       const emprAmount = prorate(Math.round((esiWage * emprPct / 100) * 100) / 100);
