@@ -648,7 +648,7 @@ export default function PayRegisterPage() {
       Swal.fire({
         icon: 'success',
         title: locked ? 'Summaries locked' : 'Summaries unlocked',
-        text: `Updated ${res.modifiedCount ?? 0} record(s).`,
+        text: `Updated ${res.data?.modifiedCount ?? 0} record(s).`,
         timer: 2200,
         showConfirmButton: false,
         toast: true,
