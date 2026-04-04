@@ -531,6 +531,22 @@ const payRegisterSummarySchema = new mongoose.Schema(
       default: 'draft',
     },
 
+    /** When true, bulk/manual sync skips this row unless force=true; auto-sync from leave/OD/OT also skips */
+    summaryLocked: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    summaryLockedAt: {
+      type: Date,
+      default: null,
+    },
+    summaryLockedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+
     // ADDITIONAL METADATA
     notes: {
       type: String,

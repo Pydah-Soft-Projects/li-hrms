@@ -12,7 +12,9 @@ const OD = require('../../leaves/model/OD');
 const MonthlyAttendanceSummary = require('../model/MonthlyAttendanceSummary');
 const { calculateMonthlySummary } = require('../services/summaryCalculationService');
 const Settings = require('../../settings/model/Settings');
-const { extractISTComponents } = require('../../shared/utils/dateUtils');
+const { extractISTComponents, getPayrollDateRange } = require('../../shared/utils/dateUtils');
+const { buildLeftDuringPeriodOrClause } = require('../services/attendanceEmployeeQuery');
+const dateCycleService = require('../../leaves/services/dateCycleService');
 
 /**
  * Format date to YYYY-MM-DD
@@ -20,6 +22,8 @@ const { extractISTComponents } = require('../../shared/utils/dateUtils');
 const formatDate = (date) => {
   return extractISTComponents(date).dateStr;
 };
+
+const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
  * @desc    Get attendance records for calendar view
@@ -42,11 +46,14 @@ exports.getAttendanceCalendar = async (req, res) => {
     const targetYear = parseInt(year) || curYear;
     const targetMonth = parseInt(month) || curMonth;
 
-    // Get employee with scope validation
+    const pr = await getPayrollDateRange(targetYear, targetMonth);
+    const rosterVisibility = buildLeftDuringPeriodOrClause(pr.startDate, pr.endDate);
+
+    // Scope + same roster rule as monthly attendance (incl. left during this payroll month)
     const employee = await Employee.findOne({
       ...req.scopeFilter,
       emp_no: employeeNumber.toUpperCase(),
-      is_active: { $ne: false }
+      ...rosterVisibility,
     });
 
     if (!employee) {
@@ -258,23 +265,34 @@ exports.getAttendanceDetail = async (req, res) => {
 exports.getEmployeesWithAttendance = async (req, res) => {
   try {
     const { date, page = 1, limit = 50 } = req.query;
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const pageNum = parseInt(page, 10) || 1;
+    const limitNum = parseInt(limit, 10) || 50;
+    const anchor = date ? new Date(date) : new Date();
+    const cycle = await dateCycleService.getPayrollCycleForDate(anchor);
+    const ps = extractISTComponents(cycle.startDate).dateStr;
+    const pe = extractISTComponents(cycle.endDate).dateStr;
+    const rosterVisibility = buildLeftDuringPeriodOrClause(ps, pe);
 
-    // Get paginated employees within scope
-    const employees = await Employee.find({
+    const skip = limitNum === -1 ? 0 : (pageNum - 1) * limitNum;
+
+    let employeeQuery = Employee.find({
       ...req.scopeFilter,
-      is_active: { $ne: false }
+      ...rosterVisibility,
     })
       .select('emp_no employee_name department_id designation_id')
       .populate('department_id', 'name')
       .populate('designation_id', 'name')
-      .sort({ emp_no: 1 })
-      .skip(skip)
-      .limit(parseInt(limit));
+      .sort({ emp_no: 1 });
+
+    if (limitNum !== -1) {
+      employeeQuery = employeeQuery.skip(skip).limit(limitNum);
+    }
+
+    const employees = await employeeQuery;
 
     const total = await Employee.countDocuments({
       ...req.scopeFilter,
-      is_active: { $ne: false }
+      ...rosterVisibility,
     });
 
     // If date provided, get attendance for that date for these SPECIFIC employees
@@ -299,11 +317,11 @@ exports.getEmployeesWithAttendance = async (req, res) => {
       success: true,
       data: employeesWithAttendance,
       pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
+        page: pageNum,
+        limit: limitNum,
         total,
-        totalPages: Math.ceil(total / parseInt(limit))
-      }
+        totalPages: limitNum === -1 ? 1 : Math.ceil(total / limitNum),
+      },
     });
 
   } catch (error) {
@@ -331,30 +349,58 @@ exports.getMonthlyAttendance = async (req, res) => {
       });
     }
 
-    // Build filter based on scope and provided filters
-    const filter = { ...req.scopeFilter, is_active: { $ne: false } };
+    const yearNum = parseInt(year, 10);
+    const monthNum = parseInt(month, 10);
 
-    if (search) {
-      filter.$or = [
-        { employee_name: { $regex: search, $options: 'i' } },
-        { emp_no: { $regex: search, $options: 'i' } }
+    // Payroll window for "left in period" — align with pay register (UTC day boundaries on YYYY-MM-DD strings).
+    let periodStartStr = startDate;
+    let periodEndStr = endDate;
+    if (!periodStartStr || !periodEndStr) {
+      const pr = await getPayrollDateRange(yearNum, monthNum);
+      periodStartStr = pr.startDate;
+      periodEndStr = pr.endDate;
+    }
+
+    const employeeVisibility = buildLeftDuringPeriodOrClause(periodStartStr, periodEndStr);
+
+    const filter = { ...req.scopeFilter };
+
+    const searchTrim = search ? String(search).trim() : '';
+    if (searchTrim) {
+      const safe = escapeRegex(searchTrim);
+      filter.$and = [
+        employeeVisibility,
+        {
+          $or: [
+            { employee_name: { $regex: safe, $options: 'i' } },
+            { emp_no: { $regex: safe, $options: 'i' } },
+          ],
+        },
       ];
+    } else {
+      Object.assign(filter, employeeVisibility);
     }
 
     if (divisionId) filter.division_id = divisionId;
     if (departmentId) filter.department_id = departmentId;
     if (designationId) filter.designation_id = designationId;
 
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const pageNum = parseInt(page, 10) || 1;
+    const limitNum = parseInt(limit, 10) || 20;
+    const skip = limitNum === -1 ? 0 : (pageNum - 1) * limitNum;
 
-    // Get paginated active employees
-    const employees = await Employee.find(filter)
+    let employeeFind = Employee.find(filter)
       .populate('division_id', 'name')
       .populate('department_id', 'name')
       .populate('designation_id', 'name')
-      .sort({ employee_name: 1 })
-      .skip(skip)
-      .limit(parseInt(limit));
+      .sort({ employee_name: 1 });
+
+    if (limitNum !== -1) {
+      employeeFind = employeeFind.skip(skip).limit(limitNum);
+    }
+
+    // Active + those who left in this payroll period (and optional "fetch all" via limit=-1)
+    const employees = await employeeFind;
 
     const totalEmployees = await Employee.countDocuments(filter);
 
@@ -366,9 +412,9 @@ exports.getMonthlyAttendance = async (req, res) => {
       data: employeesWithAttendance,
       pagination: {
         total: totalEmployees,
-        page: parseInt(page),
-        limit: parseInt(limit),
-        totalPages: Math.ceil(totalEmployees / parseInt(limit))
+        page: pageNum,
+        limit: limitNum,
+        totalPages: limitNum === -1 ? 1 : Math.ceil(totalEmployees / limitNum),
       },
       month: parseInt(month),
       year: parseInt(year),
