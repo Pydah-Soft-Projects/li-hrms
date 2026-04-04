@@ -9,7 +9,8 @@ const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
 const Shift = require('../../shifts/model/Shift');
 const MonthlyAttendanceSummary = require('../../attendance/model/MonthlyAttendanceSummary');
 const summaryCalculationService = require('../../attendance/services/summaryCalculationService');
-const { getPayrollDateRange, getAllDatesInRange } = require('../../shared/utils/dateUtils');
+const { getPayrollDateRange, getAllDatesInRange, extractISTComponents } = require('../../shared/utils/dateUtils');
+const Employee = require('../../employees/model/Employee');
 
 /**
  * Auto Population Service
@@ -646,6 +647,16 @@ async function populatePayRegisterFromSources(employeeId, emp_no, year, monthNum
   const { startDate, endDate } = await getPayrollDateRange(year, monthNumber);
   const dates = getAllDatesInRange(startDate, endDate);
 
+  const empBounds = await Employee.findById(employeeId).select('doj leftDate').lean();
+  const dojStrBound = empBounds?.doj ? extractISTComponents(empBounds.doj).dateStr : null;
+  const leftDateStrBound = empBounds?.leftDate ? extractISTComponents(empBounds.leftDate).dateStr : null;
+  const isOutsideEmploymentBound = (dStr) => {
+    if (!dStr) return false;
+    if (dojStrBound && dStr < dojStrBound) return true;
+    if (leftDateStrBound && dStr > leftDateStrBound) return true;
+    return false;
+  };
+
   // Fetch all data sources
   const [attendanceMap, leaveMap, odMap, otMap, shiftMap] = await Promise.all([
     fetchAttendanceData(emp_no, startDate, endDate),
@@ -658,6 +669,50 @@ async function populatePayRegisterFromSources(employeeId, emp_no, year, monthNum
   const dailyRecords = [];
 
   for (const date of dates) {
+    if (isOutsideEmploymentBound(date)) {
+      dailyRecords.push({
+        date,
+        firstHalf: {
+          status: 'blank',
+          leaveType: null,
+          leaveNature: null,
+          isOD: false,
+          otHours: 0,
+          shiftId: null,
+          remarks: null,
+        },
+        secondHalf: {
+          status: 'blank',
+          leaveType: null,
+          leaveNature: null,
+          isOD: false,
+          otHours: 0,
+          shiftId: null,
+          remarks: null,
+        },
+        status: 'blank',
+        leaveType: null,
+        leaveNature: null,
+        isOD: false,
+        isSplit: false,
+        shiftId: null,
+        shiftName: null,
+        payableShifts: 1,
+        otHours: 0,
+        attendanceRecordId: null,
+        leaveIds: [],
+        leaveSplitIds: [],
+        odIds: [],
+        otIds: [],
+        isLate: false,
+        isEarlyOut: false,
+        lateInMinutes: 0,
+        earlyOutMinutes: 0,
+        remarks: null,
+      });
+      continue;
+    }
+
     const attendance = attendanceMap[date];
     const leave = leaveMap[date];
     const od = odMap[date];
