@@ -329,6 +329,9 @@ function buildPayslipExcelRowsNormalized(payslip, allAllowanceNames, allDeductio
   // Arrears
   row['Arrears'] = payslip.arrears?.arrearsAmount || 0;
 
+  row['Manual Deduction'] =
+    payslip.manualDeductions?.manualDeductionsAmount ?? payslip.manualDeductionsAmount ?? 0;
+
   // Final
   row['NET SALARY'] = payslip.netSalary || 0;
   row['Round Off'] = payslip.roundOff || 0;
@@ -478,6 +481,8 @@ async function buildPayslipsFromStoredPayrollRecords(payrollRecords, month) {
           arrearsAmount: payrollRecord.arrearsAmount || 0,
           arrearsSettlements: payrollRecord.arrearsSettlements || [],
         },
+        manualDeductions: { manualDeductionsAmount: payrollRecord.manualDeductionsAmount || 0 },
+        manualDeductionsAmount: payrollRecord.manualDeductionsAmount || 0,
         netSalary: payrollRecord.netSalary,
         roundOff: payrollRecord.roundOff || 0,
         paidDays,
@@ -571,6 +576,9 @@ function buildPayslipExcelRowsOld(payslip) {
 
   // ===== ARREARS =====
   row['Arrears'] = payslip.arrears?.arrearsAmount || 0;
+
+  row['Manual Deduction'] =
+    payslip.manualDeductions?.manualDeductionsAmount ?? payslip.manualDeductionsAmount ?? 0;
 
   // ===== FINAL SALARY =====
   row['NET SALARY'] = payslip.netSalary || 0;
@@ -964,59 +972,10 @@ exports.exportPayrollExcel = async (req, res) => {
 
 /**
  * Build payslip-shaped object from a PayrollRecord (with populated employeeId) for outputColumnService.
+ * Same shape as export bundle (paysheetBundleExport.payrollRecordToPayslipShape) so paysheet and bundle stay aligned.
  */
 function recordToPayslip(record) {
-  const emp = record.employeeId || {};
-  const toObj = (x) => (x && typeof x.toObject === 'function' ? x.toObject() : x);
-  const empObj = toObj(emp);
-  const rawAtt = record.attendance && typeof record.attendance.toObject === 'function' ? record.attendance.toObject() : (record.attendance || {});
-  const ded = record.deductions && typeof record.deductions.toObject === 'function' ? record.deductions.toObject() : (record.deductions || {});
-  const daysFromBreakdown = Number(ded?.attendanceDeductionBreakdown?.daysDeducted);
-  const attendanceDeductionDays = Number.isFinite(daysFromBreakdown)
-    ? daysFromBreakdown
-    : (Number(rawAtt.attendanceDeductionDays) || 0);
-  return {
-    employee: {
-      emp_no: record.emp_no || empObj?.emp_no || '',
-      name: empObj?.employee_name || [empObj?.first_name, empObj?.last_name].filter(Boolean).join(' ') || 'N/A',
-      designation: empObj?.designation_id?.name || empObj?.designation_id || '',
-      department: empObj?.department_id?.name || empObj?.department_id || 'N/A',
-      division: empObj?.division_id?.name || empObj?.division_id || 'N/A',
-      // Match calculatePayrollFromOutputColumns record.employee so output-column fields resolve the same as 2nd salary / fresh calc
-      location: empObj?.location || '',
-      bank_account_no: empObj?.bank_account_no || '',
-      bank_name: empObj?.bank_name || '',
-      bank_place: empObj?.bank_place || '',
-      ifsc_code: empObj?.ifsc_code || '',
-      payment_mode: empObj?.salary_mode || '',
-      date_of_joining: empObj?.doj || '',
-      pf_number: empObj?.pf_number || '',
-      esi_number: empObj?.esi_number || '',
-      leftDate: empObj?.leftDate,
-      salaries:
-        empObj?.salaries && typeof empObj.salaries === 'object' && !Array.isArray(empObj.salaries)
-          ? { ...empObj.salaries }
-          : {},
-    },
-    attendance: {
-      ...rawAtt,
-      attendanceDeductionDays,
-    },
-    attendanceDeductionDays,
-    earnings: record.earnings && typeof record.earnings.toObject === 'function' ? record.earnings.toObject() : (record.earnings || {}),
-    deductions: ded,
-    loanAdvance: record.loanAdvance && typeof record.loanAdvance.toObject === 'function' ? record.loanAdvance.toObject() : (record.loanAdvance || {}),
-    arrears: record.arrears && typeof record.arrears === 'object'
-      ? (record.arrears.toObject ? record.arrears.toObject() : { ...record.arrears })
-      : { arrearsAmount: Number(record.arrearsAmount) || 0, arrearsSettlements: record.arrearsSettlements || [] },
-    manualDeductions: record.manualDeductions && typeof record.manualDeductions === 'object'
-      ? (record.manualDeductions.toObject ? record.manualDeductions.toObject() : { ...record.manualDeductions })
-      : { manualDeductionsAmount: Number(record.manualDeductionsAmount) || 0 },
-    manualDeductionsAmount: Number(record.manualDeductionsAmount) || 0,
-    arrearsAmount: Number(record.arrearsAmount) || 0,
-    netSalary: Number(record.netSalary) || 0,
-    roundOff: Number(record.roundOff) || 0,
-  };
+  return payrollRecordToPayslipShape(record);
 }
 
 /**
@@ -1589,6 +1548,7 @@ exports.exportPaysheetBundleExcel = async (req, res) => {
 
     const config = await PayrollConfiguration.get();
     const outputColumnsNormalized = normalizeOutputColumns(config?.outputColumns);
+    const statutoryCodesForBundle = await getStatutoryCodesForPaysheetExpansion();
 
     let regularRows;
     let secondRows;
@@ -1607,7 +1567,7 @@ exports.exportPaysheetBundleExcel = async (req, res) => {
         const sr = secondByEmp.get(id);
         return sr ? secondSalaryRecordToPayslipShape(sr) : null;
       });
-      const built = buildOutputColumnRows(payslipsReg, payslipsSec, outputColumnsNormalized);
+      const built = buildOutputColumnRows(payslipsReg, payslipsSec, outputColumnsNormalized, statutoryCodesForBundle);
       regularRows = built.regularRows;
       secondRows = built.secondRows;
       netsReg = payslipsReg.map((p) => Number(p.netSalary) || 0);

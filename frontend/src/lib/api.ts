@@ -3579,7 +3579,7 @@ export const api = {
 
   /** Pay-cycle aware default month (previous completed period vs today in IST). */
   getPaysheetDefaultMonth: async () => {
-    return apiRequest<{ success: boolean; data?: { month: string; containingMonth: string } }>(
+    return apiRequest<{ month: string; containingMonth: string }>(
       '/payroll/paysheet/default-month',
       { method: 'GET' }
     );
