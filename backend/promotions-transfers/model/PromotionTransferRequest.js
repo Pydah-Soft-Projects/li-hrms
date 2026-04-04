@@ -4,7 +4,7 @@ const PromotionTransferRequestSchema = new mongoose.Schema(
   {
     requestType: {
       type: String,
-      enum: ['promotion', 'demotion', 'transfer'],
+      enum: ['promotion', 'demotion', 'transfer', 'increment'],
       required: true,
     },
     employeeId: {
@@ -46,7 +46,7 @@ const PromotionTransferRequestSchema = new mongoose.Schema(
       type: Number,
       default: null,
     },
-    /** @deprecated Legacy field; old requests only. New requests use newGrossSalary. */
+    /** For requestType increment: amount added to current gross. Also stored for audit on new increment requests. */
     incrementAmount: {
       type: Number,
       default: null,
