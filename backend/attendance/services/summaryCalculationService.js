@@ -43,6 +43,127 @@ function isAbsentStatus(status) {
   return String(status || '').toUpperCase() === 'ABSENT';
 }
 
+/** Pay register leave halves use paid/lop keys (same as populate resolveConflicts). */
+function normalizePayRegisterLeaveNature(l) {
+  const n = String(l.leaveNature || '').toLowerCase();
+  if (n === 'paid' || n === 'lop') return n;
+  return 'paid';
+}
+
+function pickLeaveMetaForHalf(leaves, half) {
+  if (!leaves || !leaves.length) return { leaveTypeKey: 'paid', leaveNature: 'paid' };
+  const full = leaves.find((x) => !x.isHalfDay);
+  if (full) {
+    const nat = normalizePayRegisterLeaveNature(full);
+    return { leaveTypeKey: nat, leaveNature: nat };
+  }
+  const key = half === 'first' ? 'first_half' : 'second_half';
+  const h = leaves.find((x) => x.isHalfDay && x.halfDayType === key);
+  if (h) {
+    const nat = normalizePayRegisterLeaveNature(h);
+    return { leaveTypeKey: nat, leaveNature: nat };
+  }
+  const nat = normalizePayRegisterLeaveNature(leaves[0]);
+  return { leaveTypeKey: nat, leaveNature: nat };
+}
+
+function buildPayRegisterHalfFromCredits(leaveC, odC, attC, day, halfKey, leaves) {
+  if (day.isWO) {
+    return { status: 'week_off', leaveType: null, leaveNature: null, isOD: false, otHours: 0 };
+  }
+  if (day.isHOL) {
+    return { status: 'holiday', leaveType: null, leaveNature: null, isOD: false, otHours: 0 };
+  }
+  const lc = Number(leaveC) || 0;
+  const oc = Number(odC) || 0;
+  const ac = Number(attC) || 0;
+  const m = Math.max(lc, oc, ac);
+  if (m < 0.5) {
+    return { status: 'absent', leaveType: null, leaveNature: null, isOD: false, otHours: 0 };
+  }
+  if (lc >= 0.5 && lc >= oc && lc >= ac) {
+    const meta = pickLeaveMetaForHalf(leaves, halfKey);
+    return {
+      status: 'leave',
+      leaveType: meta.leaveTypeKey,
+      leaveNature: meta.leaveNature,
+      isOD: false,
+      otHours: 0,
+    };
+  }
+  if (oc >= 0.5 && oc >= ac) {
+    return { status: 'od', leaveType: null, leaveNature: null, isOD: true, otHours: 0 };
+  }
+  if (ac >= 0.5) {
+    return { status: 'present', leaveType: null, leaveNature: null, isOD: false, otHours: 0 };
+  }
+  return { status: 'absent', leaveType: null, leaveNature: null, isOD: false, otHours: 0 };
+}
+
+function adjustPayRegisterHalvesForPartialDay(firstHalf, secondHalf, isPartialDay, dayPayable) {
+  if (!isPartialDay) return { firstHalf, secondHalf };
+  const pay = Math.min(1, Math.max(0, Number(dayPayable) || 0));
+  if (pay <= 0) return { firstHalf, secondHalf };
+  const bothAbsent =
+    firstHalf.status === 'absent' &&
+    secondHalf.status === 'absent';
+  if (!bothAbsent) return { firstHalf, secondHalf };
+  const present = {
+    status: 'present',
+    leaveType: null,
+    leaveNature: null,
+    isOD: false,
+    otHours: 0,
+  };
+  const abs = {
+    status: 'absent',
+    leaveType: null,
+    leaveNature: null,
+    isOD: false,
+    otHours: 0,
+  };
+  if (pay >= 1) {
+    return { firstHalf: { ...present }, secondHalf: { ...present } };
+  }
+  if (pay >= 0.5) {
+    return { firstHalf: { ...present }, secondHalf: { ...abs } };
+  }
+  return { firstHalf, secondHalf };
+}
+
+function buildPayRegisterDaySnapshotFromEngine(dStr, day, ctx) {
+  const {
+    leaveFirstAll,
+    leaveSecondAll,
+    attFirst,
+    attSecond,
+    odFirst,
+    odSecond,
+    isPartialDay,
+    dayPayable,
+  } = ctx;
+  let firstHalf = buildPayRegisterHalfFromCredits(leaveFirstAll, odFirst, attFirst, day, 'first', day.leaves);
+  let secondHalf = buildPayRegisterHalfFromCredits(leaveSecondAll, odSecond, attSecond, day, 'second', day.leaves);
+  const adj = adjustPayRegisterHalvesForPartialDay(firstHalf, secondHalf, isPartialDay, dayPayable);
+  firstHalf = adj.firstHalf;
+  secondHalf = adj.secondHalf;
+  const isSplit = firstHalf.status !== secondHalf.status;
+  const status = isSplit ? null : firstHalf.status;
+  const leaveType = isSplit ? null : (firstHalf.status === 'leave' ? firstHalf.leaveType : null);
+  const leaveNature = isSplit ? null : (firstHalf.status === 'leave' ? firstHalf.leaveNature : null);
+  const isOD = isSplit ? false : firstHalf.isOD;
+  return {
+    date: dStr,
+    firstHalf,
+    secondHalf,
+    status,
+    isSplit,
+    leaveType,
+    leaveNature,
+    isOD,
+  };
+}
+
 /**
  * Monthly summary is recalculated in the background when:
  * - An AttendanceDaily doc is saved (post-save hook defers recalc via setImmediate)
@@ -190,13 +311,14 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       });
     }
 
-    // 2. Total week-offs and holidays in period from shift roster (source of truth).
-    //    This avoids depending on whether AttendanceDaily statuses were synced/overridden.
+    // 2. Week-offs and holidays in period from shift roster (PreScheduledShift), then leave + sandwich rules adjust counts below.
     const rosterNonWorking = await PreScheduledShift.find({
       employeeNumber: empNoNorm,
       date: { $gte: startDateStr, $lte: endDateStr },
       status: { $in: ['WO', 'HOL'] },
-    }).select('date status').lean();
+    })
+      .select('date status')
+      .lean();
 
     const weekOffDates = new Set();
     const holidayDates = new Set();
@@ -214,6 +336,7 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         }
       }
     }
+
     // 4. Get approved leaves for this month (Using .lean() and projections)
     // Relaxed filter: include leaves where splitStatus is null, empty, or undefined.
     const approvedLeaves = await Leave.find({
@@ -252,13 +375,14 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       date: { $gte: startDate, $lte: endDate },
     }).select('date isHalfDay halfDayType numberOfDays leaveType leaveNature').lean();
 
-    // Fill map from DB results
+    // Fill map from attendance (needed before sandwich rule uses ABSENT from dailies)
     for (const rec of attendanceRecords) {
       const dStr = toNormalizedDateStr(rec.date);
       if (dailyStatsMap.has(dStr)) {
         dailyStatsMap.get(dStr).attendance = rec;
       }
     }
+
     for (const od of approvedODs) {
       if (od.odType_extended === 'hours') continue;
       const start = toNormalizedDateStr(od.fromDate);
@@ -370,6 +494,8 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     summary.totalHolidays = holidayDates.size;
     contributingDates.weeklyOffs = Array.from(weekOffDates).map(date => ({ date, value: 1, label: 'WO' }));
     contributingDates.holidays = Array.from(holidayDates).map(date => ({ date, value: 1, label: 'HOL' }));
+
+    const payRegisterDaySnapshots = [];
 
     // Process each day
     let totalPresentDays = 0;
@@ -538,51 +664,66 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         totalPayableShifts += dayPayable;
       }
 
-      // Absent = each working-day half not covered by leave, OD, or attendance (present / worked half).
-      // Examples: half-day leave + no other credit → 0.5 absent; half-day OD + no attendance on other half → 0.5 absent.
-      if (!day.isWO && !day.isHOL && dStr <= todayIstStr) {
-        // Boundary Check: If date is before joining or after resignation, it's not "Absent"
-        if (dojStrBound && dStr < dojStrBound) continue;
-        if (leftDateStrBound && dStr > leftDateStrBound) continue;
-
-        let leaveFirst = 0;
-        let leaveSecond = 0;
+      // Leave half-credits (same basis as absent calc) — used for pay register day parity
+      let leaveFirstAll = 0;
+      let leaveSecondAll = 0;
+      if (!day.isWO && !day.isHOL) {
         for (const l of day.leaves) {
           if (l.isHalfDay) {
-            if (l.halfDayType === 'second_half') leaveSecond = Math.max(leaveSecond, 0.5);
-            else leaveFirst = Math.max(leaveFirst, 0.5);
+            if (l.halfDayType === 'second_half') leaveSecondAll = Math.max(leaveSecondAll, 0.5);
+            else leaveFirstAll = Math.max(leaveFirstAll, 0.5);
             continue;
           }
           const nd = typeof l.numberOfDays === 'number' ? l.numberOfDays : null;
           if (nd != null && nd >= 1) {
-            leaveFirst = 0.5;
-            leaveSecond = 0.5;
+            leaveFirstAll = 0.5;
+            leaveSecondAll = 0.5;
           } else if (nd != null && nd > 0 && nd < 1) {
-            if (l.halfDayType === 'second_half') leaveSecond = Math.max(leaveSecond, 0.5);
-            else leaveFirst = Math.max(leaveFirst, 0.5);
+            if (l.halfDayType === 'second_half') leaveSecondAll = Math.max(leaveSecondAll, 0.5);
+            else leaveFirstAll = Math.max(leaveFirstAll, 0.5);
           } else {
-            leaveFirst = 0.5;
-            leaveSecond = 0.5;
+            leaveFirstAll = 0.5;
+            leaveSecondAll = 0.5;
           }
         }
+      }
 
-        const mergedFirst = Math.max(attFirst, odFirst, leaveFirst);
-        const mergedSecond = Math.max(attSecond, odSecond, leaveSecond);
-        const dayCovered = Math.min(mergedFirst + mergedSecond, 1.0);
-        // PARTIAL days: attendance halves stay 0 (see attFirst/attSecond above) while payableShifts still
-        // credits working portion (e.g. 0.5). Absent must not treat the full day as missing — add that
-        // payable fraction so e.g. 0.5 pay + partial → 0.5 absent, not 1.0 absent.
-        let effectiveCovered = dayCovered;
-        if (isPartialDay) {
-          const payPortion = Math.min(1, Math.max(0, Number(dayPayable) || 0));
-          effectiveCovered = Math.min(1.0, dayCovered + payPortion);
-        }
-        const absentPortion = Math.round(Math.max(0, 1.0 - effectiveCovered) * 100) / 100;
+      // Absent = each working-day half not covered by leave, OD, or attendance (present / worked half).
+      // Examples: half-day leave + no other credit → 0.5 absent; half-day OD + no attendance on other half → 0.5 absent.
+      if (!day.isWO && !day.isHOL && dStr <= todayIstStr) {
+        // Boundary Check: If date is before joining or after resignation, it's not "Absent"
+        if (!(dojStrBound && dStr < dojStrBound) && !(leftDateStrBound && dStr > leftDateStrBound)) {
+          const mergedFirst = Math.max(attFirst, odFirst, leaveFirstAll);
+          const mergedSecond = Math.max(attSecond, odSecond, leaveSecondAll);
+          const dayCovered = Math.min(mergedFirst + mergedSecond, 1.0);
+          // PARTIAL days: attendance halves stay 0 (see attFirst/attSecond above) while payableShifts still
+          // credits working portion (e.g. 0.5). Absent must not treat the full day as missing — add that
+          // payable fraction so e.g. 0.5 pay + partial → 0.5 absent, not 1.0 absent.
+          let effectiveCovered = dayCovered;
+          if (isPartialDay) {
+            const payPortion = Math.min(1, Math.max(0, Number(dayPayable) || 0));
+            effectiveCovered = Math.min(1.0, dayCovered + payPortion);
+          }
+          const absentPortion = Math.round(Math.max(0, 1.0 - effectiveCovered) * 100) / 100;
 
-        if (absentPortion > 0 && !contributingDates.absent.some(cd => cd.date === dStr)) {
-          contributingDates.absent.push({ date: dStr, value: absentPortion, label: '' });
+          if (absentPortion > 0 && !contributingDates.absent.some(cd => cd.date === dStr)) {
+            contributingDates.absent.push({ date: dStr, value: absentPortion, label: '' });
+          }
         }
       }
+
+      payRegisterDaySnapshots.push(
+        buildPayRegisterDaySnapshotFromEngine(dStr, day, {
+          leaveFirstAll,
+          leaveSecondAll,
+          attFirst,
+          attSecond,
+          odFirst,
+          odSecond,
+          isPartialDay,
+          dayPayable,
+        })
+      );
 
       // 3. Lates & Early Outs (only on PRESENT days)
       if (day.attendance && (day.attendance.status === 'PRESENT' || day.attendance.status === 'OD') && !day.isWO && !day.isHOL) {
@@ -796,6 +937,9 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     summary.totalAttendanceDeductionDays = Math.round(policyDedDays * 100) / 100;
     summary.attendanceDeductionBreakdown = policyBreakdown;
 
+    payRegisterDaySnapshots.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    summary.payRegisterDaySnapshots = payRegisterDaySnapshots;
+    summary.markModified('payRegisterDaySnapshots');
     summary.contributingDates = contributingDates;
     summary.lastCalculatedAt = new Date();
 
