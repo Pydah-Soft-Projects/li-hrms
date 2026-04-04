@@ -83,6 +83,8 @@ function buildSecondSalaryExcelRowsNormalized(record, allAllowanceNames, allDedu
 
   row.Arrears = record.arrearsAmount || 0;
 
+  row['Manual Deduction'] = record.manualDeductionsAmount || 0;
+
   row['NET SALARY'] = record.netSalary || 0;
   row['Round Off'] = record.roundOff || 0;
   row['FINAL SALARY'] = record.netSalary || 0;

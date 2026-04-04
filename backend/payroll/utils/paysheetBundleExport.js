@@ -7,6 +7,53 @@ const outputColumnService = require('../services/outputColumnService');
 
 const DEFAULT_FIXED_KEYS = ['S.No', 'Employee Code', 'Name', 'Designation', 'Department', 'Division'];
 
+/** Ensure loan/advance fields resolve in getValueByPath (empty subdocs omit keys in Mongo). */
+function normalizeLoanAdvanceForPayslip(raw) {
+  const o =
+    raw && typeof raw === 'object' && !Array.isArray(raw)
+      ? raw.toObject
+        ? raw.toObject()
+        : { ...raw }
+      : {};
+  return {
+    ...o,
+    totalEMI: Number(o.totalEMI) || 0,
+    advanceDeduction: Number(o.advanceDeduction) || 0,
+  };
+}
+
+/** Prefer top-level arrearsAmount when nested subdoc is missing or empty (PayrollRecord stores both patterns). */
+function normalizeArrearsFromPayrollRecord(record) {
+  const raw =
+    record.arrears && typeof record.arrears === 'object'
+      ? record.arrears.toObject
+        ? record.arrears.toObject()
+        : { ...record.arrears }
+      : {};
+  const nested = raw.arrearsAmount;
+  const useNested = nested !== undefined && nested !== null && nested !== '';
+  const arrearsAmount = Number(useNested ? nested : record.arrearsAmount) || 0;
+  const settlements =
+    Array.isArray(raw.arrearsSettlements) && raw.arrearsSettlements.length
+      ? raw.arrearsSettlements
+      : record.arrearsSettlements || [];
+  return { arrearsAmount, arrearsSettlements: settlements };
+}
+
+/** Top-level manualDeductionsAmount is canonical on PayrollRecord; nested object may be empty in lean docs. */
+function normalizeManualDeductionsFromPayrollRecord(record) {
+  const raw =
+    record.manualDeductions && typeof record.manualDeductions === 'object'
+      ? record.manualDeductions.toObject
+        ? record.manualDeductions.toObject()
+        : { ...record.manualDeductions }
+      : {};
+  const nested = raw.manualDeductionsAmount;
+  const useNested = nested !== undefined && nested !== null && nested !== '';
+  const manualDeductionsAmount = Number(useNested ? nested : record.manualDeductionsAmount) || 0;
+  return { manualDeductionsAmount };
+}
+
 function payrollRecordToPayslipShape(record) {
   const emp = record.employeeId || {};
   const toObj = (x) => (x && typeof x.toObject === 'function' ? x.toObject() : x);
@@ -17,6 +64,8 @@ function payrollRecordToPayslipShape(record) {
   const attendanceDeductionDays = Number.isFinite(daysFromBreakdown)
     ? daysFromBreakdown
     : (Number(rawAtt.attendanceDeductionDays) || 0);
+  const arNorm = normalizeArrearsFromPayrollRecord(record);
+  const mdNorm = normalizeManualDeductionsFromPayrollRecord(record);
   return {
     employee: {
       emp_no: record.emp_no || empObj?.emp_no || '',
@@ -33,6 +82,7 @@ function payrollRecordToPayslipShape(record) {
       date_of_joining: empObj?.doj || '',
       pf_number: empObj?.pf_number || '',
       esi_number: empObj?.esi_number || '',
+      leftDate: empObj?.leftDate,
       salaries:
         empObj?.salaries && typeof empObj.salaries === 'object' && !Array.isArray(empObj.salaries)
           ? { ...empObj.salaries }
@@ -45,15 +95,11 @@ function payrollRecordToPayslipShape(record) {
     attendanceDeductionDays,
     earnings: record.earnings && typeof record.earnings.toObject === 'function' ? record.earnings.toObject() : (record.earnings || {}),
     deductions: ded,
-    loanAdvance: record.loanAdvance && typeof record.loanAdvance.toObject === 'function' ? record.loanAdvance.toObject() : (record.loanAdvance || {}),
-    arrears: record.arrears && typeof record.arrears === 'object'
-      ? (record.arrears.toObject ? record.arrears.toObject() : { ...record.arrears })
-      : { arrearsAmount: Number(record.arrearsAmount) || 0, arrearsSettlements: record.arrearsSettlements || [] },
-    manualDeductions: record.manualDeductions && typeof record.manualDeductions === 'object'
-      ? (record.manualDeductions.toObject ? record.manualDeductions.toObject() : { ...record.manualDeductions })
-      : { manualDeductionsAmount: Number(record.manualDeductionsAmount) || 0 },
-    manualDeductionsAmount: Number(record.manualDeductionsAmount) || 0,
-    arrearsAmount: Number(record.arrearsAmount) || 0,
+    loanAdvance: normalizeLoanAdvanceForPayslip(record.loanAdvance),
+    arrears: { arrearsAmount: arNorm.arrearsAmount, arrearsSettlements: arNorm.arrearsSettlements },
+    manualDeductions: { manualDeductionsAmount: mdNorm.manualDeductionsAmount },
+    manualDeductionsAmount: mdNorm.manualDeductionsAmount,
+    arrearsAmount: arNorm.arrearsAmount,
     netSalary: Number(record.netSalary) || 0,
     roundOff: Number(record.roundOff) || 0,
   };
@@ -98,10 +144,10 @@ function secondSalaryRecordToPayslipShape(record) {
     attendanceDeductionDays,
     earnings: record.earnings && typeof record.earnings.toObject === 'function' ? record.earnings.toObject() : (record.earnings || {}),
     deductions: ded,
-    loanAdvance: record.loanAdvance && typeof record.loanAdvance.toObject === 'function' ? record.loanAdvance.toObject() : (record.loanAdvance || {}),
-    arrears: { arrearsAmount: Number(record.arrearsAmount) || 0, arrearsSettlements: [] },
-    manualDeductions: { manualDeductionsAmount: 0 },
-    manualDeductionsAmount: 0,
+    loanAdvance: normalizeLoanAdvanceForPayslip(record.loanAdvance),
+    arrears: { arrearsAmount: Number(record.arrearsAmount) || 0, arrearsSettlements: record.arrearsSettlements || [] },
+    manualDeductions: { manualDeductionsAmount: Number(record.manualDeductionsAmount) || 0 },
+    manualDeductionsAmount: Number(record.manualDeductionsAmount) || 0,
     arrearsAmount: Number(record.arrearsAmount) || 0,
     netSalary: Number(record.netSalary) || 0,
     roundOff: Number(record.roundOff) || 0,
@@ -170,7 +216,7 @@ function collectBreakdownSetsFromPayslips(payslips) {
   return { allAllowanceNames, allDeductionNames, allStatutoryCodes };
 }
 
-function buildOutputColumnRows(payslipsReg, payslipsSecOrNull, outputColumnsNormalized) {
+function buildOutputColumnRows(payslipsReg, payslipsSecOrNull, outputColumnsNormalized, extraStatutoryCodes = []) {
   const paired = payslipsReg.map((p, i) => [p, payslipsSecOrNull[i] || null]);
   const allPayslips = [];
   paired.forEach(([a, b]) => {
@@ -178,11 +224,16 @@ function buildOutputColumnRows(payslipsReg, payslipsSecOrNull, outputColumnsNorm
     if (b) allPayslips.push(b);
   });
   const { allAllowanceNames, allDeductionNames, allStatutoryCodes } = collectBreakdownSetsFromPayslips(allPayslips);
+  const statutoryMerged = new Set(allStatutoryCodes || []);
+  for (const c of extraStatutoryCodes || []) {
+    const s = String(c || '').trim();
+    if (s) statutoryMerged.add(s);
+  }
   const expandedColumns = outputColumnService.expandOutputColumnsWithBreakdown(
     outputColumnsNormalized,
     allAllowanceNames,
     allDeductionNames,
-    allStatutoryCodes
+    statutoryMerged
   );
   const regularRows = payslipsReg.map((payslip, index) => {
     const rowData = outputColumnService.buildRowFromOutputColumns(payslip, expandedColumns, index + 1);
