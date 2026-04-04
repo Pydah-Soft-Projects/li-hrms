@@ -356,6 +356,283 @@ async function resolveConflicts(dateData) {
   return { firstHalf, secondHalf };
 }
 
+function isNonWorkingStatus(st) {
+  return st === 'week_off' || st === 'holiday';
+}
+
+function payRegisterDayNeedsWoHolRealign(dr) {
+  return (
+    isNonWorkingStatus(dr.status) ||
+    isNonWorkingStatus(dr.firstHalf?.status) ||
+    isNonWorkingStatus(dr.secondHalf?.status)
+  );
+}
+
+function payRegisterMatchesFullNonWorking(dr, kind) {
+  const s = kind === 'week_off' ? 'week_off' : 'holiday';
+  return dr.status === s && !dr.isSplit && dr.firstHalf?.status === s && dr.secondHalf?.status === s;
+}
+
+function setFullDayPayRegisterNonWorking(dailyRecord, kind) {
+  const status = kind === 'week_off' ? 'week_off' : 'holiday';
+  const fh = dailyRecord.firstHalf || {};
+  const sh = dailyRecord.secondHalf || {};
+  dailyRecord.firstHalf = {
+    status,
+    leaveType: null,
+    leaveNature: null,
+    isOD: false,
+    otHours: fh.otHours || 0,
+    shiftId: dailyRecord.shiftId || fh.shiftId || null,
+    remarks: fh.remarks ?? null,
+  };
+  dailyRecord.secondHalf = {
+    status,
+    leaveType: null,
+    leaveNature: null,
+    isOD: false,
+    otHours: sh.otHours || 0,
+    shiftId: dailyRecord.shiftId || sh.shiftId || null,
+    remarks: sh.remarks ?? null,
+  };
+  dailyRecord.status = status;
+  dailyRecord.leaveType = null;
+  dailyRecord.leaveNature = null;
+  dailyRecord.isOD = false;
+  dailyRecord.isSplit = false;
+}
+
+/** When monthly summary dropped WO/HOL (sandwich / leave override), ignore roster-only WO/HOL for conflict resolution. */
+function neutralizeShiftRosterWoHol(shift, attendance) {
+  if (!shift || (shift.status !== 'WO' && shift.status !== 'HOL')) return shift;
+  if (attendance?.shifts?.[0]?.shiftId) {
+    const sh = attendance.shifts[0];
+    const sid = sh.shiftId._id || sh.shiftId;
+    return {
+      shiftId: sid,
+      shiftName: sh.shiftId?.name,
+      payableShifts: sh.shiftId?.payableShifts ?? attendance.payableShifts ?? 1,
+    };
+  }
+  if (attendance?.shiftId) {
+    return {
+      shiftId: attendance.shiftId._id || attendance.shiftId,
+      shiftName: attendance.shiftId?.name,
+      payableShifts: attendance.shiftId?.payableShifts || 1,
+    };
+  }
+  return null;
+}
+
+/**
+ * Align pay register daily rows with MonthlyAttendanceSummary.contributingDates (WO/HOL after leave + sandwich rules).
+ * Mutates dailyRecords in place. Call after populate + calculateMonthlySummary, before save.
+ */
+async function alignPayRegisterDailyRecordsWithMonthlySummary(dailyRecords, summary, employeeId, emp_no, year, monthNumber) {
+  if (!Array.isArray(dailyRecords) || dailyRecords.length === 0 || !summary?.contributingDates) {
+    return false;
+  }
+
+  const wo = new Set((summary.contributingDates.weeklyOffs || []).map((x) => x && x.date).filter(Boolean));
+  const hol = new Set((summary.contributingDates.holidays || []).map((x) => x && x.date).filter(Boolean));
+
+  const month = `${year}-${String(monthNumber).padStart(2, '0')}`;
+  const { startDate, endDate } = await getPayrollDateRange(year, monthNumber);
+  const [attendanceMap, leaveMap, odMap, otMap, shiftMap] = await Promise.all([
+    fetchAttendanceData(emp_no, startDate, endDate),
+    fetchLeaveData(employeeId, startDate, endDate, month),
+    fetchODData(employeeId, startDate, endDate),
+    fetchOTData(employeeId, startDate, endDate),
+    fetchShiftData(emp_no, startDate, endDate),
+  ]);
+
+  let changed = false;
+
+  for (const dr of dailyRecords) {
+    const date = dr.date;
+    if (wo.has(date)) {
+      if (!payRegisterMatchesFullNonWorking(dr, 'week_off')) {
+        setFullDayPayRegisterNonWorking(dr, 'week_off');
+        changed = true;
+      }
+      continue;
+    }
+    if (hol.has(date)) {
+      if (!payRegisterMatchesFullNonWorking(dr, 'holiday')) {
+        setFullDayPayRegisterNonWorking(dr, 'holiday');
+        changed = true;
+      }
+      continue;
+    }
+
+    if (!payRegisterDayNeedsWoHolRealign(dr)) continue;
+
+    const attendance = attendanceMap[date];
+    const leave = leaveMap[date];
+    const od = odMap[date];
+    const ot = otMap[date];
+
+    let shift = shiftMap[date] || (attendance?.shiftId ? {
+      shiftId: attendance.shiftId._id,
+      shiftName: attendance.shiftId.name,
+      payableShifts: attendance.shiftId.payableShifts || 1,
+    } : null);
+    shift = neutralizeShiftRosterWoHol(shift, attendance);
+
+    const firstShift = Array.isArray(attendance?.shifts) && attendance.shifts.length > 0 ? attendance.shifts[0] : null;
+    let isLate = firstShift
+      ? Boolean(firstShift.isLateIn || (typeof firstShift.lateInMinutes === 'number' && firstShift.lateInMinutes > 0))
+      : Boolean(attendance?.isLateIn || (typeof attendance?.totalLateInMinutes === 'number' && attendance.totalLateInMinutes > 0));
+    let isEarlyOut = firstShift
+      ? Boolean(firstShift.isEarlyOut || (typeof firstShift.earlyOutMinutes === 'number' && firstShift.earlyOutMinutes > 0))
+      : Boolean(attendance?.isEarlyOut || (typeof attendance?.totalEarlyOutMinutes === 'number' && attendance.totalEarlyOutMinutes > 0));
+    let lateInMinutes = firstShift
+      ? (typeof firstShift.lateInMinutes === 'number' ? firstShift.lateInMinutes : 0)
+      : (typeof attendance?.totalLateInMinutes === 'number' ? attendance.totalLateInMinutes : 0);
+    let earlyOutMinutes = firstShift
+      ? (typeof firstShift.earlyOutMinutes === 'number' ? firstShift.earlyOutMinutes : 0)
+      : (typeof attendance?.totalEarlyOutMinutes === 'number' ? attendance.totalEarlyOutMinutes : 0);
+
+    const { firstHalf, secondHalf } = await resolveConflicts({
+      attendance,
+      leave,
+      od,
+      shift,
+      lateInMinutes,
+      earlyOutMinutes,
+    });
+
+    const isSplit = firstHalf.status !== secondHalf.status;
+    const status = isSplit ? null : (firstHalf.status || 'absent');
+    const leaveType = isSplit ? null : (firstHalf.leaveType || null);
+    const isOD = isSplit ? false : (firstHalf.isOD || false);
+
+    if (firstHalf.isOD || firstHalf.status === 'od' || firstHalf.status === 'leave') {
+      isLate = false;
+      lateInMinutes = 0;
+    }
+    if (secondHalf.isOD || secondHalf.status === 'od' || secondHalf.status === 'leave') {
+      isEarlyOut = false;
+      earlyOutMinutes = 0;
+    }
+
+    const before = JSON.stringify({
+      f: dr.firstHalf,
+      s: dr.secondHalf,
+      st: dr.status,
+      sp: dr.isSplit,
+    });
+
+    dr.firstHalf = {
+      ...dr.firstHalf,
+      status: firstHalf.status,
+      leaveType: firstHalf.leaveType,
+      isOD: firstHalf.isOD,
+    };
+    dr.secondHalf = {
+      ...dr.secondHalf,
+      status: secondHalf.status,
+      leaveType: secondHalf.leaveType,
+      isOD: secondHalf.isOD,
+    };
+    dr.status = status;
+    dr.leaveType = leaveType;
+    dr.isOD = isOD;
+    dr.isSplit = isSplit;
+    dr.shiftId = shift?.shiftId || dr.shiftId || null;
+    dr.shiftName = shift?.shiftName || dr.shiftName || null;
+    dr.payableShifts = shift?.payableShifts || dr.payableShifts || 1;
+    if (ot) dr.otHours = ot.totalHours || 0;
+    dr.isLate = isLate;
+    dr.isEarlyOut = isEarlyOut;
+    dr.lateInMinutes = lateInMinutes;
+    dr.earlyOutMinutes = earlyOutMinutes;
+
+    const after = JSON.stringify({
+      f: dr.firstHalf,
+      s: dr.secondHalf,
+      st: dr.status,
+      sp: dr.isSplit,
+    });
+    if (before !== after) changed = true;
+  }
+
+  return changed;
+}
+
+function payRegisterParitySlice(dr) {
+  return JSON.stringify({
+    f: {
+      st: dr.firstHalf?.status,
+      lt: dr.firstHalf?.leaveType,
+      ln: dr.firstHalf?.leaveNature,
+      od: dr.firstHalf?.isOD,
+    },
+    s: {
+      st: dr.secondHalf?.status,
+      lt: dr.secondHalf?.leaveType,
+      ln: dr.secondHalf?.leaveNature,
+      od: dr.secondHalf?.isOD,
+    },
+    st: dr.status,
+    sp: dr.isSplit,
+    lt: dr.leaveType,
+    ln: dr.leaveNature,
+    iod: dr.isOD,
+  });
+}
+
+/**
+ * Apply day-level pay register rows from MonthlyAttendanceSummary.payRegisterDaySnapshots when present
+ * (same engine as monthly totals). Falls back to WO/HOL realign + resolveConflicts for older summaries.
+ */
+async function applyPayRegisterParityFromMonthlySummary(dailyRecords, summary, employeeId, emp_no, year, monthNumber) {
+  const snaps = summary?.payRegisterDaySnapshots;
+  if (Array.isArray(snaps) && snaps.length > 0) {
+    const byDate = new Map();
+    for (const s of snaps) {
+      if (s && s.date) byDate.set(String(s.date), s);
+    }
+    let changed = false;
+    for (const dr of dailyRecords) {
+      const snap = byDate.get(String(dr.date));
+      if (!snap) continue;
+      const before = payRegisterParitySlice(dr);
+      const fh = snap.firstHalf || {};
+      const sh = snap.secondHalf || {};
+      dr.firstHalf = {
+        ...dr.firstHalf,
+        status: fh.status,
+        leaveType: fh.leaveType ?? null,
+        leaveNature: fh.leaveNature ?? null,
+        isOD: Boolean(fh.isOD),
+      };
+      dr.secondHalf = {
+        ...dr.secondHalf,
+        status: sh.status,
+        leaveType: sh.leaveType ?? null,
+        leaveNature: sh.leaveNature ?? null,
+        isOD: Boolean(sh.isOD),
+      };
+      dr.status = snap.status;
+      dr.isSplit = snap.isSplit;
+      dr.leaveType = snap.leaveType ?? null;
+      dr.leaveNature = snap.leaveNature ?? null;
+      dr.isOD = Boolean(snap.isOD);
+      if (before !== payRegisterParitySlice(dr)) changed = true;
+    }
+    return changed;
+  }
+  return alignPayRegisterDailyRecordsWithMonthlySummary(
+    dailyRecords,
+    summary,
+    employeeId,
+    emp_no,
+    year,
+    monthNumber
+  );
+}
+
 /**
  * Populate pay register from all sources
  * @param {String} employeeId - Employee ID
@@ -509,4 +786,6 @@ module.exports = {
   resolveConflicts,
   getLeaveNature,
   getSummaryData,
+  alignPayRegisterDailyRecordsWithMonthlySummary,
+  applyPayRegisterParityFromMonthlySummary,
 };

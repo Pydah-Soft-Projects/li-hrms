@@ -78,13 +78,13 @@ const monthlyAttendanceSummarySchema = new mongoose.Schema(
       min: 0,
     },
 
-    // Total week-off days in the period (from roster / AttendanceDaily status WEEK_OFF)
+    // Total week-off days in the period (roster + leave/sandwich rules in monthly summary calc)
     totalWeeklyOffs: {
       type: Number,
       default: 0,
       min: 0,
     },
-    // Total holiday days in the period (from roster / AttendanceDaily status HOLIDAY)
+    // Total holiday days in the period (roster + leave/sandwich rules in monthly summary calc)
     totalHolidays: {
       type: Number,
       default: 0,
@@ -287,6 +287,15 @@ const monthlyAttendanceSummarySchema = new mongoose.Schema(
       permissions: [{ date: String, value: Number, label: String }],
       absent: [{ date: String, value: Number, label: String }],
       conflicts: [{ date: String, value: Number, label: String }],
+    },
+
+    /**
+     * Per-date pay register row alignment (firstHalf/secondHalf/status) derived from this same monthly calc.
+     * Used on sync so pay register day grid matches attendance monthly summary engine (not roster-only populate).
+     */
+    payRegisterDaySnapshots: {
+      type: [mongoose.Schema.Types.Mixed],
+      default: [],
     },
 
     // Additional metadata
