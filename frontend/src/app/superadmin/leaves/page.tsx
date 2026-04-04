@@ -2522,7 +2522,7 @@ export default function LeavesPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
-                      {od.assignedBy?.name || od.appliedBy?.name || 'Self'}
+                      {od.assignedBy?.name || od.appliedBy?.name || (od.appliedBy == null ? 'System' : 'Self')}
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-500">
                       {formatDate(od.appliedAt)}
