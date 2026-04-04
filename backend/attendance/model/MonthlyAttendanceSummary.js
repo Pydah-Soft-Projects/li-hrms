@@ -307,6 +307,8 @@ const monthlyAttendanceSummarySchema = new mongoose.Schema(
   },
   {
     timestamps: true,
+    // Full recompute replaces the doc; concurrent recalcs should not fail on stale __v.
+    versionKey: false,
   }
 );
 
