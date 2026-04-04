@@ -53,18 +53,70 @@ export default function UpdateRequestReviewModal({
 }: UpdateRequestReviewModalProps) {
     const [selectedFields, setSelectedFields] = React.useState<string[]>([]);
 
-    const resolveValue = React.useCallback((val: any, fieldName: string) => {
+    const renderTableValue = React.useCallback((data: any[]) => {
+        if (!data || data.length === 0) return '—';
+        
+        // Extract headers from the items (keys of the objects)
+        const allKeys = new Set<string>();
+        data.forEach(item => {
+            if (typeof item === 'object' && item !== null) {
+                Object.keys(item).forEach(key => {
+                    const lowerKey = key.toLowerCase();
+                    if (!['certificateurl', 'certificatefile', '_id', 'id', '__v', 'isprefilled'].includes(lowerKey)) {
+                        allKeys.add(key);
+                    }
+                });
+            }
+        });
+        const headers = Array.from(allKeys);
+        
+        if (headers.length === 0) return `List (${data.length} items)`;
+
+        return (
+            <div className="mt-1 overflow-x-auto rounded-xl border border-slate-100 bg-white dark:border-slate-800 dark:bg-slate-900/40">
+                <table className="w-full text-left text-[11px]">
+                    <thead className="bg-slate-50/80 dark:bg-slate-900/80 sticky top-0">
+                        <tr>
+                            {headers.map(header => (
+                                <th key={header} className="px-3 py-2 font-black text-slate-500 uppercase tracking-widest whitespace-nowrap border-b border-slate-100 dark:border-slate-800">
+                                    {header}
+                                </th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {data.map((item, idx) => (
+                            <tr key={idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+                                {headers.map(header => (
+                                    <td key={header} className="px-3 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap font-medium">
+                                        {String(item[header] ?? '—')}
+                                    </td>
+                                ))}
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        );
+    }, []);
+
+    const resolveValue = React.useCallback((val: any, fieldName: string): React.ReactNode => {
         if (val === null || val === undefined || val === '') return '—';
 
         // Direct Object Check
-        if (typeof val === 'object' && val?.name) return val.name;
-        if (typeof val === 'object' && val?._id && !val.name) val = val._id;
+        if (typeof val === 'object' && val?.name && !Array.isArray(val)) return val.name;
+        if (typeof val === 'object' && val?._id && !val.name && !Array.isArray(val)) val = val._id;
 
         // Handle Stringified JSON (if any, e.g. Qualifications)
         if (typeof val === 'string' && (val.trim().startsWith('[') || val.trim().startsWith('{'))) {
             try {
                 const parsed = JSON.parse(val);
-                if (Array.isArray(parsed)) return `List (${parsed.length} items)`;
+                if (Array.isArray(parsed)) {
+                    if (fieldName.toLowerCase().includes('qualification')) {
+                        return renderTableValue(parsed);
+                    }
+                    return `List (${parsed.length} items)`;
+                }
                 return 'Complex Object';
             } catch (e) {
                 // Not valid JSON, continue with normal resolution
@@ -90,7 +142,12 @@ export default function UpdateRequestReviewModal({
         }
 
         if (typeof val === 'object') {
-            if (Array.isArray(val)) return `List (${val.length} items)`;
+            if (Array.isArray(val)) {
+                if (fieldName.toLowerCase().includes('qualification')) {
+                    return renderTableValue(val);
+                }
+                return `List (${val.length} items)`;
+            }
             return 'Complex Object';
         }
 
@@ -104,7 +161,7 @@ export default function UpdateRequestReviewModal({
         }
 
         return String(val);
-    }, [divisions, departments, designations, employeeGroups]);
+    }, [divisions, departments, designations, employeeGroups, renderTableValue]);
 
     React.useEffect(() => {
         if (request?.requestedChanges) {
@@ -270,10 +327,10 @@ export default function UpdateRequestReviewModal({
                                             {isSelected && <span className="text-[10px] font-bold text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity">Selected for update</span>}
                                         </div>
                                         <div className="grid grid-cols-2 gap-8">
-                                            <div className="text-sm text-slate-500 line-through decoration-red-300/50">
+                                            <div className={`text-sm ${typeof formattedOld === 'string' ? 'text-slate-500 line-through decoration-red-300/50' : ''}`}>
                                                 {formattedOld}
                                             </div>
-                                            <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                                            <div className={`text-sm ${typeof formattedNew === 'string' ? 'font-semibold text-slate-900 dark:text-slate-100' : ''}`}>
                                                 {formattedNew}
                                             </div>
                                         </div>
