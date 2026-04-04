@@ -3775,10 +3775,11 @@ export const api = {
     );
   },
 
-  getPayRegisterLockedEmployees: async (month: string, departmentId?: string, divisionId?: string) => {
+  getPayRegisterLockedEmployees: async (month: string, departmentId?: string, divisionId?: string, search?: string) => {
     const query = new URLSearchParams();
     if (departmentId) query.append('departmentId', departmentId);
     if (divisionId) query.append('divisionId', divisionId);
+    if (search) query.append('search', search);
     const qs = query.toString();
     return apiRequest<{
       success: boolean;

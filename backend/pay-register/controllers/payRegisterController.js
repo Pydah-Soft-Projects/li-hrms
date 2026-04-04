@@ -494,7 +494,7 @@ exports.setSummaryLock = async (req, res) => {
 exports.getLockedSummaryEmployees = async (req, res) => {
   try {
     const { month } = req.params;
-    const { departmentId, divisionId } = req.query;
+    const { departmentId, divisionId, search } = req.query;
 
     if (!/^\d{4}-\d{2}$/.test(month)) {
       return res.status(400).json({
@@ -562,10 +562,21 @@ exports.getLockedSummaryEmployees = async (req, res) => {
 
     rows.sort((a, b) => (a.employee_name || '').localeCompare(b.employee_name || '', undefined, { sensitivity: 'base' }));
 
+    const searchTrim = search && String(search).trim();
+    const q = searchTrim ? searchTrim.toLowerCase() : '';
+    const filteredRows = q
+      ? rows.filter((r) => {
+          const name = (r.employee_name || '').toLowerCase();
+          const eno = (r.emp_no || '').toLowerCase();
+          const dept = (r.department || '').toLowerCase();
+          return name.includes(q) || eno.includes(q) || dept.includes(q);
+        })
+      : rows;
+
     res.status(200).json({
       success: true,
-      data: rows,
-      count: rows.length,
+      data: filteredRows,
+      count: filteredRows.length,
     });
   } catch (error) {
     console.error('Error listing locked summary employees:', error);
@@ -613,13 +624,14 @@ exports.getEditHistory = async (req, res) => {
 exports.getEmployeesWithPayRegister = async (req, res) => {
   try {
     const { month } = req.params;
-    const { departmentId, divisionId, status, page, limit } = req.query;
+    const { departmentId, divisionId, status, page, limit, search } = req.query;
 
     console.log('[Pay Register Controller] getEmployeesWithPayRegister called:', {
       month,
       departmentId,
       divisionId,
-      status
+      status,
+      search: search ? '(set)' : undefined,
     });
 
     // Validate month format
@@ -639,21 +651,22 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
     const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
     const { startDate, endDate, totalDays } = await getPayrollDateRange(year, monthNum);
 
-    const pageNum = parseInt(page) || 1;
-    const limitNum = parseInt(limit) || 50; // Default limit 50
-    const skip = (pageNum - 1) * limitNum;
+    const pageNum = parseInt(page, 10) || 1;
+    const limitRaw = limit !== undefined && limit !== '' ? parseInt(limit, 10) : NaN;
+    const limitNum = Number.isFinite(limitRaw) ? limitRaw : 50; // Default limit 50; use -1 for all
+    const skip = limitNum === -1 ? 0 : (pageNum - 1) * limitNum;
 
     // Use UTC boundaries so "left in period" matches payroll calculation (excludes e.g. 25 Dec when period is 26 Dec–25 Jan).
     const rangeStart = new Date(startDate + 'T00:00:00.000Z');
     const rangeEnd = new Date(endDate + 'T23:59:59.999Z');
 
-    // Build Employee Query - include active employees OR those who left within this specific payroll cycle
-    let employeeQuery = {
-      $or: [
-        { is_active: true, leftDate: null },
-        { leftDate: { $gte: rangeStart, $lte: rangeEnd } }
-      ]
-    };
+    // Same scope as monthly attendance: active (is_active !== false) OR inactive with last working day in this pay period
+    const employmentScopeOr = [
+      { is_active: { $ne: false } },
+      { is_active: false, leftDate: { $gte: rangeStart, $lte: rangeEnd } },
+    ];
+
+    const conditions = [{ $or: employmentScopeOr }];
 
     if (departmentId) {
       let deptObjectId = departmentId;
@@ -661,8 +674,8 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
         if (mongoose.Types.ObjectId.isValid(departmentId)) {
           deptObjectId = new mongoose.Types.ObjectId(departmentId);
         }
-      } catch (err) { }
-      employeeQuery.department_id = deptObjectId;
+      } catch (err) { /* keep string */ }
+      conditions.push({ department_id: deptObjectId });
     }
 
     if (divisionId) {
@@ -671,9 +684,31 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
         if (mongoose.Types.ObjectId.isValid(divisionId)) {
           divObjectId = new mongoose.Types.ObjectId(divisionId);
         }
-      } catch (err) { }
-      employeeQuery.division_id = divObjectId;
+      } catch (err) { /* keep string */ }
+      conditions.push({ division_id: divObjectId });
     }
+
+    const searchTrim = search && String(search).trim();
+    if (searchTrim) {
+      const esc = searchTrim.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const Department = require('../../departments/model/Department');
+      const deptIdsFromName = await Department.find({
+        name: { $regex: esc, $options: 'i' },
+      })
+        .select('_id')
+        .lean()
+        .then((rows) => rows.map((r) => r._id));
+      const searchOr = [
+        { employee_name: { $regex: esc, $options: 'i' } },
+        { emp_no: { $regex: esc, $options: 'i' } },
+      ];
+      if (deptIdsFromName.length) {
+        searchOr.push({ department_id: { $in: deptIdsFromName } });
+      }
+      conditions.push({ $or: searchOr });
+    }
+
+    const employeeQuery = conditions.length === 1 ? conditions[0] : { $and: conditions };
 
     // 1. Bulk Fetch Employees
     const totalEmployees = await Employee.countDocuments(employeeQuery);
@@ -698,10 +733,10 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
         data: [],
         pagination: {
           page: pageNum,
-          limit: limitNum,
+          limit: limitNum === -1 ? totalEmployees : limitNum,
           total: totalEmployees,
-          totalPages: Math.ceil(totalEmployees / limitNum)
-        }
+          totalPages: limitNum === -1 ? 1 : Math.ceil(totalEmployees / limitNum) || 1,
+        },
       });
     }
 
@@ -811,8 +846,8 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
         page: pageNum,
         limit: limitNum === -1 ? totalEmployees : limitNum,
         total: totalEmployees,
-        totalPages: limitNum === -1 ? 1 : Math.ceil(totalEmployees / limitNum)
-      }
+        totalPages: limitNum === -1 ? 1 : Math.max(1, Math.ceil(totalEmployees / limitNum)),
+      },
     });
 
   } catch (error) {
