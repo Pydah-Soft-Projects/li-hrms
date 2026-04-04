@@ -165,6 +165,7 @@ export default function PayRegisterPage() {
   const [cycleStartDay, setCycleStartDay] = useState<number | null>(null);
   const [alignedToCycle, setAlignedToCycle] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
 
   useEffect(() => {
     let pollInterval: any;
@@ -361,11 +362,16 @@ export default function PayRegisterPage() {
   };
 
   useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch((searchQuery || '').trim()), 400);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
+  useEffect(() => {
     setPage(1);
     setHasMore(true);
     loadPayRegisters(1, false);
     checkBatchLocks();
-  }, [year, month, selectedDepartment, selectedDivision]);
+  }, [year, month, selectedDepartment, selectedDivision, debouncedSearch]);
 
   const checkBatchLocks = async () => {
     try {
@@ -427,7 +433,15 @@ export default function PayRegisterPage() {
       const targetDivId = selectedDivision && selectedDivision.trim() !== '' ? selectedDivision : undefined;
 
       const limit = PAGE_SIZE;
-      const rawResponse = await api.getEmployeesWithPayRegister(monthStr, targetDeptId, targetDivId, undefined, pageToLoad, limit);
+      const rawResponse = await api.getEmployeesWithPayRegister(
+        monthStr,
+        targetDeptId,
+        targetDivId,
+        undefined,
+        pageToLoad,
+        limit,
+        debouncedSearch || undefined
+      );
       const response = rawResponse as any;
 
       if (response.success) {
@@ -515,7 +529,8 @@ export default function PayRegisterPage() {
       const res = await api.getPayRegisterLockedEmployees(
         monthStr,
         selectedDepartment && selectedDepartment !== '' ? selectedDepartment : undefined,
-        selectedDivision && selectedDivision !== '' ? selectedDivision : undefined
+        selectedDivision && selectedDivision !== '' ? selectedDivision : undefined,
+        debouncedSearch || undefined
       );
       const lockedRows =
         res.success && Array.isArray(res.data) ? res.data : [];
@@ -573,9 +588,38 @@ export default function PayRegisterPage() {
         });
       }
 
+      const targetDeptId = selectedDepartment && selectedDepartment.trim() !== '' ? selectedDepartment : undefined;
+      const targetDivId = selectedDivision && selectedDivision.trim() !== '' ? selectedDivision : undefined;
+      const fullRes = (await api.getEmployeesWithPayRegister(
+        monthStr,
+        targetDeptId,
+        targetDivId,
+        undefined,
+        1,
+        -1,
+        debouncedSearch || undefined
+      )) as any;
+
+      if (!fullRes?.success || !Array.isArray(fullRes.data) || fullRes.data.length === 0) {
+        Swal.fire({
+          icon: 'info',
+          title: 'Nothing to sync',
+          text: 'No employees match the current month and filters.',
+          timer: 2200,
+          showConfirmButton: false,
+          toast: true,
+          position: 'top-end'
+        });
+        return;
+      }
+
+      const syncTargets: PayRegisterSummary[] = fullRes.data;
+      const SYNC_CHUNK = 15;
+
       let synced = 0;
       const syncedIds = new Set<string>();
-      const syncPromises = payRegisters.map((pr) => {
+
+      const runOne = (pr: PayRegisterSummary) => {
         const idStr = employeeIdString(pr);
         if (pr.summaryLocked && !overrideLockedIds.has(idStr)) {
           return Promise.resolve(null);
@@ -584,9 +628,12 @@ export default function PayRegisterPage() {
         synced += 1;
         syncedIds.add(idStr);
         return api.syncPayRegister(idStr, monthStr, force ? { force: true } : undefined);
-      });
+      };
 
-      await Promise.all(syncPromises);
+      for (let i = 0; i < syncTargets.length; i += SYNC_CHUNK) {
+        const chunk = syncTargets.slice(i, i + SYNC_CHUNK);
+        await Promise.all(chunk.map((pr) => runOne(pr)));
+      }
 
       for (const row of lockedRowsList) {
         const idStr = String(row.employeeId);
@@ -597,12 +644,13 @@ export default function PayRegisterPage() {
         synced += 1;
       }
 
-      await loadPayRegisters();
+      setPage(1);
+      await loadPayRegisters(1, false);
 
       const skippedLocked =
         lockedRowsList.length > 0
           ? lockedRowsList.filter((r) => !overrideLockedIds.has(String(r.employeeId))).length
-          : payRegisters.filter(
+          : syncTargets.filter(
               (pr) =>
                 !isPayRegisterStub(pr) &&
                 pr.summaryLocked &&
@@ -1040,21 +1088,8 @@ export default function PayRegisterPage() {
     }
   };
 
-  // Filter by search: name, emp no, or department (client-side)
-  const getFilteredPayRegisters = (): PayRegisterSummary[] => {
-    const q = (searchQuery || '').trim().toLowerCase();
-    if (!q) return payRegisters;
-    return payRegisters.filter((pr) => {
-      const emp = pr.employeeId && typeof pr.employeeId === 'object' ? (pr.employeeId as unknown as Record<string, unknown>) : null;
-      const name = (emp?.employee_name != null ? String(emp.employee_name) : '').toLowerCase();
-      const empNo = (emp?.emp_no != null ? String(emp.emp_no) : (pr.emp_no != null ? String(pr.emp_no) : '')).toLowerCase();
-      const deptObj = emp?.department_id;
-      const dept = (typeof deptObj === 'object' && deptObj !== null && 'name' in deptObj && (deptObj as { name?: string }).name)
-        ? String((deptObj as { name: string }).name).toLowerCase()
-        : '';
-      return name.includes(q) || empNo.includes(q) || dept.includes(q);
-    });
-  };
+  // Search is applied server-side (debounced) so pagination totals match; list rows are already filtered.
+  const getFilteredPayRegisters = (): PayRegisterSummary[] => payRegisters;
 
   const handleViewPayslip = (employee: Employee) => {
     // Navigate to payslip or open payslip modal
@@ -1689,7 +1724,7 @@ export default function PayRegisterPage() {
             </button>
             <button
               onClick={() => void beginSyncAll()}
-              disabled={syncing || loadingSyncLockedList || payRegisters.length === 0}
+              disabled={syncing || loadingSyncLockedList || paginationTotal <= 0}
               className="h-9 px-4 flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-sm disabled:opacity-50 transition-all"
             >
               <svg className={`h-4 w-4 ${syncing || loadingSyncLockedList ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
