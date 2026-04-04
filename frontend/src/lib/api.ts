@@ -3821,11 +3821,13 @@ export const api = {
     month: string;
     departmentId?: string;
     divisionId?: string;
+    search?: string;
   }) => {
     const query = new URLSearchParams();
     query.append('month', params.month);
     if (params.departmentId) query.append('departmentId', params.departmentId);
     if (params.divisionId) query.append('divisionId', params.divisionId);
+    if (params.search) query.append('search', params.search);
 
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const headers: Record<string, string> = {};

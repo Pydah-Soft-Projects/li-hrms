@@ -12,6 +12,61 @@ const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
 const { manualSyncPayRegister } = require('../services/autoSyncService');
 const { processSummaryBulkUpload } = require('../services/summaryUploadService');
 const XLSX = require('xlsx');
+const mongoose = require('mongoose');
+
+/**
+ * Mongo filter for Pay Register list / export: pay-period employment scope, optional dept/div, optional text search (server-side).
+ * Search matches employee name, emp no, and any of department / division / designation name or code.
+ */
+async function buildPayRegisterEmployeeFilter(rangeStart, rangeEnd, { departmentId, divisionId, search } = {}) {
+  const toOid = (id) => {
+    if (id === undefined || id === null || id === '') return null;
+    const s = String(id);
+    try {
+      if (mongoose.Types.ObjectId.isValid(s)) return new mongoose.Types.ObjectId(s);
+    } catch (e) {
+      /* ignore */
+    }
+    return id;
+  };
+
+  const employmentScopeOr = [
+    { is_active: { $ne: false } },
+    { is_active: false, leftDate: { $gte: rangeStart, $lte: rangeEnd } },
+  ];
+
+  const conditions = [{ $or: employmentScopeOr }];
+
+  if (departmentId) {
+    conditions.push({ department_id: toOid(departmentId) });
+  }
+  if (divisionId) {
+    conditions.push({ division_id: toOid(divisionId) });
+  }
+
+  const searchTrim = search && String(search).trim();
+  if (searchTrim) {
+    const esc = searchTrim.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const rx = { $regex: esc, $options: 'i' };
+    const Department = require('../../departments/model/Department');
+    const Division = require('../../departments/model/Division');
+    const Designation = require('../../departments/model/Designation');
+
+    const [deptIds, divIds, desigIds] = await Promise.all([
+      Department.find({ $or: [{ name: rx }, { code: rx }] }).distinct('_id'),
+      Division.find({ $or: [{ name: rx }, { code: rx }] }).distinct('_id'),
+      Designation.find({ $or: [{ name: rx }, { code: rx }] }).distinct('_id'),
+    ]);
+
+    const searchOr = [{ employee_name: rx }, { emp_no: rx }];
+    if (deptIds.length) searchOr.push({ department_id: { $in: deptIds } });
+    if (divIds.length) searchOr.push({ division_id: { $in: divIds } });
+    if (desigIds.length) searchOr.push({ designation_id: { $in: desigIds } });
+    conditions.push({ $or: searchOr });
+  }
+
+  return conditions.length === 1 ? conditions[0] : { $and: conditions };
+}
 
 /**
  * Pay Register Controller
@@ -569,7 +624,15 @@ exports.getLockedSummaryEmployees = async (req, res) => {
           const name = (r.employee_name || '').toLowerCase();
           const eno = (r.emp_no || '').toLowerCase();
           const dept = (r.department || '').toLowerCase();
-          return name.includes(q) || eno.includes(q) || dept.includes(q);
+          const desig = (r.designation || '').toLowerCase();
+          const div = (r.division || '').toLowerCase();
+          return (
+            name.includes(q) ||
+            eno.includes(q) ||
+            dept.includes(q) ||
+            desig.includes(q) ||
+            div.includes(q)
+          );
         })
       : rows;
 
@@ -644,7 +707,6 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
 
     const Employee = require('../../employees/model/Employee');
     const PayrollRecord = require('../../payroll/model/PayrollRecord');
-    const mongoose = require('mongoose');
 
     // Parse month
     const [year, monthNum] = month.split('-').map(Number);
@@ -660,55 +722,11 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
     const rangeStart = new Date(startDate + 'T00:00:00.000Z');
     const rangeEnd = new Date(endDate + 'T23:59:59.999Z');
 
-    // Same scope as monthly attendance: active (is_active !== false) OR inactive with last working day in this pay period
-    const employmentScopeOr = [
-      { is_active: { $ne: false } },
-      { is_active: false, leftDate: { $gte: rangeStart, $lte: rangeEnd } },
-    ];
-
-    const conditions = [{ $or: employmentScopeOr }];
-
-    if (departmentId) {
-      let deptObjectId = departmentId;
-      try {
-        if (mongoose.Types.ObjectId.isValid(departmentId)) {
-          deptObjectId = new mongoose.Types.ObjectId(departmentId);
-        }
-      } catch (err) { /* keep string */ }
-      conditions.push({ department_id: deptObjectId });
-    }
-
-    if (divisionId) {
-      let divObjectId = divisionId;
-      try {
-        if (mongoose.Types.ObjectId.isValid(divisionId)) {
-          divObjectId = new mongoose.Types.ObjectId(divisionId);
-        }
-      } catch (err) { /* keep string */ }
-      conditions.push({ division_id: divObjectId });
-    }
-
-    const searchTrim = search && String(search).trim();
-    if (searchTrim) {
-      const esc = searchTrim.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const Department = require('../../departments/model/Department');
-      const deptIdsFromName = await Department.find({
-        name: { $regex: esc, $options: 'i' },
-      })
-        .select('_id')
-        .lean()
-        .then((rows) => rows.map((r) => r._id));
-      const searchOr = [
-        { employee_name: { $regex: esc, $options: 'i' } },
-        { emp_no: { $regex: esc, $options: 'i' } },
-      ];
-      if (deptIdsFromName.length) {
-        searchOr.push({ department_id: { $in: deptIdsFromName } });
-      }
-      conditions.push({ $or: searchOr });
-    }
-
-    const employeeQuery = conditions.length === 1 ? conditions[0] : { $and: conditions };
+    const employeeQuery = await buildPayRegisterEmployeeFilter(rangeStart, rangeEnd, {
+      departmentId,
+      divisionId,
+      search,
+    });
 
     // 1. Bulk Fetch Employees
     const totalEmployees = await Employee.countDocuments(employeeQuery);
@@ -894,7 +912,7 @@ exports.uploadSummaryBulk = async (req, res) => {
 exports.exportSummaryExcel = async (req, res) => {
   try {
     const { month } = req.params;
-    const { departmentId, divisionId } = req.query;
+    const { departmentId, divisionId, search } = req.query;
 
     // Validate month format
     if (!/^\d{4}-\d{2}$/.test(month)) {
@@ -911,15 +929,11 @@ exports.exportSummaryExcel = async (req, res) => {
     const rangeStart = new Date(startDate + 'T00:00:00.000Z');
     const rangeEnd = new Date(endDate + 'T23:59:59.999Z');
 
-    let employeeQuery = {
-      $or: [
-        { is_active: true, leftDate: null },
-        { leftDate: { $gte: rangeStart, $lte: rangeEnd } }
-      ]
-    };
-
-    if (departmentId) employeeQuery.department_id = departmentId;
-    if (divisionId) employeeQuery.division_id = divisionId;
+    const employeeQuery = await buildPayRegisterEmployeeFilter(rangeStart, rangeEnd, {
+      departmentId,
+      divisionId,
+      search,
+    });
 
     const employees = await Employee.find(employeeQuery)
       .select('_id employee_name emp_no department_id designation_id division_id')
