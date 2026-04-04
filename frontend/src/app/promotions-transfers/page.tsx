@@ -204,6 +204,22 @@ function normalizeId(v: any): string {
   return '';
 }
 
+/** Department documents use `divisions[]` (ObjectIds), not `division_id`. Bulk UI must filter on that or department options stay empty. */
+function departmentBelongsToDivision(dept: any, divisionId: string): boolean {
+  if (!divisionId) return true;
+  const want = String(divisionId);
+  const legacy = normalizeId(dept?.division_id);
+  if (legacy && legacy === want) return true;
+  const divs = dept?.divisions;
+  if (!Array.isArray(divs) || divs.length === 0) return false;
+  return divs.some((x: any) => {
+    const id = normalizeId(x);
+    if (id && id === want) return true;
+    if (x && typeof x === 'object' && normalizeId(x._id) === want) return true;
+    return false;
+  });
+}
+
 /** Backend treats any sent to* as an org change; unchanged values must be omitted (else "must change when specified"). */
 function orgDeltaForPromotionPayload(currentEmp: any, toDiv: string, toDept: string, toDesig: string) {
   const curDiv = normalizeId(currentEmp?.division_id);
@@ -248,8 +264,8 @@ export default function PromotionsTransfersPage() {
   const [incrementAmountInput, setIncrementAmountInput] = useState('');
   const [allDesignations, setAllDesignations] = useState<{ _id: string; name: string }[]>([]);
   const [divisions, setDivisions] = useState<{ _id: string; name: string }[]>([]);
-  const [masterDepartments, setMasterDepartments] = useState<{ _id: string; name: string; division_id?: any }[]>([]);
-  const [modalDepartments, setModalDepartments] = useState<{ _id: string; name: string; division_id?: any }[]>([]);
+  const [masterDepartments, setMasterDepartments] = useState<{ _id: string; name: string; divisions?: any[]; division_id?: any }[]>([]);
+  const [modalDepartments, setModalDepartments] = useState<{ _id: string; name: string; divisions?: any[]; division_id?: any }[]>([]);
   const [toDiv, setToDiv] = useState('');
   const [toDept, setToDept] = useState('');
   const [toDesig, setToDesig] = useState('');
@@ -1129,7 +1145,7 @@ export default function PromotionsTransfersPage() {
                     className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-3.5 py-2 text-sm focus:ring-2 focus:ring-indigo-500 transition-all outline-none"
                   >
                     <option value="">All Departments</option>
-                    {masterDepartments.filter(d => !bulkDivisionId || normalizeId(d.division_id) === bulkDivisionId).map((d: any) => (
+                    {masterDepartments.filter((d) => departmentBelongsToDivision(d, bulkDivisionId)).map((d: any) => (
                       <option key={d._id} value={d._id}>{d.name}</option>
                     ))}
                   </select>
@@ -1228,7 +1244,9 @@ export default function PromotionsTransfersPage() {
                                         className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1.5 focus:ring-1 focus:ring-indigo-500 outline-none transition-all truncate"
                                       >
                                         <option value="">Select Department…</option>
-                                        {masterDepartments.filter(d => !row.toDivisionId || normalizeId(d.division_id) === row.toDivisionId).map(d => <option key={d._id} value={d._id}>{d.name}</option>)}
+                                        {masterDepartments.filter((d) => departmentBelongsToDivision(d, row.toDivisionId)).map((d) => (
+                                          <option key={d._id} value={d._id}>{d.name}</option>
+                                        ))}
                                       </select>
                                     </div>
                                     <div className="space-y-0.5">

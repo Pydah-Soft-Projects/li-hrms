@@ -68,6 +68,14 @@ async function buildPayRegisterEmployeeFilter(rangeStart, rangeEnd, { department
   return conditions.length === 1 ? conditions[0] : { $and: conditions };
 }
 
+/** When a user saves day/grid edits, mark the pay register locked (same flag as Save & lock — sync skips unless force). */
+function applySummaryLockFromEdit(payRegister, user) {
+  if (!payRegister || !user || !user._id) return;
+  payRegister.summaryLocked = true;
+  payRegister.summaryLockedAt = new Date();
+  payRegister.summaryLockedBy = user._id;
+}
+
 /**
  * Pay Register Controller
  * Handles pay register CRUD operations
@@ -98,8 +106,9 @@ exports.getPayRegister = async (req, res) => {
       .populate('lastEditedBy', 'name email role')
       .populate('editedBy', 'name email role');
 
-    // Sync totals + day-level WO/HOL with Monthly Attendance Summary (same rules as attendance module)
-    if (payRegister) {
+    // Sync totals + day-level parity with Monthly Attendance Summary — skip when summary is locked
+    // (locked rows must keep stored dailyRecords/totals after save & lock or manual edits; opening GET must not overwrite)
+    if (payRegister && !payRegister.summaryLocked) {
       const [year, monthNum] = month.split('-').map(Number);
       const summary = await getSummaryData(employeeId, payRegister.emp_no, year, monthNum);
 
@@ -339,6 +348,7 @@ exports.updatePayRegister = async (req, res) => {
         payRegister.endDate = endDate;
       }
       await ensureTotalsRespectRoster(payRegister.totals, payRegister.emp_no, startDate, endDate);
+      applySummaryLockFromEdit(payRegister, req.user);
     }
 
     // Update status if provided
@@ -364,6 +374,7 @@ exports.updatePayRegister = async (req, res) => {
       { path: 'dailyRecords.shiftId', select: 'name payableShifts' },
       { path: 'lastEditedBy', select: 'name email role' },
       { path: 'editedBy', select: 'name email role' },
+      { path: 'summaryLockedBy', select: 'name email role' },
     ]);
 
     res.status(200).json({
@@ -426,12 +437,15 @@ exports.updateDailyRecord = async (req, res) => {
       payRegister.endDate = endDate;
     }
 
+    applySummaryLockFromEdit(payRegister, req.user);
+
     await payRegister.save();
 
     await payRegister.populate([
       { path: 'employeeId', select: 'employee_name emp_no department_id designation_id' },
       { path: 'dailyRecords.shiftId', select: 'name payableShifts' },
       { path: 'lastEditedBy', select: 'name email role' },
+      { path: 'summaryLockedBy', select: 'name email role' },
     ]);
 
     res.status(200).json({
