@@ -456,6 +456,52 @@ class ArrearsService {
     const diff = (endYear - startYear) * 12 + (endM - startM) + 1;
     return Math.max(1, diff);
   }
+
+  /**
+   * Create a direct arrears row already in approved status (payroll-ready).
+   * Idempotent: returns existing row if one already exists for this promotion request.
+   */
+  static async createAutoApprovedDirectArrearFromPromotion({
+    employeeId,
+    promotionTransferRequestId,
+    totalAmount,
+    reason,
+    createdByUserId,
+  }) {
+    const amount = Number(totalAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new Error('Invalid arrears amount');
+    }
+
+    const existing = await ArrearsRequest.findOne({
+      sourceType: 'promotion_transfer',
+      sourceRequestId: promotionTransferRequestId,
+    });
+    if (existing) {
+      return { skipped: true, existing, message: 'Arrear already exists for this promotion request' };
+    }
+
+    const arrears = new ArrearsRequest({
+      type: 'direct',
+      employee: employeeId,
+      totalAmount: amount,
+      remainingAmount: amount,
+      reason: (reason || '').trim() || 'Promotion salary arrears',
+      status: 'approved',
+      sourceType: 'promotion_transfer',
+      sourceRequestId: promotionTransferRequestId,
+      createdBy: createdByUserId,
+      adminApproval: {
+        approved: true,
+        approvedBy: createdByUserId,
+        approvedAt: new Date(),
+        modifiedAmount: amount,
+        comments: 'Auto-approved: created from approved promotion request',
+      },
+    });
+    await arrears.save();
+    return { skipped: false, arrears };
+  }
 }
 
 module.exports = ArrearsService;

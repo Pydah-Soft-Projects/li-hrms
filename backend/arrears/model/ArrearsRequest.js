@@ -121,6 +121,15 @@ const arrearsRequestSchema = new mongoose.Schema(
       required: [true, 'Reason/remarks is required'],
       trim: true
     },
+    /** Set when arrears is system-created from an approved promotion (optional on manually created records). */
+    sourceType: {
+      type: String,
+      enum: ['promotion_transfer'],
+    },
+    sourceRequestId: {
+      type: mongoose.Schema.Types.ObjectId,
+      index: true,
+    },
     status: {
       type: String,
       enum: ['draft', 'pending_hod', 'pending_hr', 'pending_admin', 'approved', 'rejected', 'partially_settled', 'settled', 'cancelled'],
