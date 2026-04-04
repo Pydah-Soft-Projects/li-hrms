@@ -1,7 +1,7 @@
 /**
  * Totals Calculation Service
- * Calculates monthly totals from dailyRecords array.
- * Week-offs and holidays are overridden from shift roster (PreScheduledShift) so totals respect roster as source of truth.
+ * Calculates monthly totals from pay register dailyRecords (fallback when no MonthlyAttendanceSummary).
+ * Pay register month totals in production are synced from MonthlyAttendanceSummary via syncTotalsFromMonthlySummary.
  */
 
 const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
