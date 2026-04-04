@@ -176,8 +176,9 @@ async function _sendSms(employee, password, results, isReset = false) {
     return;
   }
   try {
+    // Reset SMS must match DLT template 1707176526611076697: "Login: {#var#}- Pydah College" (no space before hyphen after URL).
     const smsMessage = isReset
-      ? `Hello ${employee.employee_name} your password has been updated. Username: ${employee.emp_no} New Password: ${password}. Login: li-hrms.vercel.app/login - Pydah College`
+      ? `Hello ${employee.employee_name} your password has been updated. Username: ${employee.emp_no} New Password: ${password}. Login: li-hrms.vercel.app/login- Pydah College`
       : `Hello ${employee.employee_name} your account has been created. Username: ${employee.emp_no} Password: ${password}. Login: li-hrms.vercel.app/login - Pydah College`;
 
     const templateId = isReset ? '1707176526611076697' : undefined;
