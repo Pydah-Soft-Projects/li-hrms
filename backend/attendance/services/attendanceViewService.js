@@ -5,6 +5,7 @@ const OD = require('../../leaves/model/OD');
 const { calculateMonthlySummary } = require('./summaryCalculationService');
 const { extractISTComponents } = require('../../shared/utils/dateUtils');
 const dateCycleService = require('../../leaves/services/dateCycleService');
+const { filterMonthlySummaryForEmploymentBounds } = require('./employmentBoundsSummaryFilter');
 
 /**
  * Get attendance data for calendar view (Single Employee)
@@ -488,13 +489,18 @@ exports.getMonthlyTableViewData = async (employees, year, month, startQueryDate,
       };
     }
 
+    const rawSummary = summaryDataMap[emp.emp_no] || null;
+    const summaryForClient = rawSummary
+      ? filterMonthlySummaryForEmploymentBounds(rawSummary, emp)
+      : null;
+
     return {
       _id: emp._id, // Keep for legacy if needed
       employee: emp,
       dailyAttendance: dailyAttendance,
-      presentDays: summaryDataMap[emp.emp_no]?.totalPresentDays || 0,
-      payableShifts: summaryDataMap[emp.emp_no]?.totalPayableShifts || 0,
-      summary: summaryDataMap[emp.emp_no] || null
+      presentDays: rawSummary?.totalPresentDays || 0,
+      payableShifts: rawSummary?.totalPayableShifts || 0,
+      summary: summaryForClient,
     };
   });
 };

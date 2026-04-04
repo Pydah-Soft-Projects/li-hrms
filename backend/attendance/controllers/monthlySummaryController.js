@@ -1,6 +1,7 @@
 const MonthlyAttendanceSummary = require('../model/MonthlyAttendanceSummary');
 const { calculateMonthlySummary, calculateAllEmployeesSummary, deleteAllMonthlySummaries } = require('../services/summaryCalculationService');
 const Employee = require('../../employees/model/Employee');
+const { filterMonthlySummaryForEmploymentBounds } = require('../services/employmentBoundsSummaryFilter');
 
 /**
  * @desc    Get monthly summary for an employee
@@ -37,7 +38,7 @@ exports.getEmployeeMonthlySummary = async (req, res) => {
     }
 
     const summary = await MonthlyAttendanceSummary.findOne(query)
-      .populate('employeeId', 'employee_name emp_no department_id designation_id');
+      .populate('employeeId', 'employee_name emp_no department_id designation_id doj leftDate');
 
     if (!summary) {
       return res.status(404).json({
@@ -46,9 +47,11 @@ exports.getEmployeeMonthlySummary = async (req, res) => {
       });
     }
 
+    const data = filterMonthlySummaryForEmploymentBounds(summary, summary.employeeId);
+
     res.status(200).json({
       success: true,
-      data: summary,
+      data,
     });
   } catch (error) {
     console.error('Error getting monthly summary:', error);

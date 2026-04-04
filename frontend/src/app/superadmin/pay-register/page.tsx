@@ -17,7 +17,7 @@ import { Search } from 'lucide-react';
 interface DailyRecord {
   date: string;
   firstHalf: {
-    status: 'present' | 'absent' | 'leave' | 'od' | 'holiday' | 'week_off';
+    status: 'present' | 'absent' | 'leave' | 'od' | 'holiday' | 'week_off' | 'blank';
     leaveType: string | null;
     leaveNature: 'paid' | 'lop' | 'without_pay' | null;
     isOD: boolean;
@@ -26,7 +26,7 @@ interface DailyRecord {
     remarks: string | null;
   };
   secondHalf: {
-    status: 'present' | 'absent' | 'leave' | 'od' | 'holiday' | 'week_off';
+    status: 'present' | 'absent' | 'leave' | 'od' | 'holiday' | 'week_off' | 'blank';
     leaveType: string | null;
     leaveNature: 'paid' | 'lop' | 'without_pay' | null;
     isOD: boolean;
@@ -34,7 +34,7 @@ interface DailyRecord {
     shiftId: string | null;
     remarks: string | null;
   };
-  status: 'present' | 'absent' | 'leave' | 'od' | 'holiday' | 'week_off' | 'partial' | null;
+  status: 'present' | 'absent' | 'leave' | 'od' | 'holiday' | 'week_off' | 'blank' | 'partial' | null;
   leaveType: string | null;
   leaveNature: 'paid' | 'lop' | 'without_pay' | null;
   isOD: boolean;
@@ -261,6 +261,7 @@ export default function PayRegisterPage() {
       'od',
       'holiday',
       'week_off',
+      'blank',
     ];
     const fallbackStatus = allowedStatuses.includes(statusFallback as any)
       ? (statusFallback as DailyRecord['firstHalf']['status'])
@@ -653,7 +654,7 @@ export default function PayRegisterPage() {
       Swal.fire({
         icon: 'success',
         title: locked ? 'Summaries locked' : 'Summaries unlocked',
-        text: `Updated ${res.modifiedCount ?? 0} record(s).`,
+        text: `Updated ${res.data?.modifiedCount ?? 0} record(s).`,
         timer: 2200,
         showConfirmButton: false,
         toast: true,
@@ -908,28 +909,50 @@ export default function PayRegisterPage() {
         return 'bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-800';
       case 'week_off':
         return 'bg-gray-50 dark:bg-gray-900/20 border-gray-200 dark:border-gray-800';
+      case 'blank':
+        return 'bg-transparent border-transparent';
       default:
         return 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700';
     }
   };
 
+  const halfStatusLetter = (st: string) => (st === 'blank' ? '' : st.charAt(0).toUpperCase());
+
+  const formatHalfSplitCell = (record: DailyRecord) => {
+    const a = halfStatusLetter(record.firstHalf.status);
+    const b = halfStatusLetter(record.secondHalf.status);
+    if (!a && !b) return '';
+    if (a && b) return `${a}/${b}`;
+    return a || b;
+  };
+
   /** Primary status for a daily record (full day or first half when split) for coloring in "All" view */
   const getPrimaryStatus = (record: DailyRecord): string => {
-    if (record.status && ['present', 'absent', 'leave', 'od', 'holiday', 'week_off'].includes(record.status))
+    if (
+      record.status === 'blank' ||
+      (record.firstHalf?.status === 'blank' && record.secondHalf?.status === 'blank')
+    )
+      return 'blank';
+    if (record.status && ['present', 'absent', 'leave', 'od', 'holiday', 'week_off', 'blank'].includes(record.status))
       return record.status;
     const s1 = record.firstHalf?.status;
     const s2 = record.secondHalf?.status;
-    if (s1 && ['present', 'absent', 'leave', 'od', 'holiday', 'week_off'].includes(s1)) return s1;
-    if (s2 && ['present', 'absent', 'leave', 'od', 'holiday', 'week_off'].includes(s2)) return s2;
+    if (s1 && ['present', 'absent', 'leave', 'od', 'holiday', 'week_off', 'blank'].includes(s1)) return s1;
+    if (s2 && ['present', 'absent', 'leave', 'od', 'holiday', 'week_off', 'blank'].includes(s2)) return s2;
     return 'absent';
   };
 
   const getStatusDisplay = (record: DailyRecord | null): string => {
     if (!record) return '-';
+    if (
+      record.status === 'blank' ||
+      (record.firstHalf?.status === 'blank' && record.secondHalf?.status === 'blank')
+    )
+      return '';
     if (record.isSplit) {
-      // Show both halves
-      const first = record.firstHalf.status.charAt(0).toUpperCase();
-      const second = record.secondHalf.status.charAt(0).toUpperCase();
+      const first = halfStatusLetter(record.firstHalf.status);
+      const second = halfStatusLetter(record.secondHalf.status);
+      if (!first && !second) return '';
       return `${first}/${second}`;
     }
     if (record.status === 'leave') return 'L';
@@ -958,7 +981,11 @@ export default function PayRegisterPage() {
       }
     }
     if (tableType === 'absent') {
-      if (record.status === 'absent' || record.firstHalf.status === 'absent' || record.secondHalf.status === 'absent') {
+      if (
+        record.firstHalf?.status !== 'blank' &&
+        record.secondHalf?.status !== 'blank' &&
+        (record.status === 'absent' || record.firstHalf.status === 'absent' || record.secondHalf.status === 'absent')
+      ) {
         return 'bg-red-100 dark:bg-red-900/30';
       }
     }
@@ -994,7 +1021,11 @@ export default function PayRegisterPage() {
       case 'present':
         return record.status === 'present' || record.firstHalf.status === 'present' || record.secondHalf.status === 'present';
       case 'absent':
-        return record.status === 'absent' || record.firstHalf.status === 'absent' || record.secondHalf.status === 'absent';
+        return (
+          record.firstHalf?.status !== 'blank' &&
+          record.secondHalf?.status !== 'blank' &&
+          (record.status === 'absent' || record.firstHalf.status === 'absent' || record.secondHalf.status === 'absent')
+        );
       case 'leaves':
         return record.status === 'leave' || record.firstHalf.status === 'leave' || record.secondHalf.status === 'leave';
       case 'od':
@@ -2620,7 +2651,7 @@ export default function PayRegisterPage() {
                                         <div className="font-semibold text-[9px]">{displayStatus}</div>
                                         {record.isSplit && (
                                           <div className="text-[8px] opacity-75">
-                                            {record.firstHalf.status.charAt(0).toUpperCase()}/{record.secondHalf.status.charAt(0).toUpperCase()}
+                                            {formatHalfSplitCell(record)}
                                           </div>
                                         )}
                                         {activeTable === 'all' && (record.isLate || record.isEarlyOut) && (

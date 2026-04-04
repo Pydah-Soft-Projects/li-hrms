@@ -92,7 +92,7 @@ const payRegisterSummarySchema = new mongoose.Schema(
         firstHalf: {
           status: {
             type: String,
-            enum: ['present', 'absent', 'leave', 'od', 'holiday', 'week_off'],
+            enum: ['present', 'absent', 'leave', 'od', 'holiday', 'week_off', 'blank'],
             default: 'absent',
           },
           leaveType: {
@@ -129,7 +129,7 @@ const payRegisterSummarySchema = new mongoose.Schema(
         secondHalf: {
           status: {
             type: String,
-            enum: ['present', 'absent', 'leave', 'od', 'holiday', 'week_off'],
+            enum: ['present', 'absent', 'leave', 'od', 'holiday', 'week_off', 'blank'],
             default: 'absent',
           },
           leaveType: {
@@ -165,7 +165,7 @@ const payRegisterSummarySchema = new mongoose.Schema(
         // FULL DAY FIELDS (for quick access when not split)
         status: {
           type: String,
-          enum: ['present', 'absent', 'leave', 'od', 'holiday', 'week_off', null],
+          enum: ['present', 'absent', 'leave', 'od', 'holiday', 'week_off', 'blank', null],
           default: null, // Only set if firstHalf.status === secondHalf.status
         },
         leaveType: {
@@ -650,6 +650,11 @@ payRegisterSummarySchema.methods.recalculateTotals = function () {
   }
 
   for (const record of this.dailyRecords) {
+    const isBlankDay =
+      record.status === 'blank' ||
+      (record.firstHalf?.status === 'blank' && record.secondHalf?.status === 'blank');
+    if (isBlankDay) continue;
+
     // 1. Track Holidays and Weekly Offs (denotative count)
     if (record.isSplit) {
       if (record.firstHalf?.status === 'holiday') totals.totalHolidays += 0.5;

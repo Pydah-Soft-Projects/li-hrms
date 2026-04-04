@@ -349,36 +349,46 @@ exports.getMonthlyAttendance = async (req, res) => {
       });
     }
 
-    const yearNum = parseInt(year, 10);
-    const monthNum = parseInt(month, 10);
+    const targetYear = parseInt(year, 10);
+    const targetMonth = parseInt(month, 10);
+    const dateCycleService = require('../../leaves/services/dateCycleService');
 
-    // Payroll window for "left in period" — align with pay register (UTC day boundaries on YYYY-MM-DD strings).
     let periodStartStr = startDate;
     let periodEndStr = endDate;
     if (!periodStartStr || !periodEndStr) {
-      const pr = await getPayrollDateRange(yearNum, monthNum);
-      periodStartStr = pr.startDate;
-      periodEndStr = pr.endDate;
+      const anchorDateStr = `${targetYear}-${String(targetMonth).padStart(2, '0')}-15`;
+      const periodInfo = await dateCycleService.getPeriodInfo(new Date(anchorDateStr));
+      periodStartStr = extractISTComponents(periodInfo.payrollCycle.startDate).dateStr;
+      periodEndStr = extractISTComponents(periodInfo.payrollCycle.endDate).dateStr;
     }
 
-    const employeeVisibility = buildLeftDuringPeriodOrClause(periodStartStr, periodEndStr);
+    const periodStart = new Date(`${periodStartStr}T00:00:00.000Z`);
+    const periodEnd = new Date(`${periodEndStr}T23:59:59.999Z`);
 
-    const filter = { ...req.scopeFilter };
+    // Active employees, OR inactive employees whose last working day (leftDate) falls in this payroll period
+    const scopeBase = { ...(req.scopeFilter || {}) };
+    const filter = {
+      ...scopeBase,
+      $or: [
+        { is_active: { $ne: false } },
+        {
+          is_active: false,
+          leftDate: { $gte: periodStart, $lte: periodEnd },
+        },
+      ],
+    };
 
-    const searchTrim = search ? String(search).trim() : '';
-    if (searchTrim) {
-      const safe = escapeRegex(searchTrim);
+    if (search) {
       filter.$and = [
-        employeeVisibility,
+        { $or: filter.$or },
         {
           $or: [
-            { employee_name: { $regex: safe, $options: 'i' } },
-            { emp_no: { $regex: safe, $options: 'i' } },
+            { employee_name: { $regex: search, $options: 'i' } },
+            { emp_no: { $regex: search, $options: 'i' } },
           ],
         },
       ];
-    } else {
-      Object.assign(filter, employeeVisibility);
+      delete filter.$or;
     }
 
     if (divisionId) filter.division_id = divisionId;
@@ -405,7 +415,13 @@ exports.getMonthlyAttendance = async (req, res) => {
     const totalEmployees = await Employee.countDocuments(filter);
 
     const { getMonthlyTableViewData } = require('../services/attendanceViewService');
-    const employeesWithAttendance = await getMonthlyTableViewData(employees, year, month, startDate, endDate);
+    const employeesWithAttendance = await getMonthlyTableViewData(
+      employees,
+      year,
+      month,
+      periodStartStr,
+      periodEndStr
+    );
 
     res.status(200).json({
       success: true,
@@ -419,8 +435,8 @@ exports.getMonthlyAttendance = async (req, res) => {
       month: parseInt(month),
       year: parseInt(year),
       daysInMonth: new Date(parseInt(year), parseInt(month), 0).getDate(),
-      startDate,
-      endDate
+      startDate: periodStartStr,
+      endDate: periodEndStr,
     });
 
   } catch (error) {

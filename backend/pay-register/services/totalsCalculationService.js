@@ -98,6 +98,11 @@ function calculateTotals(dailyRecords) {
   }
 
   for (const record of dailyRecords) {
+    const isBlankDay =
+      record.status === 'blank' ||
+      (record.firstHalf?.status === 'blank' && record.secondHalf?.status === 'blank');
+    if (isBlankDay) continue;
+
     // Track Holidays and Weekly Offs (can be fractional if split)
     const isHoliday = record.status === 'holiday' || record.firstHalf?.status === 'holiday' || record.secondHalf?.status === 'holiday';
     const isWeekOff = record.status === 'week_off' || record.firstHalf?.status === 'week_off' || record.secondHalf?.status === 'week_off';
@@ -229,6 +234,11 @@ function calculateTotals(dailyRecords) {
   // This respects shifts with multiple payable units (e.g. 2.0)
   let totalPayableShiftsValue = 0;
   for (const record of dailyRecords) {
+    const isBlankDay =
+      record.status === 'blank' ||
+      (record.firstHalf?.status === 'blank' && record.secondHalf?.status === 'blank');
+    if (isBlankDay) continue;
+
     const isHoliday = record.status === 'holiday' || record.firstHalf?.status === 'holiday' || record.secondHalf?.status === 'holiday';
     const isWeekOff = record.status === 'week_off' || record.firstHalf?.status === 'week_off' || record.secondHalf?.status === 'week_off';
 
