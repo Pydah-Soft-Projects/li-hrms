@@ -200,6 +200,23 @@ function getValueByPath(obj, path) {
     const n2 = Number(dd);
     return Number.isFinite(n2) ? n2 : 0;
   }
+  // Missing loanAdvance subdoc makes generic path walk return '' before leaf; always return numeric 0
+  if (trimmed === 'loanAdvance.advanceDeduction') {
+    const n = Number(obj?.loanAdvance?.advanceDeduction);
+    return Number.isFinite(n) ? n : 0;
+  }
+  if (trimmed === 'loanAdvance.totalEMI') {
+    const n = Number(obj?.loanAdvance?.totalEMI);
+    return Number.isFinite(n) ? n : 0;
+  }
+  if (trimmed === 'manualDeductions.manualDeductionsAmount') {
+    const n = Number(obj?.manualDeductions?.manualDeductionsAmount ?? obj?.manualDeductionsAmount);
+    return Number.isFinite(n) ? n : 0;
+  }
+  if (trimmed === 'manualDeductionsAmount') {
+    const n = Number(obj?.manualDeductionsAmount ?? obj?.manualDeductions?.manualDeductionsAmount);
+    return Number.isFinite(n) ? n : 0;
+  }
   const parts = trimmed.split('.').filter(Boolean);
   let val = obj;
   for (const p of parts) {
