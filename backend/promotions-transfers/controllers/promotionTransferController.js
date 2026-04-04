@@ -7,6 +7,7 @@ const Division = require('../../departments/model/Division');
 const Department = require('../../departments/model/Department');
 const Designation = require('../../departments/model/Designation');
 const dateCycleService = require('../../leaves/services/dateCycleService');
+const { createDirectArrearForApprovedPromotion } = require('../services/promotionArrearService');
 
 const {
   buildWorkflowVisibilityFilter,
@@ -927,11 +928,31 @@ exports.approveOrReject = async (req, res) => {
         console.error('EmployeeHistory final:', e.message);
       }
 
-      return res.status(200).json({
+      let arrearResult = null;
+      try {
+        const approverId = req.user._id || req.user.userId;
+        arrearResult = await createDirectArrearForApprovedPromotion(doc, approverId);
+        if (arrearResult?.warning) {
+          console.warn('[PromotionTransfer] Arrear side-effect:', arrearResult.warning);
+        }
+      } catch (arrearErr) {
+        console.error('[PromotionTransfer] Unexpected arrears error:', arrearErr.message);
+        arrearResult = { ok: false, warning: arrearErr.message };
+      }
+
+      const responseBody = {
         success: true,
         message: 'Request fully approved; employee record updated',
         data: doc,
-      });
+      };
+      if (arrearResult?.arrearsId) {
+        responseBody.arrearId = arrearResult.arrearsId;
+      }
+      if (arrearResult?.warning) {
+        responseBody.arrearWarning = arrearResult.warning;
+      }
+
+      return res.status(200).json(responseBody);
     }
 
     const nextStep = chain[nextIndex];

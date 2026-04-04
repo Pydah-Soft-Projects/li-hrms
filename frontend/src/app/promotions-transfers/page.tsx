@@ -204,6 +204,18 @@ function normalizeId(v: any): string {
   return '';
 }
 
+/** Backend treats any sent to* as an org change; unchanged values must be omitted (else "must change when specified"). */
+function orgDeltaForPromotionPayload(currentEmp: any, toDiv: string, toDept: string, toDesig: string) {
+  const curDiv = normalizeId(currentEmp?.division_id);
+  const curDept = normalizeId(currentEmp?.department_id);
+  const curDes = normalizeId(currentEmp?.designation_id);
+  const patch: { toDivisionId?: string; toDepartmentId?: string; toDesignationId?: string } = {};
+  if (toDiv && toDiv !== curDiv) patch.toDivisionId = toDiv;
+  if (toDept && toDept !== curDept) patch.toDepartmentId = toDept;
+  if (toDesig && toDesig !== curDes) patch.toDesignationId = toDesig;
+  return patch;
+}
+
 interface BulkPtRow {
   employee: any;
   requestType: 'promotion' | 'demotion' | 'transfer';
@@ -297,6 +309,69 @@ export default function PromotionsTransfersPage() {
       return ['pending', 'rejected', 'cancelled'].includes(r.status);
     },
     [canDelete]
+  );
+
+  /** Load department options for the modal without clearing the list when division is missing (employee may only have department). */
+  const refreshModalDepartments = useCallback(async (divisionId: string, ensureDeptId: string) => {
+    if (!divisionId) {
+      if (ensureDeptId) {
+        try {
+          const single = await api.getDepartment(ensureDeptId);
+          const sd: any = single?.data ?? single;
+          setModalDepartments(sd?._id ? [sd] : []);
+        } catch {
+          setModalDepartments([]);
+        }
+      } else {
+        setModalDepartments([]);
+      }
+      return;
+    }
+    try {
+      const resp = await api.getDepartments(true, divisionId, true);
+      const rows: any = resp?.data ?? resp;
+      let list = Array.isArray(rows) ? rows : [];
+      if (ensureDeptId && !list.some((x: any) => normalizeId(x._id) === ensureDeptId)) {
+        try {
+          const single = await api.getDepartment(ensureDeptId);
+          const sd: any = single?.data ?? single;
+          if (sd?._id) list = [...list, sd];
+        } catch {
+          /* ignore */
+        }
+      }
+      setModalDepartments(list);
+    } catch {
+      setModalDepartments([]);
+    }
+  }, []);
+
+  const applyEmployeeOrgToForm = useCallback(
+    async (emp: any) => {
+      if (!emp) return;
+      let div = normalizeId(emp.division_id);
+      const dept = normalizeId(emp.department_id);
+      const des = normalizeId(emp.designation_id);
+
+      if (!div && dept) {
+        try {
+          const dr: any = await api.getDepartment(dept);
+          const d = dr?.data ?? dr;
+          const divs = d?.divisions;
+          if (Array.isArray(divs) && divs.length > 0) {
+            div = normalizeId(divs[0]);
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+
+      setToDiv(div);
+      setToDept(dept);
+      setToDesig(des);
+      await refreshModalDepartments(div, dept);
+    },
+    [refreshModalDepartments]
   );
 
   const promotionComparison = useMemo(() => {
@@ -514,23 +589,7 @@ export default function PromotionsTransfersPage() {
           const one = await api.getEmployee(String(selfNo).toUpperCase());
           const emp = one?.data ?? one;
           if (emp) setCurrentEmp(emp);
-          if (emp) {
-            const div = normalizeId(emp?.division_id);
-            const dept = normalizeId(emp?.department_id);
-            const des = normalizeId(emp?.designation_id);
-            setToDiv(div);
-            setToDept(dept);
-            setToDesig(des);
-            if (div) {
-              try {
-                const d = await api.getDepartments(true, div, true);
-                const rows = d?.data ?? d;
-                setModalDepartments(Array.isArray(rows) ? rows : []);
-              } catch {
-                setModalDepartments([]);
-              }
-            }
-          }
+          if (emp) await applyEmployeeOrgToForm(emp);
         }
       }
     } catch (e: any) {
@@ -674,23 +733,6 @@ export default function PromotionsTransfersPage() {
   }, [modalOpen, formType, currentEmp?._id, newGrossSalaryInput, selectedMonthLabel, currentPayrollCycleLabel]);
 
   useEffect(() => {
-    if (!modalOpen) return;
-    if (!toDiv) {
-      setModalDepartments([]);
-      return;
-    }
-    (async () => {
-      try {
-        const d = await api.getDepartments(true, toDiv, true);
-        const rows = d?.data ?? d;
-        setModalDepartments(Array.isArray(rows) ? rows : []);
-      } catch {
-        setModalDepartments([]);
-      }
-    })();
-  }, [modalOpen, toDiv]);
-
-  useEffect(() => {
     if (!modalOpen || isEmployee) return;
     const q = empSearchQuery.trim();
     if (q.length < 2) {
@@ -736,26 +778,7 @@ export default function PromotionsTransfersPage() {
       const one = await api.getEmployee(empNo);
       const emp = one?.data ?? one;
       setCurrentEmp(emp);
-      const div = normalizeId(emp?.division_id);
-      const dept = normalizeId(emp?.department_id);
-      const des = normalizeId(emp?.designation_id);
-
-      setToDiv(div);
-      setToDept(dept);
-      setToDesig(des);
-
-      // Ensure department dropdown has options for the employee's division
-      if (div) {
-        try {
-          const d = await api.getDepartments(true, div, true);
-          const rows = d?.data ?? d;
-          setModalDepartments(Array.isArray(rows) ? rows : []);
-        } catch {
-          setModalDepartments([]);
-        }
-      } else {
-        setModalDepartments([]);
-      }
+      await applyEmployeeOrgToForm(emp);
     } catch {
       setCurrentEmp(null);
     }
@@ -823,12 +846,12 @@ export default function PromotionsTransfersPage() {
           effectivePayrollMonth: opt.payrollMonth,
           remarks,
         };
-        if (toDiv) body.toDivisionId = toDiv;
-        if (toDept) body.toDepartmentId = toDept;
-        if (toDesig) {
-          // Use a single designation selector; backend expects proposedDesignationId for promotion/demotion designation change.
-          body.proposedDesignationId = toDesig;
-          body.toDesignationId = toDesig;
+        const orgPatch = orgDeltaForPromotionPayload(currentEmp, toDiv, toDept, toDesig);
+        if (orgPatch.toDivisionId) body.toDivisionId = orgPatch.toDivisionId;
+        if (orgPatch.toDepartmentId) body.toDepartmentId = orgPatch.toDepartmentId;
+        if (orgPatch.toDesignationId) {
+          body.proposedDesignationId = orgPatch.toDesignationId;
+          body.toDesignationId = orgPatch.toDesignationId;
         }
         const res = await api.createPromotionTransferRequest(body);
         if (!res?.success) throw new Error(res?.message || 'Failed');
@@ -1655,8 +1678,10 @@ export default function PromotionsTransfersPage() {
                     className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
                     value={toDiv}
                     onChange={(e) => {
-                      setToDiv(e.target.value);
+                      const v = e.target.value;
+                      setToDiv(v);
                       setToDept('');
+                      void refreshModalDepartments(v, '');
                     }}
                   >
                     <option value="">No change</option>
