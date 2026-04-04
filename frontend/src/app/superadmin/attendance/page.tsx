@@ -452,6 +452,12 @@ export default function AttendancePage() {
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 350);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
   // Filter states
   const [departments, setDepartments] = useState<Department[]>([]);
   const [designations, setDesignations] = useState<Designation[]>([]);
@@ -688,7 +694,7 @@ export default function AttendancePage() {
     // Reset page when filters change
     setPage(1);
     loadMonthlyAttendance(true);
-  }, [selectedDivision, selectedDepartment, selectedDesignation, cycleDates.startDate]); // Removed tableType dependency
+  }, [selectedDivision, selectedDepartment, selectedDesignation, cycleDates.startDate, debouncedSearch]); // Removed tableType dependency
 
   // Handle Load More when page changes
   useEffect(() => {
@@ -818,7 +824,7 @@ export default function AttendancePage() {
       const response = await api.getMonthlyAttendance(year, month, {
         page: targetPage,
         limit,
-        search: searchQuery,
+        search: debouncedSearch,
         divisionId: selectedDivision,
         departmentId: selectedDepartment,
         designationId: selectedDesignation,
@@ -1178,7 +1184,7 @@ export default function AttendancePage() {
         const monthRes = await api.getMonthlyAttendance(year, month, {
           page,
           limit,
-          search: searchQuery,
+          search: debouncedSearch,
           divisionId: selectedDivision,
           departmentId: selectedDepartment,
           designationId: selectedDesignation,
@@ -1543,7 +1549,7 @@ export default function AttendancePage() {
       const params = {
         year: String(year),
         month: String(month),
-        search: searchQuery,
+        search: debouncedSearch,
         divisionId: selectedDivision,
         departmentId: selectedDepartment,
         designationId: selectedDesignation,
@@ -1605,7 +1611,7 @@ export default function AttendancePage() {
       const response = await api.getMonthlyAttendance(year, month, {
         page: 1,
         limit: 50000,
-        search: searchQuery,
+        search: debouncedSearch,
         divisionId: selectedDivision,
         departmentId: selectedDepartment,
         designationId: selectedDesignation,

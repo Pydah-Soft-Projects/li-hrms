@@ -2522,7 +2522,7 @@ export default function LeavesPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
-                      {od.assignedBy?.name || od.appliedBy?.name || 'Self'}
+                      {od.assignedBy?.name || od.appliedBy?.name || (od.appliedBy == null ? 'System' : 'Self')}
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-500">
                       {formatDate(od.appliedAt)}
@@ -2625,7 +2625,11 @@ export default function LeavesPage() {
                       <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-500">No pending leaves</td></tr>
                     )}
                     {pendingLeaves.map((leave) => (
-                      <tr key={leave._id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                      <tr
+                        key={leave._id}
+                        className="hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer"
+                        onClick={() => openDetailDialog(leave, 'leave')}
+                      >
                         <td className="px-4 py-3">
                           <div className="font-medium text-slate-900 dark:text-white">{getEmployeeName({ employee_name: leave.employeeId?.employee_name ?? '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no ?? leave.emp_no ?? '' } as Employee)}</div>
                           <div className="text-xs text-slate-500">{leave.employeeId?.emp_no ?? leave.emp_no}</div>
@@ -2637,8 +2641,26 @@ export default function LeavesPage() {
                         <td className="px-4 py-3">{leave.numberOfDays}</td>
                         <td className="px-4 py-3"><span className={`px-2 py-0.5 text-xs font-medium rounded ${getStatusColor(leave.status)}`}>{leave.status.replace('_', ' ')}</span></td>
                         <td className="px-4 py-3 text-right">
-                          <button onClick={() => handleAction(leave._id, 'leave', 'approve')} className="px-2 py-1 text-xs font-medium text-green-700 bg-green-100 rounded hover:bg-green-200 mr-1">Approve</button>
-                          <button onClick={() => handleAction(leave._id, 'leave', 'reject')} className="px-2 py-1 text-xs font-medium text-red-700 bg-red-100 rounded hover:bg-red-200">Reject</button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleAction(leave._id, 'leave', 'approve');
+                            }}
+                            className="px-2 py-1 text-xs font-medium text-green-700 bg-green-100 rounded hover:bg-green-200 mr-1"
+                          >
+                            Approve
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleAction(leave._id, 'leave', 'reject');
+                            }}
+                            className="px-2 py-1 text-xs font-medium text-red-700 bg-red-100 rounded hover:bg-red-200"
+                          >
+                            Reject
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -2672,7 +2694,19 @@ export default function LeavesPage() {
                 )}
                 {!loadingPending && pendingLeaves.length === 0 && <div className="text-center py-6 text-slate-500 text-sm">No pending leaves</div>}
                 {!loadingPending && pendingLeaves.map((leave) => (
-                  <div key={leave._id} className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-900/50">
+                  <div
+                    key={leave._id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => openDetailDialog(leave, 'leave')}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        openDetailDialog(leave, 'leave');
+                      }
+                    }}
+                    className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-900/50 cursor-pointer hover:border-blue-300 dark:hover:border-blue-600 transition-colors"
+                  >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1 min-w-0">
                         <div className="font-medium text-slate-900 dark:text-white">{getEmployeeName({ employee_name: leave.employeeId?.employee_name ?? '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no ?? leave.emp_no ?? '' } as Employee)}</div>
@@ -2680,9 +2714,21 @@ export default function LeavesPage() {
                         <div className="text-xs text-slate-600 dark:text-slate-400 mt-1">{formatDate(leave.fromDate)} – {formatDate(leave.toDate)}</div>
                         <span className={`inline-block mt-2 px-2 py-0.5 text-xs font-medium rounded ${getStatusColor(leave.status)}`}>{leave.status?.replace('_', ' ') ?? 'pending'}</span>
                       </div>
-                      <div className="flex flex-col gap-1 shrink-0">
-                        <button onClick={() => handleAction(leave._id, 'leave', 'approve')} className="px-2 py-1 text-xs font-medium text-green-700 bg-green-100 rounded">Approve</button>
-                        <button onClick={() => handleAction(leave._id, 'leave', 'reject')} className="px-2 py-1 text-xs font-medium text-red-700 bg-red-100 rounded">Reject</button>
+                      <div className="flex flex-col gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          onClick={() => handleAction(leave._id, 'leave', 'approve')}
+                          className="px-2 py-1 text-xs font-medium text-green-700 bg-green-100 rounded"
+                        >
+                          Approve
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleAction(leave._id, 'leave', 'reject')}
+                          className="px-2 py-1 text-xs font-medium text-red-700 bg-red-100 rounded"
+                        >
+                          Reject
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -2731,7 +2777,11 @@ export default function LeavesPage() {
                       <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-500">No pending ODs</td></tr>
                     )}
                     {pendingODs.map((od) => (
-                      <tr key={od._id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                      <tr
+                        key={od._id}
+                        className="hover:bg-slate-50 dark:hover:bg-slate-700/50 cursor-pointer"
+                        onClick={() => openDetailDialog(od, 'od')}
+                      >
                         <td className="px-4 py-3">
                           <div className="font-medium text-slate-900 dark:text-white">{getEmployeeName({ employee_name: od.employeeId?.employee_name ?? '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no ?? od.emp_no ?? '' } as Employee)}</div>
                           <div className="text-xs text-slate-500">{od.employeeId?.emp_no ?? od.emp_no}</div>
@@ -2744,8 +2794,26 @@ export default function LeavesPage() {
                         <td className="px-4 py-3">{od.numberOfDays}</td>
                         <td className="px-4 py-3"><span className={`px-2 py-0.5 text-xs font-medium rounded ${getStatusColor(od.status)}`}>{od.status?.replace('_', ' ') ?? 'pending'}</span></td>
                         <td className="px-4 py-3 text-right">
-                          <button onClick={() => handleAction(od._id, 'od', 'approve')} className="px-2 py-1 text-xs font-medium text-green-700 bg-green-100 rounded hover:bg-green-200 mr-1">Approve</button>
-                          <button onClick={() => handleAction(od._id, 'od', 'reject')} className="px-2 py-1 text-xs font-medium text-red-700 bg-red-100 rounded hover:bg-red-200">Reject</button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleAction(od._id, 'od', 'approve');
+                            }}
+                            className="px-2 py-1 text-xs font-medium text-green-700 bg-green-100 rounded hover:bg-green-200 mr-1"
+                          >
+                            Approve
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleAction(od._id, 'od', 'reject');
+                            }}
+                            className="px-2 py-1 text-xs font-medium text-red-700 bg-red-100 rounded hover:bg-red-200"
+                          >
+                            Reject
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -2768,7 +2836,19 @@ export default function LeavesPage() {
               <div className="md:hidden space-y-3">
                 {!loadingPending && pendingODs.length === 0 && <div className="text-center py-6 text-slate-500 text-sm">No pending ODs</div>}
                 {pendingODs.map((od) => (
-                  <div key={od._id} className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-900/50">
+                  <div
+                    key={od._id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => openDetailDialog(od, 'od')}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        openDetailDialog(od, 'od');
+                      }
+                    }}
+                    className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 dark:border-slate-700 dark:bg-slate-900/50 cursor-pointer hover:border-purple-300 dark:hover:border-purple-600 transition-colors"
+                  >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1 min-w-0">
                         <div className="font-medium text-slate-900 dark:text-white">{getEmployeeName({ employee_name: od.employeeId?.employee_name ?? '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no ?? od.emp_no ?? '' } as Employee)}</div>
@@ -2777,9 +2857,21 @@ export default function LeavesPage() {
                         {od.placeVisited && <div className="text-xs text-slate-500 mt-0.5 truncate">{od.placeVisited}</div>}
                         <span className={`inline-block mt-2 px-2 py-0.5 text-xs font-medium rounded ${getStatusColor(od.status)}`}>{od.status?.replace('_', ' ') ?? 'pending'}</span>
                       </div>
-                      <div className="flex flex-col gap-1 shrink-0">
-                        <button onClick={() => handleAction(od._id, 'od', 'approve')} className="px-2 py-1 text-xs font-medium text-green-700 bg-green-100 rounded">Approve</button>
-                        <button onClick={() => handleAction(od._id, 'od', 'reject')} className="px-2 py-1 text-xs font-medium text-red-700 bg-red-100 rounded">Reject</button>
+                      <div className="flex flex-col gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          onClick={() => handleAction(od._id, 'od', 'approve')}
+                          className="px-2 py-1 text-xs font-medium text-green-700 bg-green-100 rounded"
+                        >
+                          Approve
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleAction(od._id, 'od', 'reject')}
+                          className="px-2 py-1 text-xs font-medium text-red-700 bg-red-100 rounded"
+                        >
+                          Reject
+                        </button>
                       </div>
                     </div>
                   </div>

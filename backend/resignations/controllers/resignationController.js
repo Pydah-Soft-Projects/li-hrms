@@ -207,7 +207,15 @@ exports.createResignationRequest = async (req, res) => {
     }
 
     const populated = await ResignationRequest.findById(resignation._id)
-      .populate('employeeId', 'employee_name emp_no department_id division_id')
+      .populate({
+        path: 'employeeId',
+        select: 'employee_name emp_no department_id division_id employee_group_id doj',
+        populate: [
+          { path: 'department_id', select: 'name' },
+          { path: 'division_id', select: 'name' },
+          { path: 'employee_group_id', select: 'name' }
+        ]
+      })
       .populate('requestedBy', 'name email')
       .lean();
 
@@ -275,7 +283,7 @@ exports.getPendingApprovals = async (req, res) => {
     const list = await ResignationRequest.find(filter)
       .populate({
         path: 'employeeId',
-        select: 'employee_name emp_no department_id division_id employee_group_id',
+        select: 'employee_name emp_no department_id division_id employee_group_id doj',
         populate: [
           { path: 'department_id', select: 'name' },
           { path: 'division_id', select: 'name' },
@@ -645,7 +653,7 @@ exports.getResignationRequests = async (req, res) => {
     const list = await ResignationRequest.find(filter)
       .populate({
         path: 'employeeId',
-        select: 'employee_name emp_no department_id division_id employee_group_id',
+        select: 'employee_name emp_no department_id division_id employee_group_id doj',
         populate: [
           { path: 'department_id', select: 'name' },
           { path: 'division_id', select: 'name' },

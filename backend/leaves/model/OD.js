@@ -350,11 +350,11 @@ const ODSchema = new mongoose.Schema(
       },
     ],
 
-    // Applied by (the user who submitted)
+    // Applied by (portal user who submitted). Null for system auto-generated ODs (holiday/week-off punches).
     appliedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: true,
+      default: null,
     },
 
     // Applied at timestamp

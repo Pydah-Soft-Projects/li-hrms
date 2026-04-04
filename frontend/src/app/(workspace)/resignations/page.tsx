@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { api } from '@/lib/api';
+import { api, Division, Department, EmployeeGroup } from '@/lib/api';
 import { auth } from '@/lib/auth';
 import { canViewResignation, canApplyResignation, canApproveResignation } from '@/lib/permissions';
 import { toast, ToastContainer } from 'react-toastify';
@@ -22,6 +22,8 @@ import {
   Plus,
   Calendar,
   Save,
+  LayoutGrid,
+  List,
 } from 'lucide-react';
 
 const StatCard = ({ title, value, icon: Icon, bgClass, iconClass, dekorClass, loading }: { title: string; value: number | string; icon: React.ComponentType<{ className?: string }>; bgClass: string; iconClass: string; dekorClass?: string; loading?: boolean }) => (
@@ -53,8 +55,10 @@ interface ResignationRequest {
     first_name?: string;
     last_name?: string;
     emp_no: string;
-    department_id?: { name: string };
-    division_id?: { name: string };
+    department_id?: { _id: string; name: string };
+    division_id?: { _id: string; name: string };
+    employee_group_id?: { _id: string; name: string };
+    doj?: string;
   };
   emp_no: string;
   leftDate: string;
@@ -166,7 +170,7 @@ const canInitiateTermination = (user: any, settings: any) => {
 };
 
 export default function ResignationsPage() {
-  const [activeTab, setActiveTab] = useState<'all' | 'pending'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
   const [allRequests, setAllRequests] = useState<ResignationRequest[]>([]);
   const [pendingRequests, setPendingRequests] = useState<ResignationRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -191,8 +195,16 @@ export default function ResignationsPage() {
   const [filters, setFilters] = useState({
     search: '',
     status: '',
+    division_id: '',
+    department_id: '',
+    employee_group_id: '',
   });
+  const [divisions, setDivisions] = useState<Division[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [groups, setGroups] = useState<EmployeeGroup[]>([]);
+
   const [resignationSettings, setResignationSettings] = useState<any>(null);
+  const [viewType, setViewType] = useState<'card' | 'list'>('list');
 
   useEffect(() => {
     const user = auth.getUser();
@@ -204,9 +216,20 @@ export default function ResignationsPage() {
     try {
       const user = auth.getUser();
       const isEmployee = isEmployeeRole(user);
-      const allRes = await api.getResignationRequests();
+      const [allRes, divRes, depRes, grpRes] = await Promise.all([
+        api.getResignationRequests(),
+        api.getDivisions(true),
+        api.getDepartments(true),
+        api.getEmployeeGroups(true)
+      ]);
+
       if (allRes.success && allRes.data) setAllRequests(Array.isArray(allRes.data) ? allRes.data : []);
       else setAllRequests([]);
+
+      if (divRes.success && divRes.data) setDivisions(divRes.data);
+      if (depRes.success && depRes.data) setDepartments(depRes.data);
+      if (grpRes.success && grpRes.data) setGroups(grpRes.data);
+
       if (!isEmployee) {
         const [pendingRes, settingsRes] = await Promise.all([
           api.getResignationPendingApprovals(),
@@ -220,11 +243,6 @@ export default function ResignationsPage() {
         const settingsRes = await api.getResignationSettings();
         if (settingsRes.success && settingsRes.data) setResignationSettings(settingsRes.data);
       }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to load data';
-      toast.error(message);
-      setAllRequests([]);
-      setPendingRequests([]);
     } finally {
       setLoading(false);
     }
@@ -527,26 +545,51 @@ export default function ResignationsPage() {
   };
 
   const filteredAll = useMemo(() => {
-    return allRequests.filter((r) => {
-      const matchSearch =
-        !filters.search ||
+    return allRequests.filter(r => {
+      const matchSearch = !filters.search || 
         getEmployeeName(r).toLowerCase().includes(filters.search.toLowerCase()) ||
         (r.emp_no || '').toLowerCase().includes(filters.search.toLowerCase());
-      const matchStatus = !filters.status || r.status === filters.status;
-      return matchSearch && matchStatus;
+      const matchDivision = !filters.division_id || r.employeeId?.division_id?._id === filters.division_id;
+      const matchDepartment = !filters.department_id || r.employeeId?.department_id?._id === filters.department_id;
+      const matchGroup = !filters.employee_group_id || r.employeeId?.employee_group_id?._id === filters.employee_group_id;
+      return matchSearch && matchDivision && matchDepartment && matchGroup;
     });
   }, [allRequests, filters]);
 
+  const filteredPendingList = useMemo(() => {
+    return pendingRequests.filter(r => {
+      const matchSearch = !filters.search || 
+        getEmployeeName(r).toLowerCase().includes(filters.search.toLowerCase()) ||
+        (r.emp_no || '').toLowerCase().includes(filters.search.toLowerCase());
+      const matchDivision = !filters.division_id || r.employeeId?.division_id?._id === filters.division_id;
+      const matchDepartment = !filters.department_id || r.employeeId?.department_id?._id === filters.department_id;
+      const matchGroup = !filters.employee_group_id || r.employeeId?.employee_group_id?._id === filters.employee_group_id;
+      return matchSearch && matchDivision && matchDepartment && matchGroup;
+    });
+  }, [pendingRequests, filters]);
+
   const stats = useMemo(
     () => ({
-      total: allRequests.length,
-      approved: allRequests.filter((r) => r.status === 'approved').length,
-      pending: allRequests.filter((r) => r.status === 'pending').length,
-      rejected: allRequests.filter((r) => ['rejected', 'cancelled'].includes(r.status)).length,
-      pendingApprovals: pendingRequests.length,
+      total: filteredAll.length,
+      approved: filteredAll.filter((r) => r.status === 'approved').length,
+      pending: filteredAll.filter((r) => r.status === 'pending').length,
+      rejected: filteredAll.filter((r) => ['rejected', 'cancelled'].includes(r.status)).length,
+      pendingApprovals: filteredPendingList.length,
     }),
-    [allRequests, pendingRequests]
+    [filteredAll, filteredPendingList]
   );
+
+  const filteredRequests = useMemo(() => {
+    const list = activeTab === 'pending' ? filteredPendingList : filteredAll;
+    return list.filter((r) => {
+      const matchStatus = 
+        activeTab === 'all' ? (!filters.status || r.status === filters.status) :
+        activeTab === 'approved' ? r.status === 'approved' :
+        activeTab === 'rejected' ? ['rejected', 'cancelled'].includes(r.status) :
+        activeTab === 'pending' ? (!filters.status || r.status === filters.status) : true;
+      return matchStatus;
+    });
+  }, [filteredAll, filteredPendingList, filters.status, activeTab]);
 
   if (currentUser && !canViewResignation(currentUser as any)) {
     return (
@@ -670,66 +713,103 @@ export default function ResignationsPage() {
           </>
         )}
 
-        {!isEmployeeRole(currentUser) && (
         <div className="mb-6 animate-in fade-in slide-in-from-top-4 duration-500">
           <div className="md:p-5 md:rounded-[2.5rem] md:border md:border-white/20 md:dark:border-slate-800 md:bg-white/60 md:dark:bg-slate-900/60 md:backdrop-blur-xl md:shadow-xl md:shadow-slate-200/50 md:dark:shadow-none transition-all">
-            <div className="flex flex-wrap items-center gap-2 md:gap-6">
-              <div className="flex items-center gap-2 w-full md:w-auto md:flex-1">
-                <div className="flex-1 min-w-[200px] relative group">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 xl:grid-cols-6 gap-3 md:gap-4 items-center">
+              <div className="col-span-1 sm:col-span-2 lg:col-span-1 xl:col-span-2">
+                <div className="relative group">
                   <div className="absolute inset-0 bg-green-500/5 rounded-2xl blur-xl transition-opacity opacity-0 group-focus-within:opacity-100" />
                   <input
                     type="text"
-                    placeholder="Search by name or emp no..."
+                    placeholder="Search name or emp no..."
                     value={filters.search}
                     onChange={(e) => setFilters((prev) => ({ ...prev, search: e.target.value }))}
-                    className="relative w-full h-10 md:h-11 pl-4 pr-12 rounded-xl md:rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs md:text-sm font-semibold focus:ring-4 focus:ring-green-500/10 focus:border-green-500 outline-none transition-all dark:text-white shadow-sm"
+                    className="relative w-full h-10 pl-4 pr-10 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[11px] font-semibold focus:ring-4 focus:ring-green-500/10 focus:border-green-500 outline-none transition-all dark:text-white shadow-sm"
                   />
-                  <button type="button" className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-green-500 text-white shadow-lg shadow-green-500/20 active:scale-95 transition-all">
-                    <Search className="w-4 h-4" />
-                  </button>
+                  <Search className="absolute right-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 group-focus-within:text-green-500 transition-colors" />
                 </div>
               </div>
-              <div className="flex md:items-center md:gap-4 w-full md:w-auto">
-                <div className="relative flex-1 md:flex-none">
-                  <Filter className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-                  <select
-                    value={filters.status}
-                    onChange={(e) => setFilters((prev) => ({ ...prev, status: e.target.value }))}
-                    className="h-10 pl-9 pr-8 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300 focus:ring-4 focus:ring-green-500/10 outline-none transition-all appearance-none cursor-pointer w-full"
-                  >
-                    <option value="">All Status</option>
-                    <option value="pending">Pending</option>
-                    <option value="approved">Approved</option>
-                    <option value="rejected">Rejected</option>
-                    <option value="cancelled">Cancelled</option>
-                  </select>
-                </div>
+
+              <div className="relative">
+                <select
+                  value={filters.division_id}
+                  onChange={(e) => setFilters((prev) => ({ ...prev, division_id: e.target.value, department_id: '' }))}
+                  className="w-full h-10 pl-4 pr-8 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[11px] font-bold text-slate-600 dark:text-slate-300 focus:ring-4 focus:ring-green-500/10 outline-none transition-all appearance-none cursor-pointer"
+                >
+                  <option value="">All Divisions</option>
+                  {divisions.map((d) => (
+                    <option key={d._id} value={d._id}>{d.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="relative">
+                <select
+                  value={filters.department_id}
+                  onChange={(e) => setFilters((prev) => ({ ...prev, department_id: e.target.value }))}
+                  className="w-full h-10 pl-4 pr-8 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[11px] font-bold text-slate-600 dark:text-slate-300 focus:ring-4 focus:ring-green-500/10 outline-none transition-all appearance-none cursor-pointer"
+                >
+                  <option value="">All Departments</option>
+                  {departments
+                    .filter(dep => !filters.division_id || (Array.isArray(dep.divisions) ? dep.divisions.some((div: any) => (typeof div === 'string' ? div : div._id) === filters.division_id) : true))
+                    .map((d) => (
+                      <option key={d._id} value={d._id}>{d.name}</option>
+                    ))}
+                </select>
+              </div>
+
+              <div className="relative">
+                <select
+                  value={filters.employee_group_id}
+                  onChange={(e) => setFilters((prev) => ({ ...prev, employee_group_id: e.target.value }))}
+                  className="w-full h-10 pl-4 pr-8 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[11px] font-bold text-slate-600 dark:text-slate-300 focus:ring-4 focus:ring-green-500/10 outline-none transition-all appearance-none cursor-pointer"
+                >
+                  <option value="">All Groups</option>
+                  {groups.map((g) => (
+                    <option key={g._id} value={g._id}>{g.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="relative">
+                <select
+                  value={filters.status}
+                  onChange={(e) => setFilters((prev) => ({ ...prev, status: e.target.value }))}
+                  className="w-full h-10 pl-4 pr-8 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[11px] font-bold text-slate-600 dark:text-slate-300 focus:ring-4 focus:ring-green-500/10 outline-none transition-all appearance-none cursor-pointer"
+                >
+                  <option value="">All Status</option>
+                  <option value="pending">Pending</option>
+                  <option value="approved">Approved</option>
+                  <option value="rejected">Rejected</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
               </div>
             </div>
           </div>
         </div>
-        )}
 
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div className="grid grid-cols-2 sm:inline-flex items-center p-1 rounded-xl bg-slate-100/50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 backdrop-blur-sm shadow-inner w-full sm:w-auto gap-1 sm:gap-0">
             {[
-              { id: 'all' as const, label: 'All requests', icon: ListTodo, count: allRequests.length, activeColor: 'green' },
-              { id: 'pending' as const, label: 'Pending', icon: Clock3, count: stats.pendingApprovals, activeColor: 'orange' },
+              { id: 'all' as const, label: 'All requests', icon: ListTodo, count: stats.total, activeColor: 'green' },
+              { id: 'pending' as const, label: 'Pending for you', icon: Clock3, count: stats.pendingApprovals, activeColor: 'orange' },
+              { id: 'approved' as const, label: 'Approved', icon: CheckCircle2, count: stats.approved, activeColor: 'green' },
+              { id: 'rejected' as const, label: 'Rejected', icon: X, count: stats.rejected, activeColor: 'red' },
             ].map((tab) => (
               <button
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
                 className={`group relative flex items-center justify-center gap-2 px-2 sm:px-6 py-2 rounded-lg text-[10px] sm:text-xs font-bold transition-all duration-300 whitespace-nowrap ${activeTab === tab.id
-                  ? 'bg-white dark:bg-slate-700 shadow-sm ring-1 ring-slate-200/50 dark:ring-0 ' + (tab.activeColor === 'green' ? 'text-green-600 dark:text-green-400' : 'text-orange-600 dark:text-orange-400')
+                  ? 'bg-white dark:bg-slate-700 shadow-sm ring-1 ring-slate-200/50 dark:ring-0 ' + (tab.activeColor === 'green' ? 'text-green-600 dark:text-green-400' : tab.activeColor === 'orange' ? 'text-orange-600 dark:text-orange-400' : 'text-rose-600 dark:text-rose-400')
                   : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
                   }`}
               >
-                <tab.icon className={`w-3.5 h-3.5 ${activeTab === tab.id ? (tab.activeColor === 'green' ? 'text-green-600 dark:text-green-400' : 'text-orange-600 dark:text-orange-400') : 'text-slate-400 group-hover:text-slate-600'}`} />
+                <tab.icon className={`w-3.5 h-3.5 ${activeTab === tab.id ? (tab.activeColor === 'green' ? 'text-green-600 dark:text-green-400' : tab.activeColor === 'orange' ? 'text-orange-600 dark:text-orange-400' : 'text-rose-600 dark:text-rose-400') : 'text-slate-400 group-hover:text-slate-600'}`} />
                 <span>{tab.label}</span>
                 {tab.count > 0 && (
                   <span className={`flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-md text-[10px] font-black ${activeTab === tab.id
-                    ? (tab.activeColor === 'green' ? 'bg-green-50 text-green-600 dark:bg-green-900/30 dark:text-green-300' : 'bg-orange-50 text-orange-600 dark:bg-orange-900/30 dark:text-orange-300')
+                    ? (tab.activeColor === 'green' ? 'bg-green-50 text-green-600 dark:bg-green-900/30 dark:text-green-300' : tab.activeColor === 'orange' ? 'bg-orange-50 text-orange-600 dark:bg-orange-900/30 dark:text-orange-300' : 'bg-rose-50 text-rose-600 dark:bg-rose-900/30 dark:text-rose-300')
                     : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
                     }`}>
                     {tab.count}
@@ -738,62 +818,200 @@ export default function ResignationsPage() {
               </button>
             ))}
           </div>
+
+          {!isEmployeeRole(currentUser) && (
+            <div className="flex items-center p-1 rounded-xl bg-slate-100/50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 backdrop-blur-sm self-end sm:self-auto">
+              <button
+                onClick={() => setViewType('list')}
+                className={`p-2 rounded-lg transition-all ${viewType === 'list' ? 'bg-white dark:bg-slate-700 shadow-sm text-green-600 dark:text-green-400' : 'text-slate-400 hover:text-slate-600'}`}
+                title="List View"
+              >
+                <List className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setViewType('card')}
+                className={`p-2 rounded-lg transition-all ${viewType === 'card' ? 'bg-white dark:bg-slate-700 shadow-sm text-green-600 dark:text-green-400' : 'text-slate-400 hover:text-slate-600'}`}
+                title="Card View"
+              >
+                <LayoutGrid className="w-4 h-4" />
+              </button>
+            </div>
+          )}
         </div>
 
-        {activeTab === 'all' && (
-          <div className="mt-4 animate-in fade-in slide-in-from-bottom-2 duration-500">
-            {loading ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-40 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800 animate-pulse" />
-                ))}
-              </div>
-            ) : filteredAll.length === 0 ? (
-              <div className="text-center py-10 text-slate-500 dark:text-slate-400 text-sm bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
-                No resignation requests found.
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {filteredAll.map((req) => (
-                  <div
-                    key={req._id}
-                    className="group relative flex flex-col rounded-2xl border border-slate-200/60 bg-white p-5 shadow-sm transition-all hover:shadow-md hover:border-green-200/60 dark:border-slate-800 dark:bg-slate-900"
-                  >
-                    <div className="absolute top-0 left-0 w-1 h-full bg-green-500/80 rounded-l-2xl group-hover:w-1.5 transition-all" />
-                    <div className="flex items-start justify-between gap-3 mb-3">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-green-100 text-green-600 font-bold dark:bg-green-900/30 dark:text-green-400">
-                          {getEmployeeInitials(req)}
+        <div className="mt-4 animate-in fade-in slide-in-from-bottom-2 duration-500">
+          {loading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className={`rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800 animate-pulse ${viewType === 'list' ? 'h-16' : 'h-40'}`} />
+              ))}
+            </div>
+          ) : filteredRequests.length === 0 ? (
+            <div className="text-center py-10 text-slate-500 dark:text-slate-400 text-sm bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
+              No resignation requests found in this section.
+            </div>
+          ) : viewType === 'list' && !isEmployeeRole(currentUser) ? (
+            <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50">
+                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400">Employee</th>
+                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400">Type</th>
+                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400 text-center">Applied</th>
+                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400">Organization</th>
+                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400 text-center">LWD</th>
+                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400 text-center">Status</th>
+                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {filteredRequests.map((req) => (
+                    <tr key={req._id} className="group hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
+                            req.status === 'approved' ? 'bg-green-100 text-green-600 dark:bg-green-900/30' : 
+                            req.status === 'pending' ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30' : 'bg-rose-100 text-rose-600 dark:bg-rose-900/30'
+                          }`}>
+                            {getEmployeeInitials(req)}
+                          </div>
+                          <div>
+                            <div className="font-semibold text-slate-900 dark:text-white text-sm whitespace-nowrap">{getEmployeeName(req)}</div>
+                            <div className="text-[10px] text-slate-400 font-bold tracking-tighter uppercase">{req.emp_no}</div>
+                          </div>
                         </div>
-                        <div>
-                          <h4 className="font-semibold text-slate-900 dark:text-white line-clamp-1">{getEmployeeName(req)}</h4>
-                          <p className="text-xs text-slate-500 dark:text-slate-400">{req.emp_no}</p>
-                        </div>
-                      </div>
-                      <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-                        <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(req.status)}`}>
-                          {req.status}
-                        </span>
-                        {req.requestType === 'termination' && (
-                          <span className="shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black uppercase bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400">
-                            Termination
+                      </td>
+                      <td className="px-6 py-4">
+                        {req.requestType === 'termination' ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-50 dark:bg-rose-900/20 text-[10px] font-bold text-rose-600 dark:text-rose-400 border border-rose-100 dark:border-rose-800/30 uppercase tracking-tighter">
+                            <X className="w-2.5 h-2.5" /> Termination
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/20 text-[10px] font-bold text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-800/30 uppercase tracking-tighter">
+                            <LogOut className="w-2.5 h-2.5" /> Resignation
                           </span>
                         )}
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <div className="text-xs font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                          {formatDate(req.createdAt)}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-xs text-slate-600 dark:text-slate-400 font-medium whitespace-nowrap">
+                          {req.employeeId?.division_id?.name || '—'}
+                        </div>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          <span className="text-[9px] text-slate-400 font-bold uppercase border border-slate-100 dark:border-slate-800 px-1 rounded bg-slate-50/50 dark:bg-slate-800/50 truncate max-w-[80px]">
+                            {req.employeeId?.department_id?.name || '—'}
+                          </span>
+                          <span className="text-[9px] text-slate-500 font-black uppercase border border-slate-200 dark:border-slate-700 px-1 rounded bg-slate-100 dark:bg-slate-800 truncate max-w-[80px]">
+                            {req.employeeId?.employee_group_id?.name || '—'}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <div className="text-xs font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                          {formatDate(req.leftDate, req.isLwdManual, req.status)}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-center font-bold">
+                        <span className={`inline-block rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-tighter ${getStatusColor(req.status)}`}>
+                          {req.status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedRequest(req);
+                            setActionComment('');
+                            setEditableLWD(req.leftDate ? req.leftDate.split('T')[0] : '');
+                            setShowDetailDialog(true);
+                          }}
+                          className="inline-flex items-center gap-1.5 px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[10px] font-black uppercase text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all tracking-tighter"
+                        >
+                          <Eye className="w-3.5 h-3.5" /> <span>View</span>
+                        </button>
+                        {activeTab === 'pending' && canPerformAction(req) && canApproveResignation(currentUser as any) && (
+                          <div className="flex gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleCardAction(req._id, 'approve')}
+                              className="p-1.5 rounded-lg bg-green-500/10 text-green-600 hover:bg-green-500 hover:text-white transition-all"
+                              title="Approve"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleCardAction(req._id, 'reject')}
+                              className="p-1.5 rounded-lg bg-red-500/10 text-red-600 hover:bg-red-500 hover:text-white transition-all"
+                              title="Reject"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                         )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {filteredRequests.map((req) => (
+                <div
+                  key={req._id}
+                  className={`group relative flex flex-col justify-between rounded-2xl border border-slate-200/60 bg-white p-5 shadow-sm transition-all hover:shadow-md dark:border-slate-800 dark:bg-slate-900 ${
+                    req.status === 'pending' ? 'hover:border-orange-200/60' : 'hover:border-green-200/60'
+                  }`}
+                >
+                  <div className={`absolute top-0 left-0 w-1 h-full rounded-l-2xl group-hover:w-1.5 transition-all ${
+                    req.status === 'pending' ? 'bg-orange-500/80' : 'bg-green-500/80'
+                  }`} />
+                  <div className="flex items-start justify-between gap-3 mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full font-bold dark:bg-green-900/30 dark:text-green-400 ${
+                        req.status === 'pending' ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'
+                      }`}>
+                        {getEmployeeInitials(req)}
+                      </div>
+                      <div>
+                        <h4 className="font-semibold text-slate-900 dark:text-white line-clamp-1">{getEmployeeName(req)}</h4>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">{req.emp_no}</p>
                       </div>
                     </div>
-                    <div className="space-y-1.5 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-slate-500 dark:text-slate-400">
-                          {req.requestType === 'termination' ? 'Termination date' : 'Last working date'}
+                    <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                      <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(req.status)}`}>
+                        {req.status}
+                      </span>
+                      {req.requestType === 'termination' && (
+                        <span className="shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black uppercase bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400">
+                          Termination
                         </span>
-                        <span className="font-medium text-slate-700 dark:text-slate-300">{formatDate(req.leftDate, req.isLwdManual, req.status)}</span>
-                      </div>
-                      {req.remarks && (
-                        <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 pt-1 border-t border-slate-100 dark:border-slate-700">
-                          {req.remarks}
-                        </p>
                       )}
                     </div>
+                  </div>
+                  <div className="mb-4 space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-slate-500 dark:text-slate-400 whitespace-nowrap">Applied on</span>
+                      <span className="font-medium text-slate-700 dark:text-slate-300">{formatDate(req.createdAt)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500 dark:text-slate-400">
+                        {req.requestType === 'termination' ? 'Termination date' : 'Last working date'}
+                      </span>
+                      <span className="font-medium text-slate-700 dark:text-slate-300">{formatDate(req.leftDate, req.isLwdManual, req.status)}</span>
+                    </div>
+                    {req.remarks && (
+                      <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2">{req.remarks}</p>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
                     <button
                       type="button"
                       onClick={() => {
@@ -802,107 +1020,34 @@ export default function ResignationsPage() {
                         setEditableLWD(req.leftDate ? req.leftDate.split('T')[0] : '');
                         setShowDetailDialog(true);
                       }}
-                      className="mt-4 flex items-center justify-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                      className="flex-1 flex items-center justify-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
                     >
-                      <Eye className="w-3.5 h-3.5" /> View details
+                      <Eye className="w-3.5 h-3.5" /> View
                     </button>
+                    {activeTab === 'pending' && canPerformAction(req) && canApproveResignation(currentUser as any) && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleCardAction(req._id, 'approve')}
+                          className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-green-500/10 py-2 text-sm font-semibold text-green-600 transition-colors hover:bg-green-500 hover:text-white dark:bg-green-500/20 dark:text-green-400 dark:hover:bg-green-500 dark:hover:text-white"
+                        >
+                          <Check className="w-4 h-4" /> Approve
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleCardAction(req._id, 'reject')}
+                          className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-red-500/10 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-500 hover:text-white dark:bg-red-500/20 dark:text-red-400 dark:hover:bg-red-500 dark:hover:text-white"
+                        >
+                          <X className="w-4 h-4" /> Reject
+                        </button>
+                      </>
+                    )}
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {activeTab === 'pending' && (
-          <div className="mt-4 p-4 space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-500">
-            {loading ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-56 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 animate-pulse" />
-                ))}
-              </div>
-            ) : pendingRequests.length === 0 ? (
-              <div className="text-center py-10 text-slate-500 dark:text-slate-400 text-sm bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
-                No pending approvals for you.
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {pendingRequests.map((req) => (
-                  <div
-                    key={req._id}
-                    className="group relative flex flex-col justify-between rounded-2xl border border-slate-200/60 bg-white p-5 shadow-sm transition-all hover:shadow-md hover:border-orange-200/60 dark:border-slate-800 dark:bg-slate-900"
-                  >
-                    <div className="absolute top-0 left-0 w-1 h-full bg-orange-500/80 rounded-l-2xl group-hover:w-1.5 transition-all" />
-                    <div className="flex items-start justify-between gap-3 mb-4">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600 font-bold dark:bg-orange-900/30 dark:text-orange-400">
-                          {getEmployeeInitials(req)}
-                        </div>
-                        <div>
-                          <h4 className="font-semibold text-slate-900 dark:text-white line-clamp-1">{getEmployeeName(req)}</h4>
-                          <p className="text-xs text-slate-500 dark:text-slate-400">{req.emp_no}</p>
-                        </div>
-                      </div>
-                      <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-                        <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${getStatusColor(req.status)}`}>
-                          {req.status === 'pending' ? 'Pending' : req.status}
-                        </span>
-                        {req.requestType === 'termination' && (
-                          <span className="shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black uppercase bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400">
-                            Termination
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="mb-4 space-y-2 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-slate-500 dark:text-slate-400">
-                          {req.requestType === 'termination' ? 'Termination date' : 'Last working date'}
-                        </span>
-                        <span className="font-medium text-slate-700 dark:text-slate-300">{formatDate(req.leftDate, req.isLwdManual, req.status)}</span>
-                      </div>
-                      {req.remarks && (
-                        <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2">&quot;{req.remarks}&quot;</p>
-                      )}
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedRequest(req);
-                          setActionComment('');
-                          setEditableLWD(req.leftDate ? req.leftDate.split('T')[0] : '');
-                          setShowDetailDialog(true);
-                        }}
-                        className="flex-1 flex items-center justify-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
-                      >
-                        <Eye className="w-3.5 h-3.5" /> View
-                      </button>
-                      {canPerformAction(req) && canApproveResignation(currentUser as any) && (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => handleCardAction(req._id, 'approve')}
-                            className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-green-500/10 py-2 text-sm font-semibold text-green-600 transition-colors hover:bg-green-500 hover:text-white dark:bg-green-500/20 dark:text-green-400 dark:hover:bg-green-500 dark:hover:text-white"
-                          >
-                            <Check className="w-4 h-4" /> Approve
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleCardAction(req._id, 'reject')}
-                            className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-red-500/10 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-500 hover:text-white dark:bg-red-500/20 dark:text-red-400 dark:hover:bg-red-500 dark:hover:text-white"
-                          >
-                            <X className="w-4 h-4" /> Reject
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {showApplyModal && (
@@ -1035,9 +1180,44 @@ export default function ResignationsPage() {
               {selectedRequest.requestType === 'termination' ? 'Termination request' : 'Resignation request'}
             </h2>
             <div className="space-y-3 text-sm">
-              <div className="flex justify-between">
+              <div className="flex justify-between items-start">
                 <span className="text-slate-500 dark:text-slate-400">Employee</span>
-                <span className="font-medium text-slate-900 dark:text-white">{getEmployeeName(selectedRequest)} ({selectedRequest.emp_no})</span>
+                <div className="text-right">
+                  <div className="font-semibold text-slate-900 dark:text-white">
+                    {getEmployeeName(selectedRequest)} ({selectedRequest.emp_no})
+                  </div>
+                </div>
+              </div>
+
+              {/* Enhanced Employee Details Section */}
+              <div className="mt-6 rounded-xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/50">
+                <h4 className="mb-3 text-[10px] font-black uppercase tracking-wider text-slate-400">Employee Profile Context</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase text-slate-400">Date of Joining</p>
+                    <p className="mt-0.5 text-sm font-medium text-slate-900 dark:text-white">
+                      {selectedRequest.employeeId?.doj ? new Date(selectedRequest.employeeId.doj).toLocaleDateString() : '—'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase text-slate-400">Employee Group</p>
+                    <p className="mt-0.5 text-sm font-medium text-slate-900 dark:text-white">
+                      {selectedRequest.employeeId?.employee_group_id?.name || '—'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase text-slate-400">Division</p>
+                    <p className="mt-0.5 text-sm font-medium text-slate-900 dark:text-white">
+                      {selectedRequest.employeeId?.division_id?.name || '—'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase text-slate-400">Department</p>
+                    <p className="mt-0.5 text-sm font-medium text-slate-900 dark:text-white">
+                      {selectedRequest.employeeId?.department_id?.name || '—'}
+                    </p>
+                  </div>
+                </div>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-slate-500 dark:text-slate-400">
