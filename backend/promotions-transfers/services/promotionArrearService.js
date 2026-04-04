@@ -78,8 +78,8 @@ async function computePromotionArrearAmount(promotionDoc) {
  * @returns {Promise<{ ok: boolean; skipped?: boolean; message?: string; arrearsId?: string; warning?: string }>}
  */
 async function createDirectArrearForApprovedPromotion(promotionDoc, approverUserId) {
-  if (!promotionDoc || promotionDoc.requestType !== 'promotion') {
-    return { ok: true, skipped: true, message: 'not_promotion' };
+  if (!promotionDoc || !['promotion', 'increment'].includes(promotionDoc.requestType)) {
+    return { ok: true, skipped: true, message: 'not_promotion_or_increment' };
   }
 
   const empId = promotionDoc.employeeId?._id || promotionDoc.employeeId;
