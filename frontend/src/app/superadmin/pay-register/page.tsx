@@ -164,8 +164,10 @@ export default function PayRegisterPage() {
   const [payrollEndDate, setPayrollEndDate] = useState<string | null>(null);
   const [cycleStartDay, setCycleStartDay] = useState<number | null>(null);
   const [alignedToCycle, setAlignedToCycle] = useState(false);
+  /** Text in the search box while typing (not sent to API until Enter). */
   const [searchQuery, setSearchQuery] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
+  /** Last search applied to the API (Enter); used for sync, export, load more. */
+  const [committedSearch, setCommittedSearch] = useState('');
 
   useEffect(() => {
     let pollInterval: any;
@@ -362,16 +364,13 @@ export default function PayRegisterPage() {
   };
 
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedSearch((searchQuery || '').trim()), 400);
-    return () => clearTimeout(t);
-  }, [searchQuery]);
-
-  useEffect(() => {
     setPage(1);
     setHasMore(true);
-    loadPayRegisters(1, false);
+    setSearchQuery('');
+    setCommittedSearch('');
+    loadPayRegisters(1, false, '');
     checkBatchLocks();
-  }, [year, month, selectedDepartment, selectedDivision, debouncedSearch]);
+  }, [year, month, selectedDepartment, selectedDivision]);
 
   const checkBatchLocks = async () => {
     try {
@@ -418,7 +417,7 @@ export default function PayRegisterPage() {
     }
   };
 
-  const loadPayRegisters = async (pageToLoad = 1, append = false) => {
+  const loadPayRegisters = async (pageToLoad = 1, append = false, searchOverride?: string) => {
     try {
       if (append) {
         setLoadingMore(true);
@@ -433,6 +432,10 @@ export default function PayRegisterPage() {
       const targetDivId = selectedDivision && selectedDivision.trim() !== '' ? selectedDivision : undefined;
 
       const limit = PAGE_SIZE;
+      const q =
+        searchOverride !== undefined
+          ? String(searchOverride).trim()
+          : (committedSearch || '').trim();
       const rawResponse = await api.getEmployeesWithPayRegister(
         monthStr,
         targetDeptId,
@@ -440,7 +443,7 @@ export default function PayRegisterPage() {
         undefined,
         pageToLoad,
         limit,
-        debouncedSearch || undefined
+        q || undefined
       );
       const response = rawResponse as any;
 
@@ -530,7 +533,7 @@ export default function PayRegisterPage() {
         monthStr,
         selectedDepartment && selectedDepartment !== '' ? selectedDepartment : undefined,
         selectedDivision && selectedDivision !== '' ? selectedDivision : undefined,
-        debouncedSearch || undefined
+        committedSearch || undefined
       );
       const lockedRows =
         res.success && Array.isArray(res.data) ? res.data : [];
@@ -597,7 +600,7 @@ export default function PayRegisterPage() {
         undefined,
         1,
         -1,
-        debouncedSearch || undefined
+        committedSearch || undefined
       )) as any;
 
       if (!fullRes?.success || !Array.isArray(fullRes.data) || fullRes.data.length === 0) {
@@ -726,6 +729,7 @@ export default function PayRegisterPage() {
         month: monthStr,
         departmentId: selectedDepartment && selectedDepartment !== '' ? selectedDepartment : undefined,
         divisionId: selectedDivision && selectedDivision !== '' ? selectedDivision : undefined,
+        search: committedSearch || undefined,
       };
       const blob = await api.exportPayRegisterSummary(params);
       const url = window.URL.createObjectURL(blob);
@@ -1088,7 +1092,7 @@ export default function PayRegisterPage() {
     }
   };
 
-  // Search is applied server-side (debounced) so pagination totals match; list rows are already filtered.
+  // List rows are filtered by the API; search text is sent only after you press Enter in the search box.
   const getFilteredPayRegisters = (): PayRegisterSummary[] => payRegisters;
 
   const handleViewPayslip = (employee: Employee) => {
@@ -1659,14 +1663,23 @@ export default function PayRegisterPage() {
                 <option value="legacy">Engine: Legacy</option>
               </select>
 
-              {/* Search bar - filter employees by name, code, or department */}
+              {/* Server-side search — runs only when you press Enter */}
               <div className="relative flex-1 min-w-[140px] max-w-[220px]">
                 <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400 pointer-events-none" />
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search by name, code, dept..."
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      const t = (searchQuery || '').trim();
+                      setCommittedSearch(t);
+                      setPage(1);
+                      void loadPayRegisters(1, false, t);
+                    }
+                  }}
+                  placeholder="Press Enter to search…"
                   className="h-8 w-full pl-8 pr-2 text-[10px] sm:text-[11px] font-medium bg-white dark:bg-slate-800 border-0 rounded-lg focus:ring-2 focus:ring-blue-500/20 text-slate-700 dark:text-slate-300 placeholder:text-slate-400 dark:placeholder:text-slate-500 shadow-sm"
                 />
               </div>
