@@ -3758,9 +3758,42 @@ export const api = {
     });
   },
 
-  syncPayRegister: async (employeeId: string, month: string) => {
+  syncPayRegister: async (employeeId: string, month: string, opts?: { force?: boolean }) => {
     return apiRequest<any>(`/pay-register/${employeeId}/${month}/sync`, {
       method: 'POST',
+      body: JSON.stringify(opts?.force ? { force: true } : {}),
+    });
+  },
+
+  setPayRegisterSummaryLock: async (month: string, data: { employeeIds: string[]; locked: boolean }) => {
+    return apiRequest<{ success: boolean; modifiedCount?: number; matchedCount?: number; message?: string }>(
+      `/pay-register/summary-lock/${month}`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
+  },
+
+  getPayRegisterLockedEmployees: async (month: string, departmentId?: string, divisionId?: string) => {
+    const query = new URLSearchParams();
+    if (departmentId) query.append('departmentId', departmentId);
+    if (divisionId) query.append('divisionId', divisionId);
+    const qs = query.toString();
+    return apiRequest<{
+      success: boolean;
+      data?: Array<{
+        employeeId: string;
+        employee_name: string;
+        emp_no: string;
+        division?: string;
+        department?: string;
+        designation?: string;
+      }>;
+      count?: number;
+      message?: string;
+    }>(`/pay-register/locked-employees/${month}${qs ? `?${qs}` : ''}`, {
+      method: 'GET',
     });
   },
 

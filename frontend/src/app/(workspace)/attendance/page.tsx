@@ -677,7 +677,12 @@ export default function AttendancePage() {
 
   const [searchQuery, setSearchQuery] = useState('');
 
-
+  /** Server-side monthly search; avoids filtering only the first loaded pages and matches resigned-in-period rows */
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 350);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
 
   // Pagination states for infinite scroll (NEW)
 
@@ -981,7 +986,7 @@ export default function AttendancePage() {
       setHasMore(true);
       loadMonthlyAttendance(true);
     }
-  }, [selectedDivision, selectedDepartment, selectedDesignation, cycleDates.startDate]);
+  }, [selectedDivision, selectedDepartment, selectedDesignation, cycleDates.startDate, debouncedSearch]);
 
 
 
@@ -1044,25 +1049,20 @@ export default function AttendancePage() {
 
 
   useEffect(() => {
-    // Apply filters to monthly data
-    let filtered = [...monthlyData];
-
-    if (searchQuery) {
-
+    // HR: search is applied on the server (debouncedSearch). Employee self-view: local filter only.
+    if (isEmployee && searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
-
-      filtered = filtered.filter(item =>
-
-        item.employee.employee_name.toLowerCase().includes(query) ||
-
-        item.employee.emp_no.toLowerCase().includes(query)
-
+      setFilteredMonthlyData(
+        monthlyData.filter(
+          (item) =>
+            item.employee.employee_name?.toLowerCase().includes(query) ||
+            String(item.employee.emp_no || '').toLowerCase().includes(query),
+        ),
       );
-
+    } else {
+      setFilteredMonthlyData([...monthlyData]);
     }
-
-    setFilteredMonthlyData(filtered);
-  }, [monthlyData, selectedDivision, selectedDepartment, selectedDesignation, searchQuery]);
+  }, [monthlyData, searchQuery, isEmployee]);
 
   // Permission checks using read/write pattern
   // Write permission enables ALL actions (mark attendance, edit, export, assign shifts, process payroll)
@@ -1180,7 +1180,7 @@ export default function AttendancePage() {
       const response = await api.getMonthlyAttendance(year, month, {
         page: targetPage,
         limit,
-        search: searchQuery,
+        search: debouncedSearch,
         divisionId: selectedDivision,
         departmentId: selectedDepartment,
         designationId: selectedDesignation,
@@ -1772,7 +1772,7 @@ export default function AttendancePage() {
         const monthRes = await api.getMonthlyAttendance(year, month, {
           page,
           limit,
-          search: searchQuery,
+          search: debouncedSearch,
           divisionId: selectedDivision,
           departmentId: selectedDepartment,
           designationId: selectedDesignation,

@@ -83,6 +83,10 @@ async function syncPayRegisterFromLeave(leave) {
         monthNum
       );
 
+      if (payRegister.summaryLocked) {
+        continue;
+      }
+
       // Fetch the actual range for this payroll month from the register itself
       const { startDate, endDate } = payRegister;
 
@@ -194,6 +198,10 @@ async function syncPayRegisterFromOD(od) {
         continue;
       }
 
+      if (payRegister.summaryLocked) {
+        continue;
+      }
+
       // Fetch the actual range for this payroll month
       const [year, monthNum] = month.split('-').map(Number);
       const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
@@ -288,6 +296,10 @@ async function syncPayRegisterFromOT(ot) {
         continue;
       }
 
+      if (payRegister.summaryLocked) {
+        continue;
+      }
+
       // Fetch actual range to verify if date belongs to this payroll month
       const [year, monthNum] = month.split('-').map(Number);
       const { startDate, endDate } = await getPayrollDateRange(year, monthNum);
@@ -355,12 +367,18 @@ async function syncPayRegisterFromOT(ot) {
  * @param {String} month - Month in YYYY-MM format
  * @returns {Promise<Object>} Updated pay register
  */
-async function manualSyncPayRegister(employeeId, month) {
+async function manualSyncPayRegister(employeeId, month, options = {}) {
   try {
+    const force = options && options.force === true;
+
     let payRegister = await PayRegisterSummary.findOne({
       employeeId,
       month,
     });
+
+    if (payRegister && payRegister.summaryLocked && !force) {
+      return payRegister;
+    }
 
     const [year, monthNum] = month.split('-').map(Number);
     const { startDate, endDate, totalDays } = await getPayrollDateRange(year, monthNum);
