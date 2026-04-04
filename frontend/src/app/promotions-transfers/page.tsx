@@ -36,7 +36,6 @@ type PayrollMonthOption = {
 type PtRequest = {
   _id: string;
   requestType: 'promotion' | 'demotion' | 'transfer' | 'increment';
-  incrementAmount?: number;
   emp_no: string;
   status: string;
   remarks?: string;
