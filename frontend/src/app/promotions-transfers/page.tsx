@@ -35,13 +35,14 @@ type PayrollMonthOption = {
 
 type PtRequest = {
   _id: string;
-  requestType: 'promotion' | 'demotion' | 'transfer';
+  requestType: 'promotion' | 'demotion' | 'transfer' | 'increment';
+  incrementAmount?: number;
   emp_no: string;
   status: string;
   remarks?: string;
   newGrossSalary?: number;
   previousGrossSalary?: number | null;
-  /** @deprecated legacy API */
+  /** Set for requestType increment */
   incrementAmount?: number;
   effectivePayrollYear?: number;
   effectivePayrollMonth?: number;
@@ -204,9 +205,22 @@ function normalizeId(v: any): string {
   return '';
 }
 
+/** Backend treats any sent to* as an org change; unchanged values must be omitted (else "must change when specified"). */
+function orgDeltaForPromotionPayload(currentEmp: any, toDiv: string, toDept: string, toDesig: string) {
+  const curDiv = normalizeId(currentEmp?.division_id);
+  const curDept = normalizeId(currentEmp?.department_id);
+  const curDes = normalizeId(currentEmp?.designation_id);
+  const patch: { toDivisionId?: string; toDepartmentId?: string; toDesignationId?: string } = {};
+  if (toDiv && toDiv !== curDiv) patch.toDivisionId = toDiv;
+  if (toDept && toDept !== curDept) patch.toDepartmentId = toDept;
+  if (toDesig && toDesig !== curDes) patch.toDesignationId = toDesig;
+  return patch;
+}
+
 interface BulkPtRow {
   employee: any;
-  requestType: 'promotion' | 'demotion' | 'transfer';
+  requestType: 'promotion' | 'demotion' | 'transfer' | 'increment';
+  /** For promotion/demotion: target gross. For increment: increment amount only. */
   newGrossSalary: number;
   selectedMonthLabel: string;
   toDivisionId: string;
@@ -224,7 +238,7 @@ export default function PromotionsTransfersPage() {
   const [search, setSearch] = useState('');
 
   const [modalOpen, setModalOpen] = useState(false);
-  const [formType, setFormType] = useState<'promotion' | 'demotion' | 'transfer'>('promotion');
+  const [formType, setFormType] = useState<'promotion' | 'demotion' | 'transfer' | 'increment'>('promotion');
   const [empSearchQuery, setEmpSearchQuery] = useState('');
   const [empSearchResults, setEmpSearchResults] = useState<{ emp_no: string; employee_name: string }[]>([]);
   const [empSearchLoading, setEmpSearchLoading] = useState(false);
@@ -232,6 +246,7 @@ export default function PromotionsTransfersPage() {
   const [payrollMonths, setPayrollMonths] = useState<PayrollMonthOption[]>([]);
   const [selectedMonthLabel, setSelectedMonthLabel] = useState('');
   const [newGrossSalaryInput, setNewGrossSalaryInput] = useState('');
+  const [incrementAmountInput, setIncrementAmountInput] = useState('');
   const [allDesignations, setAllDesignations] = useState<{ _id: string; name: string }[]>([]);
   const [divisions, setDivisions] = useState<{ _id: string; name: string }[]>([]);
   const [masterDepartments, setMasterDepartments] = useState<{ _id: string; name: string; division_id?: any }[]>([]);
@@ -258,7 +273,7 @@ export default function PromotionsTransfersPage() {
 
   // Bulk operations state
   const [bulkSectionOpen, setBulkSectionOpen] = useState(false);
-  const [bulkType, setBulkType] = useState<'promotion' | 'demotion' | 'transfer'>('promotion');
+  const [bulkType, setBulkType] = useState<'promotion' | 'demotion' | 'transfer' | 'increment'>('promotion');
   const [bulkDivisionId, setBulkDivisionId] = useState('');
   const [bulkDepartmentId, setBulkDepartmentId] = useState('');
   const [bulkRows, setBulkRows] = useState<BulkPtRow[]>([]);
@@ -299,15 +314,85 @@ export default function PromotionsTransfersPage() {
     [canDelete]
   );
 
+  /** Load department options for the modal without clearing the list when division is missing (employee may only have department). */
+  const refreshModalDepartments = useCallback(async (divisionId: string, ensureDeptId: string) => {
+    if (!divisionId) {
+      if (ensureDeptId) {
+        try {
+          const single = await api.getDepartment(ensureDeptId);
+          const sd: any = single?.data ?? single;
+          setModalDepartments(sd?._id ? [sd] : []);
+        } catch {
+          setModalDepartments([]);
+        }
+      } else {
+        setModalDepartments([]);
+      }
+      return;
+    }
+    try {
+      const resp = await api.getDepartments(true, divisionId, true);
+      const rows: any = resp?.data ?? resp;
+      let list = Array.isArray(rows) ? rows : [];
+      if (ensureDeptId && !list.some((x: any) => normalizeId(x._id) === ensureDeptId)) {
+        try {
+          const single = await api.getDepartment(ensureDeptId);
+          const sd: any = single?.data ?? single;
+          if (sd?._id) list = [...list, sd];
+        } catch {
+          /* ignore */
+        }
+      }
+      setModalDepartments(list);
+    } catch {
+      setModalDepartments([]);
+    }
+  }, []);
+
+  const applyEmployeeOrgToForm = useCallback(
+    async (emp: any) => {
+      if (!emp) return;
+      let div = normalizeId(emp.division_id);
+      const dept = normalizeId(emp.department_id);
+      const des = normalizeId(emp.designation_id);
+
+      if (!div && dept) {
+        try {
+          const dr: any = await api.getDepartment(dept);
+          const d = dr?.data ?? dr;
+          const divs = d?.divisions;
+          if (Array.isArray(divs) && divs.length > 0) {
+            div = normalizeId(divs[0]);
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+
+      setToDiv(div);
+      setToDept(dept);
+      setToDesig(des);
+      await refreshModalDepartments(div, dept);
+    },
+    [refreshModalDepartments]
+  );
+
   const promotionComparison = useMemo(() => {
     if (formType === 'transfer') return null;
     const prevRaw = currentEmp?.gross_salary;
     const prev = prevRaw == null || prevRaw === '' ? null : Number(prevRaw);
+    if (formType === 'increment') {
+      const inc = parseFloat(incrementAmountInput);
+      if (!Number.isFinite(inc) || inc <= 0) return null;
+      const next = prev != null && Number.isFinite(prev) ? prev + inc : null;
+      const delta = next != null ? inc : null;
+      return { prev, next, delta };
+    }
     const next = parseFloat(newGrossSalaryInput);
     if (!Number.isFinite(next)) return null;
     const delta = prev != null && Number.isFinite(prev) ? next - prev : null;
     return { prev, next, delta };
-  }, [formType, currentEmp?.gross_salary, newGrossSalaryInput]);
+  }, [formType, currentEmp?.gross_salary, newGrossSalaryInput, incrementAmountInput]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -337,7 +422,7 @@ export default function PromotionsTransfersPage() {
       const list = (r?.data ?? r) || [];
       const rows: BulkPtRow[] = list.map((emp: any) => ({
         employee: emp,
-        requestType: 'promotion', // default
+        requestType: bulkType,
         newGrossSalary: 0,
         selectedMonthLabel: '',
         toDivisionId: normalizeId(emp.division_id),
@@ -376,6 +461,12 @@ export default function PromotionsTransfersPage() {
         if (type === 'demotion' && delta >= 0) return false;
         return true;
       }
+      if (type === 'increment') {
+        const inc = Number(r.newGrossSalary);
+        if (!Number.isFinite(inc) || inc <= 0) return false;
+        const prevGross = Number(r.employee.gross_salary);
+        return Number.isFinite(prevGross);
+      }
       
       // For transfer, check if any org field changed relative to current
       const tDiv = r.toDivisionId;
@@ -390,7 +481,7 @@ export default function PromotionsTransfersPage() {
     });
 
     if (toCreate.length === 0) {
-      toast.warn('No valid changes detected for any row. Check if promotion/demotion salaries follow the > or < rules.');
+      toast.warn('No valid changes detected for any row. Check salaries, increment amounts, and transfer org changes.');
       return;
     }
 
@@ -399,17 +490,21 @@ export default function PromotionsTransfersPage() {
       const settled = await Promise.allSettled(
         toCreate.map((r) => {
           const body: any = {
-            requestType: bulkType,
+            requestType: r.requestType,
             emp_no: r.employee.emp_no,
-            remarks: (r.remarks || headerRemarks || `Bulk ${bulkType}`).trim(),
+            remarks: (r.remarks || headerRemarks || `Bulk ${r.requestType}`).trim(),
           };
 
-          if (r.requestType === 'promotion' || r.requestType === 'demotion') {
+          if (r.requestType === 'promotion' || r.requestType === 'demotion' || r.requestType === 'increment') {
             const opt = payrollMonths.find((p) => p.label === r.selectedMonthLabel);
             if (!opt) throw new Error(`Invalid month for ${r.employee.emp_no}`);
-            body.newGrossSalary = Number(r.newGrossSalary);
             body.effectivePayrollYear = opt.payrollYear;
             body.effectivePayrollMonth = opt.payrollMonth;
+            if (r.requestType === 'increment') {
+              body.incrementAmount = Number(r.newGrossSalary);
+            } else {
+              body.newGrossSalary = Number(r.newGrossSalary);
+            }
             
             // Optional org structure change alongside promotion
             if (r.toDivisionId && normalizeId(r.employee.division_id) !== r.toDivisionId) body.toDivisionId = r.toDivisionId;
@@ -484,6 +579,7 @@ export default function PromotionsTransfersPage() {
     setSelectedEmpNo('');
     setSelectedMonthLabel('');
     setNewGrossSalaryInput('');
+    setIncrementAmountInput('');
     setToDiv('');
     setToDept('');
     setToDesig('');
@@ -514,23 +610,7 @@ export default function PromotionsTransfersPage() {
           const one = await api.getEmployee(String(selfNo).toUpperCase());
           const emp = one?.data ?? one;
           if (emp) setCurrentEmp(emp);
-          if (emp) {
-            const div = normalizeId(emp?.division_id);
-            const dept = normalizeId(emp?.department_id);
-            const des = normalizeId(emp?.designation_id);
-            setToDiv(div);
-            setToDept(dept);
-            setToDesig(des);
-            if (div) {
-              try {
-                const d = await api.getDepartments(true, div, true);
-                const rows = d?.data ?? d;
-                setModalDepartments(Array.isArray(rows) ? rows : []);
-              } catch {
-                setModalDepartments([]);
-              }
-            }
-          }
+          if (emp) await applyEmployeeOrgToForm(emp);
         }
       }
     } catch (e: any) {
@@ -608,15 +688,25 @@ export default function PromotionsTransfersPage() {
       setProrationRows([]);
       return;
     }
-    const nextGross = parseFloat(newGrossSalaryInput);
-    if (!Number.isFinite(nextGross) || nextGross <= 0) {
-      setProrationRows([]);
-      return;
-    }
     const baseGross = Number(currentEmp?.gross_salary);
     if (!Number.isFinite(baseGross)) {
       setProrationRows([]);
       return;
+    }
+    let nextGross: number;
+    if (formType === 'increment') {
+      const inc = parseFloat(incrementAmountInput);
+      if (!Number.isFinite(inc) || inc <= 0) {
+        setProrationRows([]);
+        return;
+      }
+      nextGross = baseGross + inc;
+    } else {
+      nextGross = parseFloat(newGrossSalaryInput);
+      if (!Number.isFinite(nextGross) || nextGross <= 0) {
+        setProrationRows([]);
+        return;
+      }
     }
     const delta = nextGross - baseGross;
     if (formType === 'promotion' && delta <= 0) {
@@ -671,24 +761,7 @@ export default function PromotionsTransfersPage() {
     return () => {
       cancelled = true;
     };
-  }, [modalOpen, formType, currentEmp?._id, newGrossSalaryInput, selectedMonthLabel, currentPayrollCycleLabel]);
-
-  useEffect(() => {
-    if (!modalOpen) return;
-    if (!toDiv) {
-      setModalDepartments([]);
-      return;
-    }
-    (async () => {
-      try {
-        const d = await api.getDepartments(true, toDiv, true);
-        const rows = d?.data ?? d;
-        setModalDepartments(Array.isArray(rows) ? rows : []);
-      } catch {
-        setModalDepartments([]);
-      }
-    })();
-  }, [modalOpen, toDiv]);
+  }, [modalOpen, formType, currentEmp?._id, newGrossSalaryInput, incrementAmountInput, selectedMonthLabel, currentPayrollCycleLabel]);
 
   useEffect(() => {
     if (!modalOpen || isEmployee) return;
@@ -736,26 +809,7 @@ export default function PromotionsTransfersPage() {
       const one = await api.getEmployee(empNo);
       const emp = one?.data ?? one;
       setCurrentEmp(emp);
-      const div = normalizeId(emp?.division_id);
-      const dept = normalizeId(emp?.department_id);
-      const des = normalizeId(emp?.designation_id);
-
-      setToDiv(div);
-      setToDept(dept);
-      setToDesig(des);
-
-      // Ensure department dropdown has options for the employee's division
-      if (div) {
-        try {
-          const d = await api.getDepartments(true, div, true);
-          const rows = d?.data ?? d;
-          setModalDepartments(Array.isArray(rows) ? rows : []);
-        } catch {
-          setModalDepartments([]);
-        }
-      } else {
-        setModalDepartments([]);
-      }
+      await applyEmployeeOrgToForm(emp);
     } catch {
       setCurrentEmp(null);
     }
@@ -791,12 +845,6 @@ export default function PromotionsTransfersPage() {
           setSubmitting(false);
           return;
         }
-        const nextGross = parseFloat(newGrossSalaryInput);
-        if (!Number.isFinite(nextGross) || nextGross <= 0) {
-          toast.error('Enter a valid new gross salary');
-          setSubmitting(false);
-          return;
-        }
         const prevG = currentEmp?.gross_salary;
         if (prevG == null || prevG === '' || !Number.isFinite(Number(prevG))) {
           toast.error('Current gross salary is missing for this employee');
@@ -804,35 +852,57 @@ export default function PromotionsTransfersPage() {
           return;
         }
         const prev = Number(prevG);
-        const delta = nextGross - prev;
-        if (formType === 'promotion' && delta <= 0) {
-          toast.error('Promotion requires a higher gross salary than current');
-          setSubmitting(false);
-          return;
-        }
-        if (formType === 'demotion' && delta >= 0) {
-          toast.error('Demotion requires a lower gross salary than current');
-          setSubmitting(false);
-          return;
-        }
         const body: any = {
           requestType: formType,
           emp_no: selectedEmpNo,
-          newGrossSalary: nextGross,
           effectivePayrollYear: opt.payrollYear,
           effectivePayrollMonth: opt.payrollMonth,
           remarks,
         };
-        if (toDiv) body.toDivisionId = toDiv;
-        if (toDept) body.toDepartmentId = toDept;
-        if (toDesig) {
-          // Use a single designation selector; backend expects proposedDesignationId for promotion/demotion designation change.
-          body.proposedDesignationId = toDesig;
-          body.toDesignationId = toDesig;
+        if (formType === 'increment') {
+          const inc = parseFloat(incrementAmountInput);
+          if (!Number.isFinite(inc) || inc <= 0) {
+            toast.error('Enter a valid increment amount (greater than zero)');
+            setSubmitting(false);
+            return;
+          }
+          body.incrementAmount = inc;
+        } else {
+          const nextGross = parseFloat(newGrossSalaryInput);
+          if (!Number.isFinite(nextGross) || nextGross <= 0) {
+            toast.error('Enter a valid new gross salary');
+            setSubmitting(false);
+            return;
+          }
+          const delta = nextGross - prev;
+          if (formType === 'promotion' && delta <= 0) {
+            toast.error('Promotion requires a higher gross salary than current');
+            setSubmitting(false);
+            return;
+          }
+          if (formType === 'demotion' && delta >= 0) {
+            toast.error('Demotion requires a lower gross salary than current');
+            setSubmitting(false);
+            return;
+          }
+          body.newGrossSalary = nextGross;
+        }
+        const orgPatch = orgDeltaForPromotionPayload(currentEmp, toDiv, toDept, toDesig);
+        if (orgPatch.toDivisionId) body.toDivisionId = orgPatch.toDivisionId;
+        if (orgPatch.toDepartmentId) body.toDepartmentId = orgPatch.toDepartmentId;
+        if (orgPatch.toDesignationId) {
+          body.proposedDesignationId = orgPatch.toDesignationId;
+          body.toDesignationId = orgPatch.toDesignationId;
         }
         const res = await api.createPromotionTransferRequest(body);
         if (!res?.success) throw new Error(res?.message || 'Failed');
-        toast.success(formType === 'promotion' ? 'Promotion request submitted' : 'Demotion request submitted');
+        const submittedLabel =
+          formType === 'promotion'
+            ? 'Promotion request submitted'
+            : formType === 'demotion'
+              ? 'Demotion request submitted'
+              : 'Increment request submitted';
+        toast.success(submittedLabel);
       }
       setModalOpen(false);
       loadData();
@@ -861,8 +931,12 @@ export default function PromotionsTransfersPage() {
       setDetail(d);
       setActionComment('');
 
-      // Fetch proration for promotion/demotion
-      if (d && (d.requestType === 'promotion' || d.requestType === 'demotion') && d.employeeId?._id) {
+      // Fetch proration for promotion/demotion/increment
+      if (
+        d &&
+        (d.requestType === 'promotion' || d.requestType === 'demotion' || d.requestType === 'increment') &&
+        d.employeeId?._id
+      ) {
         const startLabel = `${d.effectivePayrollYear}-${String(d.effectivePayrollMonth || '').padStart(2, '0')}`;
         const endLabel = currentPayrollCycleLabel;
         
@@ -871,7 +945,11 @@ export default function PromotionsTransfersPage() {
           try {
             const attRes = await api.getAttendanceDataRange(String(d.employeeId._id), startLabel, endLabel);
             const attRows = attRes?.success && Array.isArray(attRes?.data) ? attRes.data : [];
-            const nextG = d.newGrossSalary ?? (d.previousGrossSalary != null && d.incrementAmount != null ? d.previousGrossSalary + d.incrementAmount : 0);
+            const nextG =
+              d.newGrossSalary ??
+              (d.previousGrossSalary != null && d.incrementAmount != null
+                ? Number(d.previousGrossSalary) + Number(d.incrementAmount)
+                : 0);
             const prevG = d.previousGrossSalary || 0;
             const delta = nextG - prevG;
 
@@ -1022,6 +1100,7 @@ export default function PromotionsTransfersPage() {
                     <option value="promotion">Promotion</option>
                     <option value="demotion">Demotion</option>
                     <option value="transfer">Transfer</option>
+                    <option value="increment">Increment</option>
                   </select>
                 </div>
                 <div className="space-y-1.5">
@@ -1096,6 +1175,7 @@ export default function PromotionsTransfersPage() {
                                 <option value="promotion">Promotion</option>
                                 <option value="demotion">Demotion</option>
                                 <option value="transfer">Transfer</option>
+                                <option value="increment">Increment</option>
                               </select>
                             </td>
                             <td className="px-3 py-4 space-y-2">
@@ -1137,10 +1217,12 @@ export default function PromotionsTransfersPage() {
                               </div>
                             </td>
                             <td className="px-3 py-4 space-y-3">
-                              {(row.requestType === 'promotion' || row.requestType === 'demotion') && (
+                              {(row.requestType === 'promotion' || row.requestType === 'demotion' || row.requestType === 'increment') && (
                                 <div className="grid grid-cols-2 gap-2">
                                   <div className="space-y-0.5">
-                                    <p className="text-[9px] font-bold text-slate-400 uppercase ml-0.5 text-indigo-600">New Gross (₹)</p>
+                                    <p className="text-[9px] font-bold text-slate-400 uppercase ml-0.5 text-indigo-600">
+                                      {row.requestType === 'increment' ? 'Increment (₹)' : 'New Gross (₹)'}
+                                    </p>
                                     <input
                                       type="number"
                                       value={row.newGrossSalary || ''}
@@ -1273,9 +1355,19 @@ export default function PromotionsTransfersPage() {
                     </td>
                     <td className="px-4 py-3 capitalize">{r.requestType}</td>
                     <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
-                      {r.requestType === 'promotion' || r.requestType === 'demotion' ? (
+                      {r.requestType === 'promotion' || r.requestType === 'demotion' || r.requestType === 'increment' ? (
                         <span className="text-xs leading-relaxed">
-                          {r.newGrossSalary != null ? (
+                          {r.requestType === 'increment' && r.incrementAmount != null ? (
+                            <>
+                              <span className="font-medium text-slate-800 dark:text-slate-200">
+                                {formatSalary(r.previousGrossSalary)} → {formatSalary(r.newGrossSalary)}
+                              </span>
+                              <span className="text-slate-500 dark:text-slate-400">
+                                {' '}
+                                (+{formatSalary(r.incrementAmount)} increment)
+                              </span>
+                            </>
+                          ) : r.newGrossSalary != null ? (
                             <>
                               <span className="font-medium text-slate-800 dark:text-slate-200">
                                 {formatSalary(r.previousGrossSalary)} → {formatSalary(r.newGrossSalary)}
@@ -1290,7 +1382,7 @@ export default function PromotionsTransfersPage() {
                               )}
                             </>
                           ) : r.incrementAmount != null ? (
-                            <span>+{formatSalary(r.incrementAmount)} (legacy)</span>
+                            <span>+{formatSalary(r.incrementAmount)}</span>
                           ) : (
                             <span>—</span>
                           )}
@@ -1448,7 +1540,12 @@ export default function PromotionsTransfersPage() {
                     </div>
                   )}
 
-                  {(selectedMonthLabel && currentPayrollCycleLabel && parseFloat(newGrossSalaryInput) > 0 && formType !== 'transfer') ? (
+                  {(selectedMonthLabel &&
+                    currentPayrollCycleLabel &&
+                    formType !== 'transfer' &&
+                    (formType === 'increment'
+                      ? parseFloat(incrementAmountInput) > 0
+                      : parseFloat(newGrossSalaryInput) > 0)) ? (
                     <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-950/20 overflow-hidden">
                       <div className="px-3 py-2 flex items-center justify-between bg-slate-50 dark:bg-slate-800/40 border-b border-slate-200 dark:border-slate-800">
                         <div>
@@ -1486,8 +1583,14 @@ export default function PromotionsTransfersPage() {
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                               {prorationRows.map((r) => {
                                 const baseGross = Number(currentEmp?.gross_salary) || 0;
-                                const newGross = parseFloat(newGrossSalaryInput);
-                                const safeNewGross = Number.isFinite(newGross) ? newGross : baseGross;
+                                let safeNewGross = baseGross;
+                                if (formType === 'increment') {
+                                  const inc = parseFloat(incrementAmountInput);
+                                  if (Number.isFinite(inc) && inc > 0) safeNewGross = baseGross + inc;
+                                } else {
+                                  const newGross = parseFloat(newGrossSalaryInput);
+                                  if (Number.isFinite(newGross)) safeNewGross = newGross;
+                                }
 
                                 const paidDays = Number(r.paidDays) || 0;
                                 const totalDays = Number(r.totalDays) || 0;
@@ -1547,6 +1650,7 @@ export default function PromotionsTransfersPage() {
                   <option value="promotion">Promotion</option>
                   <option value="demotion">Demotion</option>
                   <option value="transfer">Transfer</option>
+                  <option value="increment">Increment</option>
                 </select>
               </div>
 
@@ -1574,51 +1678,95 @@ export default function PromotionsTransfersPage() {
                       {paidDaysLoading ? ' Loading paid days…' : ''}
                     </p>
                   </div>
-                  <div>
-                    <label className="text-xs font-semibold text-slate-500 uppercase">New gross salary</label>
-                    <input
-                      type="number"
-                      min={0}
-                      step={1}
-                      className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
-                      value={newGrossSalaryInput}
-                      onChange={(e) => setNewGrossSalaryInput(e.target.value)}
-                      placeholder="e.g. 85000"
-                    />
-                    {promotionComparison && Number.isFinite(promotionComparison.next) && (
-                      <div className="mt-2 rounded-lg border border-indigo-100 dark:border-indigo-900/50 bg-indigo-50/60 dark:bg-indigo-950/30 px-3 py-2 text-xs space-y-1">
-                        <div className="flex justify-between gap-2">
-                          <span className="text-slate-500 dark:text-slate-400">Current gross</span>
-                          <span className="font-semibold text-slate-800 dark:text-slate-200">
-                            {promotionComparison.prev != null && Number.isFinite(promotionComparison.prev)
-                              ? formatSalary(promotionComparison.prev)
-                              : '—'}
-                          </span>
-                        </div>
-                        <div className="flex justify-between gap-2">
-                          <span className="text-slate-500 dark:text-slate-400">New gross</span>
-                          <span className="font-semibold text-indigo-700 dark:text-indigo-300">
-                            {formatSalary(promotionComparison.next)}
-                          </span>
-                        </div>
-                        {promotionComparison.delta != null && (
-                          <div className="flex justify-between gap-2 pt-1 border-t border-indigo-200/60 dark:border-indigo-800/60">
-                            <span className="text-slate-500 dark:text-slate-400">Change</span>
-                            <span
-                              className={`font-bold ${
-                                promotionComparison.delta >= 0
-                                  ? 'text-emerald-700 dark:text-emerald-400'
-                                  : 'text-amber-700 dark:text-amber-400'
-                              }`}
-                            >
-                              {promotionComparison.delta >= 0 ? '+' : ''}
-                              {formatSalary(promotionComparison.delta)}
+                  {formType === 'increment' ? (
+                    <div>
+                      <label className="text-xs font-semibold text-slate-500 uppercase">Increment amount (₹)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        step={1}
+                        className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                        value={incrementAmountInput}
+                        onChange={(e) => setIncrementAmountInput(e.target.value)}
+                        placeholder="Amount to add to current gross"
+                      />
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        New gross is calculated as current gross plus this amount (you do not enter the full new gross).
+                      </p>
+                      {promotionComparison && promotionComparison.next != null && Number.isFinite(promotionComparison.next) && (
+                        <div className="mt-2 rounded-lg border border-indigo-100 dark:border-indigo-900/50 bg-indigo-50/60 dark:bg-indigo-950/30 px-3 py-2 text-xs space-y-1">
+                          <div className="flex justify-between gap-2">
+                            <span className="text-slate-500 dark:text-slate-400">Current gross</span>
+                            <span className="font-semibold text-slate-800 dark:text-slate-200">
+                              {promotionComparison.prev != null && Number.isFinite(promotionComparison.prev)
+                                ? formatSalary(promotionComparison.prev)
+                                : '—'}
                             </span>
                           </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                          <div className="flex justify-between gap-2">
+                            <span className="text-slate-500 dark:text-slate-400">New gross (after increment)</span>
+                            <span className="font-semibold text-indigo-700 dark:text-indigo-300">
+                              {formatSalary(promotionComparison.next)}
+                            </span>
+                          </div>
+                          {promotionComparison.delta != null && (
+                            <div className="flex justify-between gap-2 pt-1 border-t border-indigo-200/60 dark:border-indigo-800/60">
+                              <span className="text-slate-500 dark:text-slate-400">Increment</span>
+                              <span className="font-bold text-emerald-700 dark:text-emerald-400">
+                                +{formatSalary(promotionComparison.delta)}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="text-xs font-semibold text-slate-500 uppercase">New gross salary</label>
+                      <input
+                        type="number"
+                        min={0}
+                        step={1}
+                        className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                        value={newGrossSalaryInput}
+                        onChange={(e) => setNewGrossSalaryInput(e.target.value)}
+                        placeholder="e.g. 85000"
+                      />
+                      {promotionComparison && Number.isFinite(promotionComparison.next) && (
+                        <div className="mt-2 rounded-lg border border-indigo-100 dark:border-indigo-900/50 bg-indigo-50/60 dark:bg-indigo-950/30 px-3 py-2 text-xs space-y-1">
+                          <div className="flex justify-between gap-2">
+                            <span className="text-slate-500 dark:text-slate-400">Current gross</span>
+                            <span className="font-semibold text-slate-800 dark:text-slate-200">
+                              {promotionComparison.prev != null && Number.isFinite(promotionComparison.prev)
+                                ? formatSalary(promotionComparison.prev)
+                                : '—'}
+                            </span>
+                          </div>
+                          <div className="flex justify-between gap-2">
+                            <span className="text-slate-500 dark:text-slate-400">New gross</span>
+                            <span className="font-semibold text-indigo-700 dark:text-indigo-300">
+                              {formatSalary(promotionComparison.next)}
+                            </span>
+                          </div>
+                          {promotionComparison.delta != null && (
+                            <div className="flex justify-between gap-2 pt-1 border-t border-indigo-200/60 dark:border-indigo-800/60">
+                              <span className="text-slate-500 dark:text-slate-400">Change</span>
+                              <span
+                                className={`font-bold ${
+                                  promotionComparison.delta >= 0
+                                    ? 'text-emerald-700 dark:text-emerald-400'
+                                    : 'text-amber-700 dark:text-amber-400'
+                                }`}
+                              >
+                                {promotionComparison.delta >= 0 ? '+' : ''}
+                                {formatSalary(promotionComparison.delta)}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                 </>
               )}
@@ -1655,8 +1803,10 @@ export default function PromotionsTransfersPage() {
                     className="mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
                     value={toDiv}
                     onChange={(e) => {
-                      setToDiv(e.target.value);
+                      const v = e.target.value;
+                      setToDiv(v);
                       setToDept('');
+                      void refreshModalDepartments(v, '');
                     }}
                   >
                     <option value="">No change</option>
@@ -1742,13 +1892,23 @@ export default function PromotionsTransfersPage() {
                 <span className="text-slate-500">Status</span>
                 <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusClass(detail.status)}`}>{detail.status}</span>
               </div>
-              {(detail.requestType === 'promotion' || detail.requestType === 'demotion') && (
+              {(detail.requestType === 'promotion' ||
+                detail.requestType === 'demotion' ||
+                detail.requestType === 'increment') && (
                 <>
                   <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 p-3 space-y-2">
                     <div className="flex justify-between gap-2">
                       <span className="text-slate-500">Previous gross</span>
                       <span className="font-medium">{formatSalary(detail.previousGrossSalary)}</span>
                     </div>
+                    {detail.requestType === 'increment' && detail.incrementAmount != null && (
+                      <div className="flex justify-between gap-2">
+                        <span className="text-slate-500">Increment amount</span>
+                        <span className="font-medium text-emerald-700 dark:text-emerald-400">
+                          +{formatSalary(detail.incrementAmount)}
+                        </span>
+                      </div>
+                    )}
                     <div className="flex justify-between gap-2">
                       <span className="text-slate-500">New gross</span>
                       <span className="font-semibold text-indigo-700 dark:text-indigo-300 text-right">
@@ -1756,7 +1916,7 @@ export default function PromotionsTransfersPage() {
                           formatSalary(detail.newGrossSalary)
                         ) : detail.incrementAmount != null ? (
                           <span className="text-amber-800 dark:text-amber-200 text-xs font-normal">
-                            Legacy: +{formatSalary(detail.incrementAmount)} (computed on approval)
+                            +{formatSalary(detail.incrementAmount)} (derived on save)
                           </span>
                         ) : (
                           '—'

@@ -1,19 +1,20 @@
 const { MongoClient } = require('mongodb');
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
 /**
  * Script to copy a production MongoDB database to a local instance safely.
  * Requirements:
- * 1. MONGODB_ATLAS_URI in .env (Source - Production)
- * 2. MONGODB_URI in .env (Destination - Local)
+ * 1. MONGODB_ATLAS_URI in backend/.env (Source - Production)
+ * 2. MONGODB_URI in backend/.env (Destination - Local)
  */
 
 async function copyDatabase() {
-    const prodUri = process.env.MONGODB_URI;
-    const localUri = "mongodb://127.0.0.1:27017/hrms";
+    const prodUri = process.env.MONGODB_ATLAS_URI;
+    const localUri = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/hrms";
 
     if (!prodUri) {
-        console.error("Error: MONGODB_ATLAS_URI is not defined in .env file.");
+        console.error("Error: MONGODB_ATLAS_URI is not defined in backend/.env file.");
         process.exit(1);
     }
 

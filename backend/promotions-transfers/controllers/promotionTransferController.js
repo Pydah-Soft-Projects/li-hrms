@@ -7,6 +7,7 @@ const Division = require('../../departments/model/Division');
 const Department = require('../../departments/model/Department');
 const Designation = require('../../departments/model/Designation');
 const dateCycleService = require('../../leaves/services/dateCycleService');
+const { createDirectArrearForApprovedPromotion } = require('../services/promotionArrearService');
 
 const {
   buildWorkflowVisibilityFilter,
@@ -186,10 +187,11 @@ exports.getPayrollMonths = async (req, res) => {
 exports.createRequest = async (req, res) => {
   try {
     const { requestType, remarks } = req.body;
-    if (!requestType || !['promotion', 'demotion', 'transfer'].includes(requestType)) {
-      return res
-        .status(400)
-        .json({ success: false, message: 'requestType must be promotion, demotion, or transfer' });
+    if (!requestType || !['promotion', 'demotion', 'transfer', 'increment'].includes(requestType)) {
+      return res.status(400).json({
+        success: false,
+        message: 'requestType must be promotion, demotion, transfer, or increment',
+      });
     }
 
     const resolved = await resolveTargetEmployee(req);
@@ -235,9 +237,10 @@ exports.createRequest = async (req, res) => {
       },
     };
 
-    if (requestType === 'promotion' || requestType === 'demotion') {
+    if (requestType === 'promotion' || requestType === 'demotion' || requestType === 'increment') {
       const {
         newGrossSalary,
+        incrementAmount,
         effectivePayrollYear,
         effectivePayrollMonth,
         proposedDesignationId,
@@ -246,16 +249,60 @@ exports.createRequest = async (req, res) => {
         toDesignationId,
       } = req.body;
 
-      const newGross = Number(newGrossSalary);
-      if (!Number.isFinite(newGross) || newGross < 0) {
-        return res.status(400).json({ success: false, message: 'newGrossSalary must be a valid non-negative number' });
-      }
       const y = parseInt(effectivePayrollYear, 10);
       const m = parseInt(effectivePayrollMonth, 10);
       if (!y || m < 1 || m > 12) {
         return res.status(400).json({
           success: false,
           message: 'effectivePayrollYear and effectivePayrollMonth (1–12) are required',
+        });
+      }
+
+      const prevGross =
+        employee.gross_salary === null || employee.gross_salary === undefined
+          ? null
+          : Number(employee.gross_salary);
+
+      let newGross;
+      if (requestType === 'increment') {
+        const inc = Number(incrementAmount);
+        if (!Number.isFinite(inc) || inc <= 0) {
+          return res.status(400).json({
+            success: false,
+            message: 'incrementAmount must be a positive number',
+          });
+        }
+        if (prevGross == null || !Number.isFinite(prevGross)) {
+          return res.status(400).json({
+            success: false,
+            message: 'Employee must have a current gross salary for increment requests',
+          });
+        }
+        newGross = prevGross + inc;
+        docPayload.incrementAmount = inc;
+      } else {
+        newGross = Number(newGrossSalary);
+        if (!Number.isFinite(newGross) || newGross < 0) {
+          return res.status(400).json({ success: false, message: 'newGrossSalary must be a valid non-negative number' });
+        }
+        if (prevGross !== null && Number.isFinite(prevGross) && newGross === prevGross) {
+          return res.status(400).json({
+            success: false,
+            message: 'New gross salary must differ from the current gross salary',
+          });
+        }
+      }
+
+      if (requestType === 'promotion' && prevGross != null && Number.isFinite(prevGross) && newGross <= prevGross) {
+        return res.status(400).json({
+          success: false,
+          message: 'Promotion requires new gross salary greater than current',
+        });
+      }
+      if (requestType === 'demotion' && prevGross != null && Number.isFinite(prevGross) && newGross >= prevGross) {
+        return res.status(400).json({
+          success: false,
+          message: 'Demotion requires new gross salary less than current',
         });
       }
 
@@ -268,17 +315,6 @@ exports.createRequest = async (req, res) => {
           return res.status(400).json({ success: false, message: 'Proposed designation not found' });
         }
         docPayload.proposedDesignationId = des._id;
-      }
-
-      const prevGross =
-        employee.gross_salary === null || employee.gross_salary === undefined
-          ? null
-          : Number(employee.gross_salary);
-      if (prevGross !== null && Number.isFinite(prevGross) && newGross === prevGross) {
-        return res.status(400).json({
-          success: false,
-          message: 'New gross salary must differ from the current gross salary',
-        });
       }
 
       docPayload.newGrossSalary = newGross;
@@ -698,14 +734,14 @@ async function applyApprovedChanges(doc) {
   const emp = await Employee.findById(doc.employeeId);
   if (!emp) return;
 
-  if (doc.requestType === 'promotion' || doc.requestType === 'demotion') {
+  if (doc.requestType === 'promotion' || doc.requestType === 'demotion' || doc.requestType === 'increment') {
     let nextGross = Number(doc.newGrossSalary);
     if (!Number.isFinite(nextGross) && doc.incrementAmount != null) {
       const base = Number(emp.gross_salary) || 0;
       nextGross = base + Number(doc.incrementAmount);
     }
     if (!Number.isFinite(nextGross)) {
-      throw new Error('Promotion request is missing newGrossSalary');
+      throw new Error('Salary change request is missing newGrossSalary');
     }
     emp.gross_salary = nextGross;
     if (doc.proposedDesignationId) {
@@ -927,11 +963,31 @@ exports.approveOrReject = async (req, res) => {
         console.error('EmployeeHistory final:', e.message);
       }
 
-      return res.status(200).json({
+      let arrearResult = null;
+      try {
+        const approverId = req.user._id || req.user.userId;
+        arrearResult = await createDirectArrearForApprovedPromotion(doc, approverId);
+        if (arrearResult?.warning) {
+          console.warn('[PromotionTransfer] Arrear side-effect:', arrearResult.warning);
+        }
+      } catch (arrearErr) {
+        console.error('[PromotionTransfer] Unexpected arrears error:', arrearErr.message);
+        arrearResult = { ok: false, warning: arrearErr.message };
+      }
+
+      const responseBody = {
         success: true,
         message: 'Request fully approved; employee record updated',
         data: doc,
-      });
+      };
+      if (arrearResult?.arrearsId) {
+        responseBody.arrearId = arrearResult.arrearsId;
+      }
+      if (arrearResult?.warning) {
+        responseBody.arrearWarning = arrearResult.warning;
+      }
+
+      return res.status(200).json(responseBody);
     }
 
     const nextStep = chain[nextIndex];
