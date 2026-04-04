@@ -1655,22 +1655,7 @@ export default function LeaveRegisterPage({
                                             <div className="font-semibold text-slate-900 dark:text-slate-100">
                                               {m.label || `${m.month}/${m.year}`}
                                             </div>
-                                            <div className="text-[10px] text-slate-500 font-normal mt-0.5 space-y-0.5">
-                                              <div>
-                                                Bal CL {formatNum(m.clBalance)} · CCL {formatNum(m.cclBalance)} · EL{' '}
-                                                {formatNum(m.elBalance)}
-                                              </div>
-                                              <div>
-                                                sch CL {formatNullableNum(m.scheduledCl)}
-                                                {m.scheduledClYtd != null && (
-                                                  <span className="text-slate-400">
-                                                    {' '}
-                                                    · YTD sch {formatNum(m.scheduledClYtd)}
-                                                  </span>
-                                                )}{' '}
-                                                · Txns {m.transactionCount ?? 0}
-                                              </div>
-                                            </div>
+
                                             {canEditMonths && m.monthEditPolicy?.allowEditMonth ? (
                                               <button
                                                 type="button"
