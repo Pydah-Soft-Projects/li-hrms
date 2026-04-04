@@ -22,6 +22,8 @@ import {
   Plus,
   Calendar,
   Save,
+  LayoutGrid,
+  List,
 } from 'lucide-react';
 
 const StatCard = ({ title, value, icon: Icon, bgClass, iconClass, dekorClass, loading }: { title: string; value: number | string; icon: React.ComponentType<{ className?: string }>; bgClass: string; iconClass: string; dekorClass?: string; loading?: boolean }) => (
@@ -56,6 +58,7 @@ interface ResignationRequest {
     department_id?: { _id: string; name: string };
     division_id?: { _id: string; name: string };
     employee_group_id?: { _id: string; name: string };
+    doj?: string;
   };
   emp_no: string;
   leftDate: string;
@@ -146,7 +149,7 @@ const canCreateResignation = (user: any) => {
 };
 
 export default function SuperAdminResignationsPage() {
-  const [activeTab, setActiveTab] = useState<'all' | 'pending'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
   const [allRequests, setAllRequests] = useState<ResignationRequest[]>([]);
   const [pendingRequests, setPendingRequests] = useState<ResignationRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -170,7 +173,7 @@ export default function SuperAdminResignationsPage() {
 
   const [filters, setFilters] = useState({
     search: '',
-    status: 'all',
+    requestType: 'all',
     division_id: 'all',
     department_id: 'all',
     employee_group_id: 'all',
@@ -178,6 +181,7 @@ export default function SuperAdminResignationsPage() {
   const [divisions, setDivisions] = useState<any[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
   const [groups, setGroups] = useState<any[]>([]);
+  const [viewType, setViewType] = useState<'card' | 'list'>('list');
 
   useEffect(() => {
     const user = auth.getUser();
@@ -436,60 +440,51 @@ export default function SuperAdminResignationsPage() {
     }
   };
 
-  const filteredAll = useMemo(() => {
+
+
+  const baseFiltered = useMemo(() => {
     return allRequests.filter((req) => {
       const employee = req.employeeId;
-      const matchesSearch =
-        !filters.search ||
-        employee?.employee_name?.toLowerCase().includes(filters.search.toLowerCase()) ||
-        employee?.emp_no?.toLowerCase().includes(filters.search.toLowerCase());
-
-      const matchesStatus = filters.status === 'all' || req.status === filters.status;
-      
-      const matchesDivision = filters.division_id === 'all' || 
-        (employee?.division_id?._id || employee?.division_id) === filters.division_id;
-      
-      const matchesDepartment = filters.department_id === 'all' || 
-        (employee?.department_id?._id || employee?.department_id) === filters.department_id;
-        
-      const matchesGroup = filters.employee_group_id === 'all' || 
-        (employee?.employee_group_id?._id || employee?.employee_group_id) === filters.employee_group_id;
-
-      return matchesSearch && matchesStatus && matchesDivision && matchesDepartment && matchesGroup;
+      const matchesSearch = !filters.search || employee?.employee_name?.toLowerCase().includes(filters.search.toLowerCase()) || employee?.emp_no?.toLowerCase().includes(filters.search.toLowerCase());
+      const matchesRequestType = filters.requestType === 'all' || 
+        (filters.requestType === 'resignation' ? (req.requestType !== 'termination') : (req.requestType === filters.requestType));
+      const matchesDivision = filters.division_id === 'all' || (employee?.division_id?._id || employee?.division_id) === filters.division_id;
+      const matchesDepartment = filters.department_id === 'all' || (employee?.department_id?._id || employee?.department_id) === filters.department_id;
+      const matchesGroup = filters.employee_group_id === 'all' || (employee?.employee_group_id?._id || employee?.employee_group_id) === filters.employee_group_id;
+      return matchesSearch && matchesRequestType && matchesDivision && matchesDepartment && matchesGroup;
     });
   }, [allRequests, filters]);
 
-  const filteredPending = useMemo(() => {
+  const baseFilteredPending = useMemo(() => {
     return pendingRequests.filter((req) => {
       const employee = req.employeeId;
-      const matchesSearch =
-        !filters.search ||
-        employee?.employee_name?.toLowerCase().includes(filters.search.toLowerCase()) ||
-        employee?.emp_no?.toLowerCase().includes(filters.search.toLowerCase());
-      
-      const matchesDivision = filters.division_id === 'all' || 
-        (employee?.division_id?._id || employee?.division_id) === filters.division_id;
-        
-      const matchesDepartment = filters.department_id === 'all' || 
-        (employee?.department_id?._id || employee?.department_id) === filters.department_id;
-        
-      const matchesGroup = filters.employee_group_id === 'all' || 
-        (employee?.employee_group_id?._id || employee?.employee_group_id) === filters.employee_group_id;
-
-      return matchesSearch && matchesDivision && matchesDepartment && matchesGroup;
+      const matchesSearch = !filters.search || employee?.employee_name?.toLowerCase().includes(filters.search.toLowerCase()) || employee?.emp_no?.toLowerCase().includes(filters.search.toLowerCase());
+      const matchesRequestType = filters.requestType === 'all' || 
+        (filters.requestType === 'resignation' ? (req.requestType !== 'termination') : (req.requestType === filters.requestType));
+      const matchesDivision = filters.division_id === 'all' || (employee?.division_id?._id || employee?.division_id) === filters.division_id;
+      const matchesDepartment = filters.department_id === 'all' || (employee?.department_id?._id || employee?.department_id) === filters.department_id;
+      const matchesGroup = filters.employee_group_id === 'all' || (employee?.employee_group_id?._id || employee?.employee_group_id) === filters.employee_group_id;
+      return matchesSearch && matchesRequestType && matchesDivision && matchesDepartment && matchesGroup;
     });
   }, [pendingRequests, filters]);
 
   const stats = useMemo(
     () => ({
-      total: allRequests.length,
-      approved: allRequests.filter((r) => r.status === 'approved').length,
-      pending: allRequests.filter((r) => r.status === 'pending').length,
-      rejected: allRequests.filter((r) => ['rejected', 'cancelled'].includes(r.status)).length,
-      pendingApprovals: pendingRequests.length,
+      total: baseFiltered.length,
+      approved: baseFiltered.filter((r) => r.status === 'approved').length,
+      pending: baseFiltered.filter((r) => r.status === 'pending').length,
+      rejected: baseFiltered.filter((r) => ['rejected', 'cancelled'].includes(r.status)).length,
+      pendingApprovals: baseFilteredPending.length,
     }),
-    [allRequests, pendingRequests]
+    [baseFiltered, baseFilteredPending]
   );
+
+  const filteredRequests = useMemo(() => {
+    return (activeTab === 'pending' ? baseFilteredPending : baseFiltered).filter((req) => {
+      if (activeTab === 'all' || activeTab === 'pending') return true;
+      return req.status === activeTab;
+    });
+  }, [baseFiltered, baseFilteredPending, activeTab]);
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 pb-10 pt-1">
@@ -543,8 +538,8 @@ export default function SuperAdminResignationsPage() {
 
         <div className="mb-6 animate-in fade-in slide-in-from-top-4 duration-500">
           <div className="md:p-5 md:rounded-[2.5rem] md:border md:border-white/20 md:dark:border-slate-800 md:bg-white/60 md:dark:bg-slate-900/60 md:backdrop-blur-xl md:shadow-xl md:shadow-slate-200/50 md:dark:shadow-none transition-all">
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="relative group w-full sm:w-64">
+              <div className="flex items-center gap-3 overflow-x-auto pb-1 sm:pb-0 no-scrollbar">
+                <div className="relative group shrink-0 w-full sm:w-64">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 transition-colors group-focus-within:text-slate-600 dark:group-focus-within:text-slate-300" />
                   <input
                     type="text"
@@ -555,75 +550,96 @@ export default function SuperAdminResignationsPage() {
                   />
                 </div>
 
-                <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 no-scrollbar">
-                  <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-xl p-1 gap-1 min-w-fit">
-                    {(['all', 'pending', 'approved', 'rejected'] as const).map((status) => (
-                      <button
-                        key={status}
-                        onClick={() => setFilters({ ...filters, status })}
-                        className={`px-3 py-1.5 text-[10px] sm:text-xs font-bold rounded-lg transition-all capitalize whitespace-nowrap ${
-                          filters.status === status
-                            ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white'
-                            : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-                        }`}
-                      >
-                        {status}
-                      </button>
-                    ))}
-                  </div>
+                <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-xl p-1 gap-1 min-w-fit">
+                  {(['all', 'resignation', 'termination'] as const).map((type) => (
+                    <button
+                      key={type}
+                      onClick={() => setFilters({ ...filters, requestType: type })}
+                      className={`px-3 py-1.5 text-[10px] sm:text-xs font-bold rounded-lg transition-all capitalize whitespace-nowrap ${
+                        filters.requestType === type
+                          ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white'
+                          : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                      }`}
+                    >
+                      {type === 'all' ? 'All Types' : type + 's'}
+                    </button>
+                  ))}
+                </div>
 
-                  <select
-                    className="h-9 px-3 py-1.5 text-xs font-bold rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-slate-500/20 focus:border-slate-500 transition-all dark:border-slate-800 dark:bg-slate-950 min-w-[120px]"
-                    value={filters.division_id}
-                    onChange={(e) => setFilters({ ...filters, division_id: e.target.value })}
-                  >
-                    <option value="all">All Divisions</option>
-                    {divisions.map((div) => (
-                      <option key={div._id} value={div._id}>
-                        {div.name}
-                      </option>
-                    ))}
-                  </select>
+                <select
+                  className="h-9 px-3 py-1.5 text-xs font-bold rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-slate-500/20 focus:border-slate-500 transition-all dark:border-slate-800 dark:bg-slate-950 min-w-[120px]"
+                  value={filters.division_id}
+                  onChange={(e) => setFilters({ ...filters, division_id: e.target.value })}
+                >
+                  <option value="all">All Divisions</option>
+                  {divisions.map((div) => (
+                    <option key={div._id} value={div._id}>
+                      {div.name}
+                    </option>
+                  ))}
+                </select>
 
-                  <select
-                    className="h-9 px-3 py-1.5 text-xs font-bold rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-slate-500/20 focus:border-slate-500 transition-all dark:border-slate-800 dark:bg-slate-950 min-w-[120px]"
-                    value={filters.department_id}
-                    onChange={(e) => setFilters({ ...filters, department_id: e.target.value })}
-                  >
-                    <option value="all">All Departments</option>
-                    {departments.map((dept) => (
-                      <option key={dept._id} value={dept._id}>
-                        {dept.name}
-                      </option>
-                    ))}
-                  </select>
+                <select
+                  className="h-9 px-3 py-1.5 text-xs font-bold rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-slate-500/20 focus:border-slate-500 transition-all dark:border-slate-800 dark:bg-slate-950 min-w-[120px]"
+                  value={filters.department_id}
+                  onChange={(e) => setFilters({ ...filters, department_id: e.target.value })}
+                >
+                  <option value="all">All Departments</option>
+                  {departments.map((dept) => (
+                    <option key={dept._id} value={dept._id}>
+                      {dept.name}
+                    </option>
+                  ))}
+                </select>
 
-                  <select
-                    className="h-9 px-3 py-1.5 text-xs font-bold rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-slate-500/20 focus:border-slate-500 transition-all dark:border-slate-800 dark:bg-slate-950 min-w-[120px]"
-                    value={filters.employee_group_id}
-                    onChange={(e) => setFilters({ ...filters, employee_group_id: e.target.value })}
-                  >
-                    <option value="all">All Groups</option>
-                    {groups.map((group) => (
-                      <option key={group._id} value={group._id}>
-                        {group.name}
-                      </option>
-                    ))}
-                  </select>
+                <select
+                  className="h-9 px-3 py-1.5 text-xs font-bold rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-slate-500/20 focus:border-slate-500 transition-all dark:border-slate-800 dark:bg-slate-950 min-w-[120px]"
+                  value={filters.employee_group_id}
+                  onChange={(e) => setFilters({ ...filters, employee_group_id: e.target.value })}
+                >
+                  <option value="all">All Groups</option>
+                  {groups.map((group) => (
+                    <option key={group._id} value={group._id}>
+                      {group.name}
+                    </option>
+                  ))}
+                </select>
 
+                <button
+                  onClick={() =>
+                    setFilters({
+                      search: '',
+                      requestType: 'all',
+                      division_id: 'all',
+                      department_id: 'all',
+                      employee_group_id: 'all',
+                    })
+                  }
+                  className="h-9 px-3 text-xs font-bold text-slate-500 hover:text-slate-700 transition-colors whitespace-nowrap"
+                >
+                  Reset
+                </button>
+
+                <div className="flex items-center ml-2 border-l border-slate-200 dark:border-slate-800 pl-4 gap-1">
                   <button
-                    onClick={() =>
-                      setFilters({
-                        search: '',
-                        status: 'all',
-                        division_id: 'all',
-                        department_id: 'all',
-                        employee_group_id: 'all',
-                      })
-                    }
-                    className="h-9 px-3 text-xs font-bold text-slate-500 hover:text-slate-700 transition-colors whitespace-nowrap"
+                    onClick={() => setViewType('card')}
+                    className={`p-2 rounded-lg transition-all ${viewType === 'card'
+                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm'
+                      : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                    }`}
+                    title="Card view"
                   >
-                    Reset
+                    <LayoutGrid className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => setViewType('list')}
+                    className={`p-2 rounded-lg transition-all ${viewType === 'list'
+                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm'
+                      : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                    }`}
+                    title="List view"
+                  >
+                    <List className="w-4 h-4" />
                   </button>
                 </div>
               </div>
@@ -633,23 +649,25 @@ export default function SuperAdminResignationsPage() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div className="grid grid-cols-2 sm:inline-flex items-center p-1 rounded-xl bg-slate-100/50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 backdrop-blur-sm shadow-inner w-full sm:w-auto gap-1 sm:gap-0">
             {[
-              { id: 'all' as const, label: 'All requests', icon: ListTodo, count: allRequests.length, activeColor: 'green' },
-              { id: 'pending' as const, label: 'Pending', icon: Clock3, count: stats.pendingApprovals, activeColor: 'orange' },
+              { id: 'all' as const, label: 'All requests', icon: ListTodo, count: stats.total, activeColor: 'green' },
+              { id: 'pending' as const, label: 'Pending approvals', icon: Clock, count: stats.pendingApprovals, activeColor: 'orange' },
+              { id: 'approved' as const, label: 'Approved', icon: CheckCircle2, count: stats.approved, activeColor: 'green' },
+              { id: 'rejected' as const, label: 'Rejected', icon: XCircle, count: stats.rejected, activeColor: 'red' },
             ].map((tab) => (
               <button
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
                 className={`group relative flex items-center justify-center gap-2 px-2 sm:px-6 py-2 rounded-lg text-[10px] sm:text-xs font-bold transition-all duration-300 whitespace-nowrap ${activeTab === tab.id
-                  ? 'bg-white dark:bg-slate-700 shadow-sm ring-1 ring-slate-200/50 dark:ring-0 ' + (tab.activeColor === 'green' ? 'text-green-600 dark:text-green-400' : 'text-orange-600 dark:text-orange-400')
+                  ? 'bg-white dark:bg-slate-700 shadow-sm ring-1 ring-slate-200/50 dark:ring-0 ' + (tab.activeColor === 'green' ? 'text-green-600 dark:text-green-400' : tab.activeColor === 'orange' ? 'text-orange-600 dark:text-orange-400' : 'text-rose-600 dark:text-rose-400')
                   : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
                   }`}
               >
-                <tab.icon className={`w-3.5 h-3.5 ${activeTab === tab.id ? (tab.activeColor === 'green' ? 'text-green-600 dark:text-green-400' : 'text-orange-600 dark:text-orange-400') : 'text-slate-400 group-hover:text-slate-600'}`} />
+                <tab.icon className={`w-3.5 h-3.5 ${activeTab === tab.id ? (tab.activeColor === 'green' ? 'text-green-600 dark:text-green-400' : tab.activeColor === 'orange' ? 'text-orange-600 dark:text-orange-400' : 'text-rose-600 dark:text-rose-400') : 'text-slate-400 group-hover:text-slate-600'}`} />
                 <span>{tab.label}</span>
                 {tab.count > 0 && (
                   <span className={`flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-md text-[10px] font-black ${activeTab === tab.id
-                    ? (tab.activeColor === 'green' ? 'bg-green-50 text-green-600 dark:bg-green-900/30 dark:text-green-300' : 'bg-orange-50 text-orange-600 dark:bg-orange-900/30 dark:text-orange-300')
+                    ? (tab.activeColor === 'green' ? 'bg-green-50 text-green-600 dark:bg-green-900/30 dark:text-green-300' : tab.activeColor === 'orange' ? 'bg-orange-50 text-orange-600 dark:bg-orange-900/30 dark:text-orange-300' : 'bg-rose-50 text-rose-600 dark:bg-rose-900/30 dark:text-rose-300')
                     : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
                     }`}>
                     {tab.count}
@@ -660,57 +678,179 @@ export default function SuperAdminResignationsPage() {
           </div>
         </div>
 
-        {activeTab === 'all' && (
-          <div className="mt-4 animate-in fade-in slide-in-from-bottom-2 duration-500">
-            {loading ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-40 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800 animate-pulse" />
-                ))}
-              </div>
-            ) : filteredAll.length === 0 ? (
-              <div className="text-center py-10 text-slate-500 dark:text-slate-400 text-sm bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
-                No resignation requests found.
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {filteredAll.map((req) => (
-                  <div
-                    key={req._id}
-                    className="group relative flex flex-col rounded-2xl border border-slate-200/60 bg-white p-5 shadow-sm transition-all hover:shadow-md hover:border-green-200/60 dark:border-slate-800 dark:bg-slate-900"
-                  >
-                    <div className="absolute top-0 left-0 w-1 h-full bg-green-500/80 rounded-l-2xl group-hover:w-1.5 transition-all" />
-                    <div className="flex items-start justify-between gap-3 mb-3">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-green-100 text-green-600 font-bold dark:bg-green-900/30 dark:text-green-400">
-                          {getEmployeeInitials(req)}
+        <div className="mt-4 animate-in fade-in slide-in-from-bottom-2 duration-500">
+          {loading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className={`rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800 animate-pulse ${viewType === 'list' ? 'h-16' : 'h-40'}`} />
+              ))}
+            </div>
+          ) : filteredRequests.length === 0 ? (
+            <div className="text-center py-10 text-slate-500 dark:text-slate-400 text-sm bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
+              No resignation requests found for the selected filters.
+            </div>
+          ) : viewType === 'list' ? (
+            <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50">
+                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400">Employee</th>
+                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400">Type</th>
+                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400 text-center">Applied</th>
+                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400">Organization</th>
+                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400 text-center">LWD</th>
+                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400 text-center">Status</th>
+                    <th className="px-6 py-4 text-[10px] font-black uppercase tracking-wider text-slate-400 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {filteredRequests.map((req) => (
+                    <tr key={req._id} className="group hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
+                            req.status === 'approved' ? 'bg-green-100 text-green-600 dark:bg-green-900/30' : 
+                            req.status === 'pending' ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30' : 'bg-rose-100 text-rose-600 dark:bg-rose-900/30'
+                          }`}>
+                            {getEmployeeInitials(req)}
+                          </div>
+                          <div>
+                            <div className="font-semibold text-slate-900 dark:text-white text-sm whitespace-nowrap">{getEmployeeName(req)}</div>
+                            <div className="text-[10px] text-slate-400 font-bold tracking-tighter uppercase">{req.emp_no}</div>
+                          </div>
                         </div>
-                        <div>
-                          <h4 className="font-semibold text-slate-900 dark:text-white line-clamp-1">{getEmployeeName(req)}</h4>
-                          <p className="text-xs text-slate-500 dark:text-slate-400">{req.emp_no}</p>
+                      </td>
+                      <td className="px-6 py-4">
+                        {req.requestType === 'termination' ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-50 dark:bg-rose-900/20 text-[10px] font-bold text-rose-600 dark:text-rose-400 border border-rose-100 dark:border-rose-800/30 uppercase tracking-tighter">
+                            <X className="w-2.5 h-2.5" /> Termination
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/20 text-[10px] font-bold text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-800/30 uppercase tracking-tighter">
+                            <LogOut className="w-2.5 h-2.5" /> Resignation
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <div className="text-xs font-medium text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                          {formatDate(req.createdAt)}
                         </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-xs text-slate-600 dark:text-slate-400 font-medium whitespace-nowrap">
+                          {req.employeeId?.division_id?.name || '—'}
+                        </div>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          <span className="text-[9px] text-slate-400 font-bold uppercase border border-slate-100 dark:border-slate-800 px-1 rounded bg-slate-50/50 dark:bg-slate-800/50 truncate max-w-[80px]">
+                            {req.employeeId?.department_id?.name || '—'}
+                          </span>
+                          <span className="text-[9px] text-slate-500 font-black uppercase border border-slate-200 dark:border-slate-700 px-1 rounded bg-slate-100 dark:bg-slate-800 truncate max-w-[80px]">
+                            {req.employeeId?.employee_group_id?.name || '—'}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <div className="text-xs font-bold text-slate-700 dark:text-slate-300 whitespace-nowrap">
+                          {formatDate(req.leftDate)}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-center font-bold">
+                        <span className={`inline-block rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-tighter ${getStatusColor(req.status)}`}>
+                          {req.status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedRequest(req);
+                              setActionComment('');
+                              setNewLeftDate(req.leftDate ? req.leftDate.split('T')[0] : '');
+                              setShowDetailDialog(true);
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[10px] font-black uppercase text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all tracking-tighter"
+                          >
+                            <Eye className="w-3.5 h-3.5" /> <span>View</span>
+                          </button>
+                          {req.status === 'pending' && canPerformAction(req) && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleCardAction(req._id, 'approve')}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-500/10 text-[10px] font-black text-green-700 dark:text-green-400 hover:bg-green-500 hover:text-white transition-all uppercase tracking-tighter"
+                              >
+                                <Check className="w-3.5 h-3.5" /> <span>Approve</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleCardAction(req._id, 'reject')}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-500/10 text-[10px] font-black text-rose-700 dark:text-rose-400 hover:bg-rose-500 hover:text-white transition-all uppercase tracking-tighter"
+                              >
+                                <X className="w-3.5 h-3.5" /> <span>Reject</span>
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {filteredRequests.map((req) => (
+                <div key={req._id} className="group relative flex flex-col justify-between rounded-2xl border border-slate-200/60 bg-white p-5 shadow-sm transition-all hover:shadow-md hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900">
+                  <div className={`absolute top-0 left-0 w-1 h-full rounded-l-2xl group-hover:w-1.5 transition-all ${
+                    req.status === 'approved' ? 'bg-green-500/80' : 
+                    req.status === 'pending' ? 'bg-amber-500/80' : 'bg-rose-500/80'
+                  }`} />
+                  <div className="flex items-start justify-between gap-3 mb-3">
+                    <div className="flex items-center gap-3">
+                      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full font-bold ${
+                        req.status === 'approved' ? 'bg-green-100 text-green-600 dark:bg-green-900/30' : 
+                        req.status === 'pending' ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30' : 'bg-rose-100 text-rose-600 dark:bg-rose-900/30'
+                      }`}>
+                        {getEmployeeInitials(req)}
                       </div>
-                      <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(req.status)}`}>
-                        {req.status}
-                      </span>
+                      <div>
+                        <h4 className="font-semibold text-slate-900 dark:text-white line-clamp-1">{getEmployeeName(req)}</h4>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">{req.emp_no}</p>
+                      </div>
                     </div>
-                    {req.requestType === 'termination' && (
-                      <div className="mb-3 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-900/20 border border-rose-100 dark:border-rose-800/30 w-fit">
+                    <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(req.status)}`}>
+                      {req.status}
+                    </span>
+                  </div>
+                  
+                  <div className="flex items-center gap-2 mb-3">
+                    {req.requestType === 'termination' ? (
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-900/20 border border-rose-100 dark:border-rose-800/30 w-fit">
                         <X className="w-3 h-3 text-rose-500" />
                         <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 tracking-tighter uppercase">Termination</span>
                       </div>
-                    )}
-                    <div className="space-y-1.5 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-slate-500 dark:text-slate-400">{req.requestType === 'termination' ? 'Termination date' : 'Last working date'}</span>
-                        <span className="font-medium text-slate-700 dark:text-slate-300">{formatDate(req.leftDate)}</span>
+                    ) : (
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/30 w-fit">
+                        <LogOut className="w-3 h-3 text-blue-500" />
+                        <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 tracking-tighter uppercase">Resignation</span>
                       </div>
-                      {req.remarks && (
-                        <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 pt-1 border-t border-slate-100 dark:border-slate-700">
-                          {req.remarks}
-                        </p>
-                      )}
+                    )}
+                  </div>
+
+                  <div className="space-y-1.5 text-sm mb-4">
+                    <div className="flex justify-between">
+                      <span className="text-slate-500 dark:text-slate-400 font-bold tracking-tighter uppercase text-[10px] whitespace-nowrap">{req.requestType === 'termination' ? 'Termination date' : 'Last working date'}</span>
+                      <span className="font-bold text-slate-700 dark:text-slate-300 text-xs">{formatDate(req.leftDate)}</span>
                     </div>
+                    {req.remarks && (
+                      <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 pt-1 border-t border-slate-100 dark:border-slate-700">
+                        {req.remarks}
+                      </p>
+                    )}
+                  </div>
+                  
+                  <div className="flex gap-2">
                     <button
                       type="button"
                       onClick={() => {
@@ -719,102 +859,34 @@ export default function SuperAdminResignationsPage() {
                         setNewLeftDate(req.leftDate ? req.leftDate.split('T')[0] : '');
                         setShowDetailDialog(true);
                       }}
-                      className="mt-4 flex items-center justify-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+                      className="flex-1 flex items-center justify-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 py-2 text-[10px] font-black uppercase text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all tracking-tighter"
                     >
-                      <Eye className="w-3.5 h-3.5" /> View details
+                      <Eye className="w-3.5 h-3.5" /> View
                     </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {activeTab === 'pending' && (
-          <div className="mt-4 p-4 space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-500">
-            {loading ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-56 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 animate-pulse" />
-                ))}
-              </div>
-            ) : filteredPending.length === 0 ? (
-              <div className="text-center py-10 text-slate-500 dark:text-slate-400 text-sm bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
-                No pending approvals for you.
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {filteredPending.map((req) => (
-                  <div
-                    key={req._id}
-                    className="group relative flex flex-col justify-between rounded-2xl border border-slate-200/60 bg-white p-5 shadow-sm transition-all hover:shadow-md hover:border-orange-200/60 dark:border-slate-800 dark:bg-slate-900"
-                  >
-                    <div className="absolute top-0 left-0 w-1 h-full bg-orange-500/80 rounded-l-2xl group-hover:w-1.5 transition-all" />
-                    <div className="flex items-start justify-between gap-3 mb-4">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600 font-bold dark:bg-orange-900/30 dark:text-orange-400">
-                          {getEmployeeInitials(req)}
-                        </div>
-                        <div>
-                          <h4 className="font-semibold text-slate-900 dark:text-white line-clamp-1">{getEmployeeName(req)}</h4>
-                          <p className="text-xs text-slate-500 dark:text-slate-400">{req.emp_no}</p>
-                        </div>
-                      </div>
-                      <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${getStatusColor(req.status)}`}>Pending</span>
-                    </div>
-                    {req.requestType === 'termination' && (
-                      <div className="mb-4 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-900/20 border border-rose-100 dark:border-rose-800/30 w-fit">
-                        <X className="w-3 h-3 text-rose-500" />
-                        <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 tracking-tighter uppercase">Termination</span>
-                      </div>
+                    {req.status === 'pending' && canPerformAction(req) && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleCardAction(req._id, 'approve')}
+                          className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-green-500/10 py-2 text-[10px] font-black text-green-700 hover:bg-green-500 hover:text-white dark:bg-green-500/20 dark:text-green-400 transition-all uppercase tracking-tighter"
+                        >
+                          <Check className="w-4 h-4" /> Approve
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleCardAction(req._id, 'reject')}
+                          className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-rose-500/10 py-2 text-[10px] font-black text-rose-700 hover:bg-rose-500 hover:text-white dark:bg-rose-500/20 dark:text-rose-400 transition-all uppercase tracking-tighter"
+                        >
+                          <X className="w-4 h-4" /> Reject
+                        </button>
+                      </>
                     )}
-                    <div className="mb-4 space-y-2 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-slate-500 dark:text-slate-400">{req.requestType === 'termination' ? 'Termination date' : 'Last working date'}</span>
-                        <span className="font-medium text-slate-700 dark:text-slate-300">{formatDate(req.leftDate)}</span>
-                      </div>
-                      {req.remarks && (
-                        <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2">&quot;{req.remarks}&quot;</p>
-                      )}
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedRequest(req);
-                          setActionComment('');
-                          setNewLeftDate(req.leftDate ? req.leftDate.split('T')[0] : '');
-                          setShowDetailDialog(true);
-                        }}
-                        className="flex-1 flex items-center justify-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
-                      >
-                        <Eye className="w-3.5 h-3.5" /> View
-                      </button>
-                      {canPerformAction(req) && (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => handleCardAction(req._id, 'approve')}
-                            className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-green-500/10 py-2 text-sm font-semibold text-green-600 hover:bg-green-500 hover:text-white dark:bg-green-500/20 dark:text-green-400 dark:hover:bg-green-500 dark:hover:text-white"
-                          >
-                            <Check className="w-4 h-4" /> Approve
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleCardAction(req._id, 'reject')}
-                            className="flex-1 flex items-center justify-center gap-2 rounded-lg bg-red-500/10 py-2 text-sm font-semibold text-red-600 hover:bg-red-500 hover:text-white dark:bg-red-500/20 dark:text-red-400 dark:hover:bg-red-500 dark:hover:text-white"
-                          >
-                            <X className="w-4 h-4" /> Reject
-                          </button>
-                        </>
-                      )}
-                    </div>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {showApplyModal && (
@@ -935,9 +1007,44 @@ export default function SuperAdminResignationsPage() {
               )}
             </div>
             <div className="space-y-3 text-sm">
-              <div className="flex justify-between">
+              <div className="flex justify-between items-start">
                 <span className="text-slate-500 dark:text-slate-400">Employee</span>
-                <span className="font-medium text-slate-900 dark:text-white">{getEmployeeName(selectedRequest)} ({selectedRequest.emp_no})</span>
+                <div className="text-right">
+                  <div className="font-semibold text-slate-900 dark:text-white">
+                    {getEmployeeName(selectedRequest)} ({selectedRequest.emp_no})
+                  </div>
+                </div>
+              </div>
+
+              {/* Enhanced Employee Details Section */}
+              <div className="mt-6 rounded-xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-900/50">
+                <h4 className="mb-3 text-[10px] font-black uppercase tracking-wider text-slate-400">Employee Profile Context</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase text-slate-400">Date of Joining</p>
+                    <p className="mt-0.5 text-sm font-medium text-slate-900 dark:text-white">
+                      {selectedRequest.employeeId?.doj ? new Date(selectedRequest.employeeId.doj).toLocaleDateString() : '—'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase text-slate-400">Employee Group</p>
+                    <p className="mt-0.5 text-sm font-medium text-slate-900 dark:text-white">
+                      {selectedRequest.employeeId?.employee_group_id?.name || '—'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase text-slate-400">Division</p>
+                    <p className="mt-0.5 text-sm font-medium text-slate-900 dark:text-white">
+                      {selectedRequest.employeeId?.division_id?.name || '—'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase text-slate-400">Department</p>
+                    <p className="mt-0.5 text-sm font-medium text-slate-900 dark:text-white">
+                      {selectedRequest.employeeId?.department_id?.name || '—'}
+                    </p>
+                  </div>
+                </div>
               </div>
               <div className="flex justify-between items-center gap-4">
                 <span className="text-slate-500 dark:text-slate-400">{selectedRequest.requestType === 'termination' ? 'Termination date' : 'Last working date'}</span>
