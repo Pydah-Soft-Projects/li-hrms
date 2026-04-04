@@ -273,7 +273,15 @@ exports.getPendingApprovals = async (req, res) => {
     }
 
     const list = await ResignationRequest.find(filter)
-      .populate('employeeId', 'employee_name emp_no department_id division_id')
+      .populate({
+        path: 'employeeId',
+        select: 'employee_name emp_no department_id division_id employee_group_id',
+        populate: [
+          { path: 'department_id', select: 'name' },
+          { path: 'division_id', select: 'name' },
+          { path: 'employee_group_id', select: 'name' }
+        ]
+      })
       .populate('requestedBy', 'name email')
       .sort({ createdAt: -1 })
       .lean();
@@ -635,7 +643,15 @@ exports.getResignationRequests = async (req, res) => {
 
     if (emp_no) filter.emp_no = String(emp_no).toUpperCase();
     const list = await ResignationRequest.find(filter)
-      .populate('employeeId', 'employee_name emp_no department_id division_id')
+      .populate({
+        path: 'employeeId',
+        select: 'employee_name emp_no department_id division_id employee_group_id',
+        populate: [
+          { path: 'department_id', select: 'name' },
+          { path: 'division_id', select: 'name' },
+          { path: 'employee_group_id', select: 'name' }
+        ]
+      })
       .populate('requestedBy', 'name email')
       .sort({ createdAt: -1 })
       .lean();

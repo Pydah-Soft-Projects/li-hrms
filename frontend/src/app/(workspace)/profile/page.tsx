@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { api } from '@/lib/api';
 import { auth } from '@/lib/auth';
 import Spinner from '@/components/Spinner';
-import { User, Mail, Phone, Briefcase, Calendar, Shield, Key, Building, MapPin, X, RefreshCw, AlertTriangle, Check, Clock, Users } from 'lucide-react';
+import { User, Mail, Phone, Briefcase, Calendar, Shield, Key, Building, MapPin, X, RefreshCw, AlertTriangle, Check, Clock, Users, Plus, Trash2 } from 'lucide-react';
 
 interface UserProfile {
   _id: string;
@@ -462,11 +462,29 @@ export default function ProfilePage() {
 
   const getPrimitiveValue = (value: any): string => {
     if (value === null || value === undefined || value === '') return '';
+    
+    // Handle stringified JSON (defensive check)
+    if (typeof value === 'string' && (value.trim().startsWith('[') || value.trim().startsWith('{'))) {
+      try {
+        const parsed = JSON.parse(value);
+        if (Array.isArray(parsed) || typeof parsed === 'object') {
+          return getPrimitiveValue(parsed);
+        }
+      } catch (e) {
+        // Not valid JSON, continue with original string
+      }
+    }
+
     if (typeof value === 'string' || typeof value === 'number') return String(value);
     if (typeof value === 'boolean') return value ? 'Yes' : 'No';
     if (Array.isArray(value)) {
       return value
-        .map((item) => getPrimitiveValue(item))
+        .map((item) => {
+          if (typeof item === 'object' && item !== null) {
+             return Object.values(item).filter(v => v !== null && v !== '').join(' - ');
+          }
+          return getPrimitiveValue(item);
+        })
         .filter(Boolean)
         .join(', ');
     }
@@ -567,9 +585,12 @@ export default function ProfilePage() {
     return primitive || '';
   };
 
-  const normalizeFieldValueForInput = (fieldId: string, rawValue: any): string => {
+  const normalizeFieldValueForInput = (fieldId: string, rawValue: any): any => {
     const field = getFieldDefinition(fieldId);
-    if (!field) return getPrimitiveValue(rawValue);
+    if (!field) {
+        if (Array.isArray(rawValue)) return rawValue;
+        return getPrimitiveValue(rawValue);
+    }
 
     if (field.type === 'date') return toDateInputValue(rawValue);
     if (field.type === 'select' || field.type === 'dropdown') return toSelectInputValue(rawValue, field);
@@ -1207,44 +1228,131 @@ export default function ProfilePage() {
                     if (allowedFieldsInGroup.length === 0) return null;
 
                     return (
-                      <div key={group._id || `group-${groupIdx}`} className="md:col-span-2 space-y-2">
-                        <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-50 pb-2">{group.name}</h4>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          {allowedFieldsInGroup.map((field: any, fieldIdx: number) => (
-                            <div key={field.id || `field-${fieldIdx}`} className="space-y-1">
-                              <label className="text-[11px] font-bold text-slate-600 uppercase tracking-tight">{field.label}</label>
-                              {field.type === 'select' || field.type === 'dropdown' ? (
-                                (() => {
-                                  const fieldOptions = getFieldOptionsForRequest(field);
-                                  return (
-                                <select
-                                  value={requestedChanges[field.id] ?? ''}
-                                  onChange={(e) => setRequestedChanges({ ...requestedChanges, [field.id]: e.target.value })}
-                                  className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
-                                >
-                                  <option value="">Select Option</option>
-                                  {requestedChanges[field.id] &&
-                                    !fieldOptions?.some((opt: any) => String(opt?.value) === String(requestedChanges[field.id])) && (
-                                      <option value={requestedChanges[field.id]}>{requestedChanges[field.id]}</option>
-                                    )}
-                                  {fieldOptions?.map((opt: any, optIdx: number) => (
-                                    <option key={`${opt.value}-${optIdx}`} value={opt.value}>{opt.label}</option>
-                                  ))}
-                                </select>
-                                  );
-                                })()
-                              ) : (
-                                <input
-                                  type={field.type === 'date' ? 'date' : field.type === 'number' ? 'number' : 'text'}
-                                  value={requestedChanges[field.id] ?? ''}
-                                  onChange={(e) => setRequestedChanges({ ...requestedChanges, [field.id]: e.target.value })}
-                                  className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
-                                  placeholder={`Enter ${field.label}...`}
-                                />
-                              )}
-                            </div>
-                          ))}
-                        </div>
+                      <div key={group._id || `group-${groupIdx}`} className="md:col-span-2 space-y-3">
+                        <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-50 pb-2">{group.name || group.label}</h4>
+                        {group.isArray ? (
+                           <div className="space-y-3">
+                             <div className="overflow-x-auto rounded-xl border border-slate-200">
+                               <table className="w-full text-left text-sm">
+                                 <thead>
+                                   <tr className="border-b border-slate-200 bg-slate-50">
+                                     <th className="px-3 py-2 font-semibold text-slate-600">S.No</th>
+                                     {allowedFieldsInGroup.map((f: any) => (
+                                       <th key={f.id} className="px-3 py-2 font-semibold text-slate-600">{f.label}</th>
+                                     ))}
+                                     <th className="px-3 py-2 font-semibold text-slate-600 w-10"></th>
+                                   </tr>
+                                 </thead>
+                                 <tbody>
+                                   {(() => {
+                                      const rows = requestedChanges[group.id] || [];
+                                      if (!Array.isArray(rows)) return null;
+                                      return rows.map((row: any, rIdx: number) => (
+                                        <tr key={rIdx} className="border-b border-slate-50 last:border-0">
+                                          <td className="px-3 py-2 text-slate-500">{rIdx + 1}</td>
+                                          {allowedFieldsInGroup.map((f: any) => (
+                                            <td key={f.id} className="px-2 py-1">
+                                              {f.type === 'select' || f.type === 'dropdown' ? (
+                                                <select
+                                                  value={row[f.id] ?? ''}
+                                                  onChange={(e) => {
+                                                    const newRows = [...rows];
+                                                    newRows[rIdx] = { ...newRows[rIdx], [f.id]: e.target.value };
+                                                    setRequestedChanges({ ...requestedChanges, [group.id]: newRows });
+                                                  }}
+                                                  className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded text-xs focus:ring-1 focus:ring-emerald-500 outline-none"
+                                                >
+                                                  <option value="">Select</option>
+                                                  {getFieldOptionsForRequest(f).map((opt: any) => (
+                                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                                  ))}
+                                                </select>
+                                              ) : (
+                                                <input
+                                                  type={f.type === 'date' ? 'date' : f.type === 'number' ? 'number' : 'text'}
+                                                  value={row[f.id] ?? ''}
+                                                  onChange={(e) => {
+                                                    const newRows = [...rows];
+                                                    newRows[rIdx] = { ...newRows[rIdx], [f.id]: e.target.value };
+                                                    setRequestedChanges({ ...requestedChanges, [group.id]: newRows });
+                                                  }}
+                                                  className="w-full px-2 py-1.5 bg-white border border-slate-200 rounded text-xs focus:ring-1 focus:ring-emerald-500 outline-none"
+                                                />
+                                              )}
+                                            </td>
+                                          ))}
+                                          <td className="px-3 py-2">
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                const newRows = rows.filter((_, i) => i !== rIdx);
+                                                setRequestedChanges({ ...requestedChanges, [group.id]: newRows });
+                                              }}
+                                              className="p-1 text-red-500 hover:bg-red-50 rounded"
+                                            >
+                                              <Trash2 className="w-4 h-4" />
+                                            </button>
+                                          </td>
+                                        </tr>
+                                      ));
+                                   })()}
+                                 </tbody>
+                               </table>
+                             </div>
+                             <button
+                               type="button"
+                               onClick={() => {
+                                 const currentRows = requestedChanges[group.id] || [];
+                                 const newRow = allowedFieldsInGroup.reduce((acc: any, f: any) => {
+                                   acc[f.id] = '';
+                                   return acc;
+                                 }, {});
+                                 setRequestedChanges({ ...requestedChanges, [group.id]: [...currentRows, newRow] });
+                               }}
+                               className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 hover:text-emerald-700 bg-emerald-50 px-3 py-2 rounded-lg border border-emerald-100 transition-colors"
+                             >
+                               <Plus className="w-4 h-4" />
+                               Add Row
+                             </button>
+                           </div>
+                        ) : (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            {allowedFieldsInGroup.map((field: any, fieldIdx: number) => (
+                              <div key={field.id || `field-${fieldIdx}`} className="space-y-1">
+                                <label className="text-[11px] font-bold text-slate-600 uppercase tracking-tight">{field.label}</label>
+                                {field.type === 'select' || field.type === 'dropdown' ? (
+                                  (() => {
+                                    const fieldOptions = getFieldOptionsForRequest(field);
+                                    return (
+                                  <select
+                                    value={requestedChanges[field.id] ?? ''}
+                                    onChange={(e) => setRequestedChanges({ ...requestedChanges, [field.id]: e.target.value })}
+                                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                                  >
+                                    <option value="">Select Option</option>
+                                    {requestedChanges[field.id] &&
+                                      !fieldOptions?.some((opt: any) => String(opt?.value) === String(requestedChanges[field.id])) && (
+                                        <option value={requestedChanges[field.id]}>{requestedChanges[field.id]}</option>
+                                      )}
+                                    {fieldOptions?.map((opt: any, optIdx: number) => (
+                                      <option key={`${opt.value}-${optIdx}`} value={opt.value}>{opt.label}</option>
+                                    ))}
+                                  </select>
+                                    );
+                                  })()
+                                ) : (
+                                  <input
+                                    type={field.type === 'date' ? 'date' : field.type === 'number' ? 'number' : 'text'}
+                                    value={requestedChanges[field.id] ?? ''}
+                                    onChange={(e) => setRequestedChanges({ ...requestedChanges, [field.id]: e.target.value })}
+                                    className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-900 focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                                    placeholder={`Enter ${field.label}...`}
+                                  />
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     );
                   })}

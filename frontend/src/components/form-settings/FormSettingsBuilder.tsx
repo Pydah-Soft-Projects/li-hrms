@@ -43,6 +43,7 @@ export interface FormGroup {
   order: number;
   isSystem: boolean;
   isEnabled: boolean;
+  isArray?: boolean;
   fields: FormField[];
 }
 
@@ -119,7 +120,7 @@ export default function FormSettingsBuilder() {
   const [editingSection, setEditingSection] = useState<string | null>(null);
   const [showAddSection, setShowAddSection] = useState(false);
   const [showAddQuestion, setShowAddQuestion] = useState<string | null>(null);
-  const [newSection, setNewSection] = useState({ label: '', description: '' });
+  const [newSection, setNewSection] = useState({ label: '', description: '', isArray: false });
   const [newQuestion, setNewQuestion] = useState<Partial<FormField>>({
     label: '',
     type: 'text',
@@ -204,12 +205,13 @@ export default function FormSettingsBuilder() {
         order: maxOrder + 1,
         isSystem: false,
         isEnabled: true,
+        isArray: newSection.isArray,
         fields: [],
       });
       if (response.success) {
         await loadSettings();
         setShowAddSection(false);
-        setNewSection({ label: '', description: '' });
+        setNewSection({ label: '', description: '', isArray: false });
         alertSuccess('Section added', 'The section was created successfully.');
       } else {
         alertError('Failed to add section', response.message || 'Could not add section.');
@@ -515,11 +517,23 @@ export default function FormSettingsBuilder() {
                   placeholder="Brief description for this section"
                 />
               </div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={newSection.isArray}
+                  onChange={(e) => setNewSection({ ...newSection, isArray: e.target.checked })}
+                  className="h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
+                />
+                <div className="flex flex-col">
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-200">Tabular Section (Array)</span>
+                  <span className="text-xs text-slate-500 dark:text-slate-400">Allows multiple rows of data entry in a table format.</span>
+                </div>
+              </label>
             </div>
             <div className="mt-6 flex justify-end gap-2">
               <button
                 type="button"
-                onClick={() => { setShowAddSection(false); setNewSection({ label: '', description: '' }); }}
+                onClick={() => { setShowAddSection(false); setNewSection({ label: '', description: '', isArray: false }); }}
                 className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
               >
                 Cancel
@@ -726,10 +740,25 @@ export default function FormSettingsBuilder() {
                       placeholder="Optional"
                     />
                   </div>
+                  <label className="flex items-center gap-2 cursor-pointer py-1">
+                    <input
+                      type="checkbox"
+                      checked={group.isArray}
+                      onChange={(e) => {
+                        const next = settings.groups.map((g) => (g.id === group.id ? { ...g, isArray: e.target.checked } : g));
+                        setSettings({ ...settings, groups: next });
+                      }}
+                      className="h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
+                    />
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium text-slate-700 dark:text-slate-200">Tabular Section (Array)</span>
+                      <span className="text-xs text-slate-500 dark:text-slate-400">Allows multiple rows of data entry in a table format.</span>
+                    </div>
+                  </label>
                   <div className="flex gap-2">
                     <button
                       type="button"
-                      onClick={() => handleUpdateSection(group.id, { label: group.label, description: group.description })}
+                      onClick={() => handleUpdateSection(group.id, { label: group.label, description: group.description, isArray: group.isArray })}
                       disabled={saving}
                       className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
                     >

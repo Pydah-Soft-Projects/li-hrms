@@ -789,6 +789,21 @@ exports.createEmployee = async (req, res) => {
     }
     delete dynamicFields.reporting_to_;
 
+    // 6. Generic JSON Parsing for any other array/object fields (from multipart/form-data)
+    Object.keys(dynamicFields).forEach(key => {
+      if (typeof dynamicFields[key] === 'string') {
+        const val = dynamicFields[key].trim();
+        if (val.startsWith('[') || val.startsWith('{')) {
+          try {
+            dynamicFields[key] = JSON.parse(val);
+            console.log(`[createEmployee] Parsed dynamic field "${key}" from JSON string`);
+          } catch (e) {
+            // keep as string if parsing fails
+          }
+        }
+      }
+    });
+
     // Normalize bank details from camelCase to snake_case if present
     const bankFields = [
       { snake: 'bank_account_no', camel: 'bankAccountNo' },
@@ -1209,6 +1224,21 @@ exports.updateEmployee = async (req, res) => {
       }
     }
     delete dynamicFields.reporting_to_;
+
+    // 6. Generic JSON Parsing for any other array/object fields (from multipart/form-data)
+    Object.keys(dynamicFields).forEach(key => {
+      if (typeof dynamicFields[key] === 'string') {
+        const val = dynamicFields[key].trim();
+        if (val.startsWith('[') || val.startsWith('{')) {
+          try {
+            dynamicFields[key] = JSON.parse(val);
+            console.log(`[updateEmployee] Parsed dynamic field "${key}" from JSON string`);
+          } catch (e) {
+            // keep as string if parsing fails
+          }
+        }
+      }
+    });
 
     // Normalize bank details from camelCase to snake_case if present
     const bankFields = [

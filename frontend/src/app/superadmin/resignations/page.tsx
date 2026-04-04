@@ -53,8 +53,9 @@ interface ResignationRequest {
     first_name?: string;
     last_name?: string;
     emp_no: string;
-    department_id?: { name: string };
-    division_id?: { name: string };
+    department_id?: { _id: string; name: string };
+    division_id?: { _id: string; name: string };
+    employee_group_id?: { _id: string; name: string };
   };
   emp_no: string;
   leftDate: string;
@@ -169,8 +170,14 @@ export default function SuperAdminResignationsPage() {
 
   const [filters, setFilters] = useState({
     search: '',
-    status: '',
+    status: 'all',
+    division_id: 'all',
+    department_id: 'all',
+    employee_group_id: 'all',
   });
+  const [divisions, setDivisions] = useState<any[]>([]);
+  const [departments, setDepartments] = useState<any[]>([]);
+  const [groups, setGroups] = useState<any[]>([]);
 
   useEffect(() => {
     const user = auth.getUser();
@@ -201,8 +208,28 @@ export default function SuperAdminResignationsPage() {
   };
 
   useEffect(() => {
-    loadData();
+    fetchResignations();
+    fetchFilterOptions();
   }, []);
+
+  const fetchResignations = async () => {
+    await loadData();
+  };
+
+  const fetchFilterOptions = async () => {
+    try {
+      const [divRes, deptRes, groupRes] = await Promise.all([
+        api.getDivisions(true),
+        api.getDepartments(true),
+        api.getEmployeeGroups(true),
+      ]);
+      if (divRes.success) setDivisions(divRes.data || []);
+      if (deptRes.success) setDepartments(deptRes.data || []);
+      if (groupRes.success) setGroups(groupRes.data || []);
+    } catch (error) {
+      console.error('Error fetching filter options:', error);
+    }
+  };
 
   const openApplyModal = (type: 'resignation' | 'termination' = 'resignation') => {
     setApplySelectedEmpNo('');
@@ -410,15 +437,48 @@ export default function SuperAdminResignationsPage() {
   };
 
   const filteredAll = useMemo(() => {
-    return allRequests.filter((r) => {
-      const matchSearch =
+    return allRequests.filter((req) => {
+      const employee = req.employeeId;
+      const matchesSearch =
         !filters.search ||
-        getEmployeeName(r).toLowerCase().includes(filters.search.toLowerCase()) ||
-        (r.emp_no || '').toLowerCase().includes(filters.search.toLowerCase());
-      const matchStatus = !filters.status || r.status === filters.status;
-      return matchSearch && matchStatus;
+        employee?.employee_name?.toLowerCase().includes(filters.search.toLowerCase()) ||
+        employee?.emp_no?.toLowerCase().includes(filters.search.toLowerCase());
+
+      const matchesStatus = filters.status === 'all' || req.status === filters.status;
+      
+      const matchesDivision = filters.division_id === 'all' || 
+        (employee?.division_id?._id || employee?.division_id) === filters.division_id;
+      
+      const matchesDepartment = filters.department_id === 'all' || 
+        (employee?.department_id?._id || employee?.department_id) === filters.department_id;
+        
+      const matchesGroup = filters.employee_group_id === 'all' || 
+        (employee?.employee_group_id?._id || employee?.employee_group_id) === filters.employee_group_id;
+
+      return matchesSearch && matchesStatus && matchesDivision && matchesDepartment && matchesGroup;
     });
   }, [allRequests, filters]);
+
+  const filteredPending = useMemo(() => {
+    return pendingRequests.filter((req) => {
+      const employee = req.employeeId;
+      const matchesSearch =
+        !filters.search ||
+        employee?.employee_name?.toLowerCase().includes(filters.search.toLowerCase()) ||
+        employee?.emp_no?.toLowerCase().includes(filters.search.toLowerCase());
+      
+      const matchesDivision = filters.division_id === 'all' || 
+        (employee?.division_id?._id || employee?.division_id) === filters.division_id;
+        
+      const matchesDepartment = filters.department_id === 'all' || 
+        (employee?.department_id?._id || employee?.department_id) === filters.department_id;
+        
+      const matchesGroup = filters.employee_group_id === 'all' || 
+        (employee?.employee_group_id?._id || employee?.employee_group_id) === filters.employee_group_id;
+
+      return matchesSearch && matchesDivision && matchesDepartment && matchesGroup;
+    });
+  }, [pendingRequests, filters]);
 
   const stats = useMemo(
     () => ({
@@ -481,95 +541,92 @@ export default function SuperAdminResignationsPage() {
           <StatCard title="Pending approvals (you)" value={stats.pendingApprovals} icon={Clock} bgClass="bg-blue-500/10" iconClass="text-blue-600 dark:text-blue-400" dekorClass="bg-blue-500/5" loading={loading} />
         </div>
 
-        <div className="md:hidden grid grid-cols-2 gap-3 mb-6">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden">
-            <div className="absolute top-0 right-0 p-3 opacity-10">
-              <LogOut className="w-12 h-12 text-green-500" />
-            </div>
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Resignation Stats</h3>
-            <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-1.5">
-                  <div className="w-2 h-2 rounded-full bg-slate-500" />
-                  <span className="text-xs text-slate-600 dark:text-slate-400">Total</span>
-                </div>
-                <span className="text-sm font-bold text-slate-900 dark:text-white">{loading ? '—' : stats.total}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-1.5">
-                  <div className="w-2 h-2 rounded-full bg-emerald-500" />
-                  <span className="text-xs text-slate-600 dark:text-slate-400">Approved</span>
-                </div>
-                <span className="text-sm font-bold text-slate-900 dark:text-white">{loading ? '—' : stats.approved}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-1.5">
-                  <div className="w-2 h-2 rounded-full bg-amber-500" />
-                  <span className="text-xs text-slate-600 dark:text-slate-400">Pending</span>
-                </div>
-                <span className="text-sm font-bold text-slate-900 dark:text-white">{loading ? '—' : stats.pending}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-1.5">
-                  <div className="w-2 h-2 rounded-full bg-rose-500" />
-                  <span className="text-xs text-slate-600 dark:text-slate-400">Rejected</span>
-                </div>
-                <span className="text-sm font-bold text-slate-900 dark:text-white">{loading ? '—' : stats.rejected}</span>
-              </div>
-            </div>
-          </div>
-          <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden">
-            <div className="absolute top-0 right-0 p-3 opacity-10">
-              <Clock className="w-12 h-12 text-blue-500" />
-            </div>
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Your approvals</h3>
-            <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-1.5">
-                  <div className="w-2 h-2 rounded-full bg-blue-500" />
-                  <span className="text-xs text-slate-600 dark:text-slate-400">Pending (you)</span>
-                </div>
-                <span className="text-sm font-bold text-slate-900 dark:text-white">{loading ? '—' : stats.pendingApprovals}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
         <div className="mb-6 animate-in fade-in slide-in-from-top-4 duration-500">
           <div className="md:p-5 md:rounded-[2.5rem] md:border md:border-white/20 md:dark:border-slate-800 md:bg-white/60 md:dark:bg-slate-900/60 md:backdrop-blur-xl md:shadow-xl md:shadow-slate-200/50 md:dark:shadow-none transition-all">
-            <div className="flex flex-wrap items-center gap-2 md:gap-6">
-              <div className="flex items-center gap-2 w-full md:w-auto md:flex-1">
-                <div className="flex-1 min-w-[200px] relative group">
-                  <div className="absolute inset-0 bg-green-500/5 rounded-2xl blur-xl transition-opacity opacity-0 group-focus-within:opacity-100" />
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="relative group w-full sm:w-64">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 transition-colors group-focus-within:text-slate-600 dark:group-focus-within:text-slate-300" />
                   <input
                     type="text"
-                    placeholder="Search by name or emp no..."
+                    placeholder="Search employee or emp no..."
+                    className="w-full pl-10 pr-4 py-2 text-sm rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-slate-500/20 focus:border-slate-500 transition-all dark:border-slate-800 dark:bg-slate-950"
                     value={filters.search}
-                    onChange={(e) => setFilters((prev) => ({ ...prev, search: e.target.value }))}
-                    className="relative w-full h-10 md:h-11 pl-4 pr-12 rounded-xl md:rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs md:text-sm font-semibold focus:ring-4 focus:ring-green-500/10 focus:border-green-500 outline-none transition-all dark:text-white shadow-sm"
+                    onChange={(e) => setFilters({ ...filters, search: e.target.value })}
                   />
-                  <button type="button" className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-green-500 text-white shadow-lg shadow-green-500/20 active:scale-95 transition-all">
-                    <Search className="w-4 h-4" />
+                </div>
+
+                <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 no-scrollbar">
+                  <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-xl p-1 gap-1 min-w-fit">
+                    {(['all', 'pending', 'approved', 'rejected'] as const).map((status) => (
+                      <button
+                        key={status}
+                        onClick={() => setFilters({ ...filters, status })}
+                        className={`px-3 py-1.5 text-[10px] sm:text-xs font-bold rounded-lg transition-all capitalize whitespace-nowrap ${
+                          filters.status === status
+                            ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white'
+                            : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                        }`}
+                      >
+                        {status}
+                      </button>
+                    ))}
+                  </div>
+
+                  <select
+                    className="h-9 px-3 py-1.5 text-xs font-bold rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-slate-500/20 focus:border-slate-500 transition-all dark:border-slate-800 dark:bg-slate-950 min-w-[120px]"
+                    value={filters.division_id}
+                    onChange={(e) => setFilters({ ...filters, division_id: e.target.value })}
+                  >
+                    <option value="all">All Divisions</option>
+                    {divisions.map((div) => (
+                      <option key={div._id} value={div._id}>
+                        {div.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  <select
+                    className="h-9 px-3 py-1.5 text-xs font-bold rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-slate-500/20 focus:border-slate-500 transition-all dark:border-slate-800 dark:bg-slate-950 min-w-[120px]"
+                    value={filters.department_id}
+                    onChange={(e) => setFilters({ ...filters, department_id: e.target.value })}
+                  >
+                    <option value="all">All Departments</option>
+                    {departments.map((dept) => (
+                      <option key={dept._id} value={dept._id}>
+                        {dept.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  <select
+                    className="h-9 px-3 py-1.5 text-xs font-bold rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-slate-500/20 focus:border-slate-500 transition-all dark:border-slate-800 dark:bg-slate-950 min-w-[120px]"
+                    value={filters.employee_group_id}
+                    onChange={(e) => setFilters({ ...filters, employee_group_id: e.target.value })}
+                  >
+                    <option value="all">All Groups</option>
+                    {groups.map((group) => (
+                      <option key={group._id} value={group._id}>
+                        {group.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  <button
+                    onClick={() =>
+                      setFilters({
+                        search: '',
+                        status: 'all',
+                        division_id: 'all',
+                        department_id: 'all',
+                        employee_group_id: 'all',
+                      })
+                    }
+                    className="h-9 px-3 text-xs font-bold text-slate-500 hover:text-slate-700 transition-colors whitespace-nowrap"
+                  >
+                    Reset
                   </button>
                 </div>
               </div>
-              <div className="flex md:items-center md:gap-4 w-full md:w-auto">
-                <div className="relative flex-1 md:flex-none">
-                  <Filter className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-                  <select
-                    value={filters.status}
-                    onChange={(e) => setFilters((prev) => ({ ...prev, status: e.target.value }))}
-                    className="h-10 pl-9 pr-8 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300 focus:ring-4 focus:ring-green-500/10 outline-none transition-all appearance-none cursor-pointer w-full"
-                  >
-                    <option value="">All Status</option>
-                    <option value="pending">Pending</option>
-                    <option value="approved">Approved</option>
-                    <option value="rejected">Rejected</option>
-                    <option value="cancelled">Cancelled</option>
-                  </select>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
 
@@ -681,13 +738,13 @@ export default function SuperAdminResignationsPage() {
                   <div key={i} className="h-56 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 animate-pulse" />
                 ))}
               </div>
-            ) : pendingRequests.length === 0 ? (
+            ) : filteredPending.length === 0 ? (
               <div className="text-center py-10 text-slate-500 dark:text-slate-400 text-sm bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
                 No pending approvals for you.
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {pendingRequests.map((req) => (
+                {filteredPending.map((req) => (
                   <div
                     key={req._id}
                     className="group relative flex flex-col justify-between rounded-2xl border border-slate-200/60 bg-white p-5 shadow-sm transition-all hover:shadow-md hover:border-orange-200/60 dark:border-slate-800 dark:bg-slate-900"
