@@ -18,12 +18,17 @@
  *    - Overnight: next-calendar-day punches only within shift end ± 3h enter the pool; OUT fallback can use later punches in that window.
  *    - First punch on today in [00:00, previous overnight shift end + 1hr] is reserved as prior day's OUT when applicable.
  *    - If no shift can be resolved from roster or pool, fall back to type-agnostic first/last punch on the date (and next day if needed).
+ *    - Checkout-only (OUT near shift end, no IN): same PARTIAL day treatment as IN-only partial — status PARTIAL, payable 0 until completed.
  */
 
 const AttendanceDaily = require('../model/AttendanceDaily');
 const Employee = require('../../employees/model/Employee');
 const OD = require('../../leaves/model/OD');
-const { detectAndAssignShift, getShiftsForEmployee } = require('../../shifts/services/shiftDetectionService');
+const {
+  detectAndAssignShift,
+  getShiftsForEmployee,
+  calculateEarlyOut,
+} = require('../../shifts/services/shiftDetectionService');
 const { extractISTComponents, createISTDate } = require('../../shared/utils/dateUtils');
 
 const formatDate = (date) => extractISTComponents(date).dateStr;
@@ -172,11 +177,20 @@ function buildShiftAwarePairForShiftDef(date, allPunches, shift, reservedOvernig
   let fallbackOutUsed = false;
 
   if (!inPunch) {
+    const sameAsOut = (p) => {
+      if (!outPunch || !p) return false;
+      if (p === outPunch) return true;
+      const pa = p._id || p.id;
+      const pb = outPunch._id || outPunch.id;
+      if (pa != null && pb != null && String(pa) === String(pb)) return true;
+      return new Date(p.timestamp).getTime() === new Date(outPunch.timestamp).getTime();
+    };
     const onDate = punchesInWindow
       .filter(p => extractISTComponents(new Date(p.timestamp)).dateStr === date && !isReserved(p))
       .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-    if (onDate.length > 0) {
-      inPunch = onDate[0];
+    const inFallback = onDate.find(p => !sameAsOut(p));
+    if (inFallback) {
+      inPunch = inFallback;
       fallbackInUsed = true;
     }
   }
@@ -217,6 +231,7 @@ function buildShiftAwarePairForShiftDef(date, allPunches, shift, reservedOvernig
     distScore,
     hasFullPair: !!(inPunch && outPunch),
     sourcePriority: shift.sourcePriority ?? 99,
+    matchedShift: shift,
   };
 }
 
@@ -235,6 +250,7 @@ function pickBestShiftAwarePair(candidates) {
     lastOutTime: best.lastOutTime,
     fallbackInUsed: best.fallbackInUsed,
     fallbackOutUsed: best.fallbackOutUsed,
+    matchedShift: best.matchedShift || null,
   };
 }
 
@@ -258,6 +274,7 @@ function getTypeAgnosticPoolFallbackPair(date, allPunches) {
       lastOutTime: new Date(lastSameDay.timestamp),
       fallbackInUsed: true,
       fallbackOutUsed: true,
+      matchedShift: null,
     };
   }
   const inMs = new Date(first.timestamp).getTime();
@@ -274,6 +291,7 @@ function getTypeAgnosticPoolFallbackPair(date, allPunches) {
       lastOutTime: new Date(outPunch.timestamp),
       fallbackInUsed: true,
       fallbackOutUsed: true,
+      matchedShift: null,
     };
   }
   if (onDate.length >= 2) {
@@ -284,6 +302,7 @@ function getTypeAgnosticPoolFallbackPair(date, allPunches) {
       lastOutTime: new Date(lastSameDay.timestamp),
       fallbackInUsed: true,
       fallbackOutUsed: true,
+      matchedShift: null,
     };
   }
   return {
@@ -293,6 +312,7 @@ function getTypeAgnosticPoolFallbackPair(date, allPunches) {
     lastOutTime: null,
     fallbackInUsed: true,
     fallbackOutUsed: false,
+    matchedShift: null,
   };
 }
 
@@ -305,6 +325,7 @@ function toShiftAwarePairResult(obj) {
     lastOutTime: obj.lastOutTime,
     fallbackInUsed: obj.fallbackInUsed,
     fallbackOutUsed: obj.fallbackOutUsed,
+    matchedShift: obj.matchedShift || null,
   };
 }
 
@@ -331,6 +352,57 @@ async function getShiftAwareInOutPair(employeeNumber, date, allPunches, processi
     .filter(Boolean);
   const best = pickBestShiftAwarePair(built);
   return best || getTypeAgnosticPoolFallbackPair(date, allPunches);
+}
+
+/**
+ * Pick shift whose scheduled end is nearest to outTime within ±3h (strict mode / fallback when pair has no matchedShift).
+ */
+async function resolveShiftByOutProximity(employeeNumber, date, outTime, processingMode) {
+  const shiftOptions = { rosterStrictWhenPresent: processingMode.rosterStrictWhenPresent === true };
+  const { shifts } = await getShiftsForEmployee(employeeNumber, date, shiftOptions);
+  if (!shifts?.length) return null;
+  const outMs = outTime.getTime();
+  const WINDOW_MS = 3 * 60 * 60 * 1000;
+  let best = null;
+  let bestDist = Infinity;
+  let bestPri = Infinity;
+  for (const shift of shifts) {
+    const startMins = timeToMinutes(shift.startTime);
+    const endMins = timeToMinutes(shift.endTime);
+    const isOvernight = endMins <= startMins || (startMins >= 20 * 60 && endMins < 12 * 60);
+    const shiftEndDate = isOvernight
+      ? createISTDate(nextDateStr(date), shift.endTime)
+      : createISTDate(date, shift.endTime);
+    const dist = Math.abs(outMs - shiftEndDate.getTime());
+    if (dist > WINDOW_MS) continue;
+    const pri = shift.sourcePriority ?? 99;
+    if (pri < bestPri || (pri === bestPri && dist < bestDist)) {
+      bestPri = pri;
+      bestDist = dist;
+      best = shift;
+    }
+  }
+  return best;
+}
+
+function buildPartialOutShiftAssignment(date, outTime, shift, generalConfig) {
+  const globalEarlyOutGrace = generalConfig.early_out_grace_time ?? null;
+  const eo = calculateEarlyOut(outTime, shift.endTime, shift.startTime, date, globalEarlyOutGrace);
+  return {
+    success: true,
+    assignedShift: shift._id,
+    shiftName: shift.name,
+    shiftStartTime: shift.startTime,
+    shiftEndTime: shift.endTime,
+    source: 'out_only_partial',
+    lateInMinutes: null,
+    earlyOutMinutes: eo > 0 ? eo : null,
+    isLateIn: false,
+    isEarlyOut: !!(eo && eo > 0),
+    expectedHours: shift.duration,
+    matchMethod: 'out_proximity',
+    basePayable: 1,
+  };
 }
 
 /**
@@ -397,6 +469,7 @@ async function processSingleShiftAttendance(employeeNumber, date, rawLogs, gener
     let lastOutTime = null;
     let inPunchRecord = null;
     let outPunchRecord = null;
+    let shiftAwareMatchedShift = null;
 
     const strict = processingMode.strictCheckInOutOnly !== false;
 
@@ -405,6 +478,7 @@ async function processSingleShiftAttendance(employeeNumber, date, rawLogs, gener
     if (!strict) {
       const pair = await getShiftAwareInOutPair(employeeNumber, date, allPunches, processingMode);
       if (pair) {
+        shiftAwareMatchedShift = pair.matchedShift || null;
         firstInTime = pair.firstInTime;
         lastOutTime = pair.lastOutTime;
         inPunchRecord = pair.inPunch;
@@ -490,6 +564,45 @@ async function processSingleShiftAttendance(employeeNumber, date, rawLogs, gener
       const partialRecord = await buildAndUpsertPartialSingleShift(
         employeeNumber, date, inPunch, generalConfig, processingMode
       );
+      return { success: true, dailyRecord: partialRecord, shiftsProcessed: 1, totalHours: 0, totalOT: 0 };
+    }
+
+    // Only OUT, no IN → PARTIAL (mirror IN-only partial: checkout thumb / missing check-in)
+    if (!firstInTime && lastOutTime && outPunchRecord) {
+      const outMs = lastOutTime.getTime();
+      const outPunch =
+        outPunchRecord
+        || allPunches.find(p => new Date(p.timestamp).getTime() === outMs)
+        || (strict ? targetDatePunches.filter(isOUT).slice(-1)[0] : null);
+      if (!outPunch) {
+        const updateData = buildEmptyUpdate(employeeNumber, date);
+        const dailyRecord = await upsertDaily(employeeNumber, date, updateData);
+        return { success: true, dailyRecord, shiftsProcessed: 0, totalHours: 0, totalOT: 0 };
+      }
+      const matchedShift =
+        shiftAwareMatchedShift
+        || (await resolveShiftByOutProximity(employeeNumber, date, lastOutTime, processingMode));
+      const shiftAssignment = matchedShift
+        ? buildPartialOutShiftAssignment(date, lastOutTime, matchedShift, generalConfig)
+        : { success: false };
+      const partialRecord = await buildAndUpsertPartialOutOnlySingleShift(
+        employeeNumber,
+        date,
+        outPunch,
+        generalConfig,
+        processingMode,
+        shiftAssignment
+      );
+      const noteMsg = 'SingleShift checkout-only partial (missing check-in)';
+      const existing = await AttendanceDaily.findOne({ employeeNumber, date }).select('notes').lean();
+      const merged = appendPairingNote(existing?.notes || null, noteMsg);
+      if (merged !== (existing?.notes || null)) {
+        await AttendanceDaily.findOneAndUpdate(
+          { employeeNumber, date },
+          { $set: { notes: merged } },
+          { upsert: true, new: false }
+        );
+      }
       return { success: true, dailyRecord: partialRecord, shiftsProcessed: 1, totalHours: 0, totalOT: 0 };
     }
 
@@ -708,6 +821,59 @@ async function buildAndUpsertPartialSingleShift(employeeNumber, date, inPunch, g
     lastSyncedAt: new Date(),
     totalLateInMinutes: pShift.lateInMinutes || 0,
     totalEarlyOutMinutes: 0,
+    totalExpectedHours: pShift.expectedHours || 8,
+    otHours: 0,
+  };
+
+  return upsertDaily(employeeNumber, date, updateData);
+}
+
+/**
+ * PARTIAL when only OUT is known (no check-in yet). Same payroll shape as IN-only partial: payable 0, incomplete shift.
+ */
+async function buildAndUpsertPartialOutOnlySingleShift(employeeNumber, date, outPunch, generalConfig, processingMode, shiftAssignment) {
+  const lastOutTime = new Date(outPunch.timestamp);
+  const pShift = {
+    shiftNumber: 1,
+    inTime: null,
+    outTime: lastOutTime,
+    duration: 0,
+    punchHours: 0,
+    workingHours: 0,
+    odHours: 0,
+    extraHours: 0,
+    otHours: 0,
+    status: 'incomplete',
+    payableShift: 0,
+    basePayable: 1,
+    inPunchId: null,
+    outPunchId: outPunch._id || outPunch.id,
+  };
+
+  if (shiftAssignment?.success) {
+    pShift.shiftId = shiftAssignment.assignedShift;
+    pShift.shiftName = shiftAssignment.shiftName;
+    pShift.shiftStartTime = shiftAssignment.shiftStartTime;
+    pShift.shiftEndTime = shiftAssignment.shiftEndTime;
+    pShift.lateInMinutes = null;
+    pShift.earlyOutMinutes = shiftAssignment.earlyOutMinutes;
+    pShift.isLateIn = false;
+    pShift.isEarlyOut = shiftAssignment.isEarlyOut || false;
+    pShift.expectedHours = shiftAssignment.expectedHours ?? 8;
+    pShift.basePayable = shiftAssignment.basePayable ?? 1;
+  }
+
+  const updateData = {
+    shifts: [pShift],
+    totalShifts: 1,
+    totalWorkingHours: 0,
+    totalOTHours: 0,
+    extraHours: 0,
+    payableShifts: 0,
+    status: 'PARTIAL',
+    lastSyncedAt: new Date(),
+    totalLateInMinutes: 0,
+    totalEarlyOutMinutes: pShift.earlyOutMinutes || 0,
     totalExpectedHours: pShift.expectedHours || 8,
     otHours: 0,
   };

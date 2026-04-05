@@ -31,7 +31,8 @@ const attendanceDailySchema = new mongoose.Schema(
       },
       inTime: {
         type: Date,
-        required: true,
+        default: null,
+        // Allow null for single-shift checkout-only partial (OUT recorded, IN missing)
       },
       outTime: {
         type: Date,

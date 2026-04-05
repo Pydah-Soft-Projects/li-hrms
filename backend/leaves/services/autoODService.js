@@ -47,9 +47,10 @@ const processAutoODForEmployee = async (employeeNumber, dateStr, record) => {
         let endT = null;
 
         if (record.shifts && record.shifts.length > 0) {
-            const sortedShifts = [...record.shifts].sort((a, b) => new Date(a.inTime) - new Date(b.inTime));
-            const firstIn = sortedShifts[0].inTime;
-            const lastOut = sortedShifts[sortedShifts.length - 1].outTime;
+            const segmentTime = (s) => new Date(s.inTime || s.outTime || 0);
+            const sortedShifts = [...record.shifts].sort((a, b) => segmentTime(a) - segmentTime(b));
+            const firstIn = sortedShifts.find((s) => s.inTime)?.inTime ?? null;
+            const lastOut = [...sortedShifts].reverse().find((s) => s.outTime)?.outTime ?? null;
 
             const formatTime = (date) => {
                 if (!date) return null;
