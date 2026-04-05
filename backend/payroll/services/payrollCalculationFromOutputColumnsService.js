@@ -26,7 +26,7 @@ const {
   getAbsentDeductionSettings,
   buildBaseComponents,
 } = require('./allowanceDeductionResolverService');
-const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
+const { resolveEffectiveEarnedLeaveForDepartment } = require('../../leaves/services/earnedLeavePolicyResolver');
 const { createISTDate, getPayrollDateRange } = require('../../shared/utils/dateUtils');
 const outputColumnService = require('./outputColumnService');
 const ArrearsPayrollIntegrationService = require('../../arrears/services/arrearsPayrollIntegrationService');
@@ -594,13 +594,17 @@ async function buildAttendanceFromSummary(payRegisterSummary, employee, month) {
   let paidLeaveDays = payRegisterSummary.totals?.totalPaidLeaveDays || 0;
   let elUsedInPayroll = 0;
   try {
-    const policy = await LeavePolicySettings.getSettings();
-    if (policy.earnedLeave && policy.earnedLeave.useAsPaidInPayroll !== false) {
-      const elBalance = Math.max(0, Number(employee.paidLeaves) || 0);
-      if (elBalance > 0) {
-        elUsedInPayroll = Math.min(elBalance, monthDays);
-        payableShifts += elUsedInPayroll;
-        paidLeaveDays += elUsedInPayroll;
+    const departmentId = employee.department_id?._id || employee.department_id;
+    const divisionId = employee.division_id?._id || employee.division_id;
+    if (departmentId) {
+      const effectiveEL = await resolveEffectiveEarnedLeaveForDepartment(departmentId, divisionId);
+      if (effectiveEL.enabled && effectiveEL.useAsPaidInPayroll !== false) {
+        const elBalance = Math.max(0, Number(employee.paidLeaves) || 0);
+        if (elBalance > 0) {
+          elUsedInPayroll = Math.min(elBalance, monthDays);
+          payableShifts += elUsedInPayroll;
+          paidLeaveDays += elUsedInPayroll;
+        }
       }
     }
   } catch (e) { /* ignore */ }

@@ -4,6 +4,12 @@ import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
 import Spinner from '@/components/Spinner';
+import {
+  DepartmentEarnedLeaveOverridesSection,
+  buildEarnedLeaveApiPayload,
+  defaultEarnedLeaveForm,
+  mapApiLeavesToEarnedLeaveForm,
+} from '@/components/settings/DepartmentEarnedLeaveOverrides';
 
 interface Department {
   _id: string;
@@ -22,6 +28,9 @@ interface DepartmentSettings {
     paidLeavesCount: number | null;
     dailyLimit: number | null;
     monthlyLimit: number | null;
+    elMaxCarryForward?: number | null;
+    cclExpiryMonths?: number | null;
+    earnedLeave?: import('@/components/settings/DepartmentEarnedLeaveOverrides').DepartmentEarnedLeaveForm;
   };
   loans: {
     interestRate: number | null;
@@ -93,6 +102,8 @@ export default function DepartmentalSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [settings, setSettings] = useState<DepartmentSettings | null>(null);
   const [loadingSettings, setLoadingSettings] = useState(false);
+  const [effectiveEarnedLeave, setEffectiveEarnedLeave] = useState<Record<string, unknown> | null>(null);
+  const [clearingServerEl, setClearingServerEl] = useState(false);
   const [newRange, setNewRange] = useState({
     minMinutes: '',
     maxMinutes: '',
@@ -116,6 +127,9 @@ export default function DepartmentalSettingsPage() {
       paidLeavesCount: null,
       dailyLimit: null,
       monthlyLimit: null,
+      elMaxCarryForward: null,
+      cclExpiryMonths: null,
+      earnedLeave: defaultEarnedLeaveForm(),
     },
     loans: {
       interestRate: null,
@@ -207,6 +221,7 @@ export default function DepartmentalSettingsPage() {
   const loadDepartmentSettings = async (deptId: string) => {
     try {
       setLoadingSettings(true);
+      setEffectiveEarnedLeave(null);
       const response = await api.getDepartmentSettings(deptId);
       if (response.success && response.data) {
         setSettings(response.data);
@@ -218,6 +233,9 @@ export default function DepartmentalSettingsPage() {
             paidLeavesCount: s.leaves?.paidLeavesCount ?? null,
             dailyLimit: s.leaves?.dailyLimit ?? null,
             monthlyLimit: s.leaves?.monthlyLimit ?? null,
+            elMaxCarryForward: s.leaves?.elMaxCarryForward ?? null,
+            cclExpiryMonths: s.leaves?.cclExpiryMonths ?? null,
+            earnedLeave: mapApiLeavesToEarnedLeaveForm(s.leaves),
           },
           loans: {
             interestRate: s.loans?.interestRate ?? null,
@@ -278,6 +296,14 @@ export default function DepartmentalSettingsPage() {
               s.payroll?.includeMissingEmployeeComponents ?? null,
           },
         });
+        try {
+          const resolvedRes = await api.getResolvedDepartmentSettings(deptId, 'leaves');
+          if (resolvedRes.success && resolvedRes.data?.leaves?.earnedLeave) {
+            setEffectiveEarnedLeave(resolvedRes.data.leaves.earnedLeave as Record<string, unknown>);
+          }
+        } catch {
+          /* optional preview */
+        }
       }
     } catch (error) {
       console.error('Error loading department settings:', error);
@@ -289,12 +315,16 @@ export default function DepartmentalSettingsPage() {
   };
 
   const resetForm = () => {
+    setEffectiveEarnedLeave(null);
     setFormData({
       leaves: {
         leavesPerDay: null,
         paidLeavesCount: null,
         dailyLimit: null,
         monthlyLimit: null,
+        elMaxCarryForward: null,
+        cclExpiryMonths: null,
+        earnedLeave: defaultEarnedLeaveForm(),
       },
       loans: {
         interestRate: null,
@@ -394,6 +424,44 @@ export default function DepartmentalSettingsPage() {
     });
   };
 
+  const buildLeavesPayload = () => {
+    const er = formData.leaves.earnedLeave ?? defaultEarnedLeaveForm();
+    const earnedLeavePayload = buildEarnedLeaveApiPayload(er);
+    const leaves: Record<string, unknown> = {
+      leavesPerDay: formData.leaves.leavesPerDay,
+      paidLeavesCount: formData.leaves.paidLeavesCount,
+      dailyLimit: formData.leaves.dailyLimit,
+      monthlyLimit: formData.leaves.monthlyLimit,
+      elMaxCarryForward: formData.leaves.elMaxCarryForward,
+      cclExpiryMonths: formData.leaves.cclExpiryMonths,
+    };
+    if (earnedLeavePayload) {
+      leaves.earnedLeave = earnedLeavePayload;
+      if (er.earningType) leaves.elEarningType = er.earningType;
+    }
+    return leaves;
+  };
+
+  const handleClearElOverridesOnServer = async () => {
+    if (!selectedDepartmentId) return;
+    try {
+      setClearingServerEl(true);
+      const response = await api.updateDepartmentSettings(selectedDepartmentId, {
+        leaves: { earnedLeave: null, elEarningType: null },
+      });
+      if (response.success) {
+        toast.success('Department EL overrides cleared');
+        await loadDepartmentSettings(selectedDepartmentId);
+      } else {
+        toast.error(response.message || 'Failed to clear EL overrides');
+      }
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to clear EL overrides');
+    } finally {
+      setClearingServerEl(false);
+    }
+  };
+
   const handleSave = async () => {
     if (!selectedDepartmentId) {
       toast.error('Please select a department');
@@ -405,7 +473,7 @@ export default function DepartmentalSettingsPage() {
 
       // Prepare data for API
       const updateData = {
-        leaves: formData.leaves,
+        leaves: buildLeavesPayload(),
         loans: formData.loans,
         salaryAdvance: formData.salaryAdvance,
         permissions: formData.permissions,
@@ -414,7 +482,7 @@ export default function DepartmentalSettingsPage() {
         payroll: formData.payroll,
       };
 
-      const response = await api.updateDepartmentSettings(selectedDepartmentId, updateData);
+      const response = await api.updateDepartmentSettings(selectedDepartmentId, updateData as any);
 
       if (response.success) {
         toast.success('Department settings saved successfully!');
@@ -535,6 +603,60 @@ export default function DepartmentalSettingsPage() {
                 />
               </div>
             </div>
+            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                  EL max carry forward (days)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  value={formData.leaves.elMaxCarryForward ?? ''}
+                  onChange={(e) =>
+                    handleInputChange(
+                      'leaves',
+                      'elMaxCarryForward',
+                      e.target.value ? parseInt(e.target.value, 10) : null
+                    )
+                  }
+                  placeholder="Global default"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                  CCL expiry (months)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  value={formData.leaves.cclExpiryMonths ?? ''}
+                  onChange={(e) =>
+                    handleInputChange(
+                      'leaves',
+                      'cclExpiryMonths',
+                      e.target.value ? parseInt(e.target.value, 10) : null
+                    )
+                  }
+                  placeholder="Global default"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                />
+              </div>
+            </div>
+            <DepartmentEarnedLeaveOverridesSection
+              value={formData.leaves.earnedLeave ?? defaultEarnedLeaveForm()}
+              onChange={(next) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  leaves: { ...prev.leaves, earnedLeave: next },
+                }))
+              }
+              effectiveEarnedLeave={effectiveEarnedLeave}
+              onClearServerOverrides={
+                selectedDepartmentId ? handleClearElOverridesOnServer : undefined
+              }
+              clearingServer={clearingServerEl}
+            />
           </div>
 
           {/* Loans Settings */}

@@ -553,6 +553,15 @@ class LeaveRegisterService {
      */
     async addELUsedInPayroll(employeeId, days, month, payrollBatchId = null) {
         if (!employeeId || days == null || days <= 0) return null;
+        if (payrollBatchId) {
+            const existing = await leaveRegisterYearLedgerService.findExistingPayrollElDebit(
+                employeeId,
+                payrollBatchId
+            );
+            if (existing) {
+                return { idempotent: true, existingTransaction: existing };
+            }
+        }
         const employee = await Employee.findById(employeeId)
             .select('_id emp_no employee_name designation_id department_id division_id doj is_active')
             .populate('designation_id', 'name')
@@ -562,6 +571,7 @@ class LeaveRegisterService {
         if (!employee) {
             throw new Error('Employee not found');
         }
+        const dateCycleService = require('./dateCycleService');
         const [y, m] = month.split('-').map(Number);
         const cycleDate = new Date(y, m - 1, 15);
         const periodInfo = await dateCycleService.getPeriodInfo(cycleDate);

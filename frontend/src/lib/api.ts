@@ -1323,6 +1323,30 @@ export const api = {
       paidLeavesCount?: number | null;
       dailyLimit?: number | null;
       monthlyLimit?: number | null;
+      elEarningType?: 'attendance_based' | 'fixed' | null;
+      elMaxCarryForward?: number | null;
+      cclExpiryMonths?: number | null;
+      earnedLeave?: null | {
+        enabled?: boolean | null;
+        earningType?: 'attendance_based' | 'fixed';
+        useAsPaidInPayroll?: boolean | null;
+        attendanceRules?: {
+          minDaysForFirstEL?: number | null;
+          daysPerEL?: number | null;
+          maxELPerMonth?: number | null;
+          maxELPerYear?: number | null;
+          attendanceRanges?: Array<{
+            minDays: number;
+            maxDays: number;
+            elEarned: number;
+            description?: string;
+          }>;
+        };
+        fixedRules?: {
+          elPerMonth?: number | null;
+          maxELPerYear?: number | null;
+        };
+      };
     };
     loans?: {
       interestRate?: number | null;
@@ -1351,7 +1375,11 @@ export const api = {
       monthlyLimit?: number | null;
       deductFromSalary?: boolean | null;
       deductionAmount?: number | null;
+      deductionRules?: Record<string, unknown>;
     };
+    ot?: Record<string, unknown>;
+    attendance?: Record<string, unknown>;
+    payroll?: Record<string, unknown>;
   }, divisionId?: string) => {
     let url = `/departments/${deptId}/settings`;
     if (divisionId) url += `?divisionId=${divisionId}`;
