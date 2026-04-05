@@ -54,6 +54,10 @@ const attendanceDailySchema = new mongoose.Schema(
         type: Number, // working hours added from OD gap filling
         default: 0,
       },
+      edgePermissionHours: {
+        type: Number, // late_in / early_out gate-verified credit toward expected hours
+        default: 0,
+      },
       otHours: {
         type: Number, // OT hours for this shift
         default: 0,

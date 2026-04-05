@@ -254,14 +254,20 @@ const validateOTRequest = async (employeeId, employeeNumber, date) => {
  * @param {String} date - Date (YYYY-MM-DD)
  * @returns {Object} - Validation result
  */
-const validatePermissionRequest = async (employeeId, employeeNumber, date) => {
+const validatePermissionRequest = async (employeeId, employeeNumber, date, options = {}) => {
   const errors = [];
   const warnings = [];
+  const permissionType = options.permissionType || 'mid_shift';
 
-  // Check attendance (required for permission)
   const attendanceCheck = await checkAttendanceExists(employeeNumber, date);
-  if (!attendanceCheck.hasAttendance) {
-    errors.push(attendanceCheck.message || 'No attendance record found or employee has no in-time for this date');
+  if (permissionType === 'mid_shift') {
+    if (!attendanceCheck.hasAttendance) {
+      errors.push(attendanceCheck.message || 'No attendance record found for this date');
+    }
+  } else if (!attendanceCheck.hasAttendance) {
+    warnings.push(
+      'No attendance daily record yet for this date. Edge permissions still apply after punches sync and gate scan.'
+    );
   }
 
   // Check Leave conflict

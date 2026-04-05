@@ -76,6 +76,21 @@ const permissionSchema = new mongoose.Schema(
       min: 0,
     },
 
+    // mid_shift = leave & return during shift (gate out + in); late_in / early_out = shift-edge waivers (single gate scan)
+    permissionType: {
+      type: String,
+      enum: ['mid_shift', 'late_in', 'early_out'],
+      default: 'mid_shift',
+      index: true,
+    },
+
+    // For late_in: latest acceptable arrival (HH:MM, IST calendar date). For early_out: earliest acceptable exit (HH:MM).
+    permittedEdgeTime: {
+      type: String,
+      default: null,
+      trim: true,
+    },
+
     // Purpose/reason for permission
     purpose: {
       type: String,

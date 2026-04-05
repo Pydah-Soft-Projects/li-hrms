@@ -3228,7 +3228,19 @@ export const api = {
   },
 
   // Create permission request
-  createPermission: async (data: { employeeId: string; employeeNumber: string; date: string; permissionStartTime: string; permissionEndTime: string; purpose: string; comments?: string; photoEvidence?: any; geoLocation?: any }) => {
+  createPermission: async (data: {
+    employeeId: string;
+    employeeNumber: string;
+    date: string;
+    permissionStartTime?: string;
+    permissionEndTime?: string;
+    purpose: string;
+    comments?: string;
+    photoEvidence?: any;
+    geoLocation?: any;
+    permissionType?: 'mid_shift' | 'late_in' | 'early_out';
+    permittedEdgeTime?: string;
+  }) => {
     return apiRequest<any>('/permissions', {
       method: 'POST',
       body: JSON.stringify(data),
