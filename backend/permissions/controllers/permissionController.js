@@ -26,13 +26,26 @@ exports.createPermission = async (req, res) => {
       purpose,
       comments,
       photoEvidence,
-      geoLocation
+      geoLocation,
+      permissionType,
+      permittedEdgeTime,
     } = req.body;
 
-    if (!employeeId || !employeeNumber || !date || !permissionStartTime || !permissionEndTime || !purpose) {
+    const normType = ['mid_shift', 'late_in', 'early_out'].includes(permissionType)
+      ? permissionType
+      : 'mid_shift';
+
+    if (!employeeId || !employeeNumber || !date || !purpose) {
       return res.status(400).json({
         success: false,
-        message: 'Employee, date, permission times, and purpose are required',
+        message: 'Employee, date, and purpose are required',
+      });
+    }
+
+    if (normType === 'mid_shift' && (!permissionStartTime || !permissionEndTime)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Permission start and end times are required for mid-shift permission',
       });
     }
 
@@ -115,7 +128,9 @@ exports.createPermission = async (req, res) => {
         purpose,
         comments,
         photoEvidence,
-        geoLocation
+        geoLocation,
+        permissionType: normType,
+        permittedEdgeTime,
       },
       req.user?.userId || req.user?._id
     );
@@ -426,6 +441,18 @@ exports.getQRCode = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Permission must be approved to generate QR code',
+      });
+    }
+
+    const pType = permission.permissionType || 'mid_shift';
+    if ((pType === 'late_in' || pType === 'early_out') && !permission.qrCode) {
+      return res.status(400).json({
+        success: false,
+        message:
+          pType === 'late_in'
+            ? 'Late-in permission uses security Gate In QR from the OT & Permissions screen, not the outpass QR.'
+            : 'Early-out permission uses security Gate Out QR from the OT & Permissions screen, not the outpass QR.',
+        permissionType: pType,
       });
     }
 

@@ -29,15 +29,37 @@ const createPermissionRequest = async (data, userId) => {
       purpose,
       comments,
       photoEvidence,
-      geoLocation
+      geoLocation,
+      permissionType: rawPermissionType,
+      permittedEdgeTime,
     } = data;
 
-    // Validate required fields
-    if (!employeeId || !employeeNumber || !date || !permissionStartTime || !permissionEndTime || !purpose) {
+    const normType = ['mid_shift', 'late_in', 'early_out'].includes(rawPermissionType)
+      ? rawPermissionType
+      : 'mid_shift';
+
+    if (!employeeId || !employeeNumber || !date || !purpose) {
       return {
         success: false,
-        message: 'Employee, date, permission times, and purpose are required',
+        message: 'Employee, date, and purpose are required',
       };
+    }
+
+    if (normType === 'mid_shift' && (!permissionStartTime || !permissionEndTime)) {
+      return {
+        success: false,
+        message: 'Permission start and end times are required for mid-shift permission',
+      };
+    }
+
+    if (normType === 'late_in' || normType === 'early_out') {
+      const t = String(permittedEdgeTime || '').trim();
+      if (!/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(t)) {
+        return {
+          success: false,
+          message: 'Valid permitted time (HH:MM) is required for late-in / early-out permission',
+        };
+      }
     }
 
     // Get employee
@@ -54,18 +76,6 @@ const createPermissionRequest = async (data, userId) => {
       { path: 'division_id', select: 'name' },
       { path: 'department_id', select: 'name' }
     ]);
-
-    // Ensure times are Date objects
-    const startTime = permissionStartTime instanceof Date ? permissionStartTime : new Date(permissionStartTime);
-    const endTime = permissionEndTime instanceof Date ? permissionEndTime : new Date(permissionEndTime);
-
-    // Validate end time is after start time
-    if (endTime <= startTime) {
-      return {
-        success: false,
-        message: 'Permission end time must be after start time',
-      };
-    }
 
     // Get resolved permission settings (department + global fallback)
     let resolvedPermissionSettings = null;
@@ -113,8 +123,10 @@ const createPermissionRequest = async (data, userId) => {
       }
     }
 
-    // Validate Permission request - check conflicts and attendance
-    const validation = await validatePermissionRequest(employeeId, employeeNumber, date);
+    // Validate Permission request - check conflicts and attendance rules by type
+    const validation = await validatePermissionRequest(employeeId, employeeNumber, date, {
+      permissionType: normType,
+    });
     if (!validation.isValid) {
       return {
         success: false,
@@ -126,24 +138,58 @@ const createPermissionRequest = async (data, userId) => {
       };
     }
 
-    // Check attendance exists with inTime (required for permission)
+    if (normType === 'late_in' || normType === 'early_out') {
+      const dup = await Permission.countDocuments({
+        employeeId,
+        date,
+        permissionType: normType,
+        status: { $nin: ['rejected', 'manager_rejected'] },
+        isActive: true,
+      });
+      if (dup > 0) {
+        return {
+          success: false,
+          message: `An active ${normType.replace('_', ' ')} permission already exists for this date`,
+        };
+      }
+    }
+
     const { checkAttendanceExists } = require('../../shared/services/conflictValidationService');
     const attendanceCheck = await checkAttendanceExists(employeeNumber, date);
-    if (!attendanceCheck.hasAttendance) {
+
+    if (normType === 'mid_shift' && !attendanceCheck.hasAttendance) {
       return {
         success: false,
-        message: attendanceCheck.message || 'No attendance record found or employee has no in-time for this date. Permission cannot be created without attendance.',
-        validationErrors: [attendanceCheck.message || 'Attendance with in-time is required for permission'],
+        message:
+          attendanceCheck.message ||
+          'No attendance record found for this date. Mid-shift permission requires an attendance row.',
+        validationErrors: [attendanceCheck.message || 'Attendance is required for mid-shift permission'],
         hasAttendance: false,
       };
     }
 
-    // Get attendance record (already validated)
     const attendanceRecord = attendanceCheck.attendance;
 
-    // Calculate permission hours
-    const diffMs = endTime.getTime() - startTime.getTime();
-    const permissionHours = Math.round((diffMs / (1000 * 60 * 60)) * 100) / 100;
+    let startTime;
+    let endTime;
+    let permissionHours;
+
+    if (normType === 'mid_shift') {
+      startTime = permissionStartTime instanceof Date ? permissionStartTime : new Date(permissionStartTime);
+      endTime = permissionEndTime instanceof Date ? permissionEndTime : new Date(permissionEndTime);
+      if (endTime <= startTime) {
+        return {
+          success: false,
+          message: 'Permission end time must be after start time',
+        };
+      }
+      const diffMs = endTime.getTime() - startTime.getTime();
+      permissionHours = Math.round((diffMs / (1000 * 60 * 60)) * 100) / 100;
+    } else {
+      startTime = new Date(`${date}T00:00:00+05:30`);
+      endTime = new Date(`${date}T23:59:59+05:30`);
+      permissionHours = 0;
+    }
 
     // Get Workflow Settings
     const workflowSettings = await PermissionDeductionSettings.getActiveSettings();
@@ -198,11 +244,14 @@ const createPermissionRequest = async (data, userId) => {
       employeeId: employeeId,
       employeeNumber: employeeNumber.toUpperCase(),
       date: date,
-      attendanceRecordId: attendanceRecord._id,
+      attendanceRecordId: attendanceRecord?._id || null,
       division_id: employee.division_id?._id || employee.division_id,
       division_name: employee.division_id?.name || 'N/A',
       department_id: employee.department_id?._id || employee.department_id,
       department_name: employee.department_id?.name || 'N/A',
+      permissionType: normType,
+      permittedEdgeTime:
+        normType === 'mid_shift' ? null : String(permittedEdgeTime || '').trim(),
       permissionStartTime: startTime,
       permissionEndTime: endTime,
       permissionHours: permissionHours,
@@ -215,11 +264,13 @@ const createPermissionRequest = async (data, userId) => {
       workflow: workflowData
     });
 
+    const allWarnings = [...(validation.warnings || []), ...limitWarnings];
+
     return {
       success: true,
       message: 'Permission request created successfully',
       data: permissionRequest,
-      warnings: limitWarnings.length > 0 ? limitWarnings : undefined,
+      warnings: allWarnings.length > 0 ? allWarnings : undefined,
     };
 
   } catch (error) {
@@ -326,11 +377,17 @@ const approvePermissionRequest = async (permissionId, userId, baseUrl = '', user
         workflow.nextApproverRole = null;
         workflow.nextApprover = null;
 
-        // Trigger Side Effects (QR, Attendance, etc.)
-        permissionRequest.generateQRCode();
-        permissionRequest.outpassUrl = `${baseUrl}/outpass/${permissionRequest.qrCode}`;
+        const isMidShift =
+          !permissionRequest.permissionType || permissionRequest.permissionType === 'mid_shift';
 
-        // Attendance Side Effects
+        if (isMidShift) {
+          permissionRequest.generateQRCode();
+          permissionRequest.outpassUrl = `${baseUrl}/outpass/${permissionRequest.qrCode}`;
+        } else {
+          permissionRequest.qrCode = null;
+          permissionRequest.outpassUrl = null;
+        }
+
         const employee = await Employee.findById(permissionRequest.employeeId);
         let resolvedPermissionSettings = null;
         if (employee && employee.department_id) {
@@ -343,16 +400,18 @@ const approvePermissionRequest = async (permissionId, userId, baseUrl = '', user
           permissionRequest.deductionAmount = deductionAmount;
         }
 
-        const attendanceRecord = await AttendanceDaily.findById(permissionRequest.attendanceRecordId);
-        if (attendanceRecord) {
-          attendanceRecord.permissionHours = (attendanceRecord.permissionHours || 0) + permissionRequest.permissionHours;
-          attendanceRecord.permissionCount = (attendanceRecord.permissionCount || 0) + 1;
-          if (deductionAmount > 0) {
-            attendanceRecord.permissionDeduction = (attendanceRecord.permissionDeduction || 0) + deductionAmount;
+        if (isMidShift) {
+          const attendanceRecord = await AttendanceDaily.findById(permissionRequest.attendanceRecordId);
+          if (attendanceRecord) {
+            attendanceRecord.permissionHours = (attendanceRecord.permissionHours || 0) + permissionRequest.permissionHours;
+            attendanceRecord.permissionCount = (attendanceRecord.permissionCount || 0) + 1;
+            if (deductionAmount > 0) {
+              attendanceRecord.permissionDeduction = (attendanceRecord.permissionDeduction || 0) + deductionAmount;
+            }
+            await attendanceRecord.save();
+            const [year, month] = permissionRequest.date.split('-').map(Number);
+            await calculateMonthlySummary(permissionRequest.employeeId, permissionRequest.employeeNumber, year, month);
           }
-          await attendanceRecord.save();
-          const [year, month] = permissionRequest.date.split('-').map(Number);
-          await calculateMonthlySummary(permissionRequest.employeeId, permissionRequest.employeeNumber, year, month);
         }
       } else {
         // --- MOVE TO NEXT STEP ---
@@ -376,11 +435,16 @@ const approvePermissionRequest = async (permissionId, userId, baseUrl = '', user
     }
     // --- END DYNAMIC WORKFLOW LOGIC ---
 
-    // Generate QR code (keep existing logic for legacy)
-    permissionRequest.generateQRCode();
+    const isMidShiftLegacy =
+      !permissionRequest.permissionType || permissionRequest.permissionType === 'mid_shift';
 
-    // Set outpass URL (frontend route)
-    permissionRequest.outpassUrl = `${baseUrl}/outpass/${permissionRequest.qrCode}`;
+    if (isMidShiftLegacy) {
+      permissionRequest.generateQRCode();
+      permissionRequest.outpassUrl = `${baseUrl}/outpass/${permissionRequest.qrCode}`;
+    } else {
+      permissionRequest.qrCode = null;
+      permissionRequest.outpassUrl = null;
+    }
 
     // Get employee to check department settings for deduction and limits
     const employee = await Employee.findById(permissionRequest.employeeId);
@@ -448,25 +512,23 @@ const approvePermissionRequest = async (permissionId, userId, baseUrl = '', user
     permissionRequest.approvedAt = new Date();
     await permissionRequest.save();
 
-    // Update attendance record
-    const attendanceRecord = await AttendanceDaily.findById(permissionRequest.attendanceRecordId);
-    if (attendanceRecord) {
-      // Add permission hours and count
-      attendanceRecord.permissionHours = (attendanceRecord.permissionHours || 0) + permissionRequest.permissionHours;
-      attendanceRecord.permissionCount = (attendanceRecord.permissionCount || 0) + 1;
+    if (isMidShiftLegacy) {
+      const attendanceRecord = await AttendanceDaily.findById(permissionRequest.attendanceRecordId);
+      if (attendanceRecord) {
+        attendanceRecord.permissionHours = (attendanceRecord.permissionHours || 0) + permissionRequest.permissionHours;
+        attendanceRecord.permissionCount = (attendanceRecord.permissionCount || 0) + 1;
 
-      // Store deduction amount in attendance record if applicable
-      if (deductionAmount > 0) {
-        attendanceRecord.permissionDeduction = (attendanceRecord.permissionDeduction || 0) + deductionAmount;
+        if (deductionAmount > 0) {
+          attendanceRecord.permissionDeduction = (attendanceRecord.permissionDeduction || 0) + deductionAmount;
+        }
+
+        await attendanceRecord.save();
+
+        const dateObj = new Date(permissionRequest.date);
+        const year = dateObj.getFullYear();
+        const monthNumber = dateObj.getMonth() + 1;
+        await calculateMonthlySummary(permissionRequest.employeeId, permissionRequest.employeeNumber, year, monthNumber);
       }
-
-      await attendanceRecord.save();
-
-      // Recalculate monthly summary
-      const dateObj = new Date(permissionRequest.date);
-      const year = dateObj.getFullYear();
-      const monthNumber = dateObj.getMonth() + 1;
-      await calculateMonthlySummary(permissionRequest.employeeId, permissionRequest.employeeNumber, year, monthNumber);
     }
 
     return {

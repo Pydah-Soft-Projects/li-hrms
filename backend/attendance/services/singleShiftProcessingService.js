@@ -29,6 +29,10 @@ const {
   getShiftsForEmployee,
   calculateEarlyOut,
 } = require('../../shifts/services/shiftDetectionService');
+const {
+  applyEdgePermissionAdjustmentsToShiftSegment,
+  applyStatusFromDuration,
+} = require('../../permissions/services/permissionEdgeAttendanceService');
 const { extractISTComponents, createISTDate } = require('../../shared/utils/dateUtils');
 
 const formatDate = (date) => extractISTComponents(date).dateStr;
@@ -710,20 +714,16 @@ async function processSingleShiftAttendance(employeeNumber, date, rawLogs, gener
         pShift.workingHours = Math.round((punchHours + addedOdHours) * 100) / 100;
       }
 
+      await applyEdgePermissionAdjustmentsToShiftSegment({
+        employeeNumber,
+        date,
+        pShift,
+        globalGrace: 15,
+      });
+
       const basePayable = (assignedShiftDef?.payableShifts ?? 1);
       pShift.basePayable = basePayable;
-      const statusDuration = punchHours + (pShift.odHours || 0); // Use punch + OD gap-fill for status
-
-      if (statusDuration >= expectedHours * 0.9) {
-        pShift.status = 'PRESENT';
-        pShift.payableShift = basePayable;
-      } else if (statusDuration >= expectedHours * 0.40) {
-        pShift.status = 'HALF_DAY';
-        pShift.payableShift = basePayable * 0.5;
-      } else {
-        pShift.status = 'ABSENT';
-        pShift.payableShift = 0;
-      }
+      applyStatusFromDuration(pShift, expectedHours);
     } else {
       pShift.status = 'PRESENT';
       pShift.payableShift = 1;

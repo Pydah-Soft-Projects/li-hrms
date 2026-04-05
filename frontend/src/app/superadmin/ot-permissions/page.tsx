@@ -154,11 +154,13 @@ interface PermissionRequest {
   employeeId: Employee;
   employeeNumber: string;
   date: string;
+  permissionType?: 'mid_shift' | 'late_in' | 'early_out';
+  permittedEdgeTime?: string;
   permissionStartTime: string;
   permissionEndTime: string;
   permissionHours: number;
   purpose: string;
-  status: 'pending' | 'approved' | 'rejected';
+  status: 'pending' | 'approved' | 'rejected' | 'checked_out' | 'checked_in';
   requestedBy: { name: string; email: string };
   approvedBy?: { name: string; email: string };
   rejectedBy?: { name: string; email: string };
@@ -235,6 +237,8 @@ export default function OTAndPermissionsPage() {
     employeeId: '',
     employeeNumber: '',
     date: new Date().toISOString().split('T')[0],
+    permissionType: 'mid_shift' as 'mid_shift' | 'late_in' | 'early_out',
+    permittedEdgeTime: '',
     permissionStartTime: '',
     permissionEndTime: '',
     purpose: '',
@@ -376,31 +380,34 @@ export default function OTAndPermissionsPage() {
     }
   };
 
-  // Auto-generate Gate Pass when dialog opens
+  // Auto-generate Gate Pass when dialog opens (mid-shift: out+in; early_out: out; late_in: in)
   useEffect(() => {
     let timeoutId: NodeJS.Timeout;
 
     if (showQRDialog && selectedQR && !loading) {
-      const qrCodeData = selectedQR as any; // Cast to access gate properties
-      if (!qrCodeData.gateOutTime) {
-        // Needs OUT pass
-        if (!qrCodeData.qrCode || !qrCodeData.qrCode.startsWith('OUT:')) {
-          // Add a small delay to avoid state updates during render
-          timeoutId = setTimeout(() => {
-            handleGenerateGatePass('OUT');
-          }, 500);
+      const qrCodeData = selectedQR as any;
+      const pt = selectedQR.permissionType || 'mid_shift';
+
+      if (pt === 'early_out') {
+        if (!qrCodeData.gateOutTime && (!qrCodeData.qrCode || !String(qrCodeData.qrCode).startsWith('OUT:'))) {
+          timeoutId = setTimeout(() => handleGenerateGatePass('OUT'), 500);
+        }
+      } else if (pt === 'late_in') {
+        if (!qrCodeData.gateInTime && (!qrCodeData.qrCode || !String(qrCodeData.qrCode).startsWith('IN:'))) {
+          timeoutId = setTimeout(() => handleGenerateGatePass('IN'), 500);
+        }
+      } else if (!qrCodeData.gateOutTime) {
+        if (!qrCodeData.qrCode || !String(qrCodeData.qrCode).startsWith('OUT:')) {
+          timeoutId = setTimeout(() => handleGenerateGatePass('OUT'), 500);
         }
       } else if (!qrCodeData.gateInTime) {
-        // Needs IN pass, check 5 min delay
         const now = new Date();
         const gateOutTime = new Date(qrCodeData.gateOutTime);
         const diffMs = now.getTime() - gateOutTime.getTime();
         const minutesPassed = diffMs / (1000 * 60);
 
-        if (minutesPassed >= 5 && (!qrCodeData.qrCode || !qrCodeData.qrCode.startsWith('IN:'))) {
-          timeoutId = setTimeout(() => {
-            handleGenerateGatePass('IN');
-          }, 500);
+        if (minutesPassed >= 5 && (!qrCodeData.qrCode || !String(qrCodeData.qrCode).startsWith('IN:'))) {
+          timeoutId = setTimeout(() => handleGenerateGatePass('IN'), 500);
         }
       }
     }
@@ -628,20 +635,29 @@ export default function OTAndPermissionsPage() {
   };
 
   const handleCreatePermission = async () => {
-    if (!permissionFormData.employeeId || !permissionFormData.employeeNumber || !permissionFormData.date ||
-      !permissionFormData.permissionStartTime || !permissionFormData.permissionEndTime || !permissionFormData.purpose) {
-      const errorMsg = 'Please fill all required fields';
+    const missing: string[] = [];
+    if (!permissionFormData.employeeId) missing.push('Employee');
+    if (!permissionFormData.employeeNumber) missing.push('Employee number');
+    if (!permissionFormData.date) missing.push('Date');
+    if (permissionFormData.permissionType === 'mid_shift') {
+      if (!permissionFormData.permissionStartTime) missing.push('Start time');
+      if (!permissionFormData.permissionEndTime) missing.push('End time');
+    } else if (!permissionFormData.permittedEdgeTime?.trim()) {
+      missing.push('Permitted time (HH:MM)');
+    }
+    if (!permissionFormData.purpose) missing.push('Purpose');
+    if (missing.length) {
+      const errorMsg = `Please fill all required fields: ${missing.join(', ')}`;
       setPermissionValidationError(errorMsg);
       showToast(errorMsg, 'error');
       return;
     }
 
-    // Additional check: verify attendance exists
-    if (permissionFormData.employeeNumber && permissionFormData.date) {
+    if (permissionFormData.permissionType === 'mid_shift' && permissionFormData.employeeNumber && permissionFormData.date) {
       try {
         const attendanceRes = await api.getAttendanceDetail(permissionFormData.employeeNumber, permissionFormData.date);
         if (!attendanceRes.success || !attendanceRes.data) {
-          const errorMsg = 'No attendance record found for this date. Permission cannot be created without attendance.';
+          const errorMsg = 'No attendance record found for this date. Mid-shift permission requires attendance.';
           setPermissionValidationError(errorMsg);
           showToast(errorMsg, 'error');
           return;
@@ -746,7 +762,12 @@ export default function OTAndPermissionsPage() {
         loadData();
 
         // If permission, show QR code
-        if (type === 'permission' && res.data?.qrCode) {
+        if (
+          type === 'permission' &&
+          (res.data?.qrCode ||
+            res.data?.permissionType === 'late_in' ||
+            res.data?.permissionType === 'early_out')
+        ) {
           setSelectedQR(res.data);
           setShowQRDialog(true);
         }
@@ -816,6 +837,8 @@ export default function OTAndPermissionsPage() {
       employeeId: '',
       employeeNumber: '',
       date: new Date().toISOString().split('T')[0],
+      permissionType: 'mid_shift',
+      permittedEdgeTime: '',
       permissionStartTime: '',
       permissionEndTime: '',
       purpose: '',
@@ -834,6 +857,10 @@ export default function OTAndPermissionsPage() {
         return 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400';
       case 'pending':
         return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400';
+      case 'checked_out':
+        return 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400';
+      case 'checked_in':
+        return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-400';
       default:
         return 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-400';
     }
@@ -1562,12 +1589,11 @@ export default function OTAndPermissionsPage() {
                           }));
                           setPermissionValidationError('');
 
-                          // Check attendance when employee is selected
-                          if (permissionFormData.date) {
+                          if (permissionFormData.date && permissionFormData.permissionType === 'mid_shift') {
                             try {
                               const attendanceRes = await api.getAttendanceDetail(employee.emp_no, permissionFormData.date);
                               if (!attendanceRes.success || !attendanceRes.data || !attendanceRes.data.inTime) {
-                                setPermissionValidationError('No attendance record found or employee has no in-time for this date. Permission cannot be created without attendance.');
+                                setPermissionValidationError('No attendance record found or employee has no in-time for this date. Mid-shift permission requires attendance.');
                               } else {
                                 setPermissionValidationError('');
                               }
@@ -1596,60 +1622,95 @@ export default function OTAndPermissionsPage() {
                       value={permissionFormData.date}
                       onChange={async (e) => {
                         setPermissionFormData(prev => ({ ...prev, date: e.target.value }));
-                        // Check attendance when date changes
-                        if (permissionFormData.employeeNumber && e.target.value) {
+                        if (permissionFormData.employeeNumber && e.target.value && permissionFormData.permissionType === 'mid_shift') {
                           try {
                             const attendanceRes = await api.getAttendanceDetail(permissionFormData.employeeNumber, e.target.value);
                             if (!attendanceRes.success || !attendanceRes.data || !attendanceRes.data.inTime) {
-                              setPermissionValidationError('No attendance record found or employee has no in-time for this date. Permission cannot be created without attendance.');
+                              setPermissionValidationError('No attendance record found or employee has no in-time for this date. Mid-shift permission requires attendance.');
                             } else {
                               setPermissionValidationError('');
                             }
                           } catch (error) {
                             console.error('Error checking attendance:', error);
                           }
+                        } else if (permissionFormData.permissionType !== 'mid_shift') {
+                          setPermissionValidationError('');
                         }
                       }}
                       className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
                     />
                   </div>
 
-                  {/* Attendance Validation Message for Permission */}
-                  {permissionFormData.employeeNumber && permissionFormData.date && (
+                  {permissionFormData.permissionType === 'mid_shift' && permissionFormData.employeeNumber && permissionFormData.date && (
                     <div className="rounded-lg border-2 border-orange-200 bg-orange-50 p-3 dark:border-orange-700 dark:bg-orange-900/20">
                       <div className="flex items-center gap-2">
                         <svg className="h-5 w-5 text-orange-600 dark:text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
                         <p className="text-sm font-medium text-orange-800 dark:text-orange-300">
-                          Note: Permission requires attendance with in-time for the selected date. Please ensure the employee has marked attendance.
+                          Mid-shift permission requires attendance with in-time for the selected date.
                         </p>
                       </div>
                     </div>
                   )}
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Permission Start Time *</label>
-                      <input
-                        type="datetime-local"
-                        value={permissionFormData.permissionStartTime}
-                        onChange={(e) => setPermissionFormData(prev => ({ ...prev, permissionStartTime: e.target.value }))}
-                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Permission End Time *</label>
-                      <input
-                        type="datetime-local"
-                        value={permissionFormData.permissionEndTime}
-                        onChange={(e) => setPermissionFormData(prev => ({ ...prev, permissionEndTime: e.target.value }))}
-                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                        required
-                      />
-                    </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Permission type *</label>
+                    <select
+                      value={permissionFormData.permissionType}
+                      onChange={(e) =>
+                        setPermissionFormData(prev => ({
+                          ...prev,
+                          permissionType: e.target.value as 'mid_shift' | 'late_in' | 'early_out',
+                        }))
+                      }
+                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                    >
+                      <option value="mid_shift">Mid-shift (gate out + in)</option>
+                      <option value="late_in">Late arrival (gate in only)</option>
+                      <option value="early_out">Early leave (gate out only)</option>
+                    </select>
                   </div>
+
+                  {permissionFormData.permissionType === 'mid_shift' ? (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Permission Start Time *</label>
+                        <input
+                          type="datetime-local"
+                          value={permissionFormData.permissionStartTime}
+                          onChange={(e) => setPermissionFormData(prev => ({ ...prev, permissionStartTime: e.target.value }))}
+                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Permission End Time *</label>
+                        <input
+                          type="datetime-local"
+                          value={permissionFormData.permissionEndTime}
+                          onChange={(e) => setPermissionFormData(prev => ({ ...prev, permissionEndTime: e.target.value }))}
+                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                          required
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                        {permissionFormData.permissionType === 'late_in' ? 'Latest arrival (HH:MM) *' : 'Earliest exit (HH:MM) *'}
+                      </label>
+                      <input
+                        type="time"
+                        value={permissionFormData.permittedEdgeTime}
+                        onChange={(e) => setPermissionFormData(prev => ({ ...prev, permittedEdgeTime: e.target.value }))}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                      />
+                      <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                        For overnight shifts, times before shift start (e.g. 05:00 for a 21:00 start) are the next calendar morning; times at/after start stay on the roster date.
+                      </p>
+                    </div>
+                  )}
 
                   <div>
                     <label className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Purpose *</label>
@@ -1855,11 +1916,16 @@ export default function OTAndPermissionsPage() {
                       <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Employee Info</p>
                       <p className="text-sm font-bold text-slate-900 dark:text-white line-clamp-1">{selectedQR.employeeId?.employee_name || selectedQR.employeeNumber}</p>
                       <p className="text-[10px] font-bold text-slate-500 mt-2">{formatDate(selectedQR.date)}</p>
+                      {(selectedQR.permissionType && selectedQR.permissionType !== 'mid_shift') && (
+                        <p className="text-[10px] font-black uppercase text-blue-600 dark:text-blue-400 mt-2">
+                          {selectedQR.permissionType === 'late_in' ? 'Late-in' : 'Early-out'} · permitted {selectedQR.permittedEdgeTime || '—'}
+                        </p>
+                      )}
                     </div>
 
                     {/* Timeline */}
                     <div className="relative border-l-2 border-slate-200 dark:border-slate-700 ml-2 space-y-8 pb-4">
-                      {/* Gate Out Step */}
+                      {(selectedQR.permissionType || 'mid_shift') !== 'late_in' && (
                       <div className="relative pl-6">
                         <div className={`absolute -left-[9px] top-0 w-4 h-4 rounded-full border-4 border-white dark:border-slate-900 ${(selectedQR as any).gateOutTime ? 'bg-emerald-500' : 'bg-orange-500'}`} />
                         <div className="flex items-center justify-between mb-2">
@@ -1895,10 +1961,11 @@ export default function OTAndPermissionsPage() {
                           </div>
                         )}
                       </div>
+                      )}
 
-                      {/* Gate In Step */}
+                      {(selectedQR.permissionType || 'mid_shift') !== 'early_out' && (
                       <div className="relative pl-6">
-                        <div className={`absolute -left-[9px] top-0 w-4 h-4 rounded-full border-4 border-white dark:border-slate-900 ${(selectedQR as any).gateInTime ? 'bg-emerald-500' : (!(selectedQR as any).gateOutTime ? 'bg-slate-300 dark:bg-slate-700' : 'bg-blue-500')}`} />
+                        <div className={`absolute -left-[9px] top-0 w-4 h-4 rounded-full border-4 border-white dark:border-slate-900 ${(selectedQR as any).gateInTime ? 'bg-emerald-500' : ((selectedQR.permissionType || 'mid_shift') === 'late_in' ? 'bg-blue-500' : (!(selectedQR as any).gateOutTime ? 'bg-slate-300 dark:bg-slate-700' : 'bg-blue-500'))}`} />
                         <div className="flex items-center justify-between mb-2">
                           <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-widest">
                             Gate In
@@ -1908,6 +1975,10 @@ export default function OTAndPermissionsPage() {
                             <span className="px-2 py-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-black uppercase tracking-widest rounded-lg flex items-center gap-1">
                               <Check className="w-3 h-3" /> Verified {formatTime((selectedQR as any).gateInTime)}
                             </span>
+                          ) : ((selectedQR.permissionType || 'mid_shift') === 'late_in' ? (
+                            <span className="px-2 py-1 bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[10px] font-black uppercase tracking-widest rounded-lg">
+                              Pending
+                            </span>
                           ) : (!(selectedQR as any).gateOutTime ? (
                             <span className="px-2 py-1 bg-slate-100 dark:bg-slate-800 text-slate-400 text-[10px] font-black uppercase tracking-widest rounded-lg">
                               Awaiting Exit
@@ -1916,13 +1987,14 @@ export default function OTAndPermissionsPage() {
                             <span className="px-2 py-1 bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[10px] font-black uppercase tracking-widest rounded-lg">
                               Pending
                             </span>
-                          ))}
+                          )))}
                         </div>
 
-                        {/* Content for Gate In */}
-                        {(selectedQR as any).gateOutTime && !(selectedQR as any).gateInTime && (
+                        {(((selectedQR as any).gateOutTime && !(selectedQR as any).gateInTime) || (selectedQR.permissionType || 'mid_shift') === 'late_in') && !(selectedQR as any).gateInTime && (
                           <div className="mt-4 p-4 rounded-2xl bg-white border border-slate-100 dark:border-slate-800 dark:bg-slate-900 shadow-sm flex flex-col items-center gap-4">
                             {(() => {
+                              const pt = selectedQR.permissionType || 'mid_shift';
+                              if (pt !== 'late_in' && (selectedQR as any).gateOutTime) {
                               const diff = (new Date().getTime() - new Date((selectedQR as any).gateOutTime).getTime()) / 60000;
                               if (diff < 5) {
                                 return (
@@ -1934,8 +2006,9 @@ export default function OTAndPermissionsPage() {
                                   </div>
                                 );
                               }
+                              }
 
-                              if ((selectedQR as any).gateInSecret || (selectedQR.qrCode && selectedQR.qrCode.startsWith('IN:'))) {
+                              if ((selectedQR as any).gateInSecret || (selectedQR.qrCode && String(selectedQR.qrCode).startsWith('IN:'))) {
                                 return (
                                   <>
                                     <div className="relative p-2 rounded-xl bg-white border-4 border-emerald-500/20 shadow-xl shadow-emerald-500/5">
@@ -1955,20 +2028,38 @@ export default function OTAndPermissionsPage() {
                           </div>
                         )}
                       </div>
+                      )}
                     </div>
                   </div>
 
                   {/* Right Column: Summary */}
                   <div className="p-6 sm:p-8 flex flex-col justify-center bg-slate-50/50 dark:bg-slate-900/50 relative">
-                    {/* Trip Completed Global Message */}
-                    {(selectedQR as any).gateOutTime && (selectedQR as any).gateInTime ? (
+                    {(() => {
+                      const gpt = selectedQR.permissionType || 'mid_shift';
+                      const gateDone =
+                        gpt === 'early_out'
+                          ? !!(selectedQR as any).gateOutTime
+                          : gpt === 'late_in'
+                            ? !!(selectedQR as any).gateInTime
+                            : !!(selectedQR as any).gateOutTime && !!(selectedQR as any).gateInTime;
+                      return gateDone;
+                    })() ? (
                       <div className="w-full p-6 rounded-3xl bg-emerald-500/5 border border-emerald-500/10 text-center animate-in zoom-in-95 duration-500">
                         <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-600 flex items-center justify-center mx-auto mb-3">
                           <Check className="w-6 h-6" />
                         </div>
-                        <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight">Trip Completed</h3>
-                        <p className="text-[9px] font-bold text-slate-500 uppercase tracking-[0.2em] mt-1 mb-4">Both passes verified</p>
+                        <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight">
+                          {(selectedQR.permissionType || 'mid_shift') === 'mid_shift' ? 'Trip Completed' : 'Gate verified'}
+                        </h3>
+                        <p className="text-[9px] font-bold text-slate-500 uppercase tracking-[0.2em] mt-1 mb-4">
+                          {(selectedQR.permissionType || 'mid_shift') === 'mid_shift'
+                            ? 'Both passes verified'
+                            : 'Attendance will reflect this permission'}
+                        </p>
 
+                        {(selectedQR.permissionType || 'mid_shift') === 'mid_shift' &&
+                          (selectedQR as any).gateOutTime &&
+                          (selectedQR as any).gateInTime && (
                         <div className="grid grid-cols-2 gap-2 border-t border-emerald-500/10 pt-4 mt-2">
                           <div className="flex flex-col items-center border-r border-emerald-500/10">
                             <span className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 mb-1">Requested</span>
@@ -1989,6 +2080,7 @@ export default function OTAndPermissionsPage() {
                             })()}
                           </div>
                         </div>
+                        )}
                       </div>
                     ) : (
                       <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-10">
