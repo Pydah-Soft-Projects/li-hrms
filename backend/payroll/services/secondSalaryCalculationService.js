@@ -194,7 +194,11 @@ async function calculateSecondSalary(employeeId, month, userId, sharedContext = 
         const otPayResult = await secondSalaryOTPayService.calculateOTPay(
             attendanceSummary.totalOTHours || 0,
             departmentId.toString(),
-            divisionId?.toString()
+            divisionId?.toString(),
+            {
+                employee,
+                totalDaysInMonth: attendanceSummary.totalDaysInMonth,
+            }
         );
         const otPay = otPayResult.otPay || 0;
 

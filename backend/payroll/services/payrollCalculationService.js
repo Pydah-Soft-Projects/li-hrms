@@ -263,7 +263,11 @@ async function calculatePayroll(employeeId, month, userId) {
     const otPayResult = await otPayService.calculateOTPay(
       attendanceSummary.totalOTHours || 0,
       departmentId.toString(),
-      employee.division_id?.toString() || null
+      employee.division_id?.toString() || null,
+      {
+        employee,
+        totalDaysInMonth: attendanceSummary.totalDaysInMonth,
+      }
     );
     console.log('OT Pay Result:', JSON.stringify(otPayResult, null, 2));
 
@@ -605,7 +609,11 @@ async function calculatePayroll(employeeId, month, userId) {
     console.log('========== PAYROLL CALCULATION END ==========\n');
 
     // Step 12: Get settings snapshot for audit
-    const otSettings = await otPayService.getResolvedOTSettings(departmentId.toString(), employee.division_id);
+    const otSettings = await otPayService.getResolvedOTSettings(
+      departmentId.toString(),
+      employee.division_id?.toString?.() || null,
+      employee
+    );
     const permissionRules = await deductionService.getResolvedPermissionDeductionRules(departmentId.toString(), employee.division_id);
     const attendanceRules = await deductionService.getResolvedAttendanceDeductionRules(departmentId.toString(), employee.division_id);
 
@@ -1049,7 +1057,12 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     // Step 9: OT Pay
     const otPayResult = await otPayService.calculateOTPay(
       attendanceSummary.totalOTHours || 0,
-      departmentId.toString()
+      departmentId.toString(),
+      employee.division_id?.toString() || null,
+      {
+        employee,
+        totalDaysInMonth: attendanceSummary.totalDaysInMonth,
+      }
     );
     const otPay = otPayResult.otPay || 0;
     const otHours = attendanceSummary.totalOTHours || 0;

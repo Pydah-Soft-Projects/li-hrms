@@ -88,11 +88,31 @@ const otSchema = new mongoose.Schema(
       required: true,
     },
 
-    // Calculated OT hours
+    // Calculated OT hours (policy-applied / final)
     otHours: {
       type: Number,
       required: true,
       min: 0,
+    },
+
+    /** Raw OT hours before policy (threshold / rounding), for audit */
+    rawOtHours: {
+      type: Number,
+      default: null,
+      min: 0,
+    },
+
+    /** Copy of otHours after policy; optional explicit field for reporting */
+    computedOtHours: {
+      type: Number,
+      default: null,
+      min: 0,
+    },
+
+    /** Resolved policy + pay inputs at creation time */
+    otPolicySnapshot: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
     },
 
     // Status: pending, approved, rejected

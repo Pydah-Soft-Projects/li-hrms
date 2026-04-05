@@ -2050,13 +2050,57 @@ export default function AttendancePage() {
 
 
 
-    if (!confirm(`Convert ${attendanceDetail.extraHours.toFixed(2)} extra hours to OT for ${selectedDate}?`)) {
+    setError('');
+
+    setSuccess('');
+
+    const preview = await api.previewOTExtraHours({
+
+      employeeId: selectedEmployee._id,
+
+      employeeNumber: selectedEmployee.emp_no,
+
+      date: selectedDate,
+
+    });
+
+    if (!preview.success) {
+
+      setError((preview as { message?: string }).message || 'Could not preview OT rules');
 
       return;
 
     }
 
+    const pdata = (preview as { data?: { rawExtraHours?: number; policy?: { eligible: boolean; finalHours: number; steps?: string[] } } }).data;
 
+    const pol = pdata?.policy;
+
+    if (!pol?.eligible) {
+
+      setError(
+
+        `Extra hours do not qualify under OT rules (${Number(pdata?.rawExtraHours).toFixed(2)}h raw). ${(pol?.steps || []).join('; ')}`
+
+      );
+
+      return;
+
+    }
+
+    if (
+
+      !confirm(
+
+        `Create a pending OT request for ${Number(pol.finalHours).toFixed(2)}h (raw ${Number(pdata?.rawExtraHours).toFixed(2)}h after automatic rules) for ${selectedDate}?`
+
+      )
+
+    ) {
+
+      return;
+
+    }
 
     try {
 
@@ -2065,8 +2109,6 @@ export default function AttendancePage() {
       setError('');
 
       setSuccess('');
-
-
 
       const response = await api.convertExtraHoursToOT({
 

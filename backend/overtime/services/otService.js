@@ -14,6 +14,48 @@ const { validateOTRequest } = require('../../shared/services/conflictValidationS
 const { checkJurisdiction } = require('../../shared/middleware/dataScopeMiddleware');
 const OvertimeSettings = require('../model/OvertimeSettings');
 const Settings = require('../../settings/model/Settings');
+const { getMergedOtConfig } = require('./otConfigResolver');
+const { applyOtHoursPolicy } = require('./otHoursPolicyService');
+
+function buildOtWorkflow(userId, otSettings) {
+  const approvalSteps = [];
+  approvalSteps.push({
+    stepOrder: 1,
+    role: 'hod',
+    label: 'HOD Approval',
+    status: 'pending',
+    isCurrent: true,
+  });
+  if (otSettings?.workflow?.steps && otSettings.workflow.steps.length > 0) {
+    otSettings.workflow.steps.forEach((step) => {
+      if (step.approverRole !== 'hod') {
+        approvalSteps.push({
+          stepOrder: approvalSteps.length + 1,
+          role: step.approverRole,
+          label: step.stepName || `${step.approverRole.toUpperCase()} Approval`,
+          status: 'pending',
+          isCurrent: false,
+        });
+      }
+    });
+  }
+  return {
+    currentStepRole: 'hod',
+    nextApproverRole: 'hod',
+    nextApprover: 'hod',
+    approvalChain: approvalSteps,
+    finalAuthority: otSettings?.workflow?.finalAuthority?.role || 'hr',
+    history: [
+      {
+        step: 'employee',
+        action: 'submitted',
+        actionBy: userId,
+        timestamp: new Date(),
+        comments: 'OT request submitted',
+      },
+    ],
+  };
+}
 
 /**
  * Create OT request
@@ -163,15 +205,32 @@ const createOTRequest = async (data, userId) => {
       };
     }
 
-    // Calculate OT hours
+    // Calculate raw OT hours from clock times
     const diffMs = otOutTimeDate.getTime() - otInTime.getTime();
-    const otHours = Math.round((diffMs / (1000 * 60 * 60)) * 100) / 100;
+    let otHoursRaw = Math.round((diffMs / (1000 * 60 * 60)) * 100) / 100;
+
+    const deptId = employee.department_id?._id || employee.department_id;
+    const divId = employee.division_id?._id || employee.division_id;
+    const mergedPolicy = await getMergedOtConfig(deptId, divId);
+    const policyResult = applyOtHoursPolicy(otHoursRaw, mergedPolicy);
+    if (!policyResult.eligible) {
+      return {
+        success: false,
+        message: `OT does not meet configured rules (raw ${policyResult.rawHours}h). ${policyResult.steps.join('; ')}`,
+        policy: policyResult,
+      };
+    }
+    let otHours = policyResult.finalHours;
+    let otOutTimeAdjusted = otOutTimeDate;
+    if (Math.abs(otHours - otHoursRaw) > 1e-6) {
+      otOutTimeAdjusted = new Date(otInTime.getTime() + otHours * 3600 * 1000);
+    }
 
     // Check if OT already exists for this date
     const existingOT = await OT.findOne({
       employeeId: employeeId,
       date: date,
-      status: { $in: ['pending', 'approved'] },
+      status: { $in: ['pending', 'approved', 'manager_approved'] },
       isActive: true,
     });
 
@@ -183,49 +242,18 @@ const createOTRequest = async (data, userId) => {
       };
     }
 
-    // --- Workflow Initialization ---
     const otSettings = await OvertimeSettings.getActiveSettings();
-    const approvalSteps = [];
+    const workflowData = buildOtWorkflow(userId, otSettings);
 
-    // 1. Always start with HOD
-    approvalSteps.push({
-      stepOrder: 1,
-      role: 'hod',
-      label: 'HOD Approval',
-      status: 'pending',
-      isCurrent: true
-    });
-
-    // 2. Add other steps from settings
-    if (otSettings?.workflow?.steps && otSettings.workflow.steps.length > 0) {
-      otSettings.workflow.steps.forEach(step => {
-        if (step.approverRole !== 'hod') {
-          approvalSteps.push({
-            stepOrder: approvalSteps.length + 1,
-            role: step.approverRole,
-            label: step.stepName || `${step.approverRole.toUpperCase()} Approval`,
-            status: 'pending',
-            isCurrent: false
-          });
-        }
-      });
-    }
-
-    const workflowData = {
-      currentStepRole: 'hod',
-      nextApproverRole: 'hod',
-      nextApprover: 'hod',
-      approvalChain: approvalSteps,
-      finalAuthority: otSettings?.workflow?.finalAuthority?.role || 'hr',
-      history: [
-        {
-          step: 'employee',
-          action: 'submitted',
-          actionBy: userId,
-          timestamp: new Date(),
-          comments: 'OT request submitted'
-        }
-      ]
+    const otPolicySnapshot = {
+      rawOtHours: policyResult.rawHours,
+      finalOtHours: otHours,
+      steps: policyResult.steps,
+      recognitionMode: mergedPolicy.recognitionMode,
+      thresholdHours: mergedPolicy.thresholdHours,
+      minOTHours: mergedPolicy.minOTHours,
+      roundingMinutes: mergedPolicy.roundingMinutes,
+      roundUpIfFractionMinutesGte: mergedPolicy.roundUpIfFractionMinutesGte,
     };
 
     // Create OT request
@@ -242,8 +270,11 @@ const createOTRequest = async (data, userId) => {
       employeeInTime: attendanceRecord.inTime,
       shiftEndTime: shift.endTime,
       otInTime: otInTime,
-      otOutTime: otOutTimeDate,
+      otOutTime: otOutTimeAdjusted,
       otHours: otHours,
+      rawOtHours: policyResult.rawHours,
+      computedOtHours: otHours,
+      otPolicySnapshot,
       status: 'pending',
       requestedBy: userId,
       confusedShiftId: confusedShift ? confusedShift._id : null,
@@ -267,7 +298,7 @@ const createOTRequest = async (data, userId) => {
         employeeNumber,
         date,
         attendanceRecord.inTime,
-        attendanceRecord.outTime || otOutTimeDate,
+        attendanceRecord.outTime || otOutTimeAdjusted,
         generalConfig
       );
 
@@ -579,9 +610,9 @@ const rejectOTRequest = async (otId, userId, reason, userRole) => {
  * @param {String} userName - User name performing the conversion
  * @returns {Object} - Result
  */
-const convertExtraHoursToOT = async (employeeId, employeeNumber, date, userId, userName) => {
+const convertExtraHoursToOT = async (employeeId, employeeNumber, date, userId, userName, options = {}) => {
+  const source = options.source === 'auto_detected' ? 'auto_detected' : 'attendance_conversion';
   try {
-    // Get attendance record
     const attendanceRecord = await AttendanceDaily.findOne({
       employeeNumber: employeeNumber.toUpperCase(),
       date: date,
@@ -594,7 +625,6 @@ const convertExtraHoursToOT = async (employeeId, employeeNumber, date, userId, u
       };
     }
 
-    // Check if extra hours exist
     if (!attendanceRecord.extraHours || attendanceRecord.extraHours <= 0) {
       return {
         success: false,
@@ -602,7 +632,6 @@ const convertExtraHoursToOT = async (employeeId, employeeNumber, date, userId, u
       };
     }
 
-    // Check if shift is assigned
     if (!attendanceRecord.shiftId) {
       return {
         success: false,
@@ -610,11 +639,10 @@ const convertExtraHoursToOT = async (employeeId, employeeNumber, date, userId, u
       };
     }
 
-    // Check if OT already exists for this date
     const existingOT = await OT.findOne({
       employeeId: employeeId,
       date: date,
-      status: { $in: ['pending', 'approved'] },
+      status: { $in: ['pending', 'approved', 'manager_approved'] },
       isActive: true,
     });
 
@@ -626,7 +654,6 @@ const convertExtraHoursToOT = async (employeeId, employeeNumber, date, userId, u
       };
     }
 
-    // Get employee
     const employee = await Employee.findById(employeeId);
     if (!employee) {
       return {
@@ -635,7 +662,11 @@ const convertExtraHoursToOT = async (employeeId, employeeNumber, date, userId, u
       };
     }
 
-    // Get shift
+    await employee.populate([
+      { path: 'division_id', select: 'name' },
+      { path: 'department_id', select: 'name' },
+    ]);
+
     const shift = await Shift.findById(attendanceRecord.shiftId);
     if (!shift) {
       return {
@@ -644,60 +675,92 @@ const convertExtraHoursToOT = async (employeeId, employeeNumber, date, userId, u
       };
     }
 
-    // Calculate OT times
+    const rawExtra = Math.round(attendanceRecord.extraHours * 100) / 100;
+    const deptId = employee.department_id?._id || employee.department_id;
+    const divId = employee.division_id?._id || employee.division_id;
+    const mergedPolicy = await getMergedOtConfig(deptId, divId);
+    const policyResult = applyOtHoursPolicy(rawExtra, mergedPolicy);
+
+    if (!policyResult.eligible) {
+      return {
+        success: false,
+        message: `Extra hours do not qualify under OT rules (raw ${policyResult.rawHours}h). ${policyResult.steps.join('; ')}`,
+        policy: policyResult,
+      };
+    }
+
+    const otHours = policyResult.finalHours;
     const { createDateWithOffset } = require('../../shifts/services/shiftDetectionService');
     const otInTime = createDateWithOffset(date, shift.endTime);
+    const otOutTime = new Date(otInTime.getTime() + otHours * 3600 * 1000);
 
-    // OT out time = shift end time + extra hours
-    const otOutTime = new Date(otInTime);
-    otOutTime.setMinutes(otOutTime.getMinutes() + (attendanceRecord.extraHours * 60));
+    const otSettings = await OvertimeSettings.getActiveSettings();
+    const workflowData = buildOtWorkflow(userId, otSettings);
 
-    // Use extra hours as OT hours
-    const otHours = Math.round(attendanceRecord.extraHours * 100) / 100;
+    const otPolicySnapshot = {
+      rawOtHours: policyResult.rawHours,
+      finalOtHours: otHours,
+      steps: policyResult.steps,
+      recognitionMode: mergedPolicy.recognitionMode,
+      thresholdHours: mergedPolicy.thresholdHours,
+      minOTHours: mergedPolicy.minOTHours,
+      roundingMinutes: mergedPolicy.roundingMinutes,
+      roundUpIfFractionMinutesGte: mergedPolicy.roundUpIfFractionMinutesGte,
+    };
 
-    // Create OT record (pending - management must approve)
     const otRecord = await OT.create({
       employeeId: employeeId,
       employeeNumber: employeeNumber.toUpperCase(),
       date: date,
       attendanceRecordId: attendanceRecord._id,
+      division_id: employee.division_id?._id || employee.division_id,
+      division_name: employee.division_id?.name || 'N/A',
+      department_id: employee.department_id?._id || employee.department_id,
+      department_name: employee.department_id?.name || 'N/A',
       shiftId: attendanceRecord.shiftId,
       employeeInTime: attendanceRecord.inTime,
       shiftEndTime: shift.endTime,
       otInTime: otInTime,
       otOutTime: otOutTime,
       otHours: otHours,
-      status: 'pending', // Management approves via OT workflow
+      rawOtHours: policyResult.rawHours,
+      computedOtHours: otHours,
+      otPolicySnapshot,
+      status: 'pending',
       requestedBy: userId,
       convertedFromAttendance: true,
       convertedBy: userId,
       convertedAt: new Date(),
-      source: 'attendance_conversion',
-      comments: `Converted from attendance extra hours (${otHours.toFixed(2)} hrs) - pending approval`,
+      source,
+      workflow: workflowData,
+      comments:
+        source === 'auto_detected'
+          ? `Auto OT request: raw ${rawExtra.toFixed(2)}h → ${otHours.toFixed(2)}h after policy (pending approval)`
+          : `OT request from extra hours: raw ${rawExtra.toFixed(2)}h → ${otHours.toFixed(2)}h after policy (pending approval)`,
     });
 
-    // Track Edit History - do NOT clear extraHours or set otHours yet (wait for approval)
     attendanceRecord.isEdited = true;
     attendanceRecord.editHistory.push({
-      action: 'OT_CONVERSION_REQUESTED',
+      action: source === 'auto_detected' ? 'OT_AUTO_REQUESTED' : 'OT_CONVERSION_REQUESTED',
       modifiedBy: userId,
       modifiedByName: userName,
       modifiedAt: new Date(),
-      details: `Requested conversion of ${otHours.toFixed(2)} hours extra to OT (pending approval)`
+      details:
+        source === 'auto_detected'
+          ? `Auto-created OT request: ${rawExtra.toFixed(2)}h extra → ${otHours.toFixed(2)}h after rules (pending approval)`
+          : `Requested conversion of ${rawExtra.toFixed(2)}h extra to OT (${otHours.toFixed(2)}h after rules, pending approval)`,
     });
+    await attendanceRecord.save();
 
-    // Do NOT update attendance record until OT is approved (extraHours stay, otHours stay 0)
-
-    // Recalculate monthly summary
     const [year, month] = date.split('-').map(Number);
     await calculateMonthlySummary(employeeId, employeeNumber.toUpperCase(), year, month);
 
     return {
       success: true,
-      message: `Successfully converted ${otHours.toFixed(2)} extra hours to OT`,
+      message: `OT request created: ${otHours.toFixed(2)}h (from ${rawExtra.toFixed(2)}h extra), pending approval`,
       data: otRecord,
+      policy: policyResult,
     };
-
   } catch (error) {
     console.error('Error converting extra hours to OT:', error);
     return {
@@ -707,10 +770,141 @@ const convertExtraHoursToOT = async (employeeId, employeeNumber, date, userId, u
   }
 };
 
+/**
+ * Auto-create pending OT when settings allow and extra hours qualify (idempotent per day).
+ */
+/**
+ * Run OT hour policy for a raw value (optional draft overrides on top of merged DB settings).
+ */
+const simulateOtHoursPolicy = async (rawHours, departmentId, divisionId, policyDraft) => {
+  const merged = await getMergedOtConfig(departmentId || null, divisionId || null);
+  const policy =
+    policyDraft && typeof policyDraft === 'object' ? { ...merged, ...policyDraft } : merged;
+  const result = applyOtHoursPolicy(Number(rawHours), policy);
+  return {
+    ...result,
+    policyUsed: {
+      recognitionMode: policy.recognitionMode,
+      thresholdHours: policy.thresholdHours,
+      minOTHours: policy.minOTHours,
+      roundingMinutes: policy.roundingMinutes,
+      roundUpIfFractionMinutesGte: policy.roundUpIfFractionMinutesGte,
+    },
+  };
+};
+
+/**
+ * Preview policy outcome for converting attendance extra hours (no DB writes).
+ */
+const previewConvertExtraHoursToOT = async (employeeId, employeeNumber, date) => {
+  try {
+    const attendanceRecord = await AttendanceDaily.findOne({
+      employeeNumber: employeeNumber.toUpperCase(),
+      date,
+    });
+    if (!attendanceRecord) {
+      return { success: false, message: 'Attendance record not found for this date' };
+    }
+    if (!attendanceRecord.extraHours || attendanceRecord.extraHours <= 0) {
+      return { success: false, message: 'No extra hours found for this date' };
+    }
+    if (!attendanceRecord.shiftId) {
+      return { success: false, message: 'Shift not assigned for this attendance record' };
+    }
+    const employee = await Employee.findById(employeeId);
+    if (!employee) {
+      return { success: false, message: 'Employee not found' };
+    }
+    const rawExtra = Math.round(attendanceRecord.extraHours * 100) / 100;
+    const deptId = employee.department_id?._id || employee.department_id;
+    const divId = employee.division_id?._id || employee.division_id;
+    const mergedPolicy = await getMergedOtConfig(deptId, divId);
+    const policyResult = applyOtHoursPolicy(rawExtra, mergedPolicy);
+    const existingOT = await OT.findOne({
+      employeeId,
+      date,
+      status: { $in: ['pending', 'approved', 'manager_approved'] },
+      isActive: true,
+    });
+    return {
+      success: true,
+      rawExtraHours: rawExtra,
+      policy: policyResult,
+      mergedPolicy: {
+        recognitionMode: mergedPolicy.recognitionMode,
+        thresholdHours: mergedPolicy.thresholdHours,
+        minOTHours: mergedPolicy.minOTHours,
+        roundingMinutes: mergedPolicy.roundingMinutes,
+        roundUpIfFractionMinutesGte: mergedPolicy.roundUpIfFractionMinutesGte,
+      },
+      hasExistingOt: !!existingOT,
+    };
+  } catch (e) {
+    return { success: false, message: e.message || 'Preview failed' };
+  }
+};
+
+const maybeAutoCreateOtFromAttendanceDay = async (employeeNumber, date) => {
+  try {
+    const empNo = (employeeNumber || '').toUpperCase();
+    const employee = await Employee.findOne({ emp_no: empNo, is_active: { $ne: false } });
+    if (!employee) return { skipped: true, reason: 'no_employee' };
+
+    const merged = await getMergedOtConfig(employee.department_id, employee.division_id);
+    if (!merged.autoCreateOtRequest) return { skipped: true, reason: 'auto_disabled' };
+
+    const attendanceRecord = await AttendanceDaily.findOne({
+      employeeNumber: empNo,
+      date,
+    });
+    if (!attendanceRecord?.extraHours || attendanceRecord.extraHours <= 0) {
+      return { skipped: true, reason: 'no_extra' };
+    }
+    if (!attendanceRecord.shiftId) return { skipped: true, reason: 'no_shift' };
+
+    const dup = await OT.findOne({
+      employeeId: employee._id,
+      date,
+      status: { $in: ['pending', 'approved', 'manager_approved'] },
+      isActive: true,
+    });
+    if (dup) return { skipped: true, reason: 'ot_exists' };
+
+    const User = require('../../users/model/User');
+    let requester = await User.findOne({ employeeRef: employee._id });
+    if (!requester) {
+      requester = await User.findOne({ role: 'super_admin' }).sort({ createdAt: 1 });
+    }
+    if (!requester?._id) {
+      console.warn('[OT Auto] No user for requestedBy; skipping auto OT');
+      return { skipped: true, reason: 'no_requester_user' };
+    }
+
+    const result = await convertExtraHoursToOT(
+      employee._id.toString(),
+      empNo,
+      date,
+      requester._id,
+      'System (auto OT)',
+      { source: 'auto_detected' }
+    );
+    if (!result.success) {
+      return { skipped: true, reason: 'convert_failed', message: result.message };
+    }
+    return { skipped: false, data: result.data };
+  } catch (e) {
+    console.error('[OT Auto] maybeAutoCreateOtFromAttendanceDay:', e);
+    return { skipped: true, reason: 'error', message: e.message };
+  }
+};
+
 module.exports = {
   createOTRequest,
   approveOTRequest,
   rejectOTRequest,
   convertExtraHoursToOT,
+  previewConvertExtraHoursToOT,
+  simulateOtHoursPolicy,
+  maybeAutoCreateOtFromAttendanceDay,
 };
 

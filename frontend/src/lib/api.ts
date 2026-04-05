@@ -3442,11 +3442,37 @@ export const api = {
     multiplier?: number;
     minOTHours?: number;
     roundingMinutes?: number;
-    workflow?: any
+    recognitionMode?: string;
+    thresholdHours?: number | null;
+    roundUpIfFractionMinutesGte?: number | null;
+    autoCreateOtRequest?: boolean;
+    payCalculationMode?: string;
+    otSalaryBasis?: string;
+    daysPerMonthMode?: string;
+    fixedDaysPerMonth?: number;
+    defaultWorkingHoursPerDay?: number;
+    workflow?: any;
   }) => {
     return apiRequest<any>('/ot/settings', {
       method: 'POST',
       body: JSON.stringify(data),
+    });
+  },
+
+  previewOTExtraHours: async (params: { employeeId: string; employeeNumber: string; date: string }) => {
+    const q = new URLSearchParams(params).toString();
+    return apiRequest<any>(`/ot/preview-extra-hours?${q}`, { method: 'GET' });
+  },
+
+  simulateOtHoursPolicy: async (body: {
+    rawHours: number;
+    departmentId?: string;
+    divisionId?: string;
+    policy?: Record<string, unknown>;
+  }) => {
+    return apiRequest<any>('/ot/simulate-hours-policy', {
+      method: 'POST',
+      body: JSON.stringify(body),
     });
   },
 

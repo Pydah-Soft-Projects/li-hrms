@@ -1,88 +1,112 @@
-const DepartmentSettings = require('../../departments/model/DepartmentSettings');
-const Settings = require('../../settings/model/Settings');
 const cacheService = require('../../shared/services/cacheService');
-const PermissionDeductionSettings = require('../../permissions/model/PermissionDeductionSettings');
+const {
+  getMergedOtConfig,
+  resolveMonthlySalaryZ,
+  resolveWorkingHoursPerDay,
+  resolveDaysPerMonth,
+  num,
+} = require('../../overtime/services/otConfigResolver');
 
 /**
  * OT Pay Calculation Service
- * Handles overtime pay calculation based on department/global settings
+ * flat_per_hour (legacy) or formula: (z/y)/x * eligibleHours * multiplier
  */
 
-/**
- * Get resolved OT settings for a department
- * @param {String} departmentId - Department ID
- * @returns {Object} Resolved OT settings
- */
-async function getResolvedOTSettings(departmentId, divisionId = null) {
+async function getResolvedOTSettings(departmentId, divisionId = null, employee = null) {
   try {
-    const cacheKey = `settings:ot:dept:${departmentId}:div:${divisionId || 'none'}`;
-    let resolved = await cacheService.get(cacheKey);
-    if (resolved) return resolved;
+    const cacheKey = `settings:ot:v3:dept:${departmentId}:div:${divisionId || 'none'}`;
+    let merged = await cacheService.get(cacheKey);
+    if (!merged) {
+      merged = await getMergedOtConfig(departmentId, divisionId);
+      await cacheService.set(cacheKey, merged, 300);
+    }
 
-    // Get department/division settings
-    const deptSettings = await DepartmentSettings.getByDeptAndDiv(departmentId, divisionId);
+    const x =
+      employee && merged.payCalculationMode === 'formula'
+        ? resolveWorkingHoursPerDay(merged, employee)
+        : resolveWorkingHoursPerDay(merged, employee || {});
 
-    // Get global OT settings (from Settings model - legacy support)
-    const globalPayPerHour = await Settings.findOne({ key: 'ot_pay_per_hour', category: 'overtime' }).lean();
-    const globalMinHours = await Settings.findOne({ key: 'ot_min_hours', category: 'overtime' }).lean();
-
-    // Merge: Department settings override global
-    resolved = {
-      otPayPerHour: deptSettings?.ot?.otPayPerHour ?? (globalPayPerHour?.value || 0),
-      minOTHours: deptSettings?.ot?.minOTHours ?? (globalMinHours?.value || 0),
+    return {
+      ...merged,
+      workingHoursPerDayResolved: x,
     };
-
-    // Cache for 5 minutes during batch processing
-    await cacheService.set(cacheKey, resolved, 300);
-
-    return resolved;
   } catch (error) {
     console.error('Error getting resolved OT settings:', error);
     return {
       otPayPerHour: 0,
       minOTHours: 0,
+      multiplier: 1.5,
+      payCalculationMode: 'flat_per_hour',
+      workingHoursPerDayResolved: 8,
     };
   }
 }
 
 /**
- * Calculate OT pay
- * @param {Number} otHours - Total OT hours from attendance summary
- * @param {String} departmentId - Department ID
- * @returns {Object} OT pay calculation result
+ * @param {number} otHours
+ * @param {string} departmentId
+ * @param {string|null} divisionId
+ * @param {object} [options]
+ * @param {object} [options.employee] - Required for formula mode
+ * @param {number} [options.totalDaysInMonth] - For formula + calendar mode
+ * @param {boolean} [options.useSecondSalary] - Use employee.second_salary as z
  */
-async function calculateOTPay(otHours, departmentId, divisionId = null) {
-  // Validate inputs
+async function calculateOTPay(otHours, departmentId, divisionId = null, options = {}) {
   if (otHours === null || otHours === undefined) {
     otHours = 0;
   }
-
   if (otHours < 0) {
     otHours = 0;
   }
 
-  // Get resolved OT settings
-  const otSettings = await getResolvedOTSettings(departmentId, divisionId);
+  const { employee, totalDaysInMonth, useSecondSalary = false } = options;
 
-  const otPayPerHour = otSettings.otPayPerHour || 0;
-  const minOTHours = otSettings.minOTHours || 0;
-
-  // Check eligibility
+  const merged = await getMergedOtConfig(departmentId, divisionId);
+  const minOTHours = num(merged.minOTHours, 0);
   let eligibleOTHours = 0;
-  if (otHours >= minOTHours) {
+  if (otHours + 1e-9 >= minOTHours) {
     eligibleOTHours = otHours;
   }
 
-  // Calculate OT pay
-  const otPay = eligibleOTHours * otPayPerHour;
+  const mode = merged.payCalculationMode || 'flat_per_hour';
+
+  if (mode === 'formula' && employee) {
+    const z = resolveMonthlySalaryZ(employee, merged.otSalaryBasis, useSecondSalary);
+    const y = resolveDaysPerMonth(merged, totalDaysInMonth);
+    const x = resolveWorkingHoursPerDay(merged, employee);
+    const mult = num(merged.multiplier, 1);
+    let hourlyRate = 0;
+    if (z > 0 && y > 0 && x > 0) {
+      hourlyRate = z / y / x;
+    }
+    const otPayRaw = eligibleOTHours * hourlyRate * mult;
+    const otPay = Math.round(otPayRaw * 100) / 100;
+
+    return {
+      otHours,
+      eligibleOTHours,
+      otPayPerHour: Math.round(hourlyRate * 10000) / 10000,
+      minOTHours,
+      otPay,
+      isEligible: eligibleOTHours > 0,
+      payCalculationMode: 'formula',
+      formula: { z, y, x, multiplier: mult },
+    };
+  }
+
+  const otPayPerHour = num(merged.otPayPerHour, 0);
+  const mult = num(merged.multiplier, 1);
+  const otPay = Math.round(eligibleOTHours * otPayPerHour * mult * 100) / 100;
 
   return {
     otHours,
     eligibleOTHours,
     otPayPerHour,
     minOTHours,
-    otPay: Math.round(otPay * 100) / 100, // Round to 2 decimals
-    isEligible: otHours >= minOTHours,
+    otPay,
+    isEligible: eligibleOTHours > 0,
+    payCalculationMode: 'flat_per_hour',
+    formula: null,
   };
 }
 
@@ -90,4 +114,3 @@ module.exports = {
   getResolvedOTSettings,
   calculateOTPay,
 };
-

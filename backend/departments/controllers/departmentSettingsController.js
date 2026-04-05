@@ -117,21 +117,8 @@ async function getResolvedPermissionSettings(departmentId, divisionId = null) {
  */
 async function getResolvedOTSettings(departmentId, divisionId = null) {
   try {
-    // Get department/division settings
-    const deptSettings = await DepartmentSettings.getByDeptAndDiv(departmentId, divisionId);
-
-    // Get global OT settings
-    const Settings = require('../../settings/model/Settings');
-    const globalPayPerHour = await Settings.findOne({ key: 'ot_pay_per_hour' });
-    const globalMinHours = await Settings.findOne({ key: 'ot_min_hours' });
-
-    // Merge: Department settings override global
-    const resolved = {
-      otPayPerHour: deptSettings?.ot?.otPayPerHour ?? (globalPayPerHour?.value || 0),
-      minOTHours: deptSettings?.ot?.minOTHours ?? (globalMinHours?.value || 0),
-    };
-
-    return resolved;
+    const { getMergedOtConfig } = require('../../overtime/services/otConfigResolver');
+    return await getMergedOtConfig(departmentId, divisionId);
   } catch (error) {
     console.error('Error getting resolved OT settings:', error);
     return null;
@@ -408,6 +395,13 @@ exports.updateDepartmentSettings = async (req, res) => {
 
     settings.updatedBy = req.user._id;
     await settings.save();
+
+    if (ot) {
+      const cacheService = require('../../shared/services/cacheService');
+      const divKey = divisionId || (settings.division ? String(settings.division) : 'none');
+      await cacheService.del(`settings:ot:v3:dept:${deptId}:div:${divKey}`);
+      await cacheService.del(`settings:ot:second-salary:dept:${deptId}:div:${divKey}`);
+    }
 
     await settings.populate('department', 'name code');
     if (settings.division) {
