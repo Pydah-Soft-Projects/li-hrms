@@ -23,7 +23,7 @@ const {
 } = require('./allowanceDeductionResolverService');
 const statutoryDeductionService = require('./statutoryDeductionService');
 const Settings = require('../../settings/model/Settings');
-const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
+const { resolveEffectiveEarnedLeaveForDepartment } = require('../../leaves/services/earnedLeavePolicyResolver');
 const { createISTDate, extractISTComponents } = require('../../shared/utils/dateUtils');
 
 /**
@@ -989,8 +989,8 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     // When "Use EL as paid in payroll" is ON: add employee's EL balance to payable shifts (extra paid days). Employee does not "avail" these as leave; they are consumed when batch is completed.
     let elUsedInPayroll = 0;
     try {
-      const policy = await LeavePolicySettings.getSettings();
-      if (policy.earnedLeave && policy.earnedLeave.useAsPaidInPayroll !== false) {
+      const effectiveEL = await resolveEffectiveEarnedLeaveForDepartment(departmentId, divisionId);
+      if (effectiveEL.enabled && effectiveEL.useAsPaidInPayroll !== false) {
         const elBalance = Math.max(0, Number(employee.paidLeaves) || 0);
         if (elBalance > 0) {
           elUsedInPayroll = Math.min(elBalance, monthDays);
@@ -1001,7 +1001,7 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
         }
       }
     } catch (e) {
-      console.warn('[Payroll] LeavePolicySettings check failed:', e.message);
+      console.warn('[Payroll] Effective EL policy check failed:', e.message);
     }
 
     console.log('Attendance Data:');

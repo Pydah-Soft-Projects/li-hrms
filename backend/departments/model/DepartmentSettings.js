@@ -1,5 +1,36 @@
 const mongoose = require('mongoose');
 
+/** Optional overrides for global LeavePolicySettings.earnedLeave (per department / division). */
+const departmentEarnedLeaveOverrideSchema = new mongoose.Schema(
+  {
+    enabled: { type: Boolean, default: null },
+    earningType: {
+      type: String,
+      enum: ['attendance_based', 'fixed'],
+    },
+    useAsPaidInPayroll: { type: Boolean, default: null },
+    attendanceRules: {
+      minDaysForFirstEL: { type: Number, default: null, min: 1, max: 31 },
+      daysPerEL: { type: Number, default: null, min: 1, max: 31 },
+      maxELPerMonth: { type: Number, default: null, min: 0, max: 10 },
+      maxELPerYear: { type: Number, default: null, min: 0, max: 365 },
+      attendanceRanges: [
+        {
+          minDays: { type: Number, required: true },
+          maxDays: { type: Number, required: true },
+          elEarned: { type: Number, required: true },
+          description: { type: String, default: '', trim: true },
+        },
+      ],
+    },
+    fixedRules: {
+      elPerMonth: { type: Number, default: null, min: 0, max: 10 },
+      maxELPerYear: { type: Number, default: null, min: 0, max: 365 },
+    },
+  },
+  { _id: false }
+);
+
 /**
  * Department Settings Model
  * Stores department-specific settings that override global defaults
@@ -64,6 +95,11 @@ const departmentSettingsSchema = new mongoose.Schema(
         type: Number,
         default: null,
         min: 0,
+      },
+      // Full/partial EL policy overrides (merged with global leave policy earnedLeave)
+      earnedLeave: {
+        type: departmentEarnedLeaveOverrideSchema,
+        default: undefined,
       },
     },
 

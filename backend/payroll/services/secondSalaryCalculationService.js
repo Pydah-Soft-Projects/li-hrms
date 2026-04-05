@@ -12,6 +12,7 @@ const secondSalaryLoanAdvanceService = require('./secondSalaryLoanAdvanceService
 const SecondSalaryBatchService = require('./secondSalaryBatchService');
 const allowanceDeductionResolverService = require('./allowanceDeductionResolverService');
 const statutoryDeductionService = require('./statutoryDeductionService');
+const { resolveEffectiveEarnedLeaveForDepartment } = require('../../leaves/services/earnedLeavePolicyResolver');
 
 /**
  * Normalize overrides (same logic as regular payroll)
@@ -114,8 +115,6 @@ async function calculateSecondSalary(employeeId, month, userId, sharedContext = 
             department = await Department.findById(departmentId);
         }
 
-        // Get leave policy settings for EL-as-paid feature (Parity with Regular Payroll)
-        const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
         let elUsedInPayroll = 0;
         // NOTE: totalPayableShifts from PayRegisterSummary already includes paid leave days
         // (it is computed as present + OD + paid leaves in the regular payroll flow).
@@ -125,18 +124,17 @@ async function calculateSecondSalary(employeeId, month, userId, sharedContext = 
         const monthDays = attendanceSummary.totalDaysInMonth;
 
         try {
-            const policy = await LeavePolicySettings.getSettings();
-            if (policy.earnedLeave && policy.earnedLeave.useAsPaidInPayroll !== false) {
+            const effectiveEL = await resolveEffectiveEarnedLeaveForDepartment(departmentId, divisionId);
+            if (effectiveEL.enabled && effectiveEL.useAsPaidInPayroll !== false) {
                 const elBalance = Math.max(0, Number(employee.paidLeaves) || 0);
                 if (elBalance > 0) {
                     elUsedInPayroll = Math.min(elBalance, monthDays);
-                    // Add EL to both buckets
                     payableShifts = payableShifts + elUsedInPayroll;
                     paidLeaveDays = paidLeaveDays + elUsedInPayroll;
                 }
             }
         } catch (e) {
-            console.warn('[SecondSalary] LeavePolicySettings check failed:', e.message);
+            console.warn('[SecondSalary] Effective EL policy check failed:', e.message);
         }
 
         const modifiedAttendanceSummary = {
