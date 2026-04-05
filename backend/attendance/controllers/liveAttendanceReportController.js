@@ -290,6 +290,12 @@ exports.getLiveAttendanceReport = async (req, res) => {
           completedShift.push(employeeData);
           shiftStats[sId].completed++;
           if (departmentStats[dKey]) departmentStats[dKey].completed++;
+        } else if (!hasIn && hasOut && record.status === 'PARTIAL') {
+          // Single-shift checkout-only partial (OUT recorded, IN missing) — same bucket as incomplete day
+          employeeData.hoursWorked = 0;
+          currentlyWorking.push(employeeData);
+          shiftStats[sId].working++;
+          if (departmentStats[dKey]) departmentStats[dKey].working++;
         }
       }
     });
@@ -319,7 +325,9 @@ exports.getLiveAttendanceReport = async (req, res) => {
           shiftBreakdown: Object.values(shiftStats),
           departmentBreakdown: finalDepartmentBreakdown
         },
-        currentlyWorking: currentlyWorking.sort((a, b) => new Date(b.inTime) - new Date(a.inTime)),
+        currentlyWorking: currentlyWorking.sort(
+          (a, b) => new Date(b.inTime || b.outTime || 0) - new Date(a.inTime || a.outTime || 0)
+        ),
         completedShift: completedShift.sort((a, b) => new Date(b.outTime || b.inTime) - new Date(a.outTime || a.inTime))
       }
     });
