@@ -1,4 +1,5 @@
 const OvertimeSettings = require('../model/OvertimeSettings');
+const cacheService = require('../../shared/services/cacheService');
 
 /**
  * Overtime Settings Controller
@@ -9,76 +10,103 @@ const OvertimeSettings = require('../model/OvertimeSettings');
 // @route   GET /api/overtime/settings
 // @access  Private
 exports.getSettings = async (req, res) => {
-    try {
-        let settings = await OvertimeSettings.getActiveSettings();
+  try {
+    let settings = await OvertimeSettings.getActiveSettings();
 
-        // If no settings exist, return defaults
-        if (!settings) {
-            settings = {
-                payPerHour: 0,
-                multiplier: 1.5,
-                minOTHours: 0,
-                roundingMinutes: 15,
-                workflow: {
-                    isEnabled: false,
-                    steps: [],
-                    finalAuthority: { role: 'manager', anyHRCanApprove: false }
-                },
-                isDefault: true,
-            };
-        }
-
-        res.status(200).json({
-            success: true,
-            data: settings,
-        });
-    } catch (error) {
-        console.error('Error fetching OT settings:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message || 'Failed to fetch settings',
-        });
+    if (!settings) {
+      settings = {
+        payPerHour: 0,
+        multiplier: 1.5,
+        minOTHours: 0,
+        roundingMinutes: 15,
+        recognitionMode: 'none',
+        thresholdHours: null,
+        roundUpIfFractionMinutesGte: null,
+        autoCreateOtRequest: false,
+        payCalculationMode: 'flat_per_hour',
+        otSalaryBasis: 'gross',
+        daysPerMonthMode: 'calendar',
+        fixedDaysPerMonth: 30,
+        defaultWorkingHoursPerDay: 8,
+        workflow: {
+          isEnabled: false,
+          steps: [],
+          finalAuthority: { role: 'manager', anyHRCanApprove: false },
+        },
+        isDefault: true,
+      };
     }
+
+    res.status(200).json({
+      success: true,
+      data: settings,
+    });
+  } catch (error) {
+    console.error('Error fetching OT settings:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to fetch settings',
+    });
+  }
 };
 
 // @desc    Save OT settings
 // @route   POST /api/overtime/settings
 // @access  Private (Super Admin)
 exports.saveSettings = async (req, res) => {
-    try {
-        const { payPerHour, multiplier, minOTHours, roundingMinutes, workflow } = req.body;
+  try {
+    const body = req.body || {};
+    let settings = await OvertimeSettings.getActiveSettings();
 
-        // Find existing settings or create new
-        let settings = await OvertimeSettings.getActiveSettings();
-
-        if (!settings) {
-            settings = new OvertimeSettings({
-                createdBy: req.user._id,
-            });
-        }
-
-        // Update settings
-        if (payPerHour !== undefined) settings.payPerHour = payPerHour;
-        if (multiplier !== undefined) settings.multiplier = multiplier;
-        if (minOTHours !== undefined) settings.minOTHours = minOTHours;
-        if (roundingMinutes !== undefined) settings.roundingMinutes = roundingMinutes;
-        if (workflow !== undefined) settings.workflow = workflow;
-
-        settings.updatedBy = req.user._id;
-        settings.isActive = true;
-
-        await settings.save();
-
-        res.status(200).json({
-            success: true,
-            message: 'OT settings saved successfully',
-            data: settings,
-        });
-    } catch (error) {
-        console.error('Error saving OT settings:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message || 'Failed to save settings',
-        });
+    if (!settings) {
+      settings = new OvertimeSettings({
+        createdBy: req.user._id,
+      });
     }
+
+    const assignIfDefined = (key) => {
+      if (body[key] !== undefined) settings[key] = body[key];
+    };
+
+    [
+      'payPerHour',
+      'multiplier',
+      'minOTHours',
+      'roundingMinutes',
+      'workflow',
+      'recognitionMode',
+      'thresholdHours',
+      'roundUpIfFractionMinutesGte',
+      'autoCreateOtRequest',
+      'payCalculationMode',
+      'otSalaryBasis',
+      'daysPerMonthMode',
+      'fixedDaysPerMonth',
+      'defaultWorkingHoursPerDay',
+    ].forEach(assignIfDefined);
+
+    settings.updatedBy = req.user._id;
+    settings.isActive = true;
+
+    await settings.save();
+
+    try {
+      await cacheService.delByPattern('settings:ot:v3:*');
+      await cacheService.delByPattern('settings:ot:second-salary:*');
+    } catch (e) {
+      /* non-fatal */
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'OT settings saved successfully',
+      data: settings,
+    });
+  } catch (error) {
+    console.error('Error saving OT settings:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to save settings',
+    });
+  }
 };

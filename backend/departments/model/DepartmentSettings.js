@@ -305,6 +305,91 @@ const departmentSettingsSchema = new mongoose.Schema(
         default: null, // null = use global default
         min: 0,
       },
+      /** Nearest N minutes for OT duration (0 = inherit global; global default 15) */
+      roundingMinutes: {
+        type: Number,
+        default: null,
+        min: 0,
+        max: 60,
+      },
+      recognitionMode: {
+        type: String,
+        default: null,
+        trim: true,
+      },
+      thresholdHours: {
+        type: Number,
+        default: null,
+        min: 0,
+      },
+      roundUpIfFractionMinutesGte: {
+        type: Number,
+        default: null,
+        min: 0,
+        max: 59,
+      },
+      autoCreateOtRequest: {
+        type: Boolean,
+        default: null,
+      },
+      payCalculationMode: {
+        type: String,
+        default: null,
+        trim: true,
+      },
+      otSalaryBasis: {
+        type: String,
+        default: null,
+        trim: true,
+      },
+      daysPerMonthMode: {
+        type: String,
+        default: null,
+        trim: true,
+      },
+      fixedDaysPerMonth: {
+        type: Number,
+        default: null,
+        min: 1,
+        max: 31,
+      },
+      defaultWorkingHoursPerDay: {
+        type: Number,
+        default: null,
+        min: 0.5,
+        max: 24,
+      },
+      /** Department default x (hours per day) when employee group has no override */
+      workingHoursPerDay: {
+        type: Number,
+        default: null,
+        min: 0.5,
+        max: 24,
+      },
+      /** Per employee-group x */
+      groupWorkingHours: {
+        type: [
+          {
+            employeeGroupId: {
+              type: mongoose.Schema.Types.ObjectId,
+              ref: 'EmployeeGroup',
+              required: true,
+            },
+            hoursPerDay: {
+              type: Number,
+              required: true,
+              min: 0.5,
+              max: 24,
+            },
+          },
+        ],
+        default: undefined,
+      },
+      otMultiplier: {
+        type: Number,
+        default: null,
+        min: 0,
+      },
     },
 
     // Attendance Deduction Rules (Combined Late-in + Early-out)

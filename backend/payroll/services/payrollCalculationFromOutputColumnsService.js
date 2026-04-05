@@ -270,7 +270,16 @@ async function runRequiredServices(required, record, employee, employeeId, month
 
   if (required.needsOT) {
     const departmentIdStr = (employee?.department_id?._id || employee?.department_id)?.toString() || departmentId?.toString();
-    const otPayResult = await otPayService.calculateOTPay(attendanceSummary.totalOTHours || 0, departmentIdStr);
+    const divStr = (employee?.division_id?._id || employee?.division_id)?.toString() || divisionId?.toString() || null;
+    const otPayResult = await otPayService.calculateOTPay(
+      attendanceSummary.totalOTHours || 0,
+      departmentIdStr,
+      divStr,
+      {
+        employee,
+        totalDaysInMonth: attendanceSummary.totalDaysInMonth,
+      }
+    );
     if (!record.earnings) record.earnings = {};
     record.earnings.otPay = otPayResult.otPay ?? 0;
     record.earnings.otHours = attendanceSummary.totalOTHours ?? 0;
@@ -797,7 +806,16 @@ async function resolveFieldValue(fieldPath, employee, employeeId, month, payRegi
   // earnings.otPay, otHours, otRatePerHour
   if (path.startsWith('earnings.ot')) {
     const departmentIdStr = (employee?.department_id?._id || employee?.department_id)?.toString() || departmentId?.toString();
-    const otPayResult = await otPayService.calculateOTPay(attendanceSummary.totalOTHours || 0, departmentIdStr);
+    const divStr = (employee?.division_id?._id || employee?.division_id)?.toString() || divisionId?.toString() || null;
+    const otPayResult = await otPayService.calculateOTPay(
+      attendanceSummary.totalOTHours || 0,
+      departmentIdStr,
+      divStr,
+      {
+        employee,
+        totalDaysInMonth: attendanceSummary.totalDaysInMonth,
+      }
+    );
     if (!record.earnings) record.earnings = {};
     record.earnings.otPay = otPayResult.otPay || 0;
     record.earnings.otHours = attendanceSummary.totalOTHours || 0;
