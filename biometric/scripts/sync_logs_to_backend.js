@@ -8,20 +8,36 @@ const readline = require('readline');
  * BIOMETRIC LOG RESYNC SCRIPT
  * ============================================================
  * This script sends attendance logs from the local biometric_logs database to
- * the main backend HRMS application, limited to one division (default: PYDAHSOFT PVT LTD).
+ * the main backend HRMS application, usually scoped to one division (default: Pydahsoft Pvt Ltd).
  * 
- * Scope: Only attendance for employees in division "Pydahsoft Pvt Ltd" (override with SYNC_DIVISION_NAME).
- * Requires HRMS_MONGODB_URI in .env to resolve division → departments → employee numbers.
+ * Division scope: Set SYNC_DIVISION_NAME (default below) or SYNC_DEPT. HRMS_MONGODB_URI resolves
+ * division → departments → employee numbers for filtering biometric logs.
+ *
+ * All divisions / entire DB in range: set SYNC_SCOPE=all or SYNC_DIVISION_NAME=all — no HRMS scope;
+ * every AttendanceLog in the date window is sent (backend still skips unknown emp_no).
+ *
+ * Payroll month SYNC_MONTH=YYYY-MM means 26th of previous calendar month through 25th of YYYY-MM
+ * (e.g. 2026-03 → 2026-02-26 .. 2026-03-25 UTC).
  *
  * Usage (PowerShell - Windows):
  *   Specific Employee: $env:SYNC_EMP="1832"; $env:SYNC_MONTH="2026-03"; node sync_logs_to_backend.js
- *   All Employees:     $env:SYNC_MONTH="2026-03"; node scripts/sync_logs_to_backend.js
- *   Date Range:        $env:SYNC_START="2026-03-01"; $env:SYNC_END="2026-03-31"; node sync_logs_to_backend.js
- * 
+ *   All in division:   $env:SYNC_MONTH="2026-03"; node scripts/sync_logs_to_backend.js
+ *   All logs in range: $env:SYNC_SCOPE="all"; $env:SYNC_START="2026-02-26"; $env:SYNC_END="2026-03-25"; node scripts/sync_logs_to_backend.js
+ *   All logs (payroll): $env:SYNC_SCOPE="all"; $env:SYNC_MONTH="2026-03"; node scripts/sync_logs_to_backend.js
+ *
  * Usage (Bash - Linux/macOS):
- *   Specific Employee: SYNC_EMP="1832" SYNC_MONTH="2026-03" node scripts/sync_logs_to_backend.js
+ *   SYNC_SCOPE=all SYNC_MONTH=2026-03 node scripts/sync_logs_to_backend.js
  * ============================================================
  */
+
+const DEFAULT_SYNC_DIVISION_NAME = 'Pydahsoft Pvt Ltd';
+
+/** Entire biometric DB in date range — no division/department employee filter */
+function isAllScope() {
+    const scope = String(process.env.SYNC_SCOPE || '').trim().toLowerCase();
+    const div = String(process.env.SYNC_DIVISION_NAME || '').trim().toLowerCase();
+    return scope === 'all' || div === 'all';
+}
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:5000';
@@ -188,54 +204,68 @@ async function main() {
         await mongoose.connect(mongoURI);
         console.log(`✅ Connected to: ${mongoURI}\n`);
 
-        const hrmsMongoUri = process.env.HRMS_MONGODB_URI;
-        if (!hrmsMongoUri) {
-            throw new Error('Missing HRMS_MONGODB_URI in biometric .env (needed to scope sync by division).');
-        }
+        const allScope = isAllScope();
+        let scope = {
+            division: { name: 'ALL', code: '' },
+            departments: [],
+            employeeIds: [],
+            activeDeptName: null,
+        };
 
-        hrmsConn = mongoose.createConnection(hrmsMongoUri, { maxPoolSize: 5 });
-        await hrmsConn.asPromise();
-        console.log(`✅ HRMS DB connected: ${hrmsMongoUri}\n`);
-
-        const SYNC_DIVISION_NAME = process.env.SYNC_DIVISION_NAME ;
-        let SYNC_DEPT = process.env.SYNC_DEPT;
-        let scope = await loadDivisionScope(hrmsConn, SYNC_DIVISION_NAME, SYNC_DEPT);
-
-        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        console.log(`Division (sync scope): ${scope.division.name} [${scope.division.code || 'no code'}]`);
-
-        if (scope.activeDeptName) {
-            console.log(`Department Filter     : ${scope.activeDeptName}`);
-        }
-
-        console.log(`Departments in this division (${scope.departments.length}):`);
-        scope.departments.forEach((d, index) => {
-            console.log(`   ${String(index + 1).padStart(2)}. ${d.name}${d.code ? ` (${d.code})` : ''}`);
-        });
-
-        // Interactive selection if not provided in env
-        if (!SYNC_DEPT && process.stdin.isTTY) {
-            const input = await prompt(`\nSelect Department Number (1-${scope.departments.length}) or press Enter for ALL: `);
-            if (input && !isNaN(input)) {
-                const idx = parseInt(input) - 1;
-                if (scope.departments[idx]) {
-                    SYNC_DEPT = scope.departments[idx].name;
-                    console.log(`   ➜ Selected: ${SYNC_DEPT}`);
-                    // Refresh scope with specific department
-                    scope = await loadDivisionScope(hrmsConn, SYNC_DIVISION_NAME, SYNC_DEPT);
-                } else {
-                    console.log(`   ➜ Invalid index. Syncing all departments.`);
-                }
-            } else {
-                console.log(`   ➜ Syncing all departments.`);
+        if (allScope) {
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            console.log('Sync scope: ALL (SYNC_SCOPE=all or SYNC_DIVISION_NAME=all)');
+            console.log('   No division/department filter — all biometric logs in the date range.');
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+        } else {
+            const hrmsMongoUri = process.env.HRMS_MONGODB_URI;
+            if (!hrmsMongoUri) {
+                throw new Error('Missing HRMS_MONGODB_URI in biometric .env (needed to scope sync by division).');
             }
-        }
 
-        console.log(`Active employees in division: ${scope.employeeIds.length}`);
-        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+            hrmsConn = mongoose.createConnection(hrmsMongoUri, { maxPoolSize: 5 });
+            await hrmsConn.asPromise();
+            console.log(`✅ HRMS DB connected: ${hrmsMongoUri}\n`);
 
-        if (scope.employeeIds.length === 0) {
-            console.warn('⚠️  No active employees found for this division — no logs will match.');
+            const SYNC_DIVISION_NAME = process.env.SYNC_DIVISION_NAME || DEFAULT_SYNC_DIVISION_NAME;
+            let SYNC_DEPT = process.env.SYNC_DEPT;
+            scope = await loadDivisionScope(hrmsConn, SYNC_DIVISION_NAME, SYNC_DEPT);
+
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            console.log(`Division (sync scope): ${scope.division.name} [${scope.division.code || 'no code'}]`);
+
+            if (scope.activeDeptName) {
+                console.log(`Department Filter     : ${scope.activeDeptName}`);
+            }
+
+            console.log(`Departments in this division (${scope.departments.length}):`);
+            scope.departments.forEach((d, index) => {
+                console.log(`   ${String(index + 1).padStart(2)}. ${d.name}${d.code ? ` (${d.code})` : ''}`);
+            });
+
+            // Interactive selection if not provided in env
+            if (!SYNC_DEPT && process.stdin.isTTY) {
+                const input = await prompt(`\nSelect Department Number (1-${scope.departments.length}) or press Enter for ALL: `);
+                if (input && !isNaN(input)) {
+                    const idx = parseInt(input) - 1;
+                    if (scope.departments[idx]) {
+                        SYNC_DEPT = scope.departments[idx].name;
+                        console.log(`   ➜ Selected: ${SYNC_DEPT}`);
+                        scope = await loadDivisionScope(hrmsConn, SYNC_DIVISION_NAME, SYNC_DEPT);
+                    } else {
+                        console.log(`   ➜ Invalid index. Syncing all departments.`);
+                    }
+                } else {
+                    console.log(`   ➜ Syncing all departments.`);
+                }
+            }
+
+            console.log(`Active employees in division: ${scope.employeeIds.length}`);
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+
+            if (scope.employeeIds.length === 0) {
+                console.warn('⚠️  No active employees found for this division — no logs will match.');
+            }
         }
 
         // ── STEP 2: Resend logs to backend (Filtered by month) ───────────────────
@@ -268,14 +298,18 @@ async function main() {
 
         if (SYNC_EMP) {
             const want = String(SYNC_EMP).trim();
-            const match = scope.employeeIds.find((id) => id.toUpperCase() === want.toUpperCase());
-            if (!match) {
-                throw new Error(
-                    `SYNC_EMP "${SYNC_EMP}" is not an active employee in division "${scope.division.name}".`,
-                );
+            if (allScope) {
+                query.employeeId = want;
+            } else {
+                const match = scope.employeeIds.find((id) => id.toUpperCase() === want.toUpperCase());
+                if (!match) {
+                    throw new Error(
+                        `SYNC_EMP "${SYNC_EMP}" is not an active employee in division "${scope.division.name}".`,
+                    );
+                }
+                query.employeeId = match;
             }
-            query.employeeId = match;
-        } else {
+        } else if (!allScope) {
             query.employeeId = { $in: scope.employeeIds };
         }
 

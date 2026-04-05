@@ -462,15 +462,56 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       }
     }
 
-    // Sandwich absent rule:
-    // if one or more consecutive WO/HOL days are between two ABSENT working days,
-    // convert those WO/HOL days to working days (so they are not counted as WO/HOL).
-    const isStrictAbsentWorkingDay = (dStr) => {
-      if (!dStr || dStr > todayIstStr || isOutsideEmploymentBound(dStr)) return false;
+    /**
+     * WO/HOL sandwich (week-off and holiday blocks use the same rules).
+     * Neighbor types (calendar day before / after the block):
+     * - LEAVE: approved leave on that date (map has day.leaves.length > 0)
+     * - ABSENT: AttendanceDaily exists and status is ABSENT
+     * - PRESENT: AttendanceDaily exists, not ABSENT, and no leave on that date
+     * - NONE: no leave and no attendance (or out of range — handled separately)
+     *
+     * | Before | After | What we do with the WO/HOL block |
+     * | LEAVE | LEAVE | Remove WO/HOL; add full-day LOP (sandwich) leave on each block day |
+     * | LEAVE | ABSENT | Remove WO/HOL; add full-day LOP (sandwich) on each block day |
+     * | ABSENT | LEAVE | Same as row above |
+     * | LEAVE | PRESENT | Keep as WO/HOL (no change) |
+     * | PRESENT | LEAVE | Keep as WO/HOL (no change) |
+     * | ABSENT | ABSENT | Remove WO/HOL only (legacy sandwich → absent / pay-register engine) |
+     * | PRESENT | PRESENT | Keep as WO/HOL |
+     * | ABSENT | PRESENT | Keep as WO/HOL |
+     * | PRESENT | ABSENT | Keep as WO/HOL |
+     * | NONE or missing neighbor (month edge) | any / any | Keep as WO/HOL |
+     */
+    const classifySandwichNeighbor = (dStr) => {
+      if (!dStr || dStr > todayIstStr || isOutsideEmploymentBound(dStr)) return null;
       const d = dailyStatsMap.get(dStr);
-      if (!d) return false;
-      if (!d.attendance) return false;
-      return isAbsentStatus(d.attendance.status);
+      if (!d) return null;
+      if (d.leaves.length > 0) return 'LEAVE';
+      if (!d.attendance) return 'NONE';
+      if (isAbsentStatus(d.attendance.status)) return 'ABSENT';
+      return 'PRESENT';
+    };
+
+    const stripWoHolFromBlockDay = (blockDate, blockDay) => {
+      if (blockDay.isWO) {
+        blockDay.isWO = false;
+        weekOffDates.delete(blockDate);
+      }
+      if (blockDay.isHOL) {
+        blockDay.isHOL = false;
+        holidayDates.delete(blockDate);
+      }
+    };
+
+    const pushSandwichLopLeave = (blockDay) => {
+      if (blockDay.leaves.some((l) => l && l._sandwichLop)) return;
+      blockDay.leaves.push({
+        isHalfDay: false,
+        numberOfDays: 1,
+        leaveType: 'LOP (sandwich)',
+        leaveNature: 'lop',
+        _sandwichLop: true,
+      });
     };
 
     let idx = 0;
@@ -496,21 +537,38 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
 
       const prevDate = idx > 0 ? allDates[idx - 1] : null;
       const nextDate = endIdx + 1 < allDates.length ? allDates[endIdx + 1] : null;
-      if (isStrictAbsentWorkingDay(prevDate) && isStrictAbsentWorkingDay(nextDate)) {
+      const prevKind = classifySandwichNeighbor(prevDate);
+      const nextKind = classifySandwichNeighbor(nextDate);
+
+      let stripWoHolOnly = false;
+      let stripAndLop = false;
+
+      if (prevKind != null && nextKind != null) {
+        if (prevKind === 'ABSENT' && nextKind === 'ABSENT') {
+          stripWoHolOnly = true;
+        } else if (prevKind === 'LEAVE' && nextKind === 'LEAVE') {
+          stripAndLop = true;
+        } else if (
+          (prevKind === 'LEAVE' && nextKind === 'ABSENT')
+          || (prevKind === 'ABSENT' && nextKind === 'LEAVE')
+        ) {
+          stripAndLop = true;
+        }
+        // LEAVE+PRESENT, PRESENT+LEAVE, PRESENT+PRESENT, ABSENT+PRESENT, PRESENT+ABSENT, NONE*: no flags
+      }
+
+      if (stripWoHolOnly || stripAndLop) {
         for (let k = idx; k <= endIdx; k += 1) {
           const blockDate = allDates[k];
           const blockDay = dailyStatsMap.get(blockDate);
           if (!blockDay) continue;
-          if (blockDay.isWO) {
-            blockDay.isWO = false;
-            weekOffDates.delete(blockDate);
-          }
-          if (blockDay.isHOL) {
-            blockDay.isHOL = false;
-            holidayDates.delete(blockDate);
+          stripWoHolFromBlockDay(blockDate, blockDay);
+          if (stripAndLop) {
+            pushSandwichLopLeave(blockDay);
           }
         }
       }
+
       idx = endIdx + 1;
     }
 
