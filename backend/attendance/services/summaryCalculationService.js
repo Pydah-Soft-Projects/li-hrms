@@ -466,9 +466,9 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
      * WO/HOL sandwich (week-off and holiday blocks use the same rules).
      * Neighbor types (calendar day before / after the block):
      * - LEAVE: approved leave on that date (map has day.leaves.length > 0)
-     * - ABSENT: AttendanceDaily exists and status is ABSENT
-     * - PRESENT: AttendanceDaily exists, not ABSENT, and no leave on that date
-     * - NONE: no leave and no attendance (or out of range — handled separately)
+     * - ABSENT: AttendanceDaily exists and status is ABSENT, and no approved day-level OD on that date
+     * - PRESENT: not LEAVE/ABSENT as above — includes OD-only days and OD with daily status ABSENT
+     * - NONE: no leave, no attendance, no approved day-level OD (or out of range — handled separately)
      *
      * | Before | After | What we do with the WO/HOL block |
      * | LEAVE | LEAVE | Remove WO/HOL; add full-day LOP (sandwich) leave on each block day |
@@ -487,9 +487,12 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       const d = dailyStatsMap.get(dStr);
       if (!d) return null;
       if (d.leaves.length > 0) return 'LEAVE';
-      if (!d.attendance) return 'NONE';
-      if (isAbsentStatus(d.attendance.status)) return 'ABSENT';
-      return 'PRESENT';
+      const hasDayOd = d.ods.length > 0;
+      if (!d.attendance) {
+        return hasDayOd ? 'PRESENT' : 'NONE';
+      }
+      if (hasDayOd || !isAbsentStatus(d.attendance.status)) return 'PRESENT';
+      return 'ABSENT';
     };
 
     const stripWoHolFromBlockDay = (blockDate, blockDay) => {
