@@ -1,8 +1,21 @@
+const fs = require('fs').promises;
+const path = require('path');
 const ZKLib = require('node-zklib');
+const { COMMANDS } = require('node-zklib/constants');
 const AttendanceLog = require('../models/AttendanceLog');
 const Device = require('../models/Device');
+const AdmsRawLog = require('../models/AdmsRawLog');
+const DeviceCommand = require('../models/DeviceCommand');
+const admsParser = require('../utils/admsParser');
+const { uploadAttlogBackupFile } = require('../utils/attlogS3Upload');
 const logger = require('../utils/logger');
 const DeviceUser = require('../models/DeviceUser');
+
+const ADMS_ATTLOG_SYNC_COMMAND = 'DATA QUERY ATTLOG';
+
+/** Directory for JSON backups pulled from devices (override with DEVICE_ATTLOG_BACKUP_DIR). */
+const ATTLOG_BACKUP_ROOT = process.env.DEVICE_ATTLOG_BACKUP_DIR
+    || path.join(__dirname, '../../data/device-attlog-backups');
 
 // Map device status codes to log types
 // Note: These mappings may vary by device model - adjust as needed
@@ -45,13 +58,35 @@ class DeviceService {
     }
 
     /**
-     * Connect to a single device and fetch logs
+     * Latest punch time seen in a raw getAttendances() array (for lastLogTimestamp).
      */
-    async fetchLogsFromDevice(device) {
+    _maxPunchTimeFromRawList(rows) {
+        let maxT = null;
+        for (const record of rows || []) {
+            const t = this.getRecordTime(record);
+            if (t && (!maxT || t > maxT)) maxT = t;
+        }
+        return maxT;
+    }
+
+    /**
+     * Connect to a single device and fetch logs
+     * @param {object} device — Device doc / lean object
+     * @param {object} [options]
+     * @param {string} [options.startDate] — YYYY-MM-DD inclusive (server parses as local start-of-day)
+     * @param {string} [options.endDate] — YYYY-MM-DD inclusive (local end-of-day)
+     * If startDate and/or endDate set, scans full device buffer and inserts only punches in range (backfill-friendly).
+     * If omitted, keeps incremental behaviour (only punches newer than lastLogTimestamp).
+     */
+    async fetchLogsFromDevice(device, options = {}) {
+        const startDate = options.startDate && String(options.startDate).trim() ? String(options.startDate).trim() : undefined;
+        const endDate = options.endDate && String(options.endDate).trim() ? String(options.endDate).trim() : undefined;
+        const rangeMode = Boolean(startDate || endDate);
+
         let zkInstance = null;
 
         try {
-            logger.info(`Connecting to device: ${device.name} (${device.ip}:${device.port})`);
+            logger.info(`Connecting to device: ${device.name} (${device.ip}:${device.port})${rangeMode ? ` [range ${startDate || '…'} → ${endDate || '…'}]` : ''}`);
 
             // Create ZKLib instance
             zkInstance = new ZKLib(device.ip, device.port, 10000, 4000);
@@ -82,8 +117,11 @@ class DeviceService {
                 // Get the last log timestamp for this device to perform incremental sync
                 const deviceDoc = await Device.findOne({ deviceId: device.deviceId });
                 const lastLogTimestamp = deviceDoc ? deviceDoc.lastLogTimestamp : null;
-                if (lastLogTimestamp) {
+                if (!rangeMode && lastLogTimestamp) {
                     logger.info(`Performing incremental sync for ${device.name}. Last log: ${lastLogTimestamp.toISOString()}`);
+                }
+                if (rangeMode) {
+                    logger.info(`Range sync for ${device.name}: window ${startDate || '(start open)'} → ${endDate || '(end open)'}`);
                 }
 
                 // Sort records newest first to allow early exit
@@ -111,16 +149,30 @@ class DeviceService {
                 const bulkOps = [];
                 const logsToSave = [];
 
+                let inRangeCount = 0;
+
                 for (const record of sortedRecords) {
                     try {
                         const currentTimestamp = new Date(record.recordTime || record.timestamp || record.time);
+                        if (Number.isNaN(currentTimestamp.getTime())) {
+                            continue;
+                        }
 
-                        // Incremental Sync Skip
-                        if (lastLogTimestamp && currentTimestamp <= lastLogTimestamp) {
+                        if (rangeMode) {
+                            const inWindow = this.filterDeviceAttendanceRecords([record], {
+                                startDate,
+                                endDate
+                            }).length > 0;
+                            if (!inWindow) {
+                                continue;
+                            }
+                            inRangeCount++;
+                        } else if (lastLogTimestamp && currentTimestamp <= lastLogTimestamp) {
+                            // Incremental: sorted newest first — stop once we hit already-synced data
                             break;
                         }
 
-                        // Track newest
+                        // Track newest among processed inserts
                         if (!newestLogTimestamp || currentTimestamp > newestLogTimestamp) {
                             newestLogTimestamp = currentTimestamp;
                         }
@@ -212,18 +264,20 @@ class DeviceService {
                 console.log(`Device IP: ${device.ip}:${device.port}`);
                 console.log(`Total Records Fetched: ${attendances.data.length}`);
                 console.log(`New Logs Saved: ${savedLogs.length}`);
-                console.log(`Last Log Timestamp: ${newestLogTimestamp ? newestLogTimestamp.toISOString() : 'N/A'}`);
+                const deviceLatestPunch = this._maxPunchTimeFromRawList(attendances.data);
+                const lastLogToStore = deviceLatestPunch || newestLogTimestamp || lastLogTimestamp;
+                console.log(`Last punch on device (max): ${deviceLatestPunch ? deviceLatestPunch.toISOString() : 'N/A'}`);
+                console.log(`lastLogTimestamp (device doc): ${lastLogToStore ? lastLogToStore.toISOString() : 'N/A'}`);
                 console.log(`Sync Completed At: ${new Date().toISOString()}`);
                 console.log('═'.repeat(80));
                 console.log('\n');
 
-                // Update device sync status and track the latest log timestamp
                 await Device.findOneAndUpdate(
                     { deviceId: device.deviceId },
                     {
                         lastSyncAt: new Date(),
                         lastSyncStatus: 'success',
-                        lastLogTimestamp: newestLogTimestamp
+                        lastLogTimestamp: lastLogToStore
                     }
                 ).catch(err => { });
 
@@ -233,8 +287,12 @@ class DeviceService {
                 return {
                     success: true,
                     device: device.name,
+                    deviceId: device.deviceId,
                     totalFetched: attendances.data.length,
-                    newLogs: savedLogs.length
+                    newLogs: savedLogs.length,
+                    rangeMode,
+                    dateRange: rangeMode ? { startDate: startDate || null, endDate: endDate || null } : null,
+                    rowsInRange: rangeMode ? inRangeCount : undefined
                 };
 
             } catch (innerError) {
@@ -314,9 +372,606 @@ class DeviceService {
     }
 
     /**
+     * Normalize employee / user id from a ZK attendance row (TCP or mixed shapes).
+     */
+    getRecordEmployeeKey(record) {
+        const v = record.deviceUserId ?? record.userId ?? record.uid ?? record.id;
+        if (v === undefined || v === null) return '';
+        return String(v).trim();
+    }
+
+    getRecordTime(record) {
+        const t = record.recordTime ?? record.timestamp ?? record.time;
+        if (!t) return null;
+        const d = t instanceof Date ? t : new Date(t);
+        return Number.isNaN(d.getTime()) ? null : d;
+    }
+
+    /**
+     * Parse YYYY-MM-DD into local start-of-day (server timezone).
+     */
+    parseDateOnlyStart(dateStr) {
+        if (!dateStr || typeof dateStr !== 'string') return null;
+        const m = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (!m) return null;
+        const y = parseInt(m[1], 10);
+        const mo = parseInt(m[2], 10) - 1;
+        const d = parseInt(m[3], 10);
+        return new Date(y, mo, d, 0, 0, 0, 0);
+    }
+
+    parseDateOnlyEnd(dateStr) {
+        if (!dateStr || typeof dateStr !== 'string') return null;
+        const m = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (!m) return null;
+        const y = parseInt(m[1], 10);
+        const mo = parseInt(m[2], 10) - 1;
+        const d = parseInt(m[3], 10);
+        return new Date(y, mo, d, 23, 59, 59, 999);
+    }
+
+    normalizeEmployeeIdList(employeeIds) {
+        if (!employeeIds) return null;
+        const arr = Array.isArray(employeeIds) ? employeeIds : String(employeeIds).split(/[\s,]+/);
+        const set = new Set(arr.map((x) => String(x).trim()).filter(Boolean));
+        return set.size ? set : null;
+    }
+
+    /**
+     * Filter raw device rows by optional date range and/or employee numbers.
+     */
+    filterDeviceAttendanceRecords(records, { startDate, endDate, employeeIds } = {}) {
+        const start = startDate ? this.parseDateOnlyStart(startDate) : null;
+        const end = endDate ? this.parseDateOnlyEnd(endDate) : null;
+        const idSet = this.normalizeEmployeeIdList(employeeIds);
+
+        return records.filter((rec) => {
+            const ts = this.getRecordTime(rec);
+            if (!ts) return false;
+            if (start && ts < start) return false;
+            if (end && ts > end) return false;
+            if (idSet) {
+                const key = this.getRecordEmployeeKey(rec);
+                if (!idSet.has(key)) return false;
+            }
+            return true;
+        });
+    }
+
+    async ensureBackupDir() {
+        await fs.mkdir(ATTLOG_BACKUP_ROOT, { recursive: true });
+    }
+
+    async _uploadAttlogBackupToS3IfEnabled(filePath, { deviceId, operationTag } = {}) {
+        try {
+            return await uploadAttlogBackupFile(filePath, { deviceId, operationTag });
+        } catch (e) {
+            logger.error('S3 upload error:', e.message);
+            return { uploaded: false, error: e.message };
+        }
+    }
+
+    /**
+     * Connect via TCP and read all attendance rows from the terminal (no DB write).
+     */
+    async pullAllAttendancesFromDevice(device) {
+        const zkInstance = new ZKLib(device.ip, device.port, 10000, 4000);
+        await zkInstance.createSocket();
+        try {
+            const attendances = await zkInstance.getAttendances();
+            const info = await zkInstance.getInfo().catch(() => null);
+            return { zkInstance, rows: attendances.data || [], info };
+        } catch (e) {
+            await zkInstance.disconnect().catch(() => { });
+            throw e;
+        }
+    }
+
+    /**
+     * Clears only attendance / punch records on the terminal.
+     * Uses node-zklib `clearAttendanceLog()` → ZK CMD_CLEAR_ATTLOG (0x000f)—not CMD_CLEAR_DATA.
+     * Per ZK spec, user accounts, fingerprint templates, face data, and cards are separate from ATTLOG;
+     * do not call CMD_CLEAR_DATA here (that command can wipe users or templates depending on payload).
+     */
+    async clearAttendanceLogOnConnection(zkInstance) {
+        await zkInstance.disableDevice();
+        await zkInstance.clearAttendanceLog();
+        await zkInstance.executeCmd(COMMANDS.CMD_REFRESHDATA, '');
+        await zkInstance.enableDevice();
+    }
+
+    /**
+     * Write JSON from rows already returned by the terminal over TCP (`getAttendances`).
+     * Never reads MongoDB AttendanceLog.
+     */
+    async writeAttendanceBackupFromDeviceRows(device, allRows, deviceInfo, {
+        startDate = null,
+        endDate = null,
+        employeeIds = null,
+        includeAllInFile = true,
+        operationTag = null
+    } = {}) {
+        const filtered = (startDate || endDate || this.normalizeEmployeeIdList(employeeIds))
+            ? this.filterDeviceAttendanceRecords(allRows, { startDate, endDate, employeeIds })
+            : allRows;
+
+        const recordsForFile = includeAllInFile ? allRows : filtered;
+
+        await this.ensureBackupDir();
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const safeId = String(device.deviceId).replace(/[^a-zA-Z0-9-_]/g, '_');
+        const filename = `attlog_${safeId}_${stamp}.json`;
+        const filePath = path.join(ATTLOG_BACKUP_ROOT, filename);
+
+        const payload = {
+            dataSource: 'zk_tcp_device_getAttendances',
+            note: 'Rows are exactly what was read from the physical device over TCP. Not loaded from MongoDB.',
+            exportedAt: new Date().toISOString(),
+            operationTag,
+            deviceId: device.deviceId,
+            deviceName: device.name,
+            deviceIp: device.ip,
+            devicePort: device.port,
+            filterApplied: { startDate: startDate || null, endDate: endDate || null, employeeIds: employeeIds || null },
+            rowsInDeviceSnapshot: allRows.length,
+            rowsWrittenToFile: recordsForFile.length,
+            rowsMatchingFilter: filtered.length,
+            deviceInfo: deviceInfo || null,
+            records: recordsForFile
+        };
+
+        await fs.writeFile(filePath, JSON.stringify(payload, null, 2), 'utf8');
+
+        logger.info(`Attendance backup written (from device TCP): ${filePath} (${recordsForFile.length} rows)`);
+
+        const s3 = await this._uploadAttlogBackupToS3IfEnabled(filePath, {
+            deviceId: device.deviceId,
+            operationTag: operationTag || 'tcp_backup'
+        });
+
+        return {
+            success: true,
+            filePath,
+            filename,
+            rowsInDeviceSnapshot: allRows.length,
+            rowsWrittenToFile: recordsForFile.length,
+            rowsMatchingFilter: filtered.length,
+            deviceInfo: deviceInfo || null,
+            s3
+        };
+    }
+
+    _sleep(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    /**
+     * Turn AdmsRawLog lean docs into pushBatches structure (rawBody + parsedRecords).
+     */
+    _admsRawLogLeanDocsToPushBatches(docs) {
+        const pushBatches = [];
+        let totalParsedPunches = 0;
+
+        for (const d of docs) {
+            let rawStr = '';
+            if (typeof d.body === 'string') {
+                rawStr = d.body;
+            } else if (d.body != null) {
+                rawStr = typeof d.body === 'object' ? JSON.stringify(d.body) : String(d.body);
+            }
+
+            const parsed = admsParser.parseTextRecords(rawStr);
+            totalParsedPunches += parsed.length;
+
+            pushBatches.push({
+                mongoId: String(d._id),
+                receivedAt: d.receivedAt,
+                createdAt: d.createdAt,
+                updatedAt: d.updatedAt,
+                ipAddress: d.ipAddress,
+                method: d.method,
+                admsQuery: d.query || {},
+                table: d.table,
+                rawBody: rawStr,
+                rawBodyCharLength: rawStr.length,
+                parsedPunchCount: parsed.length,
+                parsedRecords: parsed
+            });
+        }
+
+        return { pushBatches, totalParsedPunches };
+    }
+
+    /**
+     * Queue DATA QUERY ATTLOG, wait for new ATTLOG POSTs after cutoff, write JSON from those batches only.
+     * Does not include older AdmsRawLog rows—only pushes received while waiting.
+     */
+    async backupFreshAdmsAttlogAfterQueue(deviceId, options = {}) {
+        const device = await Device.findOne({ deviceId });
+        if (!device) {
+            const err = new Error('Device not found');
+            err.code = 'DEVICE_NOT_FOUND';
+            throw err;
+        }
+
+        const quietPeriodMs = options.quietPeriodMs ?? 12000;
+        const maxWaitMs = options.maxWaitMs ?? 120000;
+        const pollIntervalMs = options.pollIntervalMs ?? 2000;
+
+        const cutoff = new Date();
+
+        await DeviceCommand.create({
+            deviceId,
+            command: ADMS_ATTLOG_SYNC_COMMAND,
+            status: 'PENDING'
+        });
+
+        logger.info(`Fresh ADMS backup: queued ${ADMS_ATTLOG_SYNC_COMMAND} for ${deviceId}, cutoff=${cutoff.toISOString()}`);
+
+        const seenIds = new Set();
+        const collected = [];
+        let lastNewBatchAt = null;
+        const loopStart = Date.now();
+        let timedOut = false;
+
+        while (Date.now() - loopStart < maxWaitMs) {
+            await this._sleep(pollIntervalMs);
+
+            const batch = await AdmsRawLog.find({
+                serialNumber: deviceId,
+                table: { $regex: /^ATTLOG$/i },
+                receivedAt: { $gte: cutoff }
+            })
+                .sort({ receivedAt: 1 })
+                .lean();
+
+            let gotNew = false;
+            for (const doc of batch) {
+                const id = String(doc._id);
+                if (seenIds.has(id)) continue;
+                seenIds.add(id);
+                collected.push(doc);
+                gotNew = true;
+            }
+
+            if (gotNew) {
+                lastNewBatchAt = Date.now();
+            } else if (collected.length > 0 && lastNewBatchAt != null
+                && (Date.now() - lastNewBatchAt) >= quietPeriodMs) {
+                break;
+            }
+        }
+
+        if (Date.now() - loopStart >= maxWaitMs) {
+            timedOut = true;
+        }
+
+        const { pushBatches, totalParsedPunches } = this._admsRawLogLeanDocsToPushBatches(collected);
+        const waitedMs = Date.now() - loopStart;
+
+        await this.ensureBackupDir();
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const safeId = String(device.deviceId).replace(/[^a-zA-Z0-9-_]/g, '_');
+        const filename = `attlog_adms_fresh_${safeId}_${stamp}.json`;
+        const filePath = path.join(ATTLOG_BACKUP_ROOT, filename);
+
+        const payload = {
+            dataSource: 'adms_http_push_AdmsRawLog_fresh_session',
+            note: 'Only ATTLOG batches received after this run queued DATA QUERY ATTLOG (cutoff = triggeredAt). Full raw push bodies as from device—not TCP getAttendances. Empty batches mean the device did not POST new ATTLOG before wait ended (check ADMS URL/reachability).',
+            exportedAt: new Date().toISOString(),
+            operationTag: 'api_backup_adms_fresh',
+            triggeredAt: cutoff.toISOString(),
+            wait: {
+                maxWaitMs,
+                quietPeriodMs,
+                pollIntervalMs,
+                waitedMs,
+                timedOut,
+                settledAfterQuiet: !timedOut && collected.length > 0
+            },
+            deviceId: device.deviceId,
+            deviceName: device.name,
+            deviceIp: device.ip,
+            devicePort: device.port,
+            pushBatchCount: pushBatches.length,
+            totalParsedPunchesAcrossBatches: totalParsedPunches,
+            pushBatches
+        };
+
+        await fs.writeFile(filePath, JSON.stringify(payload, null, 2), 'utf8');
+        logger.info(`Fresh ADMS backup written: ${filePath} (${pushBatches.length} batches, ${totalParsedPunches} punches, waited ${waitedMs}ms)`);
+
+        const s3 = await this._uploadAttlogBackupToS3IfEnabled(filePath, {
+            deviceId: device.deviceId,
+            operationTag: 'api_backup_adms_fresh'
+        });
+
+        return {
+            success: true,
+            filePath,
+            filename,
+            pushBatchCount: pushBatches.length,
+            totalParsedPunchesAcrossBatches: totalParsedPunches,
+            waitedMs,
+            timedOut,
+            triggeredAt: cutoff.toISOString(),
+            s3
+        };
+    }
+
+    /**
+     * Write JSON backup from MongoDB AdmsRawLog rows (device HTTP push to /iclock/cdata.aspx?table=ATTLOG).
+     * Not a TCP pull — exports whatever was received via ADMS push, with raw body + parsed punches per batch.
+     */
+    async backupAdmsPushAttendanceLogsFromDb(deviceId, options = {}) {
+        const device = await Device.findOne({ deviceId });
+        if (!device) {
+            const err = new Error('Device not found');
+            err.code = 'DEVICE_NOT_FOUND';
+            throw err;
+        }
+
+        const {
+            startDate = null,
+            endDate = null,
+            operationTag = 'api_backup_adms_push'
+        } = options;
+
+        const query = {
+            serialNumber: deviceId,
+            table: { $regex: /^ATTLOG$/i }
+        };
+        if (startDate || endDate) {
+            query.receivedAt = {};
+            if (startDate) query.receivedAt.$gte = this.parseDateOnlyStart(startDate);
+            if (endDate) query.receivedAt.$lte = this.parseDateOnlyEnd(endDate);
+        }
+
+        const docs = await AdmsRawLog.find(query).sort({ receivedAt: 1 }).lean();
+        const { pushBatches, totalParsedPunches } = this._admsRawLogLeanDocsToPushBatches(docs);
+
+        await this.ensureBackupDir();
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const safeId = String(device.deviceId).replace(/[^a-zA-Z0-9-_]/g, '_');
+        const filename = `attlog_adms_push_${safeId}_${stamp}.json`;
+        const filePath = path.join(ATTLOG_BACKUP_ROOT, filename);
+
+        const payload = {
+            dataSource: 'adms_http_push_AdmsRawLog',
+            note: 'Batches are POST bodies the device sent to this server (ADMS), not from ZK TCP getAttendances(). Each batch includes the full raw body and parsedRecords from the same parser used on ingest. Empty if the device only uses TCP or push logs were deleted from MongoDB.',
+            exportedAt: new Date().toISOString(),
+            operationTag,
+            deviceId: device.deviceId,
+            deviceName: device.name,
+            deviceIp: device.ip,
+            devicePort: device.port,
+            filterApplied: {
+                startDate: startDate || null,
+                endDate: endDate || null,
+                appliesTo: 'AdmsRawLog.receivedAt (when the server stored the push)'
+            },
+            pushBatchCount: pushBatches.length,
+            totalParsedPunchesAcrossBatches: totalParsedPunches,
+            pushBatches
+        };
+
+        await fs.writeFile(filePath, JSON.stringify(payload, null, 2), 'utf8');
+        logger.info(`ADMS push attendance backup written: ${filePath} (${pushBatches.length} batches, ${totalParsedPunches} parsed punches)`);
+
+        const s3 = await this._uploadAttlogBackupToS3IfEnabled(filePath, {
+            deviceId: device.deviceId,
+            operationTag
+        });
+
+        return {
+            success: true,
+            filePath,
+            filename,
+            pushBatchCount: pushBatches.length,
+            totalParsedPunchesAcrossBatches: totalParsedPunches,
+            s3
+        };
+    }
+
+    /**
+     * Backup device attendance to JSON on disk. Pulls once from the terminal via TCP; optional filter limits rows in the file.
+     */
+    async backupDeviceAttendanceLogs(deviceId, options = {}) {
+        const device = await Device.findOne({ deviceId });
+        if (!device) {
+            const err = new Error('Device not found');
+            err.code = 'DEVICE_NOT_FOUND';
+            throw err;
+        }
+
+        const {
+            startDate,
+            endDate,
+            employeeIds,
+            includeAllInFile = true
+        } = options;
+
+        let zkInstance = null;
+        try {
+            const pulled = await this.pullAllAttendancesFromDevice(device);
+            zkInstance = pulled.zkInstance;
+            const result = await this.writeAttendanceBackupFromDeviceRows(
+                device,
+                pulled.rows,
+                pulled.info,
+                { startDate, endDate, employeeIds, includeAllInFile, operationTag: 'api_backup' }
+            );
+            await zkInstance.disconnect();
+
+            return result;
+        } catch (error) {
+            if (zkInstance) {
+                try { await zkInstance.disconnect(); } catch (e) { /* ignore */ }
+            }
+            throw error;
+        }
+    }
+
+    /**
+     * Summarize what would match a filter (and total on device) without writing a file.
+     */
+    async summarizeDeviceAttendance(deviceId, { startDate, endDate, employeeIds } = {}) {
+        const device = await Device.findOne({ deviceId });
+        if (!device) {
+            const err = new Error('Device not found');
+            err.code = 'DEVICE_NOT_FOUND';
+            throw err;
+        }
+
+        let zkInstance = null;
+        try {
+            const pulled = await this.pullAllAttendancesFromDevice(device);
+            zkInstance = pulled.zkInstance;
+            const allRows = pulled.rows;
+            const filtered = (startDate || endDate || this.normalizeEmployeeIdList(employeeIds))
+                ? this.filterDeviceAttendanceRecords(allRows, { startDate, endDate, employeeIds })
+                : allRows;
+            await zkInstance.disconnect();
+
+            return {
+                success: true,
+                deviceId: device.deviceId,
+                deviceName: device.name,
+                totalOnDevice: allRows.length,
+                matchingFilter: filtered.length,
+                notMatching: allRows.length - filtered.length,
+                deviceInfo: pulled.info
+            };
+        } catch (error) {
+            if (zkInstance) {
+                try { await zkInstance.disconnect(); } catch (e) { /* ignore */ }
+            }
+            throw error;
+        }
+    }
+
+    /**
+     * Clear all attendance (punch) logs on the device via TCP only—does not remove enrolled users or biometrics.
+     * Selective row delete is not supported by node-zklib / most firmware.
+     *
+     * @param {object} options
+     * @param {boolean} options.backupFirst - Write JSON from the same TCP read used for this clear (device only; never MongoDB)
+     * @param {string} [options.startDate] - If set with other filters, used to detect partial match
+     * @param {string} [options.endDate]
+     * @param {string[]|string} [options.employeeIds]
+     * @param {boolean} options.forceFullClear - If true, clear entire device even when filter matches only a subset
+     */
+    async clearDeviceAttendanceLogs(deviceId, options = {}) {
+        const {
+            backupFirst = true,
+            startDate,
+            endDate,
+            employeeIds,
+            forceFullClear = false
+        } = options;
+
+        const device = await Device.findOne({ deviceId });
+        if (!device) {
+            const err = new Error('Device not found');
+            err.code = 'DEVICE_NOT_FOUND';
+            throw err;
+        }
+
+        const hasFilter = Boolean(startDate || endDate || this.normalizeEmployeeIdList(employeeIds));
+        let backupResult = null;
+
+        let zkInstance = null;
+        try {
+            const pulled = await this.pullAllAttendancesFromDevice(device);
+            zkInstance = pulled.zkInstance;
+            const allRows = pulled.rows;
+
+            if (allRows.length === 0) {
+                await zkInstance.disconnect();
+                return {
+                    success: true,
+                    message: 'Device has no attendance rows to clear',
+                    cleared: false,
+                    totalOnDevice: 0
+                };
+            }
+
+            const filtered = hasFilter
+                ? this.filterDeviceAttendanceRecords(allRows, { startDate, endDate, employeeIds })
+                : allRows;
+
+            if (hasFilter && filtered.length === 0) {
+                await zkInstance.disconnect();
+                return {
+                    success: true,
+                    cleared: false,
+                    message: 'No attendance rows match the filter; device left unchanged',
+                    totalOnDevice: allRows.length
+                };
+            }
+
+            const partial = hasFilter && filtered.length < allRows.length;
+
+            if (partial && !forceFullClear) {
+                await zkInstance.disconnect();
+                const err = new Error(
+                    'This device cannot delete only some attendance rows over TCP. Either remove the filter and clear everything, or set forceFullClear to true (still clears the whole device).'
+                );
+                err.code = 'SELECTIVE_DEVICE_DELETE_UNSUPPORTED';
+                err.stats = {
+                    totalOnDevice: allRows.length,
+                    matchingFilter: filtered.length,
+                    notMatching: allRows.length - filtered.length
+                };
+                throw err;
+            }
+
+            if (backupFirst) {
+                backupResult = await this.writeAttendanceBackupFromDeviceRows(
+                    device,
+                    allRows,
+                    pulled.info,
+                    {
+                        startDate,
+                        endDate,
+                        employeeIds,
+                        includeAllInFile: true,
+                        operationTag: 'before_device_clear'
+                    }
+                );
+            }
+
+            await this.clearAttendanceLogOnConnection(zkInstance);
+            await zkInstance.disconnect();
+            zkInstance = null;
+
+            await Device.findOneAndUpdate(
+                { deviceId: device.deviceId },
+                { lastLogTimestamp: null, lastSyncAt: new Date(), lastSyncStatus: 'success' }
+            ).catch(() => { });
+
+            logger.info(`Cleared attendance log on device ${device.name} (${device.deviceId})`);
+
+            return {
+                success: true,
+                cleared: true,
+                totalOnDeviceBeforeClear: allRows.length,
+                hadFilter: hasFilter,
+                matchingFilterCount: filtered.length,
+                backup: backupResult
+            };
+        } catch (error) {
+            if (zkInstance) {
+                try { await zkInstance.disconnect(); } catch (e) { /* ignore */ }
+            }
+            throw error;
+        }
+    }
+
+    /**
    * Fetch logs from all enabled devices
    */
-    async fetchLogsFromAllDevices() {
+    async fetchLogsFromAllDevices(options = {}) {
         // Load devices from database if not provided in constructor
         let enabledDevices;
         if (this.deviceConfig) {
@@ -325,13 +980,15 @@ class DeviceService {
             enabledDevices = await this.loadDevicesFromDB();
         }
 
-        logger.info(`Starting sync for ${enabledDevices.length} devices`);
+        const { startDate, endDate } = options;
+        const rangeLabel = (startDate || endDate) ? ` [range ${startDate || '…'} → ${endDate || '…'}]` : '';
+        logger.info(`Starting sync for ${enabledDevices.length} devices${rangeLabel}`);
 
         const results = [];
 
         // Fetch from each device sequentially to avoid overwhelming network
         for (const device of enabledDevices) {
-            const result = await this.fetchLogsFromDevice(device);
+            const result = await this.fetchLogsFromDevice(device, { startDate, endDate });
             results.push(result);
         }
 
@@ -344,6 +1001,7 @@ class DeviceService {
             totalDevices: enabledDevices.length,
             successfulDevices: successCount,
             totalNewLogs: totalNewLogs,
+            dateRange: (startDate || endDate) ? { startDate: startDate || null, endDate: endDate || null } : null,
             results: results
         };
     }

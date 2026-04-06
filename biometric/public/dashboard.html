@@ -389,6 +389,127 @@
         .btn-cancel:hover {
             color: var(--text-main);
         }
+
+        /* Tall dialogs: cap height, scroll body, keep actions visible */
+        .dialog-box--scroll {
+            max-width: 520px;
+            max-height: min(92vh, 880px);
+            padding: 18px 22px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+        }
+
+        .dialog-box--scroll h3 {
+            flex-shrink: 0;
+            margin-bottom: 10px;
+            font-size: 1.15rem;
+        }
+
+        .dialog-body-scroll {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding-right: 8px;
+            margin-right: -4px;
+        }
+
+        .dialog-body-scroll .dialog-row:last-of-type {
+            margin-bottom: 8px;
+        }
+
+        .dialog-actions--sticky {
+            flex-shrink: 0;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            justify-content: flex-end;
+            align-items: center;
+        }
+
+        .dialog-actions--sticky .btn-refresh,
+        .dialog-actions--sticky .btn-download,
+        .dialog-actions--sticky .btn-cancel {
+            padding: 8px 14px;
+            font-size: 0.82rem;
+        }
+
+        .attlog-help {
+            margin-bottom: 12px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: rgba(0, 0, 0, 0.15);
+        }
+
+        .attlog-help summary {
+            cursor: pointer;
+            padding: 10px 12px;
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            list-style: none;
+        }
+
+        .attlog-help summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .attlog-help[open] summary {
+            border-bottom: 1px solid var(--border);
+            color: var(--text-main);
+        }
+
+        .attlog-help .help-inner {
+            padding: 10px 12px 12px;
+            font-size: 0.78rem;
+            color: var(--text-dim);
+            line-height: 1.45;
+        }
+
+        .attlog-help .help-inner strong {
+            color: var(--text-main);
+            font-weight: 600;
+        }
+
+        .pagination-bar {
+            display: none;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border);
+            font-size: 0.85rem;
+            color: var(--text-dim);
+        }
+
+        .pagination-bar.visible {
+            display: flex;
+        }
+
+        .pagination-bar .nav-btns {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .pagination-bar button:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .pagination-bar select {
+            padding: 6px 10px;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-main);
+            font-size: 0.85rem;
+        }
     </style>
 </head>
 
@@ -421,6 +542,8 @@
                 <button class="btn-refresh" onclick="exportUniqueUsersExcel()"
                     style="border-color: #10b981; color: #10b981;">Export Excel (Unique IDs)</button>
                 <button class="btn-refresh" onclick="openManualPullDialog()" style="background: var(--primary); border-color: var(--primary); color: white;">Test TCP Pull</button>
+                <button class="btn-refresh" onclick="openDeviceAttlogDialog()" style="border-color: #f59e0b; color: #f59e0b;">Backup / Clear (TCP)</button>
+                <button class="btn-refresh" onclick="openTcpSyncToDbDialog()" style="border-color: #38bdf8; color: #38bdf8;">Sync to MongoDB (TCP)</button>
                 <button class="btn-refresh" onclick="refreshData()">Refresh Data</button>
             </div>
         </div>
@@ -471,6 +594,21 @@
                         <line x1="12" y1="17" x2="12" y2="21"></line>
                     </svg>
                     <p>Select a device from the left to start viewing data.</p>
+                </div>
+            </div>
+            <div class="pagination-bar" id="user-pagination" aria-label="User list pagination">
+                <span id="pagination-summary"></span>
+                <div class="nav-btns">
+                    <label style="display: flex; align-items: center; gap: 6px;">
+                        Per page
+                        <select id="pagination-page-size" onchange="changeUserPageSize(this.value)">
+                            <option value="25">25</option>
+                            <option value="50" selected>50</option>
+                            <option value="100">100</option>
+                        </select>
+                    </label>
+                    <button type="button" class="btn-refresh" id="pagination-prev" onclick="goUserPage(-1)">Prev</button>
+                    <button type="button" class="btn-refresh" id="pagination-next" onclick="goUserPage(1)">Next</button>
                 </div>
             </div>
         </div>
@@ -550,6 +688,98 @@
         </div>
     </div>
 
+    <!-- TCP sync: device → MongoDB (optional date range) -->
+    <div class="dialog-overlay" id="tcp-sync-db-dialog">
+        <div class="dialog-box" style="max-width: 480px;">
+            <h3>Sync attendance to MongoDB (TCP)</h3>
+            <p style="color: var(--text-dim); font-size: 0.82rem; margin-bottom: 14px; line-height: 1.45;">
+                Reads punches from the terminal (full buffer), then inserts into this server’s database.
+                Leave both dates <strong>empty</strong> for normal incremental sync (only new punches after last sync).
+                With a range, only punches on those calendar days (server local time, same as backup filters) are inserted—useful for backfill.
+            </p>
+            <div class="dialog-row" style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+                <span style="font-size: 0.8rem; color: var(--text-dim);">Quick (IST calendar):</span>
+                <button type="button" class="btn-refresh" style="padding: 6px 12px; font-size: 0.8rem;" onclick="applyTcpSyncPreset('today')">Today</button>
+                <button type="button" class="btn-refresh" style="padding: 6px 12px; font-size: 0.8rem;" onclick="applyTcpSyncPreset('yesterday')">Yesterday</button>
+                <button type="button" class="btn-refresh" style="padding: 6px 12px; font-size: 0.8rem;" onclick="applyTcpSyncPreset('this_month')">This month</button>
+                <button type="button" class="btn-refresh" style="padding: 6px 12px; font-size: 0.8rem;" onclick="applyTcpSyncPreset('last_month')">Last month</button>
+                <button type="button" class="btn-refresh" style="padding: 6px 12px; font-size: 0.8rem;" onclick="applyTcpSyncPreset('clear')">Clear range</button>
+            </div>
+            <div class="dialog-row">
+                <label>Start date (optional)</label>
+                <input type="date" id="tcp-sync-start">
+            </div>
+            <div class="dialog-row">
+                <label>End date (optional)</label>
+                <input type="date" id="tcp-sync-end">
+            </div>
+            <div class="dialog-row" style="display: flex; align-items: center; gap: 8px;">
+                <input type="checkbox" id="tcp-sync-all-devices" style="width: 18px; height: 18px;">
+                <label for="tcp-sync-all-devices" style="margin: 0; cursor: pointer;">All enabled devices (otherwise selected device in sidebar)</label>
+            </div>
+            <div id="tcp-sync-status" style="font-size: 0.85rem; color: var(--accent); margin: 10px 0; white-space: pre-wrap; min-height: 1.2em;"></div>
+            <div class="dialog-actions">
+                <button class="btn-cancel" onclick="closeTcpSyncToDbDialog()">Close</button>
+                <button class="btn-download" onclick="runTcpSyncToDb()">Run sync</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- TCP attendance backup / clear (ZK terminal) -->
+    <div class="dialog-overlay" id="device-attlog-dialog">
+        <div class="dialog-box dialog-box--scroll">
+            <h3>Device attendance</h3>
+            <div class="dialog-body-scroll">
+                <details class="attlog-help">
+                    <summary>What each action does — expand for details</summary>
+                    <div class="help-inner">
+                        <p style="margin: 0 0 8px;"><strong>TCP backup</strong> — Pull slim rows via port 4370 (<code>getAttendances</code>). Filters below apply to preview / TCP backup / clear validation.</p>
+                        <p style="margin: 0 0 8px;"><strong>Fresh ADMS backup</strong> — Queues <code>DATA QUERY ATTLOG</code>, waits for <em>new</em> device POSTs, saves JSON with full push bodies (can take ~2 min).</p>
+                        <p style="margin: 0 0 8px;"><strong>Export stored (DB)</strong> — Writes ATTLOG batches already in MongoDB; optional dates filter when each batch was <code>receivedAt</code>.</p>
+                        <p style="margin: 0;"><strong>Clear device</strong> — Always runs <strong>Fresh ADMS file</strong> first (queue + wait, up to ~2 min), then clears punch logs on the machine. Optional extra TCP snapshot during clear if checked below.</p>
+                    </div>
+                </details>
+                <div class="dialog-row">
+                    <label>Start date (optional)</label>
+                    <input type="date" id="attlog-start">
+                </div>
+                <div class="dialog-row">
+                    <label>End date (optional)</label>
+                    <input type="date" id="attlog-end">
+                </div>
+                <div class="dialog-row">
+                    <label>Employee numbers (optional)</label>
+                    <input type="text" id="attlog-employees" placeholder="Comma-separated e.g. 101, 102, 103">
+                </div>
+                <div class="dialog-row" style="display: flex; align-items: flex-start; gap: 8px;">
+                    <input type="checkbox" id="attlog-backup-full-file" checked style="width: 18px; height: 18px; margin-top: 3px; flex-shrink: 0;">
+                    <label for="attlog-backup-full-file" style="margin: 0; cursor: pointer; font-size: 0.82rem; line-height: 1.35;">TCP backup file: full device snapshot (off = only rows matching filters)</label>
+                </div>
+                <div id="attlog-summary" style="font-size: 0.78rem; color: var(--accent); margin: 8px 0 10px; white-space: pre-wrap; min-height: 1.2em; max-height: 120px; overflow-y: auto;"></div>
+                <div class="dialog-row" style="display: flex; align-items: flex-start; gap: 8px;">
+                    <input type="checkbox" id="attlog-backup-before-clear" checked style="width: 18px; height: 18px; margin-top: 3px; flex-shrink: 0;">
+                    <label for="attlog-backup-before-clear" style="margin: 0; cursor: pointer; font-size: 0.82rem; line-height: 1.35;">Also run TCP JSON backup during clear (in addition to required Fresh ADMS file)</label>
+                </div>
+                <div class="dialog-row" style="display: flex; align-items: flex-start; gap: 8px;">
+                    <input type="checkbox" id="attlog-force-full" style="width: 18px; height: 18px; margin-top: 3px; flex-shrink: 0;">
+                    <label for="attlog-force-full" style="margin: 0; cursor: pointer; font-size: 0.82rem; line-height: 1.35;">Force clear entire device if filter only matches part of logs</label>
+                </div>
+                <div class="dialog-row" style="margin-bottom: 12px;">
+                    <label>Type CLEAR_ALL_ATTLOG to enable clear</label>
+                    <input type="text" id="attlog-confirm" placeholder="CLEAR_ALL_ATTLOG" autocomplete="off">
+                </div>
+            </div>
+            <div class="dialog-actions--sticky">
+                <button class="btn-cancel" onclick="closeDeviceAttlogDialog()">Close</button>
+                <button type="button" class="btn-refresh" onclick="runAttlogSummary()">Preview</button>
+                <button type="button" class="btn-download" onclick="runAttlogBackup()">TCP backup</button>
+                <button type="button" class="btn-download" onclick="runAttlogBackupAdmsFresh()" style="border-color: #10b981; color: #10b981;">Fresh ADMS file</button>
+                <button type="button" class="btn-download" onclick="runAttlogBackupAdmsPush()" style="border-color: #2dd4bf; color: #2dd4bf;">DB export</button>
+                <button type="button" class="btn-refresh" onclick="runAttlogClear()" style="border-color: #ef4444; color: #ef4444;">Clear device</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         let selectedSN = null;
         let activeTable = 'USERINFO';
@@ -557,6 +787,10 @@
         let allDevices = [];
         let downloadType = 'report'; // 'report' or 'logs'
         let heartbeatStaleMs = 180000;
+        let userListPage = 1;
+        let userListPageSize = 50;
+        let userListMeta = { total: 0, page: 1, limit: 50, totalPages: 1 };
+        let searchDebounceTimer = null;
 
         const TZ_IST = 'Asia/Kolkata';
 
@@ -567,6 +801,111 @@
 
         function closeManualPullDialog() {
             document.getElementById('manual-pull-dialog').classList.remove('open');
+        }
+
+        function todayISOInIST() {
+            return new Intl.DateTimeFormat('en-CA', { timeZone: TZ_IST, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+        }
+
+        function openTcpSyncToDbDialog() {
+            document.getElementById('tcp-sync-db-dialog').classList.add('open');
+            document.getElementById('tcp-sync-status').innerText = '';
+        }
+
+        function closeTcpSyncToDbDialog() {
+            document.getElementById('tcp-sync-db-dialog').classList.remove('open');
+        }
+
+        function applyTcpSyncPreset(which) {
+            const pad = (n) => String(n).padStart(2, '0');
+            const today = todayISOInIST();
+            const [y, m] = today.split('-').map(Number);
+            let start = '';
+            let end = '';
+            if (which === 'clear') {
+                document.getElementById('tcp-sync-start').value = '';
+                document.getElementById('tcp-sync-end').value = '';
+                return;
+            }
+            if (which === 'today') {
+                start = end = today;
+            } else if (which === 'yesterday') {
+                const yest = new Intl.DateTimeFormat('en-CA', { timeZone: TZ_IST, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(Date.now() - 86400000));
+                start = end = yest;
+            } else if (which === 'this_month') {
+                start = `${y}-${pad(m)}-01`;
+                end = today;
+            } else if (which === 'last_month') {
+                let ly = y, lm = m - 1;
+                if (lm < 1) { lm = 12; ly--; }
+                const lastDay = new Date(ly, lm, 0).getDate();
+                start = `${ly}-${pad(lm)}-01`;
+                end = `${ly}-${pad(lm)}-${pad(lastDay)}`;
+            }
+            document.getElementById('tcp-sync-start').value = start;
+            document.getElementById('tcp-sync-end').value = end;
+        }
+
+        async function runTcpSyncToDb() {
+            const startDate = document.getElementById('tcp-sync-start').value || '';
+            const endDate = document.getElementById('tcp-sync-end').value || '';
+            const allDevices = document.getElementById('tcp-sync-all-devices').checked;
+            const statusEl = document.getElementById('tcp-sync-status');
+
+            if (!allDevices && !selectedSN) {
+                alert('Select a device in the sidebar, or enable “All enabled devices”.');
+                return;
+            }
+            if (startDate && endDate && startDate > endDate) {
+                alert('Start date must be on or before end date.');
+                return;
+            }
+
+            const body = {};
+            if (startDate) body.startDate = startDate;
+            if (endDate) body.endDate = endDate;
+            const rangeLabel = (startDate || endDate) ? `range ${startDate || '…'} → ${endDate || '…'}` : 'incremental';
+
+            statusEl.style.color = 'var(--primary)';
+            statusEl.innerText = '⏳ Sync in progress (TCP read can take a while)…';
+
+            try {
+                let res;
+                if (allDevices) {
+                    res = await fetch('/api/sync', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(body)
+                    });
+                } else {
+                    res = await fetch('/api/devices/' + encodeURIComponent(selectedSN) + '/attendance/sync', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(body)
+                    });
+                }
+                const j = await res.json();
+                if (!res.ok || j.success === false) {
+                    statusEl.style.color = '#ef4444';
+                    statusEl.innerText = '❌ ' + (j.error || j.message || 'Sync failed');
+                    return;
+                }
+                statusEl.style.color = '#10b981';
+                if (allDevices && j.results) {
+                    const inserted = j.totalNewLogs ?? 0;
+                    statusEl.innerText = `✅ All devices (${rangeLabel}): ${inserted} new row(s) inserted total.\n` +
+                        j.results.map(r => `  • ${r.deviceId || r.device}: fetched ${r.totalFetched ?? '—'}, inserted ${r.newLogs ?? 0}${r.rowsInRange != null ? ` (in range ${r.rowsInRange})` : ''}`).join('\n');
+                } else if (j.data) {
+                    const d = j.data;
+                    statusEl.innerText = `✅ ${d.deviceId || d.device} — ${rangeLabel}\nFetched: ${d.totalFetched ?? '—'}, inserted: ${d.newLogs ?? 0}` +
+                        (d.rowsInRange != null ? ` (rows in range: ${d.rowsInRange})` : '');
+                } else {
+                    statusEl.innerText = '✅ Done: ' + JSON.stringify(j, null, 0);
+                }
+            } catch (e) {
+                statusEl.style.color = '#ef4444';
+                statusEl.innerText = '❌ ' + e.message;
+            }
         }
 
         async function executeManualPull() {
@@ -602,6 +941,244 @@
             } catch(e) {
                 statusEl.innerText = '❌ Network Error: ' + e.message;
                 statusEl.style.color = '#ef4444';
+            }
+        }
+
+        function openDeviceAttlogDialog() {
+            if (!selectedSN) {
+                alert('Select a device from the list first.');
+                return;
+            }
+            document.getElementById('device-attlog-dialog').classList.add('open');
+            document.getElementById('attlog-summary').innerText = '';
+        }
+
+        function closeDeviceAttlogDialog() {
+            document.getElementById('device-attlog-dialog').classList.remove('open');
+        }
+
+        function attlogFilterBody() {
+            const start = document.getElementById('attlog-start').value || undefined;
+            const end = document.getElementById('attlog-end').value || undefined;
+            const empRaw = document.getElementById('attlog-employees').value.trim();
+            let employeeIds;
+            if (empRaw) {
+                employeeIds = empRaw.split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
+            }
+            return { startDate: start, endDate: end, employeeIds };
+        }
+
+        async function runAttlogSummary() {
+            if (!selectedSN) return;
+            const el = document.getElementById('attlog-summary');
+            el.innerText = '⏳ Pulling from device...';
+            const q = new URLSearchParams();
+            const { startDate, endDate, employeeIds } = attlogFilterBody();
+            if (startDate) q.set('startDate', startDate);
+            if (endDate) q.set('endDate', endDate);
+            if (employeeIds && employeeIds.length) q.set('employeeIds', JSON.stringify(employeeIds));
+            try {
+                const res = await fetch('/api/devices/' + encodeURIComponent(selectedSN) + '/attendance/summary?' + q.toString());
+                const j = await res.json();
+                if (!j.success) {
+                    el.innerText = '❌ ' + (j.error || 'Failed');
+                    el.style.color = '#ef4444';
+                    return;
+                }
+                const d = j.data;
+                el.style.color = 'var(--accent)';
+                const reported = d.deviceInfo && typeof d.deviceInfo.logCounts === 'number' ? d.deviceInfo.logCounts : null;
+                el.innerText = 'Total on device: ' + d.totalOnDevice + '\nMatching filter: ' + d.matchingFilter + '\nNot matching: ' + d.notMatching +
+                    (reported !== null ? '\n(Device-reported log count: ' + reported + ')' : '');
+            } catch (e) {
+                el.innerText = '❌ ' + e.message;
+                el.style.color = '#ef4444';
+            }
+        }
+
+        async function runAttlogBackup() {
+            if (!selectedSN) return;
+            const el = document.getElementById('attlog-summary');
+            el.innerText = '⏳ Backup in progress (may take a while)...';
+            const { startDate, endDate, employeeIds } = attlogFilterBody();
+            const includeAllInFile = document.getElementById('attlog-backup-full-file').checked;
+            try {
+                const res = await fetch('/api/devices/' + encodeURIComponent(selectedSN) + '/attendance/backup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ startDate, endDate, employeeIds, includeAllInFile })
+                });
+                const j = await res.json();
+                if (!j.success) {
+                    el.innerText = '❌ ' + (j.error || 'Failed');
+                    el.style.color = '#ef4444';
+                    return;
+                }
+                el.style.color = '#10b981';
+                const bd = j.data || {};
+                el.innerText = '✅ Backup saved: ' + (bd.filename || '') + '\nRows in file: ' + (bd.rowsWrittenToFile ?? '—') + attlogS3StatusLine(bd.s3);
+            } catch (e) {
+                el.innerText = '❌ ' + e.message;
+                el.style.color = '#ef4444';
+            }
+        }
+
+        async function requestFreshAdmsBackup(deviceSN) {
+            const res = await fetch('/api/devices/' + encodeURIComponent(deviceSN) + '/attendance/backup-adms-fresh', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            });
+            let j = {};
+            try {
+                j = await res.json();
+            } catch {
+                j = {};
+            }
+            return { res, j };
+        }
+
+        function formatFreshAdmsResultMessage(d) {
+            const fn = d.filename || '—';
+            const batches = d.pushBatchCount ?? '—';
+            const punches = d.totalParsedPunchesAcrossBatches ?? '—';
+            const secs = Math.round((d.waitedMs || 0) / 1000);
+            const tail = d.timedOut ? ' (max wait — file may be partial or empty)' : '';
+            return 'File: ' + fn +
+                '\nBatches (new only): ' + batches + ', parsed punches: ' + punches +
+                '\nWaited ~' + secs + 's' + tail;
+        }
+
+        function attlogS3StatusLine(s3) {
+            if (!s3) return '';
+            if (s3.uploaded === true && s3.bucket && s3.key) return '\nS3: s3://' + s3.bucket + '/' + s3.key;
+            if (s3.uploaded === false && !s3.skipped && s3.error) return '\nS3 upload failed: ' + s3.error;
+            return '';
+        }
+
+        async function runAttlogBackupAdmsFresh() {
+            if (!selectedSN) return;
+            const el = document.getElementById('attlog-summary');
+            el.style.color = 'var(--primary)';
+            el.innerText = '⏳ Fresh ADMS backup: queued command, waiting for new ATTLOG from device (up to ~120s)…';
+            try {
+                const { res, j } = await requestFreshAdmsBackup(selectedSN);
+                if (!res.ok || !j.success) {
+                    el.innerText = '❌ ' + (j.error || 'Failed');
+                    el.style.color = '#ef4444';
+                    return;
+                }
+                const d = j.data || {};
+                el.style.color = '#10b981';
+                el.innerText = '✅ Fresh backup:\n' + formatFreshAdmsResultMessage(d) + attlogS3StatusLine(d.s3);
+            } catch (e) {
+                el.innerText = '❌ ' + e.message;
+                el.style.color = '#ef4444';
+            }
+        }
+
+        async function runAttlogBackupAdmsPush() {
+            if (!selectedSN) return;
+            const el = document.getElementById('attlog-summary');
+            el.innerText = '⏳ Building JSON from ADMS push logs in MongoDB...';
+            el.style.color = 'var(--primary)';
+            const { startDate, endDate } = attlogFilterBody();
+            const body = {};
+            if (startDate) body.startDate = startDate;
+            if (endDate) body.endDate = endDate;
+            try {
+                const res = await fetch('/api/devices/' + encodeURIComponent(selectedSN) + '/attendance/backup-adms-push', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                const j = await res.json();
+                if (!j.success) {
+                    el.innerText = '❌ ' + (j.error || 'Failed');
+                    el.style.color = '#ef4444';
+                    return;
+                }
+                const d = j.data || {};
+                el.style.color = '#10b981';
+                el.innerText = '✅ ADMS push backup: ' + (d.filename || '') +
+                    '\nPush batches: ' + (d.pushBatchCount ?? '—') +
+                    ', parsed punches (sum): ' + (d.totalParsedPunchesAcrossBatches ?? '—') +
+                    attlogS3StatusLine(d.s3);
+            } catch (e) {
+                el.innerText = '❌ ' + e.message;
+                el.style.color = '#ef4444';
+            }
+        }
+
+        async function runAttlogClear() {
+            if (!selectedSN) return;
+            const confirmVal = document.getElementById('attlog-confirm').value.trim();
+            if (confirmVal !== 'CLEAR_ALL_ATTLOG') {
+                alert('Type CLEAR_ALL_ATTLOG in the confirmation field.');
+                return;
+            }
+            if (!window.confirm('Step 1: Fresh ADMS backup on disk (up to ~2 min).\nStep 2: Clear all punch logs on the device.\n\nContinue?')) {
+                return;
+            }
+            const el = document.getElementById('attlog-summary');
+            el.style.color = 'var(--primary)';
+            el.innerText = 'Step 1/2: Fresh ADMS backup (required before clear, up to ~120s)…';
+
+            try {
+                const { res: freshRes, j: freshJ } = await requestFreshAdmsBackup(selectedSN);
+                if (!freshRes.ok || !freshJ.success) {
+                    el.style.color = '#ef4444';
+                    el.innerText = '❌ Clear aborted: fresh ADMS backup failed.\n' + (freshJ.error || freshRes.statusText || 'Unknown error') +
+                        '\nDevice was not cleared.';
+                    return;
+                }
+                const fd = freshJ.data || {};
+                el.innerText = '✅ Step 1/2 done.\n' + formatFreshAdmsResultMessage(fd) + attlogS3StatusLine(fd.s3) + '\n\nStep 2/2: Clearing device…';
+
+                const { startDate, endDate, employeeIds } = attlogFilterBody();
+                const body = {
+                    confirmClear: 'CLEAR_ALL_ATTLOG',
+                    backupFirst: document.getElementById('attlog-backup-before-clear').checked,
+                    forceFullClear: document.getElementById('attlog-force-full').checked,
+                    startDate,
+                    endDate,
+                    employeeIds
+                };
+                const res = await fetch('/api/devices/' + encodeURIComponent(selectedSN) + '/attendance/clear', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                const j = await res.json();
+                if (res.status === 409 && j.stats) {
+                    el.style.color = '#f59e0b';
+                    el.innerText = '✅ Step 1/2 Fresh ADMS file saved: ' + (fd.filename || '') + attlogS3StatusLine(fd.s3) +
+                        '\n\n⚠️ Step 2/2 blocked: cannot delete only filtered rows on device.\nTotal: ' + j.stats.totalOnDevice + ', matching: ' + j.stats.matchingFilter +
+                        '\nEnable "Force clear entire device" or remove filters, then try Clear again (backup already on disk).';
+                    return;
+                }
+                if (!j.success) {
+                    el.style.color = '#ef4444';
+                    el.innerText = '✅ Step 1/2 Fresh ADMS file saved: ' + (fd.filename || '') + attlogS3StatusLine(fd.s3) +
+                        '\n\n❌ Step 2/2 clear failed: ' + (j.error || 'Failed');
+                    return;
+                }
+                el.style.color = '#10b981';
+                const d = j.data;
+                const step1note = 'Fresh ADMS file: ' + (fd.filename || '—') + attlogS3StatusLine(fd.s3);
+                if (d.cleared === false) {
+                    el.innerText = '✅ ' + step1note + '\n\nℹ️ Step 2/2: ' + (d.message || 'No changes on device');
+                } else {
+                    const tcpExtra = d.backup
+                        ? '\nExtra TCP backup: ' + (d.backup.filename || '') + attlogS3StatusLine(d.backup.s3)
+                        : '';
+                    el.innerText = '✅ ' + step1note + '\n\n✅ Step 2/2: Device attendance cleared.\nRows before: ' + (d.totalOnDeviceBeforeClear ?? '—') +
+                        tcpExtra +
+                        '\nMongoDB on this server was not modified.';
+                }
+            } catch (e) {
+                el.innerText = '❌ ' + e.message + '\nIf this was during step 1, the device was not cleared.';
+                el.style.color = '#ef4444';
             }
         }
 
@@ -734,6 +1311,7 @@
 
         async function selectDevice(sn) {
             selectedSN = sn;
+            userListPage = 1;
             const dev = allDevices.find(d => d.deviceId === sn);
             const name = dev ? dev.name : sn;
             document.getElementById('selected-device-name').innerText = name;
@@ -805,7 +1383,47 @@
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             el.classList.add('active');
             activeTable = el.dataset.table;
+            userListPage = 1;
             document.getElementById('view-title').innerText = el.innerText;
+            fetchTableData();
+        }
+
+        function syncPageSizeSelect() {
+            const sel = document.getElementById('pagination-page-size');
+            if (!sel) return;
+            const v = String(userListPageSize);
+            if ([...sel.options].some(o => o.value === v)) sel.value = v;
+        }
+
+        function updateUserPaginationUI() {
+            const pagBar = document.getElementById('user-pagination');
+            const summary = document.getElementById('pagination-summary');
+            if (!pagBar || !summary) return;
+            if (!['USERINFO', 'FINGERTMP', 'FACE'].includes(activeTable)) {
+                pagBar.classList.remove('visible');
+                return;
+            }
+            pagBar.classList.add('visible');
+            const { total, page, limit, totalPages } = userListMeta;
+            const from = total === 0 ? 0 : (page - 1) * limit + 1;
+            const to = Math.min(page * limit, total);
+            summary.textContent = `Rows ${from}–${to} of ${total} · page ${page} / ${totalPages}`;
+            const prevBtn = document.getElementById('pagination-prev');
+            const nextBtn = document.getElementById('pagination-next');
+            if (prevBtn) prevBtn.disabled = page <= 1;
+            if (nextBtn) nextBtn.disabled = page >= totalPages;
+        }
+
+        function goUserPage(delta) {
+            const next = userListPage + delta;
+            if (next < 1 || next > userListMeta.totalPages) return;
+            userListPage = next;
+            fetchTableData();
+        }
+
+        function changeUserPageSize(val) {
+            userListPageSize = parseInt(val, 10) || 50;
+            userListPage = 1;
             fetchTableData();
         }
 
@@ -814,28 +1432,61 @@
 
             const container = document.getElementById('data-container');
             const countEl = document.getElementById('record-count');
+            const pagBar = document.getElementById('user-pagination');
 
             container.innerHTML = '<div class="empty-state"><span class="loader"></span><p>Fetching data from server...</p></div>';
 
             try {
                 let url = '';
                 if (['USERINFO', 'FINGERTMP', 'FACE'].includes(activeTable)) {
-                    url = `/api/adms/users?sn=${selectedSN}`;
+                    const params = new URLSearchParams({
+                        sn: selectedSN,
+                        page: String(userListPage),
+                        limit: String(userListPageSize),
+                        light: '1'
+                    });
+                    const term = document.getElementById('dashboard-search').value.trim();
+                    if (term) params.set('q', term);
+                    url = `/api/adms/users?${params}`;
                 } else {
+                    if (pagBar) pagBar.classList.remove('visible');
                     url = `/api/adms/logs?sn=${selectedSN}&table=${activeTable}&limit=100`;
                 }
 
                 const res = await fetch(url);
                 const result = await res.json();
 
-                lastFetchedData = result.data || [];
-                renderData(lastFetchedData);
+                if (['USERINFO', 'FINGERTMP', 'FACE'].includes(activeTable)) {
+                    lastFetchedData = result.data || [];
+                    userListMeta = {
+                        total: result.total ?? lastFetchedData.length,
+                        page: result.page ?? userListPage,
+                        limit: result.limit ?? userListPageSize,
+                        totalPages: result.totalPages ?? 1
+                    };
+                    userListPage = userListMeta.page;
+                    syncPageSizeSelect();
+                    updateUserPaginationUI();
+                    renderData(lastFetchedData);
+                } else {
+                    lastFetchedData = result.data || [];
+                    renderData(lastFetchedData);
+                }
             } catch (err) {
                 container.innerHTML = `<p style="color: #ef4444;">Error fetching data: ${err.message}</p>`;
             }
         }
 
         function handleSearch() {
+            if (['USERINFO', 'FINGERTMP', 'FACE'].includes(activeTable)) {
+                clearTimeout(searchDebounceTimer);
+                searchDebounceTimer = setTimeout(() => {
+                    userListPage = 1;
+                    fetchTableData();
+                }, 320);
+                return;
+            }
+
             const term = document.getElementById('dashboard-search').value.toLowerCase().trim();
             if (!term) {
                 renderData(lastFetchedData);
@@ -843,13 +1494,8 @@
             }
 
             const filtered = lastFetchedData.filter(item => {
-                if (['USERINFO', 'FINGERTMP', 'FACE'].includes(activeTable)) {
-                    return (item.userId && item.userId.includes(term)) ||
-                        (item.name && item.name.toLowerCase().includes(term));
-                } else {
-                    const body = item.body || '';
-                    return body.toLowerCase().includes(term);
-                }
+                const body = item.body || '';
+                return body.toLowerCase().includes(term);
             });
 
             renderData(filtered);
@@ -861,13 +1507,18 @@
             const isStructured = ['USERINFO', 'FINGERTMP', 'FACE'].includes(activeTable);
 
             if (dataList.length > 0) {
-                countEl.innerText = `${dataList.length} Records Found`;
+                if (isStructured) {
+                    countEl.innerText = `${dataList.length} on this page · ${userListMeta.total} total`;
+                } else {
+                    countEl.innerText = `${dataList.length} Records Found`;
+                }
 
                 if (isStructured) {
                     const content = dataList.map(user => {
                         const fpCount = user.fingerprints?.length || 0;
                         const fids = user.fingerprints?.map(f => f.fingerIndex).sort((a, b) => a - b).join(', ') || 'None';
-                        const hasFace = user.face?.templateData ? '✅' : '❌';
+                        const faceOk = Boolean(user.face?.templateData || (user.face?.length > 0));
+                        const hasFace = faceOk ? '✅' : '❌';
 
                         const hasName = user.name && user.name.trim() && !['unknown', 'staff', 'anonymous'].includes(user.name.trim().toLowerCase());
                         const displayName = hasName ? user.name : `Staff member #${user.userId}`;
@@ -911,7 +1562,7 @@
                                     <span style="font-size: 0.9rem;"><b>${fpCount}</b> Fingers <span style="color: var(--text-dim); font-size: 0.8rem;">(Indices: ${fids})</span></span>
                                 </div>
                                 <div style="display: flex; align-items: center; gap: 8px;">
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="${user.face?.templateData ? '#10b981' : '#ef4444'}" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="${faceOk ? '#10b981' : '#ef4444'}" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
                                     <span style="font-size: 0.9rem;">Face Support: <b>${hasFace}</b></span>
                                 </div>
                             </div>
@@ -945,7 +1596,12 @@
                     container.innerHTML = content;
                 }
             } else {
-                countEl.innerText = `0 Records Found`;
+                if (isStructured) {
+                    countEl.innerText = `0 on this page · ${userListMeta.total} total`;
+                    updateUserPaginationUI();
+                } else {
+                    countEl.innerText = `0 Records Found`;
+                }
                 container.innerHTML = `
                     <div class="empty-state">
                         <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
