@@ -91,7 +91,7 @@ app.get('/', (req, res) => {
                 attendanceSummary: 'GET /api/devices/:deviceId/attendance/summary?startDate=&endDate=&employeeIds=',
                 attendanceBackup: 'POST /api/devices/:deviceId/attendance/backup',
                 attendanceBackupAdmsPush: 'POST /api/devices/:deviceId/attendance/backup-adms-push (MongoDB push log export)',
-                attendanceBackupAdmsFresh: 'POST /api/devices/:deviceId/attendance/backup-adms-fresh (queue ATTLOG, wait, file=new pushes only)',
+                attendanceBackupAdmsFresh: 'POST /api/devices/:deviceId/attendance/backup-adms-fresh (queue ATTLOG, wait until pushes quiet; body: hardCapMs, quietPeriodMs, …)',
                 triggerAdmsAttlogSync: 'POST /api/devices/:deviceId/attendance/trigger-adms-attlog-sync (queue DATA QUERY ATTLOG)',
                 attendanceSyncDb: 'POST /api/devices/:deviceId/attendance/sync (optional JSON { startDate, endDate })',
                 attendanceClear: 'POST /api/devices/:deviceId/attendance/clear (body.confirmClear=CLEAR_ALL_ATTLOG)'

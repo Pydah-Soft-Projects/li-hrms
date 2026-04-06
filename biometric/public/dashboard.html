@@ -1043,7 +1043,11 @@
             const batches = d.pushBatchCount ?? '—';
             const punches = d.totalParsedPunchesAcrossBatches ?? '—';
             const secs = Math.round((d.waitedMs || 0) / 1000);
-            const tail = d.timedOut ? ' (max wait — file may be partial or empty)' : '';
+            let tail = '';
+            if (d.timedOut) tail = ' (hit max wait — file may be partial)';
+            else if (d.stoppedReason === 'no_attlog_received') {
+                tail = ' (no ATTLOG received in the first-wait window — check ADMS / device)';
+            }
             return 'File: ' + fn +
                 '\nBatches (new only): ' + batches + ', parsed punches: ' + punches +
                 '\nWaited ~' + secs + 's' + tail;
@@ -1060,7 +1064,7 @@
             if (!selectedSN) return;
             const el = document.getElementById('attlog-summary');
             el.style.color = 'var(--primary)';
-            el.innerText = '⏳ Fresh ADMS backup: queued command, waiting for new ATTLOG from device (up to ~120s)…';
+            el.innerText = '⏳ Fresh ADMS backup: waiting for ATTLOG pushes until sync goes quiet (up to ~1 hour safety cap)…';
             try {
                 const { res, j } = await requestFreshAdmsBackup(selectedSN);
                 if (!res.ok || !j.success) {
@@ -1117,12 +1121,12 @@
                 alert('Type CLEAR_ALL_ATTLOG in the confirmation field.');
                 return;
             }
-            if (!window.confirm('Step 1: Fresh ADMS backup on disk (up to ~2 min).\nStep 2: Clear all punch logs on the device.\n\nContinue?')) {
+            if (!window.confirm('Step 1: Fresh ADMS backup on disk (waits until ATTLOG sync goes quiet; can take several minutes).\nStep 2: Clear all punch logs on the device.\n\nContinue?')) {
                 return;
             }
             const el = document.getElementById('attlog-summary');
             el.style.color = 'var(--primary)';
-            el.innerText = 'Step 1/2: Fresh ADMS backup (required before clear, up to ~120s)…';
+            el.innerText = 'Step 1/2: Fresh ADMS backup (waiting for device to finish pushing ATTLOG)…';
 
             try {
                 const { res: freshRes, j: freshJ } = await requestFreshAdmsBackup(selectedSN);

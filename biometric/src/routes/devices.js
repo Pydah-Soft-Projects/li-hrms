@@ -132,21 +132,34 @@ router.post('/:deviceId/attendance/backup-adms-push', async (req, res) => {
 /**
  * POST /api/devices/:deviceId/attendance/backup-adms-fresh
  * Queue DATA QUERY ATTLOG, then wait for NEW ATTLOG POSTs (not old Mongo rows) and write JSON from those batches only.
- * Body (optional): { maxWaitMs?, quietPeriodMs? } — default wait up to 120s, stop 12s after last new batch.
+ * Body (optional): { hardCapMs?, maxWaitMs? (alias), quietPeriodMs?, waitForFirstBatchMs?, pollIntervalMs? }
+ * Waits until ATTLOG pushes go quiet (quietPeriodMs after last batch), up to hardCapMs (default 1h, env-tunable).
  */
 router.post('/:deviceId/attendance/backup-adms-fresh', async (req, res) => {
     try {
         const { deviceId } = req.params;
         const body = req.body || {};
-        const maxWaitMs = body.maxWaitMs != null ? parseInt(body.maxWaitMs, 10) : undefined;
+        const apiCap = (() => {
+            const raw = process.env.ADMS_FRESH_BACKUP_API_HARD_CAP_MS;
+            if (raw == null || String(raw).trim() === '') return 7200000;
+            const n = parseInt(String(raw), 10);
+            return Number.isFinite(n) ? Math.min(Math.max(n, 60000), 14400000) : 7200000;
+        })();
+        const hardRaw = body.hardCapMs != null ? parseInt(body.hardCapMs, 10) : body.maxWaitMs != null ? parseInt(body.maxWaitMs, 10) : undefined;
         const quietPeriodMs = body.quietPeriodMs != null ? parseInt(body.quietPeriodMs, 10) : undefined;
+        const waitForFirstBatchMs = body.waitForFirstBatchMs != null ? parseInt(body.waitForFirstBatchMs, 10) : undefined;
+        const pollIntervalMs = body.pollIntervalMs != null ? parseInt(body.pollIntervalMs, 10) : undefined;
         const deviceService = req.app.get('deviceService');
         if (!deviceService) {
             return res.status(500).json({ success: false, error: 'Device service not initialized' });
         }
         const result = await deviceService.backupFreshAdmsAttlogAfterQueue(deviceId, {
-            maxWaitMs: Number.isFinite(maxWaitMs) ? Math.min(Math.max(maxWaitMs, 5000), 300000) : undefined,
-            quietPeriodMs: Number.isFinite(quietPeriodMs) ? Math.min(Math.max(quietPeriodMs, 2000), 60000) : undefined
+            hardCapMs: Number.isFinite(hardRaw) ? Math.min(Math.max(hardRaw, 60000), apiCap) : undefined,
+            quietPeriodMs: Number.isFinite(quietPeriodMs) ? Math.min(Math.max(quietPeriodMs, 2000), 120000) : undefined,
+            waitForFirstBatchMs: Number.isFinite(waitForFirstBatchMs)
+                ? Math.min(Math.max(waitForFirstBatchMs, 5000), apiCap)
+                : undefined,
+            pollIntervalMs: Number.isFinite(pollIntervalMs) ? Math.min(Math.max(pollIntervalMs, 500), 30000) : undefined
         });
         res.json({ success: true, data: result });
     } catch (error) {
