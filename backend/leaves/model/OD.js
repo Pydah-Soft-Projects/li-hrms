@@ -498,7 +498,11 @@ ODSchema.statics.getPendingForRole = async function (role, departmentIds = []) {
   }
 
   return this.find(query)
-    .populate('employeeId', 'employee_name emp_no')
+    .populate({
+      path: 'employeeId',
+      select: 'employee_name emp_no first_name last_name designation_id',
+      populate: { path: 'designation', select: 'name code' },
+    })
     .populate('department', 'name')
     .populate('designation', 'name')
     .populate('assignedBy', 'name email')

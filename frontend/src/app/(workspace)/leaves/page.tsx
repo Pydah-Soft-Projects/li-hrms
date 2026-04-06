@@ -274,6 +274,8 @@ interface LeaveApplication {
     first_name?: string;
     last_name?: string;
     emp_no: string;
+    designation?: { _id?: string; name?: string; code?: string };
+    designation_id?: { _id?: string; name?: string; code?: string } | string;
   };
   emp_no?: string;
   leaveType: string;
@@ -338,6 +340,8 @@ interface ODApplication {
     first_name?: string;
     last_name?: string;
     emp_no: string;
+    designation?: { _id?: string; name?: string; code?: string };
+    designation_id?: { _id?: string; name?: string; code?: string } | string;
   };
   emp_no?: string;
   odType: string;
@@ -2111,10 +2115,26 @@ export default function LeavesPage() {
 
   // Helper: get designation name from item (top-level or nested on employeeId)
   const getItemDesignationName = (item: any) => {
-    const populated = item?.designation?.name || (item?.employeeId as any)?.designation?.name;
+    const emp = item?.employeeId as any;
+    const fromDesigId =
+      emp?.designation_id && typeof emp.designation_id === 'object' && emp.designation_id !== null && 'name' in emp.designation_id
+        ? String((emp.designation_id as { name?: string }).name || '')
+        : '';
+    const populated =
+      item?.designation?.name ||
+      emp?.designation?.name ||
+      fromDesigId;
     const fallback = item?.designation_name;
     const val = populated || fallback || '';
     return val === 'N/A' || val === 'undefined' ? '' : val;
+  };
+
+  /** Emp no then designation (matches API: Employee.designation virtual from designation_id) */
+  const formatEmpNoWithDesignation = (item: any) => {
+    const no = item?.employeeId?.emp_no || item?.emp_no || '';
+    const des = getItemDesignationName(item);
+    if (no && des) return `${no} · ${des}`;
+    return no || des || '';
   };
 
   // Filter logic
@@ -2129,12 +2149,14 @@ export default function LeavesPage() {
         item.employee_name,
         [item.employeeId?.first_name, item.employeeId?.last_name].filter(Boolean).join(' ')
       ].filter(Boolean).join(' ');
+      const desig = getItemDesignationName(item);
       const matchesSearch = !searchContent ||
         (fullName.toLowerCase().includes(searchContent)) ||
         (item.emp_no?.toLowerCase().includes(searchContent)) ||
         (item.employeeId?.emp_no?.toLowerCase().includes(searchContent)) ||
         (itemDept?.toLowerCase().includes(searchContent)) ||
-        (itemDiv?.toLowerCase().includes(searchContent));
+        (itemDiv?.toLowerCase().includes(searchContent)) ||
+        (desig && desig.toLowerCase().includes(searchContent));
 
       // 2. Status Filter
       const matchesStatus = !leaveFilters.status || item.status === leaveFilters.status;
@@ -2891,7 +2913,7 @@ export default function LeavesPage() {
                                     {leave.employeeId?.employee_name || `${leave.employeeId?.first_name || ''} ${leave.employeeId?.last_name || ''}`.trim() || leave.emp_no}
                                   </div>
                                   <div className="text-xs text-slate-500">
-                                    {leave.employeeId?.emp_no}
+                                    {formatEmpNoWithDesignation(leave)}
                                   </div>
                                 </div>
                               </div>
@@ -3012,7 +3034,7 @@ export default function LeavesPage() {
                                   {getEmployeeName({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no || leave.emp_no || '' } as Employee)}
                                 </h4>
                                 <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
-                                  {leave.employeeId?.emp_no || leave.emp_no}
+                                  {formatEmpNoWithDesignation(leave)}
                                   {(leave.employeeId as any)?.department?.name && ` • ${(leave.employeeId as any).department.name}`}
                                 </p>
                               </>
@@ -3130,7 +3152,7 @@ export default function LeavesPage() {
                                     {od.employeeId?.employee_name || `${od.employeeId?.first_name || ''} ${od.employeeId?.last_name || ''}`.trim() || od.emp_no}
                                   </div>
                                   <div className="text-xs text-slate-500">
-                                    {od.employeeId?.emp_no}
+                                    {formatEmpNoWithDesignation(od)}
                                   </div>
                                 </div>
                               </div>
@@ -3254,7 +3276,7 @@ export default function LeavesPage() {
                                   {getEmployeeName({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no || od.emp_no || '' } as Employee)}
                                 </h4>
                                 <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
-                                  {od.employeeId?.emp_no || od.emp_no}
+                                  {formatEmpNoWithDesignation(od)}
                                   {(od.employeeId as any)?.department?.name && ` • ${(od.employeeId as any).department.name}`}
                                 </p>
                               </>
@@ -3403,7 +3425,7 @@ export default function LeavesPage() {
                                     <div className="font-medium text-slate-900 dark:text-white text-xs truncate max-w-[150px]">
                                       {getEmployeeName({ employee_name: leave.employeeId?.employee_name || '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no || leave.emp_no || '' } as Employee)}
                                     </div>
-                                    <div className="text-[10px] text-slate-500">{leave.employeeId?.emp_no || leave.emp_no}</div>
+                                    <div className="text-[10px] text-slate-500">{formatEmpNoWithDesignation(leave)}</div>
                                   </div>
                                 </div>
                               </td>
@@ -3485,13 +3507,8 @@ export default function LeavesPage() {
                                   )}
                                 </div>
                                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                                  {leave.employeeId?.emp_no || leave.emp_no}
+                                  {formatEmpNoWithDesignation(leave)}
                                 </p>
-                                {(getItemDesignationName(leave) && getItemDesignationName(leave) !== 'N/A') && (
-                                  <p className="text-xs font-medium text-slate-600 dark:text-slate-300 mt-0.5">
-                                    {getItemDesignationName(leave)}
-                                  </p>
-                                )}
                               </div>
                             </div>
                             <div className="flex flex-col gap-1 items-end">
@@ -3612,7 +3629,7 @@ export default function LeavesPage() {
                                     <div className="font-medium text-slate-900 dark:text-white text-xs truncate max-w-[150px]">
                                       {getEmployeeName({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no || od.emp_no || '' } as Employee)}
                                     </div>
-                                    <div className="text-[10px] text-slate-500">{od.employeeId?.emp_no || od.emp_no}</div>
+                                    <div className="text-[10px] text-slate-500">{formatEmpNoWithDesignation(od)}</div>
                                   </div>
                                 </div>
                               </td>
@@ -3692,13 +3709,8 @@ export default function LeavesPage() {
                                   )}
                                 </div>
                                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                                  {od.employeeId?.emp_no || od.emp_no}
+                                  {formatEmpNoWithDesignation(od)}
                                 </p>
-                                {(getItemDesignationName(od) && getItemDesignationName(od) !== 'N/A') && (
-                                  <p className="text-xs font-medium text-slate-600 dark:text-slate-300 mt-0.5">
-                                    {getItemDesignationName(od)}
-                                  </p>
-                                )}
                               </div>
                             </div>
                             <div className="flex flex-col gap-1 items-end">
@@ -3848,7 +3860,7 @@ export default function LeavesPage() {
                                   </h4>
                                 </div>
                                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                                  {leave.employeeId?.emp_no || leave.emp_no}
+                                  {formatEmpNoWithDesignation(leave)}
                                 </p>
                               </div>
                             </div>
@@ -3902,7 +3914,7 @@ export default function LeavesPage() {
                                   {getEmployeeName({ employee_name: od.employeeId?.employee_name || '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no || od.emp_no || '' } as Employee)}
                                 </h4>
                                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                                  {od.employeeId?.emp_no || od.emp_no}
+                                  {formatEmpNoWithDesignation(od)}
                                 </p>
                               </div>
                             </div>
@@ -4641,7 +4653,7 @@ export default function LeavesPage() {
                           {selectedItem!.employeeId?.employee_name || selectedItem!.emp_no}
                         </h3>
                         <p className="text-sm text-slate-500 font-bold uppercase tracking-tight">
-                          {selectedItem!.employeeId?.emp_no}
+                          {formatEmpNoWithDesignation(selectedItem)}
                         </p>
                         <div className="flex gap-2 mt-2">
                           {selectedItem!.department?.name && (

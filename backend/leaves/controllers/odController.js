@@ -309,10 +309,11 @@ exports.getODs = async (req, res) => {
       OD.find(filter)
         .populate({
           path: 'employeeId',
-          select: 'employee_name emp_no department_id division_id department',
+          select: 'employee_name emp_no first_name last_name department_id division_id designation_id department',
           populate: [
             { path: 'department', select: 'name code' },
-            { path: 'division', select: 'name code' }
+            { path: 'division', select: 'name code' },
+            { path: 'designation', select: 'name code' },
           ]
         })
         .populate('department', 'name')
@@ -378,10 +379,11 @@ exports.getMyODs = async (req, res) => {
     const ods = await OD.find(filter)
       .populate({
           path: 'employeeId',
-          select: 'employee_name emp_no department_id division_id department',
+          select: 'employee_name emp_no first_name last_name department_id division_id designation_id department',
           populate: [
             { path: 'department', select: 'name code' },
-            { path: 'division', select: 'name code' }
+            { path: 'division', select: 'name code' },
+            { path: 'designation', select: 'name code' },
           ]
         })
       .populate('department', 'name')
@@ -412,10 +414,11 @@ exports.getOD = async (req, res) => {
     const od = await OD.findById(req.params.id)
       .populate({
           path: 'employeeId',
-          select: 'employee_name emp_no email phone_number department_id division_id department',
+          select: 'employee_name emp_no first_name last_name email phone_number department_id division_id designation_id department',
           populate: [
             { path: 'department', select: 'name code' },
-            { path: 'division', select: 'name code' }
+            { path: 'division', select: 'name code' },
+            { path: 'designation', select: 'name code' },
           ]
         })
       .populate('department', 'name code')
@@ -959,7 +962,11 @@ exports.applyOD = async (req, res) => {
 
     // Populate for response
     await od.populate([
-      { path: 'employeeId', select: 'first_name last_name emp_no' },
+      {
+        path: 'employeeId',
+        select: 'first_name last_name emp_no employee_name designation_id',
+        populate: { path: 'designation', select: 'name code' },
+      },
       { path: 'department', select: 'name' },
       { path: 'designation', select: 'name' },
     ]);
@@ -1248,7 +1255,11 @@ exports.updateOD = async (req, res) => {
 
     // Populate for response
     await od.populate([
-      { path: 'employeeId', select: 'employee_name emp_no' },
+      {
+        path: 'employeeId',
+        select: 'employee_name emp_no first_name last_name designation_id',
+        populate: { path: 'designation', select: 'name code' },
+      },
       { path: 'department', select: 'name' },
       { path: 'designation', select: 'name' },
       { path: 'changeHistory.modifiedBy', select: 'name email role' },
@@ -1430,10 +1441,11 @@ exports.getPendingApprovals = async (req, res) => {
       OD.find(filter)
         .populate({
           path: 'employeeId',
-          select: 'employee_name emp_no first_name last_name department_id division_id department',
+          select: 'employee_name emp_no first_name last_name department_id division_id designation_id department',
           populate: [
             { path: 'department', select: 'name code' },
-            { path: 'division', select: 'name code' }
+            { path: 'division', select: 'name code' },
+            { path: 'designation', select: 'name code' },
           ]
         })
         .populate('department', 'name')
@@ -1865,7 +1877,11 @@ exports.processODAction = async (req, res) => {
     }
 
     await od.populate([
-      { path: 'employeeId', select: 'first_name last_name emp_no' },
+      {
+        path: 'employeeId',
+        select: 'first_name last_name emp_no employee_name designation_id',
+        populate: { path: 'designation', select: 'name code' },
+      },
       { path: 'department', select: 'name' },
     ]);
 

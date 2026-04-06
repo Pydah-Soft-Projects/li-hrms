@@ -107,6 +107,24 @@ const formatValue = (val: any) => {
   return String(val);
 };
 
+/** Subline under employee name: emp no · designation */
+const formatEmployeeEmpNoDesignationLine = (employee: {
+  emp_no?: string;
+  designation?: { name?: string } | null;
+  designation_id?: unknown;
+}) => {
+  const no = String(employee.emp_no || '').trim();
+  const des =
+    employee.designation?.name?.trim() ||
+    (typeof employee.designation_id === 'object' &&
+    employee.designation_id !== null &&
+    'name' in (employee.designation_id as object)
+      ? String((employee.designation_id as { name?: string }).name || '').trim()
+      : '');
+  if (no && des) return `${no} · ${des}`;
+  return no || des || '';
+};
+
 interface FormSettings {
   groups: Array<{
     id: string;
@@ -3707,19 +3725,13 @@ export default function EmployeesPage() {
                       <thead>
                         <tr className="bg-slate-50 dark:bg-slate-900/50">
                           <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                            Emp No
-                          </th>
-                          <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                            Name
+                            Employee
                           </th>
                           <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
                             Division
                           </th>
                           <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
                             Department
-                          </th>
-                          <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                            Designation
                           </th>
                           <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
                             Phone
@@ -3735,7 +3747,7 @@ export default function EmployeesPage() {
                       <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                         {employees.length === 0 ? (
                           <tr>
-                            <td colSpan={7} className="px-6 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                            <td colSpan={6} className="px-6 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
                               No employees found matching your criteria
                             </td>
                           </tr>
@@ -3746,10 +3758,7 @@ export default function EmployeesPage() {
                               className="transition-colors hover:bg-green-50/30 dark:hover:bg-green-900/10 cursor-pointer"
                               onClick={() => handleViewEmployee(employee)}
                             >
-                              <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-green-600 dark:text-green-400">
-                                {employee.emp_no}
-                              </td>
-                              <td className="whitespace-nowrap px-6 py-4">
+                              <td className="px-6 py-4 min-w-[12rem] max-w-[22rem]">
                                 <div className="flex items-center gap-3">
                                   {(employee as any).profilePhoto ? (
                                     <img
@@ -3762,10 +3771,13 @@ export default function EmployeesPage() {
                                       {(employee.employee_name || '?').charAt(0).toUpperCase()}
                                     </div>
                                   )}
-                                  <div>
-                                    <div className="text-sm font-medium text-slate-900 dark:text-slate-100">{employee.employee_name}</div>
+                                  <div className="min-w-0">
+                                    <div className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">{employee.employee_name}</div>
+                                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate" title={formatEmployeeEmpNoDesignationLine(employee)}>
+                                      {formatEmployeeEmpNoDesignationLine(employee) || '—'}
+                                    </div>
                                     {employee.email && (
-                                      <div className="text-xs text-slate-500 dark:text-slate-400">{employee.email}</div>
+                                      <div className="text-xs text-slate-500 dark:text-slate-400 truncate">{employee.email}</div>
                                     )}
                                   </div>
                                 </div>
@@ -3775,9 +3787,6 @@ export default function EmployeesPage() {
                               </td>
                               <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
                                 {employee.department?.name || '-'}
-                              </td>
-                              <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
-                                {employee.designation?.name || '-'}
                               </td>
                               <td className="whitespace-nowrap px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
                                 {employee.phone_number || '-'}
