@@ -1,7 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const Device = require('../models/Device');
+const DeviceCommand = require('../models/DeviceCommand');
 const logger = require('../utils/logger');
+
+/** Same command the dashboard sends for “Sync All Attendance” — device uploads ATTLOG via ADMS push after next heartbeat(s). */
+const ADMS_ATTLOG_FULL_SYNC_COMMAND = 'DATA QUERY ATTLOG';
 
 /** Max age of lastSeenAt (ms) to treat device as "live" in dashboard. Override with DEVICE_HEARTBEAT_STALE_MS. */
 const HEARTBEAT_STALE_MS = parseInt(process.env.DEVICE_HEARTBEAT_STALE_MS, 10) || 180000;
@@ -31,6 +35,252 @@ router.get('/', async (req, res) => {
             success: false,
             error: error.message
         });
+    }
+});
+
+/**
+ * GET /api/devices/:deviceId/attendance/summary
+ * Count rows on device and how many match optional date / employee filter (TCP pull).
+ */
+router.get('/:deviceId/attendance/summary', async (req, res) => {
+    try {
+        const { deviceId } = req.params;
+        const { startDate, endDate, employeeIds } = req.query;
+        const deviceService = req.app.get('deviceService');
+        if (!deviceService) {
+            return res.status(500).json({ success: false, error: 'Device service not initialized' });
+        }
+        let employeeIdsParsed = employeeIds;
+        if (typeof employeeIds === 'string' && employeeIds.trim()) {
+            try {
+                employeeIdsParsed = JSON.parse(employeeIds);
+            } catch {
+                employeeIdsParsed = employeeIds;
+            }
+        }
+        const summary = await deviceService.summarizeDeviceAttendance(deviceId, {
+            startDate: startDate || undefined,
+            endDate: endDate || undefined,
+            employeeIds: employeeIdsParsed || undefined
+        });
+        res.json({ success: true, data: summary });
+    } catch (error) {
+        if (error.code === 'DEVICE_NOT_FOUND') {
+            return res.status(404).json({ success: false, error: error.message });
+        }
+        logger.error('Attendance summary failed:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * POST /api/devices/:deviceId/attendance/backup
+ * Pull attendance from device via TCP; write JSON under data/device-attlog-backups (optional filter for rows in file).
+ * Body: { startDate?, endDate?, employeeIds?, includeAllInFile?: boolean } — includeAllInFile false writes only matching rows.
+ */
+router.post('/:deviceId/attendance/backup', async (req, res) => {
+    try {
+        const { deviceId } = req.params;
+        const { startDate, endDate, employeeIds, includeAllInFile } = req.body || {};
+        const deviceService = req.app.get('deviceService');
+        if (!deviceService) {
+            return res.status(500).json({ success: false, error: 'Device service not initialized' });
+        }
+        const result = await deviceService.backupDeviceAttendanceLogs(deviceId, {
+            startDate,
+            endDate,
+            employeeIds,
+            includeAllInFile: includeAllInFile !== false
+        });
+        res.json({ success: true, data: result });
+    } catch (error) {
+        if (error.code === 'DEVICE_NOT_FOUND') {
+            return res.status(404).json({ success: false, error: error.message });
+        }
+        logger.error('Attendance backup failed:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * POST /api/devices/:deviceId/attendance/backup-adms-push
+ * Export ATTLOG batches from MongoDB (AdmsRawLog) — data as received via device ADMS HTTP push, not TCP pull.
+ * Body (optional): { startDate?, endDate? } — filters AdmsRawLog.receivedAt (YYYY-MM-DD).
+ */
+router.post('/:deviceId/attendance/backup-adms-push', async (req, res) => {
+    try {
+        const { deviceId } = req.params;
+        const { startDate, endDate } = req.body || {};
+        const deviceService = req.app.get('deviceService');
+        if (!deviceService) {
+            return res.status(500).json({ success: false, error: 'Device service not initialized' });
+        }
+        const result = await deviceService.backupAdmsPushAttendanceLogsFromDb(deviceId, {
+            startDate: startDate || undefined,
+            endDate: endDate || undefined
+        });
+        res.json({ success: true, data: result });
+    } catch (error) {
+        if (error.code === 'DEVICE_NOT_FOUND') {
+            return res.status(404).json({ success: false, error: error.message });
+        }
+        logger.error('ADMS push backup failed:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * POST /api/devices/:deviceId/attendance/backup-adms-fresh
+ * Queue DATA QUERY ATTLOG, then wait for NEW ATTLOG POSTs (not old Mongo rows) and write JSON from those batches only.
+ * Body (optional): { maxWaitMs?, quietPeriodMs? } — default wait up to 120s, stop 12s after last new batch.
+ */
+router.post('/:deviceId/attendance/backup-adms-fresh', async (req, res) => {
+    try {
+        const { deviceId } = req.params;
+        const body = req.body || {};
+        const maxWaitMs = body.maxWaitMs != null ? parseInt(body.maxWaitMs, 10) : undefined;
+        const quietPeriodMs = body.quietPeriodMs != null ? parseInt(body.quietPeriodMs, 10) : undefined;
+        const deviceService = req.app.get('deviceService');
+        if (!deviceService) {
+            return res.status(500).json({ success: false, error: 'Device service not initialized' });
+        }
+        const result = await deviceService.backupFreshAdmsAttlogAfterQueue(deviceId, {
+            maxWaitMs: Number.isFinite(maxWaitMs) ? Math.min(Math.max(maxWaitMs, 5000), 300000) : undefined,
+            quietPeriodMs: Number.isFinite(quietPeriodMs) ? Math.min(Math.max(quietPeriodMs, 2000), 60000) : undefined
+        });
+        res.json({ success: true, data: result });
+    } catch (error) {
+        if (error.code === 'DEVICE_NOT_FOUND') {
+            return res.status(404).json({ success: false, error: error.message });
+        }
+        logger.error('Fresh ADMS backup failed:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * POST /api/devices/:deviceId/attendance/trigger-adms-attlog-sync
+ * Queue DATA QUERY ATTLOG for the device (identical to dashboard “Sync All Attendance”).
+ * Not TCP and not MongoDB: the terminal pulls the command on getrequest.aspx and posts ATTLOG batches to /iclock/cdata.aspx.
+ */
+router.post('/:deviceId/attendance/trigger-adms-attlog-sync', async (req, res) => {
+    try {
+        const { deviceId } = req.params;
+        const device = await Device.findOne({ deviceId });
+        if (!device) {
+            return res.status(404).json({ success: false, error: 'Device not found' });
+        }
+
+        const doc = await DeviceCommand.create({
+            deviceId,
+            command: ADMS_ATTLOG_FULL_SYNC_COMMAND,
+            status: 'PENDING'
+        });
+
+        logger.info(`Queued ADMS ATTLOG full sync: [${deviceId}] id=${doc._id}`);
+
+        res.json({
+            success: true,
+            data: {
+                commandId: doc._id,
+                command: ADMS_ATTLOG_FULL_SYNC_COMMAND,
+                status: 'PENDING',
+                note: 'Ensure the device reaches this server over ADMS (heartbeats). It will upload logs in one or more ATTLOG POSTs—not instant.'
+            }
+        });
+    } catch (error) {
+        logger.error('trigger-adms-attlog-sync failed:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * POST /api/devices/:deviceId/attendance/sync
+ * TCP pull from this device and insert into MongoDB (AttendanceLog).
+ * Body (optional): { startDate?, endDate? } YYYY-MM-DD — if set, only punches in window are inserted.
+ * If omitted, incremental sync for this device.
+ */
+router.post('/:deviceId/attendance/sync', async (req, res) => {
+    try {
+        const { deviceId } = req.params;
+        const body = req.body || {};
+        const startDate = body.startDate && String(body.startDate).trim() ? String(body.startDate).trim() : undefined;
+        const endDate = body.endDate && String(body.endDate).trim() ? String(body.endDate).trim() : undefined;
+
+        if (startDate && !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
+            return res.status(400).json({ success: false, error: 'startDate must be YYYY-MM-DD' });
+        }
+        if (endDate && !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+            return res.status(400).json({ success: false, error: 'endDate must be YYYY-MM-DD' });
+        }
+        if (startDate && endDate && startDate > endDate) {
+            return res.status(400).json({ success: false, error: 'startDate must be before or equal to endDate' });
+        }
+
+        const device = await Device.findOne({ deviceId });
+        if (!device) {
+            return res.status(404).json({ success: false, error: 'Device not found' });
+        }
+        if (!device.enabled) {
+            return res.status(400).json({ success: false, error: 'Device is disabled' });
+        }
+
+        const deviceService = req.app.get('deviceService');
+        if (!deviceService) {
+            return res.status(500).json({ success: false, error: 'Device service not initialized' });
+        }
+
+        const devLean = device.toObject ? device.toObject() : device;
+        const result = await deviceService.fetchLogsFromDevice(devLean, { startDate, endDate });
+        res.json({ success: result.success !== false, data: result });
+    } catch (error) {
+        logger.error('Attendance sync to DB failed:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * POST /api/devices/:deviceId/attendance/clear
+ * Clear ALL attendance (punch) logs on the device (ZK TCP)—CMD_CLEAR_ATTLOG only; users and templates are not wiped.
+ * Optional filter is only for validation unless forceFullClear is true.
+ * Body: { confirmClear: 'CLEAR_ALL_ATTLOG', backupFirst?, startDate?, endDate?, employeeIds?, forceFullClear? }
+ */
+router.post('/:deviceId/attendance/clear', async (req, res) => {
+    try {
+        const { deviceId } = req.params;
+        const body = req.body || {};
+        if (body.confirmClear !== 'CLEAR_ALL_ATTLOG') {
+            return res.status(400).json({
+                success: false,
+                error: 'confirmClear must be exactly CLEAR_ALL_ATTLOG'
+            });
+        }
+        const deviceService = req.app.get('deviceService');
+        if (!deviceService) {
+            return res.status(500).json({ success: false, error: 'Device service not initialized' });
+        }
+        const result = await deviceService.clearDeviceAttendanceLogs(deviceId, {
+            backupFirst: body.backupFirst !== false,
+            startDate: body.startDate,
+            endDate: body.endDate,
+            employeeIds: body.employeeIds,
+            forceFullClear: Boolean(body.forceFullClear)
+        });
+        res.json({ success: true, data: result });
+    } catch (error) {
+        if (error.code === 'DEVICE_NOT_FOUND') {
+            return res.status(404).json({ success: false, error: error.message });
+        }
+        if (error.code === 'SELECTIVE_DEVICE_DELETE_UNSUPPORTED') {
+            return res.status(409).json({
+                success: false,
+                code: error.code,
+                error: error.message,
+                stats: error.stats
+            });
+        }
+        logger.error('Attendance clear failed:', error);
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 

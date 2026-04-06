@@ -526,19 +526,28 @@ async function processAdmsPost(req, res, SN, table, clientIp) {
             const lines = rawBody.split('\n');
             let count = 0;
             for (const line of lines) {
-                const cleanLine = line.replace(/^(USER)\s+/, '').trim();
-                const data = admsParser.parseKeyValueLine(cleanLine);
+                const trimmed = line.trim();
+                if (!trimmed) continue;
+                const data = admsParser.parseUserInfoAdmsLine(trimmed)
+                    || admsParser.parseKeyValueLine(trimmed.replace(/^(USER)\s+/i, '').trim());
                 if (data && data.PIN) {
-                    const userId = data.PIN;
+                    const userId = String(data.PIN).trim();
+                    const existing = await DeviceUser.findOne({ userId }).lean();
+
+                    const mergedName = mergeDeviceUserField(data.NAME, existing?.name);
+                    const mergedPassword = mergeDeviceUserField(data.PASSWORD, existing?.password);
+                    const mergedCard = mergeDeviceUserField(data.CARD, existing?.card);
+                    const mergedRole = mergeDeviceUserRole(data.ROLE, existing?.role);
+
                     await DeviceUser.findOneAndUpdate(
-                        { userId: userId },
+                        { userId },
                         {
                             $set: {
-                                userId: userId,
-                                name: data.NAME || '',
-                                password: data.PASSWORD || '',
-                                card: data.CARD || '',
-                                role: parseInt(data.ROLE) || 0,
+                                userId,
+                                name: mergedName,
+                                password: mergedPassword,
+                                card: mergedCard,
+                                role: mergedRole,
                                 lastSyncedAt: new Date(),
                                 lastDeviceId: SN
                             }
@@ -546,7 +555,12 @@ async function processAdmsPost(req, res, SN, table, clientIp) {
                         { upsert: true }
                     );
                     count++;
-                    // Trigger Auto-Sync for new user info
+
+                    const stored = await DeviceUser.findOne({ userId });
+                    if (existing && stored && deviceUserinfoDrift(data, stored)) {
+                        await queueUserInfoPushToDevice(SN, stored);
+                    }
+
                     autoCloneUser(userId, SN);
                 }
             }
@@ -664,16 +678,54 @@ async function processAdmsPost(req, res, SN, table, clientIp) {
 
 /**
  * GET /api/adms/users
- * Returns structured device users with biometric info
+ * Returns structured device users with biometric info.
+ * Query: sn, q (search userId/name), page, limit, light=1 (omit fingerprint/face/photo blobs for dashboard)
  */
 router.get('/users', async (req, res) => {
     try {
-        const { sn } = req.query;
+        const { sn, q, light } = req.query;
         const query = {};
         if (sn) query.lastDeviceId = sn;
 
-        const users = await DeviceUser.find(query).sort({ userId: 1 });
-        res.json({ success: true, count: users.length, data: users });
+        if (q && String(q).trim()) {
+            const escaped = String(q).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const rx = new RegExp(escaped, 'i');
+            query.$or = [{ userId: rx }, { name: rx }];
+        }
+
+        const usePaging = req.query.page != null || req.query.limit != null;
+        const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+        const limitRaw = parseInt(req.query.limit, 10);
+        const limit = usePaging
+            ? Math.min(200, Math.max(1, Number.isFinite(limitRaw) ? limitRaw : 50))
+            : null;
+
+        let mongoQuery = DeviceUser.find(query).sort({ userId: 1 });
+        if (light === '1' || light === 'true') {
+            mongoQuery = mongoQuery
+                .select('-fingerprints.templateData -face.templateData -photo.content');
+        }
+        if (usePaging && limit != null) {
+            mongoQuery = mongoQuery.skip((page - 1) * limit).limit(limit);
+        }
+
+        const [users, total] = await Promise.all([
+            mongoQuery.lean(),
+            usePaging ? DeviceUser.countDocuments(query) : Promise.resolve(null)
+        ]);
+
+        const payload = {
+            success: true,
+            count: users.length,
+            data: users
+        };
+        if (usePaging) {
+            payload.total = total;
+            payload.page = page;
+            payload.limit = limit;
+            payload.totalPages = Math.max(1, Math.ceil(total / limit));
+        }
+        res.json(payload);
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
     }
@@ -823,6 +875,71 @@ router.get('/raw', async (req, res) => {
     // Redirect to the public unified endpoint
     res.redirect(`/api/adms/logs?limit=${req.query.limit || 50}`);
 });
+
+/**
+ * Prefer non-empty device value; otherwise keep biometric DB value (avoid wiping name/card with blanks).
+ */
+function mergeDeviceUserField(incoming, stored) {
+    const t = incoming != null ? String(incoming).trim() : '';
+    if (t !== '') return t;
+    return stored != null ? String(stored).trim() : '';
+}
+
+function mergeDeviceUserRole(incomingStr, storedNum) {
+    if (incomingStr == null || String(incomingStr).trim() === '') {
+        return typeof storedNum === 'number' && !Number.isNaN(storedNum) ? storedNum : 0;
+    }
+    const n = parseInt(String(incomingStr), 10);
+    return Number.isNaN(n) ? (typeof storedNum === 'number' ? storedNum : 0) : n;
+}
+
+/**
+ * True when the terminal's USERINFO payload still does not match our canonical DeviceUser document
+ * (after merge)—so the device should receive DATA UPDATE USERINFO for this PIN.
+ */
+function deviceUserinfoDrift(deviceData, userDoc) {
+    if (!userDoc) return false;
+    const dName = (deviceData.NAME || '').trim();
+    const dCard = (deviceData.CARD || '').trim();
+    const dPwd = (deviceData.PASSWORD || '').trim();
+    let dRole = null;
+    if (deviceData.ROLE != null && String(deviceData.ROLE).trim() !== '') {
+        const n = parseInt(String(deviceData.ROLE), 10);
+        if (!Number.isNaN(n)) dRole = n;
+    }
+
+    const uName = (userDoc.name || '').trim();
+    const uCard = (userDoc.card || '').trim();
+    const uPwd = (userDoc.password || '').trim();
+    const uRole = userDoc.role || 0;
+
+    if (uName !== dName) return true;
+    if (uCard !== dCard) return true;
+    if (uPwd !== dPwd) return true;
+    if (dRole !== null && uRole !== dRole) return true;
+
+    return false;
+}
+
+/**
+ * Push stored biometric DeviceUser profile to this device (ADMS queue). Not HRMS—local DeviceUser only.
+ */
+async function queueUserInfoPushToDevice(serialNumber, userDoc) {
+    if (process.env.SYNC_STORED_DEVICEUSER_TO_TERMINAL === 'false') return;
+
+    const device = await Device.findOne({ deviceId: serialNumber });
+    if (!device || device.enabled === false) return;
+
+    const sep = device.protocol?.separator || '\t';
+    const cmd = `DATA UPDATE USERINFO PIN=${userDoc.userId}${sep}Name=${userDoc.name || ''}${sep}Password=${userDoc.password || ''}${sep}Group=1${sep}Card=${userDoc.card || ''}${sep}Role=${userDoc.role || 0}`;
+
+    await DeviceCommand.create({
+        deviceId: serialNumber,
+        command: cmd,
+        status: 'PENDING'
+    });
+    logger.info(`ADMS: Queued USERINFO reconcile push to device ${serialNumber} for PIN ${userDoc.userId}`);
+}
 
 /**
  * HELPER: Auto-clone a user/template to all other devices
