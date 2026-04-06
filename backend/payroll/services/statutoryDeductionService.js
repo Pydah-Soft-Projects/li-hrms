@@ -85,8 +85,8 @@ async function calculateStatutoryDeductions({ basicPay = 0, grossSalary = 0, ear
       breakdown.push({
         name: 'ESI',
         code: 'ESI',
-        employeeAmount: empAmount,
-        employerAmount: emprAmount,
+        employeeAmount: Math.round(empAmount),
+        employerAmount: Math.round(emprAmount),
       });
     }
   }
@@ -121,8 +121,8 @@ async function calculateStatutoryDeductions({ basicPay = 0, grossSalary = 0, ear
       breakdown.push({
         name: 'PF',
         code: 'PF',
-        employeeAmount: empAmount,
-        employerAmount: emprAmount,
+        employeeAmount: Math.round(empAmount),
+        employerAmount: Math.round(emprAmount),
       });
     }
   }
@@ -153,7 +153,7 @@ async function calculateStatutoryDeductions({ basicPay = 0, grossSalary = 0, ear
     breakdown.push({
       name: 'Profession Tax',
       code: 'PT',
-      employeeAmount: amount,
+      employeeAmount: Math.round(amount),
       employerAmount: 0,
     });
   }
