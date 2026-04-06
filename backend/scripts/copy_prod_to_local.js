@@ -4,6 +4,8 @@ require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
 /**
  * Script to copy a production MongoDB database to a local instance safely.
+ * Replaces or inserts each document by _id (upsert). Does not delete local
+ * documents that no longer exist in production.
  * Requirements:
  * 1. MONGODB_ATLAS_URI in backend/.env (Source - Production)
  * 2. MONGODB_URI in backend/.env (Destination - Local)
@@ -48,45 +50,46 @@ async function copyDatabase() {
 
             console.log(`\n--- Copying collection: ${collectionName} ---`);
 
-            // 1. Clear local collection
-            await localDb.collection(collectionName).deleteMany({});
-            console.log(`Cleared local collection: ${collectionName}`);
-
-            // 2. Fetch documents from production
             const prodCollection = prodDb.collection(collectionName);
             const count = await prodCollection.countDocuments();
-            console.log(`Total documents to copy: ${count}`);
+            console.log(`Total documents to upsert: ${count}`);
 
             if (count === 0) {
                 console.log(`Skipping empty collection: ${collectionName}`);
                 continue;
             }
 
-            // 3. Batch copy to local
             const batchSize = 1000;
             const cursor = prodCollection.find({});
 
             let batch = [];
             let processed = 0;
 
+            const flushBatch = async () => {
+                if (batch.length === 0) return;
+                const ops = batch.map((doc) => ({
+                    replaceOne: {
+                        filter: { _id: doc._id },
+                        replacement: doc,
+                        upsert: true,
+                    },
+                }));
+                await localDb.collection(collectionName).bulkWrite(ops, { ordered: false });
+                processed += batch.length;
+                console.log(`  Upserted ${processed}/${count}...`);
+                batch = [];
+            };
+
             while (await cursor.hasNext()) {
                 const doc = await cursor.next();
                 batch.push(doc);
 
                 if (batch.length === batchSize) {
-                    await localDb.collection(collectionName).insertMany(batch);
-                    processed += batch.length;
-                    console.log(`  Processed ${processed}/${count}...`);
-                    batch = [];
+                    await flushBatch();
                 }
             }
 
-            // Insert remaining documents
-            if (batch.length > 0) {
-                await localDb.collection(collectionName).insertMany(batch);
-                processed += batch.length;
-                console.log(`  Finished copying ${processed} documents.`);
-            }
+            await flushBatch();
         }
 
         console.log("\nDatabase copy completed successfully!");
