@@ -13,7 +13,7 @@ const MonthlyAttendanceSummary = require('../model/MonthlyAttendanceSummary');
 const { calculateMonthlySummary } = require('../services/summaryCalculationService');
 const Settings = require('../../settings/model/Settings');
 const { extractISTComponents, getPayrollDateRange } = require('../../shared/utils/dateUtils');
-const { buildLeftDuringPeriodOrClause } = require('../services/attendanceEmployeeQuery');
+const { buildLeftDuringPeriodOrClause, mergeScopeWithEmployeeClauses } = require('../services/attendanceEmployeeQuery');
 const dateCycleService = require('../../leaves/services/dateCycleService');
 
 /**
@@ -49,12 +49,14 @@ exports.getAttendanceCalendar = async (req, res) => {
     const pr = await getPayrollDateRange(targetYear, targetMonth);
     const rosterVisibility = buildLeftDuringPeriodOrClause(pr.startDate, pr.endDate);
 
-    // Scope + same roster rule as monthly attendance (incl. left during this payroll month)
-    const employee = await Employee.findOne({
-      ...req.scopeFilter,
-      emp_no: employeeNumber.toUpperCase(),
-      ...rosterVisibility,
-    });
+    // Scope + same roster rule as monthly attendance (incl. left during this payroll month).
+    // Do not spread rosterVisibility onto scopeFilter — both use `$or` and would overwrite scope.
+    const employee = await Employee.findOne(
+      mergeScopeWithEmployeeClauses(req.scopeFilter, [
+        { emp_no: employeeNumber.toUpperCase() },
+        rosterVisibility,
+      ])
+    );
 
     if (!employee) {
       return res.status(403).json({
@@ -275,10 +277,9 @@ exports.getEmployeesWithAttendance = async (req, res) => {
 
     const skip = limitNum === -1 ? 0 : (pageNum - 1) * limitNum;
 
-    let employeeQuery = Employee.find({
-      ...req.scopeFilter,
-      ...rosterVisibility,
-    })
+    const employeesFilter = mergeScopeWithEmployeeClauses(req.scopeFilter, [rosterVisibility]);
+
+    let employeeQuery = Employee.find(employeesFilter)
       .select('emp_no employee_name department_id designation_id')
       .populate('department_id', 'name')
       .populate('designation_id', 'name')
@@ -290,10 +291,7 @@ exports.getEmployeesWithAttendance = async (req, res) => {
 
     const employees = await employeeQuery;
 
-    const total = await Employee.countDocuments({
-      ...req.scopeFilter,
-      ...rosterVisibility,
-    });
+    const total = await Employee.countDocuments(employeesFilter);
 
     // If date provided, get attendance for that date for these SPECIFIC employees
     let attendanceMap = {};
@@ -365,10 +363,9 @@ exports.getMonthlyAttendance = async (req, res) => {
     const periodStart = new Date(`${periodStartStr}T00:00:00.000Z`);
     const periodEnd = new Date(`${periodEndStr}T23:59:59.999Z`);
 
-    // Active employees, OR inactive employees whose last working day (leftDate) falls in this payroll period
-    const scopeBase = { ...(req.scopeFilter || {}) };
-    const filter = {
-      ...scopeBase,
+    // Active employees, OR inactive employees whose last working day (leftDate) falls in this payroll period.
+    // Must $and with scopeFilter: scope often has top-level `$or`; assigning `filter.$or` for roster would drop scope.
+    const rosterVisibility = {
       $or: [
         { is_active: { $ne: false } },
         {
@@ -378,22 +375,21 @@ exports.getMonthlyAttendance = async (req, res) => {
       ],
     };
 
+    const extraClauses = [rosterVisibility];
     if (search) {
-      filter.$and = [
-        { $or: filter.$or },
-        {
-          $or: [
-            { employee_name: { $regex: search, $options: 'i' } },
-            { emp_no: { $regex: search, $options: 'i' } },
-          ],
-        },
-      ];
-      delete filter.$or;
+      const safeSearch = escapeRegex(search);
+      extraClauses.push({
+        $or: [
+          { employee_name: { $regex: safeSearch, $options: 'i' } },
+          { emp_no: { $regex: safeSearch, $options: 'i' } },
+        ],
+      });
     }
+    if (divisionId) extraClauses.push({ division_id: divisionId });
+    if (departmentId) extraClauses.push({ department_id: departmentId });
+    if (designationId) extraClauses.push({ designation_id: designationId });
 
-    if (divisionId) filter.division_id = divisionId;
-    if (departmentId) filter.department_id = departmentId;
-    if (designationId) filter.designation_id = designationId;
+    const filter = mergeScopeWithEmployeeClauses(req.scopeFilter, extraClauses);
 
     const pageNum = parseInt(page, 10) || 1;
     const limitNum = parseInt(limit, 10) || 20;
