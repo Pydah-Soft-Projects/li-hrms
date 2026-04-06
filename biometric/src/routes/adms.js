@@ -424,40 +424,47 @@ async function processAdmsPost(req, res, SN, table, clientIp) {
 
                     // ==========================================
                     // REAL-TIME SYNC TRIGGER (Microservice -> Backend)
+                    // Skipped while a fresh ADMS backup is capturing ATTLOG for this SN (avoid duplicate HRMS rows).
                     // ==========================================
                     try {
-                        const axios = require('axios'); // Lazy load
-                        const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:5000';
-                        const syncEndpoint = `${BACKEND_URL}/api/internal/attendance/sync`;
-                        const SYSTEM_KEY = process.env.HRMS_MICROSERVICE_SECRET_KEY || "hrms-secret-key-2026-abc123xyz789";
-                        if (!SYSTEM_KEY) {
-                            logger.error('HRMS_MICROSERVICE_SECRET_KEY not configured in biometric service');
-                            return;
-                        }
+                        const deviceService = req.app.get('deviceService');
+                        if (deviceService && typeof deviceService.shouldSuppressHrmsSyncForAdmsAttlog === 'function'
+                            && deviceService.shouldSuppressHrmsSyncForAdmsAttlog(SN)) {
+                            logger.info(`ADMS ATTLOG: skipping HRMS sync for ${SN} (fresh backup capture in progress; local AttendanceLog still updated)`);
+                        } else {
+                            const axios = require('axios'); // Lazy load
+                            const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:5000';
+                            const syncEndpoint = `${BACKEND_URL}/api/internal/attendance/sync`;
+                            const SYSTEM_KEY = process.env.HRMS_MICROSERVICE_SECRET_KEY || "hrms-secret-key-2026-abc123xyz789";
+                            if (!SYSTEM_KEY) {
+                                logger.error('HRMS_MICROSERVICE_SECRET_KEY not configured in biometric service');
+                                return;
+                            }
 
-                        const syncPayload = records.map(rec => {
-                            const logType = LOG_TYPE_MAP[rec.inOutMode] || 'CHECK-IN';
-                            return {
-                                employeeId: rec.userId,
-                                timestamp: rec.timestamp,
-                                logType: logType,
-                                deviceId: SN,
-                                deviceName: deviceName,
-                                rawStatus: rec.inOutMode
-                            };
-                        });
-
-                        axios.post(syncEndpoint, syncPayload, {
-                            headers: { 'x-system-key': SYSTEM_KEY },
-                            timeout: 5000
-                        })
-                            .then(response => {
-                                logger.info(`ADMS Real-Time Sync Success: Backend accepted ${response.data.processed} logs.`);
-                            })
-                            .catch(err => {
-                                const errorReason = err.code === 'ECONNREFUSED' ? `Connection refused at ${syncEndpoint}` : err.message;
-                                logger.error(`ADMS Real-Time Sync Failed: ${errorReason}`);
+                            const syncPayload = records.map(rec => {
+                                const logType = LOG_TYPE_MAP[rec.inOutMode] || 'CHECK-IN';
+                                return {
+                                    employeeId: rec.userId,
+                                    timestamp: rec.timestamp,
+                                    logType: logType,
+                                    deviceId: SN,
+                                    deviceName: deviceName,
+                                    rawStatus: rec.inOutMode
+                                };
                             });
+
+                            axios.post(syncEndpoint, syncPayload, {
+                                headers: { 'x-system-key': SYSTEM_KEY },
+                                timeout: 5000
+                            })
+                                .then(response => {
+                                    logger.info(`ADMS Real-Time Sync Success: Backend accepted ${response.data.processed} logs.`);
+                                })
+                                .catch(err => {
+                                    const errorReason = err.code === 'ECONNREFUSED' ? `Connection refused at ${syncEndpoint}` : err.message;
+                                    logger.error(`ADMS Real-Time Sync Failed: ${errorReason}`);
+                                });
+                        }
 
                     } catch (syncError) {
                         logger.error(`ADMS Real-Time Trigger Error: ${syncError.message}`);

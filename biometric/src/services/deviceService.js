@@ -17,6 +17,14 @@ const ADMS_ATTLOG_SYNC_COMMAND = 'DATA QUERY ATTLOG';
 const ATTLOG_BACKUP_ROOT = process.env.DEVICE_ATTLOG_BACKUP_DIR
     || path.join(__dirname, '../../data/device-attlog-backups');
 
+function envMs(name, fallback, min, max) {
+    const raw = process.env[name];
+    if (raw == null || String(raw).trim() === '') return fallback;
+    const n = parseInt(String(raw), 10);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.min(Math.max(n, min), max);
+}
+
 // Map device status codes to log types
 // Note: These mappings may vary by device model - adjust as needed
 // Different eSSL/ZKTeco models use different status codes
@@ -42,6 +50,28 @@ const CMD = {
 class DeviceService {
     constructor(deviceConfig = null) {
         this.deviceConfig = deviceConfig;
+        /** @type {Map<string, number>} deviceId -> ref count while fresh ADMS backup is capturing ATTLOG */
+        this._admsFreshBackupHrmsSyncSuppressRef = new Map();
+    }
+
+    /**
+     * While ref count is positive, ADMS ATTLOG posts for this device skip POST to HRMS (fresh backup capture).
+     */
+    beginAdmsFreshBackupSuppressHrmsSync(deviceId) {
+        const id = String(deviceId);
+        const n = (this._admsFreshBackupHrmsSyncSuppressRef.get(id) || 0) + 1;
+        this._admsFreshBackupHrmsSyncSuppressRef.set(id, n);
+    }
+
+    endAdmsFreshBackupSuppressHrmsSync(deviceId) {
+        const id = String(deviceId);
+        const next = (this._admsFreshBackupHrmsSyncSuppressRef.get(id) || 0) - 1;
+        if (next <= 0) this._admsFreshBackupHrmsSyncSuppressRef.delete(id);
+        else this._admsFreshBackupHrmsSyncSuppressRef.set(id, next);
+    }
+
+    shouldSuppressHrmsSyncForAdmsAttlog(deviceId) {
+        return (this._admsFreshBackupHrmsSyncSuppressRef.get(String(deviceId)) || 0) > 0;
     }
 
     /**
@@ -594,12 +624,21 @@ class DeviceService {
             throw err;
         }
 
-        const quietPeriodMs = options.quietPeriodMs ?? 12000;
-        const maxWaitMs = options.maxWaitMs ?? 120000;
         const pollIntervalMs = options.pollIntervalMs ?? 2000;
+        const quietPeriodMs = options.quietPeriodMs
+            ?? envMs('ADMS_FRESH_BACKUP_QUIET_PERIOD_MS', 12000, 2000, 120000);
+        /** Absolute wall-clock cap while batches may still be arriving (sync can span many minutes). */
+        const hardCapMs = options.hardCapMs
+            ?? options.maxWaitMs
+            ?? envMs('ADMS_FRESH_BACKUP_HARD_CAP_MS', 3600000, 120000, 7200000);
+        /** If no ATTLOG batch appears at all, stop after this (avoid waiting the full hard cap on offline devices). */
+        const waitForFirstBatchMs = options.waitForFirstBatchMs
+            ?? envMs('ADMS_FRESH_BACKUP_FIRST_BATCH_WAIT_MS', 180000, 10000, 3600000);
 
         const cutoff = new Date();
 
+        this.beginAdmsFreshBackupSuppressHrmsSync(deviceId);
+        try {
         await DeviceCommand.create({
             deviceId,
             command: ADMS_ATTLOG_SYNC_COMMAND,
@@ -612,9 +651,10 @@ class DeviceService {
         const collected = [];
         let lastNewBatchAt = null;
         const loopStart = Date.now();
-        let timedOut = false;
+        let settledAfterQuiet = false;
+        let stoppedReason = 'active';
 
-        while (Date.now() - loopStart < maxWaitMs) {
+        while (Date.now() - loopStart < hardCapMs) {
             await this._sleep(pollIntervalMs);
 
             const batch = await AdmsRawLog.find({
@@ -638,13 +678,20 @@ class DeviceService {
                 lastNewBatchAt = Date.now();
             } else if (collected.length > 0 && lastNewBatchAt != null
                 && (Date.now() - lastNewBatchAt) >= quietPeriodMs) {
+                settledAfterQuiet = true;
+                stoppedReason = 'quiet_after_sync';
+                break;
+            } else if (collected.length === 0 && (Date.now() - loopStart) >= waitForFirstBatchMs) {
+                stoppedReason = 'no_attlog_received';
                 break;
             }
         }
 
-        if (Date.now() - loopStart >= maxWaitMs) {
-            timedOut = true;
+        if (!settledAfterQuiet && stoppedReason === 'active' && Date.now() - loopStart >= hardCapMs) {
+            stoppedReason = 'hard_cap';
         }
+
+        const timedOut = stoppedReason === 'hard_cap';
 
         const { pushBatches, totalParsedPunches } = this._admsRawLogLeanDocsToPushBatches(collected);
         const waitedMs = Date.now() - loopStart;
@@ -662,12 +709,15 @@ class DeviceService {
             operationTag: 'api_backup_adms_fresh',
             triggeredAt: cutoff.toISOString(),
             wait: {
-                maxWaitMs,
+                hardCapMs,
+                waitForFirstBatchMs,
                 quietPeriodMs,
                 pollIntervalMs,
                 waitedMs,
                 timedOut,
-                settledAfterQuiet: !timedOut && collected.length > 0
+                stoppedReason,
+                settledAfterQuiet,
+                maxWaitMs: hardCapMs
             },
             deviceId: device.deviceId,
             deviceName: device.name,
@@ -694,9 +744,15 @@ class DeviceService {
             totalParsedPunchesAcrossBatches: totalParsedPunches,
             waitedMs,
             timedOut,
+            settledAfterQuiet,
+            stoppedReason,
             triggeredAt: cutoff.toISOString(),
+            hrmsSyncSuppressed: true,
             s3
         };
+        } finally {
+            this.endAdmsFreshBackupSuppressHrmsSync(deviceId);
+        }
     }
 
     /**
