@@ -211,6 +211,23 @@ interface AttendanceRecord {
 
   source?: string[];
 
+  policyMeta?: {
+    partialDayRule?: {
+      applied?: boolean;
+      firstHalfStatus?: string | null;
+      secondHalfStatus?: string | null;
+      lopPortion?: number;
+      note?: string | null;
+    } | null;
+    sandwichRule?: {
+      applied?: boolean;
+      previousNeighborKind?: string | null;
+      nextNeighborKind?: string | null;
+      effect?: string | null;
+      note?: string | null;
+    } | null;
+  } | null;
+
 }
 
 
@@ -493,7 +510,9 @@ export default function AttendancePage() {
     const hasFullLeave = !!(leaveInfo && !leaveInfo.isHalfDay);
     const hasFullOD = !!(odInfo && odInfo.odType_extended === 'full_day');
 
-    const shouldSplit = !isHoursOD && (record.status === 'HALF_DAY' || hasHalfLeave || hasHalfOD);
+    const partialRule = record.policyMeta?.partialDayRule;
+    const hasPartialPolicySplit = record.status === 'PARTIAL' && partialRule?.applied === true;
+    const shouldSplit = !isHoursOD && (record.status === 'HALF_DAY' || hasHalfLeave || hasHalfOD || hasPartialPolicySplit);
     if (!shouldSplit) return null;
 
     let top = 'A';
@@ -503,8 +522,21 @@ export default function AttendancePage() {
       top = 'P';
       bottom = 'P';
     } else if (record.status === 'PARTIAL') {
-      top = 'PT';
-      bottom = 'PT';
+      if (hasPartialPolicySplit) {
+        const toCell = (status?: string | null) => {
+          const s = String(status || '').toLowerCase();
+          if (s === 'present') return 'PT';
+          if (s === 'leave') return 'L';
+          if (s === 'od') return 'OD';
+          if (s === 'absent') return 'A';
+          return 'PT';
+        };
+        top = toCell(partialRule?.firstHalfStatus);
+        bottom = toCell(partialRule?.secondHalfStatus);
+      } else {
+        top = 'PT';
+        bottom = 'PT';
+      }
     } else if (record.status === 'HALF_DAY') {
       const eo = Number(record.earlyOutMinutes) || 0;
       const li = Number(record.lateInMinutes) || 0;
@@ -5096,6 +5128,43 @@ export default function AttendancePage() {
                           {formatHours(attendanceDetail.permissionHours)} hrs ({attendanceDetail.permissionCount || 0} permissions)
                         </div>
 
+                      </div>
+                    )}
+
+                    {attendanceDetail.policyMeta?.partialDayRule?.applied && (
+                      <div className="col-span-2 rounded-xl border border-violet-200 bg-violet-50/70 p-4 dark:border-violet-800/60 dark:bg-violet-900/20">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-violet-700/80 dark:text-violet-300/80">
+                          Policy Split
+                        </label>
+                        <div className="mt-1 text-sm font-semibold text-violet-900 dark:text-violet-100">
+                          {String(attendanceDetail.policyMeta?.partialDayRule?.firstHalfStatus || '-').toUpperCase()} / {String(attendanceDetail.policyMeta?.partialDayRule?.secondHalfStatus || '-').toUpperCase()}
+                          {typeof attendanceDetail.policyMeta?.partialDayRule?.lopPortion === 'number'
+                            ? ` (LOP: ${attendanceDetail.policyMeta.partialDayRule.lopPortion})`
+                            : ''}
+                        </div>
+                        {attendanceDetail.policyMeta?.partialDayRule?.note && (
+                          <div className="mt-1 text-xs text-violet-800/90 dark:text-violet-200/90">
+                            {attendanceDetail.policyMeta.partialDayRule.note}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {attendanceDetail.policyMeta?.sandwichRule?.applied && (
+                      <div className="col-span-2 rounded-xl border border-amber-200 bg-amber-50/70 p-4 dark:border-amber-800/60 dark:bg-amber-900/20">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-amber-700/80 dark:text-amber-300/80">
+                          Sandwich Policy
+                        </label>
+                        <div className="mt-1 text-sm font-semibold text-amber-900 dark:text-amber-100">
+                          {String(attendanceDetail.policyMeta?.sandwichRule?.effect || 'applied').replaceAll('_', ' ')}
+                        </div>
+                        <div className="mt-1 text-xs text-amber-800/90 dark:text-amber-200/90">
+                          Neighbours: {attendanceDetail.policyMeta?.sandwichRule?.previousNeighborKind || '-'} / {attendanceDetail.policyMeta?.sandwichRule?.nextNeighborKind || '-'}
+                        </div>
+                        {attendanceDetail.policyMeta?.sandwichRule?.note && (
+                          <div className="mt-1 text-xs text-amber-800/90 dark:text-amber-200/90">
+                            {attendanceDetail.policyMeta.sandwichRule.note}
+                          </div>
+                        )}
                       </div>
                     )}
 

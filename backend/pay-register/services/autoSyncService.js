@@ -4,6 +4,10 @@ const {
   applyPayRegisterParityFromMonthlySummary,
 } = require('./autoPopulationService');
 const { calculateTotals, ensureTotalsRespectRoster, syncTotalsFromMonthlySummary } = require('./totalsCalculationService');
+const {
+  applyContributingDatesFromMonthlySummary,
+  applyContributingDatesFromDailyGrid,
+} = require('./contributingDatesService');
 const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
 const { syncAttendanceFromMSSQL } = require('../../attendance/services/attendanceSyncService');
 const summaryCalculationService = require('../../attendance/services/summaryCalculationService');
@@ -135,9 +139,11 @@ async function syncPayRegisterFromLeave(leave) {
           monthNum
         );
         syncTotalsFromMonthlySummary(payRegister, summary);
+        applyContributingDatesFromMonthlySummary(payRegister, summary);
       } else {
         payRegister.totals = calculateTotals(dailyRecords);
         await ensureTotalsRespectRoster(payRegister.totals, payRegister.emp_no, payRegister.startDate, payRegister.endDate);
+        applyContributingDatesFromDailyGrid(payRegister);
       }
 
       // Update sync tracking
@@ -248,9 +254,11 @@ async function syncPayRegisterFromOD(od) {
           monthNum
         );
         syncTotalsFromMonthlySummary(payRegister, summary);
+        applyContributingDatesFromMonthlySummary(payRegister, summary);
       } else {
         payRegister.totals = calculateTotals(dailyRecords);
         await ensureTotalsRespectRoster(payRegister.totals, payRegister.emp_no, payRegister.startDate, payRegister.endDate);
+        applyContributingDatesFromDailyGrid(payRegister);
       }
       payRegister.lastAutoSyncedAt = new Date();
       payRegister.lastAutoSyncedFrom.ods = new Date();
@@ -346,9 +354,11 @@ async function syncPayRegisterFromOT(ot) {
             monthNum
           );
           syncTotalsFromMonthlySummary(payRegister, summary);
+          applyContributingDatesFromMonthlySummary(payRegister, summary);
         } else {
           payRegister.totals = calculateTotals(payRegister.dailyRecords);
           await ensureTotalsRespectRoster(payRegister.totals, payRegister.emp_no, payRegister.startDate, payRegister.endDate);
+          applyContributingDatesFromDailyGrid(payRegister);
         }
         payRegister.lastAutoSyncedAt = new Date();
         payRegister.lastAutoSyncedFrom.ot = new Date();
@@ -451,9 +461,11 @@ async function manualSyncPayRegister(employeeId, month, options = {}) {
         monthNum
       );
       syncTotalsFromMonthlySummary(payRegister, summary);
+      applyContributingDatesFromMonthlySummary(payRegister, summary);
     } else {
       payRegister.totals = calculateTotals(dailyRecords);
       await ensureTotalsRespectRoster(payRegister.totals, payRegister.emp_no, payRegister.startDate, payRegister.endDate);
+      applyContributingDatesFromDailyGrid(payRegister);
     }
 
     payRegister.lastAutoSyncedAt = new Date();
