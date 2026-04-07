@@ -903,6 +903,9 @@ export default function PayRegisterPage() {
       (totals?.totalUnpaidLeaveDays || 0) +
       (totals?.totalLopDays || 0));
 
+  const getLateAndEarlyCount = (totals: any) =>
+    (Number(totals?.lateCount) || 0) + (Number(totals?.earlyOutCount) || 0);
+
   const getSummaryRows = () =>
     getFilteredPayRegisters().map((pr) => {
       const totals = pr.totals || {};
@@ -916,7 +919,7 @@ export default function PayRegisterPage() {
       const holidays = totals.totalHolidays || 0;
       const lop = totals.totalLopDays || 0;
       const paidLeave = totals.totalPaidLeaveDays || 0;
-      const lateCount = totals.lateCount || 0;
+      const lateCount = getLateAndEarlyCount(totals);
       const holidayAndWeekoffs = (totals.totalWeeklyOffs || 0) + (totals.totalHolidays || 0);
 
       const monthDays = pr.totalDaysInMonth || daysArray.length || daysInMonth;
@@ -2123,7 +2126,7 @@ export default function PayRegisterPage() {
                     'Total OD',
                     'Total OT Hours',
                     'Total Extra Days',
-                    'Lates',
+                    'Lates (L+E)',
                     'Holidays & Weekoffs',
                     'Present Days',
                     'Payable Shifts',
@@ -2179,7 +2182,7 @@ export default function PayRegisterPage() {
                     'Total OD',
                     'Total OT Hours',
                     'Total Extra Days',
-                    'Lates',
+                    'Lates (L+E)',
                     'Holidays & Weekoffs',
                     'Present Days',
                     'Payable Shifts',
@@ -2238,7 +2241,12 @@ export default function PayRegisterPage() {
                       <td className="text-center px-2 py-2">{row.od.toFixed(1)}</td>
                       <td className="text-center px-2 py-2">{row.ot.toFixed(1)}</td>
                       <td className="text-center px-2 py-2">{row.extra.toFixed(1)}</td>
-                      <td className="text-center px-2 py-2 font-bold text-amber-600 dark:text-amber-400">{row.lateCount}</td>
+                      <td
+                        className="text-center px-2 py-2 font-bold text-amber-600 dark:text-amber-400"
+                        title={`Late in: ${row.pr.totals?.lateCount ?? 0}, Early out: ${row.pr.totals?.earlyOutCount ?? 0}`}
+                      >
+                        {row.lateCount}
+                      </td>
                       <td className="text-center px-2 py-2">{row.holidayAndWeekoffs.toFixed(1)}</td>
                       <td className="text-center px-2 py-2 font-medium text-green-600 dark:text-green-400" title="Includes OD days">{row.present.toFixed(1)}</td>
                       <td className="text-center px-2 py-2 font-bold text-slate-700 dark:text-slate-300">{row.payableShifts.toFixed(1)}</td>
@@ -2443,8 +2451,11 @@ export default function PayRegisterPage() {
                         <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-blue-50 dark:bg-blue-900/20" title="Payable Shifts + Week Offs + Holidays + Paid Leaves">
                           Paid Days
                         </th>
-                        <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-amber-50 dark:bg-amber-900/20">
-                          Lates
+                        <th
+                          className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-amber-50 dark:bg-amber-900/20"
+                          title="Late in + early out (combined). Week off / holiday excluded from totals."
+                        >
+                          Lates (L+E)
                         </th>
                       </>
                     )}
@@ -2754,8 +2765,11 @@ export default function PayRegisterPage() {
                                 <td className="border-r border-slate-200 bg-blue-50 dark:bg-blue-900/20 px-2 py-2 text-center text-[11px] font-bold text-blue-700 dark:text-blue-300" title="Payable + Week Offs + Holidays + Paid Leaves">
                                   {paidDays.toFixed(1)}
                                 </td>
-                                <td className="border-r-0 border-slate-200 bg-amber-50 dark:bg-amber-900/20 px-2 py-2 text-center text-[11px] font-bold text-amber-700 dark:text-amber-300">
-                                  {pr.totals?.lateCount || 0}
+                                <td
+                                  className="border-r-0 border-slate-200 bg-amber-50 dark:bg-amber-900/20 px-2 py-2 text-center text-[11px] font-bold text-amber-700 dark:text-amber-300"
+                                  title={`Late: ${pr.totals?.lateCount ?? 0}, Early out: ${pr.totals?.earlyOutCount ?? 0}`}
+                                >
+                                  {getLateAndEarlyCount(pr.totals)}
                                 </td>
                               </>
                             );

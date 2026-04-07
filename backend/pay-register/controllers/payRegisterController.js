@@ -981,7 +981,7 @@ exports.exportSummaryExcel = async (req, res) => {
         'LOP Count': totals.totalLopDays || 0,
         'Total Absent': totals.totalAbsentDays || 0,
         'Holiday Count': (totals.totalWeeklyOffs || 0) + (totals.totalHolidays || 0),
-        'Late Count': totals.lateCount || 0,
+        'Late Count': (Number(totals.lateCount) || 0) + (Number(totals.earlyOutCount) || 0),
         'OT Hours': totals.totalOTHours || 0,
         'Extra Days': totals.extraDays || 0,
       };
