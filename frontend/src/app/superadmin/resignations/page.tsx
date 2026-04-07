@@ -121,6 +121,7 @@ const formatDateTime = (dateStr?: string) => {
   const d = new Date(dateStr);
   if (Number.isNaN(d.getTime())) return '—';
   return d.toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
     day: '2-digit',
     month: 'short',
     year: 'numeric',
@@ -1138,7 +1139,7 @@ export default function SuperAdminResignationsPage() {
                                 By: <span className="font-semibold text-slate-700 dark:text-slate-200">{step.actionByName || '—'}</span>
                               </p>
                               <p className="mt-0.5">
-                                Action date: <span className="font-semibold text-slate-700 dark:text-slate-200">{formatDateTime(step.updatedAt)}</span>
+                                Action date: <span className="font-semibold text-slate-700 dark:text-slate-200">{step.updatedAtIST || formatDateTime(step.updatedAt)}</span>
                               </p>
                               {step.comments && <p className="mt-1 italic border-l-2 border-slate-200 dark:border-slate-700 pl-2">&quot;{step.comments}&quot;</p>}
                             </div>
@@ -1167,7 +1168,7 @@ export default function SuperAdminResignationsPage() {
                         <span className="font-bold text-blue-700 dark:text-blue-400">
                           {formatDate(h.oldDate)} → {formatDate(h.newDate)}
                         </span>
-                        <span className="opacity-60">{formatDateTime(h.timestamp)}</span>
+                        <span className="opacity-60">{h.timestampIST || formatDateTime(h.timestamp)}</span>
                       </div>
                       <p className="text-slate-600 dark:text-slate-400">Changed by <span className="font-bold">{h.updatedByName}</span> ({h.updatedByRole})</p>
                       {h.comments && <p className="mt-1 italic">&quot;{h.comments}&quot;</p>}

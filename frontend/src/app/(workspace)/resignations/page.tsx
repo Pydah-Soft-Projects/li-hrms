@@ -137,6 +137,7 @@ const formatDateTime = (dateStr?: string) => {
   const d = new Date(dateStr);
   if (Number.isNaN(d.getTime())) return '—';
   return d.toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
     day: '2-digit',
     month: 'short',
     year: 'numeric',
@@ -1277,7 +1278,7 @@ export default function ResignationsPage() {
                       <div key={idx} className="text-[11px] text-slate-600 dark:text-slate-400 pb-2 border-b border-slate-100 dark:border-slate-800 last:border-0 last:pb-0">
                         <div className="flex justify-between font-bold text-slate-700 dark:text-slate-300">
                           <span>{formatDate(history.oldDate, true)} → {formatDate(history.newDate, true)}</span>
-                          <span className="opacity-60">{formatDateTime(history.timestamp)}</span>
+                          <span className="opacity-60">{(history as any).timestampIST || formatDateTime(history.timestamp)}</span>
                         </div>
                         <p className="mt-0.5">Changed by <span className="font-semibold">{history.updatedByName}</span> ({history.updatedByRole})</p>
                         {history.comments && <p className="mt-1 italic opacity-80">&quot;{history.comments}&quot;</p>}
@@ -1323,7 +1324,7 @@ export default function ResignationsPage() {
                         <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
                           <p>By: <span className="font-semibold text-slate-700 dark:text-slate-300">{step.actionByName || '—'}</span></p>
                           <p className="mt-0.5">
-                            Action date: <span className="font-semibold text-slate-700 dark:text-slate-300">{formatDateTime(step.updatedAt)}</span>
+                            Action date: <span className="font-semibold text-slate-700 dark:text-slate-300">{(step as any).updatedAtIST || formatDateTime(step.updatedAt)}</span>
                           </p>
                           {step.comments && <p className="mt-1 italic border-l-2 border-slate-200 dark:border-slate-700 pl-2">"{step.comments}"</p>}
                         </div>

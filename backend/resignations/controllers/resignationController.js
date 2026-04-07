@@ -7,6 +7,19 @@ const {
   buildWorkflowVisibilityFilter
 } = require('../../shared/middleware/dataScopeMiddleware');
 
+function formatISTTimestamp(date = new Date()) {
+  return date.toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+  });
+}
+
 // @desc    Create resignation request (opens workflow)
 // @route   POST /api/resignations
 // @access  Private (HR, manager, super_admin, etc. - who can set left date)
@@ -181,6 +194,7 @@ exports.createResignationRequest = async (req, res) => {
             actionByRole: req.user.role,
             comments: 'Resignation request submitted',
             timestamp: new Date(),
+            timestampIST: formatISTTimestamp(),
           },
         ],
       },
@@ -396,6 +410,7 @@ exports.approveResignationRequest = async (req, res) => {
           updatedByRole: userRole,
           comments: comments || 'LWD updated during approval',
           timestamp: new Date(),
+          timestampIST: formatISTTimestamp(),
         });
 
         // Also log to workflow history for immediate visibility
@@ -407,6 +422,7 @@ exports.approveResignationRequest = async (req, res) => {
           actionByRole: userRole,
           comments: `LWD changed from ${oldDate.toISOString().split('T')[0]} to ${newDateObj.toISOString().split('T')[0]}`,
           timestamp: new Date(),
+          timestampIST: formatISTTimestamp(),
         });
       }
     }
@@ -417,6 +433,7 @@ exports.approveResignationRequest = async (req, res) => {
     actingStep.actionByRole = userRole;
     actingStep.comments = comments || '';
     actingStep.updatedAt = new Date();
+    actingStep.updatedAtIST = formatISTTimestamp();
 
     // If a higher authority approved, we should mark all skipped earlier steps as 'approved' as well
     // or just leave them? Usually 'approved' is better so workflow proceed.
@@ -430,6 +447,7 @@ exports.approveResignationRequest = async (req, res) => {
           skippedStep.actionByRole = `${userRole} (Higher Auth)`;
           skippedStep.comments = 'Auto-approved by higher authority';
           skippedStep.updatedAt = new Date();
+          skippedStep.updatedAtIST = formatISTTimestamp();
           
           resignation.workflow.history.push({
             step: skippedStep.role,
@@ -439,6 +457,7 @@ exports.approveResignationRequest = async (req, res) => {
             actionByRole: `${userRole} (Higher Auth)`,
             comments: 'Auto-approved by higher authority acting on later step',
             timestamp: new Date(),
+            timestampIST: formatISTTimestamp(),
           });
         }
       }
@@ -452,6 +471,7 @@ exports.approveResignationRequest = async (req, res) => {
       actionByRole: userRole,
       comments: comments || '',
       timestamp: new Date(),
+      timestampIST: formatISTTimestamp(),
     });
 
     // Employee history: per-step approval / rejection
@@ -533,6 +553,7 @@ exports.approveResignationRequest = async (req, res) => {
           actionByRole: 'system',
           comments: `Final LWD calculated as per ${noticePeriodDays} days notice period.`,
           timestamp: new Date(),
+          timestampIST: formatISTTimestamp(),
         });
       }
 
@@ -752,6 +773,7 @@ exports.updateLWD = async (req, res) => {
       updatedByRole: userRole,
       comments: comments || `LWD updated from ${oldDateStr} to ${newDateStr}`,
       timestamp: new Date(),
+      timestampIST: formatISTTimestamp(),
     });
 
     // Also log to workflow history
@@ -763,6 +785,7 @@ exports.updateLWD = async (req, res) => {
       actionByRole: userRole,
       comments: `LWD changed from ${oldDateStr} to ${newDateStr}. ${comments || ''}`,
       timestamp: new Date(),
+      timestampIST: formatISTTimestamp(),
     });
 
     // If already approved, changing LWD must restart approvals from first step
@@ -781,6 +804,7 @@ exports.updateLWD = async (req, res) => {
           s.actionByRole = null;
           s.comments = '';
           s.updatedAt = null;
+          s.updatedAtIST = null;
         }
 
         chain[0].isCurrent = true;
@@ -799,6 +823,7 @@ exports.updateLWD = async (req, res) => {
         actionByRole: userRole,
         comments: `Workflow reopened because LWD was changed after approval (${oldDateStr} -> ${newDateStr}).`,
         timestamp: new Date(),
+        timestampIST: formatISTTimestamp(),
       });
 
       // Revert employee leftDate side-effect for resignations (termination may already be deactivated)
