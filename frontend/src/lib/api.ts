@@ -2205,12 +2205,13 @@ export const api = {
   },
 
   // Dashboard stats (global or filtered) for superadmin cards
-  getLeaveDashboardStats: async (filters?: { search?: string; division?: string | string[]; department?: string | string[]; designation?: string | string[]; fromDate?: string; toDate?: string }) => {
+  getLeaveDashboardStats: async (filters?: { search?: string; division?: string | string[]; department?: string | string[]; designation?: string | string[]; placeVisited?: string; fromDate?: string; toDate?: string }) => {
     const params = new URLSearchParams();
     if (filters?.search) params.append('search', filters.search);
     if (filters?.division) params.append('division', Array.isArray(filters.division) ? filters.division.join(',') : filters.division);
     if (filters?.department) params.append('department', Array.isArray(filters.department) ? filters.department.join(',') : filters.department);
     if (filters?.designation) params.append('designation', Array.isArray(filters.designation) ? filters.designation.join(',') : filters.designation);
+    if (filters?.placeVisited) params.append('placeVisited', filters.placeVisited);
     if (filters?.fromDate) params.append('fromDate', filters.fromDate);
     if (filters?.toDate) params.append('toDate', filters.toDate);
     const query = params.toString() ? `?${params.toString()}` : '';
@@ -2468,7 +2469,7 @@ export const api = {
   },
 
   // Get all ODs (admin) - supports pagination, search, division, designation
-  getODs: async (filters?: { status?: string; employeeId?: string | string[]; department?: string | string[]; division?: string | string[]; designation?: string | string[]; search?: string; fromDate?: string; toDate?: string; page?: number; limit?: number }) => {
+  getODs: async (filters?: { status?: string; employeeId?: string | string[]; department?: string | string[]; division?: string | string[]; designation?: string | string[]; search?: string; placeVisited?: string; fromDate?: string; toDate?: string; page?: number; limit?: number }) => {
     const params = new URLSearchParams();
     if (filters?.status) params.append('status', filters.status);
     if (filters?.employeeId) params.append('employeeId', Array.isArray(filters.employeeId) ? filters.employeeId.join(',') : filters.employeeId);
@@ -2476,6 +2477,7 @@ export const api = {
     if (filters?.division) params.append('division', Array.isArray(filters.division) ? filters.division.join(',') : filters.division);
     if (filters?.designation) params.append('designation', Array.isArray(filters.designation) ? filters.designation.join(',') : filters.designation);
     if (filters?.search) params.append('search', filters.search);
+    if (filters?.placeVisited) params.append('placeVisited', filters.placeVisited);
     if (filters?.fromDate) params.append('fromDate', filters.fromDate);
     if (filters?.toDate) params.append('toDate', filters.toDate);
     if (filters?.page != null) params.append('page', String(filters.page));
