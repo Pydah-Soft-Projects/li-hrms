@@ -11,6 +11,12 @@ const { updateDailyRecord } = require('../services/dailyRecordUpdateService');
 const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
 const { manualSyncPayRegister } = require('../services/autoSyncService');
 const { processSummaryBulkUpload } = require('../services/summaryUploadService');
+const {
+  applyContributingDatesFromMonthlySummary,
+  applyContributingDatesFromDailyGrid,
+  cloneContributingDatesFromSummaryPlain,
+  rebuildContributingDatesFromDailyRecords,
+} = require('../services/contributingDatesService');
 const XLSX = require('xlsx');
 const mongoose = require('mongoose');
 
@@ -126,9 +132,11 @@ exports.getPayRegister = async (req, res) => {
 
       if (summary) {
         syncTotalsFromMonthlySummary(payRegister, summary);
+        applyContributingDatesFromMonthlySummary(payRegister, summary);
       } else {
         payRegister.totals = calculateTotals(payRegister.dailyRecords);
         payRegister.recalculateTotals();
+        applyContributingDatesFromDailyGrid(payRegister);
       }
 
       let startDate = payRegister.startDate;
@@ -191,9 +199,15 @@ exports.getPayRegister = async (req, res) => {
           monthNum
         );
         syncTotalsFromMonthlySummary(payRegisterObj, summary);
+        payRegisterObj.contributingDates = cloneContributingDatesFromSummaryPlain(summary);
+        payRegisterObj.contributingDatesUpdatedAt = new Date();
+        payRegisterObj.contributingDatesDerivedFrom = 'monthly_summary';
       } else {
         payRegisterObj.totals = calculateTotals(dailyRecords);
         await ensureTotalsRespectRoster(payRegisterObj.totals, employee.emp_no, startDate, endDate);
+        payRegisterObj.contributingDates = rebuildContributingDatesFromDailyRecords(dailyRecords);
+        payRegisterObj.contributingDatesUpdatedAt = new Date();
+        payRegisterObj.contributingDatesDerivedFrom = 'daily_grid';
       }
 
       payRegister = await PayRegisterSummary.create({
@@ -265,6 +279,9 @@ exports.createPayRegister = async (req, res) => {
 
     const summary = await getSummaryData(employeeId, employee.emp_no, year, monthNum);
     let totals;
+    let contributingDates;
+    let contributingDatesUpdatedAt = new Date();
+    let contributingDatesDerivedFrom;
     if (summary) {
       await applyPayRegisterParityFromMonthlySummary(
         dailyRecords,
@@ -277,9 +294,13 @@ exports.createPayRegister = async (req, res) => {
       const tmp = { totals: {} };
       syncTotalsFromMonthlySummary(tmp, summary);
       totals = tmp.totals;
+      contributingDates = cloneContributingDatesFromSummaryPlain(summary);
+      contributingDatesDerivedFrom = 'monthly_summary';
     } else {
       totals = calculateTotals(dailyRecords);
       await ensureTotalsRespectRoster(totals, employee.emp_no, startDate, endDate);
+      contributingDates = rebuildContributingDatesFromDailyRecords(dailyRecords);
+      contributingDatesDerivedFrom = 'daily_grid';
     }
 
     const payRegister = await PayRegisterSummary.create({
@@ -294,6 +315,9 @@ exports.createPayRegister = async (req, res) => {
       endDate,
       dailyRecords,
       totals,
+      contributingDates,
+      contributingDatesUpdatedAt,
+      contributingDatesDerivedFrom,
       status: 'draft',
       lastAutoSyncedAt: new Date(),
     });
@@ -348,6 +372,7 @@ exports.updatePayRegister = async (req, res) => {
         payRegister.endDate = endDate;
       }
       await ensureTotalsRespectRoster(payRegister.totals, payRegister.emp_no, startDate, endDate);
+      applyContributingDatesFromDailyGrid(payRegister);
       applySummaryLockFromEdit(payRegister, req.user);
     }
 
@@ -437,6 +462,7 @@ exports.updateDailyRecord = async (req, res) => {
       payRegister.endDate = endDate;
     }
 
+    applyContributingDatesFromDailyGrid(payRegister);
     applySummaryLockFromEdit(payRegister, req.user);
 
     await payRegister.save();

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from "next/navigation";
 import Link from 'next/link';
 import { parseFile } from '@/lib/bulkUpload';
@@ -10,6 +10,14 @@ import DeductionsPayrollSection from '@/components/ManualDeductions/DeductionsPa
 import * as XLSX from 'xlsx';
 import Swal from 'sweetalert2';
 import { Search } from 'lucide-react';
+import { formatHighlightContribution, highlightBadgeSubtitle } from '@/lib/attendanceHighlight';
+import {
+  type PayRegisterContribKey,
+  resolvePayRegisterContribMap,
+  payRegisterContribSelectionActive,
+  payRegisterBadgeCategory,
+  payRegisterContribAccent,
+} from '@/lib/payRegisterContributingHighlight';
 
 
 
@@ -58,6 +66,9 @@ interface PayRegisterSummary {
   monthNumber: number;
   totalDaysInMonth: number;
   dailyRecords: DailyRecord[];
+  contributingDates?: Partial<Record<PayRegisterContribKey, Array<string | { date: string; value?: number; label?: string }>>>;
+  contributingDatesUpdatedAt?: string | null;
+  contributingDatesDerivedFrom?: 'monthly_summary' | 'daily_grid' | null;
   totals: {
     presentDays: number;
     presentHalfDays: number;
@@ -127,6 +138,11 @@ export default function PayRegisterPage() {
   const [savingSummaryLock, setSavingSummaryLock] = useState(false);
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [activeTable, setActiveTable] = useState<TableType>('all');
+  const [contribHighlight, setContribHighlight] = useState<{
+    prId: string;
+    keys: PayRegisterContribKey[];
+    title: string;
+  } | null>(null);
   const [departments, setDepartments] = useState<any[]>([]);
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [selectedDivision, setSelectedDivision] = useState<string>('');
@@ -1022,49 +1038,66 @@ export default function PayRegisterPage() {
   const getCellBackgroundColor = (record: DailyRecord | null, tableType: TableType): string => {
     if (!record) return '';
 
+    let base = '';
     if (record.isManuallyEdited) {
-      return 'bg-amber-100 dark:bg-amber-900/30 ring-inset ring-1 ring-amber-300 dark:ring-amber-700';
-    }
-
-    if (tableType === 'all') {
-      return getStatusColor(getPrimaryStatus(record));
-    }
-
-    if (tableType === 'present') {
+      base = 'bg-amber-100 dark:bg-amber-900/30 ring-inset ring-1 ring-amber-300 dark:ring-amber-700';
+    } else if (tableType === 'all') {
+      base = getStatusColor(getPrimaryStatus(record));
+    } else if (tableType === 'present') {
       if (record.status === 'present' || record.firstHalf.status === 'present' || record.secondHalf.status === 'present') {
-        return 'bg-green-100 dark:bg-green-900/30';
+        base = 'bg-green-100 dark:bg-green-900/30';
       }
-    }
-    if (tableType === 'absent') {
+    } else if (tableType === 'absent') {
       if (
         record.firstHalf?.status !== 'blank' &&
         record.secondHalf?.status !== 'blank' &&
         (record.status === 'absent' || record.firstHalf.status === 'absent' || record.secondHalf.status === 'absent')
       ) {
-        return 'bg-red-100 dark:bg-red-900/30';
+        base = 'bg-red-100 dark:bg-red-900/30';
       }
-    }
-    if (tableType === 'leaves') {
+    } else if (tableType === 'leaves') {
       if (record.status === 'leave' || record.firstHalf.status === 'leave' || record.secondHalf.status === 'leave') {
-        return 'bg-yellow-100 dark:bg-yellow-900/30';
+        base = 'bg-yellow-100 dark:bg-yellow-900/30';
       }
-    }
-    if (tableType === 'od') {
+    } else if (tableType === 'od') {
       if (record.status === 'od' || record.isOD || record.firstHalf.status === 'od' || record.secondHalf.status === 'od' || record.firstHalf.isOD || record.secondHalf.isOD) {
-        return 'bg-blue-100 dark:bg-blue-900/30';
+        base = 'bg-blue-100 dark:bg-blue-900/30';
       }
-    }
-    if (tableType === 'ot' || tableType === 'extraHours') {
+    } else if (tableType === 'ot' || tableType === 'extraHours') {
       if (record.otHours > 0 || record.firstHalf.otHours > 0 || record.secondHalf.otHours > 0) {
-        return 'bg-orange-100 dark:bg-orange-900/30';
+        base = 'bg-orange-100 dark:bg-orange-900/30';
       }
-    }
-    if (tableType === 'shifts') {
+    } else if (tableType === 'shifts') {
       if (record.shiftId !== null || record.shiftName !== null || record.firstHalf.shiftId !== null || record.secondHalf.shiftId !== null) {
-        return 'bg-indigo-100 dark:bg-indigo-900/30';
+        base = 'bg-indigo-100 dark:bg-indigo-900/30';
       }
     }
-    return '';
+    return base.trim();
+  };
+
+  const payRegisterContribMap = useMemo(() => {
+    if (!contribHighlight) return new Map<string, { value: number; label: string }>();
+    const pr = payRegisters.find((p) => p._id === contribHighlight.prId);
+    return resolvePayRegisterContribMap(pr, contribHighlight.keys).map;
+  }, [contribHighlight, payRegisters]);
+
+  const payRegisterContribAccentClasses = useMemo(
+    () => (contribHighlight ? payRegisterContribAccent(contribHighlight.keys) : null),
+    [contribHighlight]
+  );
+
+  const togglePayRegisterContrib = (pr: PayRegisterSummary, keys: PayRegisterContribKey[], title: string) => {
+    if (!keys.length || pr.isStub) return;
+    setContribHighlight((prev) => {
+      const same =
+        prev &&
+        prev.prId === pr._id &&
+        prev.title === title &&
+        keys.length === prev.keys.length &&
+        keys.every((k, i) => k === prev.keys[i]);
+      if (same) return null;
+      return { prId: pr._id, keys, title };
+    });
   };
 
   const shouldShowInTable = (record: DailyRecord | null, tableType: TableType): boolean => {
@@ -2233,23 +2266,98 @@ export default function PayRegisterPage() {
                           )}
                         </div>
                       </td>
-                      <td className="text-center px-2 py-2">{row.present.toFixed(1)}</td>
-                      <td className="text-center px-2 py-2">{row.absent.toFixed(1)}</td>
-                      <td className="text-center px-2 py-2">{row.leave.toFixed(1)}</td>
-                      <td className="text-center px-2 py-2 font-medium text-green-600 dark:text-green-400">{row.paidLeave.toFixed(1)}</td>
-                      <td className="text-center px-2 py-2 font-medium text-red-600 dark:text-red-400">{row.lop.toFixed(1)}</td>
-                      <td className="text-center px-2 py-2">{row.od.toFixed(1)}</td>
-                      <td className="text-center px-2 py-2">{row.ot.toFixed(1)}</td>
-                      <td className="text-center px-2 py-2">{row.extra.toFixed(1)}</td>
                       <td
-                        className="text-center px-2 py-2 font-bold text-amber-600 dark:text-amber-400"
-                        title={`Late in: ${row.pr.totals?.lateCount ?? 0}, Early out: ${row.pr.totals?.earlyOutCount ?? 0}`}
+                        className={`text-center px-2 py-2 ${row.pr.isStub ? '' : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/80'} ${payRegisterContribSelectionActive(contribHighlight, row.pr._id, ['present'], 'Present days') ? payRegisterContribAccent(['present']).summaryRing : ''}`}
+                        title={row.pr.isStub ? undefined : 'Click to highlight days in grid (from contributingDates)'}
+                        onClick={() => !row.pr.isStub && togglePayRegisterContrib(row.pr, ['present'], 'Present days')}
+                      >
+                        {row.present.toFixed(1)}
+                      </td>
+                      <td
+                        className={`text-center px-2 py-2 ${row.pr.isStub ? '' : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/80'} ${payRegisterContribSelectionActive(contribHighlight, row.pr._id, ['absent'], 'Absent') ? payRegisterContribAccent(['absent']).summaryRing : ''}`}
+                        title={row.pr.isStub ? undefined : 'Click to highlight contributing absent days'}
+                        onClick={() => !row.pr.isStub && togglePayRegisterContrib(row.pr, ['absent'], 'Absent')}
+                      >
+                        {row.absent.toFixed(1)}
+                      </td>
+                      <td
+                        className={`text-center px-2 py-2 ${row.pr.isStub ? '' : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/80'} ${payRegisterContribSelectionActive(contribHighlight, row.pr._id, ['leaves'], 'Leaves') ? payRegisterContribAccent(['leaves']).summaryRing : ''}`}
+                        title={row.pr.isStub ? undefined : 'Click to highlight leave days'}
+                        onClick={() => !row.pr.isStub && togglePayRegisterContrib(row.pr, ['leaves'], 'Leaves')}
+                      >
+                        {row.leave.toFixed(1)}
+                      </td>
+                      <td
+                        className={`text-center px-2 py-2 font-medium text-green-600 dark:text-green-400 ${row.pr.isStub ? '' : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/80'} ${payRegisterContribSelectionActive(contribHighlight, row.pr._id, ['leaves'], 'Paid leaves') ? payRegisterContribAccent(['leaves']).summaryRing : ''}`}
+                        title={row.pr.isStub ? undefined : 'Click to highlight leave days'}
+                        onClick={() => !row.pr.isStub && togglePayRegisterContrib(row.pr, ['leaves'], 'Paid leaves')}
+                      >
+                        {row.paidLeave.toFixed(1)}
+                      </td>
+                      <td
+                        className={`text-center px-2 py-2 font-medium text-red-600 dark:text-red-400 ${row.pr.isStub ? '' : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/80'} ${payRegisterContribSelectionActive(contribHighlight, row.pr._id, ['leaves'], 'LOP / leaves') ? payRegisterContribAccent(['leaves']).summaryRing : ''}`}
+                        title={row.pr.isStub ? undefined : 'Click to highlight leave days'}
+                        onClick={() => !row.pr.isStub && togglePayRegisterContrib(row.pr, ['leaves'], 'LOP / leaves')}
+                      >
+                        {row.lop.toFixed(1)}
+                      </td>
+                      <td
+                        className={`text-center px-2 py-2 ${row.pr.isStub ? '' : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/80'} ${payRegisterContribSelectionActive(contribHighlight, row.pr._id, ['ods'], 'OD') ? payRegisterContribAccent(['ods']).summaryRing : ''}`}
+                        title={row.pr.isStub ? undefined : 'Click to highlight OD days'}
+                        onClick={() => !row.pr.isStub && togglePayRegisterContrib(row.pr, ['ods'], 'OD')}
+                      >
+                        {row.od.toFixed(1)}
+                      </td>
+                      <td
+                        className={`text-center px-2 py-2 ${row.pr.isStub ? '' : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/80'} ${payRegisterContribSelectionActive(contribHighlight, row.pr._id, ['otHours'], 'OT hours') ? payRegisterContribAccent(['otHours']).summaryRing : ''}`}
+                        title={row.pr.isStub ? undefined : 'Click to highlight OT days'}
+                        onClick={() => !row.pr.isStub && togglePayRegisterContrib(row.pr, ['otHours'], 'OT hours')}
+                      >
+                        {row.ot.toFixed(1)}
+                      </td>
+                      <td
+                        className={`text-center px-2 py-2 ${row.pr.isStub ? '' : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/80'} ${payRegisterContribSelectionActive(contribHighlight, row.pr._id, ['partial', 'payableShifts'], 'Extra / payable') ? payRegisterContribAccent(['partial', 'payableShifts']).summaryRing : ''}`}
+                        title={row.pr.isStub ? undefined : 'Click to highlight payable / partial related days'}
+                        onClick={() => !row.pr.isStub && togglePayRegisterContrib(row.pr, ['partial', 'payableShifts'], 'Extra / payable')}
+                      >
+                        {row.extra.toFixed(1)}
+                      </td>
+                      <td
+                        className={`text-center px-2 py-2 font-bold text-amber-600 dark:text-amber-400 ${row.pr.isStub ? '' : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/80'} ${payRegisterContribSelectionActive(contribHighlight, row.pr._id, ['lateIn', 'earlyOut'], 'Late / early') ? payRegisterContribAccent(['lateIn', 'earlyOut']).summaryRing : ''}`}
+                        title={
+                          row.pr.isStub
+                            ? undefined
+                            : `Late in: ${row.pr.totals?.lateCount ?? 0}, Early out: ${row.pr.totals?.earlyOutCount ?? 0}. Click to highlight.`
+                        }
+                        onClick={() =>
+                          !row.pr.isStub && togglePayRegisterContrib(row.pr, ['lateIn', 'earlyOut'], 'Late / early')
+                        }
                       >
                         {row.lateCount}
                       </td>
-                      <td className="text-center px-2 py-2">{row.holidayAndWeekoffs.toFixed(1)}</td>
-                      <td className="text-center px-2 py-2 font-medium text-green-600 dark:text-green-400" title="Includes OD days">{row.present.toFixed(1)}</td>
-                      <td className="text-center px-2 py-2 font-bold text-slate-700 dark:text-slate-300">{row.payableShifts.toFixed(1)}</td>
+                      <td
+                        className={`text-center px-2 py-2 ${row.pr.isStub ? '' : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/80'} ${payRegisterContribSelectionActive(contribHighlight, row.pr._id, ['weeklyOffs', 'holidays'], 'Week offs & holidays') ? payRegisterContribAccent(['weeklyOffs', 'holidays']).summaryRing : ''}`}
+                        title={row.pr.isStub ? undefined : 'Click to highlight week offs & holidays'}
+                        onClick={() =>
+                          !row.pr.isStub && togglePayRegisterContrib(row.pr, ['weeklyOffs', 'holidays'], 'Week offs & holidays')
+                        }
+                      >
+                        {row.holidayAndWeekoffs.toFixed(1)}
+                      </td>
+                      <td
+                        className={`text-center px-2 py-2 font-medium text-green-600 dark:text-green-400 ${row.pr.isStub ? '' : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/80'} ${payRegisterContribSelectionActive(contribHighlight, row.pr._id, ['present'], 'Present days') ? payRegisterContribAccent(['present']).summaryRing : ''}`}
+                        title={row.pr.isStub ? undefined : 'Includes OD days — click to highlight present contributions'}
+                        onClick={() => !row.pr.isStub && togglePayRegisterContrib(row.pr, ['present'], 'Present days')}
+                      >
+                        {row.present.toFixed(1)}
+                      </td>
+                      <td
+                        className={`text-center px-2 py-2 font-bold text-slate-700 dark:text-slate-300 ${row.pr.isStub ? '' : 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800/80'} ${payRegisterContribSelectionActive(contribHighlight, row.pr._id, ['payableShifts'], 'Payable shifts') ? payRegisterContribAccent(['payableShifts']).summaryRing : ''}`}
+                        title={row.pr.isStub ? undefined : 'Click to highlight payable shift days'}
+                        onClick={() => !row.pr.isStub && togglePayRegisterContrib(row.pr, ['payableShifts'], 'Payable shifts')}
+                      >
+                        {row.payableShifts.toFixed(1)}
+                      </td>
                       <td className="text-center px-2 py-2">{row.monthDays}</td>
                       <td
                         className={`text-center px-2 py-2 font-semibold ${row.matchesMonth
@@ -2637,7 +2745,15 @@ export default function PayRegisterPage() {
                             const record = dailyRecordsMap.get(dateStr) || null;
                             const shouldShow = shouldShowInTable(record, activeTable);
                             const displayStatus = getStatusDisplay(record);
+                            const highlightInfo =
+                              contribHighlight?.prId === pr._id ? payRegisterContribMap.get(dateStr) : undefined;
+                            const isContribHighlighted = !!highlightInfo;
                             const bgColor = getCellBackgroundColor(record, activeTable);
+                            const badgeCategory = contribHighlight ? payRegisterBadgeCategory(contribHighlight.keys) : 'present';
+                            const highlightSub =
+                              isContribHighlighted && highlightInfo && contribHighlight
+                                ? highlightBadgeSubtitle(badgeCategory, highlightInfo.label)
+                                : null;
 
                             return (
                               <td
@@ -2682,10 +2798,30 @@ export default function PayRegisterPage() {
                                     }
                                   }
                                 }}
-                                className={`border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700
+                                className={`border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700 relative
                                 ${employee && !isLocked ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800' : 'cursor-not-allowed opacity-75 bg-slate-50 dark:bg-slate-800/50'} 
-                                ${bgColor}`}
+                                ${bgColor}
+                                ${isContribHighlighted && payRegisterContribAccentClasses ? payRegisterContribAccentClasses.cellHighlight : ''}`}
                               >
+                                {isContribHighlighted && highlightInfo && payRegisterContribAccentClasses && (
+                                  <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none px-0.5">
+                                    <div
+                                      className={`text-white px-1 py-0.5 rounded-md shadow-md flex flex-col items-center justify-center gap-0 leading-none min-w-[1.35rem] max-w-[46px] ${payRegisterContribAccentClasses.badgeBg}`}
+                                    >
+                                      <span className="text-[9px] font-black tabular-nums tracking-tight">
+                                        {formatHighlightContribution(highlightInfo.value)}
+                                      </span>
+                                      {highlightSub ? (
+                                        <span
+                                          className="text-[6px] opacity-95 truncate max-w-[44px] text-center leading-tight font-bold uppercase"
+                                          title={highlightSub}
+                                        >
+                                          {highlightSub}
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                  </div>
+                                )}
                                 {shouldShow && record ? (
                                   <div className="space-y-0.5">
                                     {activeTable === 'shifts' ? (
@@ -2747,27 +2883,66 @@ export default function PayRegisterPage() {
                             const paidDays = payable + weekOffs + holidays + paidLeaves;
                             return (
                               <>
-                                <td className="border-r border-slate-200 bg-green-50 dark:bg-green-900/20 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:text-green-300" title="Includes OD days">
+                                <td
+                                  className={`border-r border-slate-200 bg-green-50 dark:bg-green-900/20 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:text-green-300 cursor-pointer hover:opacity-90 ${payRegisterContribSelectionActive(contribHighlight, pr._id, ['present'], 'Present days') ? payRegisterContribAccent(['present']).summaryRing : ''}`}
+                                  title="Includes OD days — click to highlight"
+                                  onClick={() => !pr.isStub && togglePayRegisterContrib(pr, ['present'], 'Present days')}
+                                >
                                   {(pr.totals?.totalPresentDays ?? 0).toFixed(1)}
                                 </td>
-                                <td className="border-r border-slate-200 bg-slate-50 dark:bg-slate-800 px-2 py-2 text-center text-[11px] font-bold text-slate-700 dark:text-slate-300 dark:bg-slate-700/50">
+                                <td
+                                  className={`border-r border-slate-200 bg-slate-50 dark:bg-slate-800 px-2 py-2 text-center text-[11px] font-bold text-slate-700 dark:text-slate-300 dark:bg-slate-700/50 cursor-pointer hover:opacity-90 ${payRegisterContribSelectionActive(contribHighlight, pr._id, ['payableShifts'], 'Payable shifts') ? payRegisterContribAccent(['payableShifts']).summaryRing : ''}`}
+                                  title="Click to highlight payable shifts"
+                                  onClick={() => !pr.isStub && togglePayRegisterContrib(pr, ['payableShifts'], 'Payable shifts')}
+                                >
                                   {payable.toFixed(1)}
                                 </td>
-                                <td className="border-r border-slate-200 bg-gray-50 dark:bg-slate-700/50 px-2 py-2 text-center text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                                <td
+                                  className={`border-r border-slate-200 bg-gray-50 dark:bg-slate-700/50 px-2 py-2 text-center text-[11px] font-bold text-slate-700 dark:text-slate-300 cursor-pointer hover:opacity-90 ${payRegisterContribSelectionActive(contribHighlight, pr._id, ['weeklyOffs'], 'Week offs') ? payRegisterContribAccent(['weeklyOffs']).summaryRing : ''}`}
+                                  title="Click to highlight week offs"
+                                  onClick={() => !pr.isStub && togglePayRegisterContrib(pr, ['weeklyOffs'], 'Week offs')}
+                                >
                                   {weekOffs.toFixed(1)}
                                 </td>
-                                <td className="border-r border-slate-200 bg-purple-50 dark:bg-purple-900/20 px-2 py-2 text-center text-[11px] font-bold text-purple-700 dark:text-purple-300">
+                                <td
+                                  className={`border-r border-slate-200 bg-purple-50 dark:bg-purple-900/20 px-2 py-2 text-center text-[11px] font-bold text-purple-700 dark:text-purple-300 cursor-pointer hover:opacity-90 ${payRegisterContribSelectionActive(contribHighlight, pr._id, ['holidays'], 'Holidays') ? payRegisterContribAccent(['holidays']).summaryRing : ''}`}
+                                  title="Click to highlight holidays"
+                                  onClick={() => !pr.isStub && togglePayRegisterContrib(pr, ['holidays'], 'Holidays')}
+                                >
                                   {holidays.toFixed(1)}
                                 </td>
-                                <td className="border-r border-slate-200 bg-green-50/80 dark:bg-green-900/30 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:text-green-400">
+                                <td
+                                  className={`border-r border-slate-200 bg-green-50/80 dark:bg-green-900/30 px-2 py-2 text-center text-[11px] font-bold text-green-700 dark:text-green-400 cursor-pointer hover:opacity-90 ${payRegisterContribSelectionActive(contribHighlight, pr._id, ['leaves'], 'Paid leaves') ? payRegisterContribAccent(['leaves']).summaryRing : ''}`}
+                                  title="Click to highlight leave days"
+                                  onClick={() => !pr.isStub && togglePayRegisterContrib(pr, ['leaves'], 'Paid leaves')}
+                                >
                                   {paidLeaves.toFixed(1)}
                                 </td>
-                                <td className="border-r border-slate-200 bg-blue-50 dark:bg-blue-900/20 px-2 py-2 text-center text-[11px] font-bold text-blue-700 dark:text-blue-300" title="Payable + Week Offs + Holidays + Paid Leaves">
+                                <td
+                                  className={`border-r border-slate-200 bg-blue-50 dark:bg-blue-900/20 px-2 py-2 text-center text-[11px] font-bold text-blue-700 dark:text-blue-300 cursor-pointer hover:opacity-90 ${payRegisterContribSelectionActive(
+                                    contribHighlight,
+                                    pr._id,
+                                    ['payableShifts', 'weeklyOffs', 'holidays', 'leaves'],
+                                    'Paid days components'
+                                  )
+                                    ? payRegisterContribAccent(['payableShifts', 'weeklyOffs', 'holidays', 'leaves']).summaryRing
+                                    : ''}`}
+                                  title="Payable + WO + HOL + paid leave — highlights payable / WO / HOL / leaves"
+                                  onClick={() =>
+                                    !pr.isStub &&
+                                    togglePayRegisterContrib(pr, ['payableShifts', 'weeklyOffs', 'holidays', 'leaves'], 'Paid days components')
+                                  }
+                                >
                                   {paidDays.toFixed(1)}
                                 </td>
                                 <td
-                                  className="border-r-0 border-slate-200 bg-amber-50 dark:bg-amber-900/20 px-2 py-2 text-center text-[11px] font-bold text-amber-700 dark:text-amber-300"
-                                  title={`Late: ${pr.totals?.lateCount ?? 0}, Early out: ${pr.totals?.earlyOutCount ?? 0}`}
+                                  className={`border-r-0 border-slate-200 bg-amber-50 dark:bg-amber-900/20 px-2 py-2 text-center text-[11px] font-bold text-amber-700 dark:text-amber-300 cursor-pointer hover:opacity-90 ${
+                                    payRegisterContribSelectionActive(contribHighlight, pr._id, ['lateIn', 'earlyOut'], 'Late / early')
+                                      ? payRegisterContribAccent(['lateIn', 'earlyOut']).summaryRing
+                                      : ''
+                                  }`}
+                                  title={`Late: ${pr.totals?.lateCount ?? 0}, Early out: ${pr.totals?.earlyOutCount ?? 0} — click to highlight`}
+                                  onClick={() => !pr.isStub && togglePayRegisterContrib(pr, ['lateIn', 'earlyOut'], 'Late / early')}
                                 >
                                   {getLateAndEarlyCount(pr.totals)}
                                 </td>

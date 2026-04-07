@@ -190,6 +190,82 @@ const attendanceDailySchema = new mongoose.Schema(
       trim: true,
       default: null,
     },
+    // Policy-derived metadata used for auditability of summary/pay-register half splits.
+    policyMeta: {
+      partialDayRule: {
+        applied: {
+          type: Boolean,
+          default: false,
+        },
+        ruleCode: {
+          type: String,
+          default: null,
+        },
+        firstHalfStatus: {
+          type: String,
+          enum: ['present', 'absent', 'leave', 'od', 'holiday', 'week_off', 'blank', null],
+          default: null,
+        },
+        secondHalfStatus: {
+          type: String,
+          enum: ['present', 'absent', 'leave', 'od', 'holiday', 'week_off', 'blank', null],
+          default: null,
+        },
+        presentPortion: {
+          type: Number,
+          default: 0,
+        },
+        lopPortion: {
+          type: Number,
+          default: 0,
+        },
+        coveredPortion: {
+          type: Number,
+          default: 0,
+        },
+        note: {
+          type: String,
+          default: null,
+        },
+        updatedAt: {
+          type: Date,
+          default: null,
+        },
+      },
+      sandwichRule: {
+        applied: {
+          type: Boolean,
+          default: false,
+        },
+        ruleCode: {
+          type: String,
+          default: null,
+        },
+        previousNeighborKind: {
+          type: String,
+          enum: ['LEAVE', 'ABSENT', 'PRESENT', 'NONE', null],
+          default: null,
+        },
+        nextNeighborKind: {
+          type: String,
+          enum: ['LEAVE', 'ABSENT', 'PRESENT', 'NONE', null],
+          default: null,
+        },
+        effect: {
+          type: String,
+          enum: ['strip_non_working', 'strip_non_working_add_lop', null],
+          default: null,
+        },
+        note: {
+          type: String,
+          default: null,
+        },
+        updatedAt: {
+          type: Date,
+          default: null,
+        },
+      },
+    },
     // Overtime and extra hours
     otHours: {
       type: Number,
