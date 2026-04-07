@@ -71,7 +71,7 @@ const ResignationRequestSchema = new mongoose.Schema(
       history: [
         {
           step: String,
-          action: { type: String, enum: ['submitted', 'approved', 'rejected', 'cancelled', 'lwd_changed'] },
+          action: { type: String, enum: ['submitted', 'approved', 'rejected', 'cancelled', 'lwd_changed', 'workflow_reopened'] },
           actionBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
           actionByName: String,
           actionByRole: String,
