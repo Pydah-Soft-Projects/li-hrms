@@ -116,6 +116,20 @@ const formatDate = (dateStr: string) => {
   });
 };
 
+const formatDateTime = (dateStr?: string) => {
+  if (!dateStr) return '—';
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  });
+};
+
 /** Format date as YYYY-MM-DD in local time (avoids UTC shift that makes "today + 90" show as previous day) */
 const toLocalDateString = (d: Date) => {
   const y = d.getFullYear();
@@ -1048,7 +1062,7 @@ export default function SuperAdminResignationsPage() {
               </div>
               <div className="flex justify-between items-center gap-4">
                 <span className="text-slate-500 dark:text-slate-400">{selectedRequest.requestType === 'termination' ? 'Termination date' : 'Last working date'}</span>
-                {selectedRequest.status === 'pending' ? (
+                {['pending', 'approved'].includes(selectedRequest.status) ? (
                   <div className="flex items-center gap-2">
                     <input
                       type="date"
@@ -1120,9 +1134,19 @@ export default function SuperAdminResignationsPage() {
                           </div>
                           {!isPending && (
                             <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                              <p>By: <span className="font-semibold text-slate-700 dark:text-slate-200">{step.actionByName || '—'}</span> {step.updatedAt && <span className="ml-1 opacity-70">· {new Date(step.updatedAt).toLocaleDateString()}</span>}</p>
+                              <p>
+                                By: <span className="font-semibold text-slate-700 dark:text-slate-200">{step.actionByName || '—'}</span>
+                              </p>
+                              <p className="mt-0.5">
+                                Action date: <span className="font-semibold text-slate-700 dark:text-slate-200">{formatDateTime(step.updatedAt)}</span>
+                              </p>
                               {step.comments && <p className="mt-1 italic border-l-2 border-slate-200 dark:border-slate-700 pl-2">&quot;{step.comments}&quot;</p>}
                             </div>
+                          )}
+                          {isPending && (
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                              Action date: <span className="font-semibold text-slate-700 dark:text-slate-200">Awaiting approval</span>
+                            </p>
                           )}
                         </div>
                       </div>
@@ -1143,7 +1167,7 @@ export default function SuperAdminResignationsPage() {
                         <span className="font-bold text-blue-700 dark:text-blue-400">
                           {formatDate(h.oldDate)} → {formatDate(h.newDate)}
                         </span>
-                        <span className="opacity-60">{new Date(h.timestamp).toLocaleDateString()}</span>
+                        <span className="opacity-60">{formatDateTime(h.timestamp)}</span>
                       </div>
                       <p className="text-slate-600 dark:text-slate-400">Changed by <span className="font-bold">{h.updatedByName}</span> ({h.updatedByRole})</p>
                       {h.comments && <p className="mt-1 italic">&quot;{h.comments}&quot;</p>}

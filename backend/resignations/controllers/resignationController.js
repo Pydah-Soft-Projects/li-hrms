@@ -690,25 +690,33 @@ exports.updateLWD = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Resignation request not found' });
     }
 
-    if (resignation.status !== 'pending') {
-      return res.status(400).json({ success: false, message: 'Can only update LWD for pending requests' });
-    }
-
     const userRole = (req.user.role || '').toLowerCase();
     const isSuperOrSubAdmin = ['super_admin', 'sub_admin'].includes(userRole);
+    const isHR = userRole === 'hr';
+    const isApproved = resignation.status === 'approved';
+
+    // Only allow LWD updates for pending or approved requests
+    if (!['pending', 'approved'].includes(resignation.status)) {
+      return res.status(400).json({ success: false, message: 'Can only update LWD for pending or approved requests' });
+    }
     
-    // Check if user is the current approver or super admin
+    // Check if user is the current approver or elevated role
     const chain = resignation.workflow?.approvalChain || [];
     const activeIndex = chain.findIndex(s => s.status === 'pending');
     const step = activeIndex !== -1 ? chain[activeIndex] : null;
 
     let canEdit = isSuperOrSubAdmin;
-    if (step && !canEdit) {
+
+    // For approved requests, allow HR and super/sub admin to edit regardless of workflow step
+    if (isApproved && (isHR || isSuperOrSubAdmin)) {
+      canEdit = true;
+    } else if (step && !canEdit) {
       const isReportingManager = resignation.workflow?.reportingManagerIds?.includes(req.user._id.toString());
-      const isCorrectRole = (step.role === userRole) || 
-                          (step.role === 'reporting_manager' && isReportingManager) ||
-                          (step.role === 'final_authority' && userRole === 'hr');
-      
+      const isCorrectRole =
+        step.role === userRole ||
+        (step.role === 'reporting_manager' && isReportingManager) ||
+        (step.role === 'final_authority' && userRole === 'hr');
+
       if (isCorrectRole && step.canEditLWD) {
         canEdit = true;
       }
@@ -756,6 +764,75 @@ exports.updateLWD = async (req, res) => {
       comments: `LWD changed from ${oldDateStr} to ${newDateStr}. ${comments || ''}`,
       timestamp: new Date(),
     });
+
+    // If already approved, changing LWD must restart approvals from first step
+    if (isApproved) {
+      resignation.status = 'pending';
+      resignation.workflow.isCompleted = false;
+
+      const chain = resignation.workflow?.approvalChain || [];
+      if (Array.isArray(chain) && chain.length > 0) {
+        // Reset all steps back to pending (clear action metadata)
+        for (const s of chain) {
+          s.status = 'pending';
+          s.isCurrent = false;
+          s.actionBy = null;
+          s.actionByName = null;
+          s.actionByRole = null;
+          s.comments = '';
+          s.updatedAt = null;
+        }
+
+        chain[0].isCurrent = true;
+        resignation.workflow.currentStepRole = chain[0].role || null;
+        resignation.workflow.nextApproverRole = chain[0].role || null;
+      } else {
+        resignation.workflow.currentStepRole = null;
+        resignation.workflow.nextApproverRole = null;
+      }
+
+      resignation.workflow.history.push({
+        step: 'system',
+        action: 'workflow_reopened',
+        actionBy: req.user._id,
+        actionByName: req.user.name,
+        actionByRole: userRole,
+        comments: `Workflow reopened because LWD was changed after approval (${oldDateStr} -> ${newDateStr}).`,
+        timestamp: new Date(),
+      });
+
+      // Revert employee leftDate side-effect for resignations (termination may already be deactivated)
+      if ((resignation.requestType || 'resignation') !== 'termination') {
+        try {
+          const emp = await Employee.findById(resignation.employeeId?._id || resignation.employeeId);
+          if (emp) {
+            emp.leftDate = null;
+            emp.leftReason = null;
+            await emp.save();
+
+            try {
+              await EmployeeHistory.create({
+                emp_no: emp.emp_no,
+                event: 'resignation_workflow_reopened',
+                performedBy: req.user._id,
+                performedByName: req.user.name,
+                performedByRole: req.user.role,
+                details: {
+                  resignationId: resignation._id,
+                  oldLeftDate: oldDate,
+                  newLeftDate: newDateObj,
+                },
+                comments: 'Workflow reopened due to LWD change after approval; employee left date cleared pending re-approval.',
+              });
+            } catch (err) {
+              console.error('Failed to log workflow reopen history:', err.message);
+            }
+          }
+        } catch (err) {
+          console.error('Failed to revert employee leftDate after reopening workflow:', err.message);
+        }
+      }
+    }
 
     await resignation.save();
 
