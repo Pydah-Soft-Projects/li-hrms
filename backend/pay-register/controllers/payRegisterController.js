@@ -11,6 +11,7 @@ const { updateDailyRecord } = require('../services/dailyRecordUpdateService');
 const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
 const { manualSyncPayRegister } = require('../services/autoSyncService');
 const { processSummaryBulkUpload } = require('../services/summaryUploadService');
+const { recalculatePayRegisterAttendanceDeduction } = require('../services/payRegisterAttendanceDeductionService');
 const XLSX = require('xlsx');
 const mongoose = require('mongoose');
 
@@ -142,6 +143,7 @@ exports.getPayRegister = async (req, res) => {
         payRegister.endDate = endDate;
       }
       await ensureTotalsRespectRoster(payRegister.totals, payRegister.emp_no, startDate, endDate);
+      await recalculatePayRegisterAttendanceDeduction(payRegister);
       await payRegister.save();
     }
 
@@ -200,6 +202,9 @@ exports.getPayRegister = async (req, res) => {
         ...payRegisterObj,
         lastAutoSyncedAt: new Date(),
       });
+
+      await recalculatePayRegisterAttendanceDeduction(payRegister);
+      await payRegister.save();
 
       await payRegister.populate([
         { path: 'employeeId', select: 'employee_name emp_no department_id designation_id' },
@@ -298,6 +303,9 @@ exports.createPayRegister = async (req, res) => {
       lastAutoSyncedAt: new Date(),
     });
 
+    await recalculatePayRegisterAttendanceDeduction(payRegister);
+    await payRegister.save();
+
     await payRegister.populate([
       { path: 'employeeId', select: 'employee_name emp_no department_id designation_id' },
       { path: 'dailyRecords.shiftId', select: 'name payableShifts' },
@@ -349,6 +357,7 @@ exports.updatePayRegister = async (req, res) => {
       }
       await ensureTotalsRespectRoster(payRegister.totals, payRegister.emp_no, startDate, endDate);
       applySummaryLockFromEdit(payRegister, req.user);
+      await recalculatePayRegisterAttendanceDeduction(payRegister);
     }
 
     // Update status if provided
@@ -439,6 +448,7 @@ exports.updateDailyRecord = async (req, res) => {
 
     applySummaryLockFromEdit(payRegister, req.user);
 
+    await recalculatePayRegisterAttendanceDeduction(payRegister);
     await payRegister.save();
 
     await payRegister.populate([
@@ -780,7 +790,7 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
       month
     })
       .populate('employeeId', 'employee_name emp_no department_id designation_id leftDate leftReason')
-      .select('employeeId emp_no month status totals lastEditedAt dailyRecords startDate endDate totalDaysInMonth summaryLocked summaryLockedAt');
+      .select('employeeId emp_no month status totals lastEditedAt dailyRecords startDate endDate totalDaysInMonth summaryLocked summaryLockedAt totalAttendanceDeductionDays attendanceDeductionBreakdown attendanceDeductionCalculatedAt');
 
     // Map for O(1) Access
     const prMap = new Map();
@@ -820,6 +830,9 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
           totalDaysInMonth: existingPR.totalDaysInMonth || totalDays,
           summaryLocked: !!existingPR.summaryLocked,
           summaryLockedAt: existingPR.summaryLockedAt || null,
+          totalAttendanceDeductionDays: existingPR.totalAttendanceDeductionDays ?? 0,
+          attendanceDeductionBreakdown: existingPR.attendanceDeductionBreakdown ?? null,
+          attendanceDeductionCalculatedAt: existingPR.attendanceDeductionCalculatedAt ?? null,
         };
       } else {
         // Return In-Memory Stub (Fast!)
@@ -861,6 +874,9 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
           totalDaysInMonth: totalDays,
           summaryLocked: false,
           summaryLockedAt: null,
+          totalAttendanceDeductionDays: 0,
+          attendanceDeductionBreakdown: null,
+          attendanceDeductionCalculatedAt: null,
         };
       }
     });
