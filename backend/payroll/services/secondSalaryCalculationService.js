@@ -126,7 +126,11 @@ async function calculateSecondSalary(employeeId, month, userId, sharedContext = 
 
         try {
             const policy = await LeavePolicySettings.getSettings();
-            if (policy.earnedLeave && policy.earnedLeave.useAsPaidInPayroll !== false) {
+            if (
+                policy.earnedLeave &&
+                policy.earnedLeave.enabled === true &&
+                policy.earnedLeave.useAsPaidInPayroll === true
+            ) {
                 const elBalance = Math.max(0, Number(employee.paidLeaves) || 0);
                 if (elBalance > 0) {
                     elUsedInPayroll = Math.min(elBalance, monthDays);

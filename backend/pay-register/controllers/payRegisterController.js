@@ -19,7 +19,11 @@ const mongoose = require('mongoose');
  * Mongo filter for Pay Register list / export: pay-period employment scope, optional dept/div, optional text search (server-side).
  * Search matches employee name, emp no, and any of department / division / designation name or code.
  */
-async function buildPayRegisterEmployeeFilter(rangeStart, rangeEnd, { departmentId, divisionId, search } = {}) {
+async function buildPayRegisterEmployeeFilter(
+  rangeStart,
+  rangeEnd,
+  { departmentId, divisionId, search, scopeFilter } = {}
+) {
   const toOid = (id) => {
     if (id === undefined || id === null || id === '') return null;
     const s = String(id);
@@ -37,6 +41,11 @@ async function buildPayRegisterEmployeeFilter(rangeStart, rangeEnd, { department
   ];
 
   const conditions = [{ $or: employmentScopeOr }];
+
+  // Apply request-level data scope at endpoint boundary (same model = Employee)
+  if (scopeFilter && typeof scopeFilter === 'object' && Object.keys(scopeFilter).length > 0) {
+    conditions.push(scopeFilter);
+  }
 
   if (departmentId) {
     conditions.push({ department_id: toOid(departmentId) });
@@ -69,6 +78,34 @@ async function buildPayRegisterEmployeeFilter(rangeStart, rangeEnd, { department
   return conditions.length === 1 ? conditions[0] : { $and: conditions };
 }
 
+async function ensureEmployeeInScope(req, res, employeeId) {
+  if (!employeeId || !mongoose.Types.ObjectId.isValid(String(employeeId))) {
+    res.status(400).json({ success: false, error: 'Invalid employeeId' });
+    return false;
+  }
+  const scopeFilter = req.scopeFilter || {};
+  const scopedQuery =
+    scopeFilter && Object.keys(scopeFilter).length > 0
+      ? { $and: [{ _id: new mongoose.Types.ObjectId(String(employeeId)) }, scopeFilter] }
+      : { _id: new mongoose.Types.ObjectId(String(employeeId)) };
+  const employee = await Employee.findOne(scopedQuery).select('_id').lean();
+  if (!employee) {
+    res.status(403).json({ success: false, error: 'Access denied for this employee in current scope' });
+    return false;
+  }
+  return true;
+}
+
+async function getScopedEmployeeIds(req, extraQuery = {}) {
+  const scopeFilter = req.scopeFilter || {};
+  const query =
+    scopeFilter && Object.keys(scopeFilter).length > 0
+      ? { $and: [scopeFilter, extraQuery] }
+      : extraQuery;
+  const rows = await Employee.find(query).select('_id').lean();
+  return rows.map((r) => r._id);
+}
+
 /** When a user saves day/grid edits, mark the pay register locked (same flag as Save & lock — sync skips unless force). */
 function applySummaryLockFromEdit(payRegister, user) {
   if (!payRegister || !user || !user._id) return;
@@ -88,6 +125,7 @@ function applySummaryLockFromEdit(payRegister, user) {
 exports.getPayRegister = async (req, res) => {
   try {
     const { employeeId, month } = req.params;
+    if (!(await ensureEmployeeInScope(req, res, employeeId))) return;
 
     // Validate month format
     if (!/^\d{4}-\d{2}$/.test(month)) {
@@ -231,6 +269,7 @@ exports.getPayRegister = async (req, res) => {
 exports.createPayRegister = async (req, res) => {
   try {
     const { employeeId, month } = req.params;
+    if (!(await ensureEmployeeInScope(req, res, employeeId))) return;
 
     // Validate month format
     if (!/^\d{4}-\d{2}$/.test(month)) {
@@ -330,6 +369,7 @@ exports.createPayRegister = async (req, res) => {
 exports.updatePayRegister = async (req, res) => {
   try {
     const { employeeId, month } = req.params;
+    if (!(await ensureEmployeeInScope(req, res, employeeId))) return;
     const { dailyRecords, status, notes } = req.body;
 
     const payRegister = await PayRegisterSummary.findOne({ employeeId, month });
@@ -405,6 +445,7 @@ exports.updatePayRegister = async (req, res) => {
 exports.updateDailyRecord = async (req, res) => {
   try {
     const { employeeId, month, date } = req.params;
+    if (!(await ensureEmployeeInScope(req, res, employeeId))) return;
     const updateData = req.body;
 
     // Validate date format
@@ -477,6 +518,7 @@ exports.updateDailyRecord = async (req, res) => {
 exports.syncPayRegister = async (req, res) => {
   try {
     const { employeeId, month } = req.params;
+    if (!(await ensureEmployeeInScope(req, res, employeeId))) return;
     const force = req.body && req.body.force === true;
 
     const payRegister = await manualSyncPayRegister(employeeId, month, { force });
@@ -548,8 +590,18 @@ exports.setSummaryLock = async (req, res) => {
           summaryLockedBy: null,
         };
 
+    const scopedIds = await getScopedEmployeeIds(req, { _id: { $in: validIds } });
+    const scopedIdSet = new Set(scopedIds.map((id) => String(id)));
+    const allowedIds = validIds.filter((id) => scopedIdSet.has(String(id)));
+    if (allowedIds.length === 0) {
+      return res.status(403).json({
+        success: false,
+        error: 'No scoped employees in request',
+      });
+    }
+
     const result = await PayRegisterSummary.updateMany(
-      { employeeId: { $in: validIds }, month },
+      { employeeId: { $in: allowedIds }, month },
       { $set: update }
     );
 
@@ -583,7 +635,12 @@ exports.getLockedSummaryEmployees = async (req, res) => {
     }
 
     const mongoose = require('mongoose');
-    const docs = await PayRegisterSummary.find({ month, summaryLocked: true })
+    const scopedEmployeeIds = await getScopedEmployeeIds(req);
+    const docs = await PayRegisterSummary.find({
+      month,
+      summaryLocked: true,
+      employeeId: { $in: scopedEmployeeIds },
+    })
       .select('employeeId emp_no')
       .populate({
         path: 'employeeId',
@@ -680,6 +737,7 @@ exports.getLockedSummaryEmployees = async (req, res) => {
 exports.getEditHistory = async (req, res) => {
   try {
     const { employeeId, month } = req.params;
+    if (!(await ensureEmployeeInScope(req, res, employeeId))) return;
 
     const payRegister = await PayRegisterSummary.findOne({ employeeId, month })
       .select('editHistory')
@@ -750,6 +808,7 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
       departmentId,
       divisionId,
       search,
+      scopeFilter: req.scopeFilter,
     });
 
     // 1. Bulk Fetch Employees
@@ -922,7 +981,10 @@ exports.uploadSummaryBulk = async (req, res) => {
       });
     }
 
-    const result = await processSummaryBulkUpload(month, data, req.user._id);
+    const allowedEmployeeIds = await getScopedEmployeeIds(req);
+    const result = await processSummaryBulkUpload(month, data, req.user._id, {
+      allowedEmployeeIds,
+    });
 
     res.status(200).json({
       success: true,
@@ -963,6 +1025,7 @@ exports.exportSummaryExcel = async (req, res) => {
       departmentId,
       divisionId,
       search,
+      scopeFilter: req.scopeFilter,
     });
 
     const employees = await Employee.find(employeeQuery)
