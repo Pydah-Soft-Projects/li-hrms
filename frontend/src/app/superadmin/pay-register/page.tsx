@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, type MouseEvent } from 'react';
+import { useState, useEffect, useCallback, type MouseEvent } from 'react';
 import { useRouter } from "next/navigation";
 import Link from 'next/link';
 import { parseFile } from '@/lib/bulkUpload';
@@ -1541,13 +1541,13 @@ export default function PayRegisterPage() {
     }
   };
 
-  const handleArrearsSelected = (arrears: Array<{ id: string, amount: number, employeeId?: string }>) => {
+  const handleArrearsSelected = useCallback((arrears: Array<{ id: string, amount: number, employeeId?: string }>) => {
     setSelectedArrears(arrears);
-  };
+  }, []);
 
-  const handleDeductionsSelected = (deductions: Array<{ id: string, amount: number, employeeId?: string }>) => {
+  const handleDeductionsSelected = useCallback((deductions: Array<{ id: string, amount: number, employeeId?: string }>) => {
     setSelectedDeductions(deductions);
-  };
+  }, []);
 
   const processPayroll = async () => {
     try {
