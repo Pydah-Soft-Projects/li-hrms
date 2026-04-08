@@ -374,6 +374,14 @@ export default function PayRegisterPage() {
   };
 
   useEffect(() => {
+    // Workspace users scoped to a single division should default to it
+    // instead of "All Divisions" so the filter reflects their actual scope.
+    if (divisions.length === 1 && !selectedDivision) {
+      setSelectedDivision(divisions[0]._id);
+    }
+  }, [divisions, selectedDivision]);
+
+  useEffect(() => {
     setPage(1);
     setHasMore(true);
     setSearchQuery('');
