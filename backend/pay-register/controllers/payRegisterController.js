@@ -22,7 +22,7 @@ const mongoose = require('mongoose');
 async function buildPayRegisterEmployeeFilter(
   rangeStart,
   rangeEnd,
-  { departmentId, divisionId, search, scopeFilter } = {}
+  { departmentId, divisionId, employeeGroupId, search, scopeFilter } = {}
 ) {
   const toOid = (id) => {
     if (id === undefined || id === null || id === '') return null;
@@ -52,6 +52,9 @@ async function buildPayRegisterEmployeeFilter(
   }
   if (divisionId) {
     conditions.push({ division_id: toOid(divisionId) });
+  }
+  if (employeeGroupId) {
+    conditions.push({ employee_group_id: toOid(employeeGroupId) });
   }
 
   const searchTrim = search && String(search).trim();
@@ -625,7 +628,7 @@ exports.setSummaryLock = async (req, res) => {
 exports.getLockedSummaryEmployees = async (req, res) => {
   try {
     const { month } = req.params;
-    const { departmentId, divisionId, search } = req.query;
+    const { departmentId, divisionId, employeeGroupId, search } = req.query;
 
     if (!/^\d{4}-\d{2}$/.test(month)) {
       return res.status(400).json({
@@ -644,7 +647,7 @@ exports.getLockedSummaryEmployees = async (req, res) => {
       .select('employeeId emp_no')
       .populate({
         path: 'employeeId',
-        select: 'employee_name emp_no department_id division_id designation_id',
+        select: 'employee_name emp_no department_id division_id designation_id employee_group_id',
         populate: [
           { path: 'department_id', select: 'name' },
           { path: 'division_id', select: 'name' },
@@ -660,6 +663,10 @@ exports.getLockedSummaryEmployees = async (req, res) => {
     let deptFilter = null;
     if (departmentId && mongoose.Types.ObjectId.isValid(String(departmentId))) {
       deptFilter = new mongoose.Types.ObjectId(String(departmentId));
+    }
+    let groupFilter = null;
+    if (employeeGroupId && mongoose.Types.ObjectId.isValid(String(employeeGroupId))) {
+      groupFilter = new mongoose.Types.ObjectId(String(employeeGroupId));
     }
 
     const refId = (ref) => {
@@ -680,6 +687,10 @@ exports.getLockedSummaryEmployees = async (req, res) => {
       if (deptFilter) {
         const deptIdVal = refId(emp.department_id);
         if (!deptIdVal || deptIdVal !== String(deptFilter)) continue;
+      }
+      if (groupFilter) {
+        const groupIdVal = refId(emp.employee_group_id);
+        if (!groupIdVal || groupIdVal !== String(groupFilter)) continue;
       }
 
       const divObj = emp.division_id;
@@ -769,12 +780,13 @@ exports.getEditHistory = async (req, res) => {
 exports.getEmployeesWithPayRegister = async (req, res) => {
   try {
     const { month } = req.params;
-    const { departmentId, divisionId, status, page, limit, search } = req.query;
+    const { departmentId, divisionId, employeeGroupId, status, page, limit, search } = req.query;
 
     console.log('[Pay Register Controller] getEmployeesWithPayRegister called:', {
       month,
       departmentId,
       divisionId,
+      employeeGroupId,
       status,
       search: search ? '(set)' : undefined,
     });
@@ -807,6 +819,7 @@ exports.getEmployeesWithPayRegister = async (req, res) => {
     const employeeQuery = await buildPayRegisterEmployeeFilter(rangeStart, rangeEnd, {
       departmentId,
       divisionId,
+      employeeGroupId,
       search,
       scopeFilter: req.scopeFilter,
     });
@@ -1004,7 +1017,7 @@ exports.uploadSummaryBulk = async (req, res) => {
 exports.exportSummaryExcel = async (req, res) => {
   try {
     const { month } = req.params;
-    const { departmentId, divisionId, search } = req.query;
+    const { departmentId, divisionId, employeeGroupId, search } = req.query;
 
     // Validate month format
     if (!/^\d{4}-\d{2}$/.test(month)) {
@@ -1024,6 +1037,7 @@ exports.exportSummaryExcel = async (req, res) => {
     const employeeQuery = await buildPayRegisterEmployeeFilter(rangeStart, rangeEnd, {
       departmentId,
       divisionId,
+      employeeGroupId,
       search,
       scopeFilter: req.scopeFilter,
     });

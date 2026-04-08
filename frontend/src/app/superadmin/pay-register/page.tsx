@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, type MouseEvent } from 'react';
 import { useRouter } from "next/navigation";
 import Link from 'next/link';
 import { parseFile } from '@/lib/bulkUpload';
-import { api, apiRequest, Employee, Division } from '@/lib/api';
+import { api, apiRequest, Employee, Division, EmployeeGroup } from '@/lib/api';
 import ArrearsPayrollSection from '@/components/Arrears/ArrearsPayrollSection';
 import DeductionsPayrollSection from '@/components/ManualDeductions/DeductionsPayrollSection';
 import * as XLSX from 'xlsx';
@@ -141,6 +141,9 @@ export default function PayRegisterPage() {
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [selectedDivision, setSelectedDivision] = useState<string>('');
   const [selectedDepartment, setSelectedDepartment] = useState<string>('');
+  const [selectedEmployeeGroup, setSelectedEmployeeGroup] = useState<string>('');
+  const [employeeGroups, setEmployeeGroups] = useState<EmployeeGroup[]>([]);
+  const [customGroupingEnabled, setCustomGroupingEnabled] = useState(false);
   const [leaveTypes, setLeaveTypes] = useState<any[]>([]);
   const [calculatingId, setCalculatingId] = useState<string | null>(null);
   const [bulkCalculating, setBulkCalculating] = useState(false);
@@ -354,7 +357,25 @@ export default function PayRegisterPage() {
     loadDivisions();
     loadDepartments();
     loadLeaveTypes();
+    loadEmployeeGroupsAndSetting();
   }, []);
+  const loadEmployeeGroupsAndSetting = async () => {
+    try {
+      const [groupRes, settingRes] = await Promise.all([
+        api.getEmployeeGroups(true),
+        api.getSetting('custom_employee_grouping_enabled'),
+      ]);
+      if (groupRes.success) setEmployeeGroups(groupRes.data || []);
+      const enabled = !!(settingRes.success && settingRes.data && settingRes.data.value);
+      setCustomGroupingEnabled(enabled);
+      if (!enabled) setSelectedEmployeeGroup('');
+    } catch (err) {
+      console.error('Error loading employee groups/setting:', err);
+      setCustomGroupingEnabled(false);
+      setSelectedEmployeeGroup('');
+    }
+  };
+
 
   const loadDivisions = async () => {
     try {
@@ -385,7 +406,7 @@ export default function PayRegisterPage() {
     setCommittedSearch('');
     loadPayRegisters(1, false, '');
     checkBatchLocks();
-  }, [year, month, selectedDepartment, selectedDivision]);
+  }, [year, month, selectedDepartment, selectedDivision, selectedEmployeeGroup]);
 
   const checkBatchLocks = async () => {
     try {
@@ -445,6 +466,10 @@ export default function PayRegisterPage() {
       // Ensure we pass undefined instead of empty string
       const targetDeptId = selectedDepartment && selectedDepartment.trim() !== '' ? selectedDepartment : undefined;
       const targetDivId = selectedDivision && selectedDivision.trim() !== '' ? selectedDivision : undefined;
+      const targetGroupId =
+        customGroupingEnabled && selectedEmployeeGroup && selectedEmployeeGroup.trim() !== ''
+          ? selectedEmployeeGroup
+          : undefined;
 
       const limit = PAGE_SIZE;
       const q =
@@ -458,7 +483,8 @@ export default function PayRegisterPage() {
         undefined,
         pageToLoad,
         limit,
-        q || undefined
+        q || undefined,
+        targetGroupId
       );
       const response = rawResponse as any;
 
@@ -548,7 +574,10 @@ export default function PayRegisterPage() {
         monthStr,
         selectedDepartment && selectedDepartment !== '' ? selectedDepartment : undefined,
         selectedDivision && selectedDivision !== '' ? selectedDivision : undefined,
-        committedSearch || undefined
+        committedSearch || undefined,
+        customGroupingEnabled && selectedEmployeeGroup && selectedEmployeeGroup !== ''
+          ? selectedEmployeeGroup
+          : undefined
       );
       const lockedRows =
         res.success && Array.isArray(res.data) ? res.data : [];
@@ -608,6 +637,10 @@ export default function PayRegisterPage() {
 
       const targetDeptId = selectedDepartment && selectedDepartment.trim() !== '' ? selectedDepartment : undefined;
       const targetDivId = selectedDivision && selectedDivision.trim() !== '' ? selectedDivision : undefined;
+      const targetGroupId =
+        customGroupingEnabled && selectedEmployeeGroup && selectedEmployeeGroup.trim() !== ''
+          ? selectedEmployeeGroup
+          : undefined;
       const fullRes = (await api.getEmployeesWithPayRegister(
         monthStr,
         targetDeptId,
@@ -615,7 +648,8 @@ export default function PayRegisterPage() {
         undefined,
         1,
         -1,
-        committedSearch || undefined
+        committedSearch || undefined,
+        targetGroupId
       )) as any;
 
       if (!fullRes?.success || !Array.isArray(fullRes.data) || fullRes.data.length === 0) {
@@ -745,6 +779,10 @@ export default function PayRegisterPage() {
         departmentId: selectedDepartment && selectedDepartment !== '' ? selectedDepartment : undefined,
         divisionId: selectedDivision && selectedDivision !== '' ? selectedDivision : undefined,
         search: committedSearch || undefined,
+        employeeGroupId:
+          customGroupingEnabled && selectedEmployeeGroup && selectedEmployeeGroup !== ''
+            ? selectedEmployeeGroup
+            : undefined,
       };
       const blob = await api.exportPayRegisterSummary(params);
       const url = window.URL.createObjectURL(blob);
@@ -1693,6 +1731,21 @@ export default function PayRegisterPage() {
                     <option key={dept._id} value={dept._id}>{dept.name}</option>
                   ))}
               </select>
+
+              {customGroupingEnabled && (
+                <select
+                  value={selectedEmployeeGroup}
+                  onChange={(e) => setSelectedEmployeeGroup(e.target.value)}
+                  className="h-8 pl-2 pr-6 text-[11px] font-semibold bg-white dark:bg-slate-800 border-0 rounded-lg focus:ring-2 focus:ring-blue-500/20 text-slate-700 dark:text-slate-300 shadow-sm min-w-[110px] max-w-[150px]"
+                >
+                  <option value="">All Groups</option>
+                  {employeeGroups.map((group) => (
+                    <option key={group._id} value={group._id}>
+                      {group.name}
+                    </option>
+                  ))}
+                </select>
+              )}
 
               {/* Payroll Engine selector (Previously Payroll Strategy) */}
               <select

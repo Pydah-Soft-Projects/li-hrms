@@ -3,6 +3,11 @@ const User = require('../../users/model/User');
 const Employee = require('../../employees/model/Employee');
 const Shift = require('../../shifts/model/Shift');
 const Designation = require('../model/Designation');
+const {
+  isCustomEmployeeGroupingEnabled,
+  validateEmployeeGroupIfEnabled,
+  stripEmployeeGroupWhenDisabled,
+} = require('../../shared/utils/customEmployeeGrouping');
 
 /**
  * Map Employee-style scope filter to Department schema.
@@ -730,6 +735,7 @@ exports.assignHR = async (req, res) => {
 exports.assignShifts = async (req, res) => {
   try {
     const { shifts } = req.body;
+    const groupingEnabled = await isCustomEmployeeGroupingEnabled();
 
     if (!Array.isArray(shifts)) {
       return res.status(400).json({
@@ -760,10 +766,23 @@ exports.assignShifts = async (req, res) => {
     }
 
     // Ensure we store in the correct format [{ shiftId, gender }]
-    const formattedShifts = shifts.map(s => {
-      if (typeof s === 'string') return { shiftId: s, gender: 'All' };
-      return { shiftId: s.shiftId, gender: s.gender || 'All' };
-    });
+    const formattedShifts = [];
+    for (const s of shifts) {
+      const config = typeof s === 'string'
+        ? { shiftId: s, gender: 'All' }
+        : { shiftId: s.shiftId, gender: s.gender || 'All', employee_group_id: s.employee_group_id || null };
+
+      const groupValidation = await validateEmployeeGroupIfEnabled(config.employee_group_id);
+      if (groupValidation?.error) {
+        return res.status(400).json({
+          success: false,
+          message: groupValidation.error,
+        });
+      }
+
+      stripEmployeeGroupWhenDisabled(config, groupingEnabled);
+      formattedShifts.push(config);
+    }
 
     department.shifts = formattedShifts;
     await department.save();

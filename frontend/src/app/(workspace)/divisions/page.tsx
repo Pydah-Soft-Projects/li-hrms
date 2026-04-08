@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { api, Division, Department, Designation, Shift } from '@/lib/api';
+import { api, Division, Department, Designation, Shift, EmployeeGroup } from '@/lib/api';
 import Spinner from '@/components/Spinner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
@@ -118,7 +118,9 @@ export default function DivisionsPage() {
     const [managerId, setManagerId] = useState('');
     const [selectedDeptIds, setSelectedDeptIds] = useState<string[]>([]);
     const [linkDeptSearch, setLinkDeptSearch] = useState('');
-    const [selectedShifts, setSelectedShifts] = useState<{ shiftId: string; gender: string }[]>([]);
+    const [selectedShifts, setSelectedShifts] = useState<{ shiftId: string; gender: string; employee_group_id?: string | null }[]>([]);
+    const [employeeGroups, setEmployeeGroups] = useState<EmployeeGroup[]>([]);
+    const [customGroupingEnabled, setCustomGroupingEnabled] = useState(false);
     const [shiftSearch, setShiftSearch] = useState('');
 
     const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
@@ -138,17 +140,23 @@ export default function DivisionsPage() {
     const loadData = async () => {
         try {
             setLoading(true);
-            const [divRes, deptRes, shiftRes, managerRes] = await Promise.all([
+            const [divRes, deptRes, shiftRes, managerRes, groupRes, groupingSettingRes] = await Promise.all([
                 api.getDivisions(),
                 api.getDepartments(true), // Fetch populated departments with designations
                 api.getShifts(),
-                api.getUsers({ role: 'manager' })
+                api.getUsers({ role: 'manager' }),
+                api.getEmployeeGroups(true),
+                api.getSetting('custom_employee_grouping_enabled'),
             ]);
 
             if (divRes.success) setDivisions(divRes.data || []);
             if (deptRes.success) setDepartments(deptRes.data || []);
             if (shiftRes.success) setShifts(shiftRes.data || []);
             if (managerRes.success) setManagers(managerRes.data || []);
+            if (groupRes.success) setEmployeeGroups(groupRes.data || []);
+            if (groupingSettingRes.success && groupingSettingRes.data) {
+                setCustomGroupingEnabled(!!groupingSettingRes.data.value);
+            }
         } catch (err) {
             console.error('Error loading division data:', err);
             setError('Failed to load data');
@@ -177,7 +185,7 @@ export default function DivisionsPage() {
         if (!showShiftDialog) return;
 
         const loadExistingShifts = async () => {
-            let existingShifts: { shiftId: string; gender: string }[] = [];
+            let existingShifts: { shiftId: string; gender: string; employee_group_id?: string | null }[] = [];
             const divisionId = showShiftDialog._id;
 
             // Helper to parse Mixed backend response (string ID or Object with shiftId/gender)
@@ -188,7 +196,10 @@ export default function DivisionsPage() {
                     // If it's the new object structure
                     if (s.shiftId) return {
                         shiftId: typeof s.shiftId === 'string' ? s.shiftId : s.shiftId._id,
-                        gender: s.gender || 'All'
+                        gender: s.gender || 'All',
+                        employee_group_id: s.employee_group_id
+                            ? (typeof s.employee_group_id === 'string' ? s.employee_group_id : s.employee_group_id._id)
+                            : null,
                     };
                     // Fallback for old object structure (direct Shift object)
                     return { shiftId: s._id, gender: 'All' };
@@ -300,7 +311,7 @@ export default function DivisionsPage() {
         e.preventDefault();
         if (!showShiftDialog) return;
 
-        const payload: { shifts: { shiftId: string; gender: string }[]; targetType?: string; targetId?: string | { designationId: string; departmentId: string } } = { shifts: selectedShifts };
+        const payload: { shifts: { shiftId: string; gender: string; employee_group_id?: string | null }[]; targetType?: string; targetId?: string | { designationId: string; departmentId: string } } = { shifts: selectedShifts };
 
         if (targetScope === 'division') {
             payload.targetType = 'division_general';
@@ -850,14 +861,14 @@ export default function DivisionsPage() {
                                                         if (isSelected) {
                                                             setSelectedShifts(prev => prev.filter(s => s.shiftId !== shift._id));
                                                         } else {
-                                                            setSelectedShifts(prev => [...prev, { shiftId: shift._id, gender: 'All' }]);
+                                                            setSelectedShifts(prev => [...prev, { shiftId: shift._id, gender: 'All', employee_group_id: null }]);
                                                         }
                                                     }}
                                                     className="rounded border-slate-300 text-amber-600 focus:ring-amber-500 h-4 w-4 cursor-pointer"
                                                 />
                                                 <div className="flex-1 cursor-pointer" onClick={() => {
                                                     if (!isSelected) {
-                                                        setSelectedShifts(prev => [...prev, { shiftId: shift._id, gender: 'All' }]);
+                                                        setSelectedShifts(prev => [...prev, { shiftId: shift._id, gender: 'All', employee_group_id: null }]);
                                                     }
                                                 }}>
                                                     <div className="text-sm text-slate-700 dark:text-slate-300 font-semibold">{shift.name}</div>
@@ -866,22 +877,44 @@ export default function DivisionsPage() {
 
                                                 {/* Gender Selector - Only visible if checked */}
                                                 {isSelected && (
-                                                    <select
-                                                        value={selectedConfig?.gender || 'All'}
-                                                        onChange={(e) => {
-                                                            const newGender = e.target.value;
-                                                            setSelectedShifts(prev => prev.map(s =>
-                                                                s.shiftId === shift._id ? { ...s, gender: newGender } : s
-                                                            ));
-                                                        }}
-                                                        className="text-xs rounded-lg border-slate-200 bg-white px-2 py-1 focus:border-amber-500 focus:outline-none dark:bg-slate-900 dark:border-slate-700"
-                                                        onClick={(e) => e.stopPropagation()}
-                                                    >
-                                                        <option value="All">All Genders</option>
-                                                        <option value="Male">Male Only</option>
-                                                        <option value="Female">Female Only</option>
-                                                        <option value="Other">Other</option>
-                                                    </select>
+                                                    <div className="flex items-center gap-2">
+                                                        <select
+                                                            value={selectedConfig?.gender || 'All'}
+                                                            onChange={(e) => {
+                                                                const newGender = e.target.value;
+                                                                setSelectedShifts(prev => prev.map(s =>
+                                                                    s.shiftId === shift._id ? { ...s, gender: newGender } : s
+                                                                ));
+                                                            }}
+                                                            className="text-xs rounded-lg border-slate-200 bg-white px-2 py-1 focus:border-amber-500 focus:outline-none dark:bg-slate-900 dark:border-slate-700"
+                                                            onClick={(e) => e.stopPropagation()}
+                                                        >
+                                                            <option value="All">All Genders</option>
+                                                            <option value="Male">Male Only</option>
+                                                            <option value="Female">Female Only</option>
+                                                            <option value="Other">Other</option>
+                                                        </select>
+                                                        {customGroupingEnabled && (
+                                                            <select
+                                                                value={selectedConfig?.employee_group_id || ''}
+                                                                onChange={(e) => {
+                                                                    const newGroup = e.target.value || null;
+                                                                    setSelectedShifts(prev => prev.map(s =>
+                                                                        s.shiftId === shift._id ? { ...s, employee_group_id: newGroup } : s
+                                                                    ));
+                                                                }}
+                                                                className="text-xs rounded-lg border-slate-200 bg-white px-2 py-1 focus:border-amber-500 focus:outline-none dark:bg-slate-900 dark:border-slate-700"
+                                                                onClick={(e) => e.stopPropagation()}
+                                                            >
+                                                                <option value="">All Groups</option>
+                                                                {employeeGroups.map((group) => (
+                                                                    <option key={group._id} value={group._id}>
+                                                                        {group.name}
+                                                                    </option>
+                                                                ))}
+                                                            </select>
+                                                        )}
+                                                    </div>
                                                 )}
                                             </div>
                                         );

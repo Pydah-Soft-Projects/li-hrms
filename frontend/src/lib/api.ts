@@ -531,12 +531,12 @@ export interface Designation {
   code: string;
   description?: string;
   department?: string | Department;
-  shifts?: (string | Shift)[];
-  divisionDefaults?: { division: string | Division; shifts: (string | Shift)[] }[];
+  shifts?: (string | { shiftId: string | Shift; gender?: string; employee_group_id?: string | EmployeeGroup | null })[];
+  divisionDefaults?: { division: string | Division; shifts: (string | { shiftId: string | Shift; gender?: string; employee_group_id?: string | EmployeeGroup | null })[] }[];
   departmentShifts?: Array<{
     division?: string | Division;
     department: string | Department | { _id: string; name: string; code?: string };
-    shifts: (string | Shift)[];
+    shifts: (string | { shiftId: string | Shift; gender?: string; employee_group_id?: string | EmployeeGroup | null })[];
     _id?: string;
   }>;
   paidLeaves?: number;
@@ -573,7 +573,7 @@ export interface Department {
     action: 'half_day' | 'full_day' | 'deduct_amount';
     amount?: number;
   }>;
-  shifts?: (string | Shift)[];
+  shifts?: (string | { shiftId: string | Shift; gender?: string; employee_group_id?: string | EmployeeGroup | null })[];
   paidLeaves?: number;
   leaveLimits?: {
     casual: number;
@@ -585,7 +585,7 @@ export interface Department {
   updatedAt?: string;
   divisions?: (string | Division)[];
   designations?: (string | Designation)[];
-  divisionDefaults?: { division: string | Division; shifts: (string | Shift)[] }[];
+  divisionDefaults?: { division: string | Division; shifts: (string | { shiftId: string | Shift; gender?: string; employee_group_id?: string | EmployeeGroup | null })[] }[];
   applyPF?: boolean;
   applyESI?: boolean;
   applyProfessionTax?: boolean;
@@ -603,7 +603,7 @@ export interface Division {
   description?: string;
   manager?: { _id: string; name: string; email: string };
   departments?: (string | Department)[];
-  shifts?: (string | Shift)[];
+  shifts?: (string | { shiftId: string | Shift; gender?: string; employee_group_id?: string | EmployeeGroup | null })[];
   isActive?: boolean;
 }
 
@@ -1265,7 +1265,7 @@ export const api = {
     });
   },
 
-  assignShiftsToDivision: async (id: string, data: { shifts: (string | { shiftId: string; gender: string })[]; targetType: string; targetId?: string | { designationId: string; departmentId: string } }) => {
+  assignShiftsToDivision: async (id: string, data: { shifts: (string | { shiftId: string; gender: string; employee_group_id?: string | null })[]; targetType: string; targetId?: string | { designationId: string; departmentId: string } }) => {
     return apiRequest<any>(`/divisions/${id}/shifts`, {
       method: 'POST',
       body: JSON.stringify(data),
@@ -3777,11 +3777,12 @@ export const api = {
     );
   },
 
-  getPayRegisterLockedEmployees: async (month: string, departmentId?: string, divisionId?: string, search?: string) => {
+  getPayRegisterLockedEmployees: async (month: string, departmentId?: string, divisionId?: string, search?: string, employeeGroupId?: string) => {
     const query = new URLSearchParams();
     if (departmentId) query.append('departmentId', departmentId);
     if (divisionId) query.append('divisionId', divisionId);
     if (search) query.append('search', search);
+    if (employeeGroupId) query.append('employeeGroupId', employeeGroupId);
     const qs = query.toString();
     return apiRequest<{
       success: boolean;
@@ -3806,7 +3807,7 @@ export const api = {
     });
   },
 
-  getEmployeesWithPayRegister: async (month: string, departmentId?: string, divisionId?: string, status?: string, page?: number, limit?: number, search?: string) => {
+  getEmployeesWithPayRegister: async (month: string, departmentId?: string, divisionId?: string, status?: string, page?: number, limit?: number, search?: string, employeeGroupId?: string) => {
     const query = new URLSearchParams();
     if (departmentId) query.append('departmentId', departmentId);
     if (divisionId) query.append('divisionId', divisionId);
@@ -3814,6 +3815,7 @@ export const api = {
     if (page) query.append('page', page.toString());
     if (limit) query.append('limit', limit.toString());
     if (search) query.append('search', search);
+    if (employeeGroupId) query.append('employeeGroupId', employeeGroupId);
     return apiRequest<{ data: any[], pagination?: any, success: boolean, message?: string }>(`/pay-register/employees/${month}${query.toString() ? `?${query.toString()}` : ''}`, {
       method: 'GET',
     });
@@ -3824,12 +3826,14 @@ export const api = {
     departmentId?: string;
     divisionId?: string;
     search?: string;
+    employeeGroupId?: string;
   }) => {
     const query = new URLSearchParams();
     query.append('month', params.month);
     if (params.departmentId) query.append('departmentId', params.departmentId);
     if (params.divisionId) query.append('divisionId', params.divisionId);
     if (params.search) query.append('search', params.search);
+    if (params.employeeGroupId) query.append('employeeGroupId', params.employeeGroupId);
 
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const headers: Record<string, string> = {};
