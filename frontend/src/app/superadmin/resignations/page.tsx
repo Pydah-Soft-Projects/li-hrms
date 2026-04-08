@@ -79,6 +79,7 @@ interface ResignationRequest {
       actionByRole?: string;
       comments?: string;
       updatedAt?: string;
+      updatedAtIST?: string;
       canEditLWD?: boolean;
     }>;
     history?: Array<{

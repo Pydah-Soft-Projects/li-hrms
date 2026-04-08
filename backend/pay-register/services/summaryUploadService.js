@@ -5,6 +5,7 @@ const { calculateTotals, ensureTotalsRespectRoster } = require('./totalsCalculat
 const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
 const mongoose = require('mongoose');
 const SecondSalarySyncService = require('../../payroll/services/secondSalarySyncService');
+const { recalculatePayRegisterAttendanceDeduction } = require('./payRegisterAttendanceDeductionService');
 
 /**
  * Summary Upload Service
@@ -220,6 +221,7 @@ async function processSummaryBulkUpload(month, rows, userId) {
             payRegister.markModified('totals');
             payRegister.markModified('dailyRecords');
 
+            await recalculatePayRegisterAttendanceDeduction(payRegister);
             await payRegister.save();
             updatedEmployeeIds.push(employeeId.toString());
             results.success++;
