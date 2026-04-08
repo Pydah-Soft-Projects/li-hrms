@@ -731,6 +731,7 @@ export default function LeavesPage() {
     employeeNumber: '',
     status: '',
     leaveType: '',
+    odPlace: '',
     startDate: '',
     endDate: '',
     division: [] as string[],
@@ -2185,7 +2186,10 @@ export default function LeavesPage() {
         matchesDate = itemDate >= start && itemDate <= end;
       }
 
-      return matchesSearch && matchesStatus && matchesType && matchesDivision && matchesDepartment && matchesDesignation && matchesDate;
+      // 7. OD Place Filter (apply only while viewing OD tab)
+      const matchesODPlace = activeTab !== 'od' || !leaveFilters.odPlace || item.placeVisited === leaveFilters.odPlace;
+
+      return matchesSearch && matchesStatus && matchesType && matchesDivision && matchesDepartment && matchesDesignation && matchesDate && matchesODPlace;
     });
   };
 
@@ -2774,6 +2778,21 @@ export default function LeavesPage() {
                     )}
                   </select>
                 </div>
+
+                {/* OD Place Filter (only in OD tab) */}
+                {activeTab === 'od' && (
+                  <div className="relative">
+                    <Filter className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                    <select
+                      value={leaveFilters.odPlace}
+                      onChange={(e) => setLeaveFilters(prev => ({ ...prev, odPlace: e.target.value }))}
+                      className="h-10 pl-9 pr-8 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all appearance-none cursor-pointer w-full"
+                    >
+                      <option value="">All Places</option>
+                      <option value="Organization Campus (Auto)">Organization Campus (Auto)</option>
+                    </select>
+                  </div>
+                )}
 
                 {/* Division Filter */}
                 {currentUser?.role !== 'hod' && (
@@ -4518,6 +4537,7 @@ export default function LeavesPage() {
                         placeholder="Location"
                       />
                     </div>
+
                     <LocationPhotoCapture
                       required
                       label="Photo Evidence"

@@ -225,7 +225,7 @@ const getWorkflowSettings = async () => {
 // @access  Private
 exports.getODs = async (req, res) => {
   try {
-    const { status, employeeId, department, division, designation, fromDate, toDate, search, page = 1, limit = 20 } = req.query;
+    const { status, employeeId, department, division, designation, placeVisited, fromDate, toDate, search, page = 1, limit = 20 } = req.query;
 
     // Multi-layered filter: Jurisdiction (Scope) AND Timing (Workflow)
     const scopeFilter = req.scopeFilter || { isActive: true };
@@ -277,6 +277,10 @@ exports.getODs = async (req, res) => {
     if (designation && designation !== 'all') {
       const ids = String(designation).split(',').filter(id => id && id !== 'all');
       if (ids.length > 0) filter.designation = ids.length > 1 ? { $in: ids } : ids[0];
+    }
+    if (placeVisited && String(placeVisited).trim()) {
+      const placeRegex = new RegExp(`^${String(placeVisited).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+      filter.placeVisited = placeRegex;
     }
     if (fromDate || toDate) {
       if (toDate) filter.fromDate = { ...filter.fromDate, $lte: new Date(toDate) };
