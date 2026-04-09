@@ -72,4 +72,22 @@ describe('applyOtHoursPolicy', () => {
   it('snapToNearestMinuteGrid: 1.37h → 1.25h at 15 min', () => {
     expect(snapToNearestMinuteGrid(1.37, 15)).toBeCloseTo(1.25, 4);
   });
+
+  it('range mapping: 30-60 -> 60 minutes', () => {
+    const r = applyOtHoursPolicy(0.7, {
+      ...base,
+      otHourRanges: [{ minMinutes: 30, maxMinutes: 60, creditedMinutes: 60 }],
+    });
+    expect(r.eligible).toBe(true);
+    expect(r.finalHours).toBe(1);
+  });
+
+  it('range mapping: no match -> zero', () => {
+    const r = applyOtHoursPolicy(0.2, {
+      ...base,
+      otHourRanges: [{ minMinutes: 30, maxMinutes: 60, creditedMinutes: 60 }],
+    });
+    expect(r.eligible).toBe(false);
+    expect(r.finalHours).toBe(0);
+  });
 });

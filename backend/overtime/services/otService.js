@@ -57,6 +57,13 @@ function buildOtWorkflow(userId, otSettings) {
   };
 }
 
+function formatHoursAsHHMM(hours) {
+  const totalMinutes = Math.max(0, Math.round((Number(hours) || 0) * 60));
+  const hh = String(Math.floor(totalMinutes / 60)).padStart(2, '0');
+  const mm = String(totalMinutes % 60).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
 /**
  * Create OT request
  * @param {Object} data - OT request data
@@ -247,13 +254,19 @@ const createOTRequest = async (data, userId) => {
 
     const otPolicySnapshot = {
       rawOtHours: policyResult.rawHours,
+      rawOtHHMM: formatHoursAsHHMM(policyResult.rawHours),
+      rawOtMinutes: policyResult.rawMinutes,
       finalOtHours: otHours,
+      finalOtHHMM: formatHoursAsHHMM(otHours),
+      finalOtMinutes: policyResult.creditedMinutes,
+      matchedRange: policyResult.matchedRange,
       steps: policyResult.steps,
       recognitionMode: mergedPolicy.recognitionMode,
       thresholdHours: mergedPolicy.thresholdHours,
       minOTHours: mergedPolicy.minOTHours,
       roundingMinutes: mergedPolicy.roundingMinutes,
       roundUpIfFractionMinutesGte: mergedPolicy.roundUpIfFractionMinutesGte,
+      otHourRanges: mergedPolicy.otHourRanges,
     };
 
     // Create OT request
@@ -699,13 +712,19 @@ const convertExtraHoursToOT = async (employeeId, employeeNumber, date, userId, u
 
     const otPolicySnapshot = {
       rawOtHours: policyResult.rawHours,
+      rawOtHHMM: formatHoursAsHHMM(policyResult.rawHours),
+      rawOtMinutes: policyResult.rawMinutes,
       finalOtHours: otHours,
+      finalOtHHMM: formatHoursAsHHMM(otHours),
+      finalOtMinutes: policyResult.creditedMinutes,
+      matchedRange: policyResult.matchedRange,
       steps: policyResult.steps,
       recognitionMode: mergedPolicy.recognitionMode,
       thresholdHours: mergedPolicy.thresholdHours,
       minOTHours: mergedPolicy.minOTHours,
       roundingMinutes: mergedPolicy.roundingMinutes,
       roundUpIfFractionMinutesGte: mergedPolicy.roundUpIfFractionMinutesGte,
+      otHourRanges: mergedPolicy.otHourRanges,
     };
 
     const otRecord = await OT.create({
@@ -735,8 +754,8 @@ const convertExtraHoursToOT = async (employeeId, employeeNumber, date, userId, u
       workflow: workflowData,
       comments:
         source === 'auto_detected'
-          ? `Auto OT request: raw ${rawExtra.toFixed(2)}h → ${otHours.toFixed(2)}h after policy (pending approval)`
-          : `OT request from extra hours: raw ${rawExtra.toFixed(2)}h → ${otHours.toFixed(2)}h after policy (pending approval)`,
+          ? `Auto OT request: original ${formatHoursAsHHMM(rawExtra)} (${rawExtra.toFixed(2)}h) -> considered ${formatHoursAsHHMM(otHours)} (${otHours.toFixed(2)}h) after policy (pending approval)`
+          : `OT request from extra hours: original ${formatHoursAsHHMM(rawExtra)} (${rawExtra.toFixed(2)}h) -> considered ${formatHoursAsHHMM(otHours)} (${otHours.toFixed(2)}h) after policy (pending approval)`,
     });
 
     attendanceRecord.isEdited = true;
@@ -747,8 +766,8 @@ const convertExtraHoursToOT = async (employeeId, employeeNumber, date, userId, u
       modifiedAt: new Date(),
       details:
         source === 'auto_detected'
-          ? `Auto-created OT request: ${rawExtra.toFixed(2)}h extra → ${otHours.toFixed(2)}h after rules (pending approval)`
-          : `Requested conversion of ${rawExtra.toFixed(2)}h extra to OT (${otHours.toFixed(2)}h after rules, pending approval)`,
+          ? `Auto-created OT request: original ${formatHoursAsHHMM(rawExtra)} (${rawExtra.toFixed(2)}h) -> considered ${formatHoursAsHHMM(otHours)} (${otHours.toFixed(2)}h) after rules (pending approval)`
+          : `Requested conversion of extra hours: original ${formatHoursAsHHMM(rawExtra)} (${rawExtra.toFixed(2)}h) -> considered ${formatHoursAsHHMM(otHours)} (${otHours.toFixed(2)}h) after rules (pending approval)`,
     });
     await attendanceRecord.save();
 
@@ -757,7 +776,7 @@ const convertExtraHoursToOT = async (employeeId, employeeNumber, date, userId, u
 
     return {
       success: true,
-      message: `OT request created: ${otHours.toFixed(2)}h (from ${rawExtra.toFixed(2)}h extra), pending approval`,
+      message: `OT request created: considered ${formatHoursAsHHMM(otHours)} (${otHours.toFixed(2)}h) from original ${formatHoursAsHHMM(rawExtra)} (${rawExtra.toFixed(2)}h), pending approval`,
       data: otRecord,
       policy: policyResult,
     };
@@ -789,6 +808,7 @@ const simulateOtHoursPolicy = async (rawHours, departmentId, divisionId, policyD
       minOTHours: policy.minOTHours,
       roundingMinutes: policy.roundingMinutes,
       roundUpIfFractionMinutesGte: policy.roundUpIfFractionMinutesGte,
+      otHourRanges: policy.otHourRanges,
     },
   };
 };
@@ -836,6 +856,7 @@ const previewConvertExtraHoursToOT = async (employeeId, employeeNumber, date) =>
         minOTHours: mergedPolicy.minOTHours,
         roundingMinutes: mergedPolicy.roundingMinutes,
         roundUpIfFractionMinutesGte: mergedPolicy.roundUpIfFractionMinutesGte,
+        otHourRanges: mergedPolicy.otHourRanges,
       },
       hasExistingOt: !!existingOT,
     };

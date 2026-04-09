@@ -3445,11 +3445,13 @@ export const api = {
     recognitionMode?: string;
     thresholdHours?: number | null;
     roundUpIfFractionMinutesGte?: number | null;
+    otHourRanges?: Array<{
+      minMinutes: number;
+      maxMinutes: number;
+      creditedMinutes: number;
+      label?: string;
+    }>;
     autoCreateOtRequest?: boolean;
-    payCalculationMode?: string;
-    otSalaryBasis?: string;
-    daysPerMonthMode?: string;
-    fixedDaysPerMonth?: number;
     defaultWorkingHoursPerDay?: number;
     workflow?: any;
   }) => {
