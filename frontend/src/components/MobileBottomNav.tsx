@@ -17,6 +17,7 @@ import {
   PiggyBank,
   Briefcase,
   Gift,
+  Cake,
   Clock,
   CalendarDays,
   Timer,
@@ -70,6 +71,7 @@ const moduleIcons: Record<string, any> = {
   HOLIDAY_CALENDAR: CalendarHeart,
   RESIGNATION: LogOut,
   PROMOTIONS_TRANSFERS: TrendingUp,
+  EMPLOYEE_BIRTHDAYS: Cake,
 };
 
 const shortModuleLabels: Record<string, string> = {
@@ -104,6 +106,7 @@ const shortModuleLabels: Record<string, string> = {
   HOLIDAY_CALENDAR: 'Hols',
   RESIGNATION: 'Resign',
   PROMOTIONS_TRANSFERS: 'Promo',
+  EMPLOYEE_BIRTHDAYS: 'Bday',
 };
 
 export default function MobileBottomNav() {
@@ -202,11 +205,12 @@ export default function MobileBottomNav() {
     return pathname === href ||
       (code === 'LEAVE_OD' && (pathname === '/leaves' || pathname === '/od')) ||
       (code === 'CCL' && pathname === '/ccl') ||
-      (code === 'PROMOTIONS_TRANSFERS' && pathname === '/promotions-transfers');
+      (code === 'PROMOTIONS_TRANSFERS' && pathname === '/promotions-transfers') ||
+      (code === 'EMPLOYEE_BIRTHDAYS' && pathname === '/employee-birthdays');
   };
 
-  const handleLogout = () => {
-    auth.logout();
+  const handleLogout = async () => {
+    if (!(await auth.logoutWithConfirmation())) return;
     router.push('/login');
     setIsMoreOpen(false);
   };

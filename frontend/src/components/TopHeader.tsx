@@ -2,6 +2,7 @@
 
 import { LogOut } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { auth } from '@/lib/auth';
 import { useRouter } from 'next/navigation';
 
 interface TopHeaderProps {
@@ -12,7 +13,9 @@ export default function TopHeader({ showLogout = true }: TopHeaderProps) {
     const { logout } = useAuth();
     const router = useRouter();
 
-    const handleLogout = () => {
+    const handleLogout = async () => {
+        const confirmed = await auth.confirmLogout();
+        if (!confirmed) return;
         logout();
         router.push('/login');
     };

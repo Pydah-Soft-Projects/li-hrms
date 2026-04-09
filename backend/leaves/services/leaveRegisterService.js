@@ -742,6 +742,8 @@ class LeaveRegisterService {
                 
                 if (filters.divisionId) empQuery.division_id = filters.divisionId;
                 if (filters.departmentId) empQuery.department_id = filters.departmentId;
+                if (filters.designationId) empQuery.designation_id = filters.designationId;
+                if (filters.employee_group_id) empQuery.employee_group_id = filters.employee_group_id;
                 
                 const extraEmployees = await Employee.find(empQuery)
                     .select('_id emp_no employee_name designation_id department_id division_id doj is_active casualLeaves paidLeaves compensatoryOffs')
