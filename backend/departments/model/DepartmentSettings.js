@@ -328,30 +328,20 @@ const departmentSettingsSchema = new mongoose.Schema(
         min: 0,
         max: 59,
       },
+      otHourRanges: {
+        type: [
+          {
+            minMinutes: { type: Number, required: true, min: 0 },
+            maxMinutes: { type: Number, required: true, min: 0 },
+            creditedMinutes: { type: Number, required: true, min: 0 },
+            label: { type: String, default: '', trim: true },
+          },
+        ],
+        default: undefined,
+      },
       autoCreateOtRequest: {
         type: Boolean,
         default: null,
-      },
-      payCalculationMode: {
-        type: String,
-        default: null,
-        trim: true,
-      },
-      otSalaryBasis: {
-        type: String,
-        default: null,
-        trim: true,
-      },
-      daysPerMonthMode: {
-        type: String,
-        default: null,
-        trim: true,
-      },
-      fixedDaysPerMonth: {
-        type: Number,
-        default: null,
-        min: 1,
-        max: 31,
       },
       defaultWorkingHoursPerDay: {
         type: Number,

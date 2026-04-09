@@ -50,34 +50,22 @@ const OvertimeSettingsSchema = new mongoose.Schema(
             min: 0,
             max: 59,
         },
+        /** Slab mapping: raw OT range (minutes) -> credited OT (minutes) */
+        otHourRanges: {
+            type: [
+                {
+                    minMinutes: { type: Number, required: true, min: 0 },
+                    maxMinutes: { type: Number, required: true, min: 0 },
+                    creditedMinutes: { type: Number, required: true, min: 0 },
+                    label: { type: String, default: '', trim: true },
+                },
+            ],
+            default: [],
+        },
         /** When true, extra-hours detection can create a pending OT request automatically */
         autoCreateOtRequest: {
             type: Boolean,
             default: false,
-        },
-        /** flat_per_hour (legacy) | formula — (z/y)/x * hours * multiplier */
-        payCalculationMode: {
-            type: String,
-            enum: ['flat_per_hour', 'formula'],
-            default: 'flat_per_hour',
-        },
-        /** Salary component z for formula mode */
-        otSalaryBasis: {
-            type: String,
-            enum: ['gross', 'basic'],
-            default: 'gross',
-        },
-        /** calendar = use payroll month length; fixed = use fixedDaysPerMonth */
-        daysPerMonthMode: {
-            type: String,
-            enum: ['calendar', 'fixed'],
-            default: 'calendar',
-        },
-        fixedDaysPerMonth: {
-            type: Number,
-            default: 30,
-            min: 1,
-            max: 31,
         },
         /** Fallback working hours per day (x) when department/group not set */
         defaultWorkingHoursPerDay: {

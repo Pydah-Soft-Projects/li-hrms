@@ -5,7 +5,7 @@ import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
 import Spinner from '@/components/Spinner';
 import { SettingsSkeleton } from './SettingsSkeleton';
-import { Save, Clock, ChevronRight, Percent } from 'lucide-react';
+import { Save, Clock, ChevronRight } from 'lucide-react';
 import WorkflowManager, { WorkflowData } from './shared/WorkflowManager';
 
 type OtSettingsState = {
@@ -16,11 +16,8 @@ type OtSettingsState = {
     recognitionMode: string;
     thresholdHours: number | null;
     roundUpIfFractionMinutesGte: number | null;
+    otHourRanges: { minMinutes: number; maxMinutes: number; creditedMinutes: number; label?: string }[];
     autoCreateOtRequest: boolean;
-    payCalculationMode: string;
-    otSalaryBasis: string;
-    daysPerMonthMode: string;
-    fixedDaysPerMonth: number;
     defaultWorkingHoursPerDay: number;
     workflow: WorkflowData;
 };
@@ -33,17 +30,39 @@ const defaultOt: OtSettingsState = {
     recognitionMode: 'none',
     thresholdHours: null,
     roundUpIfFractionMinutesGte: null,
+    otHourRanges: [],
     autoCreateOtRequest: false,
-    payCalculationMode: 'flat_per_hour',
-    otSalaryBasis: 'gross',
-    daysPerMonthMode: 'calendar',
-    fixedDaysPerMonth: 30,
     defaultWorkingHoursPerDay: 8,
     workflow: {
         isEnabled: true,
         steps: [],
         finalAuthority: { role: 'admin', anyHRCanApprove: false },
     },
+};
+
+const minutesToHHMM = (minutes: number): string => {
+    const safe = Math.max(0, Number.isFinite(minutes) ? Math.round(minutes) : 0);
+    const hh = String(Math.floor(safe / 60)).padStart(2, '0');
+    const mm = String(safe % 60).padStart(2, '0');
+    return `${hh}:${mm}`;
+};
+
+const hhmmToMinutes = (value: string): number => {
+    const v = String(value || '').trim();
+    const m = v.match(/^(\d{1,2}):([0-5]\d)$/);
+    if (!m) return 0;
+    return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+};
+
+const hoursToHHMM = (hours: number | null): string => {
+    if (hours === null || hours === undefined || !Number.isFinite(hours)) return '';
+    return minutesToHHMM(Math.round(hours * 60));
+};
+
+const hhmmToHours = (value: string): number | null => {
+    if (!value) return null;
+    const mins = hhmmToMinutes(value);
+    return mins / 60;
 };
 
 type SimResult = {
@@ -58,7 +77,7 @@ const OTSettings = () => {
     const [otSettings, setOTSettings] = useState<OtSettingsState>(defaultOt);
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
-    const [simRawHours, setSimRawHours] = useState('1.37');
+    const [simRawHours, setSimRawHours] = useState('01:22');
     const [simLoading, setSimLoading] = useState(false);
     const [simResult, setSimResult] = useState<SimResult | null>(null);
 
@@ -85,11 +104,10 @@ const OTSettings = () => {
                             d.roundUpIfFractionMinutesGte === null || d.roundUpIfFractionMinutesGte === undefined
                                 ? null
                                 : Number(d.roundUpIfFractionMinutesGte),
+                        otHourRanges: Array.isArray(d.otHourRanges)
+                            ? (d.otHourRanges as { minMinutes: number; maxMinutes: number; creditedMinutes: number; label?: string }[])
+                            : [],
                         autoCreateOtRequest: Boolean(d.autoCreateOtRequest),
-                        payCalculationMode: String(d.payCalculationMode ?? 'flat_per_hour'),
-                        otSalaryBasis: String(d.otSalaryBasis ?? 'gross'),
-                        daysPerMonthMode: String(d.daysPerMonthMode ?? 'calendar'),
-                        fixedDaysPerMonth: Number(d.fixedDaysPerMonth ?? 30),
                         defaultWorkingHoursPerDay: Number(d.defaultWorkingHoursPerDay ?? 8),
                         workflow: (d.workflow as WorkflowData) || defaultOt.workflow,
                     });
@@ -114,11 +132,8 @@ const OTSettings = () => {
                 recognitionMode: otSettings.recognitionMode,
                 thresholdHours: otSettings.thresholdHours,
                 roundUpIfFractionMinutesGte: otSettings.roundUpIfFractionMinutesGte,
+                otHourRanges: otSettings.otHourRanges,
                 autoCreateOtRequest: otSettings.autoCreateOtRequest,
-                payCalculationMode: otSettings.payCalculationMode,
-                otSalaryBasis: otSettings.otSalaryBasis,
-                daysPerMonthMode: otSettings.daysPerMonthMode,
-                fixedDaysPerMonth: otSettings.fixedDaysPerMonth,
                 defaultWorkingHoursPerDay: otSettings.defaultWorkingHoursPerDay,
                 workflow: otSettings.workflow,
             });
@@ -131,11 +146,12 @@ const OTSettings = () => {
     };
 
     const handleSimulatePolicy = async () => {
-        const raw = parseFloat(simRawHours);
-        if (!Number.isFinite(raw) || raw < 0) {
-            toast.error('Enter a valid raw OT hours value (≥ 0)');
+        const rawMinutes = hhmmToMinutes(simRawHours);
+        if (!simRawHours || !/^\d{1,2}:[0-5]\d$/.test(simRawHours) || rawMinutes < 0) {
+            toast.error('Enter a valid raw OT duration in HH:MM format');
             return;
         }
+        const raw = rawMinutes / 60;
         try {
             setSimLoading(true);
             const res = await api.simulateOtHoursPolicy({
@@ -146,6 +162,7 @@ const OTSettings = () => {
                     minOTHours: otSettings.minOTHours,
                     roundingMinutes: otSettings.roundingMinutes,
                     roundUpIfFractionMinutesGte: otSettings.roundUpIfFractionMinutesGte,
+                    otHourRanges: otSettings.otHourRanges,
                 },
             });
             if (!res.success) {
@@ -185,7 +202,7 @@ const OTSettings = () => {
     if (loading) return <SettingsSkeleton />;
 
     return (
-        <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="flex items-end justify-between border-b border-gray-200 dark:border-gray-800 pb-5">
                 <div>
                     <div className="flex items-center gap-2 text-[10px] font-bold text-gray-400 uppercase tracking-[0.2em] mb-2">
@@ -195,90 +212,24 @@ const OTSettings = () => {
                     </div>
                     <h2 className="text-xl font-bold text-gray-900 dark:text-white">Overtime (OT)</h2>
                     <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                        Rates, automatic hour rules, formula pay (z/y)/x, and approvals.
+                        Automatic OT hour rules, range slabs, employee hourly OT pay, and approvals.
                     </p>
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+            <div className="grid grid-cols-1 xl:grid-cols-[1.05fr_1.95fr] gap-6 items-start">
                 {/* OT Parameters */}
-                <div className="xl:col-span-1">
-                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden sticky top-24 p-4 sm:p-6 lg:p-8">
-                        <div className="px-8 py-6 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
+                <div>
+                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden sticky top-24">
+                        <div className="px-5 py-4 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
                             <div className="h-10 w-10 flex items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800/50">
                                 <Clock className="h-5 w-5" />
                             </div>
                             <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Parameters</h3>
                         </div>
 
-                        <div className="p-8 space-y-8">
+                        <div className="p-5 space-y-6">
                             <div className="space-y-4">
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="flex justify-between items-center bg-gray-50/50 dark:bg-black/10 p-3 rounded-xl border border-gray-100 dark:border-gray-800">
-                                        <div className="flex items-center gap-2">
-                                            <Percent className="h-3.5 w-3.5 text-gray-400" />
-                                            <span className="text-[10px] font-bold text-gray-500 uppercase tracking-tighter">Rate/Hr</span>
-                                        </div>
-                                        <input
-                                            type="number"
-                                            value={otSettings.payPerHour ?? ''}
-                                            onChange={(e) => setOTSettings({ ...otSettings, payPerHour: parseFloat(e.target.value) })}
-                                            className="w-16 bg-transparent text-right text-sm font-black text-indigo-600 outline-none"
-                                        />
-                                    </div>
-
-                                    <div className="flex justify-between items-center bg-gray-50/50 dark:bg-black/10 p-3 rounded-xl border border-gray-100 dark:border-gray-800">
-                                        <div className="flex items-center gap-2">
-                                            <Percent className="h-3.5 w-3.5 text-gray-400" />
-                                            <span className="text-[10px] font-bold text-gray-500 uppercase tracking-tighter">Multiplier</span>
-                                        </div>
-                                        <input
-                                            type="number"
-                                            step="0.1"
-                                            value={otSettings.multiplier ?? ''}
-                                            onChange={(e) => setOTSettings({ ...otSettings, multiplier: parseFloat(e.target.value) })}
-                                            className="w-12 bg-transparent text-right text-sm font-black text-indigo-600 outline-none"
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="flex justify-between items-center bg-gray-50/50 dark:bg-black/10 p-3 rounded-xl border border-gray-100 dark:border-gray-800">
-                                        <div className="flex items-center gap-2">
-                                            <Clock className="h-3.5 w-3.5 text-gray-400" />
-                                            <span className="text-[10px] font-bold text-gray-500 uppercase tracking-tighter">Min OT</span>
-                                        </div>
-                                        <div className="flex items-center gap-1">
-                                            <input
-                                                type="number"
-                                                value={otSettings.minOTHours ?? ''}
-                                                onChange={(e) => setOTSettings({ ...otSettings, minOTHours: parseFloat(e.target.value) })}
-                                                className="w-12 bg-transparent text-right text-sm font-black text-indigo-600 outline-none"
-                                            />
-                                            <span className="text-[8px] font-bold text-gray-400 uppercase">Hrs</span>
-                                        </div>
-                                    </div>
-
-                                    <div className="flex justify-between items-center bg-gray-50/50 dark:bg-black/10 p-3 rounded-xl border border-gray-100 dark:border-gray-800">
-                                        <div className="flex items-center gap-2">
-                                            <Clock className="h-3.5 w-3.5 text-gray-400" />
-                                            <span className="text-[10px] font-bold text-gray-500 uppercase tracking-tighter">Rounding</span>
-                                        </div>
-                                        <div className="flex items-center gap-1">
-                                            <input
-                                                type="number"
-                                                value={otSettings.roundingMinutes ?? ''}
-                                                onChange={(e) => setOTSettings({ ...otSettings, roundingMinutes: parseInt(e.target.value) })}
-                                                className="w-12 bg-transparent text-right text-sm font-black text-indigo-600 outline-none"
-                                            />
-                                            <span className="text-[8px] font-bold text-gray-400 uppercase">Min</span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <p className="text-[9px] text-gray-400 px-1">
-                                    Nearest N-minute grid (after threshold and minimum). Use 0 to disable.
-                                </p>
-
                                 <div className="space-y-3 pt-2 border-t border-gray-100 dark:border-gray-800">
                                     <p className="text-[10px] font-bold text-gray-500 uppercase tracking-tighter">Hour rules (automatic)</p>
                                     <select
@@ -290,18 +241,18 @@ const OTSettings = () => {
                                         <option value="threshold_full">Threshold — full raw hours count once met</option>
                                     </select>
                                     <div className="flex items-center justify-between gap-2">
-                                        <span className="text-[10px] text-gray-500">Threshold (h)</span>
+                                        <span className="text-[10px] text-gray-500">Threshold (HH:MM)</span>
                                         <input
-                                            type="number"
-                                            step="0.25"
-                                            value={otSettings.thresholdHours ?? ''}
+                                            type="time"
+                                            step={60}
+                                            value={hoursToHHMM(otSettings.thresholdHours)}
                                             onChange={(e) =>
                                                 setOTSettings({
                                                     ...otSettings,
-                                                    thresholdHours: e.target.value === '' ? null : parseFloat(e.target.value),
+                                                    thresholdHours: hhmmToHours(e.target.value),
                                                 })
                                             }
-                                            className="w-20 rounded-lg border border-gray-200 dark:border-gray-700 px-2 py-1 text-xs text-right"
+                                            className="w-28 rounded-lg border border-gray-200 dark:border-gray-700 px-2 py-1 text-xs text-right"
                                         />
                                     </div>
                                     <div className="flex items-center justify-between gap-2">
@@ -335,49 +286,14 @@ const OTSettings = () => {
                                 </div>
 
                                 <div className="space-y-3 pt-2 border-t border-gray-100 dark:border-gray-800">
-                                    <p className="text-[10px] font-bold text-gray-500 uppercase tracking-tighter">Pay formula</p>
-                                    <select
-                                        value={otSettings.payCalculationMode}
-                                        onChange={(e) => setOTSettings({ ...otSettings, payCalculationMode: e.target.value })}
-                                        className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-900 px-2 py-2 text-xs"
-                                    >
-                                        <option value="flat_per_hour">Flat ₹/hour × hours × multiplier</option>
-                                        <option value="formula">(z/y)/x × hours × multiplier</option>
-                                    </select>
-                                    <select
-                                        value={otSettings.otSalaryBasis}
-                                        onChange={(e) => setOTSettings({ ...otSettings, otSalaryBasis: e.target.value })}
-                                        className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-900 px-2 py-2 text-xs"
-                                    >
-                                        <option value="gross">z = gross salary</option>
-                                        <option value="basic">z = basic (from salary components)</option>
-                                    </select>
-                                    <select
-                                        value={otSettings.daysPerMonthMode}
-                                        onChange={(e) => setOTSettings({ ...otSettings, daysPerMonthMode: e.target.value })}
-                                        className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-900 px-2 py-2 text-xs"
-                                    >
-                                        <option value="calendar">y = calendar days in payroll month</option>
-                                        <option value="fixed">y = fixed days</option>
-                                    </select>
+                                    <p className="text-[10px] font-bold text-gray-500 uppercase tracking-tighter">
+                                        OT pay basis
+                                    </p>
+                                    <p className="text-[10px] text-gray-500">
+                                        Per hour pay = (employee monthly basic / payroll days) / working hours per day.
+                                    </p>
                                     <div className="flex items-center justify-between gap-2">
-                                        <span className="text-[10px] text-gray-500">Fixed y (if fixed)</span>
-                                        <input
-                                            type="number"
-                                            min={1}
-                                            max={31}
-                                            value={otSettings.fixedDaysPerMonth}
-                                            onChange={(e) =>
-                                                setOTSettings({
-                                                    ...otSettings,
-                                                    fixedDaysPerMonth: parseInt(e.target.value, 10) || 30,
-                                                })
-                                            }
-                                            className="w-16 rounded-lg border border-gray-200 dark:border-gray-700 px-2 py-1 text-xs text-right"
-                                        />
-                                    </div>
-                                    <div className="flex items-center justify-between gap-2">
-                                        <span className="text-[10px] text-gray-500">Default x (h/day)</span>
+                                        <span className="text-[10px] text-gray-500">Default hours/day</span>
                                         <input
                                             type="number"
                                             step="0.5"
@@ -391,6 +307,86 @@ const OTSettings = () => {
                                             }
                                             className="w-16 rounded-lg border border-gray-200 dark:border-gray-700 px-2 py-1 text-xs text-right"
                                         />
+                                    </div>
+                                    <p className="text-[10px] font-bold text-gray-500 uppercase tracking-tighter pt-2">
+                                        Ranges (HH:MM)
+                                    </p>
+                                    <p className="text-[10px] text-gray-500">
+                                        Example: 00:30 to 01:00 consider as 01:00
+                                    </p>
+                                    <div className="space-y-2">
+                                        <div className="grid grid-cols-9 gap-2 text-[9px] font-bold uppercase tracking-wider text-gray-400 px-1">
+                                            <span className="col-span-2">From</span>
+                                            <span className="col-span-1 text-center">-</span>
+                                            <span className="col-span-2">To</span>
+                                            <span className="col-span-1 text-center">=</span>
+                                            <span className="col-span-2">Consider As</span>
+                                            <span className="col-span-1 text-right">Action</span>
+                                        </div>
+                                        {otSettings.otHourRanges.map((r, idx) => (
+                                            <div key={idx} className="grid grid-cols-9 gap-2 items-center rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50/70 dark:bg-slate-900/30 p-2">
+                                                <input
+                                                    type="time"
+                                                    step={60}
+                                                    value={minutesToHHMM(r.minMinutes)}
+                                                    onChange={(e) => {
+                                                        const next = [...otSettings.otHourRanges];
+                                                        next[idx] = { ...next[idx], minMinutes: hhmmToMinutes(e.target.value) };
+                                                        setOTSettings({ ...otSettings, otHourRanges: next });
+                                                    }}
+                                                    className="col-span-2 rounded-lg border border-gray-200 dark:border-gray-700 px-2 py-1 text-xs"
+                                                />
+                                                <span className="text-[10px] text-gray-500 text-center">to</span>
+                                                <input
+                                                    type="time"
+                                                    step={60}
+                                                    value={minutesToHHMM(r.maxMinutes)}
+                                                    onChange={(e) => {
+                                                        const next = [...otSettings.otHourRanges];
+                                                        next[idx] = { ...next[idx], maxMinutes: hhmmToMinutes(e.target.value) };
+                                                        setOTSettings({ ...otSettings, otHourRanges: next });
+                                                    }}
+                                                    className="col-span-2 rounded-lg border border-gray-200 dark:border-gray-700 px-2 py-1 text-xs"
+                                                />
+                                                <span className="text-[10px] text-gray-500 text-center">consider</span>
+                                                <input
+                                                    type="time"
+                                                    step={60}
+                                                    value={minutesToHHMM(r.creditedMinutes)}
+                                                    onChange={(e) => {
+                                                        const next = [...otSettings.otHourRanges];
+                                                        next[idx] = { ...next[idx], creditedMinutes: hhmmToMinutes(e.target.value) };
+                                                        setOTSettings({ ...otSettings, otHourRanges: next });
+                                                    }}
+                                                    className="col-span-2 rounded-lg border border-gray-200 dark:border-gray-700 px-2 py-1 text-xs"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const next = otSettings.otHourRanges.filter((_, i) => i !== idx);
+                                                        setOTSettings({ ...otSettings, otHourRanges: next });
+                                                    }}
+                                                    className="text-[10px] text-red-600 font-bold col-span-1 text-right"
+                                                >
+                                                    Remove
+                                                </button>
+                                            </div>
+                                        ))}
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                setOTSettings({
+                                                    ...otSettings,
+                                                    otHourRanges: [
+                                                        ...otSettings.otHourRanges,
+                                                        { minMinutes: 0, maxMinutes: 0, creditedMinutes: 0, label: '' },
+                                                    ],
+                                                })
+                                            }
+                                            className="text-[10px] text-indigo-600 font-bold hover:text-indigo-700"
+                                        >
+                                            + Add range
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -408,24 +404,32 @@ const OTSettings = () => {
                 </div>
 
                 {/* OT Workflow */}
-                <div className="xl:col-span-2 space-y-6">
-                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden min-h-[400px] p-4 sm:p-6 lg:p-8">
-                        <div className="p-8">
+                <div className="space-y-6">
+                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden min-h-[400px] p-4 sm:p-5 lg:p-6">
+                        <div className="rounded-xl border border-purple-100 dark:border-purple-900/40 bg-purple-50/60 dark:bg-purple-900/10 px-3 py-2 mb-4">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-purple-700 dark:text-purple-300">
+                                Approval Chain
+                            </p>
+                            <p className="text-[11px] text-purple-700/80 dark:text-purple-200/80 mt-0.5">
+                                Keep steps minimal for faster OT approvals.
+                            </p>
+                        </div>
+                        <div className="px-1">
                             <WorkflowManager
                                 workflow={otSettings.workflow}
                                 onChange={(newWorkflow: WorkflowData) => setOTSettings({ ...otSettings, workflow: newWorkflow })}
                                 title="Multi-Level Approval"
                                 description="Workflow Engine for overtime hierarchies."
-                                addStepLabel="Append Authorization Level"
+                                addStepLabel="Add Approval Step"
                             />
 
                             <button
                                 onClick={handleSaveWorkflow}
                                 disabled={saving}
-                                className="w-full flex items-center justify-center gap-2 rounded-xl bg-purple-600 text-white py-4 text-xs font-bold hover:bg-purple-700 transition-all shadow-xl shadow-purple-500/20 active:scale-95 disabled:opacity-50 mt-8"
+                                className="w-full flex items-center justify-center gap-2 rounded-xl bg-purple-600 text-white py-3.5 text-xs font-bold hover:bg-purple-700 transition-all shadow-lg shadow-purple-500/20 active:scale-95 disabled:opacity-50 mt-6"
                             >
                                 {saving ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />}
-                                Commit Authorization Chain
+                                Save Approval Chain
                             </button>
                         </div>
                     </section>
@@ -441,11 +445,10 @@ const OTSettings = () => {
                 </p>
                 <div className="flex flex-wrap items-end gap-3">
                     <div>
-                        <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Raw hours</label>
+                        <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Raw OT (HH:MM)</label>
                         <input
-                            type="number"
-                            step="0.01"
-                            min={0}
+                            type="time"
+                            step={60}
                             value={simRawHours}
                             onChange={(e) => setSimRawHours(e.target.value)}
                             className="w-28 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
@@ -468,7 +471,7 @@ const OTSettings = () => {
                         </p>
                         <p>
                             <span className="font-semibold text-gray-700 dark:text-gray-300">Final hours:</span>{' '}
-                            {simResult.finalHours}
+                            {minutesToHHMM(Math.round((simResult.finalHours || 0) * 60))} ({simResult.finalHours})
                         </p>
                         <p className="text-gray-600 dark:text-gray-400">
                             <span className="font-semibold text-gray-700 dark:text-gray-300">Steps:</span>{' '}

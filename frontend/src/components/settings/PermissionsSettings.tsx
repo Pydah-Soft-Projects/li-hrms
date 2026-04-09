@@ -92,7 +92,7 @@ const PermissionsSettings = () => {
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 items-start">
+            <div className="grid grid-cols-1 xl:grid-cols-[1.25fr_0.75fr] gap-6 items-start">
                 {/* Deduction Rules */}
                 <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden flex flex-col min-h-[500px]">
                     <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-5 lg:py-6 border-b border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-black/10 flex items-center gap-3 sm:gap-4">
@@ -105,7 +105,7 @@ const PermissionsSettings = () => {
                         </div>
                     </div>
 
-                    <div className="p-4 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 flex-1">
+                    <div className="p-4 sm:p-6 lg:p-7 space-y-4 sm:space-y-5 flex-1">
                         <div className="space-y-2">
                             <label className="text-[10px] text-gray-400 font-black uppercase tracking-widest pl-1">Free Allowed (Monthly)</label>
                             <input
@@ -132,13 +132,13 @@ const PermissionsSettings = () => {
                                 />
                             </div>
                             <div className="space-y-2">
-                                <label className="text-[10px] text-gray-400 font-black uppercase tracking-widest pl-1">Min. Duration (Hrs)</label>
+                                <label className="text-[10px] text-gray-400 font-black uppercase tracking-widest pl-1">Min. Duration (Minutes)</label>
                                 <input
                                     type="number"
                                     value={rules.minimumDuration ?? ''}
                                     onChange={(e) => setRules({ ...rules, minimumDuration: e.target.value !== '' ? parseFloat(e.target.value) : null })}
                                     className="w-full bg-gray-50 dark:bg-black/20 border border-gray-100 dark:border-gray-800 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-emerald-500/20 outline-none font-bold"
-                                    placeholder="e.g. 0.5"
+                                    placeholder="e.g. 30"
                                 />
                             </div>
                         </div>
@@ -214,7 +214,7 @@ const PermissionsSettings = () => {
                         <button
                             onClick={handleSaveRules}
                             disabled={saving}
-                            className="w-full flex items-center justify-center gap-2 rounded-xl bg-emerald-600 text-white py-4 text-xs font-bold hover:bg-emerald-700 transition-all shadow-xl shadow-emerald-500/20 active:scale-95 disabled:opacity-50 mt-auto"
+                            className="w-full flex items-center justify-center gap-2 rounded-xl bg-emerald-600 text-white py-3.5 text-xs font-bold hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-500/20 active:scale-95 disabled:opacity-50 mt-auto"
                         >
                             {saving ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />}
                             Commit Logic Parameters
@@ -223,23 +223,31 @@ const PermissionsSettings = () => {
                 </section>
 
                 {/* Workflow section */}
-                <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden flex flex-col">
-                    <div className="p-4 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 flex-1">
+                <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden flex flex-col xl:sticky xl:top-24">
+                    <div className="p-4 sm:p-5 lg:p-6 space-y-4 flex-1">
+                        <div className="rounded-xl border border-purple-100 dark:border-purple-900/40 bg-purple-50/60 dark:bg-purple-900/10 px-3 py-2">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-purple-700 dark:text-purple-300">
+                                Approval Chain
+                            </p>
+                            <p className="text-[11px] text-purple-700/80 dark:text-purple-200/80 mt-0.5">
+                                Keep this lean and role-based for faster approvals.
+                            </p>
+                        </div>
                         <WorkflowManager
                             workflow={workflow}
                             onChange={(newWorkflow: WorkflowData) => setWorkflow(newWorkflow)}
                             title="Multi-Level Approval"
                             description="Workflow Engine for short-term absence."
-                            addStepLabel="Append Authorization Level"
+                            addStepLabel="Add Approval Step"
                         />
 
                         <button
                             onClick={handleSaveWorkflow}
                             disabled={saving}
-                            className="w-full flex items-center justify-center gap-2 rounded-xl bg-purple-600 text-white py-4 text-xs font-bold hover:bg-purple-700 transition-all shadow-xl shadow-purple-500/20 active:scale-95 disabled:opacity-50 mt-auto"
+                            className="w-full flex items-center justify-center gap-2 rounded-xl bg-purple-600 text-white py-3.5 text-xs font-bold hover:bg-purple-700 transition-all shadow-lg shadow-purple-500/20 active:scale-95 disabled:opacity-50 mt-auto"
                         >
                             {saving ? <Spinner className="h-4 w-4" /> : <Save className="h-4 w-4" />}
-                            Commit Authorization Chain
+                            Save Approval Chain
                         </button>
                     </div>
                 </section>

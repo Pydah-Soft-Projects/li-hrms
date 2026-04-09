@@ -83,10 +83,7 @@ interface DepartmentSettings {
     roundUpIfFractionMinutesGte?: number | null;
     roundingMinutes?: number | null;
     autoCreateOtRequest?: boolean | null;
-    payCalculationMode?: string | null;
-    otSalaryBasis?: string | null;
-    daysPerMonthMode?: string | null;
-    fixedDaysPerMonth?: number | null;
+    otHourRanges?: { minMinutes: number; maxMinutes: number; creditedMinutes: number; label?: string }[];
     defaultWorkingHoursPerDay?: number | null;
     workingHoursPerDay?: number | null;
     groupWorkingHours?: { employeeGroupId: string; hoursPerDay: number }[];
@@ -198,10 +195,7 @@ export default function DepartmentalSettingsPage() {
       roundUpIfFractionMinutesGte: null,
       roundingMinutes: null,
       autoCreateOtRequest: null,
-      payCalculationMode: null,
-      otSalaryBasis: null,
-      daysPerMonthMode: null,
-      fixedDaysPerMonth: null,
+      otHourRanges: [],
       defaultWorkingHoursPerDay: null,
       workingHoursPerDay: null,
       groupWorkingHours: [],
@@ -385,10 +379,7 @@ export default function DepartmentalSettingsPage() {
             roundUpIfFractionMinutesGte: s.ot?.roundUpIfFractionMinutesGte ?? null,
             roundingMinutes: s.ot?.roundingMinutes ?? null,
             autoCreateOtRequest: s.ot?.autoCreateOtRequest ?? null,
-            payCalculationMode: s.ot?.payCalculationMode ?? null,
-            otSalaryBasis: s.ot?.otSalaryBasis ?? null,
-            daysPerMonthMode: s.ot?.daysPerMonthMode ?? null,
-            fixedDaysPerMonth: s.ot?.fixedDaysPerMonth ?? null,
+            otHourRanges: Array.isArray(s.ot?.otHourRanges) ? s.ot.otHourRanges : [],
             defaultWorkingHoursPerDay: s.ot?.defaultWorkingHoursPerDay ?? null,
             workingHoursPerDay: s.ot?.workingHoursPerDay ?? null,
             groupWorkingHours: Array.isArray(s.ot?.groupWorkingHours) ? s.ot.groupWorkingHours : [],
@@ -491,10 +482,7 @@ export default function DepartmentalSettingsPage() {
         roundUpIfFractionMinutesGte: null,
         roundingMinutes: null,
         autoCreateOtRequest: null,
-        payCalculationMode: null,
-        otSalaryBasis: null,
-        daysPerMonthMode: null,
-        fixedDaysPerMonth: null,
+        otHourRanges: [],
         defaultWorkingHoursPerDay: null,
         workingHoursPerDay: null,
         groupWorkingHours: [],
@@ -1401,52 +1389,41 @@ export default function DepartmentalSettingsPage() {
                   <option value="false">Disabled</option>
                 </select>
               </div>
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">Pay mode</label>
-                <select
-                  value={formData.ot.payCalculationMode ?? ''}
-                  onChange={(e) => handleInputChange('ot', 'payCalculationMode', e.target.value || null)}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                >
-                  <option value="">Inherit global</option>
-                  <option value="flat_per_hour">Flat ₹/hour</option>
-                  <option value="formula">Formula (z/y)/x</option>
-                </select>
-              </div>
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">Salary basis (z)</label>
-                <select
-                  value={formData.ot.otSalaryBasis ?? ''}
-                  onChange={(e) => handleInputChange('ot', 'otSalaryBasis', e.target.value || null)}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                >
-                  <option value="">Inherit global</option>
-                  <option value="gross">Gross salary</option>
-                  <option value="basic">Basic (from salary components)</option>
-                </select>
-              </div>
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">Days per month (y)</label>
-                <select
-                  value={formData.ot.daysPerMonthMode ?? ''}
-                  onChange={(e) => handleInputChange('ot', 'daysPerMonthMode', e.target.value || null)}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                >
-                  <option value="">Inherit global</option>
-                  <option value="calendar">Calendar month length</option>
-                  <option value="fixed">Fixed</option>
-                </select>
-              </div>
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">Fixed days (if fixed)</label>
-                <input
-                  type="number"
-                  min="1"
-                  max="31"
-                  value={formData.ot.fixedDaysPerMonth ?? ''}
-                  onChange={(e) => handleInputChange('ot', 'fixedDaysPerMonth', e.target.value ? parseInt(e.target.value, 10) : null)}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                />
+              <div className="sm:col-span-2 lg:col-span-3 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/40">
+                <p className="text-xs font-semibold text-slate-800 dark:text-slate-200">OT Hour Ranges (minutes)</p>
+                <p className="mb-3 text-[10px] text-slate-500">Map raw OT minute range to credited minutes.</p>
+                {(formData.ot.otHourRanges || []).map((row, idx) => (
+                  <div key={idx} className="mb-2 grid grid-cols-4 gap-2">
+                    <input type="number" min="0" value={row.minMinutes} onChange={(e) => {
+                      const next = [...(formData.ot.otHourRanges || [])];
+                      next[idx] = { ...next[idx], minMinutes: parseInt(e.target.value, 10) || 0 };
+                      setFormData((prev) => ({ ...prev, ot: { ...prev.ot, otHourRanges: next } }));
+                    }} placeholder="Min" className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-700 dark:text-white" />
+                    <input type="number" min="0" value={row.maxMinutes} onChange={(e) => {
+                      const next = [...(formData.ot.otHourRanges || [])];
+                      next[idx] = { ...next[idx], maxMinutes: parseInt(e.target.value, 10) || 0 };
+                      setFormData((prev) => ({ ...prev, ot: { ...prev.ot, otHourRanges: next } }));
+                    }} placeholder="Max" className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-700 dark:text-white" />
+                    <input type="number" min="0" value={row.creditedMinutes} onChange={(e) => {
+                      const next = [...(formData.ot.otHourRanges || [])];
+                      next[idx] = { ...next[idx], creditedMinutes: parseInt(e.target.value, 10) || 0 };
+                      setFormData((prev) => ({ ...prev, ot: { ...prev.ot, otHourRanges: next } }));
+                    }} placeholder="Consider" className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-700 dark:text-white" />
+                    <button type="button" onClick={() => {
+                      const next = (formData.ot.otHourRanges || []).filter((_, i) => i !== idx);
+                      setFormData((prev) => ({ ...prev, ot: { ...prev.ot, otHourRanges: next } }));
+                    }} className="rounded-lg border border-red-200 px-2 py-1 text-xs text-red-600 dark:border-red-800">Remove</button>
+                  </div>
+                ))}
+                <button type="button" onClick={() =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    ot: {
+                      ...prev.ot,
+                      otHourRanges: [...(prev.ot.otHourRanges || []), { minMinutes: 0, maxMinutes: 0, creditedMinutes: 0, label: '' }],
+                    },
+                  }))
+                } className="text-xs font-medium text-indigo-600 hover:underline">+ Add range</button>
               </div>
               <div>
                 <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">Default hours/day (x) fallback</label>

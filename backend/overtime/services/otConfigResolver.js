@@ -61,11 +61,12 @@ async function getMergedOtConfig(departmentId, divisionId = null) {
     minOTHours: num(minFromDeptOrGlobal, 0),
     roundingMinutes: roundingMinutesMerged,
     roundUpIfFractionMinutesGte: pick('roundUpIfFractionMinutesGte', null),
+    otHourRanges: Array.isArray(d.otHourRanges)
+      ? d.otHourRanges
+      : Array.isArray(g.otHourRanges)
+        ? g.otHourRanges
+        : [],
     autoCreateOtRequest: autoInherited,
-    payCalculationMode: pick('payCalculationMode', 'flat_per_hour'),
-    otSalaryBasis: pick('otSalaryBasis', 'gross'),
-    daysPerMonthMode: pick('daysPerMonthMode', 'calendar'),
-    fixedDaysPerMonth: num(pick('fixedDaysPerMonth', 30), 30),
     defaultWorkingHoursPerDay: num(pick('defaultWorkingHoursPerDay', 8), 8),
     workingHoursPerDay:
       d.workingHoursPerDay !== undefined && d.workingHoursPerDay !== null
@@ -148,21 +149,9 @@ function resolveWorkingHoursPerDay(merged, employee) {
   return fallback;
 }
 
-/**
- * Days in month (y) for formula.
- */
-function resolveDaysPerMonth(merged, totalDaysInMonth) {
-  if (merged.daysPerMonthMode === 'fixed') {
-    return Math.max(1, num(merged.fixedDaysPerMonth, 30));
-  }
-  const y = num(totalDaysInMonth, 0);
-  return y > 0 ? y : 30;
-}
-
 module.exports = {
   getMergedOtConfig,
   resolveMonthlySalaryZ,
   resolveWorkingHoursPerDay,
-  resolveDaysPerMonth,
   num,
 };

@@ -22,11 +22,8 @@ exports.getSettings = async (req, res) => {
         recognitionMode: 'none',
         thresholdHours: null,
         roundUpIfFractionMinutesGte: null,
+        otHourRanges: [],
         autoCreateOtRequest: false,
-        payCalculationMode: 'flat_per_hour',
-        otSalaryBasis: 'gross',
-        daysPerMonthMode: 'calendar',
-        fixedDaysPerMonth: 30,
         defaultWorkingHoursPerDay: 8,
         workflow: {
           isEnabled: false,
@@ -77,11 +74,8 @@ exports.saveSettings = async (req, res) => {
       'recognitionMode',
       'thresholdHours',
       'roundUpIfFractionMinutesGte',
+      'otHourRanges',
       'autoCreateOtRequest',
-      'payCalculationMode',
-      'otSalaryBasis',
-      'daysPerMonthMode',
-      'fixedDaysPerMonth',
       'defaultWorkingHoursPerDay',
     ].forEach(assignIfDefined);
 
