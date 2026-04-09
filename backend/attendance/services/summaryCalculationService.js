@@ -364,6 +364,7 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
 
     const weekOffDates = new Set();
     const holidayDates = new Set();
+    const originalNonWorkingStatusByDate = new Map();
     for (const row of rosterNonWorking) {
       const dateKey = toNormalizedDateStr(row?.date);
       if (!dateKey || isOutsideEmploymentBound(dateKey)) continue;
@@ -371,10 +372,12 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         if (row.status === 'WO') {
           dailyStatsMap.get(dateKey).isWO = true;
           weekOffDates.add(dateKey);
+          originalNonWorkingStatusByDate.set(dateKey, 'WO');
         }
         if (row.status === 'HOL') {
           dailyStatsMap.get(dateKey).isHOL = true;
           holidayDates.add(dateKey);
+          originalNonWorkingStatusByDate.set(dateKey, 'HOL');
         }
       }
     }
@@ -495,12 +498,27 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
      * | PRESENT | ABSENT | Keep as WO/HOL |
      * | NONE or missing neighbor (month edge) | any / any | Keep as WO/HOL |
      */
+    const sandwichPolicyMetaByDate = new Map();
     const classifySandwichNeighbor = (dStr) => {
       if (!dStr || dStr > todayIstStr || isOutsideEmploymentBound(dStr)) return null;
       const d = dailyStatsMap.get(dStr);
       if (!d) return null;
-      if (d.leaves.length > 0) return 'LEAVE';
+      // If attendance exists and is not ABSENT, treat as PRESENT context first.
+      // This covers punch-based days such as HALF_DAY/PARTIAL/PRESENT/OD.
+      if (d.attendance && !isAbsentStatus(d.attendance.status)) return 'PRESENT';
+      // Sandwich should consider LEAVE neighbor only when leave coverage is full-day.
+      // Half-day leave on a side (e.g. HD + L) should not force WO/HOL conversion.
+      const leaveCoverage = (d.leaves || []).reduce((sum, l) => {
+        if (!l) return sum;
+        if (l.isHalfDay) return sum + 0.5;
+        if (typeof l.numberOfDays === 'number' && l.numberOfDays > 0 && l.numberOfDays < 1) return sum + 0.5;
+        return sum + 1;
+      }, 0);
+      if (Math.min(1, leaveCoverage) >= 1) return 'LEAVE';
       const hasDayOd = d.ods.length > 0;
+      // Align sandwich classification with summary absent logic:
+      // on past working days, missing AttendanceDaily is effectively treated as absent.
+      if (!d.isWO && !d.isHOL && !d.attendance && !hasDayOd) return 'ABSENT';
       if (!d.attendance) {
         return hasDayOd ? 'PRESENT' : 'NONE';
       }
@@ -530,71 +548,74 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       });
     };
 
-    let idx = 0;
-    while (idx < allDates.length) {
-      const dStr = allDates[idx];
-      const day = dailyStatsMap.get(dStr);
-      const startsNonWorkingBlock = day && (day.isWO || day.isHOL);
-      if (!startsNonWorkingBlock) {
-        idx += 1;
-        continue;
-      }
-
-      let endIdx = idx;
-      while (
-        endIdx + 1 < allDates.length &&
-        (() => {
-          const nextDay = dailyStatsMap.get(allDates[endIdx + 1]);
-          return !!nextDay && (nextDay.isWO || nextDay.isHOL);
-        })()
-      ) {
-        endIdx += 1;
-      }
-
-      const prevDate = idx > 0 ? allDates[idx - 1] : null;
-      const nextDate = endIdx + 1 < allDates.length ? allDates[endIdx + 1] : null;
-      const prevKind = classifySandwichNeighbor(prevDate);
-      const nextKind = classifySandwichNeighbor(nextDate);
-
-      let stripWoHolOnly = false;
-      let stripAndLop = false;
-
-      if (prevKind != null && nextKind != null) {
-        if (prevKind === 'ABSENT' && nextKind === 'ABSENT') {
-          stripWoHolOnly = true;
-        } else if (prevKind === 'LEAVE' && nextKind === 'LEAVE') {
-          stripAndLop = true;
-        } else if (
-          (prevKind === 'LEAVE' && nextKind === 'ABSENT')
-          || (prevKind === 'ABSENT' && nextKind === 'LEAVE')
-        ) {
-          stripAndLop = true;
+    // Business rule: sandwich conversion is supported only in single-shift mode.
+    if (processingModeIsSingleShift) {
+      let idx = 0;
+      while (idx < allDates.length) {
+        const dStr = allDates[idx];
+        const day = dailyStatsMap.get(dStr);
+        const startsNonWorkingBlock = day && (day.isWO || day.isHOL);
+        if (!startsNonWorkingBlock) {
+          idx += 1;
+          continue;
         }
-        // LEAVE+PRESENT, PRESENT+LEAVE, PRESENT+PRESENT, ABSENT+PRESENT, PRESENT+ABSENT, NONE*: no flags
-      }
 
-      if (stripWoHolOnly || stripAndLop) {
-        for (let k = idx; k <= endIdx; k += 1) {
-          const blockDate = allDates[k];
-          const blockDay = dailyStatsMap.get(blockDate);
-          if (!blockDay) continue;
-          sandwichPolicyMetaByDate.set(blockDate, {
-            previousNeighborKind: prevKind || 'NONE',
-            nextNeighborKind: nextKind || 'NONE',
-            effect: stripAndLop ? 'strip_non_working_add_lop' : 'strip_non_working',
-            ruleCode: stripAndLop ? 'SANDWICH_STRIP_AND_LOP_V1' : 'SANDWICH_STRIP_ONLY_V1',
-            note: stripAndLop
-              ? 'Sandwich rule applied: non-working block converted and LOP leave added.'
-              : 'Sandwich rule applied: non-working block converted based on surrounding absents.',
-          });
-          stripWoHolFromBlockDay(blockDate, blockDay);
-          if (stripAndLop) {
-            pushSandwichLopLeave(blockDay);
+        let endIdx = idx;
+        while (
+          endIdx + 1 < allDates.length &&
+          (() => {
+            const nextDay = dailyStatsMap.get(allDates[endIdx + 1]);
+            return !!nextDay && (nextDay.isWO || nextDay.isHOL);
+          })()
+        ) {
+          endIdx += 1;
+        }
+
+        const prevDate = idx > 0 ? allDates[idx - 1] : null;
+        const nextDate = endIdx + 1 < allDates.length ? allDates[endIdx + 1] : null;
+        const prevKind = classifySandwichNeighbor(prevDate);
+        const nextKind = classifySandwichNeighbor(nextDate);
+
+        let stripWoHolOnly = false;
+        let stripAndLop = false;
+
+        if (prevKind != null && nextKind != null) {
+          if (prevKind === 'ABSENT' && nextKind === 'ABSENT') {
+            stripWoHolOnly = true;
+          } else if (prevKind === 'LEAVE' && nextKind === 'LEAVE') {
+            stripAndLop = true;
+          } else if (
+            (prevKind === 'LEAVE' && nextKind === 'ABSENT')
+            || (prevKind === 'ABSENT' && nextKind === 'LEAVE')
+          ) {
+            stripAndLop = true;
+          }
+          // LEAVE+PRESENT, PRESENT+LEAVE, PRESENT+PRESENT, ABSENT+PRESENT, PRESENT+ABSENT, NONE*: no flags
+        }
+
+        if (stripWoHolOnly || stripAndLop) {
+          for (let k = idx; k <= endIdx; k += 1) {
+            const blockDate = allDates[k];
+            const blockDay = dailyStatsMap.get(blockDate);
+            if (!blockDay) continue;
+            sandwichPolicyMetaByDate.set(blockDate, {
+              previousNeighborKind: prevKind || 'NONE',
+              nextNeighborKind: nextKind || 'NONE',
+              effect: stripAndLop ? 'strip_non_working_add_lop' : 'strip_non_working',
+              ruleCode: stripAndLop ? 'SANDWICH_STRIP_AND_LOP_V1' : 'SANDWICH_STRIP_ONLY_V1',
+              note: stripAndLop
+                ? 'Sandwich rule applied: non-working block converted and LOP leave added.'
+                : 'Sandwich rule applied: non-working block converted based on surrounding absents.',
+            });
+            stripWoHolFromBlockDay(blockDate, blockDay);
+            if (stripAndLop) {
+              pushSandwichLopLeave(blockDay);
+            }
           }
         }
-      }
 
-      idx = endIdx + 1;
+        idx = endIdx + 1;
+      }
     }
 
     // Strip all calendar days outside [DOJ, last working day]: treat as blank (no roster WO/HOL, no dailies, no leave/OD).
@@ -630,7 +651,6 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
 
     const payRegisterDaySnapshots = [];
     const partialPolicyMetaByDate = new Map();
-    const sandwichPolicyMetaByDate = new Map();
 
     // Process each day
     let totalPresentDays = 0;
@@ -1138,8 +1158,7 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     try {
       const policyNow = new Date();
       const policyOps = [];
-      for (const rec of attendanceRecords) {
-        const dStr = toNormalizedDateStr(rec.date);
+      for (const dStr of allDates) {
         if (!dStr) continue;
         const partialMeta = partialPolicyMetaByDate.get(dStr);
         if (partialMeta) {
@@ -1183,6 +1202,13 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         }
         const sandwichMeta = sandwichPolicyMetaByDate.get(dStr);
         if (sandwichMeta) {
+          const sandwichStatusSet = {
+            // Sandwich converted non-working day:
+            // - strip_non_working => ABSENT
+            // - strip_non_working_add_lop => LEAVE (LOP-style day)
+            status: sandwichMeta.effect === 'strip_non_working_add_lop' ? 'LEAVE' : 'ABSENT',
+            payableShifts: 0,
+          };
           policyOps.push({
             updateOne: {
               filter: { employeeNumber: empNoNorm, date: dStr },
@@ -1195,11 +1221,19 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
                   'policyMeta.sandwichRule.effect': sandwichMeta.effect,
                   'policyMeta.sandwichRule.note': sandwichMeta.note,
                   'policyMeta.sandwichRule.updatedAt': policyNow,
+                  ...sandwichStatusSet,
                 },
               },
             },
           });
         } else {
+          const originalNonWorking = originalNonWorkingStatusByDate.get(dStr);
+          const restoreStatusSet =
+            originalNonWorking === 'WO'
+              ? { status: 'WEEK_OFF', payableShifts: 0 }
+              : originalNonWorking === 'HOL'
+                ? { status: 'HOLIDAY', payableShifts: 0 }
+                : null;
           policyOps.push({
             updateOne: {
               filter: { employeeNumber: empNoNorm, date: dStr },
@@ -1212,6 +1246,7 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
                   'policyMeta.sandwichRule.effect': null,
                   'policyMeta.sandwichRule.note': null,
                   'policyMeta.sandwichRule.updatedAt': policyNow,
+                  ...(restoreStatusSet || {}),
                 },
               },
             },
