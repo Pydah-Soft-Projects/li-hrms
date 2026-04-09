@@ -19,6 +19,10 @@ type OtSettingsState = {
     otHourRanges: { minMinutes: number; maxMinutes: number; creditedMinutes: number; label?: string }[];
     autoCreateOtRequest: boolean;
     defaultWorkingHoursPerDay: number;
+    allowBackdated: boolean;
+    maxBackdatedDays: number;
+    allowFutureDated: boolean;
+    maxAdvanceDays: number;
     workflow: WorkflowData;
 };
 
@@ -33,6 +37,10 @@ const defaultOt: OtSettingsState = {
     otHourRanges: [],
     autoCreateOtRequest: false,
     defaultWorkingHoursPerDay: 8,
+    allowBackdated: false,
+    maxBackdatedDays: 0,
+    allowFutureDated: true,
+    maxAdvanceDays: 365,
     workflow: {
         isEnabled: true,
         steps: [],
@@ -135,6 +143,10 @@ const OTSettings = () => {
                 otHourRanges: otSettings.otHourRanges,
                 autoCreateOtRequest: otSettings.autoCreateOtRequest,
                 defaultWorkingHoursPerDay: otSettings.defaultWorkingHoursPerDay,
+                allowBackdated: otSettings.allowBackdated,
+                maxBackdatedDays: otSettings.maxBackdatedDays,
+                allowFutureDated: otSettings.allowFutureDated,
+                maxAdvanceDays: otSettings.maxAdvanceDays,
                 workflow: otSettings.workflow,
             });
             toast.success('OT parameters updated');
@@ -283,6 +295,45 @@ const OTSettings = () => {
                                         />
                                         Auto-create pending OT when extra hours are detected
                                     </label>
+                                    <div className="pt-2 border-t border-gray-100 dark:border-gray-800 space-y-2">
+                                        <p className="text-[10px] font-bold text-gray-500 uppercase tracking-tighter">Apply date window</p>
+                                        <label className="flex items-center justify-between text-[10px] text-gray-600 dark:text-gray-300">
+                                            <span>Allow backdated</span>
+                                            <input
+                                                type="checkbox"
+                                                checked={otSettings.allowBackdated}
+                                                onChange={(e) => setOTSettings({ ...otSettings, allowBackdated: e.target.checked })}
+                                            />
+                                        </label>
+                                        <div className="flex items-center justify-between gap-2">
+                                            <span className="text-[10px] text-gray-500">Max backdated days</span>
+                                            <input
+                                                type="number"
+                                                min={0}
+                                                value={otSettings.maxBackdatedDays}
+                                                onChange={(e) => setOTSettings({ ...otSettings, maxBackdatedDays: Number(e.target.value || 0) })}
+                                                className="w-16 rounded-lg border border-gray-200 dark:border-gray-700 px-2 py-1 text-xs text-right"
+                                            />
+                                        </div>
+                                        <label className="flex items-center justify-between text-[10px] text-gray-600 dark:text-gray-300">
+                                            <span>Allow future-dated</span>
+                                            <input
+                                                type="checkbox"
+                                                checked={otSettings.allowFutureDated}
+                                                onChange={(e) => setOTSettings({ ...otSettings, allowFutureDated: e.target.checked })}
+                                            />
+                                        </label>
+                                        <div className="flex items-center justify-between gap-2">
+                                            <span className="text-[10px] text-gray-500">Max advance days</span>
+                                            <input
+                                                type="number"
+                                                min={0}
+                                                value={otSettings.maxAdvanceDays}
+                                                onChange={(e) => setOTSettings({ ...otSettings, maxAdvanceDays: Number(e.target.value || 0) })}
+                                                className="w-16 rounded-lg border border-gray-200 dark:border-gray-700 px-2 py-1 text-xs text-right"
+                                            />
+                                        </div>
+                                    </div>
                                 </div>
 
                                 <div className="space-y-3 pt-2 border-t border-gray-100 dark:border-gray-800">

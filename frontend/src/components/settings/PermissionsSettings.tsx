@@ -26,6 +26,12 @@ const PermissionsSettings = () => {
         steps: [],
         finalAuthority: { role: 'admin', anyHRCanApprove: false },
     });
+    const [datePolicy, setDatePolicy] = useState({
+        allowBackdated: false,
+        maxBackdatedDays: 0,
+        allowFutureDated: true,
+        maxAdvanceDays: 365,
+    });
 
     const loadSettings = useCallback(async () => {
         try {
@@ -34,6 +40,12 @@ const PermissionsSettings = () => {
             if (res.success && res.data) {
                 if (res.data.deductionRules) setRules(res.data.deductionRules);
                 if (res.data.workflow) setWorkflow(res.data.workflow);
+                setDatePolicy({
+                    allowBackdated: Boolean(res.data.allowBackdated),
+                    maxBackdatedDays: Number(res.data.maxBackdatedDays ?? 0),
+                    allowFutureDated: res.data.allowFutureDated !== false,
+                    maxAdvanceDays: Number(res.data.maxAdvanceDays ?? 365),
+                });
             }
         } catch (err) {
             console.error('Failed to load settings', err);
@@ -52,6 +64,7 @@ const PermissionsSettings = () => {
             await api.savePermissionDeductionSettings({
                 deductionRules: rules,
                 workflow: { ...workflow, isEnabled: true },
+                ...datePolicy,
             });
             toast.success('Deduction rules saved');
         } catch {
@@ -67,6 +80,7 @@ const PermissionsSettings = () => {
             await api.savePermissionDeductionSettings({
                 deductionRules: rules,
                 workflow: { ...workflow, isEnabled: true },
+                ...datePolicy,
             });
             toast.success('Gate protocol saved');
         } catch {
@@ -158,6 +172,45 @@ const PermissionsSettings = () => {
                                         {mode.label}
                                     </button>
                                 ))}
+                            </div>
+                        </div>
+                        <div className="space-y-3 pt-2 border-t border-gray-100 dark:border-gray-800">
+                            <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest pl-1">Apply Date Window</p>
+                            <label className="flex items-center justify-between text-[12px] text-gray-600 dark:text-gray-300">
+                                <span>Allow backdated</span>
+                                <input
+                                    type="checkbox"
+                                    checked={datePolicy.allowBackdated}
+                                    onChange={(e) => setDatePolicy((prev) => ({ ...prev, allowBackdated: e.target.checked }))}
+                                />
+                            </label>
+                            <div className="flex items-center justify-between gap-2">
+                                <label className="text-[10px] text-gray-400 font-black uppercase tracking-widest pl-1">Max backdated days</label>
+                                <input
+                                    type="number"
+                                    min={0}
+                                    value={datePolicy.maxBackdatedDays}
+                                    onChange={(e) => setDatePolicy((prev) => ({ ...prev, maxBackdatedDays: Number(e.target.value || 0) }))}
+                                    className="w-28 bg-gray-50 dark:bg-black/20 border border-gray-100 dark:border-gray-800 rounded-xl px-3 py-2 text-sm font-bold text-right"
+                                />
+                            </div>
+                            <label className="flex items-center justify-between text-[12px] text-gray-600 dark:text-gray-300">
+                                <span>Allow future-dated</span>
+                                <input
+                                    type="checkbox"
+                                    checked={datePolicy.allowFutureDated}
+                                    onChange={(e) => setDatePolicy((prev) => ({ ...prev, allowFutureDated: e.target.checked }))}
+                                />
+                            </label>
+                            <div className="flex items-center justify-between gap-2">
+                                <label className="text-[10px] text-gray-400 font-black uppercase tracking-widest pl-1">Max advance days</label>
+                                <input
+                                    type="number"
+                                    min={0}
+                                    value={datePolicy.maxAdvanceDays}
+                                    onChange={(e) => setDatePolicy((prev) => ({ ...prev, maxAdvanceDays: Number(e.target.value || 0) }))}
+                                    className="w-28 bg-gray-50 dark:bg-black/20 border border-gray-100 dark:border-gray-800 rounded-xl px-3 py-2 text-sm font-bold text-right"
+                                />
                             </div>
                         </div>
 

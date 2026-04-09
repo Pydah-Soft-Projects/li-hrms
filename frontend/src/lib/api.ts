@@ -3453,6 +3453,10 @@ export const api = {
     }>;
     autoCreateOtRequest?: boolean;
     defaultWorkingHoursPerDay?: number;
+    allowBackdated?: boolean;
+    maxBackdatedDays?: number;
+    allowFutureDated?: boolean;
+    maxAdvanceDays?: number;
     workflow?: any;
   }) => {
     return apiRequest<any>('/ot/settings', {

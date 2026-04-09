@@ -106,6 +106,18 @@ interface AttendanceRecord {
   extraHours?: number;
   permissionHours?: number;
   permissionCount?: number;
+  permissionRequests?: Array<{
+    _id: string;
+    permissionType?: 'mid_shift' | 'late_in' | 'early_out';
+    permittedEdgeTime?: string;
+    permissionStartTime?: string;
+    permissionEndTime?: string;
+    permissionHours?: number;
+    status?: string;
+    gateOutTime?: string;
+    gateInTime?: string;
+    purpose?: string;
+  }>;
   isEdited?: boolean;
   editHistory?: {
     action: string;
@@ -514,6 +526,8 @@ export default function AttendancePage() {
     allowAttendanceUpload: boolean;
     allowShiftChange: boolean;
   }>({ allowInTimeEditing: true, allowOutTimeEditing: true, allowAttendanceUpload: true, allowShiftChange: true });
+  const [otAutoCreateEnabled, setOtAutoCreateEnabled] = useState(false);
+  const [otPolicyEligibleForConvert, setOtPolicyEligibleForConvert] = useState(false);
 
   const [exportingExcel, setExportingExcel] = useState(false);
 
@@ -626,9 +640,12 @@ export default function AttendancePage() {
   useEffect(() => {
     const loadFlags = async () => {
       try {
-        const res = await api.getAttendanceSettings();
-        if (res?.data?.featureFlags) {
-          const ff = res.data.featureFlags;
+        const [attendanceRes, otRes] = await Promise.all([
+          api.getAttendanceSettings(),
+          api.getOvertimeSettings(),
+        ]);
+        if (attendanceRes?.data?.featureFlags) {
+          const ff = attendanceRes.data.featureFlags;
           setAttendanceFeatureFlags({
             allowInTimeEditing: ff.allowInTimeEditing !== false,
             allowOutTimeEditing: ff.allowOutTimeEditing !== false,
@@ -636,15 +653,58 @@ export default function AttendancePage() {
             allowShiftChange: ff.allowShiftChange !== false,
           });
         }
-        if (res?.data?.completeSummaryColumns) {
-          setOrgCompleteSummaryColumns(normalizeCompleteSummaryColumns(res.data.completeSummaryColumns));
+        if (attendanceRes?.data?.completeSummaryColumns) {
+          setOrgCompleteSummaryColumns(normalizeCompleteSummaryColumns(attendanceRes.data.completeSummaryColumns));
         }
+        setOtAutoCreateEnabled(Boolean(otRes?.data?.autoCreateOtRequest));
       } catch {
         // keep defaults
       }
     };
     loadFlags();
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const checkEligibility = async () => {
+      setOtPolicyEligibleForConvert(false);
+      if (
+        !selectedEmployee ||
+        !selectedDate ||
+        !attendanceDetail?.shiftId ||
+        !attendanceDetail?.extraHours ||
+        attendanceDetail.extraHours <= 0 ||
+        hasExistingOT
+      ) {
+        return;
+      }
+      try {
+        const preview = await api.previewOTExtraHours({
+          employeeId: selectedEmployee._id,
+          employeeNumber: selectedEmployee.emp_no,
+          date: selectedDate,
+        });
+        const eligible = Boolean(
+          preview?.success &&
+          (preview as { data?: { policy?: { eligible?: boolean } } }).data?.policy?.eligible
+        );
+        if (!cancelled) setOtPolicyEligibleForConvert(eligible);
+      } catch {
+        if (!cancelled) setOtPolicyEligibleForConvert(false);
+      }
+    };
+    checkEligibility();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    selectedEmployee?._id,
+    selectedEmployee?.emp_no,
+    selectedDate,
+    attendanceDetail?.shiftId,
+    attendanceDetail?.extraHours,
+    hasExistingOT,
+  ]);
 
   useEffect(() => {
     if (selectedDepartment) {
@@ -3577,7 +3637,7 @@ export default function AttendancePage() {
                   </div>
 
                   {/* OT Conversion Actions */}
-                  {attendanceDetail.extraHours > 0 && !hasExistingOT && (
+                  {attendanceDetail.extraHours > 0 && !hasExistingOT && (!otAutoCreateEnabled || otPolicyEligibleForConvert) && (
                     <div className="mt-3 flex justify-end">
                       <button
                         onClick={handleConvertExtraHoursToOT}
@@ -3586,6 +3646,13 @@ export default function AttendancePage() {
                       >
                         {convertingToOT ? 'Converting...' : 'Convert Extra to OT'}
                       </button>
+                    </div>
+                  )}
+                  {attendanceDetail.extraHours > 0 && !hasExistingOT && otAutoCreateEnabled && !otPolicyEligibleForConvert && (
+                    <div className="mt-3 text-right">
+                      <span className="inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                        Auto OT enabled
+                      </span>
                     </div>
                   )}
                   {hasExistingOT && (
@@ -3843,6 +3910,30 @@ export default function AttendancePage() {
                     <label className="text-[10px] font-black uppercase tracking-widest text-cyan-600/70">Permission Hours</label>
                     <div className="mt-1 text-sm font-bold text-cyan-800 dark:text-cyan-400">
                       {formatHours(attendanceDetail.permissionHours)} hrs ({attendanceDetail.permissionCount || 0} applications)
+                    </div>
+                  </div>
+                )}
+                {!!attendanceDetail.permissionRequests?.length && (
+                  <div className="p-3 rounded-xl bg-cyan-50/50 dark:bg-cyan-900/10 border border-cyan-100 dark:border-cyan-800/50 mt-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-cyan-600/70">Permission Details</label>
+                    <div className="mt-2 space-y-2">
+                      {attendanceDetail.permissionRequests.map((p: any) => {
+                        const type = p.permissionType || 'mid_shift';
+                        const typeLabel = type === 'late_in' ? 'Late In' : type === 'early_out' ? 'Early Out' : 'Mid Shift';
+                        const timeLabel =
+                          type === 'mid_shift'
+                            ? `${formatTime(p.permissionStartTime, true, selectedDate || '')} - ${formatTime(p.permissionEndTime, true, selectedDate || '')}`
+                            : `${type === 'late_in' ? 'Latest arrival' : 'Earliest exit'} ${p.permittedEdgeTime || '--:--'}`;
+                        return (
+                          <div key={p._id} className="rounded-lg border border-cyan-200/70 dark:border-cyan-800/60 bg-white/80 dark:bg-slate-900/60 px-3 py-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="text-xs font-black text-slate-900 dark:text-slate-100">{typeLabel}</p>
+                              <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">{String(p.status || 'pending').replace(/_/g, ' ')}</span>
+                            </div>
+                            <p className="text-[11px] font-semibold text-cyan-700 dark:text-cyan-300 mt-1">{timeLabel}</p>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}

@@ -194,40 +194,40 @@ const createPermissionRequest = async (data, userId) => {
     // Get Workflow Settings
     const workflowSettings = await PermissionDeductionSettings.getActiveSettings();
 
-    // Initialize Workflow (Dynamic Chain)
-    const approvalSteps = [];
+    // Initialize workflow chain from settings order (not hardcoded to HOD).
+    const configuredSteps = Array.isArray(workflowSettings?.workflow?.steps)
+      ? workflowSettings.workflow.steps
+          .filter((s) => s && s.approverRole && s.isActive !== false)
+          .sort((a, b) => Number(a.stepOrder || 0) - Number(b.stepOrder || 0))
+      : [];
 
-    // 1. Always start with HOD
-    approvalSteps.push({
-      stepOrder: 1,
-      role: 'hod',
-      label: 'HOD Approval',
-      status: 'pending',
-      isCurrent: true
-    });
-
-    // 2. Add other steps from settings
-    if (workflowSettings?.workflow?.steps && workflowSettings.workflow.steps.length > 0) {
-      workflowSettings.workflow.steps.forEach(step => {
-        // Skip if it's HOD (already first)
-        if (step.approverRole !== 'hod') {
-          approvalSteps.push({
-            stepOrder: approvalSteps.length + 1,
-            role: step.approverRole,
-            label: step.stepName || `${step.approverRole.toUpperCase()} Approval`,
+    const approvalSteps = configuredSteps.length
+      ? configuredSteps.map((step, idx) => ({
+          stepOrder: idx + 1,
+          role: step.approverRole,
+          label: step.stepName || `${String(step.approverRole || '').toUpperCase()} Approval`,
+          status: 'pending',
+          isCurrent: idx === 0,
+        }))
+      : [
+          {
+            stepOrder: 1,
+            role: 'hod',
+            label: 'HOD Approval',
             status: 'pending',
-            isCurrent: false
-          });
-        }
-      });
-    }
+            isCurrent: true,
+          },
+        ];
+
+    const firstStepRole = approvalSteps[0]?.role || 'hod';
+    const finalRoleFromChain = approvalSteps[approvalSteps.length - 1]?.role || 'hr';
 
     const workflowData = {
-      currentStepRole: 'hod',
-      nextApproverRole: 'hod',
-      nextApprover: 'hod',
+      currentStepRole: firstStepRole,
+      nextApproverRole: firstStepRole,
+      nextApprover: firstStepRole,
       approvalChain: approvalSteps,
-      finalAuthority: workflowSettings?.workflow?.finalAuthority?.role || 'hr',
+      finalAuthority: workflowSettings?.workflow?.finalAuthority?.role || finalRoleFromChain,
       history: [
         {
           step: 'employee',

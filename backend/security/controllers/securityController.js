@@ -14,10 +14,10 @@ const { refreshAttendanceEdgePermissions } = require('../../permissions/services
  */
 exports.getTodayPermissions = async (req, res) => {
     try {
-        // Get today's date in YYYY-MM-DD format based on local time (or consistent server time)
-        // Assuming backend stores date as string 'YYYY-MM-DD'
-        const today = new Date();
-        const dateStr = today.toISOString().split('T')[0];
+        // Get IST today's date (YYYY-MM-DD) to avoid UTC date drift.
+        const now = new Date();
+        const istNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+        const dateStr = `${istNow.getFullYear()}-${String(istNow.getMonth() + 1).padStart(2, '0')}-${String(istNow.getDate()).padStart(2, '0')}`;
 
         const permissions = await Permission.find({
             date: dateStr,

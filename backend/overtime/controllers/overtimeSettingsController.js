@@ -25,6 +25,10 @@ exports.getSettings = async (req, res) => {
         otHourRanges: [],
         autoCreateOtRequest: false,
         defaultWorkingHoursPerDay: 8,
+        allowBackdated: false,
+        maxBackdatedDays: 0,
+        allowFutureDated: true,
+        maxAdvanceDays: 365,
         workflow: {
           isEnabled: false,
           steps: [],
@@ -77,6 +81,10 @@ exports.saveSettings = async (req, res) => {
       'otHourRanges',
       'autoCreateOtRequest',
       'defaultWorkingHoursPerDay',
+      'allowBackdated',
+      'maxBackdatedDays',
+      'allowFutureDated',
+      'maxAdvanceDays',
     ].forEach(assignIfDefined);
 
     settings.updatedBy = req.user._id;
