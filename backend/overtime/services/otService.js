@@ -484,35 +484,46 @@ const approveOTRequest = async (otId, userId, userRole) => {
     }
     // --- END DYNAMIC WORKFLOW LOGIC ---
 
-    // Determine status based on role (Legacy)
+    // Legacy fallback when no workflow chain is present:
+    // manager does intermediate approval, others can finalize.
+    if (userRole === 'manager') {
+      otRequest.status = 'manager_approved';
+    } else {
+      otRequest.status = 'approved';
+    }
 
     otRequest.approvedBy = userId;
     otRequest.approvedAt = new Date();
     await otRequest.save();
 
-    // Update attendance record
-    const attendanceRecord = await AttendanceDaily.findById(otRequest.attendanceRecordId);
-    if (attendanceRecord) {
-      attendanceRecord.otHours = otRequest.otHours;
-      if (otRequest.convertedFromAttendance) {
-        attendanceRecord.extraHours = 0;
-        if (attendanceRecord.shifts?.length) {
-          attendanceRecord.shifts.forEach(s => {
-            if (s.extraHours > 0) { s.otHours = (s.otHours || 0) + s.extraHours; s.extraHours = 0; }
-          });
-          attendanceRecord.markModified('shifts');
+    // IMPORTANT: only write OT into attendance once final approval is reached.
+    if (otRequest.status === 'approved') {
+      const attendanceRecord = await AttendanceDaily.findById(otRequest.attendanceRecordId);
+      if (attendanceRecord) {
+        attendanceRecord.otHours = otRequest.otHours;
+        if (otRequest.convertedFromAttendance) {
+          attendanceRecord.extraHours = 0;
+          if (attendanceRecord.shifts?.length) {
+            attendanceRecord.shifts.forEach(s => {
+              if (s.extraHours > 0) { s.otHours = (s.otHours || 0) + s.extraHours; s.extraHours = 0; }
+            });
+            attendanceRecord.markModified('shifts');
+          }
         }
-      }
-      await attendanceRecord.save();
+        await attendanceRecord.save();
 
-      // Recalculate monthly summary
-      const [year, month] = otRequest.date.split('-').map(Number);
-      await calculateMonthlySummary(otRequest.employeeId, otRequest.employeeNumber, year, month);
+        // Recalculate monthly summary
+        const [year, month] = otRequest.date.split('-').map(Number);
+        await calculateMonthlySummary(otRequest.employeeId, otRequest.employeeNumber, year, month);
+      }
     }
 
     return {
       success: true,
-      message: 'OT request approved successfully',
+      message:
+        otRequest.status === 'approved'
+          ? 'OT request approved successfully'
+          : 'OT request moved to manager approved stage',
       data: otRequest,
     };
 

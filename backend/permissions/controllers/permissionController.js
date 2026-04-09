@@ -4,6 +4,7 @@
  */
 
 const Permission = require('../model/Permission');
+const PermissionDeductionSettings = require('../model/PermissionDeductionSettings');
 const { createPermissionRequest, approvePermissionRequest, rejectPermissionRequest, getOutpassByQR } = require('../services/permissionService');
 const {
   buildWorkflowVisibilityFilter,
@@ -49,17 +50,39 @@ exports.createPermission = async (req, res) => {
       });
     }
 
-    // Validate Date (Must be today or future)
-    // Get IST "Today" (YYYY-MM-DD)
-    const now = new Date();
-    const istNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-    const todayStr = `${istNow.getFullYear()}-${String(istNow.getMonth() + 1).padStart(2, '0')}-${String(istNow.getDate()).padStart(2, '0')}`;
+    // Validate date window from Permission settings.
+    if (req.user?.role !== 'super_admin') {
+      const settings = await PermissionDeductionSettings.getActiveSettings();
+      const policy = settings || {
+        allowBackdated: false,
+        maxBackdatedDays: 0,
+        allowFutureDated: true,
+        maxAdvanceDays: 365,
+      };
 
-    if (date < todayStr) {
-      return res.status(400).json({
-        success: false,
-        message: 'Permission requests are restricted to current or future dates only.'
-      });
+      const now = new Date();
+      const istNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+      const today = new Date(istNow.getFullYear(), istNow.getMonth(), istNow.getDate());
+      const minDate = new Date(today);
+      const maxDate = new Date(today);
+
+      if (policy.allowBackdated && (policy.maxBackdatedDays ?? 0) > 0) {
+        minDate.setDate(minDate.getDate() - Number(policy.maxBackdatedDays || 0));
+      }
+      if (policy.allowFutureDated && (policy.maxAdvanceDays ?? 0) > 0) {
+        maxDate.setDate(maxDate.getDate() + Number(policy.maxAdvanceDays || 0));
+      }
+
+      const toYmd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const minDateStr = toYmd(minDate);
+      const maxDateStr = toYmd(maxDate);
+
+      if (date < minDateStr || date > maxDateStr) {
+        return res.status(400).json({
+          success: false,
+          message: `Permission date must be within allowed range (${minDateStr} to ${maxDateStr}) as per Permission settings.`,
+        });
+      }
     }
 
     // --- SCOPING & AUTHORIZATION (New Logic) ---

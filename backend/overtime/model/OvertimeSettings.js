@@ -74,6 +74,25 @@ const OvertimeSettingsSchema = new mongoose.Schema(
             min: 0.5,
             max: 24,
         },
+        // Application date window
+        allowBackdated: {
+            type: Boolean,
+            default: false,
+        },
+        maxBackdatedDays: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
+        allowFutureDated: {
+            type: Boolean,
+            default: true,
+        },
+        maxAdvanceDays: {
+            type: Number,
+            default: 365,
+            min: 0,
+        },
 
         // Workflow configuration
         workflow: {

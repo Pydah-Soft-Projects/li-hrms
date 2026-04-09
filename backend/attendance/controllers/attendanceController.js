@@ -231,6 +231,7 @@ exports.getAttendanceDetail = async (req, res) => {
 
     // Check for OT request (pending or approved) for Convert button logic
     const OT = require('../../overtime/model/OT');
+    const Permission = require('../../permissions/model/Permission');
     const otRequest = await OT.findOne({
       employeeId: allowedEmployee._id,
       date: date,
@@ -238,12 +239,23 @@ exports.getAttendanceDetail = async (req, res) => {
       isActive: true,
     }).select('status otHours').lean();
 
+    const permissionRequests = await Permission.find({
+      employeeId: allowedEmployee._id,
+      date,
+      isActive: true,
+      status: { $in: ['pending', 'approved', 'checked_out', 'checked_in'] },
+    })
+      .select('permissionType permittedEdgeTime permissionStartTime permissionEndTime permissionHours status gateOutTime gateInTime purpose comments')
+      .sort({ createdAt: -1 })
+      .lean();
+
     res.status(200).json({
       success: true,
       data: {
         ...record.toObject(),
         rawLogs,
         otRequest: otRequest ? { status: otRequest.status, otHours: otRequest.otHours } : null,
+        permissionRequests,
         leftDate: allowedEmployee.leftDate || null,
       },
     });

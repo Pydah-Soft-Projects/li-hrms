@@ -24,6 +24,10 @@ exports.getSettings = async (req, res) => {
           minimumDuration: null,
           calculationMode: null,
         },
+        allowBackdated: false,
+        maxBackdatedDays: 0,
+        allowFutureDated: true,
+        maxAdvanceDays: 365,
         isDefault: true,
       };
     }
@@ -47,7 +51,7 @@ exports.getSettings = async (req, res) => {
 // @access  Private (Super Admin, Sub Admin)
 exports.saveSettings = async (req, res) => {
   try {
-    const { deductionRules, workflow } = req.body;
+    const { deductionRules, workflow, allowBackdated, maxBackdatedDays, allowFutureDated, maxAdvanceDays } = req.body;
 
     // Find existing settings or create new
     let settings = await PermissionDeductionSettings.getActiveSettings();
@@ -87,6 +91,10 @@ exports.saveSettings = async (req, res) => {
         settings.deductionRules.calculationMode = deductionRules.calculationMode;
       }
     }
+    if (allowBackdated !== undefined) settings.allowBackdated = allowBackdated;
+    if (maxBackdatedDays !== undefined) settings.maxBackdatedDays = maxBackdatedDays;
+    if (allowFutureDated !== undefined) settings.allowFutureDated = allowFutureDated;
+    if (maxAdvanceDays !== undefined) settings.maxAdvanceDays = maxAdvanceDays;
 
     settings.updatedBy = req.user._id;
     settings.isActive = true;
