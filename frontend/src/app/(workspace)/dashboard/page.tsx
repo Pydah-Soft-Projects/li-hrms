@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { api } from '@/lib/api';
+import TodayBirthdayTicker from '@/components/employee-birthdays/TodayBirthdayTicker';
 import Link from 'next/link';
 import {
   Users,
@@ -77,6 +78,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [attendanceData, setAttendanceData] = useState<any[] | null>(null);
   const [currentDate] = useState(new Date());
+  const [todayBirthdayItems, setTodayBirthdayItems] = useState<Array<{ id: string; name: string; designationName: string }>>([]);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -100,6 +102,37 @@ export default function DashboardPage() {
           setAttendanceData([attendanceRes.data]);
         } else {
           setAttendanceData([]);
+        }
+
+        try {
+          const empRes = await api.getEmployees({ includeLeft: false, limit: 10000, page: 1 });
+          if (empRes?.success && Array.isArray(empRes.data)) {
+            const today = new Date();
+            const month = today.getMonth();
+            const date = today.getDate();
+
+            const items = empRes.data
+              .filter((emp: any) => {
+                if (!emp?.dob) return false;
+                const dob = new Date(emp.dob);
+                if (Number.isNaN(dob.getTime())) return false;
+                return dob.getMonth() === month && dob.getDate() === date;
+              })
+              .map((emp: any) => ({
+                id: emp._id || emp.emp_no,
+                name: emp.employee_name || emp.emp_no || 'Employee',
+                designationName:
+                  (typeof emp.designation_id === 'object' && emp.designation_id?.name) ||
+                  (typeof emp.designation === 'object' && emp.designation?.name) ||
+                  '—',
+              }));
+
+            setTodayBirthdayItems(items);
+          } else {
+            setTodayBirthdayItems([]);
+          }
+        } catch {
+          setTodayBirthdayItems([]);
         }
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
@@ -179,6 +212,12 @@ export default function DashboardPage() {
             </span>
           </div>
         </div>
+
+        {todayBirthdayItems.length > 0 && (
+          <div className="mb-5">
+            <TodayBirthdayTicker items={todayBirthdayItems} />
+          </div>
+        )}
 
         {/* Global Attendance Card (Always relevant for employees/managers) */}
         {userRole !== 'super_admin' && (

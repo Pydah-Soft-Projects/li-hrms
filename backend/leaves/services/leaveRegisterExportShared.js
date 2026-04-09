@@ -33,6 +33,7 @@ async function resolveLeaveRegisterExportRequest(req) {
     departmentId,
     divisionId,
     designationId,
+    employee_group_id,
     employeeId,
     empNo,
     search,
@@ -71,6 +72,10 @@ async function resolveLeaveRegisterExportRequest(req) {
     designationId:
       designationId && mongoose.Types.ObjectId.isValid(String(designationId))
         ? new mongoose.Types.ObjectId(String(designationId))
+        : undefined,
+    employee_group_id:
+      employee_group_id && mongoose.Types.ObjectId.isValid(String(employee_group_id))
+        ? new mongoose.Types.ObjectId(String(employee_group_id))
         : undefined,
     employeeId:
       employeeId && mongoose.Types.ObjectId.isValid(String(employeeId))
@@ -111,6 +116,16 @@ async function resolveLeaveRegisterExportRequest(req) {
   if (filters.departmentId) {
     const dept = await Department.findById(filters.departmentId).select('name').lean();
     if (dept?.name) filterParts.push(`Department: ${dept.name}`);
+  }
+  if (filters.designationId) {
+    const Designation = require('../../departments/model/Designation');
+    const des = await Designation.findById(filters.designationId).select('name').lean();
+    if (des?.name) filterParts.push(`Designation: ${des.name}`);
+  }
+  if (filters.employee_group_id) {
+    const EmployeeGroup = require('../../employees/model/EmployeeGroup');
+    const grp = await EmployeeGroup.findById(filters.employee_group_id).select('name').lean();
+    if (grp?.name) filterParts.push(`Group: ${grp.name}`);
   }
   const typeLabels = [
     includeCL && 'Casual leave',

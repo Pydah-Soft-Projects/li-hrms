@@ -1,6 +1,15 @@
 const mongoose = require('mongoose');
 const ArrearsRequest = require('../model/ArrearsRequest');
 const Employee = require('../../employees/model/Employee');
+const EMPLOYEE_ORG_POPULATE = {
+  path: 'employee',
+  select: 'emp_no employee_name first_name last_name division_id department_id designation_id',
+  populate: [
+    { path: 'division_id', select: 'name code' },
+    { path: 'department_id', select: 'name code' },
+    { path: 'designation_id', select: 'name code' },
+  ],
+};
 
 class ArrearsService {
   /**
@@ -39,7 +48,7 @@ class ArrearsService {
           status: 'draft',
         });
         await arrears.save();
-        return arrears.populate('employee createdBy');
+        return arrears.populate([EMPLOYEE_ORG_POPULATE, { path: 'createdBy', select: 'name email' }]);
       }
 
       // Incremental arrears: validate months and total
@@ -70,7 +79,7 @@ class ArrearsService {
       });
 
       await arrears.save();
-      return arrears.populate('employee createdBy');
+      return arrears.populate([EMPLOYEE_ORG_POPULATE, { path: 'createdBy', select: 'name email' }]);
     } catch (error) {
       throw new Error(`Failed to create arrears request: ${error.message}`);
     }
@@ -97,7 +106,11 @@ class ArrearsService {
       arrears.updatedBy = userId;
       await arrears.save();
 
-      return arrears.populate('employee createdBy updatedBy');
+      return arrears.populate([
+        EMPLOYEE_ORG_POPULATE,
+        { path: 'createdBy', select: 'name email' },
+        { path: 'updatedBy', select: 'name email' },
+      ]);
     } catch (error) {
       throw new Error(`Failed to submit for HOD approval: ${error.message}`);
     }
@@ -138,7 +151,12 @@ class ArrearsService {
       arrears.updatedBy = userId;
       await arrears.save();
 
-      return arrears.populate('employee createdBy updatedBy hodApproval.approvedBy');
+      return arrears.populate([
+        EMPLOYEE_ORG_POPULATE,
+        { path: 'createdBy', select: 'name email' },
+        { path: 'updatedBy', select: 'name email' },
+        { path: 'hodApproval.approvedBy', select: 'name email' },
+      ]);
     } catch (error) {
       throw new Error(`Failed to process HOD approval: ${error.message}`);
     }
@@ -179,7 +197,12 @@ class ArrearsService {
       arrears.updatedBy = userId;
       await arrears.save();
 
-      return arrears.populate('employee createdBy updatedBy hrApproval.approvedBy');
+      return arrears.populate([
+        EMPLOYEE_ORG_POPULATE,
+        { path: 'createdBy', select: 'name email' },
+        { path: 'updatedBy', select: 'name email' },
+        { path: 'hrApproval.approvedBy', select: 'name email' },
+      ]);
     } catch (error) {
       throw new Error(`Failed to process HR approval: ${error.message}`);
     }
@@ -234,7 +257,12 @@ class ArrearsService {
       arrears.updatedBy = userId;
       await arrears.save();
 
-      return arrears.populate('employee createdBy updatedBy adminApproval.approvedBy');
+      return arrears.populate([
+        EMPLOYEE_ORG_POPULATE,
+        { path: 'createdBy', select: 'name email' },
+        { path: 'updatedBy', select: 'name email' },
+        { path: 'adminApproval.approvedBy', select: 'name email' },
+      ]);
     } catch (error) {
       throw new Error(`Failed to process admin approval: ${error.message}`);
     }
@@ -333,6 +361,7 @@ class ArrearsService {
         remainingAmount: { $gt: 0 }
       })
         .sort({ createdAt: 1 })
+        .populate(EMPLOYEE_ORG_POPULATE)
         .populate('createdBy', 'name email');
     } catch (error) {
       throw new Error(`Failed to fetch pending arrears: ${error.message}`);
@@ -347,7 +376,7 @@ class ArrearsService {
   static async getArrearsById(arrearsId) {
     try {
       const arrears = await ArrearsRequest.findById(arrearsId)
-        .populate('employee', 'emp_no name')
+        .populate(EMPLOYEE_ORG_POPULATE)
         .populate('createdBy updatedBy', 'name email')
         .populate('hodApproval.approvedBy hrApproval.approvedBy adminApproval.approvedBy', 'name email')
         .populate('settlementHistory.settledBy', 'name email')
@@ -391,7 +420,7 @@ class ArrearsService {
       }
 
       const arrears = await ArrearsRequest.find(query)
-        .populate('employee', 'emp_no name')
+        .populate(EMPLOYEE_ORG_POPULATE)
         .populate('createdBy', 'name email')
         .sort({ createdAt: -1 });
 

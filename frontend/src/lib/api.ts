@@ -4415,6 +4415,8 @@ export const api = {
     year?: number;
     departmentId?: string;
     divisionId?: string;
+    designationId?: string;
+    employee_group_id?: string;
     search?: string;
     page?: number;
     limit?: number;
@@ -4425,6 +4427,8 @@ export const api = {
     if (params?.year != null) q.set('year', String(params.year));
     if (params?.departmentId) q.set('departmentId', params.departmentId);
     if (params?.divisionId) q.set('divisionId', params.divisionId);
+    if (params?.designationId) q.set('designationId', params.designationId);
+    if (params?.employee_group_id) q.set('employee_group_id', params.employee_group_id);
     if (params?.search) q.set('search', params.search);
     if (params?.page != null) q.set('page', String(params.page));
     if (params?.limit != null) q.set('limit', String(params.limit));
@@ -4439,6 +4443,8 @@ export const api = {
     year?: number;
     departmentId?: string;
     divisionId?: string;
+    designationId?: string;
+    employee_group_id?: string;
     search?: string;
     /** Omit or true = include; set false to exclude that leave block from every month column. */
     includeCL?: boolean;
@@ -4451,6 +4457,8 @@ export const api = {
     if (params?.year != null) q.set('year', String(params.year));
     if (params?.departmentId) q.set('departmentId', params.departmentId);
     if (params?.divisionId) q.set('divisionId', params.divisionId);
+    if (params?.designationId) q.set('designationId', params.designationId);
+    if (params?.employee_group_id) q.set('employee_group_id', params.employee_group_id);
     if (params?.search) q.set('search', params.search);
     if (params?.includeCL === false) q.set('includeCL', 'false');
     if (params?.includeCCL === false) q.set('includeCCL', 'false');
@@ -4484,6 +4492,8 @@ export const api = {
     year?: number;
     departmentId?: string;
     divisionId?: string;
+    designationId?: string;
+    employee_group_id?: string;
     search?: string;
     includeCL?: boolean;
     includeCCL?: boolean;
@@ -4495,6 +4505,8 @@ export const api = {
     if (params?.year != null) q.set('year', String(params.year));
     if (params?.departmentId) q.set('departmentId', params.departmentId);
     if (params?.divisionId) q.set('divisionId', params.divisionId);
+    if (params?.designationId) q.set('designationId', params.designationId);
+    if (params?.employee_group_id) q.set('employee_group_id', params.employee_group_id);
     if (params?.search) q.set('search', params.search);
     if (params?.includeCL === false) q.set('includeCL', 'false');
     if (params?.includeCCL === false) q.set('includeCCL', 'false');
