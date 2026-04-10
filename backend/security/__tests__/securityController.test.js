@@ -1,3 +1,7 @@
+jest.mock('../../permissions/services/permissionEdgeAttendanceService', () => ({
+    refreshAttendanceEdgePermissions: jest.fn().mockResolvedValue({ success: true }),
+}));
+
 // Mock Permission - use path relative to backend root
 jest.mock('../../permissions/model/Permission', () => ({
     find: jest.fn().mockReturnThis(),
@@ -101,6 +105,24 @@ describe('Security Controller Unit Tests', () => {
                 message: 'Permission is not approved'
             }));
         });
+
+        test('should reject gate out for late_in permission type', async () => {
+            const mockPermission = {
+                _id: 'perm123',
+                employeeId: 'emp123',
+                requestedBy: 'user123',
+                status: 'approved',
+                permissionType: 'late_in',
+            };
+            Permission.findById.mockResolvedValue(mockPermission);
+            mockReq.params.id = 'perm123';
+            await securityController.generateGateOutQR(mockReq, mockRes);
+            expect(mockRes.status).toHaveBeenCalledWith(400);
+            expect(mockRes.json).toHaveBeenCalledWith(expect.objectContaining({
+                success: false,
+                message: expect.stringContaining('Gate In'),
+            }));
+        });
     });
 
     describe('generateGateInQR', () => {
@@ -163,6 +185,44 @@ describe('Security Controller Unit Tests', () => {
             expect(mockRes.json).toHaveBeenCalledWith(expect.objectContaining({
                 success: true,
                 qrSecret: expect.stringMatching(/^IN:perm123:/)
+            }));
+        });
+
+        test('should reject gate in for early_out permission type', async () => {
+            const mockPermission = {
+                _id: 'perm123',
+                employeeId: 'emp123',
+                requestedBy: 'user123',
+                status: 'approved',
+                permissionType: 'early_out',
+            };
+            Permission.findById.mockResolvedValue(mockPermission);
+            mockReq.params.id = 'perm123';
+            await securityController.generateGateInQR(mockReq, mockRes);
+            expect(mockRes.status).toHaveBeenCalledWith(400);
+            expect(mockRes.json).toHaveBeenCalledWith(expect.objectContaining({
+                success: false,
+                message: expect.stringContaining('Gate Out'),
+            }));
+        });
+
+        test('should allow gate in for late_in without prior gate out', async () => {
+            const mockPermission = {
+                _id: 'perm123',
+                employeeId: 'emp123',
+                requestedBy: 'user123',
+                status: 'approved',
+                permissionType: 'late_in',
+                gateInTime: null,
+                save: jest.fn().mockResolvedValue(true),
+            };
+            Permission.findById.mockResolvedValue(mockPermission);
+            mockReq.params.id = 'perm123';
+            await securityController.generateGateInQR(mockReq, mockRes);
+            expect(mockRes.status).toHaveBeenCalledWith(200);
+            expect(mockRes.json).toHaveBeenCalledWith(expect.objectContaining({
+                success: true,
+                qrSecret: expect.stringMatching(/^IN:perm123:/),
             }));
         });
     });

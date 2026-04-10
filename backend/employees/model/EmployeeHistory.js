@@ -51,6 +51,7 @@ const employeeHistorySchema = new mongoose.Schema(
                 'user_deleted',
                 // Automation
                 'system_auto_deactivation',
+                'birthday_wish_sent',
                 'status_deactivated',
                 // Promotion & transfer workflow
                 'promotion_transfer_submitted',

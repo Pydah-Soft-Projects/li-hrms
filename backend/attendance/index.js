@@ -56,6 +56,7 @@ router.put('/:employeeNumber/:date/intime', authorize('super_admin', 'sub_admin'
 
 // Assign shift to attendance record (Super Admin, Sub Admin, HR, HOD)
 router.put('/:employeeNumber/:date/shift', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), attendanceController.assignShift);
+router.put('/:employeeNumber/:date/esi-halfday-ot', applyScopeFilter, authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), attendanceController.setEsiHalfDayOtHours);
 
 // Settings Routes (Super Admin, Sub Admin only)
 router.get('/settings', attendanceSettingsController.getSettings);

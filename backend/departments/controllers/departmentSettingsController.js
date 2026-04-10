@@ -1,6 +1,5 @@
 const DepartmentSettings = require('../model/DepartmentSettings');
 const Department = require('../model/Department');
-const LeaveSettings = require('../../leaves/model/LeaveSettings');
 const LoanSettings = require('../../loans/model/LoanSettings');
 
 /**
@@ -9,25 +8,27 @@ const LoanSettings = require('../../loans/model/LoanSettings');
  */
 async function getResolvedLeaveSettings(departmentId, divisionId = null) {
   try {
-    // Get department/division settings
     const deptSettings = await DepartmentSettings.getByDeptAndDiv(departmentId, divisionId);
 
-    // Get global leave settings
-    const globalSettings = await LeaveSettings.findOne({ type: 'leave', isActive: true });
+    const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
+    const { resolveEffectiveEarnedLeave } = require('../../leaves/services/earnedLeavePolicyResolver');
+    const globalPolicy = await LeavePolicySettings.getSettings();
+    const effectiveEarnedLeave = resolveEffectiveEarnedLeave(
+      globalPolicy?.earnedLeave,
+      deptSettings?.leaves
+    );
 
-    // Merge: Department settings override global
-    const resolved = {
+    return {
       leavesPerDay: deptSettings?.leaves?.leavesPerDay ?? null,
       paidLeavesCount: deptSettings?.leaves?.paidLeavesCount ?? null,
       dailyLimit: deptSettings?.leaves?.dailyLimit ?? null,
       monthlyLimit: deptSettings?.leaves?.monthlyLimit ?? null,
+      elEarningType: deptSettings?.leaves?.elEarningType ?? null,
+      elMaxCarryForward: deptSettings?.leaves?.elMaxCarryForward ?? null,
+      cclExpiryMonths: deptSettings?.leaves?.cclExpiryMonths ?? null,
+      earnedLeaveDepartmentOverride: deptSettings?.leaves?.earnedLeave || null,
+      earnedLeave: effectiveEarnedLeave,
     };
-
-    // If department settings are null, use global defaults
-    // Note: Global settings don't have leavesPerDay/paidLeavesCount directly
-    // These might need to be configured separately or use department defaults
-
-    return resolved;
   } catch (error) {
     console.error('Error getting resolved leave settings:', error);
     return null;
@@ -116,21 +117,8 @@ async function getResolvedPermissionSettings(departmentId, divisionId = null) {
  */
 async function getResolvedOTSettings(departmentId, divisionId = null) {
   try {
-    // Get department/division settings
-    const deptSettings = await DepartmentSettings.getByDeptAndDiv(departmentId, divisionId);
-
-    // Get global OT settings
-    const Settings = require('../../settings/model/Settings');
-    const globalPayPerHour = await Settings.findOne({ key: 'ot_pay_per_hour' });
-    const globalMinHours = await Settings.findOne({ key: 'ot_min_hours' });
-
-    // Merge: Department settings override global
-    const resolved = {
-      otPayPerHour: deptSettings?.ot?.otPayPerHour ?? (globalPayPerHour?.value || 0),
-      minOTHours: deptSettings?.ot?.minOTHours ?? (globalMinHours?.value || 0),
-    };
-
-    return resolved;
+    const { getMergedOtConfig } = require('../../overtime/services/otConfigResolver');
+    return await getMergedOtConfig(departmentId, divisionId);
   } catch (error) {
     console.error('Error getting resolved OT settings:', error);
     return null;
@@ -263,6 +251,40 @@ exports.updateDepartmentSettings = async (req, res) => {
       if (leaves.paidLeavesCount !== undefined) settings.leaves.paidLeavesCount = leaves.paidLeavesCount;
       if (leaves.dailyLimit !== undefined) settings.leaves.dailyLimit = leaves.dailyLimit;
       if (leaves.monthlyLimit !== undefined) settings.leaves.monthlyLimit = leaves.monthlyLimit;
+      if (leaves.elEarningType !== undefined) settings.leaves.elEarningType = leaves.elEarningType;
+      if (leaves.elMaxCarryForward !== undefined) settings.leaves.elMaxCarryForward = leaves.elMaxCarryForward;
+      if (leaves.cclExpiryMonths !== undefined) settings.leaves.cclExpiryMonths = leaves.cclExpiryMonths;
+
+      if (leaves.earnedLeave === null) {
+        settings.leaves.earnedLeave = undefined;
+      } else if (leaves.earnedLeave !== undefined && typeof leaves.earnedLeave === 'object') {
+        if (!settings.leaves.earnedLeave) settings.leaves.earnedLeave = {};
+        const el = leaves.earnedLeave;
+        if (el.enabled !== undefined) settings.leaves.earnedLeave.enabled = el.enabled;
+        if (el.earningType !== undefined) settings.leaves.earnedLeave.earningType = el.earningType;
+        if (el.useAsPaidInPayroll !== undefined) {
+          settings.leaves.earnedLeave.useAsPaidInPayroll = el.useAsPaidInPayroll;
+        }
+        if (el.attendanceRules && typeof el.attendanceRules === 'object') {
+          if (!settings.leaves.earnedLeave.attendanceRules) settings.leaves.earnedLeave.attendanceRules = {};
+          const ar = el.attendanceRules;
+          ['minDaysForFirstEL', 'daysPerEL', 'maxELPerMonth', 'maxELPerYear'].forEach((k) => {
+            if (ar[k] !== undefined) settings.leaves.earnedLeave.attendanceRules[k] = ar[k];
+          });
+          if (ar.attendanceRanges !== undefined) {
+            settings.leaves.earnedLeave.attendanceRules.attendanceRanges = ar.attendanceRanges;
+          }
+        }
+        if (el.fixedRules && typeof el.fixedRules === 'object') {
+          if (!settings.leaves.earnedLeave.fixedRules) settings.leaves.earnedLeave.fixedRules = {};
+          if (el.fixedRules.elPerMonth !== undefined) {
+            settings.leaves.earnedLeave.fixedRules.elPerMonth = el.fixedRules.elPerMonth;
+          }
+          if (el.fixedRules.maxELPerYear !== undefined) {
+            settings.leaves.earnedLeave.fixedRules.maxELPerYear = el.fixedRules.maxELPerYear;
+          }
+        }
+      }
       settings.markModified('leaves');
     }
 
@@ -373,6 +395,13 @@ exports.updateDepartmentSettings = async (req, res) => {
 
     settings.updatedBy = req.user._id;
     await settings.save();
+
+    if (ot) {
+      const cacheService = require('../../shared/services/cacheService');
+      const divKey = divisionId || (settings.division ? String(settings.division) : 'none');
+      await cacheService.del(`settings:ot:v3:dept:${deptId}:div:${divKey}`);
+      await cacheService.del(`settings:ot:second-salary:dept:${deptId}:div:${divKey}`);
+    }
 
     await settings.populate('department', 'name code');
     if (settings.division) {

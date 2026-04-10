@@ -7,6 +7,7 @@ const Employee = require('../../employees/model/Employee');
 const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
 const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
 const DepartmentSettings = require('../../departments/model/DepartmentSettings');
+const { resolveEffectiveEarnedLeave } = require('./earnedLeavePolicyResolver');
 const leaveRegisterService = require('./leaveRegisterService');
 const leaveRegisterYearLedgerService = require('./leaveRegisterYearLedgerService');
 const ELHistory = require('../model/ELHistory');
@@ -32,10 +33,13 @@ async function calculateEarnedLeave(employeeId, month, year, cycleStart = null, 
             throw new Error('Employee not found');
         }
 
-        if (settings.earnedLeave?.enabled === false) {
+        const deptSettings = await DepartmentSettings.getByDeptAndDiv(employee.department_id, employee.division_id);
+        const effectiveEL = resolveEffectiveEarnedLeave(settings.earnedLeave, deptSettings?.leaves);
+
+        if (!effectiveEL.enabled) {
             return {
                 eligible: false,
-                reason: 'Earned leave is disabled',
+                reason: 'Earned leave is disabled for this department or globally',
                 elEarned: 0,
                 attendanceDays: 0,
                 employeeId,
@@ -82,29 +86,28 @@ async function calculateEarnedLeave(employeeId, month, year, cycleStart = null, 
                     reason: 'Probation period not completed',
                     elEarned: 0,
                     attendanceDays: 0,
-                    requiredDays: settings.earnedLeave?.attendanceRules?.minDaysForFirstEL
+                    requiredDays: effectiveEL.attendanceRules?.minDaysForFirstEL
                 };
             }
         }
 
-        // Get department settings for overrides
-        const deptSettings = await DepartmentSettings.getByDeptAndDiv(employee.department_id, employee.division_id);
-        const earningType = deptSettings?.leaves?.elEarningType || settings.earnedLeave.earningType;
+        const earningType = effectiveEL.earningType;
+        const elPolicyWrapper = { earnedLeave: effectiveEL, compliance: settings.compliance };
 
         // Get attendance data for the specific payroll cycle
         const attendanceData = await getAttendanceData(employeeId, month, year, settings, employee, cycleStart, cycleEnd);
 
-        // Calculate EL based on earning type
+        // Calculate EL based on earning type (rules = global policy + department overrides)
         let elCalculation;
         switch (earningType) {
             case 'attendance_based':
-                elCalculation = calculateAttendanceBasedEL(attendanceData, settings);
+                elCalculation = calculateAttendanceBasedEL(attendanceData, elPolicyWrapper);
                 break;
             case 'fixed':
-                elCalculation = calculateFixedEL(settings, deptSettings);
+                elCalculation = calculateFixedEL(elPolicyWrapper, deptSettings);
                 break;
             default:
-                elCalculation = calculateAttendanceBasedEL(attendanceData, settings);
+                elCalculation = calculateAttendanceBasedEL(attendanceData, elPolicyWrapper);
         }
 
         return {
@@ -117,10 +120,11 @@ async function calculateEarnedLeave(employeeId, month, year, cycleStart = null, 
             elEarned: elCalculation.elEarned,
             maxELForMonth: elCalculation.maxELForMonth,
             calculationBreakdown: elCalculation.breakdown,
+            effectiveEarnedLeavePolicy: effectiveEL,
             settings: {
-                minDaysForEL: settings.earnedLeave?.attendanceRules?.minDaysForFirstEL,
-                daysPerEL: settings.earnedLeave?.attendanceRules?.daysPerEL,
-                maxELPerMonth: settings.earnedLeave?.attendanceRules?.maxELPerMonth
+                minDaysForEL: effectiveEL.attendanceRules?.minDaysForFirstEL,
+                daysPerEL: effectiveEL.attendanceRules?.daysPerEL,
+                maxELPerMonth: effectiveEL.attendanceRules?.maxELPerMonth
             }
         };
 

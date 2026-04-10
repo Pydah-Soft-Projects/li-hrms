@@ -26,7 +26,7 @@ const {
   getAbsentDeductionSettings,
   buildBaseComponents,
 } = require('./allowanceDeductionResolverService');
-const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
+const { resolveEffectiveEarnedLeaveForDepartment } = require('../../leaves/services/earnedLeavePolicyResolver');
 const { createISTDate, getPayrollDateRange } = require('../../shared/utils/dateUtils');
 const outputColumnService = require('./outputColumnService');
 const ArrearsPayrollIntegrationService = require('../../arrears/services/arrearsPayrollIntegrationService');
@@ -270,7 +270,16 @@ async function runRequiredServices(required, record, employee, employeeId, month
 
   if (required.needsOT) {
     const departmentIdStr = (employee?.department_id?._id || employee?.department_id)?.toString() || departmentId?.toString();
-    const otPayResult = await otPayService.calculateOTPay(attendanceSummary.totalOTHours || 0, departmentIdStr);
+    const divStr = (employee?.division_id?._id || employee?.division_id)?.toString() || divisionId?.toString() || null;
+    const otPayResult = await otPayService.calculateOTPay(
+      attendanceSummary.totalOTHours || 0,
+      departmentIdStr,
+      divStr,
+      {
+        employee,
+        totalDaysInMonth: attendanceSummary.totalDaysInMonth,
+      }
+    );
     if (!record.earnings) record.earnings = {};
     record.earnings.otPay = otPayResult.otPay ?? 0;
     record.earnings.otHours = attendanceSummary.totalOTHours ?? 0;
@@ -594,13 +603,17 @@ async function buildAttendanceFromSummary(payRegisterSummary, employee, month) {
   let paidLeaveDays = payRegisterSummary.totals?.totalPaidLeaveDays || 0;
   let elUsedInPayroll = 0;
   try {
-    const policy = await LeavePolicySettings.getSettings();
-    if (policy.earnedLeave && policy.earnedLeave.useAsPaidInPayroll !== false) {
-      const elBalance = Math.max(0, Number(employee.paidLeaves) || 0);
-      if (elBalance > 0) {
-        elUsedInPayroll = Math.min(elBalance, monthDays);
-        payableShifts += elUsedInPayroll;
-        paidLeaveDays += elUsedInPayroll;
+    const departmentId = employee.department_id?._id || employee.department_id;
+    const divisionId = employee.division_id?._id || employee.division_id;
+    if (departmentId) {
+      const effectiveEL = await resolveEffectiveEarnedLeaveForDepartment(departmentId, divisionId);
+      if (effectiveEL.enabled && effectiveEL.useAsPaidInPayroll !== false) {
+        const elBalance = Math.max(0, Number(employee.paidLeaves) || 0);
+        if (elBalance > 0) {
+          elUsedInPayroll = Math.min(elBalance, monthDays);
+          payableShifts += elUsedInPayroll;
+          paidLeaveDays += elUsedInPayroll;
+        }
       }
     }
   } catch (e) { /* ignore */ }
@@ -710,11 +723,12 @@ async function resolveFieldValue(fieldPath, employee, employeeId, month, payRegi
 
   // arrears.* — always from service (or options.arrearsSettlements when provided)
   if (path.startsWith('arrears.')) {
-    const arrearsSettlements = options.arrearsSettlements;
+    const hasExplicitArrearsSelection = Array.isArray(options.arrearsSettlements);
+    const arrearsSettlements = hasExplicitArrearsSelection ? options.arrearsSettlements : [];
     let arrearsAmount = 0;
-    if (arrearsSettlements && arrearsSettlements.length > 0) {
+    if (arrearsSettlements.length > 0) {
       arrearsAmount = arrearsSettlements.reduce((s, a) => s + (Number(a.amount) || 0), 0);
-    } else {
+    } else if (!hasExplicitArrearsSelection) {
       try {
         const pendingArrears = await ArrearsPayrollIntegrationService.getPendingArrearsForPayroll(employeeId);
         arrearsAmount = (pendingArrears || []).reduce((sum, ar) => sum + (ar.remainingAmount || 0), 0);
@@ -725,7 +739,7 @@ async function resolveFieldValue(fieldPath, employee, employeeId, month, payRegi
     arrearsAmount = Math.round(arrearsAmount * 100) / 100;
     if (!record.arrears) record.arrears = { arrearsAmount: 0, arrearsSettlements: [] };
     record.arrears.arrearsAmount = arrearsAmount;
-    if (arrearsSettlements && arrearsSettlements.length > 0) record.arrears.arrearsSettlements = arrearsSettlements;
+    record.arrears.arrearsSettlements = arrearsSettlements;
     return path === 'arrears.arrearsAmount' ? arrearsAmount : arrearsAmount;
   }
 
@@ -793,7 +807,16 @@ async function resolveFieldValue(fieldPath, employee, employeeId, month, payRegi
   // earnings.otPay, otHours, otRatePerHour
   if (path.startsWith('earnings.ot')) {
     const departmentIdStr = (employee?.department_id?._id || employee?.department_id)?.toString() || departmentId?.toString();
-    const otPayResult = await otPayService.calculateOTPay(attendanceSummary.totalOTHours || 0, departmentIdStr);
+    const divStr = (employee?.division_id?._id || employee?.division_id)?.toString() || divisionId?.toString() || null;
+    const otPayResult = await otPayService.calculateOTPay(
+      attendanceSummary.totalOTHours || 0,
+      departmentIdStr,
+      divStr,
+      {
+        employee,
+        totalDaysInMonth: attendanceSummary.totalDaysInMonth,
+      }
+    );
     if (!record.earnings) record.earnings = {};
     record.earnings.otPay = otPayResult.otPay || 0;
     record.earnings.otHours = attendanceSummary.totalOTHours || 0;
@@ -1106,8 +1129,8 @@ function buildAttendancePatchForSecondSalary(recordAttendance, payRegisterSummar
  * arrears FIELD column runs — formulas earlier in the list would see arrearsAmount as 0 in context.
  * Prime from pending when there are no explicit settlements (same totals resolveFieldValue would use).
  */
-async function primeArrearsFromPendingIfNoSettlements(record, employeeId, arrearsSettlements) {
-  if (arrearsSettlements.length) return;
+async function primeArrearsFromPendingIfNoSettlements(record, employeeId, arrearsSettlements, hasExplicitArrearsSelection) {
+  if (hasExplicitArrearsSelection || arrearsSettlements.length) return;
   try {
     const pendingArrears = await ArrearsPayrollIntegrationService.getPendingArrearsForPayroll(employeeId);
     const arrearsAmount = Math.round(
@@ -1267,12 +1290,17 @@ async function calculatePayrollFromOutputColumns(employeeId, month, userId, opti
   await runRequiredServices(required, record, calcEmployee, employeeId, month, payRegisterSummary, attendanceSummary, departmentId, divisionId, config);
 
   // When pay register passes selected arrears, use that sum so config/formulas see the correct amount
-  const arrearsSettlements = options.arrearsSettlements || [];
+  const hasExplicitArrearsSelection = Array.isArray(options.arrearsSettlements);
+  const arrearsSettlements = hasExplicitArrearsSelection ? options.arrearsSettlements : [];
   if (arrearsSettlements.length > 0) {
     const arrearsSum = arrearsSettlements.reduce((s, a) => s + (Number(a.amount) || 0), 0);
     if (!record.arrears) record.arrears = { arrearsAmount: 0, arrearsSettlements: [] };
     record.arrears.arrearsAmount = Math.round(arrearsSum * 100) / 100;
     record.arrears.arrearsSettlements = arrearsSettlements;
+  } else if (hasExplicitArrearsSelection) {
+    if (!record.arrears) record.arrears = { arrearsAmount: 0, arrearsSettlements: [] };
+    record.arrears.arrearsAmount = 0;
+    record.arrears.arrearsSettlements = [];
   }
 
   // Apply manual deduction settlements before column loop so outcome vars (manualDeductionsAmount) are available in config/formulas
@@ -1287,7 +1315,12 @@ async function calculatePayrollFromOutputColumns(employeeId, month, userId, opti
     }
   }
 
-  await primeArrearsFromPendingIfNoSettlements(record, employeeId, arrearsSettlements);
+  await primeArrearsFromPendingIfNoSettlements(
+    record,
+    employeeId,
+    arrearsSettlements,
+    hasExplicitArrearsSelection
+  );
 
   const context = { ...outputColumnService.getContextFromPayslip(record) };
   const row = {};
@@ -1420,10 +1453,8 @@ async function calculatePayrollFromOutputColumns(employeeId, month, userId, opti
   payrollRecord.set('roundOff', Number(record.roundOff) || 0);
   payrollRecord.set('arrearsAmount', Number(record.arrears?.arrearsAmount) || 0);
   payrollRecord.set('manualDeductionsAmount', Number(record.manualDeductionsAmount) || 0);
-  if (options.arrearsSettlements && options.arrearsSettlements.length > 0) {
-    payrollRecord.set('arrearsSettlements', options.arrearsSettlements);
-    payrollRecord.markModified('arrearsSettlements');
-  }
+  payrollRecord.set('arrearsSettlements', arrearsSettlements);
+  payrollRecord.markModified('arrearsSettlements');
   if (record.deductionSettlements && record.deductionSettlements.length > 0) {
     payrollRecord.set('deductionSettlements', record.deductionSettlements);
     payrollRecord.markModified('deductionSettlements');

@@ -4,6 +4,12 @@ import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
 import Spinner from '@/components/Spinner';
+import {
+  DepartmentEarnedLeaveOverridesSection,
+  buildEarnedLeaveApiPayload,
+  defaultEarnedLeaveForm,
+  mapApiLeavesToEarnedLeaveForm,
+} from '@/components/settings/DepartmentEarnedLeaveOverrides';
 
 interface Department {
   _id: string;
@@ -22,6 +28,9 @@ interface DepartmentSettings {
     paidLeavesCount: number | null;
     dailyLimit: number | null;
     monthlyLimit: number | null;
+    elMaxCarryForward?: number | null;
+    cclExpiryMonths?: number | null;
+    earnedLeave?: import('@/components/settings/DepartmentEarnedLeaveOverrides').DepartmentEarnedLeaveForm;
   };
   loans: {
     interestRate: number | null;
@@ -61,6 +70,16 @@ interface DepartmentSettings {
   ot: {
     otPayPerHour: number | null;
     minOTHours: number | null;
+    recognitionMode?: string | null;
+    thresholdHours?: number | null;
+    roundUpIfFractionMinutesGte?: number | null;
+    roundingMinutes?: number | null;
+    autoCreateOtRequest?: boolean | null;
+    otHourRanges?: { minMinutes: number; maxMinutes: number; creditedMinutes: number; label?: string }[];
+    defaultWorkingHoursPerDay?: number | null;
+    workingHoursPerDay?: number | null;
+    groupWorkingHours?: { employeeGroupId: string; hoursPerDay: number }[];
+    otMultiplier?: number | null;
   };
   attendance?: {
     deductionRules?: {
@@ -93,6 +112,9 @@ export default function DepartmentalSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [settings, setSettings] = useState<DepartmentSettings | null>(null);
   const [loadingSettings, setLoadingSettings] = useState(false);
+  const [effectiveEarnedLeave, setEffectiveEarnedLeave] = useState<Record<string, unknown> | null>(null);
+  const [clearingServerEl, setClearingServerEl] = useState(false);
+  const [employeeGroups, setEmployeeGroups] = useState<{ _id: string; name: string }[]>([]);
   const [newRange, setNewRange] = useState({
     minMinutes: '',
     maxMinutes: '',
@@ -116,6 +138,9 @@ export default function DepartmentalSettingsPage() {
       paidLeavesCount: null,
       dailyLimit: null,
       monthlyLimit: null,
+      elMaxCarryForward: null,
+      cclExpiryMonths: null,
+      earnedLeave: defaultEarnedLeaveForm(),
     },
     loans: {
       interestRate: null,
@@ -155,6 +180,16 @@ export default function DepartmentalSettingsPage() {
     ot: {
       otPayPerHour: null,
       minOTHours: null,
+      recognitionMode: null,
+      thresholdHours: null,
+      roundUpIfFractionMinutesGte: null,
+      roundingMinutes: null,
+      autoCreateOtRequest: null,
+      otHourRanges: [],
+      defaultWorkingHoursPerDay: null,
+      workingHoursPerDay: null,
+      groupWorkingHours: [],
+      otMultiplier: null,
     },
     attendance: {
       deductionRules: {
@@ -178,6 +213,19 @@ export default function DepartmentalSettingsPage() {
 
   useEffect(() => {
     loadDepartments();
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await api.getEmployeeGroups();
+        if (res.success && Array.isArray(res.data)) {
+          setEmployeeGroups(res.data as { _id: string; name: string }[]);
+        }
+      } catch {
+        /* optional */
+      }
+    })();
   }, []);
 
   useEffect(() => {
@@ -207,6 +255,7 @@ export default function DepartmentalSettingsPage() {
   const loadDepartmentSettings = async (deptId: string) => {
     try {
       setLoadingSettings(true);
+      setEffectiveEarnedLeave(null);
       const response = await api.getDepartmentSettings(deptId);
       if (response.success && response.data) {
         setSettings(response.data);
@@ -218,6 +267,9 @@ export default function DepartmentalSettingsPage() {
             paidLeavesCount: s.leaves?.paidLeavesCount ?? null,
             dailyLimit: s.leaves?.dailyLimit ?? null,
             monthlyLimit: s.leaves?.monthlyLimit ?? null,
+            elMaxCarryForward: s.leaves?.elMaxCarryForward ?? null,
+            cclExpiryMonths: s.leaves?.cclExpiryMonths ?? null,
+            earnedLeave: mapApiLeavesToEarnedLeaveForm(s.leaves),
           },
           loans: {
             interestRate: s.loans?.interestRate ?? null,
@@ -257,6 +309,16 @@ export default function DepartmentalSettingsPage() {
           ot: {
             otPayPerHour: s.ot?.otPayPerHour ?? null,
             minOTHours: s.ot?.minOTHours ?? null,
+            recognitionMode: s.ot?.recognitionMode ?? null,
+            thresholdHours: s.ot?.thresholdHours ?? null,
+            roundUpIfFractionMinutesGte: s.ot?.roundUpIfFractionMinutesGte ?? null,
+            roundingMinutes: s.ot?.roundingMinutes ?? null,
+            autoCreateOtRequest: s.ot?.autoCreateOtRequest ?? null,
+            otHourRanges: Array.isArray(s.ot?.otHourRanges) ? s.ot.otHourRanges : [],
+            defaultWorkingHoursPerDay: s.ot?.defaultWorkingHoursPerDay ?? null,
+            workingHoursPerDay: s.ot?.workingHoursPerDay ?? null,
+            groupWorkingHours: Array.isArray(s.ot?.groupWorkingHours) ? s.ot.groupWorkingHours : [],
+            otMultiplier: s.ot?.otMultiplier ?? null,
           },
           attendance: {
             deductionRules: {
@@ -278,6 +340,14 @@ export default function DepartmentalSettingsPage() {
               s.payroll?.includeMissingEmployeeComponents ?? null,
           },
         });
+        try {
+          const resolvedRes = await api.getResolvedDepartmentSettings(deptId, 'leaves');
+          if (resolvedRes.success && resolvedRes.data?.leaves?.earnedLeave) {
+            setEffectiveEarnedLeave(resolvedRes.data.leaves.earnedLeave as Record<string, unknown>);
+          }
+        } catch {
+          /* optional preview */
+        }
       }
     } catch (error) {
       console.error('Error loading department settings:', error);
@@ -289,12 +359,16 @@ export default function DepartmentalSettingsPage() {
   };
 
   const resetForm = () => {
+    setEffectiveEarnedLeave(null);
     setFormData({
       leaves: {
         leavesPerDay: null,
         paidLeavesCount: null,
         dailyLimit: null,
         monthlyLimit: null,
+        elMaxCarryForward: null,
+        cclExpiryMonths: null,
+        earnedLeave: defaultEarnedLeaveForm(),
       },
       loans: {
         interestRate: null,
@@ -334,6 +408,16 @@ export default function DepartmentalSettingsPage() {
       ot: {
         otPayPerHour: null,
         minOTHours: null,
+        recognitionMode: null,
+        thresholdHours: null,
+        roundUpIfFractionMinutesGte: null,
+        roundingMinutes: null,
+        autoCreateOtRequest: null,
+        otHourRanges: [],
+        defaultWorkingHoursPerDay: null,
+        workingHoursPerDay: null,
+        groupWorkingHours: [],
+        otMultiplier: null,
       },
       attendance: {
         deductionRules: {
@@ -394,6 +478,44 @@ export default function DepartmentalSettingsPage() {
     });
   };
 
+  const buildLeavesPayload = () => {
+    const er = formData.leaves.earnedLeave ?? defaultEarnedLeaveForm();
+    const earnedLeavePayload = buildEarnedLeaveApiPayload(er);
+    const leaves: Record<string, unknown> = {
+      leavesPerDay: formData.leaves.leavesPerDay,
+      paidLeavesCount: formData.leaves.paidLeavesCount,
+      dailyLimit: formData.leaves.dailyLimit,
+      monthlyLimit: formData.leaves.monthlyLimit,
+      elMaxCarryForward: formData.leaves.elMaxCarryForward,
+      cclExpiryMonths: formData.leaves.cclExpiryMonths,
+    };
+    if (earnedLeavePayload) {
+      leaves.earnedLeave = earnedLeavePayload;
+      if (er.earningType) leaves.elEarningType = er.earningType;
+    }
+    return leaves;
+  };
+
+  const handleClearElOverridesOnServer = async () => {
+    if (!selectedDepartmentId) return;
+    try {
+      setClearingServerEl(true);
+      const response = await api.updateDepartmentSettings(selectedDepartmentId, {
+        leaves: { earnedLeave: null, elEarningType: null },
+      });
+      if (response.success) {
+        toast.success('Department EL overrides cleared');
+        await loadDepartmentSettings(selectedDepartmentId);
+      } else {
+        toast.error(response.message || 'Failed to clear EL overrides');
+      }
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to clear EL overrides');
+    } finally {
+      setClearingServerEl(false);
+    }
+  };
+
   const handleSave = async () => {
     if (!selectedDepartmentId) {
       toast.error('Please select a department');
@@ -405,16 +527,21 @@ export default function DepartmentalSettingsPage() {
 
       // Prepare data for API
       const updateData = {
-        leaves: formData.leaves,
+        leaves: buildLeavesPayload(),
         loans: formData.loans,
         salaryAdvance: formData.salaryAdvance,
         permissions: formData.permissions,
-        ot: formData.ot,
+        ot: {
+          ...formData.ot,
+          groupWorkingHours: (formData.ot.groupWorkingHours || []).filter(
+            (r) => r.employeeGroupId && Number(r.hoursPerDay) > 0
+          ),
+        },
         attendance: formData.attendance,
         payroll: formData.payroll,
       };
 
-      const response = await api.updateDepartmentSettings(selectedDepartmentId, updateData);
+      const response = await api.updateDepartmentSettings(selectedDepartmentId, updateData as any);
 
       if (response.success) {
         toast.success('Department settings saved successfully!');
@@ -535,6 +662,60 @@ export default function DepartmentalSettingsPage() {
                 />
               </div>
             </div>
+            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                  EL max carry forward (days)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  value={formData.leaves.elMaxCarryForward ?? ''}
+                  onChange={(e) =>
+                    handleInputChange(
+                      'leaves',
+                      'elMaxCarryForward',
+                      e.target.value ? parseInt(e.target.value, 10) : null
+                    )
+                  }
+                  placeholder="Global default"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                  CCL expiry (months)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  value={formData.leaves.cclExpiryMonths ?? ''}
+                  onChange={(e) =>
+                    handleInputChange(
+                      'leaves',
+                      'cclExpiryMonths',
+                      e.target.value ? parseInt(e.target.value, 10) : null
+                    )
+                  }
+                  placeholder="Global default"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                />
+              </div>
+            </div>
+            <DepartmentEarnedLeaveOverridesSection
+              value={formData.leaves.earnedLeave ?? defaultEarnedLeaveForm()}
+              onChange={(next) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  leaves: { ...prev.leaves, earnedLeave: next },
+                }))
+              }
+              effectiveEarnedLeave={effectiveEarnedLeave}
+              onClearServerOverrides={
+                selectedDepartmentId ? handleClearElOverridesOnServer : undefined
+              }
+              clearingServer={clearingServerEl}
+            />
           </div>
 
           {/* Loans Settings */}
@@ -942,39 +1123,267 @@ export default function DepartmentalSettingsPage() {
           <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
             <h2 className="mb-4 text-base font-semibold text-slate-900 dark:text-white">Overtime (OT) Settings</h2>
             <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
-              Configure department-specific overtime settings. Leave blank to use global defaults.
+              Department overrides. Leave blank to inherit global OT settings.
             </p>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <div>
-                <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
-                  OT Pay Per Hour (₹)
-                </label>
+                <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">OT Pay Per Hour (₹)</label>
                 <input
                   type="number"
                   min="0"
                   step="0.01"
                   value={formData.ot.otPayPerHour ?? ''}
                   onChange={(e) => handleInputChange('ot', 'otPayPerHour', e.target.value ? parseFloat(e.target.value) : null)}
-                  placeholder="e.g., 100, 150, 200"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-700 dark:text-white"
                 />
-                <p className="mt-1 text-[10px] text-slate-400 dark:text-slate-500">Leave blank to use global default</p>
               </div>
               <div>
-                <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
-                  Minimum OT Hours
-                </label>
+                <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">Minimum OT Hours</label>
                 <input
                   type="number"
                   min="0"
                   step="0.5"
                   value={formData.ot.minOTHours ?? ''}
                   onChange={(e) => handleInputChange('ot', 'minOTHours', e.target.value ? parseFloat(e.target.value) : null)}
-                  placeholder="e.g., 1, 2, 2.5"
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-700 dark:text-white"
                 />
-                <p className="mt-1 text-[10px] text-slate-400 dark:text-slate-500">Minimum hours required for OT pay eligibility</p>
               </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">Recognition mode</label>
+                <select
+                  value={formData.ot.recognitionMode ?? ''}
+                  onChange={(e) => handleInputChange('ot', 'recognitionMode', e.target.value || null)}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                >
+                  <option value="">Inherit global</option>
+                  <option value="none">No threshold</option>
+                  <option value="threshold_full">Threshold (full raw after)</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">Threshold (hours)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.25"
+                  value={formData.ot.thresholdHours ?? ''}
+                  onChange={(e) => handleInputChange('ot', 'thresholdHours', e.target.value ? parseFloat(e.target.value) : null)}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">Round up hour if frac min ≥</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="59"
+                  value={formData.ot.roundUpIfFractionMinutesGte ?? ''}
+                  onChange={(e) =>
+                    handleInputChange('ot', 'roundUpIfFractionMinutesGte', e.target.value ? parseInt(e.target.value, 10) : null)
+                  }
+                  placeholder="e.g. 45 (blank = inherit)"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
+                  Nearest N minutes (grid)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="60"
+                  value={formData.ot.roundingMinutes ?? ''}
+                  onChange={(e) =>
+                    handleInputChange('ot', 'roundingMinutes', e.target.value ? parseInt(e.target.value, 10) : null)
+                  }
+                  placeholder="blank = inherit global"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                />
+                <p className="mt-1 text-[10px] text-slate-400">Leave blank to inherit global (15 by default). Set 0 here to disable snap for this department.</p>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">Auto-create OT request</label>
+                <select
+                  value={formData.ot.autoCreateOtRequest === null || formData.ot.autoCreateOtRequest === undefined ? '' : String(formData.ot.autoCreateOtRequest)}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    handleInputChange('ot', 'autoCreateOtRequest', v === '' ? null : v === 'true');
+                  }}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                >
+                  <option value="">Inherit global</option>
+                  <option value="true">Enabled</option>
+                  <option value="false">Disabled</option>
+                </select>
+              </div>
+              <div className="sm:col-span-2 lg:col-span-3 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/40">
+                <p className="text-xs font-semibold text-slate-800 dark:text-slate-200">OT Hour Ranges (minutes)</p>
+                <p className="mb-3 text-[10px] text-slate-500">Map raw OT minute range to credited minutes.</p>
+                {(formData.ot.otHourRanges || []).map((row, idx) => (
+                  <div key={idx} className="mb-2 grid grid-cols-4 gap-2">
+                    <input
+                      type="number"
+                      min="0"
+                      value={row.minMinutes}
+                      onChange={(e) => {
+                        const next = [...(formData.ot.otHourRanges || [])];
+                        next[idx] = { ...next[idx], minMinutes: parseInt(e.target.value, 10) || 0 };
+                        setFormData((prev) => ({ ...prev, ot: { ...prev.ot, otHourRanges: next } }));
+                      }}
+                      placeholder="Min"
+                      className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      value={row.maxMinutes}
+                      onChange={(e) => {
+                        const next = [...(formData.ot.otHourRanges || [])];
+                        next[idx] = { ...next[idx], maxMinutes: parseInt(e.target.value, 10) || 0 };
+                        setFormData((prev) => ({ ...prev, ot: { ...prev.ot, otHourRanges: next } }));
+                      }}
+                      placeholder="Max"
+                      className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      value={row.creditedMinutes}
+                      onChange={(e) => {
+                        const next = [...(formData.ot.otHourRanges || [])];
+                        next[idx] = { ...next[idx], creditedMinutes: parseInt(e.target.value, 10) || 0 };
+                        setFormData((prev) => ({ ...prev, ot: { ...prev.ot, otHourRanges: next } }));
+                      }}
+                      placeholder="Consider"
+                      className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = (formData.ot.otHourRanges || []).filter((_, i) => i !== idx);
+                        setFormData((prev) => ({ ...prev, ot: { ...prev.ot, otHourRanges: next } }));
+                      }}
+                      className="rounded-lg border border-red-200 px-2 py-1 text-xs text-red-600 dark:border-red-800"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      ot: {
+                        ...prev.ot,
+                        otHourRanges: [...(prev.ot.otHourRanges || []), { minMinutes: 0, maxMinutes: 0, creditedMinutes: 0, label: '' }],
+                      },
+                    }))
+                  }
+                  className="text-xs font-medium text-indigo-600 hover:underline"
+                >
+                  + Add range
+                </button>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">Default hours/day (x) fallback</label>
+                <input
+                  type="number"
+                  min="0.5"
+                  step="0.5"
+                  value={formData.ot.defaultWorkingHoursPerDay ?? ''}
+                  onChange={(e) =>
+                    handleInputChange('ot', 'defaultWorkingHoursPerDay', e.target.value ? parseFloat(e.target.value) : null)
+                  }
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">Dept hours/day (x)</label>
+                <input
+                  type="number"
+                  min="0.5"
+                  step="0.5"
+                  value={formData.ot.workingHoursPerDay ?? ''}
+                  onChange={(e) => handleInputChange('ot', 'workingHoursPerDay', e.target.value ? parseFloat(e.target.value) : null)}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">OT pay multiplier</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={formData.ot.otMultiplier ?? ''}
+                  onChange={(e) => handleInputChange('ot', 'otMultiplier', e.target.value ? parseFloat(e.target.value) : null)}
+                  placeholder="Inherit global"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                />
+              </div>
+            </div>
+            <div className="mt-4 border-t border-slate-200 pt-4 dark:border-slate-600">
+              <h3 className="mb-2 text-sm font-medium text-slate-800 dark:text-slate-200">Group hours per day (x)</h3>
+              <p className="mb-2 text-[10px] text-slate-500">Unlisted groups use department x above, then global default.</p>
+              {(formData.ot.groupWorkingHours || []).map((row, idx) => (
+                <div key={idx} className="mb-2 flex flex-wrap items-center gap-2">
+                  <select
+                    value={row.employeeGroupId || ''}
+                    onChange={(e) => {
+                      const next = [...(formData.ot.groupWorkingHours || [])];
+                      next[idx] = { ...next[idx], employeeGroupId: e.target.value };
+                      setFormData((prev) => ({ ...prev, ot: { ...prev.ot, groupWorkingHours: next } }));
+                    }}
+                    className="min-w-[160px] rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  >
+                    <option value="">Select group</option>
+                    {employeeGroups.map((g) => (
+                      <option key={g._id} value={g._id}>
+                        {g.name}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    min="0.5"
+                    step="0.5"
+                    placeholder="h/day"
+                    value={row.hoursPerDay ?? ''}
+                    onChange={(e) => {
+                      const next = [...(formData.ot.groupWorkingHours || [])];
+                      next[idx] = { ...next[idx], hoursPerDay: e.target.value ? parseFloat(e.target.value) : 0 };
+                      setFormData((prev) => ({ ...prev, ot: { ...prev.ot, groupWorkingHours: next } }));
+                    }}
+                    className="w-24 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-700 dark:text-white"
+                  />
+                  <button
+                    type="button"
+                    className="text-xs text-red-600 hover:underline"
+                    onClick={() => {
+                      const next = (formData.ot.groupWorkingHours || []).filter((_, i) => i !== idx);
+                      setFormData((prev) => ({ ...prev, ot: { ...prev.ot, groupWorkingHours: next } }));
+                    }}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                className="mt-1 text-xs font-medium text-indigo-600 hover:underline"
+                onClick={() =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    ot: {
+                      ...prev.ot,
+                      groupWorkingHours: [...(prev.ot.groupWorkingHours || []), { employeeGroupId: '', hoursPerDay: 8 }],
+                    },
+                  }))
+                }
+              >
+                + Add group row
+              </button>
             </div>
           </div>
 

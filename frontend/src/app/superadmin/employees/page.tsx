@@ -19,6 +19,7 @@ import BankUpdateDialog from '@/components/employee/BankUpdateDialog';
 import Spinner from '@/components/Spinner';
 import EmployeeExportDialog from '@/components/employee/EmployeeExportDialog';
 import { getEmployeeGroupedDynamicFieldValue } from '@/lib/employeeDynamicFieldValue';
+import { getPayPeriodRangeForCalendarMonth } from '@/lib/payPeriodRange';
 
 import {
   EMPLOYEE_TEMPLATE_HEADERS,
@@ -107,6 +108,17 @@ const formatValue = (val: any) => {
   return String(val);
 };
 
+const formatDateDayMonthYear = (value?: string | Date | null) => {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return new Intl.DateTimeFormat('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  }).format(date);
+};
+
 /** Subline under employee name: emp no · designation */
 const formatEmployeeEmpNoDesignationLine = (employee: {
   emp_no?: string;
@@ -123,6 +135,53 @@ const formatEmployeeEmpNoDesignationLine = (employee: {
       : '');
   if (no && des) return `${no} · ${des}`;
   return no || des || '';
+};
+
+const isProfileFieldFilled = (value: any): boolean => {
+  if (value === null || value === undefined) return false;
+  if (typeof value === 'string') return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === 'object') return Object.keys(value).length > 0;
+  return true;
+};
+
+const getEmployeeProfileCompletion = (employee: any): number => {
+  const coreFields = [
+    employee.employee_name,
+    employee.emp_no,
+    employee.division?.name || employee.division_id,
+    employee.department?.name || employee.department_id,
+    employee.designation?.name || employee.designation_id,
+    employee.doj,
+    employee.dob,
+    employee.gender,
+    employee.marital_status,
+    employee.blood_group,
+    employee.phone_number,
+    employee.email,
+    employee.address,
+    employee.location,
+    employee.aadhar_number,
+    employee.bank_account_no,
+    employee.ifsc_code,
+    employee.salary_mode,
+    employee.profilePhoto,
+  ];
+
+  const dynamicValues = employee?.dynamicFields && typeof employee.dynamicFields === 'object'
+    ? Object.values(employee.dynamicFields).filter((v) => {
+      if (v && typeof v === 'object' && !Array.isArray(v)) {
+        // Skip container-like nested objects to avoid over-weighting metadata.
+        return false;
+      }
+      return true;
+    })
+    : [];
+
+  const allFields = [...coreFields, ...dynamicValues];
+  const total = allFields.length || 1;
+  const filled = allFields.filter(isProfileFieldFilled).length;
+  return Math.round((filled / total) * 100);
 };
 
 interface FormSettings {
@@ -364,11 +423,16 @@ export default function EmployeesPage() {
 
   const [employeeHistory, setEmployeeHistory] = useState<any[]>([]);
   const [employeeHistoryLoading, setEmployeeHistoryLoading] = useState(false);
-  const [employeeViewTab, setEmployeeViewTab] = useState<'profile' | 'history'>('profile');
+  const [employeeViewTab, setEmployeeViewTab] = useState<'profile' | 'history' | 'leaves_register'>('profile');
+  const [leaveRegisterMonth, setLeaveRegisterMonth] = useState<string>(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
   const [historyViewComplete, setHistoryViewComplete] = useState<{
     eventLabel: string;
     changes: { field: string; fieldLabel: string; previous: unknown; current: unknown }[];
   } | null>(null);
+  const [expandedLeaveIds, setExpandedLeaveIds] = useState<Set<string>>(new Set());
   const [certificatePreviewUrl, setCertificatePreviewUrl] = useState<string | null>(null);
   const [formData, setFormData] = useState<Partial<Employee>>(initialFormState);
   const [formSettings, setFormSettings] = useState<FormSettings | null>(null);
@@ -409,7 +473,7 @@ export default function EmployeesPage() {
   const [selectedEmployeeForLeftDate, setSelectedEmployeeForLeftDate] = useState<Employee | null>(null);
   const [leftDateForm, setLeftDateForm] = useState<{ leftDate: string; leftReason: string; requestType?: 'resignation' | 'termination' }>({ leftDate: '', leftReason: '', requestType: 'resignation' });
   const [resignationNoticePeriodDays, setResignationNoticePeriodDays] = useState(0);
-  const [includeLeftEmployees, setIncludeLeftEmployees] = useState(false);
+  const [includeLeftEmployees, setIncludeLeftEmployees] = useState(true);
   const [passwordMode, setPasswordMode] = useState<'random' | 'phone_empno'>('random');
   const [isResending, setIsResending] = useState<string | null>(null);
   const [isResetting, setIsResetting] = useState<string | null>(null);
@@ -421,12 +485,106 @@ export default function EmployeesPage() {
   const [submittingBankUpdate, setSubmittingBankUpdate] = useState(false);
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [selectedEmployeeForExport, setSelectedEmployeeForExport] = useState<{ empNo?: string; name?: string } | null>(null);
+  const [cameraFor, setCameraFor] = useState<'employee' | 'application' | null>(null);
+  const [cameraLoading, setCameraLoading] = useState(false);
+  const [cameraError, setCameraError] = useState('');
+  const streamRef = useRef<MediaStream | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const [dynamicTemplate, setDynamicTemplate] = useState<{ headers: string[]; sample: any[]; columns: TemplateColumn[] }>({
     headers: EMPLOYEE_TEMPLATE_HEADERS,
     sample: EMPLOYEE_TEMPLATE_SAMPLE,
     columns: [],
   });
+
+  const stopCameraStream = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+  }, []);
+
+  const uploadProfileForTarget = useCallback(async (file: File, target: 'employee' | 'application') => {
+    try {
+      const res = await api.uploadProfile(file) as { success?: boolean; url?: string };
+      if (res?.success && res?.url) {
+        if (target === 'employee') {
+          setFormData(prev => ({ ...prev, profilePhoto: res.url }));
+        } else {
+          setApplicationFormData(prev => ({ ...prev, profilePhoto: res.url }));
+        }
+      } else {
+        setError('Failed to upload profile photo. Try again.');
+      }
+    } catch {
+      setError('Failed to upload profile photo. Try again.');
+    }
+  }, []);
+
+  const startCameraCapture = useCallback(async (target: 'employee' | 'application') => {
+    setCameraError('');
+    try {
+      stopCameraStream();
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user' },
+        audio: false,
+      });
+      streamRef.current = stream;
+      setCameraFor(target);
+    } catch {
+      setCameraError('Unable to access camera. Please allow camera permission or use device upload.');
+    }
+  }, [stopCameraStream]);
+
+  const closeCameraCapture = useCallback(() => {
+    stopCameraStream();
+    setCameraFor(null);
+    setCameraLoading(false);
+    setCameraError('');
+  }, [stopCameraStream]);
+
+  const captureFromCamera = useCallback(async () => {
+    if (!cameraFor || !videoRef.current || !canvasRef.current) return;
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video.videoWidth || !video.videoHeight) {
+      setCameraError('Camera is not ready yet. Please wait a second and try again.');
+      return;
+    }
+
+    setCameraLoading(true);
+    try {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Canvas unavailable');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.92));
+      if (!blob) throw new Error('Failed to capture image');
+
+      const file = new File([blob], `employee-photo-${Date.now()}.jpg`, { type: 'image/jpeg' });
+      await uploadProfileForTarget(file, cameraFor);
+      closeCameraCapture();
+    } catch {
+      setCameraError('Failed to capture or upload photo. Please try again.');
+    } finally {
+      setCameraLoading(false);
+    }
+  }, [cameraFor, uploadProfileForTarget, closeCameraCapture]);
+
+  useEffect(() => {
+    if (!cameraFor || !videoRef.current || !streamRef.current) return;
+    videoRef.current.srcObject = streamRef.current;
+    videoRef.current.play().catch(() => {
+      setCameraError('Unable to start camera preview.');
+    });
+  }, [cameraFor]);
+
+  useEffect(() => {
+    return () => stopCameraStream();
+  }, [stopCameraStream]);
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
@@ -447,6 +605,96 @@ export default function EmployeesPage() {
   // Deduction Defaults
   const [defaultStatutory, setDefaultStatutory] = useState(true);
   const [defaultAttendance, setDefaultAttendance] = useState(true);
+  const [payrollCycleStartDay, setPayrollCycleStartDay] = useState<number>(1);
+  const [payrollCycleEndDay, setPayrollCycleEndDay] = useState<number>(31);
+  const [leaveRegisterLoading, setLeaveRegisterLoading] = useState(false);
+  const [leaveRegisterRecords, setLeaveRegisterRecords] = useState<any[]>([]);
+
+  const normalizeLeaveType = useCallback((value: unknown) => {
+    const raw = String(value || '').trim().toLowerCase();
+    if (!raw) return '';
+    if (raw === 'cl' || raw.includes('casual')) return 'CL';
+    if (raw === 'ccl' || raw.includes('compensatory') || raw.includes('comp off') || raw.includes('comp_off')) return 'CCL';
+    return raw.toUpperCase();
+  }, []);
+
+  const leaveRegisterCycleRange = useMemo(() => {
+    const [yearStr, monthStr] = leaveRegisterMonth.split('-');
+    const year = Number(yearStr);
+    const month = Number(monthStr);
+    if (!year || !month) {
+      return {
+        start: new Date(0),
+        end: new Date(0),
+        label: '-',
+      };
+    }
+    const range = getPayPeriodRangeForCalendarMonth(year, month, payrollCycleStartDay, payrollCycleEndDay);
+    const start = new Date(`${range.from}T00:00:00`);
+    const end = new Date(`${range.to}T23:59:59`);
+    return {
+      start,
+      end,
+      label: `${start.toLocaleDateString()} to ${end.toLocaleDateString()}`,
+    };
+  }, [leaveRegisterMonth, payrollCycleStartDay, payrollCycleEndDay]);
+
+  const leaveRegisterView = useMemo(() => {
+    const groupedLeaves = leaveRegisterRecords.map((row: any) => {
+      const isOd = row.recordType === 'od';
+      const event = isOd ? 'od_applied' : 'leave_applied';
+      const actorName =
+        row.appliedByName ||
+        row.createdBy?.name ||
+        row.approvedBy?.name ||
+        row.employeeId?.employee_name ||
+        'System';
+      const actorRole =
+        row.appliedByRole ||
+        row.createdBy?.role ||
+        row.approvedBy?.role ||
+        '';
+      const details = {
+        fromDate: row.fromDate,
+        toDate: row.toDate,
+        leaveType: row.leaveType || row.leave_type || row.type || '',
+        odType: row.odType || row.od_type || row.type || '',
+      };
+      const latest = {
+        _id: row._id,
+        event,
+        timestamp: row.updatedAt || row.createdAt,
+        created_at: row.createdAt,
+        performedByName: actorName,
+        performedByRole: actorRole,
+        comments: row.remarks || row.reason || row.purpose || '',
+        details,
+        status: row.status,
+      };
+      return {
+        id: row._id,
+        latest,
+        history: [latest],
+      };
+    });
+
+    const summary = leaveRegisterRecords.reduce(
+      (acc, row: any) => {
+        if (row.recordType === 'od') {
+          acc.ods += 1;
+          return acc;
+        }
+        acc.leaves += 1;
+        const leaveType = normalizeLeaveType(row.leaveType || row.leave_type || row.type);
+        if (leaveType === 'CL') acc.cl += 1;
+        if (leaveType === 'CCL') acc.ccl += 1;
+        return acc;
+      },
+      { leaves: 0, ods: 0, cl: 0, ccl: 0 }
+    );
+
+    return { groupedLeaves, summary };
+  }, [leaveRegisterRecords, normalizeLeaveType]);
 
   const fetchDeductionDefaults = useCallback(async () => {
     try {
@@ -464,6 +712,70 @@ export default function EmployeesPage() {
   useEffect(() => {
     fetchDeductionDefaults();
   }, [fetchDeductionDefaults]);
+
+  useEffect(() => {
+    const loadPayrollCycleSettings = async () => {
+      try {
+        const [resStart, resEnd] = await Promise.all([
+          api.getSetting('payroll_cycle_start_day'),
+          api.getSetting('payroll_cycle_end_day'),
+        ]);
+        if (resStart?.success && resStart?.data?.value != null) {
+          setPayrollCycleStartDay(Number(resStart.data.value) || 1);
+        }
+        if (resEnd?.success && resEnd?.data?.value != null) {
+          setPayrollCycleEndDay(Number(resEnd.data.value) || 31);
+        }
+      } catch (err) {
+        console.error('Failed to load payroll cycle settings:', err);
+      }
+    };
+    loadPayrollCycleSettings();
+  }, []);
+
+  useEffect(() => {
+    const loadEmployeeLeaveRegister = async () => {
+      if (!viewingEmployee?._id || employeeViewTab !== 'leaves_register') {
+        return;
+      }
+      try {
+        setLeaveRegisterLoading(true);
+        const filters = {
+          employeeId: viewingEmployee._id,
+          fromDate: toLocalDateString(leaveRegisterCycleRange.start),
+          toDate: toLocalDateString(leaveRegisterCycleRange.end),
+          page: 1,
+          limit: 500,
+        };
+        const [leavesRes, odsRes] = await Promise.all([
+          api.getLeaves(filters),
+          api.getODs(filters),
+        ]);
+        const leaves = (leavesRes?.success ? leavesRes.data : []) || [];
+        const ods = (odsRes?.success ? odsRes.data : []) || [];
+        const merged = [
+          ...leaves.map((x: any) => ({ ...x, recordType: 'leave' })),
+          ...ods.map((x: any) => ({ ...x, recordType: 'od' })),
+        ].sort((a: any, b: any) => {
+          const ad = new Date(a.updatedAt || a.createdAt || 0).getTime();
+          const bd = new Date(b.updatedAt || b.createdAt || 0).getTime();
+          return bd - ad;
+        });
+        setLeaveRegisterRecords(merged);
+      } catch (err) {
+        console.error('Failed to load employee leave register records:', err);
+        setLeaveRegisterRecords([]);
+      } finally {
+        setLeaveRegisterLoading(false);
+      }
+    };
+    loadEmployeeLeaveRegister();
+  }, [employeeViewTab, leaveRegisterCycleRange.end, leaveRegisterCycleRange.start, viewingEmployee?._id]);
+
+  const payrollCycleType = useMemo(() => {
+    return payrollCycleStartDay <= 1 ? 'Calendar Month' : 'Custom Cycle';
+  }, [payrollCycleStartDay]);
+
 
   const initialFormStateWithDefaults = useMemo(() => ({
     ...initialFormState,
@@ -2033,6 +2345,12 @@ export default function EmployeesPage() {
 
     // Map gross_salary to proposedSalary for the form (form uses proposedSalary field)
     const salaryValue = employee.gross_salary || dynamicFieldsData.proposedSalary || 0;
+    const employeeGroupId =
+      (employee as any).employee_group?._id ||
+      ((employee as any).employee_group_id && typeof (employee as any).employee_group_id === 'object'
+        ? (employee as any).employee_group_id._id
+        : (employee as any).employee_group_id) ||
+      '';
 
     // Create form data object - merge all fields including dynamicFields
     const newFormData: any = {
@@ -2040,6 +2358,7 @@ export default function EmployeesPage() {
       department_id: employee.department?._id || employee.department_id || '',
       designation_id: employee.designation?._id || employee.designation_id || '',
       division_id: employee.division?._id || employee.division_id || '',
+      employee_group_id: employeeGroupId,
       doj: employee.doj ? new Date(employee.doj).toISOString().split('T')[0] : '',
       dob: employee.dob ? new Date(employee.dob).toISOString().split('T')[0] : '',
       paidLeaves: paidLeavesValue,
@@ -2059,6 +2378,28 @@ export default function EmployeesPage() {
       reporting_to_: reportingToValue,
       // Salary mode dropdown defaults to Cash when editing if not set
       salary_mode: (employee as any).salary_mode ?? dynamicFieldsData.salary_mode ?? 'Cash',
+      gender: employee.gender ?? dynamicFieldsData.gender ?? '',
+      marital_status: employee.marital_status ?? dynamicFieldsData.marital_status ?? '',
+      blood_group: employee.blood_group ?? dynamicFieldsData.blood_group ?? '',
+      phone_number: employee.phone_number ?? dynamicFieldsData.phone_number ?? '',
+      alt_phone_number: employee.alt_phone_number ?? dynamicFieldsData.alt_phone_number ?? '',
+      email: employee.email ?? dynamicFieldsData.email ?? '',
+      address: employee.address ?? dynamicFieldsData.address ?? '',
+      location: employee.location ?? dynamicFieldsData.location ?? '',
+      aadhar_number:
+        (employee as any).aadhar_number ??
+        (employee as any).aadhaar_number ??
+        dynamicFieldsData.aadhar_number ??
+        dynamicFieldsData.aadhaar_number ??
+        '',
+      pf_number: employee.pf_number ?? dynamicFieldsData.pf_number ?? '',
+      esi_number: employee.esi_number ?? dynamicFieldsData.esi_number ?? '',
+      bank_account_no: employee.bank_account_no ?? dynamicFieldsData.bank_account_no ?? '',
+      bank_name: employee.bank_name ?? dynamicFieldsData.bank_name ?? '',
+      bank_place: employee.bank_place ?? dynamicFieldsData.bank_place ?? '',
+      ifsc_code: employee.ifsc_code ?? dynamicFieldsData.ifsc_code ?? '',
+      experience: employee.experience ?? dynamicFieldsData.experience ?? '',
+      profilePhoto: (employee as any).profilePhoto ?? dynamicFieldsData.profilePhoto ?? '',
     };
 
     setFormData(newFormData);
@@ -3739,6 +4080,9 @@ export default function EmployeesPage() {
                           <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
                             Status
                           </th>
+                          <th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                            Profile
+                          </th>
                           <th className="px-6 py-4 text-right text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
                             Actions
                           </th>
@@ -3747,7 +4091,7 @@ export default function EmployeesPage() {
                       <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                         {employees.length === 0 ? (
                           <tr>
-                            <td colSpan={6} className="px-6 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                            <td colSpan={7} className="px-6 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
                               No employees found matching your criteria
                             </td>
                           </tr>
@@ -3758,7 +4102,7 @@ export default function EmployeesPage() {
                               className="transition-colors hover:bg-green-50/30 dark:hover:bg-green-900/10 cursor-pointer"
                               onClick={() => handleViewEmployee(employee)}
                             >
-                              <td className="px-6 py-4 min-w-[12rem] max-w-[22rem]">
+                              <td className="px-6 py-4 min-w-[10rem] max-w-[18rem]">
                                 <div className="flex items-center gap-3">
                                   {(employee as any).profilePhoto ? (
                                     <img
@@ -3812,6 +4156,29 @@ export default function EmployeesPage() {
                                     </span>
                                   )}
                                 </div>
+                              </td>
+                              <td className="px-4 py-4">
+                                {(() => {
+                                  const completion = getEmployeeProfileCompletion(employee);
+                                  const toneClass = completion >= 80
+                                    ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                    : completion >= 50
+                                      ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                                      : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
+                                  return (
+                                    <div className="w-[88px]">
+                                      <div className="mb-1 flex items-center justify-end text-xs text-slate-500 dark:text-slate-400">
+                                        <span className={`inline-flex rounded-full px-2 py-0.5 font-semibold ${toneClass}`}>{completion}%</span>
+                                      </div>
+                                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
+                                        <div
+                                          className="h-full rounded-full bg-indigo-500 transition-all"
+                                          style={{ width: `${completion}%` }}
+                                        />
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
                               </td>
                               <td className="whitespace-nowrap px-6 py-4 text-right">
                                 <button
@@ -4051,24 +4418,31 @@ export default function EmployeesPage() {
                           </button>
                         </div>
                       )}
-                      <div>
-                        <input
-                          type="file"
-                          accept="image/jpeg,image/png,image/jpg"
-                          className="block w-full max-w-xs text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-4 file:py-2 file:text-slate-700 dark:text-slate-300 dark:file:bg-slate-800 dark:file:text-slate-200"
-                          onChange={async (e) => {
-                            const file = e.target.files?.[0];
-                            if (!file) return;
-                            try {
-                              const res = await api.uploadProfile(file) as { success?: boolean; url?: string };
-                              if (res?.success && res?.url) setApplicationFormData(prev => ({ ...prev, profilePhoto: res.url }));
-                            } catch (err) {
-                              setError('Failed to upload profile photo. Try again.');
-                            }
-                            e.target.value = '';
-                          }}
-                        />
-                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">JPG or PNG, max 5MB. Stored in S3 profiles folder.</p>
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => startCameraCapture('application')}
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                          >
+                            Use Camera
+                          </button>
+                          <label className="cursor-pointer rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                            Upload from Device
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/jpg"
+                              className="hidden"
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+                                await uploadProfileForTarget(file, 'application');
+                                e.target.value = '';
+                              }}
+                            />
+                          </label>
+                        </div>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">JPG or PNG, max 5MB. Stored in S3 profiles folder.</p>
                       </div>
                     </div>
                   </div>
@@ -5025,24 +5399,31 @@ export default function EmployeesPage() {
                           </button>
                         </div>
                       )}
-                      <div>
-                        <input
-                          type="file"
-                          accept="image/jpeg,image/png,image/jpg"
-                          className="block w-full max-w-xs text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-4 file:py-2 file:text-slate-700 dark:text-slate-300 dark:file:bg-slate-800 dark:file:text-slate-200"
-                          onChange={async (e) => {
-                            const file = e.target.files?.[0];
-                            if (!file) return;
-                            try {
-                              const res = await api.uploadProfile(file) as { success?: boolean; url?: string };
-                              if (res?.success && res?.url) setFormData(prev => ({ ...prev, profilePhoto: res.url }));
-                            } catch (err) {
-                              setError('Failed to upload profile photo. Try again.');
-                            }
-                            e.target.value = '';
-                          }}
-                        />
-                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">JPG or PNG, max 5MB. Stored in S3 profiles folder.</p>
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => startCameraCapture('employee')}
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                          >
+                            Use Camera
+                          </button>
+                          <label className="cursor-pointer rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                            Upload from Device
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/jpg"
+                              className="hidden"
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+                                await uploadProfileForTarget(file, 'employee');
+                                e.target.value = '';
+                              }}
+                            />
+                          </label>
+                        </div>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">JPG or PNG, max 5MB. Stored in S3 profiles folder.</p>
                       </div>
                     </div>
                   </div>
@@ -5583,17 +5964,6 @@ export default function EmployeesPage() {
               <div className="relative z-50 max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950/95">
                 <div className="mb-6 flex items-center justify-between">
                   <div className="flex items-center gap-4">
-                    {(viewingEmployee as any).profilePhoto ? (
-                      <img
-                        src={(viewingEmployee as any).profilePhoto}
-                        alt={viewingEmployee.employee_name || 'Profile'}
-                        className="h-16 w-16 rounded-xl border border-slate-200 object-cover dark:border-slate-700"
-                      />
-                    ) : (
-                      <div className="flex h-16 w-16 items-center justify-center rounded-xl border border-slate-200 bg-slate-100 text-xl font-semibold text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
-                        {(viewingEmployee.employee_name || '?').charAt(0).toUpperCase()}
-                      </div>
-                    )}
                     <div>
                       <div className="mb-1 flex items-center gap-3">
                         <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
@@ -5601,6 +5971,11 @@ export default function EmployeesPage() {
                         </span>
                         <span className="rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-semibold text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300">
                           Cert Status: {viewingEmployee.qualificationStatus || '—'}
+                        </span>
+                        <span className={viewingEmployee.is_active !== false
+                          ? 'inline-flex rounded-full bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                          : 'inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-400'}>
+                          {viewingEmployee.is_active !== false ? 'Active' : 'Inactive'}
                         </span>
                       </div>
                       <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
@@ -5689,18 +6064,11 @@ export default function EmployeesPage() {
                     </div>
                   )}
 
-                  {/* Status Badge */}
-
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
-                      <span className={viewingEmployee.is_active !== false
-                        ? 'inline-flex rounded-full px-3 py-1 text-sm font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                        : 'inline-flex rounded-full px-3 py-1 text-sm font-medium bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}>
-                        {viewingEmployee.is_active !== false ? 'Active' : 'Inactive'}
-                      </span>
                       {viewingEmployee.leftDate && (
                         <span className="inline-flex rounded-full px-3 py-1 text-xs font-medium bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                          Last working date: {new Date(viewingEmployee.leftDate).toLocaleDateString()}
+                          Last working date: {formatDateDayMonthYear(viewingEmployee.leftDate)}
                         </span>
                       )}
                     </div>
@@ -5726,6 +6094,16 @@ export default function EmployeesPage() {
                       >
                         History
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => setEmployeeViewTab('leaves_register')}
+                        className={`px-3 py-1 rounded-full transition ${employeeViewTab === 'leaves_register'
+                          ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-slate-100'
+                          : 'bg-transparent'
+                          }`}
+                      >
+                        Leaves Register
+                      </button>
                     </div>
                   </div>
 
@@ -5734,10 +6112,24 @@ export default function EmployeesPage() {
 
 
                       {/* Basic Information */}
-
                       <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
                         <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Basic Information</h3>
-                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                        <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
+                          <div className="lg:col-span-4 xl:col-span-3">
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Profile Photo</label>
+                            {(viewingEmployee as any).profilePhoto ? (
+                              <img
+                                src={(viewingEmployee as any).profilePhoto}
+                                alt={viewingEmployee.employee_name || 'Profile'}
+                                className="mt-1 h-72 w-full rounded-2xl border border-slate-200 object-cover shadow-sm dark:border-slate-700"
+                              />
+                            ) : (
+                              <div className="mt-1 flex h-72 w-full items-center justify-center rounded-2xl border border-slate-200 bg-slate-100 text-5xl font-semibold text-slate-500 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
+                                {(viewingEmployee.employee_name || '?').charAt(0).toUpperCase()}
+                              </div>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:col-span-8 xl:col-span-9 xl:grid-cols-3">
                           <div>
                             <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Employee Number</label>
                             <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.emp_no || '-'}</p>
@@ -5764,11 +6156,11 @@ export default function EmployeesPage() {
                           )}
                           <div>
                             <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Date of Joining</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.doj ? new Date(viewingEmployee.doj).toLocaleDateString() : '-'}</p>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{formatDateDayMonthYear(viewingEmployee.doj)}</p>
                           </div>
                           <div>
                             <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Date of Birth</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.dob ? new Date(viewingEmployee.dob).toLocaleDateString() : '-'}</p>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{formatDateDayMonthYear(viewingEmployee.dob)}</p>
                           </div>
 
                           <div>
@@ -5785,23 +6177,124 @@ export default function EmployeesPage() {
                           </div>
                           <div>
                             <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Phone Number</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.phone_number || '-'}</p>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                              {viewingEmployee.phone_number ||
+                                (viewingEmployee as any).contact_number ||
+                                (viewingEmployee as any).dynamicFields?.phone_number ||
+                                (viewingEmployee as any).dynamicFields?.contact_number ||
+                                '-'}
+                            </p>
                           </div>
                           <div>
                             <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Alternate Phone</label>
                             <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.alt_phone_number || '-'}</p>
                           </div>
                           <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Email</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.email || '-'}</p>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Father Name</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                              {(viewingEmployee as any).father_name ||
+                                (viewingEmployee as any).dynamicFields?.father_name ||
+                                '-'}
+                            </p>
                           </div>
-                          <div className="sm:col-span-2 lg:col-span-3">
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Mother Name</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                              {(viewingEmployee as any).mother_name ||
+                                (viewingEmployee as any).dynamicFields?.mother_name ||
+                                '-'}
+                            </p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Caste</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                              {(viewingEmployee as any).caste ||
+                                (viewingEmployee as any).dynamicFields?.caste ||
+                                '-'}
+                            </p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Category</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                              {(viewingEmployee as any).category ||
+                                (viewingEmployee as any).dynamicFields?.category ||
+                                '-'}
+                            </p>
+                          </div>
+                          </div>
+                        </div>
+                        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Email</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                              {viewingEmployee.email ||
+                                (viewingEmployee as any).dynamicFields?.email ||
+                                '-'}
+                            </p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Present Address</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                              {(viewingEmployee as any).present_address ||
+                                (viewingEmployee as any).dynamicFields?.present_address ||
+                                viewingEmployee.address ||
+                                (viewingEmployee as any).dynamicFields?.address ||
+                                '-'}
+                            </p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Permanent Address</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                              {(viewingEmployee as any).permanent_address ||
+                                (viewingEmployee as any).dynamicFields?.permanent_address ||
+                                '-'}
+                            </p>
+                          </div>
+                          <div className="sm:col-span-2 xl:col-span-2">
                             <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Address</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.address || '-'}</p>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                              {(() => {
+                                const dynamic = (viewingEmployee as any).dynamicFields || {};
+                                const address =
+                                  viewingEmployee.address ||
+                                  (viewingEmployee as any).present_address ||
+                                  dynamic.address ||
+                                  dynamic.present_address ||
+                                  (viewingEmployee as any).permanent_address ||
+                                  dynamic.permanent_address ||
+                                  '';
+
+                                if (!address) return '-';
+
+                                const permanentAddress =
+                                  (viewingEmployee as any).permanent_address || dynamic.permanent_address || '';
+
+                                if (permanentAddress && permanentAddress !== address) {
+                                  return `${address} | ${permanentAddress}`;
+                                }
+                                return address;
+                              })()}
+                            </p>
                           </div>
                           <div>
                             <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Location</label>
                             <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.location || '-'}</p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Relative Contact 1</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                              {(viewingEmployee as any).relative_contact_1 ||
+                                (viewingEmployee as any).dynamicFields?.relative_contact_1 ||
+                                '-'}
+                            </p>
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Relative Contact 2</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                              {(viewingEmployee as any).relative_contact_2 ||
+                                (viewingEmployee as any).dynamicFields?.relative_contact_2 ||
+                                '-'}
+                            </p>
                           </div>
                         </div>
                       </div>
@@ -5812,35 +6305,79 @@ export default function EmployeesPage() {
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                           <div>
                             <label className="text-xs font-medium text-slate-500 dark:text-slate-400">PF Number</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.pf_number || '-'}</p>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                              {(viewingEmployee as any).pf_number ||
+                                (viewingEmployee as any).dynamicFields?.pf_number ||
+                                (viewingEmployee as any).dynamicFields?.pfNumber ||
+                                '-'}
+                            </p>
                           </div>
                           <div>
                             <label className="text-xs font-medium text-slate-500 dark:text-slate-400">ESI Number</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.esi_number || '-'}</p>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                              {(viewingEmployee as any).esi_number ||
+                                (viewingEmployee as any).dynamicFields?.esi_number ||
+                                (viewingEmployee as any).dynamicFields?.esiNumber ||
+                                '-'}
+                            </p>
                           </div>
                           <div>
                             <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Aadhar Number</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.aadhar_number || '-'}</p>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                              {(viewingEmployee as any).aadhar_number ||
+                                (viewingEmployee as any).aadhaar_number ||
+                                (viewingEmployee as any).dynamicFields?.aadhar_number ||
+                                (viewingEmployee as any).dynamicFields?.aadhaar_number ||
+                                (viewingEmployee as any).dynamicFields?.aadharNumber ||
+                                '-'}
+                            </p>
                           </div>
                           <div>
                             <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Account Number</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_account_no || '-'}</p>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                              {(viewingEmployee as any).bank_account_no ||
+                                (viewingEmployee as any).dynamicFields?.bank_account_no ||
+                                (viewingEmployee as any).dynamicFields?.bank_ac_no ||
+                                (viewingEmployee as any).dynamicFields?.bank_account_number ||
+                                (viewingEmployee as any).dynamicFields?.account_number ||
+                                '-'}
+                            </p>
                           </div>
                           <div>
                             <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Bank Name</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_name || '-'}</p>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                              {(viewingEmployee as any).bank_name ||
+                                (viewingEmployee as any).dynamicFields?.bank_name ||
+                                (viewingEmployee as any).dynamicFields?.bankName ||
+                                '-'}
+                            </p>
                           </div>
                           <div>
                             <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Bank Place</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.bank_place || '-'}</p>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                              {(viewingEmployee as any).bank_place ||
+                                (viewingEmployee as any).dynamicFields?.bank_place ||
+                                (viewingEmployee as any).dynamicFields?.bankPlace ||
+                                '-'}
+                            </p>
                           </div>
                           <div>
                             <label className="text-xs font-medium text-slate-500 dark:text-slate-400">IFSC Code</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.ifsc_code || '-'}</p>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                              {(viewingEmployee as any).ifsc_code ||
+                                (viewingEmployee as any).dynamicFields?.ifsc_code ||
+                                (viewingEmployee as any).dynamicFields?.ifsc ||
+                                '-'}
+                            </p>
                           </div>
                           <div>
                             <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Salary Mode</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.salary_mode || 'Bank'}</p>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                              {(viewingEmployee as any).salary_mode ||
+                                (viewingEmployee as any).dynamicFields?.salary_mode ||
+                                (viewingEmployee as any).dynamicFields?.salaryMode ||
+                                'Bank'}
+                            </p>
                           </div>
                         </div>
                         <div className="mt-4 flex justify-end">
@@ -5853,92 +6390,6 @@ export default function EmployeesPage() {
                           </button>
                         </div>
                       </div>
-
-                      {/* Dynamic Sections from Form Settings (e.g. Salaries) */}
-                      {formSettings?.groups?.filter(g => 
-                        g.isEnabled && 
-                        !['basic_info', 'personal_info', 'contact_info', 'bank_details', 'reporting_authority', 'professional', 'documents', 'experience', 'qualifications'].includes(g.id)
-                      ).map(group => {
-                        const groupFields = group.fields?.filter(f => f.isEnabled) || [];
-                        if (groupFields.length === 0) return null;
-
-                        return (
-                          <div key={group.id} className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                            <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">{group.label}</h3>
-                            {group.isArray ? (
-                              <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
-                                <table className="w-full text-left text-sm">
-                                  <thead>
-                                    <tr className="border-b border-slate-200 bg-slate-100/80 dark:border-slate-700 dark:bg-slate-800/80">
-                                      {groupFields.map(f => (
-                                        <th key={f.id} className="px-3 py-2 font-semibold text-slate-700 dark:text-slate-300">
-                                          {f.label}
-                                        </th>
-                                      ))}
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {(() => {
-                                      let rows = (viewingEmployee as any)?.[group.id] || viewingEmployee?.dynamicFields?.[group.id];
-                                      if (typeof rows === 'string') {
-                                        try {
-                                          rows = JSON.parse(rows);
-                                        } catch (e) {
-                                          rows = [];
-                                        }
-                                      }
-
-                                      if (!Array.isArray(rows) || rows.length === 0) {
-                                        return (
-                                          <tr>
-                                            <td colSpan={groupFields.length} className="px-3 py-4 text-center text-slate-500 italic">
-                                              No data provided.
-                                            </td>
-                                          </tr>
-                                        );
-                                      }
-                                      return rows.map((row: any, idx: number) => (
-                                        <tr key={idx} className="border-b border-slate-100 last:border-0 dark:border-slate-800">
-                                          {groupFields.map(f => {
-                                            const val = row[f.id];
-                                            const isCurrency = group.id === 'salaries' || f.label.toLowerCase().includes('salary') || f.label.toLowerCase().includes('allowance');
-                                            const displayVal = (val === undefined || val === null || val === '')
-                                              ? '-'
-                                              : (isCurrency ? `₹${Number(val).toLocaleString()}` : String(val));
-                                            return (
-                                              <td key={f.id} className="px-3 py-2 text-slate-900 dark:text-slate-100">
-                                                {displayVal}
-                                              </td>
-                                            );
-                                          })}
-                                        </tr>
-                                      ));
-                                    })()}
-                                  </tbody>
-                                </table>
-                              </div>
-                            ) : (
-                              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                                {groupFields.map(field => {
-                                  const val = getEmployeeGroupedDynamicFieldValue(viewingEmployee, group.id, field.id);
-                                  // Check if the field is from the 'salaries' group to add currency symbol
-                                  const isCurrency = group.id === 'salaries' || field.label.toLowerCase().includes('salary') || field.label.toLowerCase().includes('allowance');
-                                  const displayVal = (val === undefined || val === null || val === '')
-                                    ? '-'
-                                    : (isCurrency ? `₹${Number(val).toLocaleString()}` : String(val));
-
-                                  return (
-                                    <div key={field.id}>
-                                      <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{field.label}</label>
-                                      <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{displayVal}</p>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
 
                       {/* Deduction Preferences - Statutory & Attendance flags */}
                       <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
@@ -6061,13 +6512,10 @@ export default function EmployeesPage() {
                                               {f.label}
                                             </th>
                                           ))}
-                                          <th className="w-20 px-3 py-2 font-semibold text-slate-700 dark:text-slate-300">View</th>
                                         </tr>
                                       </thead>
                                       <tbody>
                                         {quals.map((qual: any, idx: number) => {
-                                          const certificateUrl = qual.certificateUrl;
-     
                                           return (
                                             <tr key={idx} className="border-b border-slate-100 dark:border-slate-700/50">
                                               {qualFields.map((f: any) => {
@@ -6079,19 +6527,6 @@ export default function EmployeesPage() {
                                                   </td>
                                                 );
                                               })}
-                                              <td className="px-3 py-2">
-                                                {certificateUrl ? (
-                                                  <button
-                                                    type="button"
-                                                    onClick={() => setCertificatePreviewUrl(certificateUrl)}
-                                                    className="rounded bg-slate-200 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-300 dark:bg-slate-600 dark:text-slate-200 dark:hover:bg-slate-500"
-                                                  >
-                                                    View
-                                                  </button>
-                                                ) : (
-                                                  <span className="text-slate-400 dark:text-slate-500">—</span>
-                                                )}
-                                              </td>
                                             </tr>
                                           );
                                         })}
@@ -6368,7 +6803,7 @@ export default function EmployeesPage() {
                       )}
                       {!employeeHistoryLoading && employeeHistory.length > 0 && (
                         <ol className="relative space-y-4 border-l border-slate-200 pl-4 text-sm dark:border-slate-700">
-                          {employeeHistory.map((h: any, index: number) => {
+                          {employeeHistory.filter((h: any) => !h.event?.startsWith('leave_') && !h.event?.startsWith('od_')).map((h: any, index: number) => {
                             const ts = h.timestamp || h.created_at;
                             const when = ts ? new Date(ts).toLocaleString() : '-';
                             const actor = h.performedByName || 'System';
@@ -6592,6 +7027,196 @@ export default function EmployeesPage() {
                     </div>
                   )}
 
+                  {employeeViewTab === 'leaves_register' && (
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-5 dark:border-slate-700 dark:bg-slate-900/60">
+                      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                        <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Leaves & OD Register</h3>
+                        <div className="w-full sm:w-auto">
+                          <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">Month</label>
+                          <input
+                            type="month"
+                            value={leaveRegisterMonth}
+                            onChange={(e) => setLeaveRegisterMonth(e.target.value)}
+                            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 sm:w-[180px]"
+                          />
+                        </div>
+                      </div>
+                      <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50/70 p-3 dark:border-indigo-800/70 dark:bg-indigo-900/20">
+                        <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+                          <div>
+                            <p className="text-xs font-medium text-indigo-700/80 dark:text-indigo-300/80">Payroll Cycle Type</p>
+                            <p className="mt-0.5 font-semibold text-indigo-900 dark:text-indigo-100">{payrollCycleType}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs font-medium text-indigo-700/80 dark:text-indigo-300/80">Cycle Days</p>
+                            <p className="mt-0.5 font-semibold text-indigo-900 dark:text-indigo-100">{payrollCycleStartDay} to {payrollCycleEndDay}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs font-medium text-indigo-700/80 dark:text-indigo-300/80">Selected Pay Cycle Dates</p>
+                            <p className="mt-0.5 font-semibold text-indigo-900 dark:text-indigo-100">{leaveRegisterCycleRange.label}</p>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+                        <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 dark:border-blue-800/50 dark:bg-blue-900/20">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">Total Leaves</p>
+                          <p className="mt-1 text-xl font-bold text-blue-900 dark:text-blue-100">{leaveRegisterView.summary.leaves}</p>
+                        </div>
+                        <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 dark:border-sky-800/50 dark:bg-sky-900/20">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-sky-700 dark:text-sky-300">Total ODs</p>
+                          <p className="mt-1 text-xl font-bold text-sky-900 dark:text-sky-100">{leaveRegisterView.summary.ods}</p>
+                        </div>
+                        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 dark:border-emerald-800/50 dark:bg-emerald-900/20">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">CL Count</p>
+                          <p className="mt-1 text-xl font-bold text-emerald-900 dark:text-emerald-100">{leaveRegisterView.summary.cl}</p>
+                        </div>
+                        <div className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 dark:border-violet-800/50 dark:bg-violet-900/20">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-700 dark:text-violet-300">CCL Count</p>
+                          <p className="mt-1 text-xl font-bold text-violet-900 dark:text-violet-100">{leaveRegisterView.summary.ccl}</p>
+                        </div>
+                      </div>
+                      {(employeeHistoryLoading || leaveRegisterLoading) && (
+                        <p className="text-sm text-slate-500 dark:text-slate-400">Loading...</p>
+                      )}
+                      {!employeeHistoryLoading && !leaveRegisterLoading && leaveRegisterView.groupedLeaves.length === 0 && (
+                        <p className="text-sm text-slate-500 dark:text-slate-400">No leaves or ODs recorded for this employee.</p>
+                      )}
+                      {!employeeHistoryLoading && !leaveRegisterLoading && leaveRegisterView.groupedLeaves.length > 0 && (
+                        <ol className="relative space-y-4 border-l border-slate-200 pl-4 text-sm dark:border-slate-700">
+                          {(() => {
+                            const groupedLeaves = leaveRegisterView.groupedLeaves;
+
+                            return groupedLeaves.map((group: any) => {
+                              const h = group.latest;
+                              const isExpanded = expandedLeaveIds.has(group.id);
+                              
+                              const ts = h.timestamp || h.created_at;
+                              const when = ts ? new Date(ts).toLocaleString() : '-';
+                              const actor = h.performedByName || 'System';
+                              const role = h.performedByRole ? ` (${h.performedByRole})` : '';
+                              const labelMap: Record<string, string> = {
+                                leave_applied: 'Leave applied',
+                                leave_approved: 'Leave approved',
+                                leave_rejected: 'Leave rejected',
+                                od_applied: 'OD applied',
+                                od_approved: 'OD approved',
+                                od_rejected: 'OD rejected',
+                              };
+                              const isOd = h.event?.startsWith('od_');
+                              const displayLabel = `${isOd ? 'OD' : 'Leave'} - ${labelMap[h.event] || h.event}`;
+                              
+                              let ringColor = 'border-slate-400';
+                              let cardBorder = 'border-slate-200 dark:border-slate-700';
+                              let pillBg = 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200';
+
+                              if (h.event?.startsWith('leave_')) {
+                                ringColor = 'border-emerald-500';
+                                cardBorder = 'border-emerald-200 dark:border-emerald-700/70';
+                                pillBg = 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200';
+                              } else if (h.event?.startsWith('od_')) {
+                                ringColor = 'border-sky-500';
+                                cardBorder = 'border-sky-200 dark:border-sky-700/70';
+                                pillBg = 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200';
+                              }
+
+                              const appliedEvent = group.history.find((e: any) => e.event === 'leave_applied' || e.event === 'od_applied');
+                              const fromStr = appliedEvent?.details?.fromDate ? new Date(appliedEvent.details.fromDate).toLocaleDateString() : '';
+                              const toStr = appliedEvent?.details?.toDate ? new Date(appliedEvent.details.toDate).toLocaleDateString() : '';
+                              const dateRange = (fromStr && toStr) ? (fromStr === toStr ? fromStr : `${fromStr} to ${toStr}`) : '';
+
+                              return (
+                                <li key={group.id} className="relative pl-4">
+                                  <span
+                                    className={`absolute -left-[9px] flex h-4 w-4 items-center justify-center rounded-full border-2 flex-shrink-0 ${ringColor} bg-white dark:bg-slate-950`}
+                                  >
+                                    <span className="h-1.5 w-1.5 rounded-full bg-slate-500 dark:bg-slate-300" />
+                                  </span>
+                                  <div
+                                    className={`rounded-2xl border ${cardBorder} bg-white/90 p-3 shadow-sm shadow-slate-900/5 dark:bg-slate-950/70 transition-all`}
+                                  >
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div className="space-y-1">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${pillBg}`}>
+                                            {displayLabel}
+                                          </span>
+                                          {dateRange && (
+                                            <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                                              <LucideClock className="mr-1 h-3 w-3 opacity-70" /> {dateRange}
+                                            </span>
+                                          )}
+                                        </div>
+                                        <div className="text-xs text-slate-500 dark:text-slate-400">
+                                          Last update: {when} • {actor}{role}
+                                        </div>
+                                      </div>
+                                      <button
+                                        onClick={() => {
+                                          setExpandedLeaveIds(prev => {
+                                            const next = new Set(prev);
+                                            if (next.has(group.id)) next.delete(group.id);
+                                            else next.add(group.id);
+                                            return next;
+                                          });
+                                        }}
+                                        className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 flex-shrink-0 text-[11px] font-semibold transition-colors ${
+                                          isExpanded 
+                                            ? 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200' 
+                                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700'
+                                        }`}
+                                      >
+                                        <Eye className="h-3.5 w-3.5" /> 
+                                        {isExpanded ? 'Hide History' : 'View History'}
+                                      </button>
+                                    </div>
+                                    
+                                    {h.comments && (
+                                      <div className="mt-2 text-xs text-slate-700 dark:text-slate-200 border-l-2 border-slate-200 dark:border-slate-700 pl-2">
+                                        {h.comments}
+                                      </div>
+                                    )}
+
+                                    {/* Expanded History View */}
+                                    {isExpanded && (
+                                      <div className="mt-4 border-t border-slate-100 dark:border-slate-800 pt-4">
+                                        <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3">Request History</h4>
+                                        <div className="space-y-4">
+                                          {group.history.map((hevt: any, idx: number) => {
+                                            const ht = hevt.timestamp || hevt.created_at;
+                                            const hl = labelMap[hevt.event] || hevt.event;
+                                            return (
+                                              <div key={idx} className="flex gap-3 text-sm">
+                                                <div className="mt-1 flex flex-col items-center">
+                                                  <div className="h-2 w-2 rounded-full border border-slate-400 bg-white ring-2 ring-white dark:border-slate-500 dark:bg-slate-900 dark:ring-slate-900" />
+                                                  {idx < group.history.length - 1 && <div className="mt-1 h-full w-px bg-slate-200 dark:bg-slate-700" />}
+                                                </div>
+                                                <div className="pb-1">
+                                                  <p className="text-xs font-semibold text-slate-800 dark:text-slate-200">{hl}</p>
+                                                  <p className="gap-1 text-[11px] font-medium text-slate-500 dark:text-slate-400 flex flex-wrap mt-0.5">
+                                                    <span>{ht ? new Date(ht).toLocaleString() : '-'}</span>
+                                                    <span>•</span>
+                                                    <span>{hevt.performedByName || 'System'} {hevt.performedByRole ? `(${hevt.performedByRole})` : ''}</span>
+                                                  </p>
+                                                  {hevt.comments && (
+                                                    <p className="mt-1 text-[11px] italic text-slate-600 dark:text-slate-300">"{hevt.comments}"</p>
+                                                  )}
+                                                </div>
+                                              </div>
+                                            )
+                                          })}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                </li>
+                              );
+                            });
+                          })()}
+                        </ol>
+                      )}
+                    </div>
+                  )}
+
 
 
 
@@ -6662,7 +7287,7 @@ export default function EmployeesPage() {
                           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                             <div>
                               <label className="text-xs font-medium text-orange-700 dark:text-orange-300">Left Date</label>
-                              <p className="mt-1 text-sm font-medium text-orange-900 dark:text-orange-100">{new Date(viewingEmployee.leftDate).toLocaleDateString()}</p>
+                              <p className="mt-1 text-sm font-medium text-orange-900 dark:text-orange-100">{formatDateDayMonthYear(viewingEmployee.leftDate)}</p>
                             </div>
                             {viewingEmployee.leftReason && (
                               <div>
@@ -6789,29 +7414,49 @@ export default function EmployeesPage() {
                     </>
                   )}
 
-                  {/* History Tab Content */}
-                  {employeeViewTab === 'history' && (
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-5 dark:border-slate-700 dark:bg-slate-900/60">
-                      <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Employee History</h3>
-                      {employeeHistoryLoading ? (
-                        <p className="text-sm text-slate-500 dark:text-slate-400">Loading history…</p>
-                      ) : employeeHistory.length === 0 ? (
-                        <p className="text-sm text-slate-500 dark:text-slate-400">No history recorded.</p>
-                      ) : (
-                        <ol className="relative space-y-4 border-l border-slate-200 pl-4 text-sm dark:border-slate-700">
-                          {employeeHistory.map((h: any, idx: number) => (
-                            <li key={idx} className="relative pl-4">
-                              <span className="absolute -left-[9px] h-4 w-4 rounded-full border-2 border-slate-400 bg-white dark:bg-slate-950" />
-                              <div className="rounded-2xl border border-slate-200 bg-white/90 p-3 shadow-sm dark:bg-slate-950/70">
-                                <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold text-slate-800">{h.event}</span>
-                                <div className="text-xs text-slate-500">{new Date(h.timestamp || h.created_at).toLocaleString()}</div>
-                              </div>
-                            </li>
-                          ))}
-                        </ol>
-                      )}
-                    </div>
-                  )}
+                  {/* Certificate image/document popup anchor */}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {cameraFor && (
+            <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+              <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm" onClick={closeCameraCapture} />
+              <div className="relative z-[71] w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+                <div className="mb-3 flex items-center justify-between">
+                  <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">Capture Profile Photo</h3>
+                  <button
+                    type="button"
+                    onClick={closeCameraCapture}
+                    className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-500 transition hover:text-red-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
+                  >
+                    Close
+                  </button>
+                </div>
+                <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800">
+                  <video ref={videoRef} autoPlay playsInline muted className="h-[320px] w-full object-cover" />
+                </div>
+                <canvas ref={canvasRef} className="hidden" />
+                {cameraError && (
+                  <p className="mt-2 text-xs text-red-600 dark:text-red-400">{cameraError}</p>
+                )}
+                <div className="mt-3 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={closeCameraCapture}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={captureFromCamera}
+                    disabled={cameraLoading}
+                    className={`rounded-lg px-3 py-2 text-sm font-semibold text-white transition ${cameraLoading ? 'cursor-not-allowed bg-slate-400' : 'bg-indigo-600 hover:bg-indigo-700'}`}
+                  >
+                    {cameraLoading ? 'Capturing...' : 'Capture Photo'}
+                  </button>
                 </div>
               </div>
             </div>

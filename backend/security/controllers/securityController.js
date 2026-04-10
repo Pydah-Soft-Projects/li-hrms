@@ -5,6 +5,7 @@
 
 const Permission = require('../../permissions/model/Permission');
 const crypto = require('crypto');
+const { refreshAttendanceEdgePermissions } = require('../../permissions/services/permissionEdgeAttendanceService');
 
 /**
  * @desc    Get approved permissions for today (Security Dashboard)
@@ -13,10 +14,10 @@ const crypto = require('crypto');
  */
 exports.getTodayPermissions = async (req, res) => {
     try {
-        // Get today's date in YYYY-MM-DD format based on local time (or consistent server time)
-        // Assuming backend stores date as string 'YYYY-MM-DD'
-        const today = new Date();
-        const dateStr = today.toISOString().split('T')[0];
+        // Get IST today's date (YYYY-MM-DD) to avoid UTC date drift.
+        const now = new Date();
+        const istNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+        const dateStr = `${istNow.getFullYear()}-${String(istNow.getMonth() + 1).padStart(2, '0')}-${String(istNow.getDate()).padStart(2, '0')}`;
 
         const permissions = await Permission.find({
             date: dateStr,
@@ -32,7 +33,7 @@ exports.getTodayPermissions = async (req, res) => {
                     { path: 'designation_id', select: 'name' }
                 ]
             })
-            .select('employeeId date permissionStartTime permissionEndTime purpose status gateOutTime gateInTime gateOutVerifiedBy gateInVerifiedBy')
+            .select('employeeId date permissionType permittedEdgeTime permissionStartTime permissionEndTime purpose status gateOutTime gateInTime gateOutVerifiedBy gateInVerifiedBy')
             .sort({ permissionStartTime: 1 });
 
         res.status(200).json({
@@ -83,6 +84,14 @@ exports.generateGateOutQR = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Permission is not approved' });
         }
 
+        const pType = permission.permissionType || 'mid_shift';
+        if (pType === 'late_in') {
+            return res.status(400).json({
+                success: false,
+                message: 'Late-in permission uses Gate In QR only (no gate out)',
+            });
+        }
+
         if (permission.gateOutTime) {
             return res.status(400).json({ success: false, message: 'Gate Out already recorded' });
         }
@@ -122,7 +131,16 @@ exports.generateGateInQR = async (req, res) => {
             return res.status(403).json({ success: false, message: 'Not authorized' });
         }
 
-        if (!permission.gateOutTime) {
+        const pTypeIn = permission.permissionType || 'mid_shift';
+
+        if (pTypeIn === 'early_out') {
+            return res.status(400).json({
+                success: false,
+                message: 'Early-out permission uses Gate Out QR only (no gate in)',
+            });
+        }
+
+        if (pTypeIn === 'mid_shift' && !permission.gateOutTime) {
             return res.status(400).json({ success: false, message: 'Must Gate Out first' });
         }
 
@@ -130,19 +148,21 @@ exports.generateGateInQR = async (req, res) => {
             return res.status(400).json({ success: false, message: 'Gate In already recorded' });
         }
 
-        // 5 Minute Buffer Check
-        const now = new Date();
-        const gateOutTime = new Date(permission.gateOutTime);
-        const diffMs = now - gateOutTime;
-        const minutesPassed = diffMs / (1000 * 60);
+        // 5 Minute Buffer Check (mid-shift only)
+        if (pTypeIn === 'mid_shift') {
+            const now = new Date();
+            const gateOutTime = new Date(permission.gateOutTime);
+            const diffMs = now - gateOutTime;
+            const minutesPassed = diffMs / (1000 * 60);
 
-        if (minutesPassed < 5) {
-            const remaining = Math.ceil(5 - minutesPassed);
-            return res.status(400).json({
-                success: false,
-                message: `Please wait ${remaining} more minute(s) before generating Gate In Pass`,
-                waitTime: remaining
-            });
+            if (minutesPassed < 5) {
+                const remaining = Math.ceil(5 - minutesPassed);
+                return res.status(400).json({
+                    success: false,
+                    message: `Please wait ${remaining} more minute(s) before generating Gate In Pass`,
+                    waitTime: remaining
+                });
+            }
         }
 
         // Generate secure random secret
@@ -248,6 +268,16 @@ exports.verifyGatePass = async (req, res) => {
         }
 
         await permission.save();
+
+        const pTypeVerify = permission.permissionType || 'mid_shift';
+        const empNoScan = (permission.employeeNumber || permission.employeeId?.emp_no || '').toUpperCase();
+        if (empNoScan && permission.date && (pTypeVerify === 'late_in' || pTypeVerify === 'early_out')) {
+            try {
+                await refreshAttendanceEdgePermissions(empNoScan, permission.date);
+            } catch (e) {
+                console.error('[Security] refreshAttendanceEdgePermissions failed:', e.message);
+            }
+        }
 
         logEntry.status = 'SUCCESS';
         logEntry.details = `Gate ${type === 'OUT' ? 'Out' : 'In'} Verified Successfully at ${new Date().toISOString()}`;

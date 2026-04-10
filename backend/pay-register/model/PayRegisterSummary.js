@@ -526,6 +526,31 @@ const payRegisterSummarySchema = new mongoose.Schema(
       },
     ],
 
+    // Policy attendance deduction (late/early + optional absent extra) — same rules as payroll; refreshed when register totals change
+    totalAttendanceDeductionDays: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    attendanceDeductionBreakdown: {
+      lateInsCount: { type: Number, default: 0 },
+      earlyOutsCount: { type: Number, default: 0 },
+      combinedCount: { type: Number, default: 0 },
+      freeAllowedPerMonth: { type: Number, default: 0 },
+      effectiveCount: { type: Number, default: 0 },
+      daysDeducted: { type: Number, default: 0 },
+      lateEarlyDaysDeducted: { type: Number, default: 0 },
+      absentExtraDays: { type: Number, default: 0 },
+      absentDays: { type: Number, default: 0 },
+      lopDaysPerAbsent: { type: Number, default: null },
+      deductionType: { type: String, default: null },
+      calculationMode: { type: String, default: null },
+    },
+    attendanceDeductionCalculatedAt: {
+      type: Date,
+      default: null,
+    },
+
     // STATUS
     status: {
       type: String,

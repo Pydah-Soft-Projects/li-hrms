@@ -1,5 +1,14 @@
 const ArrearsRequest = require('../model/ArrearsRequest');
 const ArrearsService = require('../services/arrearsService');
+const EMPLOYEE_ORG_POPULATE = {
+  path: 'employee',
+  select: 'emp_no employee_name first_name last_name division_id department_id designation_id',
+  populate: [
+    { path: 'division_id', select: 'name code' },
+    { path: 'department_id', select: 'name code' },
+    { path: 'designation_id', select: 'name code' },
+  ],
+};
 
 // @desc    Create new arrears request (incremental: period + monthly amount; direct: amount + remarks only)
 // @route   POST /api/arrears
@@ -314,7 +323,7 @@ exports.getMyArrears = async (req, res) => {
 
     const arrears = await ArrearsRequest.find({ employee: employeeId })
       .sort({ createdAt: -1 })
-      .populate('employee', 'emp_no name');
+      .populate(EMPLOYEE_ORG_POPULATE);
 
     res.status(200).json({
       success: true,
@@ -361,7 +370,7 @@ exports.getPendingApprovals = async (req, res) => {
 
     const arrears = await ArrearsRequest.find(query)
       .sort({ createdAt: -1 })
-      .populate('employee', 'emp_no name')
+      .populate(EMPLOYEE_ORG_POPULATE)
       .populate('createdBy', 'name email');
 
     res.status(200).json({
@@ -454,7 +463,7 @@ exports.editArrears = async (req, res) => {
       { path: 'updatedBy', select: 'name email' },
       { path: 'editHistory.editedBy', select: 'name email' },
       { path: 'statusHistory.changedBy', select: 'name email' },
-      { path: 'employee', select: 'first_name last_name emp_no' }
+      EMPLOYEE_ORG_POPULATE
     ]);
 
     res.status(200).json({
@@ -618,7 +627,7 @@ exports.transitionArrears = async (req, res) => {
       { path: 'updatedBy', select: 'name email' },
       { path: 'editHistory.editedBy', select: 'name email' },
       { path: 'statusHistory.changedBy', select: 'name email' },
-      { path: 'employee', select: 'first_name last_name emp_no' }
+      EMPLOYEE_ORG_POPULATE
     ]);
 
     res.status(200).json({
@@ -823,7 +832,7 @@ exports.updateArrearsSettlement = async (req, res) => {
 
     // Populate for response
     await arrears.populate([
-      { path: 'employee', select: 'emp_no first_name last_name' },
+      EMPLOYEE_ORG_POPULATE,
       { path: 'createdBy', select: 'name email' },
       { path: 'settlementHistory.settledBy', select: 'name email' }
     ]);
@@ -870,7 +879,7 @@ exports.getArrearsForPayroll = async (req, res) => {
     // All approved/partially_settled arrears with remaining amount should be shown
 
     const arrears = await ArrearsRequest.find(query)
-      .populate('employee', 'emp_no employee_name first_name last_name department_id division_id')
+      .populate(EMPLOYEE_ORG_POPULATE)
       .populate('createdBy', 'name email')
       .sort({ createdAt: -1 });
 

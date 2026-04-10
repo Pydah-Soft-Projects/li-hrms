@@ -531,12 +531,12 @@ export interface Designation {
   code: string;
   description?: string;
   department?: string | Department;
-  shifts?: (string | Shift)[];
-  divisionDefaults?: { division: string | Division; shifts: (string | Shift)[] }[];
+  shifts?: (string | { shiftId: string | Shift; gender?: string; employee_group_id?: string | EmployeeGroup | null })[];
+  divisionDefaults?: { division: string | Division; shifts: (string | { shiftId: string | Shift; gender?: string; employee_group_id?: string | EmployeeGroup | null })[] }[];
   departmentShifts?: Array<{
     division?: string | Division;
     department: string | Department | { _id: string; name: string; code?: string };
-    shifts: (string | Shift)[];
+    shifts: (string | { shiftId: string | Shift; gender?: string; employee_group_id?: string | EmployeeGroup | null })[];
     _id?: string;
   }>;
   paidLeaves?: number;
@@ -573,7 +573,7 @@ export interface Department {
     action: 'half_day' | 'full_day' | 'deduct_amount';
     amount?: number;
   }>;
-  shifts?: (string | Shift)[];
+  shifts?: (string | { shiftId: string | Shift; gender?: string; employee_group_id?: string | EmployeeGroup | null })[];
   paidLeaves?: number;
   leaveLimits?: {
     casual: number;
@@ -585,7 +585,7 @@ export interface Department {
   updatedAt?: string;
   divisions?: (string | Division)[];
   designations?: (string | Designation)[];
-  divisionDefaults?: { division: string | Division; shifts: (string | Shift)[] }[];
+  divisionDefaults?: { division: string | Division; shifts: (string | { shiftId: string | Shift; gender?: string; employee_group_id?: string | EmployeeGroup | null })[] }[];
   applyPF?: boolean;
   applyESI?: boolean;
   applyProfessionTax?: boolean;
@@ -603,7 +603,7 @@ export interface Division {
   description?: string;
   manager?: { _id: string; name: string; email: string };
   departments?: (string | Department)[];
-  shifts?: (string | Shift)[];
+  shifts?: (string | { shiftId: string | Shift; gender?: string; employee_group_id?: string | EmployeeGroup | null })[];
   isActive?: boolean;
 }
 
@@ -1265,7 +1265,7 @@ export const api = {
     });
   },
 
-  assignShiftsToDivision: async (id: string, data: { shifts: (string | { shiftId: string; gender: string })[]; targetType: string; targetId?: string | { designationId: string; departmentId: string } }) => {
+  assignShiftsToDivision: async (id: string, data: { shifts: (string | { shiftId: string; gender: string; employee_group_id?: string | null })[]; targetType: string; targetId?: string | { designationId: string; departmentId: string } }) => {
     return apiRequest<any>(`/divisions/${id}/shifts`, {
       method: 'POST',
       body: JSON.stringify(data),
@@ -1323,6 +1323,30 @@ export const api = {
       paidLeavesCount?: number | null;
       dailyLimit?: number | null;
       monthlyLimit?: number | null;
+      elEarningType?: 'attendance_based' | 'fixed' | null;
+      elMaxCarryForward?: number | null;
+      cclExpiryMonths?: number | null;
+      earnedLeave?: null | {
+        enabled?: boolean | null;
+        earningType?: 'attendance_based' | 'fixed';
+        useAsPaidInPayroll?: boolean | null;
+        attendanceRules?: {
+          minDaysForFirstEL?: number | null;
+          daysPerEL?: number | null;
+          maxELPerMonth?: number | null;
+          maxELPerYear?: number | null;
+          attendanceRanges?: Array<{
+            minDays: number;
+            maxDays: number;
+            elEarned: number;
+            description?: string;
+          }>;
+        };
+        fixedRules?: {
+          elPerMonth?: number | null;
+          maxELPerYear?: number | null;
+        };
+      };
     };
     loans?: {
       interestRate?: number | null;
@@ -1351,7 +1375,11 @@ export const api = {
       monthlyLimit?: number | null;
       deductFromSalary?: boolean | null;
       deductionAmount?: number | null;
+      deductionRules?: Record<string, unknown>;
     };
+    ot?: Record<string, unknown>;
+    attendance?: Record<string, unknown>;
+    payroll?: Record<string, unknown>;
   }, divisionId?: string) => {
     let url = `/departments/${deptId}/settings`;
     if (divisionId) url += `?divisionId=${divisionId}`;
@@ -1556,7 +1584,10 @@ export const api = {
     return await response.blob();
   },
 
-  getEmployees: async (filters?: { is_active?: boolean; department_id?: string; division_id?: string; designation_id?: string; employee_group_id?: string; includeLeft?: boolean; search?: string; startDate?: string; endDate?: string; page?: number; limit?: number }) => {
+  getEmployees: async (
+    filters?: { is_active?: boolean; department_id?: string; division_id?: string; designation_id?: string; employee_group_id?: string; includeLeft?: boolean; search?: string; startDate?: string; endDate?: string; page?: number; limit?: number },
+    fetchInit?: RequestInit
+  ) => {
     const params = new URLSearchParams();
     if (filters?.is_active !== undefined) params.append('is_active', String(filters.is_active));
     if (filters?.department_id) params.append('department_id', filters.department_id);
@@ -1570,7 +1601,12 @@ export const api = {
     if (filters?.page) params.append('page', String(filters.page));
     if (filters?.limit) params.append('limit', String(filters.limit));
     const query = params.toString() ? `?${params.toString()}` : '';
-    return apiRequest<any>(`/employees${query}`, { method: 'GET' });
+    return apiRequest<any>(`/employees${query}`, { method: 'GET', ...fetchInit });
+  },
+
+  /** Scoped lean payload for birthday calendar (DOB + org refs only). */
+  getBirthdaysSummary: async (fetchInit?: RequestInit) => {
+    return apiRequest<any>('/employees/birthdays-summary', { method: 'GET', ...fetchInit });
   },
 
   getEmployee: async (empNo: string) => {
@@ -2205,12 +2241,13 @@ export const api = {
   },
 
   // Dashboard stats (global or filtered) for superadmin cards
-  getLeaveDashboardStats: async (filters?: { search?: string; division?: string | string[]; department?: string | string[]; designation?: string | string[]; fromDate?: string; toDate?: string }) => {
+  getLeaveDashboardStats: async (filters?: { search?: string; division?: string | string[]; department?: string | string[]; designation?: string | string[]; placeVisited?: string; fromDate?: string; toDate?: string }) => {
     const params = new URLSearchParams();
     if (filters?.search) params.append('search', filters.search);
     if (filters?.division) params.append('division', Array.isArray(filters.division) ? filters.division.join(',') : filters.division);
     if (filters?.department) params.append('department', Array.isArray(filters.department) ? filters.department.join(',') : filters.department);
     if (filters?.designation) params.append('designation', Array.isArray(filters.designation) ? filters.designation.join(',') : filters.designation);
+    if (filters?.placeVisited) params.append('placeVisited', filters.placeVisited);
     if (filters?.fromDate) params.append('fromDate', filters.fromDate);
     if (filters?.toDate) params.append('toDate', filters.toDate);
     const query = params.toString() ? `?${params.toString()}` : '';
@@ -2468,7 +2505,7 @@ export const api = {
   },
 
   // Get all ODs (admin) - supports pagination, search, division, designation
-  getODs: async (filters?: { status?: string; employeeId?: string | string[]; department?: string | string[]; division?: string | string[]; designation?: string | string[]; search?: string; fromDate?: string; toDate?: string; page?: number; limit?: number }) => {
+  getODs: async (filters?: { status?: string; employeeId?: string | string[]; department?: string | string[]; division?: string | string[]; designation?: string | string[]; search?: string; placeVisited?: string; fromDate?: string; toDate?: string; page?: number; limit?: number }) => {
     const params = new URLSearchParams();
     if (filters?.status) params.append('status', filters.status);
     if (filters?.employeeId) params.append('employeeId', Array.isArray(filters.employeeId) ? filters.employeeId.join(',') : filters.employeeId);
@@ -2476,6 +2513,7 @@ export const api = {
     if (filters?.division) params.append('division', Array.isArray(filters.division) ? filters.division.join(',') : filters.division);
     if (filters?.designation) params.append('designation', Array.isArray(filters.designation) ? filters.designation.join(',') : filters.designation);
     if (filters?.search) params.append('search', filters.search);
+    if (filters?.placeVisited) params.append('placeVisited', filters.placeVisited);
     if (filters?.fromDate) params.append('fromDate', filters.fromDate);
     if (filters?.toDate) params.append('toDate', filters.toDate);
     if (filters?.page != null) params.append('page', String(filters.page));
@@ -3200,7 +3238,19 @@ export const api = {
   },
 
   // Create permission request
-  createPermission: async (data: { employeeId: string; employeeNumber: string; date: string; permissionStartTime: string; permissionEndTime: string; purpose: string; comments?: string; photoEvidence?: any; geoLocation?: any }) => {
+  createPermission: async (data: {
+    employeeId: string;
+    employeeNumber: string;
+    date: string;
+    permissionStartTime?: string;
+    permissionEndTime?: string;
+    purpose: string;
+    comments?: string;
+    photoEvidence?: any;
+    geoLocation?: any;
+    permissionType?: 'mid_shift' | 'late_in' | 'early_out';
+    permittedEdgeTime?: string;
+  }) => {
     return apiRequest<any>('/permissions', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -3402,11 +3452,43 @@ export const api = {
     multiplier?: number;
     minOTHours?: number;
     roundingMinutes?: number;
-    workflow?: any
+    recognitionMode?: string;
+    thresholdHours?: number | null;
+    roundUpIfFractionMinutesGte?: number | null;
+    otHourRanges?: Array<{
+      minMinutes: number;
+      maxMinutes: number;
+      creditedMinutes: number;
+      label?: string;
+    }>;
+    autoCreateOtRequest?: boolean;
+    defaultWorkingHoursPerDay?: number;
+    allowBackdated?: boolean;
+    maxBackdatedDays?: number;
+    allowFutureDated?: boolean;
+    maxAdvanceDays?: number;
+    workflow?: any;
   }) => {
     return apiRequest<any>('/ot/settings', {
       method: 'POST',
       body: JSON.stringify(data),
+    });
+  },
+
+  previewOTExtraHours: async (params: { employeeId: string; employeeNumber: string; date: string }) => {
+    const q = new URLSearchParams(params).toString();
+    return apiRequest<any>(`/ot/preview-extra-hours?${q}`, { method: 'GET' });
+  },
+
+  simulateOtHoursPolicy: async (body: {
+    rawHours: number;
+    departmentId?: string;
+    divisionId?: string;
+    policy?: Record<string, unknown>;
+  }) => {
+    return apiRequest<any>('/ot/simulate-hours-policy', {
+      method: 'POST',
+      body: JSON.stringify(body),
     });
   },
 
@@ -3775,11 +3857,12 @@ export const api = {
     );
   },
 
-  getPayRegisterLockedEmployees: async (month: string, departmentId?: string, divisionId?: string, search?: string) => {
+  getPayRegisterLockedEmployees: async (month: string, departmentId?: string, divisionId?: string, search?: string, employeeGroupId?: string) => {
     const query = new URLSearchParams();
     if (departmentId) query.append('departmentId', departmentId);
     if (divisionId) query.append('divisionId', divisionId);
     if (search) query.append('search', search);
+    if (employeeGroupId) query.append('employeeGroupId', employeeGroupId);
     const qs = query.toString();
     return apiRequest<{
       success: boolean;
@@ -3804,7 +3887,7 @@ export const api = {
     });
   },
 
-  getEmployeesWithPayRegister: async (month: string, departmentId?: string, divisionId?: string, status?: string, page?: number, limit?: number, search?: string) => {
+  getEmployeesWithPayRegister: async (month: string, departmentId?: string, divisionId?: string, status?: string, page?: number, limit?: number, search?: string, employeeGroupId?: string) => {
     const query = new URLSearchParams();
     if (departmentId) query.append('departmentId', departmentId);
     if (divisionId) query.append('divisionId', divisionId);
@@ -3812,6 +3895,7 @@ export const api = {
     if (page) query.append('page', page.toString());
     if (limit) query.append('limit', limit.toString());
     if (search) query.append('search', search);
+    if (employeeGroupId) query.append('employeeGroupId', employeeGroupId);
     return apiRequest<{ data: any[], pagination?: any, success: boolean, message?: string }>(`/pay-register/employees/${month}${query.toString() ? `?${query.toString()}` : ''}`, {
       method: 'GET',
     });
@@ -3822,12 +3906,14 @@ export const api = {
     departmentId?: string;
     divisionId?: string;
     search?: string;
+    employeeGroupId?: string;
   }) => {
     const query = new URLSearchParams();
     query.append('month', params.month);
     if (params.departmentId) query.append('departmentId', params.departmentId);
     if (params.divisionId) query.append('divisionId', params.divisionId);
     if (params.search) query.append('search', params.search);
+    if (params.employeeGroupId) query.append('employeeGroupId', params.employeeGroupId);
 
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     const headers: Record<string, string> = {};
@@ -4409,6 +4495,8 @@ export const api = {
     year?: number;
     departmentId?: string;
     divisionId?: string;
+    designationId?: string;
+    employee_group_id?: string;
     search?: string;
     page?: number;
     limit?: number;
@@ -4419,6 +4507,8 @@ export const api = {
     if (params?.year != null) q.set('year', String(params.year));
     if (params?.departmentId) q.set('departmentId', params.departmentId);
     if (params?.divisionId) q.set('divisionId', params.divisionId);
+    if (params?.designationId) q.set('designationId', params.designationId);
+    if (params?.employee_group_id) q.set('employee_group_id', params.employee_group_id);
     if (params?.search) q.set('search', params.search);
     if (params?.page != null) q.set('page', String(params.page));
     if (params?.limit != null) q.set('limit', String(params.limit));
@@ -4433,6 +4523,8 @@ export const api = {
     year?: number;
     departmentId?: string;
     divisionId?: string;
+    designationId?: string;
+    employee_group_id?: string;
     search?: string;
     /** Omit or true = include; set false to exclude that leave block from every month column. */
     includeCL?: boolean;
@@ -4445,6 +4537,8 @@ export const api = {
     if (params?.year != null) q.set('year', String(params.year));
     if (params?.departmentId) q.set('departmentId', params.departmentId);
     if (params?.divisionId) q.set('divisionId', params.divisionId);
+    if (params?.designationId) q.set('designationId', params.designationId);
+    if (params?.employee_group_id) q.set('employee_group_id', params.employee_group_id);
     if (params?.search) q.set('search', params.search);
     if (params?.includeCL === false) q.set('includeCL', 'false');
     if (params?.includeCCL === false) q.set('includeCCL', 'false');
@@ -4478,6 +4572,8 @@ export const api = {
     year?: number;
     departmentId?: string;
     divisionId?: string;
+    designationId?: string;
+    employee_group_id?: string;
     search?: string;
     includeCL?: boolean;
     includeCCL?: boolean;
@@ -4489,6 +4585,8 @@ export const api = {
     if (params?.year != null) q.set('year', String(params.year));
     if (params?.departmentId) q.set('departmentId', params.departmentId);
     if (params?.divisionId) q.set('divisionId', params.divisionId);
+    if (params?.designationId) q.set('designationId', params.designationId);
+    if (params?.employee_group_id) q.set('employee_group_id', params.employee_group_id);
     if (params?.search) q.set('search', params.search);
     if (params?.includeCL === false) q.set('includeCL', 'false');
     if (params?.includeCCL === false) q.set('includeCCL', 'false');

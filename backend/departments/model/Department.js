@@ -115,6 +115,11 @@ const departmentSchema = new mongoose.Schema(
         enum: ['Male', 'Female', 'Other', 'All'],
         default: 'All',
       },
+      employee_group_id: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'EmployeeGroup',
+        default: null,
+      },
     }],
     // Designations linked to this department
     // Automatically populated when employees are assigned designations
@@ -163,6 +168,11 @@ const departmentSchema = new mongoose.Schema(
             type: String,
             enum: ['Male', 'Female', 'Other', 'All'],
             default: 'All',
+          },
+          employee_group_id: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'EmployeeGroup',
+            default: null,
           },
         }],
       },

@@ -8,6 +8,7 @@ const {
   applyContributingDatesFromMonthlySummary,
   applyContributingDatesFromDailyGrid,
 } = require('./contributingDatesService');
+const { recalculatePayRegisterAttendanceDeduction } = require('./payRegisterAttendanceDeductionService');
 const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
 const { syncAttendanceFromMSSQL } = require('../../attendance/services/attendanceSyncService');
 const summaryCalculationService = require('../../attendance/services/summaryCalculationService');
@@ -150,6 +151,7 @@ async function syncPayRegisterFromLeave(leave) {
       payRegister.lastAutoSyncedAt = new Date();
       payRegister.lastAutoSyncedFrom.leaves = new Date();
 
+      await recalculatePayRegisterAttendanceDeduction(payRegister);
       await payRegister.save();
     }
   } catch (error) {
@@ -263,6 +265,7 @@ async function syncPayRegisterFromOD(od) {
       payRegister.lastAutoSyncedAt = new Date();
       payRegister.lastAutoSyncedFrom.ods = new Date();
 
+      await recalculatePayRegisterAttendanceDeduction(payRegister);
       await payRegister.save();
     }
   } catch (error) {
@@ -363,6 +366,7 @@ async function syncPayRegisterFromOT(ot) {
         payRegister.lastAutoSyncedAt = new Date();
         payRegister.lastAutoSyncedFrom.ot = new Date();
 
+        await recalculatePayRegisterAttendanceDeduction(payRegister);
         await payRegister.save();
       }
     }
@@ -475,6 +479,7 @@ async function manualSyncPayRegister(employeeId, month, options = {}) {
     payRegister.lastAutoSyncedFrom.ot = new Date();
     payRegister.lastAutoSyncedFrom.shifts = new Date();
 
+    await recalculatePayRegisterAttendanceDeduction(payRegister);
     await payRegister.save();
 
     return payRegister;

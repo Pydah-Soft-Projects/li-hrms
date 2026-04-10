@@ -6,7 +6,7 @@ import { api } from '@/lib/api';
 import { toast } from 'react-hot-toast';
 import { format, parseISO } from 'date-fns';
 
-import { Holiday, HolidayGroup, Shift, Employee } from '@/lib/api';
+import { Holiday, HolidayGroup, Shift, Employee, Designation } from '@/lib/api';
 import {
   LayoutGrid,
   Save,
@@ -64,10 +64,13 @@ export default function RosterPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [divisions, setDivisions] = useState<any[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
+  const [designations, setDesignations] = useState<Designation[]>([]);
   const [selectedDivision, setSelectedDivision] = useState<string>('');
   const [selectedDept, setSelectedDept] = useState<string>('');
+  const [selectedDesignation, setSelectedDesignation] = useState<string>('');
   const [selectedGroup, setSelectedGroup] = useState<string>('');
   const [employeeGroups, setEmployeeGroups] = useState<any[]>([]);
+  const [availableGroupIds, setAvailableGroupIds] = useState<Set<string>>(new Set());
   const [selectedShiftForAssign, setSelectedShiftForAssign] = useState<string>('');
   const [roster, setRoster] = useState<RosterState>(new Map());
   /** Keys of modified cells: `${empNo}|${date}` — only these are sent on save to avoid updating whole roster */
@@ -210,16 +213,18 @@ export default function RosterPage() {
     if (!cycleDates) return;
     setLoading(true);
     try {
-      const [shiftRes, divRes, deptRes, holidayRes, groupRes] = await Promise.all([
+      const [shiftRes, divRes, deptRes, desigRes, holidayRes, groupRes] = await Promise.all([
         api.getShifts(),
         api.getDivisions(),
         api.getDepartments(),
+        api.getAllDesignations(true),
         api.getAllHolidaysAdmin(parseInt(month.split('-')[0])),
         api.getEmployeeGroups(true),
       ]);
       setShifts(shiftRes.data || []);
       setDivisions(divRes.data || []);
       setDepartments(deptRes.data || []);
+      setDesignations(desigRes.data || []);
       setEmployeeGroups(groupRes.data || []);
       if (holidayRes && holidayRes.data) {
         if (Array.isArray(holidayRes.data)) setHolidays(holidayRes.data);
@@ -231,6 +236,7 @@ export default function RosterPage() {
       const empParams: Record<string, unknown> = { page, limit };
       if (selectedDept) empParams.department_id = selectedDept;
       if (selectedDivision) empParams.division_id = selectedDivision;
+      if (selectedDesignation) empParams.designation_id = selectedDesignation;
       if (selectedGroup) empParams.employee_group_id = selectedGroup;
       if (searchQuery) empParams.search = searchQuery;
       if (cycleDates?.startDate && cycleDates?.endDate) {
@@ -265,7 +271,7 @@ export default function RosterPage() {
       console.error('Error loading roster data:', err);
       toast.error('Failed to load roster');
     } finally { setLoading(false); }
-  }, [month, selectedDept, selectedDivision, selectedGroup, searchQuery, page, limit, cycleDates]);
+  }, [month, selectedDept, selectedDivision, selectedDesignation, selectedGroup, searchQuery, page, limit, cycleDates]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -531,6 +537,121 @@ export default function RosterPage() {
     return employees.filter(emp => (emp.employee_name || '').toLowerCase().includes(term) || (emp.emp_no || '').toLowerCase().includes(term));
   }, [employees, debouncedSearch]);
 
+  const filteredDepartments = useMemo(() => {
+    if (!selectedDivision) return departments;
+
+    const selectedDivisionData = divisions.find((div: any) => div?._id === selectedDivision);
+    const linkedDepartmentIds = new Set(
+      (selectedDivisionData?.departments || [])
+        .map((dept: any) => (typeof dept === 'string' ? dept : dept?._id))
+        .filter(Boolean)
+    );
+
+    return departments.filter((dept: any) => {
+      const deptDivisionIds = Array.isArray(dept?.divisions)
+        ? dept.divisions
+          .map((div: any) => (typeof div === 'string' ? div : div?._id))
+          .filter(Boolean)
+        : [];
+
+      return deptDivisionIds.includes(selectedDivision) || linkedDepartmentIds.has(dept?._id);
+    });
+  }, [departments, divisions, selectedDivision]);
+
+  useEffect(() => {
+    if (!selectedDept) return;
+    const stillAvailable = filteredDepartments.some((dept: any) => dept._id === selectedDept);
+    if (!stillAvailable) setSelectedDept('');
+  }, [filteredDepartments, selectedDept]);
+
+  const filteredDesignations = useMemo(() => {
+    const selectedDeptIds = selectedDept
+      ? new Set([String(selectedDept)])
+      : new Set(filteredDepartments.map((dept: any) => String(dept._id)));
+
+    // Primary linkage in this codebase is Department.designations[].
+    const linkedDesignationIds = new Set<string>();
+    filteredDepartments.forEach((dept: any) => {
+      if (!selectedDeptIds.has(String(dept?._id))) return;
+      const deptDesignationIds = Array.isArray(dept?.designations) ? dept.designations : [];
+      deptDesignationIds.forEach((designationRef: any) => {
+        const id = typeof designationRef === 'string' ? designationRef : designationRef?._id;
+        if (id) linkedDesignationIds.add(String(id));
+      });
+    });
+
+    return designations.filter((designation) => {
+      if (linkedDesignationIds.has(String(designation._id))) return true;
+
+      // Backward compatibility fallback where designation has direct department mapping.
+      const departmentValue = (designation as any)?.department;
+      const designationDepartmentId = typeof departmentValue === 'string'
+        ? departmentValue
+        : departmentValue?._id;
+      if (!designationDepartmentId) return false;
+      return selectedDeptIds.has(String(designationDepartmentId));
+    });
+  }, [designations, filteredDepartments, selectedDept, selectedDivision]);
+
+  useEffect(() => {
+    if (!selectedDesignation) return;
+    const stillAvailable = filteredDesignations.some((designation) => designation._id === selectedDesignation);
+    if (!stillAvailable) setSelectedDesignation('');
+  }, [filteredDesignations, selectedDesignation]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadAvailableGroups = async () => {
+      // With no higher-level filters, show all groups.
+      if (!selectedDivision && !selectedDept && !selectedDesignation) {
+        if (!cancelled) setAvailableGroupIds(new Set());
+        return;
+      }
+
+      try {
+        const params: Record<string, unknown> = { page: 1, limit: 10000 };
+        if (selectedDivision) params.division_id = selectedDivision;
+        if (selectedDept) params.department_id = selectedDept;
+        if (selectedDesignation) params.designation_id = selectedDesignation;
+        if (cycleDates?.startDate && cycleDates?.endDate) {
+          params.startDate = cycleDates.startDate;
+          params.endDate = cycleDates.endDate;
+        }
+
+        const res = await api.getEmployees(params) as { data: Employee[] };
+        const ids = new Set<string>();
+        (res.data || []).forEach((emp) => {
+          const groupRef = (emp as any)?.employee_group_id;
+          const groupId = typeof groupRef === 'string' ? groupRef : groupRef?._id;
+          if (groupId) ids.add(String(groupId));
+        });
+        if (!cancelled) setAvailableGroupIds(ids);
+      } catch {
+        if (!cancelled) setAvailableGroupIds(new Set());
+      }
+    };
+
+    loadAvailableGroups();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedDivision, selectedDept, selectedDesignation, cycleDates?.startDate, cycleDates?.endDate]);
+
+  const filteredGroups = useMemo(() => {
+    if (!selectedDivision && !selectedDept && !selectedDesignation) return employeeGroups;
+    return employeeGroups.filter((group: any) => {
+      const id = String(group?._id || '');
+      return availableGroupIds.has(id) || (selectedGroup && id === selectedGroup);
+    });
+  }, [employeeGroups, availableGroupIds, selectedDivision, selectedDept, selectedDesignation, selectedGroup]);
+
+  useEffect(() => {
+    if (!selectedGroup) return;
+    const stillAvailable = filteredGroups.some((group: any) => group._id === selectedGroup);
+    if (!stillAvailable) setSelectedGroup('');
+  }, [filteredGroups, selectedGroup]);
+
   const handleSearchSubmit = useCallback(() => {
     setSearchQuery(searchTerm.trim());
     setPage(1);
@@ -592,8 +713,9 @@ export default function RosterPage() {
         <div className="flex flex-col gap-3 sm:px-6 py-3 bg-white/40 dark:bg-slate-950/20 border-b border-slate-200/40 dark:border-slate-800/40">
           <RosterFilters
             selectedDivision={selectedDivision} setSelectedDivision={setSelectedDivision} divisions={divisions}
-            selectedDept={selectedDept} setSelectedDept={setSelectedDept} departments={departments}
-            selectedGroup={selectedGroup} setSelectedGroup={setSelectedGroup} groups={employeeGroups}
+            selectedDept={selectedDept} setSelectedDept={setSelectedDept} departments={filteredDepartments}
+            selectedDesignation={selectedDesignation} setSelectedDesignation={setSelectedDesignation} designations={filteredDesignations}
+            selectedGroup={selectedGroup} setSelectedGroup={setSelectedGroup} groups={filteredGroups}
             month={month} setMonth={setMonth} setPage={setPage}
             cycleDates={cycleDates}
           />

@@ -1130,6 +1130,14 @@ exports.updateLeave = async (req, res) => {
     }
 
     await leave.save();
+    try {
+      const { syncEsiLeaveOtForLeave, isEsiLeaveType } = require('../../overtime/services/esiLeaveOtService');
+      if (isEsiLeaveType(leave.leaveType)) {
+        await syncEsiLeaveOtForLeave(leave, { requestedByUserId: req.user._id });
+      }
+    } catch (esiErr) {
+      console.error('ESI OT sync failed after leave cancel:', esiErr);
+    }
 
     if (affectsMonthlyApply) {
       try {
@@ -1711,6 +1719,14 @@ exports.processLeaveAction = async (req, res) => {
     leave.markModified('approvals');
 
     await leave.save();
+    try {
+      const { syncEsiLeaveOtForLeave, isEsiLeaveType } = require('../../overtime/services/esiLeaveOtService');
+      if (isEsiLeaveType(leave.leaveType)) {
+        await syncEsiLeaveOtForLeave(leave, { requestedByUserId: req.user._id });
+      }
+    } catch (esiErr) {
+      console.error('ESI OT sync failed after leave action:', esiErr);
+    }
 
     // Monthly slot: await only for final approval or canonical final rejection (`rejected`).
     // Intermediate pipeline outcomes (`hod_approved`, `hod_rejected`, etc.) use deferred sync.
@@ -1952,6 +1968,14 @@ exports.revokeLeaveApproval = async (req, res) => {
     leave.markModified('workflow');
     leave.markModified('approvals');
     await leave.save();
+    try {
+      const { syncEsiLeaveOtForLeave, isEsiLeaveType } = require('../../overtime/services/esiLeaveOtService');
+      if (isEsiLeaveType(leave.leaveType)) {
+        await syncEsiLeaveOtForLeave(leave, { requestedByUserId: req.user._id });
+      }
+    } catch (esiErr) {
+      console.error('ESI OT sync failed after leave revoke:', esiErr);
+    }
 
     leaveRegisterYearMonthlyApplyService.scheduleSyncMonthApply(leave.employeeId, leave.fromDate);
 
@@ -1997,6 +2021,14 @@ exports.deleteLeave = async (req, res) => {
 
     leave.isActive = false;
     await leave.save();
+    try {
+      const { syncEsiLeaveOtForLeave, isEsiLeaveType } = require('../../overtime/services/esiLeaveOtService');
+      if (isEsiLeaveType(leave.leaveType)) {
+        await syncEsiLeaveOtForLeave(leave, { requestedByUserId: req.user._id });
+      }
+    } catch (esiErr) {
+      console.error('ESI OT sync failed after leave delete:', esiErr);
+    }
 
     leaveRegisterYearMonthlyApplyService.scheduleSyncMonthApply(leave.employeeId, leave.fromDate);
 
@@ -2739,6 +2771,7 @@ exports.listLeaveRegister = async (req, res) => {
       departmentId,
       divisionId,
       designationId,
+      employee_group_id,
       employeeId,
       empNo,
       search,
@@ -2763,6 +2796,7 @@ exports.listLeaveRegister = async (req, res) => {
       divisionId: divisionId && mongoose.Types.ObjectId.isValid(String(divisionId)) ? new mongoose.Types.ObjectId(String(divisionId)) : undefined,
       departmentId: departmentId && mongoose.Types.ObjectId.isValid(String(departmentId)) ? new mongoose.Types.ObjectId(String(departmentId)) : undefined,
       designationId: designationId && mongoose.Types.ObjectId.isValid(String(designationId)) ? new mongoose.Types.ObjectId(String(designationId)) : undefined,
+      employee_group_id: employee_group_id && mongoose.Types.ObjectId.isValid(String(employee_group_id)) ? new mongoose.Types.ObjectId(String(employee_group_id)) : undefined,
       employeeId: employeeId && mongoose.Types.ObjectId.isValid(String(employeeId)) ? new mongoose.Types.ObjectId(String(employeeId)) : undefined,
       empNo: empNo && String(empNo).trim() ? String(empNo).trim() : undefined,
       searchTerm: search && String(search).trim() ? String(search).trim() : undefined,

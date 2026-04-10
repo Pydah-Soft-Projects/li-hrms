@@ -54,6 +54,10 @@ const attendanceDailySchema = new mongoose.Schema(
         type: Number, // working hours added from OD gap filling
         default: 0,
       },
+      edgePermissionHours: {
+        type: Number, // late_in / early_out gate-verified credit toward expected hours
+        default: 0,
+      },
       otHours: {
         type: Number, // OT hours for this shift
         default: 0,
@@ -158,7 +162,14 @@ const attendanceDailySchema = new mongoose.Schema(
     editHistory: [{
       action: {
         type: String,
-        enum: ['OUT_TIME_UPDATE', 'SHIFT_CHANGE', 'OT_CONVERSION', 'IN_TIME_UPDATE'],
+        enum: [
+          'OUT_TIME_UPDATE',
+          'SHIFT_CHANGE',
+          'OT_CONVERSION',
+          'OT_CONVERSION_REQUESTED',
+          'OT_AUTO_REQUESTED',
+          'IN_TIME_UPDATE',
+        ],
         required: true,
       },
       modifiedBy: {
