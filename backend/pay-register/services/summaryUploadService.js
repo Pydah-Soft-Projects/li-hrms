@@ -2,6 +2,7 @@ const PayRegisterSummary = require('../model/PayRegisterSummary');
 const Employee = require('../../employees/model/Employee');
 const { populatePayRegisterFromSources, getAllDatesInMonth } = require('./autoPopulationService');
 const { calculateTotals, ensureTotalsRespectRoster } = require('./totalsCalculationService');
+const { applyContributingDatesFromDailyGrid } = require('./contributingDatesService');
 const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
 const mongoose = require('mongoose');
 const SecondSalarySyncService = require('../../payroll/services/secondSalarySyncService');
@@ -230,6 +231,7 @@ async function processSummaryBulkUpload(month, rows, userId, options = {}) {
             payRegister.lastEditedAt = new Date();
             payRegister.markModified('totals');
             payRegister.markModified('dailyRecords');
+            applyContributingDatesFromDailyGrid(payRegister);
 
             await recalculatePayRegisterAttendanceDeduction(payRegister);
             await payRegister.save();

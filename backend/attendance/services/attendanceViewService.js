@@ -252,7 +252,8 @@ exports.getCalendarViewData = async (employee, year, month) => {
       isEdited: record.isEdited || false,
       editHistory: record.editHistory || [],
       source: record.source || [],
-      shifts: record.shifts || []
+      shifts: record.shifts || [],
+      policyMeta: record.policyMeta || null,
     };
   });
 
@@ -338,7 +339,7 @@ exports.getMonthlyTableViewData = async (employees, year, month, startQueryDate,
     employeeNumber: { $in: empNos },
     date: { $gte: startDate, $lte: endDateStr },
   })
-    .select('employeeNumber date status shifts totalWorkingHours totalLateInMinutes totalEarlyOutMinutes totalExpectedHours totalOTHours extraHours permissionHours permissionCount notes earlyOutDeduction isEdited editHistory')
+    .select('employeeNumber date status shifts totalWorkingHours totalLateInMinutes totalEarlyOutMinutes totalExpectedHours totalOTHours extraHours permissionHours permissionCount notes earlyOutDeduction isEdited editHistory policyMeta')
     .populate('shifts.shiftId', 'name startTime endTime duration payableShifts')
     .sort({ employeeNumber: 1, date: 1 })
     .lean();
@@ -572,7 +573,8 @@ exports.getMonthlyTableViewData = async (employees, year, month, startQueryDate,
         isEsiLeaveDay,
         isEdited: record?.isEdited || false,
         editHistory: record?.editHistory || [],
-        source: record?.source || []
+        source: record?.source || [],
+        policyMeta: record?.policyMeta || null,
       };
     }
 
