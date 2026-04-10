@@ -319,9 +319,9 @@ async function syncPayRegisterFromOT(ot) {
         continue;
       }
 
-      // Check if date was manually edited
+      // Check if date was manually edited (use continue — other months in monthSet may still need updates)
       if (checkIfManuallyEdited(payRegister, dateStr)) {
-        return;
+        continue;
       }
 
       // Find the daily record

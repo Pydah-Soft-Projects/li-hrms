@@ -1217,7 +1217,7 @@ export default function PayRegisterPage() {
 
   const handleViewPayslip = (employee: Employee) => {
     // Navigate to payslip or open payslip modal
-    router.push(`/superadmin/payroll-transactions?employeeId=${employee._id}&month=${monthStr}`);
+    router.push(`/payroll-transactions?employeeId=${employee._id}&month=${monthStr}`);
   };
 
   const handleCalculatePayroll = async (employee: Employee) => {
@@ -1254,7 +1254,7 @@ export default function PayRegisterPage() {
         });
         // Small delay to let the toast be seen
         setTimeout(() => {
-          router.push(`/superadmin/payments/${response.data.batchId}`);
+          router.push(`/payments/${response.data.batchId}`);
         }, 1000);
       } else {
         Swal.fire({
@@ -1497,7 +1497,7 @@ export default function PayRegisterPage() {
           position: 'top-end'
         });
         setTimeout(() => {
-          router.push(`/superadmin/payments/${batchId}`);
+          router.push(`/payments/${batchId}`);
         }, 1500);
       } else if (batchIds.size > 1) {
         // Multiple batches -> Redirect to list
@@ -1511,7 +1511,7 @@ export default function PayRegisterPage() {
           position: 'top-end'
         });
         setTimeout(() => {
-          router.push('/superadmin/payments');
+          router.push('/payments');
         }, 1500);
       }
       else if (successCount > 0) {
@@ -2696,7 +2696,7 @@ export default function PayRegisterPage() {
                                     </button>
                                   ) : (
                                     <Link
-                                      href={`/superadmin/payroll-transactions?employeeId=${employeeId}&month=${monthStr}`}
+                                      href={`/payroll-transactions?employeeId=${employeeId}&month=${monthStr}`}
                                       onClick={(e) => e.stopPropagation()}
                                       className="rounded-md px-2 py-1 text-[9px] font-semibold text-white shadow-sm transition-all hover:shadow-md bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 inline-block"
                                       title="View Payslip"
