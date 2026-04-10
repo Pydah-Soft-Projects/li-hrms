@@ -530,6 +530,19 @@ export default function AttendancePage() {
   const [otPolicyEligibleForConvert, setOtPolicyEligibleForConvert] = useState(false);
   const [otPolicyPreview, setOtPolicyPreview] = useState<any | null>(null);
   const [selectedOtEmployees, setSelectedOtEmployees] = useState<Record<string, boolean>>({});
+  const [showBulkOtPreviewModal, setShowBulkOtPreviewModal] = useState(false);
+  const [bulkOtEligibleQueue, setBulkOtEligibleQueue] = useState<
+    Array<{
+      key: string;
+      employeeId: string;
+      employeeNumber: string;
+      employeeName: string;
+      date: string;
+      rawHours: number;
+      slabHours: number;
+    }>
+  >([]);
+  const [selectedBulkOtKeys, setSelectedBulkOtKeys] = useState<Record<string, boolean>>({});
 
   const [exportingExcel, setExportingExcel] = useState(false);
 
@@ -587,6 +600,16 @@ export default function AttendancePage() {
   useEffect(() => {
     if (tableType !== 'ot') setSelectedOtEmployees({});
   }, [tableType]);
+
+  const groupedBulkOtEligibility = useMemo(() => {
+    const map: Record<string, typeof bulkOtEligibleQueue> = {};
+    bulkOtEligibleQueue.forEach((item) => {
+      const groupKey = `${item.employeeName} (${item.employeeNumber})`;
+      if (!map[groupKey]) map[groupKey] = [];
+      map[groupKey].push(item);
+    });
+    return map;
+  }, [bulkOtEligibleQueue]);
 
   const handleSummaryClick = (employeeId: string, category: string) => {
     setActiveHighlight(prev => {
@@ -1521,19 +1544,24 @@ export default function AttendancePage() {
       setError('Select at least one employee in OT table');
       return;
     }
-    if (!confirm(`Convert eligible extra hours to OT for ${selected.length} selected employee(s)?`)) return;
-
     try {
-      setConvertingToOT(true);
       setError('');
       setSuccess('');
-      let converted = 0;
-      let failed = 0;
       let skipped = 0;
+      const eligibleQueue: Array<{
+        key: string;
+        employeeId: string;
+        employeeNumber: string;
+        employeeName: string;
+        date: string;
+        rawHours: number;
+        slabHours: number;
+      }> = [];
 
       for (const item of selected) {
         const employeeId = item.employee?._id;
         const employeeNumber = item.employee?.emp_no;
+        const employeeName = item.employee?.employee_name || employeeNumber || 'Employee';
         if (!employeeId || !employeeNumber) {
           skipped += 1;
           continue;
@@ -1544,19 +1572,68 @@ export default function AttendancePage() {
           if (rawExtra <= 0) continue;
 
           const preview = await api.previewOTExtraHours({ employeeId, employeeNumber, date });
-          if (!preview.success || !(preview as any)?.data?.policy?.eligible) {
+          const pdata = (preview as any)?.data;
+          const pol = pdata?.policy;
+          if (!preview.success || !pol?.eligible) {
             skipped += 1;
             continue;
           }
-
-          const resp = await api.convertExtraHoursToOT({ employeeId, employeeNumber, date });
-          if (resp.success) converted += 1;
-          else failed += 1;
+          const key = `${employeeNumber}|${date}`;
+          eligibleQueue.push({
+            key,
+            employeeId,
+            employeeNumber,
+            employeeName,
+            date,
+            rawHours: Number(pdata?.rawExtraHours || 0),
+            slabHours: Number(pol?.finalHours || 0),
+          });
         }
       }
 
-      setSuccess(`Bulk OT conversion finished: ${converted} converted, ${skipped} skipped, ${failed} failed.`);
+      if (!eligibleQueue.length) {
+        setSuccess('No eligible OT conversion days found for selected employees under current OT slab/threshold settings.');
+        return;
+      }
+      setBulkOtEligibleQueue(eligibleQueue);
+      const allSelected: Record<string, boolean> = {};
+      eligibleQueue.forEach((q) => {
+        allSelected[q.key] = true;
+      });
+      setSelectedBulkOtKeys(allSelected);
+      setShowBulkOtPreviewModal(true);
+      if (skipped > 0) {
+        setSuccess(`${eligibleQueue.length} eligible day(s) ready. ${skipped} day(s) skipped by policy/no extra.`);
+      }
+    } catch (err: any) {
+      console.error('Bulk OT conversion error:', err);
+      setError(err?.message || 'Bulk OT conversion failed');
+    }
+  };
+
+  const handleConfirmBulkConvertSelectedToOT = async () => {
+    if (!bulkOtEligibleQueue.length) return;
+    const selectedQueue = bulkOtEligibleQueue.filter((q) => selectedBulkOtKeys[q.key]);
+    if (!selectedQueue.length) {
+      setError('Select at least one eligible day to create OT');
+      return;
+    }
+    try {
+      setConvertingToOT(true);
+      setError('');
+      setSuccess('');
+      let converted = 0;
+      let failed = 0;
+      for (const item of selectedQueue) {
+        const resp = await api.convertExtraHoursToOT(item);
+        if (resp.success) converted += 1;
+        else failed += 1;
+      }
+      setSuccess(`Bulk OT conversion finished: ${converted} converted, ${failed} failed.`);
       setSelectedOtEmployees({});
+      setShowBulkOtPreviewModal(false);
+      setBulkOtEligibleQueue([]);
+      setSelectedBulkOtKeys({});
       await loadMonthlyAttendance();
     } catch (err: any) {
       console.error('Bulk OT conversion error:', err);
@@ -3472,6 +3549,133 @@ export default function AttendancePage() {
           </table>
           <div ref={observerTarget} className="h-4 w-full" />
         </div>
+
+        {showBulkOtPreviewModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/55 p-4 backdrop-blur-sm">
+            <div className="w-full max-w-4xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                    Eligible OT Days (Selected Employees)
+                  </h3>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    OT rules (slab/threshold) already applied
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    if (convertingToOT) return;
+                    setShowBulkOtPreviewModal(false);
+                  }}
+                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800"
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="mb-3 flex items-center justify-between rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs dark:border-green-900/50 dark:bg-green-900/20">
+                <span className="font-semibold text-green-800 dark:text-green-300">
+                  Only selected employees and listed dates will be created.
+                </span>
+                <div className="flex items-center gap-2">
+                  <label className="inline-flex items-center gap-1 rounded-md border border-green-300 bg-white/80 px-2 py-1 text-[11px] font-semibold text-green-800 dark:border-green-800 dark:bg-green-950/40 dark:text-green-300">
+                    <input
+                      type="checkbox"
+                      checked={bulkOtEligibleQueue.length > 0 && bulkOtEligibleQueue.every((q) => selectedBulkOtKeys[q.key])}
+                      onChange={(e) => {
+                        const next: Record<string, boolean> = {};
+                        bulkOtEligibleQueue.forEach((q) => {
+                          next[q.key] = e.target.checked;
+                        });
+                        setSelectedBulkOtKeys(next);
+                      }}
+                      className="h-3.5 w-3.5 rounded border-slate-300 text-green-600"
+                    />
+                    Select all
+                  </label>
+                  <span className="rounded-full bg-green-600 px-2 py-0.5 text-[11px] font-bold text-white">
+                    {bulkOtEligibleQueue.filter((q) => selectedBulkOtKeys[q.key]).length}/{bulkOtEligibleQueue.length}
+                  </span>
+                </div>
+              </div>
+              <div className="max-h-80 space-y-2 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/60">
+                {Object.entries(groupedBulkOtEligibility).map(([employeeLabel, rows]) => (
+                  <div key={employeeLabel} className="rounded-lg border border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-900">
+                    <div className="mb-2 flex items-center justify-between border-b border-slate-200 pb-2 text-xs dark:border-slate-700">
+                      <label className="inline-flex items-center gap-2 font-semibold text-slate-800 dark:text-slate-100">
+                        <input
+                          type="checkbox"
+                          checked={rows.every((r) => selectedBulkOtKeys[r.key])}
+                          onChange={(e) => {
+                            const next = { ...selectedBulkOtKeys };
+                            rows.forEach((r) => {
+                              next[r.key] = e.target.checked;
+                            });
+                            setSelectedBulkOtKeys(next);
+                          }}
+                          className="h-3.5 w-3.5 rounded border-slate-300 text-green-600"
+                        />
+                        {employeeLabel}
+                      </label>
+                      <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                        {rows.filter((r) => selectedBulkOtKeys[r.key]).length}/{rows.length} selected
+                      </span>
+                    </div>
+                    <div className="space-y-1">
+                      {rows.map((row) => (
+                        <label
+                          key={row.key}
+                          className="grid cursor-pointer grid-cols-[auto_90px_1fr] items-center gap-2 rounded-md border border-slate-100 px-2 py-1.5 text-xs hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800"
+                        >
+                          <span className="inline-flex items-center gap-2 text-slate-700 dark:text-slate-200">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(selectedBulkOtKeys[row.key])}
+                              onChange={(e) =>
+                                setSelectedBulkOtKeys((prev) => ({ ...prev, [row.key]: e.target.checked }))
+                              }
+                              className="h-3.5 w-3.5 rounded border-slate-300 text-green-600"
+                            />
+                            {row.date}
+                          </span>
+                          <span className="font-medium text-slate-600 dark:text-slate-300">
+                            raw {row.rawHours.toFixed(2)}h
+                          </span>
+                          <span className="font-semibold text-indigo-700 dark:text-indigo-300">
+                            slab {row.slabHours.toFixed(2)}h
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-5 flex justify-end gap-3">
+                <button
+                  onClick={() => setShowBulkOtPreviewModal(false)}
+                  disabled={convertingToOT}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition-all hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmBulkConvertSelectedToOT}
+                  disabled={
+                    convertingToOT ||
+                    bulkOtEligibleQueue.length === 0 ||
+                    bulkOtEligibleQueue.filter((q) => selectedBulkOtKeys[q.key]).length === 0
+                  }
+                  className="rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-green-500/30 transition-all hover:from-green-700 hover:to-emerald-700 disabled:opacity-50"
+                >
+                  {convertingToOT
+                    ? 'Creating...'
+                    : `Create OT (${bulkOtEligibleQueue.filter((q) => selectedBulkOtKeys[q.key]).length})`}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {showUploadDialog && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
