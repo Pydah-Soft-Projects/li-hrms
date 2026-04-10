@@ -35,6 +35,11 @@ const DivisionSchema = new mongoose.Schema({
             type: String,
             enum: ['Male', 'Female', 'Other', 'All'],
             default: 'All'
+        },
+        employee_group_id: {
+            type: mongoose.Schema.ObjectId,
+            ref: 'EmployeeGroup',
+            default: null
         }
     }],
     isActive: {

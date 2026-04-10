@@ -11,6 +11,7 @@ import {
     Save,
     AlertTriangle,
     Calendar,
+    ChevronDown,
     ChevronRight,
     Clock,
     Table2,
@@ -238,6 +239,7 @@ const LeavePolicySettings = () => {
     const [initialSyncExpandedEmployeeId, setInitialSyncExpandedEmployeeId] = useState<string | null>(null);
     const [syncPreviewSearch, setSyncPreviewSearch] = useState('');
     const [syncApplyReason, setSyncApplyReason] = useState('');
+    const [leaveRegisterSlotEditExpanded, setLeaveRegisterSlotEditExpanded] = useState(false);
 
     useEffect(() => {
         loadSettings();
@@ -622,86 +624,54 @@ const LeavePolicySettings = () => {
                 </button>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 w-full">
-                {/* ——— Left column: Financial Year + EL Earning Rules ——— */}
-                <div className="space-y-8 min-w-0">
-                    {/* 1. Financial Year */}
-                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
-                        <div className="px-6 sm:px-8 py-6 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
-                            <div className="h-10 w-10 flex items-center justify-center rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800/50">
-                                <Calendar className="h-5 w-5" />
-                            </div>
-                            <div>
-                                <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Financial Year</h3>
-                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Leave cycles and annual reset.</p>
-                            </div>
-                        </div>
-                        <div className="p-6 sm:p-8 space-y-6">
-
-                        {/* Use calendar year — same toggle style as Leave Settings (Backdated / Future Dated) */}
-                        <div className="flex items-center justify-between gap-4 p-3 rounded-xl border border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30 mb-4">
-                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Use calendar year (Jan–Dec)</span>
-                            <button
-                                type="button"
-                                role="switch"
-                                aria-checked={settings.financialYear.useCalendarYear}
-                                onClick={() => updateSettings('financialYear.useCalendarYear', '', !settings.financialYear.useCalendarYear)}
-                                className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900 ${settings.financialYear.useCalendarYear ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-gray-700'}`}
-                            >
-                                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${settings.financialYear.useCalendarYear ? 'translate-x-6' : 'translate-x-1'}`} />
-                            </button>
-                        </div>
-
-                        {!settings.financialYear.useCalendarYear && (
-                            <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-1 duration-200">
-                                <div className="space-y-1.5">
-                                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Start Month</label>
-                                    <select
-                                        value={settings.financialYear.startMonth}
-                                        onChange={(e) => updateSettings('financialYear.startMonth', '', parseInt(e.target.value))}
-                                        className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
-                                    >
-                                        {[...Array(12)].map((_, i) => (
-                                            <option key={i} value={i + 1}>{new Date(0, i).toLocaleString('default', { month: 'long' })}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                                <div className="space-y-1.5">
-                                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Start Day</label>
-                                    <input
-                                        type="number"
-                                        min="1"
-                                        max="31"
-                                        value={settings.financialYear.startDay}
-                                        onChange={(e) => updateSettings('financialYear.startDay', '', parseInt(e.target.value))}
-                                        className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
-                                    />
-                                </div>
-                            </div>
-                        )}
-                        </div>
-                    </section>
-
-                    {/* Leave register month-slot manual edit controls */}
-                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
-                        <div className="px-4 sm:px-8 py-5 sm:py-6 border-b border-gray-100 dark:border-gray-800 flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-4">
-                            <div className="h-10 w-10 shrink-0 flex items-center justify-center rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-gray-200 dark:border-gray-600">
-                                <Table2 className="h-5 w-5" strokeWidth={2} />
+            {/* Full width (top): leave register month-slot edit permissions */}
+            <section className="w-full min-w-0 rounded-2xl border border-indigo-200/80 dark:border-indigo-500/35 bg-white dark:bg-[#1E293B] shadow-md shadow-indigo-500/[0.07] dark:shadow-lg dark:shadow-black/25 overflow-hidden ring-1 ring-indigo-500/15 dark:ring-indigo-400/20">
+                <button
+                    type="button"
+                    aria-expanded={leaveRegisterSlotEditExpanded}
+                    aria-controls="leave-register-slot-edit-panel"
+                    id="leave-register-slot-edit-trigger"
+                    onClick={() => setLeaveRegisterSlotEditExpanded((v) => !v)}
+                    className="w-full border-b border-gray-100 dark:border-gray-800 bg-gradient-to-r from-indigo-50/95 via-white to-slate-50/50 dark:from-indigo-950/50 dark:via-[#1E293B] dark:to-slate-900/30 px-5 sm:px-8 py-5 sm:py-6 text-left transition-colors hover:from-indigo-50 dark:hover:from-indigo-950/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500 rounded-t-2xl"
+                >
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+                        <div className="flex min-w-0 flex-1 flex-col gap-5 lg:flex-row lg:items-center lg:gap-8">
+                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-600/35">
+                                <Table2 className="h-6 w-6" strokeWidth={2} />
                             </div>
                             <div className="min-w-0 flex-1">
-                                <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">
+                                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-indigo-600 dark:text-indigo-400">
+                                    Policy · full width
+                                </p>
+                                <h3 className="mt-1 text-base font-bold tracking-tight text-gray-900 dark:text-white sm:text-lg">
                                     Leave register — month slot edit permissions
                                 </h3>
-                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-relaxed max-w-3xl">
-                                    Twelve rows = FY periods <strong>1–12</strong> in the same order as{' '}
-                                    <strong>Financial Year</strong> above: <strong>calendar year</strong> = Jan→Dec;{' '}
-                                    <strong>custom FY</strong> = first period starts at your start month/day. Row <strong>Default</strong>{' '}
-                                    applies when a period has no override. Turn <strong>Master</strong> on first; sub-columns only
-                                    apply when Master is on for that row. Scroll sideways on narrow screens.
-                                </p>
+                                {leaveRegisterSlotEditExpanded ? (
+                                    <p className="mt-2 max-w-none text-sm leading-relaxed text-gray-600 dark:text-gray-400">
+                                        Twelve payroll periods <strong>1–12</strong> match the <strong>Financial Year</strong> order below
+                                        (calendar year = Jan→Dec; custom FY = from your start month/day). Use <strong>Default</strong>{' '}
+                                        for all periods unless a row has overrides. Turn <strong>Master</strong> on first; other columns
+                                        apply only when Master is on. Scroll the grid horizontally on small screens.
+                                    </p>
+                                ) : (
+                                    <p className="mt-2 text-xs leading-relaxed text-gray-500 dark:text-gray-400">
+                                        Expand to show the permission toggles (Default row + 12 FY periods).
+                                    </p>
+                                )}
                             </div>
                         </div>
-                        {settings && (() => {
+                        <span className="inline-flex shrink-0 items-center gap-2 self-start text-sm font-semibold text-indigo-700 dark:text-indigo-300 sm:self-center">
+                            {leaveRegisterSlotEditExpanded ? 'Hide' : 'Show'} toggles
+                            <ChevronDown
+                                className={`h-5 w-5 shrink-0 transition-transform duration-200 ${leaveRegisterSlotEditExpanded ? 'rotate-180' : ''}`}
+                                aria-hidden
+                            />
+                        </span>
+                    </div>
+                </button>
+                        {leaveRegisterSlotEditExpanded &&
+                            settings &&
+                            (() => {
                             const lr = settings.leaveRegisterMonthSlotEdit || { defaults: {}, byPayrollMonthIndex: {} };
                             const defs = lr.defaults || {};
                             const byMonth = lr.byPayrollMonthIndex || {};
@@ -780,10 +750,15 @@ const LeavePolicySettings = () => {
                             );
 
                             return (
-                                <div className="px-0 sm:px-2 pb-5 sm:pb-6">
-                                    <div className="mx-3 sm:mx-6 lg:mx-8 rounded-xl border border-gray-200/90 dark:border-gray-700 bg-gray-50/60 dark:bg-slate-900/50 overflow-hidden shadow-inner">
-                                        <div className="overflow-x-auto overscroll-x-contain [scrollbar-gutter:stable]">
-                                            <table className="w-full min-w-[1000px] text-sm border-collapse">
+                                <div
+                                    id="leave-register-slot-edit-panel"
+                                    role="region"
+                                    aria-labelledby="leave-register-slot-edit-trigger"
+                                    className="w-full min-w-0 overflow-x-auto px-4 pb-6 pt-4 sm:px-8 sm:pb-8"
+                                >
+                                    <div className="rounded-xl border border-gray-200/90 dark:border-gray-700 bg-gray-50/70 dark:bg-slate-900/40 shadow-inner w-full min-w-0">
+                                        <div className="overflow-x-auto overscroll-x-contain [scrollbar-gutter:stable] w-full min-w-0">
+                                            <table className="w-full min-w-[1000px] max-w-none text-sm border-collapse">
                                         <thead>
                                             <tr className="border-b border-gray-200 dark:border-gray-700 bg-gray-100/90 dark:bg-slate-800/95 text-gray-700 dark:text-gray-200">
                                                 <th className="py-3 px-3 text-left font-semibold sticky left-0 z-20 min-w-[10.5rem] max-w-[14rem] bg-gray-100/95 dark:bg-slate-800/98 border-r border-gray-200/80 dark:border-gray-700 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.12)]">
@@ -880,6 +855,66 @@ const LeavePolicySettings = () => {
                                 </div>
                             );
                         })()}
+            </section>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 w-full">
+                {/* ——— Left column: Financial Year + EL Earning Rules ——— */}
+                <div className="space-y-8 min-w-0">
+                    {/* 1. Financial Year */}
+                    <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
+                        <div className="px-6 sm:px-8 py-6 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
+                            <div className="h-10 w-10 flex items-center justify-center rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800/50">
+                                <Calendar className="h-5 w-5" />
+                            </div>
+                            <div>
+                                <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Financial Year</h3>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Leave cycles and annual reset.</p>
+                            </div>
+                        </div>
+                        <div className="p-6 sm:p-8 space-y-6">
+
+                        {/* Use calendar year — same toggle style as Leave Settings (Backdated / Future Dated) */}
+                        <div className="flex items-center justify-between gap-4 p-3 rounded-xl border border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30 mb-4">
+                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Use calendar year (Jan–Dec)</span>
+                            <button
+                                type="button"
+                                role="switch"
+                                aria-checked={settings.financialYear.useCalendarYear}
+                                onClick={() => updateSettings('financialYear.useCalendarYear', '', !settings.financialYear.useCalendarYear)}
+                                className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900 ${settings.financialYear.useCalendarYear ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-gray-700'}`}
+                            >
+                                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${settings.financialYear.useCalendarYear ? 'translate-x-6' : 'translate-x-1'}`} />
+                            </button>
+                        </div>
+
+                        {!settings.financialYear.useCalendarYear && (
+                            <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-1 duration-200">
+                                <div className="space-y-1.5">
+                                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Start Month</label>
+                                    <select
+                                        value={settings.financialYear.startMonth}
+                                        onChange={(e) => updateSettings('financialYear.startMonth', '', parseInt(e.target.value))}
+                                        className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                                    >
+                                        {[...Array(12)].map((_, i) => (
+                                            <option key={i} value={i + 1}>{new Date(0, i).toLocaleString('default', { month: 'long' })}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Start Day</label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        max="31"
+                                        value={settings.financialYear.startDay}
+                                        onChange={(e) => updateSettings('financialYear.startDay', '', parseInt(e.target.value))}
+                                        className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                                    />
+                                </div>
+                            </div>
+                        )}
+                        </div>
                     </section>
 
                     {/* Monthly application cap (payroll period) */}

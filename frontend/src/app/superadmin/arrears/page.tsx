@@ -243,6 +243,13 @@ export default function ArrearsPage() {
     }
   };
 
+  const getEntityId = (value: any) => {
+    if (value && typeof value === 'object') {
+      return String((value as any)._id || (value as any).id || '');
+    }
+    return String(value || '');
+  };
+
   const filteredArrears = arrears.filter(ar => {
     // Search Term Match
     if (searchTerm) {
@@ -255,9 +262,10 @@ export default function ArrearsPage() {
     }
 
     // Role Filters Match
-    if (selectedDivisionFilter && String(ar.employee.division_id) !== String(selectedDivisionFilter)) return false;
-    if (selectedDepartmentFilter && String(ar.employee.department_id) !== String(selectedDepartmentFilter)) return false;
-    if (selectedDesignationFilter && String(ar.employee.designation_id) !== String(selectedDesignationFilter)) return false;
+    const employeeSource = getEmployeeMasterRecord(ar.employee);
+    if (selectedDivisionFilter && getEntityId(employeeSource?.division_id) !== String(selectedDivisionFilter)) return false;
+    if (selectedDepartmentFilter && getEntityId(employeeSource?.department_id) !== String(selectedDepartmentFilter)) return false;
+    if (selectedDesignationFilter && getEntityId(employeeSource?.designation_id) !== String(selectedDesignationFilter)) return false;
 
     // Tab Match
     if (activeTab === 'pending') {
@@ -279,6 +287,55 @@ export default function ArrearsPage() {
     if (emp.first_name && emp.last_name) return `${emp.first_name} ${emp.last_name}`;
     if (emp.first_name) return emp.first_name;
     return emp.emp_no;
+  };
+
+  function getEmployeeMasterRecord(employee: any) {
+    const employeeId = String(employee?._id || '');
+    if (!employeeId) return employee;
+    return (employees as any[]).find((emp: any) => String(emp?._id) === employeeId) || employee;
+  }
+
+  const sanitizeDisplayValue = (value: any) => {
+    if (value === null || value === undefined) return '';
+    const text = String(value).trim();
+    if (!text) return '';
+    const lowered = text.toLowerCase();
+    if (lowered === 'null' || lowered === 'undefined' || lowered === 'n/a') return '';
+    return text;
+  };
+
+  const resolveEntityName = (value: any, items: any[]) => {
+    if (value && typeof value === 'object') {
+      return sanitizeDisplayValue((value as any).name) || sanitizeDisplayValue((value as any).code);
+    }
+    const id = sanitizeDisplayValue(value);
+    if (!id) return '';
+    const found = items.find((item: any) => String(item?._id) === String(id));
+    return sanitizeDisplayValue(found?.name) || sanitizeDisplayValue(found?.code);
+  };
+
+  const getDivisionName = (employee: any) => {
+    const source = getEmployeeMasterRecord(employee);
+    return (
+      resolveEntityName(source?.division_id, divisions as any[]) ||
+      sanitizeDisplayValue(source?.division_name)
+    );
+  };
+
+  const getDepartmentName = (employee: any) => {
+    const source = getEmployeeMasterRecord(employee);
+    return (
+      resolveEntityName(source?.department_id, departments as any[]) ||
+      sanitizeDisplayValue(source?.department_name)
+    );
+  };
+
+  const getDesignationName = (employee: any) => {
+    const source = getEmployeeMasterRecord(employee);
+    return (
+      resolveEntityName(source?.designation_id, designations as any[]) ||
+      sanitizeDisplayValue(source?.designation_name)
+    );
   };
 
   const filteredBulkDepartments = React.useMemo(() => {
@@ -564,12 +621,12 @@ export default function ArrearsPage() {
         {/* Navigation & Search Bar */}
         <div className="border-b border-slate-200 bg-slate-100/50 p-6 dark:border-slate-800 dark:bg-slate-900/80">
           <div className="flex flex-col gap-6 xl:flex-row xl:items-center xl:justify-between">
-            <div className="flex flex-wrap items-center gap-1.5 rounded-2xl bg-slate-200/80 p-1.5 dark:bg-slate-800/50 backdrop-blur-sm shadow-inner overflow-x-auto">
+            <div className="grid w-full grid-cols-5 gap-1.5 rounded-2xl bg-slate-200/80 p-1.5 dark:bg-slate-800/50 backdrop-blur-sm shadow-inner xl:w-auto">
               {['all', 'pending', 'approved', 'settled', 'rejected'].map(tab => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
-                  className={`rounded-xl px-5 py-2.5 text-xs font-bold uppercase tracking-widest transition-all duration-300 ${activeTab === tab
+                  className={`w-full rounded-xl px-3 py-2.5 text-[11px] font-bold uppercase tracking-wide transition-all duration-300 ${activeTab === tab
                     ? 'bg-white text-slate-950 shadow-md dark:bg-slate-700 dark:text-white'
                     : 'text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white'
                     }`}
@@ -579,7 +636,7 @@ export default function ArrearsPage() {
               ))}
             </div>
 
-            <div className="flex flex-wrap gap-4 items-center">
+            <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
               {/* Division Filter */}
               <select
                 value={selectedDivisionFilter}
@@ -587,7 +644,7 @@ export default function ArrearsPage() {
                   setSelectedDivisionFilter(e.target.value);
                   setSelectedDepartmentFilter(''); // Reset department when division changes
                 }}
-                className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
               >
                 <option value="">All Divisions</option>
                 {divisions.map((div) => (
@@ -601,7 +658,7 @@ export default function ArrearsPage() {
               <select
                 value={selectedDepartmentFilter}
                 onChange={(e) => setSelectedDepartmentFilter(e.target.value)}
-                className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
               >
                 <option value="">All Departments</option>
                 {filteredDepartments.map((dept) => (
@@ -615,7 +672,7 @@ export default function ArrearsPage() {
               <select
                 value={selectedDesignationFilter}
                 onChange={(e) => setSelectedDesignationFilter(e.target.value)}
-                className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
               >
                 <option value="">All Designations</option>
                 {designations.map((desig) => (
@@ -625,7 +682,7 @@ export default function ArrearsPage() {
                 ))}
               </select>
 
-              <div className="relative group min-w-[280px]">
+              <div className="relative group w-full">
                 <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-600 transition-colors group-hover:text-blue-600" />
                 <input
                   type="text"
@@ -658,7 +715,9 @@ export default function ArrearsPage() {
             <table className="w-full border-collapse">
               <thead>
                 <tr className="bg-slate-100 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-700 dark:bg-slate-900/50 border-b border-slate-200">
-                  <th className="px-8 py-6 text-left">Employee Entity</th>
+                  <th className="px-8 py-6 text-left">Employee</th>
+                  <th className="px-8 py-6 text-left">Division</th>
+                  <th className="px-8 py-6 text-left">Department</th>
                   <th className="px-8 py-6 text-left">Fiscal Period</th>
                   <th className="px-8 py-6 text-right">Agreed Value</th>
                   <th className="px-8 py-6 text-right">Outstanding</th>
@@ -678,11 +737,24 @@ export default function ArrearsPage() {
                           {getEmployeeName(ar.employee).charAt(0).toUpperCase()}
                           <div className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full border-2 border-white bg-emerald-500 dark:border-slate-900" />
                         </div>
-                        <div>
-                          <p className="text-sm font-bold text-slate-950 dark:text-white">{getEmployeeName(ar.employee)}</p>
-                          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-600">{ar.employee.emp_no}</p>
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold text-slate-950 dark:text-white whitespace-normal break-words leading-5">{getEmployeeName(ar.employee)}</p>
+                          <p className="text-xs font-semibold text-slate-600 dark:text-slate-400 whitespace-normal break-words leading-5">
+                            {(() => {
+                              const empNo = sanitizeDisplayValue(ar.employee.emp_no);
+                              const designation = getDesignationName(ar.employee);
+                              if (empNo && designation) return `${empNo} · ${designation}`;
+                              return empNo || designation || '—';
+                            })()}
+                          </p>
                         </div>
                       </div>
+                    </td>
+                    <td className="px-8 py-6 text-sm font-semibold text-slate-800 dark:text-slate-200">
+                      {getDivisionName(ar.employee) || '—'}
+                    </td>
+                    <td className="px-8 py-6 text-sm font-semibold text-slate-800 dark:text-slate-200">
+                      {getDepartmentName(ar.employee) || '—'}
                     </td>
                     <td className="px-8 py-6">
                       {ar.type === 'direct' ? (

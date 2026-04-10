@@ -7,8 +7,6 @@ import { Eye, EyeOff, ShieldCheck, ArrowLeft, Lock, Mail, User } from "lucide-re
 import { api } from "@/lib/api";
 import { auth } from "@/lib/auth";
 import { setWorkspaceDataFromLogin } from "@/contexts/WorkspaceContext";
-import LiquidEther from "@/components/LiquidEther";
-import "@/components/LiquidEther.css";
 
 function LoginContent() {
   const router = useRouter();
@@ -143,19 +141,6 @@ function LoginContent() {
     <div className="flex min-h-screen bg-slate-50">
       {/* Left Side: Branding (Hidden on mobile) */}
       <div className="hidden lg:flex lg:w-1/2 relative bg-emerald-950 items-center justify-center overflow-hidden">
-        {/* Background Animation */}
-        <div className="absolute inset-0 z-0 opacity-40">
-          <LiquidEther
-            colors={['#10b981', '#34d399', '#059669']}
-            mouseForce={10}
-            cursorSize={60}
-            autoDemo={true}
-            autoSpeed={0.2}
-            autoIntensity={1.2}
-            resolution={0.4}
-          />
-        </div>
-        
         <div className="relative z-10 p-12 max-w-xl text-white">
           <div className="mb-8 p-3 w-fit bg-white/10 backdrop-blur-md rounded-2xl border border-white/10 shadow-2xl">
             <ShieldCheck className="w-10 h-10 text-emerald-400" />

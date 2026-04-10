@@ -1,5 +1,8 @@
 const LeaveSettings = require('../../leaves/model/LeaveSettings');
 
+/** Matches PayRegisterSummary daily record status enum (halves + full day). */
+const VALID_DAY_STATUSES = ['present', 'absent', 'leave', 'od', 'holiday', 'week_off', 'blank'];
+
 /**
  * Daily Record Update Service
  * Handles updating single day records with validation
@@ -12,11 +15,12 @@ const LeaveSettings = require('../../leaves/model/LeaveSettings');
  */
 function validateDailyRecord(updateData) {
   const errors = [];
+  const allowedStatuses = ['present', 'absent', 'leave', 'od', 'holiday', 'week_off', 'blank'];
 
   // Validate firstHalf
   if (updateData.firstHalf) {
-    if (!['present', 'absent', 'leave', 'od'].includes(updateData.firstHalf.status)) {
-      errors.push('firstHalf.status must be one of: present, absent, leave, od');
+    if (updateData.firstHalf.status && !allowedStatuses.includes(updateData.firstHalf.status)) {
+      errors.push('firstHalf.status must be one of: present, absent, leave, od, holiday, week_off, blank');
     }
     if (updateData.firstHalf.status === 'leave' && !updateData.firstHalf.leaveType) {
       errors.push('leaveType is required when status is leave');
@@ -34,8 +38,8 @@ function validateDailyRecord(updateData) {
 
   // Validate secondHalf
   if (updateData.secondHalf) {
-    if (!['present', 'absent', 'leave', 'od'].includes(updateData.secondHalf.status)) {
-      errors.push('secondHalf.status must be one of: present, absent, leave, od');
+    if (updateData.secondHalf.status && !allowedStatuses.includes(updateData.secondHalf.status)) {
+      errors.push('secondHalf.status must be one of: present, absent, leave, od, holiday, week_off, blank');
     }
     if (updateData.secondHalf.status === 'leave' && !updateData.secondHalf.leaveType) {
       errors.push('leaveType is required when status is leave');
@@ -52,8 +56,8 @@ function validateDailyRecord(updateData) {
   }
 
   // Validate full day fields
-  if (updateData.status && !['present', 'absent', 'leave', 'od'].includes(updateData.status)) {
-    errors.push('status must be one of: present, absent, leave, od');
+  if (updateData.status && !allowedStatuses.includes(updateData.status)) {
+    errors.push('status must be one of: present, absent, leave, od, holiday, week_off, blank');
   }
   if (updateData.otHours !== undefined && updateData.otHours < 0) {
     errors.push('otHours must be >= 0');

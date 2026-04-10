@@ -35,6 +35,16 @@ export default function SuperAdminLayout({
     setIsChecking(false);
   }, [router]);
 
+  useEffect(() => {
+    auth.startInactivityAutoLogout(() => {
+      router.replace('/login');
+    });
+
+    return () => {
+      auth.stopInactivityAutoLogout();
+    };
+  }, [router]);
+
   if (isChecking) {
     return (
       <div className="min-h-screen bg-bg-base flex items-center justify-center">

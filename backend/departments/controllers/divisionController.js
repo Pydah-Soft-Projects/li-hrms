@@ -3,6 +3,44 @@ const Department = require('../model/Department');
 const Designation = require('../model/Designation');
 const Shift = require('../../shifts/model/Shift');
 const User = require('../../users/model/User');
+const {
+    isCustomEmployeeGroupingEnabled,
+    validateEmployeeGroupIfEnabled,
+    stripEmployeeGroupWhenDisabled,
+} = require('../../shared/utils/customEmployeeGrouping');
+
+const formatAndValidateShiftConfigs = async (shifts, groupingEnabled) => {
+    if (!Array.isArray(shifts)) {
+        return { error: 'shifts must be an array' };
+    }
+
+    if (shifts.length === 0) {
+        return { formattedShifts: [] };
+    }
+
+    const shiftIds = shifts.map((s) => (typeof s === 'string' ? s : s.shiftId)).filter(Boolean);
+    const foundShifts = await Shift.find({ _id: { $in: shiftIds } }).select('_id').lean();
+    if (foundShifts.length !== shiftIds.length) {
+        return { error: 'One or more shifts not found' };
+    }
+
+    const formattedShifts = [];
+    for (const s of shifts) {
+        const config = typeof s === 'string'
+            ? { shiftId: s, gender: 'All' }
+            : { shiftId: s.shiftId, gender: s.gender || 'All', employee_group_id: s.employee_group_id || null };
+
+        const groupValidation = await validateEmployeeGroupIfEnabled(config.employee_group_id);
+        if (groupValidation?.error) {
+            return { error: groupValidation.error };
+        }
+
+        stripEmployeeGroupWhenDisabled(config, groupingEnabled);
+        formattedShifts.push(config);
+    }
+
+    return { formattedShifts };
+};
 
 /**
  * @desc    Get all divisions
@@ -360,9 +398,19 @@ exports.assignShifts = async (req, res, next) => {
         const { shifts, targetType, targetId } = req.body;
         // targetType: 'division_general', 'department_in_division', 'designation_in_division', 'designation_in_dept_in_div'
         const divisionId = req.params.id;
+        const groupingEnabled = await isCustomEmployeeGroupingEnabled();
+        const { formattedShifts, error } = await formatAndValidateShiftConfigs(shifts, groupingEnabled);
+        if (error) {
+            return res.status(400).json({
+                success: false,
+                message: error,
+            });
+        }
+
+        let shouldInvalidateDepartmentsCache = false;
 
         if (targetType === 'division_general') {
-            await Division.findByIdAndUpdate(divisionId, { shifts });
+            await Division.findByIdAndUpdate(divisionId, { shifts: formattedShifts });
         } else if (targetType === 'department_in_division') {
             // Update Department.divisionDefaults
             const departmentId = targetId;
@@ -381,11 +429,12 @@ exports.assignShifts = async (req, res, next) => {
             );
 
             if (existingIndex > -1) {
-                department.divisionDefaults[existingIndex].shifts = shifts;
+                department.divisionDefaults[existingIndex].shifts = formattedShifts;
             } else {
-                department.divisionDefaults.push({ division: divisionId, shifts });
+                department.divisionDefaults.push({ division: divisionId, shifts: formattedShifts });
             }
             await department.save();
+            shouldInvalidateDepartmentsCache = true;
         } else if (targetType === 'designation_in_division') {
             // Update Designation.divisionDefaults
             const designationId = targetId;
@@ -403,9 +452,9 @@ exports.assignShifts = async (req, res, next) => {
             );
 
             if (existingIndex > -1) {
-                designation.divisionDefaults[existingIndex].shifts = shifts;
+                designation.divisionDefaults[existingIndex].shifts = formattedShifts;
             } else {
-                designation.divisionDefaults.push({ division: divisionId, shifts });
+                designation.divisionDefaults.push({ division: divisionId, shifts: formattedShifts });
             }
             await designation.save();
         } else if (targetType === 'designation_in_dept_in_div') {
@@ -426,15 +475,20 @@ exports.assignShifts = async (req, res, next) => {
             );
 
             if (existingIndex > -1) {
-                designation.departmentShifts[existingIndex].shifts = shifts;
+                designation.departmentShifts[existingIndex].shifts = formattedShifts;
             } else {
                 designation.departmentShifts.push({
                     division: divisionId,
                     department: departmentId,
-                    shifts,
+                    shifts: formattedShifts,
                 });
             }
             await designation.save();
+        }
+
+        if (shouldInvalidateDepartmentsCache) {
+            const cacheService = require('../../shared/services/cacheService');
+            await cacheService.delByPattern('departments:*');
         }
 
         res.status(200).json({

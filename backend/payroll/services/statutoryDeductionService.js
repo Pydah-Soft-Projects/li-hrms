@@ -78,8 +78,8 @@ async function calculateStatutoryDeductions({ basicPay = 0, grossSalary = 0, ear
     // Eligibility must follow the ESI wage (field or % of basic), not full contractual basic — see StatutoryDeductionConfig esiSchema comment.
     const applicable = esiWage > 0 && (wageCeiling <= 0 || esiWage <= wageCeiling);
     if (applicable) {
-      const empAmount = prorate(Math.round((esiWage * empPct / 100) * 100) / 100);
-      const emprAmount = prorate(Math.round((esiWage * emprPct / 100) * 100) / 100);
+      const empAmount = Math.round(prorate(Math.round((esiWage * empPct / 100) * 100) / 100));
+      const emprAmount = Math.round(prorate(Math.round((esiWage * emprPct / 100) * 100) / 100));
       totalEmployeeShare += empAmount;
       totalEmployerShare += emprAmount;
       breakdown.push({
@@ -114,8 +114,8 @@ async function calculateStatutoryDeductions({ basicPay = 0, grossSalary = 0, ear
     const finalBase = contributionBase > 0 ? (wageCeiling > 0 ? Math.min(contributionBase, wageCeiling) : contributionBase) : 0;
 
     if (finalBase > 0) {
-      const empAmount = prorate(Math.round((finalBase * empPct / 100) * 100) / 100);
-      const emprAmount = prorate(Math.round((finalBase * emprPct / 100) * 100) / 100);
+      const empAmount = Math.round(prorate(Math.round((finalBase * empPct / 100) * 100) / 100));
+      const emprAmount = Math.round(prorate(Math.round((finalBase * emprPct / 100) * 100) / 100));
       totalEmployeeShare += empAmount;
       totalEmployerShare += emprAmount;
       breakdown.push({

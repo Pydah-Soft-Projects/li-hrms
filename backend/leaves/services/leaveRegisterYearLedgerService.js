@@ -373,10 +373,12 @@ async function findYearDocsForRegisterFilters(filters, fyName) {
   }
 
   let docs = await LeaveRegisterYear.find(q).lean();
-  if (filters.divisionId || filters.departmentId) {
+  if (filters.divisionId || filters.departmentId || filters.designationId || filters.employee_group_id) {
     const empQ = { is_active: true };
     if (filters.divisionId) empQ.division_id = filters.divisionId;
     if (filters.departmentId) empQ.department_id = filters.departmentId;
+    if (filters.designationId) empQ.designation_id = filters.designationId;
+    if (filters.employee_group_id) empQ.employee_group_id = filters.employee_group_id;
     const allowed = await Employee.find(empQ).select('_id').lean();
     const set = new Set(allowed.map((x) => x._id.toString()));
     docs = docs.filter((d) => set.has(d.employeeId.toString()));

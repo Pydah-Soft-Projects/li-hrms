@@ -1,4 +1,5 @@
 import { clearWorkspaceData } from '@/contexts/WorkspaceContext';
+import { alertConfirm } from '@/lib/customSwal';
 
 export interface User {
   id: string;
@@ -15,6 +16,33 @@ export interface User {
   featureControl?: string[];
   loginMethod?: string;
 }
+
+const INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000;
+const ACTIVITY_EVENTS: Array<keyof WindowEventMap> = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'];
+
+let inactivityTimer: ReturnType<typeof setTimeout> | null = null;
+let inactivityListenersBound = false;
+let inactivityLogoutHandler: (() => void) | null = null;
+
+const clearInactivityTimer = () => {
+  if (inactivityTimer) {
+    clearTimeout(inactivityTimer);
+    inactivityTimer = null;
+  }
+};
+
+const resetInactivityTimer = () => {
+  if (typeof window === 'undefined') return;
+
+  clearInactivityTimer();
+
+  inactivityTimer = setTimeout(() => {
+    if (!auth.getToken() || !auth.getUser()) return;
+
+    auth.logout();
+    inactivityLogoutHandler?.();
+  }, INACTIVITY_TIMEOUT_MS);
+};
 
 export const auth = {
   setToken: (token: string) => {
@@ -56,6 +84,52 @@ export const auth = {
       // Dispatch custom event to notify React contexts to clear memory state
       window.dispatchEvent(new CustomEvent('auth-logout'));
     }
+  },
+
+  confirmLogout: async (
+    message = 'Are you sure you want to logout?',
+    title = 'Confirm Logout'
+  ): Promise<boolean> => {
+    if (typeof window === 'undefined') return false;
+    const result = await alertConfirm(title, message, 'Logout');
+    return result.isConfirmed;
+  },
+
+  logoutWithConfirmation: async (message = 'Are you sure you want to logout?'): Promise<boolean> => {
+    const confirmed = await auth.confirmLogout(message);
+    if (!confirmed) return false;
+    auth.logout();
+    return true;
+  },
+
+  startInactivityAutoLogout: (onLogout?: () => void) => {
+    if (typeof window === 'undefined') return;
+
+    inactivityLogoutHandler = onLogout || null;
+
+    if (!inactivityListenersBound) {
+      ACTIVITY_EVENTS.forEach((eventName) => {
+        window.addEventListener(eventName, resetInactivityTimer, { passive: true });
+      });
+      inactivityListenersBound = true;
+    }
+
+    resetInactivityTimer();
+  },
+
+  stopInactivityAutoLogout: () => {
+    if (typeof window === 'undefined') return;
+
+    clearInactivityTimer();
+
+    if (inactivityListenersBound) {
+      ACTIVITY_EVENTS.forEach((eventName) => {
+        window.removeEventListener(eventName, resetInactivityTimer);
+      });
+      inactivityListenersBound = false;
+    }
+
+    inactivityLogoutHandler = null;
   },
 
   isAuthenticated: (): boolean => {
