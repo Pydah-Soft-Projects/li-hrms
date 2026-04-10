@@ -64,6 +64,11 @@ const designationSchema = new mongoose.Schema(
         enum: ['Male', 'Female', 'Other', 'All'],
         default: 'All',
       },
+      employee_group_id: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'EmployeeGroup',
+        default: null,
+      },
     }],
     // Division-specific default shifts (across all departments in that division)
     divisionDefaults: [
@@ -82,6 +87,11 @@ const designationSchema = new mongoose.Schema(
             type: String,
             enum: ['Male', 'Female', 'Other', 'All'],
             default: 'All',
+          },
+          employee_group_id: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'EmployeeGroup',
+            default: null,
           },
         }],
       },
@@ -108,6 +118,11 @@ const designationSchema = new mongoose.Schema(
             type: String,
             enum: ['Male', 'Female', 'Other', 'All'],
             default: 'All',
+          },
+          employee_group_id: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'EmployeeGroup',
+            default: null,
           },
         }],
       },

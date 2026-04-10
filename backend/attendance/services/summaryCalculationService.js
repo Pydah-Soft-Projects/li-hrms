@@ -10,6 +10,7 @@ const { createISTDate, extractISTComponents, getAllDatesInRange } = require('../
 const dateCycleService = require('../../leaves/services/dateCycleService');
 const Employee = require('../../employees/model/Employee');
 const LeaveRegisterYear = require('../../leaves/model/LeaveRegisterYear');
+const OT = require('../../overtime/model/OT');
 const deductionService = require('../../payroll/services/deductionService');
 const { getAbsentDeductionSettings } = require('../../payroll/services/allowanceDeductionResolverService');
 
@@ -41,6 +42,41 @@ function toNormalizedDateStr(val) {
 
 function isAbsentStatus(status) {
   return String(status || '').toUpperCase() === 'ABSENT';
+}
+
+function isEsiLeaveEntry(leaveEntry) {
+  return String(leaveEntry?.leaveType || '').trim().toUpperCase() === 'ESI';
+}
+
+function isFullDayEsiLeaveEntry(leaveEntry) {
+  if (!isEsiLeaveEntry(leaveEntry)) return false;
+  if (leaveEntry?.isHalfDay) return false;
+  if (typeof leaveEntry?.numberOfDays === 'number' && leaveEntry.numberOfDays < 1) return false;
+  return true;
+}
+
+function isHalfDayEsiLeaveEntry(leaveEntry) {
+  if (!isEsiLeaveEntry(leaveEntry)) return false;
+  return !!leaveEntry?.isHalfDay || Number(leaveEntry?.numberOfDays) === 0.5;
+}
+
+function getPunchHoursFromAttendance(attendance) {
+  if (!attendance) return 0;
+  const shifts = Array.isArray(attendance.shifts) ? attendance.shifts : [];
+  if (shifts.length > 0) {
+    const sum = shifts.reduce((acc, s) => acc + (Number(s?.punchHours) || 0), 0);
+    return Math.round(sum * 100) / 100;
+  }
+  return Math.round((Number(attendance.totalWorkingHours) || 0) * 100) / 100;
+}
+
+function getExpectedHoursFromAttendance(attendance) {
+  if (!attendance) return 0;
+  const totalExpected = Number(attendance.totalExpectedHours) || 0;
+  if (totalExpected > 0) return totalExpected;
+  const shifts = Array.isArray(attendance.shifts) ? attendance.shifts : [];
+  const fromShifts = shifts.reduce((acc, s) => acc + (Number(s?.expectedHours) || 0), 0);
+  return fromShifts > 0 ? fromShifts : 8;
 }
 
 /** Pay register leave halves use paid/lop keys (same as populate resolveConflicts). */
@@ -420,6 +456,20 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       date: { $gte: startDate, $lte: endDate },
     }).select('date isHalfDay halfDayType numberOfDays leaveType leaveNature').lean();
 
+    // Half-day ESI remaining-hours logic:
+    // if OT was declared from ESI conversion, use remaining punch hours
+    // (punch - declared OT) for present/payable contribution.
+    const esiOtRecords = await OT.find({
+      employeeId,
+      date: { $gte: startDateStr, $lte: endDateStr },
+      source: 'esi_leave_conversion',
+      isActive: true,
+      status: { $in: ['pending', 'manager_approved', 'approved'] },
+    }).select('date otHours').lean();
+    const esiOtHoursByDate = new Map(
+      (esiOtRecords || []).map((r) => [toNormalizedDateStr(r.date), Number(r.otHours) || 0])
+    );
+
     // Fill map from attendance (needed before sandwich rule uses ABSENT from dailies)
     for (const rec of attendanceRecords) {
       const dStr = toNormalizedDateStr(rec.date);
@@ -671,6 +721,8 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         payRegisterDaySnapshots.push(buildBlankPayRegisterDaySnapshot(dStr));
         continue;
       }
+      const hasFullDayEsiLeave = Array.isArray(day.leaves) && day.leaves.some(isFullDayEsiLeaveEntry);
+      const hasHalfDayEsiLeave = Array.isArray(day.leaves) && day.leaves.some(isHalfDayEsiLeaveEntry);
       // 1. Leaves (Priority - if leave is taken, it counts as leave)
       if (day.leaves.length > 0) {
         // Sum all leave units on the same date (multiple 0.5 leaves can make 1.0)
@@ -764,6 +816,35 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         totalODDays += (odFirst + odSecond);
       }
 
+      // Half-day ESI with user-declared OT:
+      // remaining worked hours (punch - OT) should decide half/full/none attendance contribution.
+      if (hasHalfDayEsiLeave && day.attendance && !day.isWO && !day.isHOL && esiOtHoursByDate.has(dStr)) {
+        const declaredOtHours = Math.max(0, Number(esiOtHoursByDate.get(dStr)) || 0);
+        const punchHours = getPunchHoursFromAttendance(day.attendance);
+        const remainingHours = Math.max(0, Math.round((punchHours - declaredOtHours) * 100) / 100);
+        const expectedHours = Math.max(0.01, getExpectedHoursFromAttendance(day.attendance));
+        const remainingRatio = remainingHours / expectedHours;
+
+        if (remainingRatio >= 0.9) {
+          attFirst = 0.5;
+          attSecond = 0.5;
+        } else if (remainingRatio >= 0.45) {
+          attFirst = 0.5;
+          attSecond = 0;
+        } else {
+          attFirst = 0;
+          attSecond = 0;
+        }
+      }
+
+      // ESI leave day override:
+      // even if punches exist (used for OT conversion/pay), attendance should not
+      // increase PRESENT or payable-shift totals in monthly summary.
+      if (hasFullDayEsiLeave) {
+        attFirst = 0;
+        attSecond = 0;
+      }
+
       // dayPresent: physical presence (PARTIAL status does not add to present; partial payable is tracked separately)
       const dayPresent = Math.min(Math.max(0, attFirst - odFirst) + Math.max(0, attSecond - odSecond), 1.0);
 
@@ -792,6 +873,10 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         if (Number.isFinite(attendancePayable) && attendancePayable >= 0) candidates.push(attendancePayable);
         if (Number.isFinite(shiftLevelPayable) && shiftLevelPayable >= 0) candidates.push(shiftLevelPayable);
         dayPayable = Math.round(Math.max(...candidates) * 100) / 100;
+      }
+
+      if (hasFullDayEsiLeave) {
+        dayPayable = 0;
       }
 
       dayPayable = Math.min(dayPayable, 1.0);
@@ -994,7 +1079,6 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     summary.earlyOutCount = earlyOutCount;
 
     // 7. Calculate total OT hours
-    const OT = require('../../overtime/model/OT');
     const approvedOTs = await OT.find({
       employeeId,
       status: 'approved',

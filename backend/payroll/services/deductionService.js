@@ -146,10 +146,12 @@ function calculateDaysToDeduct(multiplier, remainder, threshold, deductionType, 
  * @param {String} departmentId - Department ID
  * @param {Number} perDayBasicPay - Per day basic pay
  * @param {String|null} divisionId - Division ID for rules
- * @param {Object} [options] - Optional: { absentDays, enableAbsentDeduction, lopDaysPerAbsent, employee, ignoreMonthlySummary, forceRecalculate }.
+ * @param {Object} [options] - Optional: { absentDays, enableAbsentDeduction, lopDaysPerAbsent, employee, ignorePayRegisterSummary, ignoreMonthlySummary, forceRecalculate, periodStartDateStr, periodEndDateStr }.
  *   employee: { applyAttendanceDeduction, deductLateIn, deductEarlyOut, deductAbsent }.
+ *   ignorePayRegisterSummary: when true, never read stored PayRegisterSummary policy snapshot (used while recalculating that register).
+ *   usePayRegisterLateEarlyCounts + payRegisterLateInsCount / payRegisterEarlyOutsCount: when true, late/early instance counts come from the pay register grid (totals), not AttendanceDaily — required so edits on the pay register affect policy deduction.
  *   ignoreMonthlySummary: when true, never read MonthlyAttendanceSummary (used while recalculating that summary).
- *   forceRecalculate: when true, skip stored monthly summary and pay-register fallback shortcuts.
+ *   forceRecalculate: when true, skip stored pay register + monthly summary snapshots.
  * @param {Object} [options] - Optional: { absentDays, enableAbsentDeduction, lopDaysPerAbsent, employee, periodStartDateStr, periodEndDateStr, forceRecalculate }.
  *   When periodStartDateStr + periodEndDateStr (YYYY-MM-DD IST) are set, late/early counts use AttendanceDaily in that inclusive range. Otherwise the range is resolved from `month` using payroll cycle settings (not calendar month).
  *   employee: { applyAttendanceDeduction, deductLateIn, deductEarlyOut, deductAbsent }.
@@ -177,6 +179,50 @@ async function calculateAttendanceDeduction(employeeId, month, departmentId, per
           calculationMode: null,
         },
       };
+    }
+
+    const skipStoredPayRegister =
+      options.ignorePayRegisterSummary === true || options.forceRecalculate === true;
+    if (!skipStoredPayRegister) {
+      try {
+        const PayRegisterSummary = require('../../pay-register/model/PayRegisterSummary');
+        const prDoc = await PayRegisterSummary.findOne({ employeeId, month })
+          .select('attendanceDeductionBreakdown totalAttendanceDeductionDays attendanceDeductionCalculatedAt')
+          .lean();
+        const hasPrDed =
+          prDoc &&
+          prDoc.attendanceDeductionCalculatedAt != null &&
+          prDoc.attendanceDeductionBreakdown != null &&
+          typeof prDoc.attendanceDeductionBreakdown === 'object';
+        if (hasPrDed) {
+          const br = prDoc.attendanceDeductionBreakdown;
+          const rawDays =
+            br.daysDeducted != null && br.daysDeducted !== ''
+              ? Number(br.daysDeducted)
+              : Number(prDoc.totalAttendanceDeductionDays) || 0;
+          const safeDays = Number.isFinite(rawDays) ? Math.max(0, rawDays) : 0;
+          const attendanceDeduction = Math.round(safeDays * perDayBasicPay * 100) / 100;
+          return {
+            attendanceDeduction,
+            breakdown: {
+              lateInsCount: Number(br.lateInsCount) || 0,
+              earlyOutsCount: Number(br.earlyOutsCount) || 0,
+              combinedCount: Number(br.combinedCount) || 0,
+              freeAllowedPerMonth: Number(br.freeAllowedPerMonth) || 0,
+              effectiveCount: Number(br.effectiveCount) || 0,
+              daysDeducted: safeDays,
+              lateEarlyDaysDeducted: Number(br.lateEarlyDaysDeducted) || 0,
+              absentExtraDays: Number(br.absentExtraDays) || 0,
+              absentDays: Number(br.absentDays) || 0,
+              lopDaysPerAbsent: br.lopDaysPerAbsent != null ? Number(br.lopDaysPerAbsent) : null,
+              deductionType: br.deductionType != null ? String(br.deductionType) : null,
+              calculationMode: br.calculationMode != null ? String(br.calculationMode) : null,
+            },
+          };
+        }
+      } catch (e) {
+        console.warn('[Deduction] PayRegisterSummary policy snapshot read failed, falling back:', e.message);
+      }
     }
 
     const skipStoredMonthlySummary =
@@ -223,14 +269,10 @@ async function calculateAttendanceDeduction(employeeId, month, departmentId, per
     }
 
     // 1. Fetch counts FIRST (so we can return them even if no deduction rules apply)
-    const PayRegisterSummary = require('../../pay-register/model/PayRegisterSummary');
-    // Using lean() to bypass strict mode filtering if fields are missing from schema but present in DB
-    let payRegister = await PayRegisterSummary.findOne({ employeeId, month }).lean();
     let lateInsCount = 0;
     let earlyOutsCount = 0;
     let source = 'attendance_logs';
 
-    // Priority 1: Always try to calculate from AttendanceDaily logs first (Real-time truth)
     const [y, mNum] = month.split('-').map(Number);
     let startStr;
     let endStr;
@@ -243,50 +285,58 @@ async function calculateAttendanceDeduction(employeeId, month, departmentId, per
       endStr = extractISTComponents(cycle.endDate).dateStr;
     }
 
-    const Employee = require('../../employees/model/Employee');
-    const empDoc = await Employee.findById(employeeId).select('emp_no').lean();
-    let logsFound = false;
+    if (options.usePayRegisterLateEarlyCounts === true) {
+      lateInsCount = Number(options.payRegisterLateInsCount) || 0;
+      earlyOutsCount = Number(options.payRegisterEarlyOutsCount) || 0;
+      source = 'pay_register_grid_totals';
+    } else {
+      const PayRegisterSummary = require('../../pay-register/model/PayRegisterSummary');
+      let payRegister = await PayRegisterSummary.findOne({ employeeId, month }).lean();
 
-    if (empDoc?.emp_no) {
-      const empNo = String(empDoc.emp_no).toUpperCase();
-      const attendanceRecords = await AttendanceDaily.find({
-        employeeNumber: empNo,
-        date: { $gte: startStr, $lte: endStr },
-      })
-        .select('status shifts totalLateInMinutes totalEarlyOutMinutes lateInWaved earlyOutWaved')
-        .lean();
+      const Employee = require('../../employees/model/Employee');
+      const empDoc = await Employee.findById(employeeId).select('emp_no').lean();
+      let logsFound = false;
 
-      if (attendanceRecords.length > 0) {
-        logsFound = true;
-        const rulesTemp = await getResolvedAttendanceDeductionRules(departmentId, divisionId);
-        const minimumDuration = rulesTemp.minimumDuration || 0;
+      if (empDoc?.emp_no) {
+        const empNo = String(empDoc.emp_no).toUpperCase();
+        const attendanceRecords = await AttendanceDaily.find({
+          employeeNumber: empNo,
+          date: { $gte: startStr, $lte: endStr },
+        })
+          .select('status shifts totalLateInMinutes totalEarlyOutMinutes lateInWaved earlyOutWaved')
+          .lean();
 
-        for (const record of attendanceRecords) {
-          if (record.status !== 'PRESENT') continue;
+        if (attendanceRecords.length > 0) {
+          logsFound = true;
+          const rulesTemp = await getResolvedAttendanceDeductionRules(departmentId, divisionId);
+          const minimumDuration = rulesTemp.minimumDuration || 0;
 
-          const shifts = Array.isArray(record.shifts) ? record.shifts : [];
-          let dayLate = 0;
-          let dayEarly = 0;
-          if (shifts.length > 0) {
-            for (const s of shifts) {
-              dayLate += Number(s.lateInMinutes) || 0;
-              dayEarly += Number(s.earlyOutMinutes) || 0;
+          for (const record of attendanceRecords) {
+            if (record.status !== 'PRESENT') continue;
+
+            const shifts = Array.isArray(record.shifts) ? record.shifts : [];
+            let dayLate = 0;
+            let dayEarly = 0;
+            if (shifts.length > 0) {
+              for (const s of shifts) {
+                dayLate += Number(s.lateInMinutes) || 0;
+                dayEarly += Number(s.earlyOutMinutes) || 0;
+              }
+            } else {
+              dayLate = Number(record.totalLateInMinutes) || 0;
+              dayEarly = Number(record.totalEarlyOutMinutes) || 0;
             }
-          } else {
-            dayLate = Number(record.totalLateInMinutes) || 0;
-            dayEarly = Number(record.totalEarlyOutMinutes) || 0;
+            if (dayLate > 0 && dayLate >= minimumDuration && !record.lateInWaved) lateInsCount++;
+            if (dayEarly > 0 && dayEarly >= minimumDuration && !record.earlyOutWaved) earlyOutsCount++;
           }
-          if (dayLate > 0 && dayLate >= minimumDuration && !record.lateInWaved) lateInsCount++;
-          if (dayEarly > 0 && dayEarly >= minimumDuration && !record.earlyOutWaved) earlyOutsCount++;
         }
       }
-    }
 
-    // Priority 2: Fallback to Pay Register Summary only if no logs available OR if summary specifically exists and we aren't forcing logs
-    if (!logsFound && payRegister && payRegister.totals && !options.forceRecalculate) {
-      lateInsCount = payRegister.totals.lateCount || 0;
-      earlyOutsCount = payRegister.totals.earlyOutCount || 0;
-      source = 'pay_register_summary';
+      if (!logsFound && payRegister && payRegister.totals && !options.forceRecalculate) {
+        lateInsCount = payRegister.totals.lateCount || 0;
+        earlyOutsCount = payRegister.totals.earlyOutCount || 0;
+        source = 'pay_register_summary';
+      }
     }
 
     const deductLateIn = employee == null || employee.deductLateIn !== false;

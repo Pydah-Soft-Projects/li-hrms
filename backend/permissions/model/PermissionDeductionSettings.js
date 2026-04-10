@@ -51,6 +51,25 @@ const PermissionDeductionSettingsSchema = new mongoose.Schema(
         default: null,
       },
     },
+    // Application date window
+    allowBackdated: {
+      type: Boolean,
+      default: false,
+    },
+    maxBackdatedDays: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    allowFutureDated: {
+      type: Boolean,
+      default: true,
+    },
+    maxAdvanceDays: {
+      type: Number,
+      default: 365,
+      min: 0,
+    },
 
     // Workflow configuration
     workflow: {

@@ -6,6 +6,7 @@ const { applyContributingDatesFromDailyGrid } = require('./contributingDatesServ
 const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
 const mongoose = require('mongoose');
 const SecondSalarySyncService = require('../../payroll/services/secondSalarySyncService');
+const { recalculatePayRegisterAttendanceDeduction } = require('./payRegisterAttendanceDeductionService');
 
 /**
  * Summary Upload Service
@@ -17,9 +18,11 @@ const SecondSalarySyncService = require('../../payroll/services/secondSalarySync
  * @param {String} month - Month in YYYY-MM format
  * @param {Array} rows - Array of objects from Excel
  * @param {String} userId - ID of user performing upload
+ * @param {Object} [options]
+ * @param {Array<string|ObjectId>} [options.allowedEmployeeIds] - Optional scoped employee ids; rows outside scope are skipped.
  * @returns {Object} Result summary
  */
-async function processSummaryBulkUpload(month, rows, userId) {
+async function processSummaryBulkUpload(month, rows, userId, options = {}) {
     const [year, monthNum] = month.split('-').map(Number);
     const range = await getPayrollDateRange(year, monthNum);
 
@@ -31,6 +34,9 @@ async function processSummaryBulkUpload(month, rows, userId) {
     };
 
     const updatedEmployeeIds = [];
+    const allowedEmployeeIdSet = Array.isArray(options.allowedEmployeeIds)
+        ? new Set(options.allowedEmployeeIds.map((id) => String(id)))
+        : null;
 
     // Helper to find value in row by various possible key names (case-insensitive, trimmed)
     const getValue = (row, variants) => {
@@ -55,6 +61,11 @@ async function processSummaryBulkUpload(month, rows, userId) {
             if (!employee) {
                 results.failed++;
                 results.errors.push(`Employee not found: ${empNo}`);
+                continue;
+            }
+            if (allowedEmployeeIdSet && !allowedEmployeeIdSet.has(String(employee._id))) {
+                results.failed++;
+                results.errors.push(`Employee out of scope: ${empNo}`);
                 continue;
             }
 
@@ -222,6 +233,7 @@ async function processSummaryBulkUpload(month, rows, userId) {
             payRegister.markModified('dailyRecords');
             applyContributingDatesFromDailyGrid(payRegister);
 
+            await recalculatePayRegisterAttendanceDeduction(payRegister);
             await payRegister.save();
             updatedEmployeeIds.push(employeeId.toString());
             results.success++;

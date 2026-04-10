@@ -764,7 +764,8 @@ export default function LeavesPage() {
     division: [] as string[],
     department: [] as string[],
     designation: [] as string[],
-    status: ''
+    status: '',
+    odPlace: ''
   });
 
   // Form validation for Apply button
@@ -894,6 +895,7 @@ export default function LeavesPage() {
   const getLeavesODFilters = () => ({
     search: searchTerm?.trim() || undefined,
     status: leaveFilters.status || undefined,
+    placeVisited: activeTab === 'od' ? (leaveFilters.odPlace || undefined) : undefined,
     department: leaveFilters.department.length > 0 ? leaveFilters.department : undefined,
     division: leaveFilters.division.length > 0 ? leaveFilters.division : undefined,
     designation: leaveFilters.designation.length > 0 ? leaveFilters.designation : undefined,
@@ -2317,6 +2319,17 @@ export default function LeavesPage() {
             <option value="rejected">Rejected</option>
             <option value="cancelled">Cancelled</option>
           </select>
+
+          {activeTab === 'od' && (
+            <select
+              value={leaveFilters.odPlace}
+              onChange={(e) => setLeaveFilters(prev => ({ ...prev, odPlace: e.target.value }))}
+              className="h-9 pl-3 pr-8 text-[11px] font-bold uppercase tracking-wider bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-300 shadow-sm min-w-[170px]"
+            >
+              <option value="">Place</option>
+              <option value="Organization Campus (Auto)">Organization Campus (Auto)</option>
+            </select>
+          )}
 
           <div className="relative min-w-[150px]">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">

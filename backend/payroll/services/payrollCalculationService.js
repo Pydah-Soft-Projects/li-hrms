@@ -23,7 +23,7 @@ const {
 } = require('./allowanceDeductionResolverService');
 const statutoryDeductionService = require('./statutoryDeductionService');
 const Settings = require('../../settings/model/Settings');
-const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
+const { resolveEffectiveEarnedLeaveForDepartment } = require('../../leaves/services/earnedLeavePolicyResolver');
 const { createISTDate, extractISTComponents } = require('../../shared/utils/dateUtils');
 
 /**
@@ -263,7 +263,11 @@ async function calculatePayroll(employeeId, month, userId) {
     const otPayResult = await otPayService.calculateOTPay(
       attendanceSummary.totalOTHours || 0,
       departmentId.toString(),
-      employee.division_id?.toString() || null
+      employee.division_id?.toString() || null,
+      {
+        employee,
+        totalDaysInMonth: attendanceSummary.totalDaysInMonth,
+      }
     );
     console.log('OT Pay Result:', JSON.stringify(otPayResult, null, 2));
 
@@ -605,7 +609,11 @@ async function calculatePayroll(employeeId, month, userId) {
     console.log('========== PAYROLL CALCULATION END ==========\n');
 
     // Step 12: Get settings snapshot for audit
-    const otSettings = await otPayService.getResolvedOTSettings(departmentId.toString(), employee.division_id);
+    const otSettings = await otPayService.getResolvedOTSettings(
+      departmentId.toString(),
+      employee.division_id?.toString?.() || null,
+      employee
+    );
     const permissionRules = await deductionService.getResolvedPermissionDeductionRules(departmentId.toString(), employee.division_id);
     const attendanceRules = await deductionService.getResolvedAttendanceDeductionRules(departmentId.toString(), employee.division_id);
 
@@ -989,8 +997,8 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     // When "Use EL as paid in payroll" is ON: add employee's EL balance to payable shifts (extra paid days). Employee does not "avail" these as leave; they are consumed when batch is completed.
     let elUsedInPayroll = 0;
     try {
-      const policy = await LeavePolicySettings.getSettings();
-      if (policy.earnedLeave && policy.earnedLeave.useAsPaidInPayroll !== false) {
+      const effectiveEL = await resolveEffectiveEarnedLeaveForDepartment(departmentId, divisionId);
+      if (effectiveEL.enabled && effectiveEL.useAsPaidInPayroll !== false) {
         const elBalance = Math.max(0, Number(employee.paidLeaves) || 0);
         if (elBalance > 0) {
           elUsedInPayroll = Math.min(elBalance, monthDays);
@@ -1001,7 +1009,7 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
         }
       }
     } catch (e) {
-      console.warn('[Payroll] LeavePolicySettings check failed:', e.message);
+      console.warn('[Payroll] Effective EL policy check failed:', e.message);
     }
 
     console.log('Attendance Data:');
@@ -1049,7 +1057,12 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     // Step 9: OT Pay
     const otPayResult = await otPayService.calculateOTPay(
       attendanceSummary.totalOTHours || 0,
-      departmentId.toString()
+      departmentId.toString(),
+      employee.division_id?.toString() || null,
+      {
+        employee,
+        totalDaysInMonth: attendanceSummary.totalDaysInMonth,
+      }
     );
     const otPay = otPayResult.otPay || 0;
     const otHours = attendanceSummary.totalOTHours || 0;
@@ -1402,9 +1415,10 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     payrollRecord.markModified('loanAdvance');
 
     // Process arrears
-    let arrearsSettlements = options.arrearsSettlements;
-    // Auto-fetch if not provided OR if empty array provided (default from frontend)
-    if (!arrearsSettlements || arrearsSettlements.length === 0) {
+    const hasExplicitArrearsSelection = Array.isArray(options.arrearsSettlements);
+    let arrearsSettlements = hasExplicitArrearsSelection ? options.arrearsSettlements : undefined;
+    // Auto-fetch only when selection is not explicitly provided by caller.
+    if (!hasExplicitArrearsSelection) {
       try {
         const pendingArrears = await ArrearsPayrollIntegrationService.getPendingArrearsForPayroll(employeeId);
         if (pendingArrears && pendingArrears.length > 0) {
@@ -1417,7 +1431,13 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
         console.error("Error auto-fetching pending arrears in calculatePayrollNew", e);
       }
     }
-    arrearsSettlements = arrearsSettlements || [];
+    arrearsSettlements = Array.isArray(arrearsSettlements) ? arrearsSettlements : [];
+    if (hasExplicitArrearsSelection && arrearsSettlements.length === 0) {
+      payrollRecord.set('arrearsAmount', 0);
+      payrollRecord.set('arrearsSettlements', []);
+      payrollRecord.markModified('arrearsAmount');
+      payrollRecord.markModified('arrearsSettlements');
+    }
     if (arrearsSettlements && arrearsSettlements.length > 0) {
       console.log(`\n--- Processing Arrears Settlements: ${arrearsSettlements.length} items ---`);
       try {

@@ -2,6 +2,11 @@ const Designation = require('../model/Designation');
 const Department = require('../model/Department');
 const User = require('../../users/model/User');
 const Shift = require('../../shifts/model/Shift');
+const {
+  isCustomEmployeeGroupingEnabled,
+  validateEmployeeGroupIfEnabled,
+  stripEmployeeGroupWhenDisabled,
+} = require('../../shared/utils/customEmployeeGrouping');
 
 // @desc    Get all designations (global)
 // @route   GET /api/designations
@@ -488,6 +493,7 @@ exports.updateDesignation = async (req, res) => {
 exports.assignShifts = async (req, res) => {
   try {
     const { shifts, departmentId } = req.body; // Expect 'shifts' array
+    const groupingEnabled = await isCustomEmployeeGroupingEnabled();
 
     if (!Array.isArray(shifts)) {
       return res.status(400).json({
@@ -517,10 +523,23 @@ exports.assignShifts = async (req, res) => {
     }
 
     // Format shifts
-    const formattedShifts = shifts.map(s => {
-      if (typeof s === 'string') return { shiftId: s, gender: 'All' };
-      return { shiftId: s.shiftId, gender: s.gender || 'All' };
-    });
+    const formattedShifts = [];
+    for (const s of shifts) {
+      const config = typeof s === 'string'
+        ? { shiftId: s, gender: 'All' }
+        : { shiftId: s.shiftId, gender: s.gender || 'All', employee_group_id: s.employee_group_id || null };
+
+      const groupValidation = await validateEmployeeGroupIfEnabled(config.employee_group_id);
+      if (groupValidation?.error) {
+        return res.status(400).json({
+          success: false,
+          message: groupValidation.error,
+        });
+      }
+
+      stripEmployeeGroupWhenDisabled(config, groupingEnabled);
+      formattedShifts.push(config);
+    }
 
     if (departmentId) {
       // Find and update specific department configuration

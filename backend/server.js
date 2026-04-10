@@ -240,6 +240,14 @@ const startServer = async () => {
       console.warn('⚠️  Resignation deactivation cron failed to start:', cronErr.message);
     }
 
+    // Birthday wishes cron (09:00 IST daily - sends SMS + email birthday greetings)
+    try {
+      const { startBirthdayWishCron } = require('./shared/jobs/birthdayWishCron');
+      startBirthdayWishCron();
+    } catch (cronErr) {
+      console.warn('⚠️  Birthday wish cron failed to start:', cronErr.message);
+    }
+
     // Start BullMQ Workers for background job processing
     try {
       const { startWorkers } = require('./shared/jobs/worker');

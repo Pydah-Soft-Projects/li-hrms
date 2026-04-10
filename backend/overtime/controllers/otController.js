@@ -7,7 +7,15 @@ const OT = require('../model/OT');
 const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
 const ConfusedShift = require('../../shifts/model/ConfusedShift');
 const Employee = require('../../employees/model/Employee');
-const { createOTRequest, approveOTRequest, rejectOTRequest, convertExtraHoursToOT } = require('../services/otService');
+const OvertimeSettings = require('../model/OvertimeSettings');
+const {
+  createOTRequest,
+  approveOTRequest,
+  rejectOTRequest,
+  convertExtraHoursToOT,
+  previewConvertExtraHoursToOT,
+  simulateOtHoursPolicy,
+} = require('../services/otService');
 const {
   buildWorkflowVisibilityFilter,
   getEmployeeIdsInScope
@@ -39,17 +47,39 @@ exports.createOT = async (req, res) => {
       });
     }
 
-    // Validate Date (Must be today or future)
-    // Get IST "Today" (YYYY-MM-DD)
-    const now = new Date();
-    const istNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-    const todayStr = `${istNow.getFullYear()}-${String(istNow.getMonth() + 1).padStart(2, '0')}-${String(istNow.getDate()).padStart(2, '0')}`;
+    // Validate date window from OT settings.
+    if (req.user?.role !== 'super_admin') {
+      const settings = await OvertimeSettings.getActiveSettings();
+      const policy = settings || {
+        allowBackdated: false,
+        maxBackdatedDays: 0,
+        allowFutureDated: true,
+        maxAdvanceDays: 365,
+      };
 
-    if (date < todayStr) {
-      return res.status(400).json({
-        success: false,
-        message: 'OT requests are restricted to current or future dates only.'
-      });
+      const now = new Date();
+      const istNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+      const today = new Date(istNow.getFullYear(), istNow.getMonth(), istNow.getDate());
+      const minDate = new Date(today);
+      const maxDate = new Date(today);
+
+      if (policy.allowBackdated && (policy.maxBackdatedDays ?? 0) > 0) {
+        minDate.setDate(minDate.getDate() - Number(policy.maxBackdatedDays || 0));
+      }
+      if (policy.allowFutureDated && (policy.maxAdvanceDays ?? 0) > 0) {
+        maxDate.setDate(maxDate.getDate() + Number(policy.maxAdvanceDays || 0));
+      }
+
+      const toYmd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const minDateStr = toYmd(minDate);
+      const maxDateStr = toYmd(maxDate);
+
+      if (date < minDateStr || date > maxDateStr) {
+        return res.status(400).json({
+          success: false,
+          message: `OT date must be within allowed range (${minDateStr} to ${maxDateStr}) as per OT settings.`,
+        });
+      }
     }
 
     // --- SCOPING & AUTHORIZATION (New Logic) ---
@@ -368,6 +398,60 @@ exports.rejectOT = async (req, res) => {
       success: false,
       message: 'Error rejecting OT request',
       error: error.message,
+    });
+  }
+};
+
+/**
+ * @desc    Simulate OT hour policy (saved settings ± optional draft overrides)
+ * @route   POST /api/ot/simulate-hours-policy
+ * @access  Private (admin / HR)
+ */
+exports.simulateHoursPolicy = async (req, res) => {
+  try {
+    const { rawHours, departmentId, divisionId, policy } = req.body || {};
+    const rh = Number(rawHours);
+    if (!Number.isFinite(rh) || rh < 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'rawHours is required and must be a number >= 0',
+      });
+    }
+    const data = await simulateOtHoursPolicy(rh, departmentId || null, divisionId || null, policy);
+    res.status(200).json({ success: true, data });
+  } catch (error) {
+    console.error('Error simulating OT policy:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Simulation failed',
+    });
+  }
+};
+
+/**
+ * @desc    Preview OT policy outcome for extra hours (no create)
+ * @route   GET /api/ot/preview-extra-hours
+ * @access  Private
+ */
+exports.previewExtraHoursOt = async (req, res) => {
+  try {
+    const { employeeId, employeeNumber, date } = req.query;
+    if (!employeeId || !employeeNumber || !date) {
+      return res.status(400).json({
+        success: false,
+        message: 'employeeId, employeeNumber, and date are required',
+      });
+    }
+    const result = await previewConvertExtraHoursToOT(employeeId, employeeNumber, date);
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+    res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    console.error('Error previewing extra-hours OT:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Preview failed',
     });
   }
 };
