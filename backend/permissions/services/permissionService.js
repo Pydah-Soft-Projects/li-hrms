@@ -300,16 +300,15 @@ const approvePermissionRequest = async (permissionId, userId, baseUrl = '', user
       };
     }
 
-    if (permissionRequest.status !== 'pending' && permissionRequest.status !== 'manager_approved') {
-      return {
-        success: false,
-        message: `Permission request is already ${permissionRequest.status}`,
-      };
-    }
-
     // --- START DYNAMIC WORKFLOW LOGIC ---
     if (permissionRequest.workflow && permissionRequest.workflow.approvalChain.length > 0) {
       const { workflow } = permissionRequest;
+      if (['approved', 'rejected', 'manager_rejected', 'checked_out', 'checked_in'].includes(String(permissionRequest.status || '').toLowerCase())) {
+        return {
+          success: false,
+          message: `Permission request is already ${permissionRequest.status}`,
+        };
+      }
       const currentStepIndex = workflow.approvalChain.findIndex(step => step.isCurrent);
       const currentStep = workflow.approvalChain[currentStepIndex];
 
@@ -368,9 +367,9 @@ const approvePermissionRequest = async (permissionId, userId, baseUrl = '', user
 
       // 4. Determination of Next Step or Finality
       const isLastStep = currentStepIndex === workflow.approvalChain.length - 1;
-      const isFinalAuthority = userRole === workflow.finalAuthority || currentStep.role === workflow.finalAuthority;
 
-      if (isLastStep || isFinalAuthority) {
+      // Keep approval strictly sequential: only final step can fully approve.
+      if (isLastStep) {
         // --- FINAL APPROVAL REACHED ---
         permissionRequest.status = 'approved';
         workflow.isCompleted = true;
@@ -435,6 +434,13 @@ const approvePermissionRequest = async (permissionId, userId, baseUrl = '', user
     }
     // --- END DYNAMIC WORKFLOW LOGIC ---
 
+    if (permissionRequest.status !== 'pending' && permissionRequest.status !== 'manager_approved') {
+      return {
+        success: false,
+        message: `Permission request is already ${permissionRequest.status}`,
+      };
+    }
+
     const isMidShiftLegacy =
       !permissionRequest.permissionType || permissionRequest.permissionType === 'mid_shift';
 
@@ -473,15 +479,14 @@ const approvePermissionRequest = async (permissionId, userId, baseUrl = '', user
 
       // Check monthly limit (if set, 0 = unlimited)
       if (resolvedPermissionSettings.monthlyLimit !== null && resolvedPermissionSettings.monthlyLimit > 0) {
-        const dateObj = new Date(permissionRequest.date);
-        const month = dateObj.getMonth() + 1;
-        const year = dateObj.getFullYear();
-        const monthStart = new Date(year, month - 1, 1);
-        const monthEnd = new Date(year, month, 0, 23, 59, 59);
+        const [year, month] = String(permissionRequest.date).split('-').map(Number);
+        const lastDay = new Date(year, month, 0).getDate();
+        const monthStartStr = `${year}-${String(month).padStart(2, '0')}-01`;
+        const monthEndStr = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 
         const existingPermissionsThisMonth = await Permission.countDocuments({
           employeeId: permissionRequest.employeeId,
-          date: { $gte: monthStart, $lte: monthEnd },
+          date: { $gte: monthStartStr, $lte: monthEndStr },
           status: 'approved',
           isActive: true,
           _id: { $ne: permissionRequest._id }, // Exclude current permission

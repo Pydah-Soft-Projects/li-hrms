@@ -266,6 +266,10 @@ const getTodayIST = () => {
   return `${istNow.getFullYear()}-${String(istNow.getMonth() + 1).padStart(2, '0')}-${String(istNow.getDate()).padStart(2, '0')}`;
 };
 
+const buildIstDateTimeLocal = (dateYmd: string, hour: number, minute: number) => {
+  return `${dateYmd}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+};
+
 const getPolicyDateBounds = (policy: { allowBackdated?: boolean; maxBackdatedDays?: number; allowFutureDated?: boolean; maxAdvanceDays?: number }) => {
   const now = new Date();
   const istNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
@@ -444,10 +448,14 @@ export default function OTAndPermissionsPage() {
 
   // Evidence State
   // Derived State
-  const pendingOTs = otRequests.filter(req => req.status === 'pending');
-  const pendingPermissions = permissions.filter(req => req.status === 'pending');
-  const totalPending = pendingOTs.length + pendingPermissions.length;
-
+  const isTerminalOtStatus = (status?: string) => {
+    const s = String(status || '').toLowerCase();
+    return ['approved', 'rejected', 'manager_rejected'].includes(s);
+  };
+  const isTerminalPermissionStatus = (status?: string) => {
+    const s = String(status || '').toLowerCase();
+    return ['approved', 'rejected', 'checked_in', 'checked_out'].includes(s);
+  };
   const isEmployee = currentUser?.role === 'employee';
 
   // Dynamic Column Logic
@@ -510,7 +518,15 @@ export default function OTAndPermissionsPage() {
 
   const canPerformAction = (item: any) => {
     if (!item || !currentUser) return false;
-    if (item.status === 'approved' || item.status === 'rejected' || (item.workflow && item.workflow.isCompleted)) return false;
+
+    const hasWorkflow = !!(item.workflow && Array.isArray(item.workflow.approvalChain) && item.workflow.approvalChain.length > 0);
+    if (hasWorkflow) {
+      // For workflow-driven items, completion flag is the source of truth.
+      if (item.workflow?.isCompleted) return false;
+    } else {
+      // Legacy/non-workflow items rely on top-level status.
+      if (item.status === 'approved' || item.status === 'rejected') return false;
+    }
 
     // Super Admin can always act (emergency override)
     if (currentUser.role === 'super_admin') return true;
@@ -543,6 +559,10 @@ export default function OTAndPermissionsPage() {
 
     return false;
   };
+
+  const pendingOTs = otRequests.filter(req => !isTerminalOtStatus(req.status) && canPerformAction(req));
+  const pendingPermissions = permissions.filter(req => !isTerminalPermissionStatus(req.status) && canPerformAction(req));
+  const totalPending = pendingOTs.length + pendingPermissions.length;
 
   const getStepStatusBadgeClass = (status?: string) => {
     if (status === 'approved') return 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/50';
@@ -709,9 +729,7 @@ export default function OTAndPermissionsPage() {
 
               // Auto-suggest OT out time (shift end time + 1 hour as default)
               const [endHour, endMin] = shift.endTime.split(':').map(Number);
-              const suggestedOutTime = new Date(date);
-              suggestedOutTime.setHours(endHour + 1, endMin, 0, 0);
-              const suggestedOutTimeStr = suggestedOutTime.toISOString().slice(0, 16);
+              const suggestedOutTimeStr = buildIstDateTimeLocal(date, endHour + 1, endMin);
               setOTFormData(prev => ({ ...prev, otOutTime: suggestedOutTimeStr }));
             } else if (firstShift.shiftId && typeof firstShift.shiftId === 'object') {
               // Shift not found in global list but present in attendance (populated)
@@ -728,9 +746,7 @@ export default function OTAndPermissionsPage() {
               // Auto-suggest OT out time
               if (shiftData.endTime) {
                 const [endHour, endMin] = shiftData.endTime.split(':').map(Number);
-                const suggestedOutTime = new Date(date);
-                suggestedOutTime.setHours(endHour + 1, endMin, 0, 0);
-                const suggestedOutTimeStr = suggestedOutTime.toISOString().slice(0, 16);
+                const suggestedOutTimeStr = buildIstDateTimeLocal(date, endHour + 1, endMin);
                 setOTFormData(prev => ({ ...prev, otOutTime: suggestedOutTimeStr }));
               }
             } else {
@@ -2123,10 +2139,8 @@ export default function OTAndPermissionsPage() {
                                   if (s) {
                                     setSelectedShift({ _id: s.shiftId, name: s.shiftName, startTime: s.startTime, endTime: s.endTime, duration: 0 });
                                     if (s.endTime) {
-                                      const out = new Date(otFormData.date);
                                       const [h, m] = s.endTime.split(':').map(Number);
-                                      out.setHours(h + 1, m, 0, 0);
-                                      setOTFormData(prev => ({ ...prev, otOutTime: out.toISOString().slice(0, 16) }));
+                                      setOTFormData(prev => ({ ...prev, otOutTime: buildIstDateTimeLocal(otFormData.date, h + 1, m) }));
                                     }
                                   }
                                 }}
@@ -2639,7 +2653,59 @@ export default function OTAndPermissionsPage() {
                       ) : null}
                     </div>
 
-                    <div className="sticky bottom-0 z-10 p-4 sm:p-6 border-t border-slate-100 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md flex items-center justify-end">
+                    <div className="sticky bottom-0 z-10 p-4 sm:p-6 border-t border-slate-100 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md flex items-center justify-end gap-2">
+                      {selectedOTDetails && canPerformAction(selectedOTDetails) && (
+                        <>
+                          <button
+                            onClick={async () => {
+                              await handleApprove('ot', selectedOTDetails._id);
+                              setShowDetailsDialog(false);
+                              setSelectedOTDetails(null);
+                              setSelectedPermissionDetails(null);
+                            }}
+                            className="h-10 sm:h-11 px-4 rounded-2xl bg-emerald-500 text-white text-[10px] font-black uppercase tracking-widest shadow-xl shadow-emerald-500/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                          >
+                            Approve
+                          </button>
+                          <button
+                            onClick={async () => {
+                              await handleReject('ot', selectedOTDetails._id);
+                              setShowDetailsDialog(false);
+                              setSelectedOTDetails(null);
+                              setSelectedPermissionDetails(null);
+                            }}
+                            className="h-10 sm:h-11 px-4 rounded-2xl bg-rose-500 text-white text-[10px] font-black uppercase tracking-widest shadow-xl shadow-rose-500/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                          >
+                            Reject
+                          </button>
+                        </>
+                      )}
+                      {selectedPermissionDetails && canPerformAction(selectedPermissionDetails) && (
+                        <>
+                          <button
+                            onClick={async () => {
+                              await handleApprove('permission', selectedPermissionDetails._id);
+                              setShowDetailsDialog(false);
+                              setSelectedOTDetails(null);
+                              setSelectedPermissionDetails(null);
+                            }}
+                            className="h-10 sm:h-11 px-4 rounded-2xl bg-emerald-500 text-white text-[10px] font-black uppercase tracking-widest shadow-xl shadow-emerald-500/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                          >
+                            Approve
+                          </button>
+                          <button
+                            onClick={async () => {
+                              await handleReject('permission', selectedPermissionDetails._id);
+                              setShowDetailsDialog(false);
+                              setSelectedOTDetails(null);
+                              setSelectedPermissionDetails(null);
+                            }}
+                            className="h-10 sm:h-11 px-4 rounded-2xl bg-rose-500 text-white text-[10px] font-black uppercase tracking-widest shadow-xl shadow-rose-500/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                          >
+                            Reject
+                          </button>
+                        </>
+                      )}
                       <button
                         onClick={() => {
                           setShowDetailsDialog(false);

@@ -8,6 +8,7 @@ const OD = require('../../leaves/model/OD');
 const OT = require('../../overtime/model/OT');
 const Permission = require('../../permissions/model/Permission');
 const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
+const { extractISTComponents } = require('../utils/dateUtils');
 
 /**
  * Check if a date falls within a date range
@@ -17,16 +18,10 @@ const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
  * @returns {Boolean}
  */
 const isDateInRange = (date, fromDate, toDate) => {
-  const checkDate = typeof date === 'string' ? new Date(date) : date;
-  const from = new Date(fromDate);
-  const to = new Date(toDate);
-
-  // Use UTC for consistent comparison regardless of server timezone
-  from.setUTCHours(0, 0, 0, 0);
-  to.setUTCHours(23, 59, 59, 999);
-  checkDate.setUTCHours(12, 0, 0, 0); // Set to noon for date-only comparison
-
-  return checkDate >= from && checkDate <= to;
+  const checkDateStr = extractISTComponents(typeof date === 'string' ? new Date(`${date}T12:00:00+05:30`) : date).dateStr;
+  const fromDateStr = extractISTComponents(fromDate).dateStr;
+  const toDateStr = extractISTComponents(toDate).dateStr;
+  return checkDateStr >= fromDateStr && checkDateStr <= toDateStr;
 };
 
 /**
@@ -36,11 +31,7 @@ const isDateInRange = (date, fromDate, toDate) => {
  * @returns {Boolean}
  */
 const isSameDay = (date1, date2) => {
-  const d1 = new Date(date1);
-  const d2 = new Date(date2);
-  return d1.getUTCFullYear() === d2.getUTCFullYear() &&
-    d1.getUTCMonth() === d2.getUTCMonth() &&
-    d1.getUTCDate() === d2.getUTCDate();
+  return extractISTComponents(date1).dateStr === extractISTComponents(date2).dateStr;
 };
 
 /**
@@ -87,7 +78,7 @@ const checkLeaveConflict = async (employeeId, employeeNumber, date, approvedOnly
   try {
     const statusFilter = approvedOnly
       ? ['approved'] // Only approved for creation
-      : ['pending', 'hod_approved', 'hr_approved', 'approved']; // All for approval
+      : ['pending', 'reporting_manager_approved', 'hod_approved', 'manager_approved', 'hr_approved', 'principal_approved', 'approved']; // All in-flight + approved
 
     const leaves = await Leave.find({
       $or: [
@@ -134,7 +125,7 @@ const checkODConflict = async (employeeId, employeeNumber, date, approvedOnly = 
   try {
     const statusFilter = approvedOnly
       ? ['approved'] // Only approved for creation
-      : ['pending', 'hod_approved', 'hr_approved', 'approved']; // All for approval
+      : ['pending', 'reporting_manager_approved', 'hod_approved', 'manager_approved', 'hr_approved', 'principal_approved', 'approved']; // All in-flight + approved
 
     const ods = await OD.find({
       $or: [
@@ -579,8 +570,10 @@ const validateODRequest = async (employeeId, employeeNumber, fromDate, toDate, i
  */
 const getApprovedRecordsForDate = async (employeeId, employeeNumber, date) => {
   try {
-    const checkDate = typeof date === 'string' ? new Date(date) : date;
-    checkDate.setUTCHours(12, 0, 0, 0);
+    const checkDateStr =
+      typeof date === 'string'
+        ? date
+        : extractISTComponents(date).dateStr;
 
     // Check for approved Leave (only approved for creation dialog)
     const leaves = await Leave.find({
@@ -594,7 +587,7 @@ const getApprovedRecordsForDate = async (employeeId, employeeNumber, date) => {
 
     let leaveInfo = null;
     for (const leave of leaves) {
-      if (isDateInRange(checkDate, leave.fromDate, leave.toDate)) {
+      if (isDateInRange(checkDateStr, leave.fromDate, leave.toDate)) {
         leaveInfo = {
           id: leave._id,
           status: leave.status,
@@ -619,7 +612,7 @@ const getApprovedRecordsForDate = async (employeeId, employeeNumber, date) => {
 
     let odInfo = null;
     for (const od of ods) {
-      if (isDateInRange(checkDate, od.fromDate, od.toDate)) {
+      if (isDateInRange(checkDateStr, od.fromDate, od.toDate)) {
         odInfo = {
           id: od._id,
           status: od.status,

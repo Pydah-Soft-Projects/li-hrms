@@ -64,6 +64,34 @@ function formatHoursAsHHMM(hours) {
   return `${hh}:${mm}`;
 }
 
+function getSegmentCumulativeExtraHours(attendanceRecord) {
+  const segments = Array.isArray(attendanceRecord?.shifts) ? attendanceRecord.shifts : [];
+  if (!segments.length) return 0;
+  const total = segments.reduce((sum, s) => sum + (Number(s?.extraHours) || 0), 0);
+  return Math.round(total * 100) / 100;
+}
+
+function resolveAttendanceShiftId(attendanceRecord) {
+  const segmentShift = (attendanceRecord?.shifts || []).find((s) => s?.shiftId)?.shiftId || null;
+  return segmentShift || attendanceRecord?.shiftId || null;
+}
+
+function resolveSegmentPunchWindow(attendanceRecord) {
+  const windows = (attendanceRecord?.shifts || [])
+    .filter((s) => s?.inTime && s?.outTime)
+    .map((s) => ({
+      inTime: new Date(s.inTime),
+      outTime: new Date(s.outTime),
+    }))
+    .filter((w) => !Number.isNaN(w.inTime.getTime()) && !Number.isNaN(w.outTime.getTime()) && w.outTime > w.inTime);
+  if (!windows.length) return null;
+  windows.sort((a, b) => a.inTime - b.inTime);
+  return {
+    firstInTime: windows[0].inTime,
+    lastOutTime: windows.reduce((mx, w) => (w.outTime > mx ? w.outTime : mx), windows[0].outTime),
+  };
+}
+
 /**
  * Create OT request
  * @param {Object} data - OT request data
@@ -365,17 +393,15 @@ const approveOTRequest = async (otId, userId, userRole) => {
       };
     }
 
-    if (otRequest.status !== 'pending' && otRequest.status !== 'manager_approved') {
-      // Allow HR to approve 'manager_approved' requests
-      return {
-        success: false,
-        message: `OT request is already ${otRequest.status}`,
-      };
-    }
-
     // --- START DYNAMIC WORKFLOW LOGIC ---
     if (otRequest.workflow && otRequest.workflow.approvalChain.length > 0) {
       const { workflow } = otRequest;
+      if (['approved', 'rejected', 'manager_rejected'].includes(String(otRequest.status || '').toLowerCase())) {
+        return {
+          success: false,
+          message: `OT request is already ${otRequest.status}`,
+        };
+      }
       const currentStepIndex = workflow.approvalChain.findIndex(step => step.isCurrent);
       const currentStep = workflow.approvalChain[currentStepIndex];
 
@@ -434,9 +460,9 @@ const approveOTRequest = async (otId, userId, userRole) => {
 
       // 4. Determination of Next Step or Finality
       const isLastStep = currentStepIndex === workflow.approvalChain.length - 1;
-      const isFinalAuthority = userRole === workflow.finalAuthority || currentStep.role === workflow.finalAuthority;
 
-      if (isLastStep || isFinalAuthority) {
+      // Keep approval strictly sequential: only final step can fully approve.
+      if (isLastStep) {
         // --- FINAL APPROVAL REACHED ---
         otRequest.status = 'approved';
         workflow.isCompleted = true;
@@ -483,6 +509,14 @@ const approveOTRequest = async (otId, userId, userRole) => {
       };
     }
     // --- END DYNAMIC WORKFLOW LOGIC ---
+
+    if (otRequest.status !== 'pending' && otRequest.status !== 'manager_approved') {
+      // Legacy fallback allows manager intermediate approval only.
+      return {
+        success: false,
+        message: `OT request is already ${otRequest.status}`,
+      };
+    }
 
     // Legacy fallback when no workflow chain is present:
     // manager does intermediate approval, others can finalize.
@@ -649,14 +683,16 @@ const convertExtraHoursToOT = async (employeeId, employeeNumber, date, userId, u
       };
     }
 
-    if (!attendanceRecord.extraHours || attendanceRecord.extraHours <= 0) {
+    const rawExtra = getSegmentCumulativeExtraHours(attendanceRecord);
+    if (!rawExtra || rawExtra <= 0) {
       return {
         success: false,
-        message: 'No extra hours found for this date',
+        message: 'No segment extra hours found for this date',
       };
     }
 
-    if (!attendanceRecord.shiftId) {
+    const resolvedShiftId = resolveAttendanceShiftId(attendanceRecord);
+    if (!resolvedShiftId) {
       return {
         success: false,
         message: 'Shift not assigned for this attendance record. Please assign shift first.',
@@ -691,7 +727,7 @@ const convertExtraHoursToOT = async (employeeId, employeeNumber, date, userId, u
       { path: 'department_id', select: 'name' },
     ]);
 
-    const shift = await Shift.findById(attendanceRecord.shiftId);
+    const shift = await Shift.findById(resolvedShiftId);
     if (!shift) {
       return {
         success: false,
@@ -699,7 +735,6 @@ const convertExtraHoursToOT = async (employeeId, employeeNumber, date, userId, u
       };
     }
 
-    const rawExtra = Math.round(attendanceRecord.extraHours * 100) / 100;
     const deptId = employee.department_id?._id || employee.department_id;
     const divId = employee.division_id?._id || employee.division_id;
     const mergedPolicy = await getMergedOtConfig(deptId, divId);
@@ -715,8 +750,23 @@ const convertExtraHoursToOT = async (employeeId, employeeNumber, date, userId, u
 
     const otHours = policyResult.finalHours;
     const { createDateWithOffset } = require('../../shifts/services/shiftDetectionService');
+    const segmentWindow = resolveSegmentPunchWindow(attendanceRecord);
+    // For regular attendance conversion, OT window must follow shift-end -> actual out punch.
     const otInTime = createDateWithOffset(date, shift.endTime);
-    const otOutTime = new Date(otInTime.getTime() + otHours * 3600 * 1000);
+    const otOutTime = segmentWindow?.lastOutTime || new Date(otInTime.getTime() + otHours * 3600 * 1000);
+    const employeeInTime = attendanceRecord.inTime || segmentWindow?.firstInTime || null;
+    if (!employeeInTime) {
+      return {
+        success: false,
+        message: 'Employee in-time not found in attendance or shift segments',
+      };
+    }
+    if (otOutTime <= otInTime) {
+      return {
+        success: false,
+        message: 'Actual out punch is not after shift end time for OT conversion',
+      };
+    }
 
     const otSettings = await OvertimeSettings.getActiveSettings();
     const workflowData = buildOtWorkflow(userId, otSettings);
@@ -747,8 +797,8 @@ const convertExtraHoursToOT = async (employeeId, employeeNumber, date, userId, u
       division_name: employee.division_id?.name || 'N/A',
       department_id: employee.department_id?._id || employee.department_id,
       department_name: employee.department_id?.name || 'N/A',
-      shiftId: attendanceRecord.shiftId,
-      employeeInTime: attendanceRecord.inTime,
+      shiftId: resolvedShiftId,
+      employeeInTime,
       shiftEndTime: shift.endTime,
       otInTime: otInTime,
       otOutTime: otOutTime,
@@ -836,17 +886,18 @@ const previewConvertExtraHoursToOT = async (employeeId, employeeNumber, date) =>
     if (!attendanceRecord) {
       return { success: false, message: 'Attendance record not found for this date' };
     }
-    if (!attendanceRecord.extraHours || attendanceRecord.extraHours <= 0) {
-      return { success: false, message: 'No extra hours found for this date' };
+    const rawExtra = getSegmentCumulativeExtraHours(attendanceRecord);
+    if (!rawExtra || rawExtra <= 0) {
+      return { success: false, message: 'No segment extra hours found for this date' };
     }
-    if (!attendanceRecord.shiftId) {
+    const resolvedShiftId = resolveAttendanceShiftId(attendanceRecord);
+    if (!resolvedShiftId) {
       return { success: false, message: 'Shift not assigned for this attendance record' };
     }
     const employee = await Employee.findById(employeeId);
     if (!employee) {
       return { success: false, message: 'Employee not found' };
     }
-    const rawExtra = Math.round(attendanceRecord.extraHours * 100) / 100;
     const deptId = employee.department_id?._id || employee.department_id;
     const divId = employee.division_id?._id || employee.division_id;
     const mergedPolicy = await getMergedOtConfig(deptId, divId);
@@ -889,10 +940,11 @@ const maybeAutoCreateOtFromAttendanceDay = async (employeeNumber, date) => {
       employeeNumber: empNo,
       date,
     });
-    if (!attendanceRecord?.extraHours || attendanceRecord.extraHours <= 0) {
+    const rawExtra = getSegmentCumulativeExtraHours(attendanceRecord);
+    if (!rawExtra || rawExtra <= 0) {
       return { skipped: true, reason: 'no_extra' };
     }
-    if (!attendanceRecord.shiftId) return { skipped: true, reason: 'no_shift' };
+    if (!resolveAttendanceShiftId(attendanceRecord)) return { skipped: true, reason: 'no_shift' };
 
     const dup = await OT.findOne({
       employeeId: employee._id,

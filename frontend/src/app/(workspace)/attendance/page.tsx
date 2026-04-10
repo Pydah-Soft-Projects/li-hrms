@@ -796,6 +796,8 @@ export default function AttendancePage() {
   }>({ allowInTimeEditing: true, allowOutTimeEditing: true, allowAttendanceUpload: true, allowShiftChange: true });
   const [otAutoCreateEnabled, setOtAutoCreateEnabled] = useState(false);
   const [otPolicyEligibleForConvert, setOtPolicyEligibleForConvert] = useState(false);
+  const [otPolicyPreview, setOtPolicyPreview] = useState<any | null>(null);
+  const [selectedOtEmployees, setSelectedOtEmployees] = useState<Record<string, boolean>>({});
 
   const [showInTimeDialog, setShowInTimeDialog] = useState(false);
   const [selectedRecordForInTime, setSelectedRecordForInTime] = useState<any>(null);
@@ -855,10 +857,12 @@ export default function AttendancePage() {
     let cancelled = false;
     const checkEligibility = async () => {
       setOtPolicyEligibleForConvert(false);
+      setOtPolicyPreview(null);
+      const hasAnyShift = Boolean(attendanceDetail?.shiftId || (attendanceDetail?.shifts && attendanceDetail.shifts.length > 0));
       if (
         !selectedEmployee ||
         !selectedDate ||
-        !attendanceDetail?.shiftId ||
+        !hasAnyShift ||
         !attendanceDetail?.extraHours ||
         attendanceDetail.extraHours <= 0 ||
         hasExistingOT
@@ -871,13 +875,19 @@ export default function AttendancePage() {
           employeeNumber: selectedEmployee.emp_no,
           date: selectedDate,
         });
+        if (!cancelled) {
+          setOtPolicyPreview((preview as { data?: any })?.data || null);
+        }
         const eligible = Boolean(
           preview?.success &&
           (preview as { data?: { policy?: { eligible?: boolean } } }).data?.policy?.eligible
         );
         if (!cancelled) setOtPolicyEligibleForConvert(eligible);
       } catch {
-        if (!cancelled) setOtPolicyEligibleForConvert(false);
+        if (!cancelled) {
+          setOtPolicyEligibleForConvert(false);
+          setOtPolicyPreview(null);
+        }
       }
     };
     checkEligibility();
@@ -889,8 +899,10 @@ export default function AttendancePage() {
     selectedEmployee?.emp_no,
     selectedDate,
     attendanceDetail?.shiftId,
+    attendanceDetail?.shifts?.length,
     attendanceDetail?.extraHours,
     hasExistingOT,
+    showDetailDialog,
   ]);
 
   const loadPayrollSettings = async () => {
@@ -2218,6 +2230,74 @@ export default function AttendancePage() {
 
   };
 
+  const handleToggleOtEmployeeSelection = (employeeId: string, checked: boolean) => {
+    setSelectedOtEmployees((prev) => ({ ...prev, [employeeId]: checked }));
+  };
+
+  const handleSelectAllOtEmployees = (checked: boolean) => {
+    if (!checked) {
+      setSelectedOtEmployees({});
+      return;
+    }
+    const next: Record<string, boolean> = {};
+    filteredMonthlyData.forEach((item) => {
+      if (item?.employee?._id) next[item.employee._id] = true;
+    });
+    setSelectedOtEmployees(next);
+  };
+
+  const handleBulkConvertSelectedToOT = async () => {
+    if (!otAutoCreateEnabled || tableType !== 'ot') return;
+    const selected = filteredMonthlyData.filter((item) => selectedOtEmployees[item.employee._id]);
+    if (!selected.length) {
+      setError('Select at least one employee in OT table');
+      return;
+    }
+    if (!confirm(`Convert eligible extra hours to OT for ${selected.length} selected employee(s)?`)) return;
+
+    try {
+      setConvertingToOT(true);
+      setError('');
+      setSuccess('');
+      let converted = 0;
+      let failed = 0;
+      let skipped = 0;
+
+      for (const item of selected) {
+        const employeeId = item.employee?._id;
+        const employeeNumber = item.employee?.emp_no;
+        if (!employeeId || !employeeNumber) {
+          skipped += 1;
+          continue;
+        }
+        const entries = Object.entries(item.dailyAttendance || {});
+        for (const [date, record] of entries) {
+          const rawExtra = Number((record as any)?.extraHours || 0);
+          if (rawExtra <= 0) continue;
+
+          const preview = await api.previewOTExtraHours({ employeeId, employeeNumber, date });
+          if (!preview.success || !(preview as any)?.data?.policy?.eligible) {
+            skipped += 1;
+            continue;
+          }
+
+          const resp = await api.convertExtraHoursToOT({ employeeId, employeeNumber, date });
+          if (resp.success) converted += 1;
+          else failed += 1;
+        }
+      }
+
+      setSuccess(`Bulk OT conversion finished: ${converted} converted, ${skipped} skipped, ${failed} failed.`);
+      setSelectedOtEmployees({});
+      await loadMonthlyAttendance();
+    } catch (err: any) {
+      console.error('Bulk OT conversion error:', err);
+      setError(err?.message || 'Bulk OT conversion failed');
+    } finally {
+      setConvertingToOT(false);
+    }
+  };
+
 
 
   const navigateMonth = (direction: 'prev' | 'next') => {
@@ -3199,6 +3279,10 @@ export default function AttendancePage() {
 
   }, [activeHighlight, monthlyData]);
 
+  useEffect(() => {
+    if (tableType !== 'ot') setSelectedOtEmployees({});
+  }, [tableType]);
+
   return (
 
     <div className="relative min-h-screen">
@@ -3865,6 +3949,31 @@ export default function AttendancePage() {
         ) : (
           <>
             <div className="mb-2 flex items-center justify-end gap-2">
+              {tableType === 'ot' && otAutoCreateEnabled && (
+                <>
+                  <label className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                    <input
+                      type="checkbox"
+                      checked={
+                        filteredMonthlyData.length > 0 &&
+                        filteredMonthlyData.every((i) => Boolean(selectedOtEmployees[i.employee._id]))
+                      }
+                      onChange={(e) => handleSelectAllOtEmployees(e.target.checked)}
+                      className="h-3.5 w-3.5 rounded border-slate-300 text-green-600 focus:ring-green-500"
+                    />
+                    Select all
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleBulkConvertSelectedToOT}
+                    disabled={convertingToOT || filteredMonthlyData.length === 0}
+                    className="rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    title="Convert eligible extra hours for selected employees"
+                  >
+                    {convertingToOT ? 'Converting...' : 'Convert Selected to OT'}
+                  </button>
+                </>
+              )}
               <button
                 type="button"
                 onClick={() => scrollAttendanceTable('left')}
@@ -4045,8 +4154,13 @@ export default function AttendancePage() {
                       )}
                       {tableType === 'ot' && (
                         <>
-                          <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-orange-50 text-orange-700">OT Hours</th>
-                          <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-purple-50 text-purple-700">Extra Hours</th>
+                          <th
+                            className="w-[90px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-orange-50 text-orange-700"
+                            title="Slab-based OT value (considered OT after conversion policy)"
+                          >
+                            Eligible OT (Slab)
+                          </th>
+                          <th className="w-[90px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider bg-purple-50 text-purple-700">Worked Extra (Actual)</th>
                         </>
                       )}
                     </tr>
@@ -4189,6 +4303,18 @@ export default function AttendancePage() {
                                 <td className={`sticky left-0 z-10 border-r border-slate-200 px-3 py-2 text-[11px] font-medium text-slate-900 dark:border-slate-700 dark:text-white shadow-[2px_0_5px_rgba(0,0,0,0.05)] ${isHighAbsenteeism ? 'bg-red-50 dark:bg-red-900/20' : 'bg-white dark:bg-slate-900'}`}>
                                   <div>
                                     <div className="flex items-center gap-2">
+                                      {tableType === 'ot' && otAutoCreateEnabled && (
+                                        <input
+                                          type="checkbox"
+                                          checked={Boolean(selectedOtEmployees[item.employee._id])}
+                                          onChange={(e) =>
+                                            handleToggleOtEmployeeSelection(item.employee._id, e.target.checked)
+                                          }
+                                          onClick={(e) => e.stopPropagation()}
+                                          title="Select employee for bulk OT conversion"
+                                          className="h-3.5 w-3.5 cursor-pointer rounded border-slate-300 text-green-600 focus:ring-green-500"
+                                        />
+                                      )}
                                       <div
                                         className="font-semibold truncate cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors flex-1"
                                         onClick={() => handleEmployeeClick(item.employee)}
@@ -4348,8 +4474,11 @@ export default function AttendancePage() {
                                           )}
                                           {tableType === 'ot' && (
                                             <div className="text-[8px] font-medium leading-tight">
-                                              <div className="text-orange-600">{record?.otHours ? formatHours(record.otHours) : '-'}</div>
-                                              <div className="text-purple-600">{record?.extraHours ? formatHours(record.extraHours) : '-'}</div>
+                                              <div className="text-orange-700 font-semibold">
+                                                <span className="mr-1 rounded bg-orange-100 px-1 py-[1px] text-[7px] uppercase">slab</span>
+                                                {(record?.otSlabHours || record?.otHours) ? formatHours(record?.otSlabHours || record?.otHours) : '-'}
+                                              </div>
+                                              <div className="text-purple-600">{(record?.otActualHours || record?.extraHours) ? formatHours(record?.otActualHours || record?.extraHours) : '-'}</div>
                                             </div>
                                           )}
                                           {(record?.source?.includes('manual') || record?.isEdited) && (
@@ -4580,14 +4709,14 @@ export default function AttendancePage() {
                                       onClick={(e) => onSummaryMetricClick(e, item.employee._id, 'otHours', 'ot', item)}
                                       className={`border-r border-slate-200 bg-orange-50 px-2 py-2 text-center text-[11px] font-bold text-orange-700 cursor-pointer hover:bg-orange-100 ${activeHighlight?.employeeId === item.employee._id && activeHighlight?.category === 'otHours' ? 'ring-2 ring-orange-500 ring-inset shadow-inner' : ''}`}
                                     >
-                                      {formatHours(Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.otHours || 0), 0))}
+                                      {formatHours(Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.otSlabHours || record?.otHours || 0), 0))}
                                     </td>
                                     <td
                                       title="Click: highlight • Alt+click: list"
                                       onClick={(e) => onSummaryMetricClick(e, item.employee._id, 'extraHours', 'extra', item)}
                                       className={`border-r border-slate-200 bg-purple-50 px-2 py-2 text-center text-[11px] font-bold text-purple-700 cursor-pointer hover:bg-purple-100 ${activeHighlight?.employeeId === item.employee._id && activeHighlight?.category === 'extraHours' ? 'ring-2 ring-purple-500 ring-inset shadow-inner' : ''}`}
                                     >
-                                      {formatHours(Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.extraHours || 0), 0))}
+                                      {formatHours(Object.values(item.dailyAttendance).reduce((sum, record) => sum + (record?.otActualHours || record?.extraHours || 0), 0))}
                                     </td>
                                   </>
                                 )}
@@ -5154,11 +5283,66 @@ export default function AttendancePage() {
                       }
                       return null;
                     })()}
-                    {attendanceDetail.otHours && attendanceDetail.otHours > 0 && (
+                    {Number(
+                      attendanceDetail?.esiConversion?.consideredOtHours
+                      ?? attendanceDetail?.otRequest?.otHours
+                      ?? attendanceDetail.otHours
+                      ?? 0
+                    ) > 0 && (
                       <div>
                         <label className="text-xs font-medium text-slate-600 dark:text-slate-400">OT Hours</label>
                         <div className="mt-1 text-sm font-semibold text-orange-600 dark:text-orange-400">
-                          {formatHours(attendanceDetail.otHours)} hrs
+                          {formatHours(
+                            Number(
+                              attendanceDetail?.esiConversion?.consideredOtHours
+                              ?? attendanceDetail?.otRequest?.otHours
+                              ?? attendanceDetail.otHours
+                              ?? 0
+                            )
+                          )} hrs
+                        </div>
+                      </div>
+                    )}
+                    {Number(attendanceDetail.approvedOtHours || 0) > 0 && (
+                      <div>
+                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Approved OT Hours</label>
+                        <div className="mt-1 text-sm font-semibold text-green-600 dark:text-green-400">
+                          {formatHours(Number(attendanceDetail.approvedOtHours || 0))} hrs
+                        </div>
+                      </div>
+                    )}
+                    {Number(attendanceDetail?.otRequest?.rawOtHours ?? 0) > 0 && (
+                      <div className="col-span-2">
+                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400">OT Policy Split</label>
+                        <div className="mt-1 text-xs text-slate-700 dark:text-slate-300">
+                          Actual: {formatHours(Number(attendanceDetail?.otRequest?.rawOtHours || 0))} hrs, Considered: {formatHours(Number(attendanceDetail?.otRequest?.consideredOtHours ?? attendanceDetail?.otRequest?.otHours ?? 0))} hrs
+                        </div>
+                      </div>
+                    )}
+                    {attendanceDetail.approvedEsiLeave && attendanceDetail.esiConversion && (
+                      <div className="col-span-2 rounded-xl bg-amber-50/60 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/50 p-3">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-amber-700/80 dark:text-amber-400/80">
+                          ESI Day OT Split
+                        </label>
+                        <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                          <div>
+                            <span className="text-slate-500 dark:text-slate-400">Punch Hours:</span>{' '}
+                            <span className="font-semibold text-slate-900 dark:text-slate-100">
+                              {formatHours(Number(attendanceDetail.esiConversion.punchHours || 0))} hrs
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 dark:text-slate-400">Considered to OT:</span>{' '}
+                            <span className="font-semibold text-orange-700 dark:text-orange-300">
+                              {formatHours(Number(attendanceDetail.esiConversion.consideredOtHours || 0))} hrs
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500 dark:text-slate-400">Remaining:</span>{' '}
+                            <span className="font-semibold text-blue-700 dark:text-blue-300">
+                              {formatHours(Number(attendanceDetail.esiConversion.remainingHoursForAttendance || 0))} hrs
+                            </span>
+                          </div>
                         </div>
                       </div>
                     )}
@@ -5169,20 +5353,33 @@ export default function AttendancePage() {
                           <div className="text-sm font-semibold text-purple-600 dark:text-purple-400">
                             {formatHours(attendanceDetail.extraHours)} hrs
                           </div>
-                          {!hasExistingOT && attendanceDetail.shiftId && (!otAutoCreateEnabled || otPolicyEligibleForConvert) && (
-                            <button
-                              onClick={handleConvertExtraHoursToOT}
-                              disabled={convertingToOT}
-                              className="ml-3 rounded-lg bg-gradient-to-r from-purple-500 to-indigo-500 px-3 py-1.5 text-xs font-semibold text-white shadow-md shadow-purple-500/30 transition-all hover:from-purple-600 hover:to-indigo-600 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              {convertingToOT ? 'Converting...' : 'Convert to OT'}
-                            </button>
+                          {!hasExistingOT && (attendanceDetail.shiftId || attendanceDetail.shifts?.length > 0) && (!otAutoCreateEnabled || otPolicyEligibleForConvert) && (
+                            <div className="ml-3 text-right">
+                              <button
+                                onClick={handleConvertExtraHoursToOT}
+                                disabled={convertingToOT}
+                                className="rounded-lg bg-gradient-to-r from-purple-500 to-indigo-500 px-3 py-1.5 text-xs font-semibold text-white shadow-md shadow-purple-500/30 transition-all hover:from-purple-600 hover:to-indigo-600 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                {convertingToOT ? 'Converting...' : 'Convert to OT'}
+                              </button>
+                              {otPolicyPreview?.policy?.eligible && (
+                                <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
+                                  Slab/base value: {formatHours(Number(otPolicyPreview?.policy?.finalHours || 0))} hrs
+                                  {' '}from actual {formatHours(Number(otPolicyPreview?.rawExtraHours || attendanceDetail?.extraHours || 0))} hrs
+                                </div>
+                              )}
+                            </div>
 
                           )}
-                          {!hasExistingOT && attendanceDetail.shiftId && otAutoCreateEnabled && !otPolicyEligibleForConvert && (
-                            <span className="ml-3 rounded-full px-2 py-1 text-[10px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                              Auto OT enabled
-                            </span>
+                          {!hasExistingOT && (attendanceDetail.shiftId || attendanceDetail.shifts?.length > 0) && otAutoCreateEnabled && !otPolicyEligibleForConvert && (
+                            <div className="ml-3 text-right">
+                              <span className="rounded-full px-2 py-1 text-[10px] font-medium bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">
+                                Not eligible to convert to OT
+                              </span>
+                              <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
+                                {(otPolicyPreview?.policy?.steps || []).join('; ') || `Check OT slab minimum (threshold ${Number(otPolicyPreview?.mergedPolicy?.thresholdHours || 0).toFixed(2)}h, min OT ${Number(otPolicyPreview?.mergedPolicy?.minOTHours || 0).toFixed(2)}h).`}
+                              </div>
+                            </div>
                           )}
                           {hasExistingOT && (
                             <span className={`ml-3 rounded-full px-2 py-1 text-[10px] font-medium ${otRequestStatus === 'approved'
@@ -5953,8 +6150,13 @@ export default function AttendancePage() {
                             </>
                           ) : typeSummaryData.type === 'ot' || typeSummaryData.type === 'extra' ? (
                             <>
-                              <th className="px-4 py-3 font-semibold border-b border-slate-200 dark:border-slate-700">OT Hours</th>
-                              <th className="px-4 py-3 font-semibold border-b border-slate-200 dark:border-slate-700">Extra Hours</th>
+                              <th
+                                className="px-4 py-3 font-semibold border-b border-slate-200 dark:border-slate-700"
+                                title="Slab-based OT value (considered OT after conversion policy)"
+                              >
+                                Eligible OT (Slab)
+                              </th>
+                              <th className="px-4 py-3 font-semibold border-b border-slate-200 dark:border-slate-700">Worked Extra (Actual)</th>
                             </>
                           ) : typeSummaryData.type === 'leaves' ? (
                             <>
@@ -5981,8 +6183,8 @@ export default function AttendancePage() {
                             if (typeSummaryData.type === 'absent') return record.status === 'ABSENT' || (!record.status && !record.hasLeave && !record.hasOD);
                             if (typeSummaryData.type === 'leaves') return record.hasLeave || record.status === 'LEAVE';
                             if (typeSummaryData.type === 'od') return record.hasOD || record.status === 'OD';
-                            if (typeSummaryData.type === 'ot') return (record.otHours || 0) > 0;
-                            if (typeSummaryData.type === 'extra') return (record.extraHours || 0) > 0;
+                            if (typeSummaryData.type === 'ot') return ((record.otSlabHours || record.otHours) || 0) > 0;
+                            if (typeSummaryData.type === 'extra') return ((record.otActualHours || record.extraHours) || 0) > 0;
                             if (typeSummaryData.type === 'permission') return (record.permissionCount || 0) > 0;
                             if (typeSummaryData.type === 'in_out') return !!record.inTime;
                             return true;
@@ -6000,8 +6202,8 @@ export default function AttendancePage() {
                                 </>
                               ) : typeSummaryData.type === 'ot' || typeSummaryData.type === 'extra' ? (
                                 <>
-                                  <td className="px-4 py-3 text-orange-600 font-bold">{record?.otHours?.toFixed(1) || '0.0'}</td>
-                                  <td className="px-4 py-3 text-purple-600 font-bold">{record?.extraHours?.toFixed(1) || '0.0'}</td>
+                                  <td className="px-4 py-3 text-orange-600 font-bold">{Number(record?.otSlabHours || record?.otHours || 0).toFixed(1)}</td>
+                                  <td className="px-4 py-3 text-purple-600 font-bold">{Number(record?.otActualHours || record?.extraHours || 0).toFixed(1)}</td>
                                 </>
                               ) : typeSummaryData.type === 'leaves' ? (
                                 <>
