@@ -540,9 +540,27 @@ export default function AttendancePage() {
       date: string;
       rawHours: number;
       slabHours: number;
+      steps: string[];
     }>
   >([]);
   const [selectedBulkOtKeys, setSelectedBulkOtKeys] = useState<Record<string, boolean>>({});
+  const [bulkOtPreviewLoading, setBulkOtPreviewLoading] = useState(false);
+  const [bulkOtSkippedItems, setBulkOtSkippedItems] = useState<
+    Array<{ key: string; label: string; date: string; reason: string }>
+  >([]);
+  const [bulkOtSkippedExpanded, setBulkOtSkippedExpanded] = useState(false);
+  const [showSingleOtConfirmModal, setShowSingleOtConfirmModal] = useState(false);
+  const [singleOtConfirmLoading, setSingleOtConfirmLoading] = useState(false);
+  const [singleOtConfirmError, setSingleOtConfirmError] = useState('');
+  const [singleOtConfirmData, setSingleOtConfirmData] = useState<{
+    employeeId: string;
+    rawHours: number;
+    finalHours: number;
+    date: string;
+    steps: string[];
+    employeeName: string;
+    employeeNumber: string;
+  } | null>(null);
 
   const [exportingExcel, setExportingExcel] = useState(false);
 
@@ -598,8 +616,8 @@ export default function AttendancePage() {
   }, [activeHighlight, monthlyData]);
 
   useEffect(() => {
-    if (tableType !== 'ot') setSelectedOtEmployees({});
-  }, [tableType]);
+    if (tableType !== 'ot' || otAutoCreateEnabled) setSelectedOtEmployees({});
+  }, [tableType, otAutoCreateEnabled]);
 
   const groupedBulkOtEligibility = useMemo(() => {
     const map: Record<string, typeof bulkOtEligibleQueue> = {};
@@ -715,12 +733,14 @@ export default function AttendancePage() {
           employeeNumber: selectedEmployee.emp_no,
           date: selectedDate,
         });
+        const pdata = (preview as { data?: any })?.data;
         if (!cancelled) {
-          setOtPolicyPreview((preview as { data?: any })?.data || null);
+          setOtPolicyPreview(pdata || null);
         }
         const eligible = Boolean(
           preview?.success &&
-          (preview as { data?: { policy?: { eligible?: boolean } } }).data?.policy?.eligible
+          pdata?.policy?.eligible &&
+          !pdata?.hasExistingOt
         );
         if (!cancelled) setOtPolicyEligibleForConvert(eligible);
       } catch {
@@ -1436,86 +1456,105 @@ export default function AttendancePage() {
     }
   };
 
+  const closeSingleOtConfirmModal = () => {
+    if (convertingToOT || singleOtConfirmLoading) return;
+    setShowSingleOtConfirmModal(false);
+    setSingleOtConfirmError('');
+    setSingleOtConfirmData(null);
+  };
+
   const handleConvertExtraHoursToOT = async () => {
     if (!selectedEmployee || !selectedDate || !attendanceDetail) {
       setError('Missing employee or date information');
       return;
     }
-
     if (!attendanceDetail.extraHours || attendanceDetail.extraHours <= 0) {
       setError('No extra hours to convert');
       return;
     }
-
     if (hasExistingOT) {
       setError('OT record already exists for this date');
       return;
     }
-
-    if (!attendanceDetail.shiftId) {
+    const hasShift = Boolean(
+      attendanceDetail.shiftId || (attendanceDetail.shifts && attendanceDetail.shifts.length > 0)
+    );
+    if (!hasShift) {
       setError('Shift not assigned. Please assign shift first.');
       return;
     }
 
     setError('');
     setSuccess('');
-
-    const preview = await api.previewOTExtraHours({
-      employeeId: selectedEmployee._id,
-      employeeNumber: selectedEmployee.emp_no,
-      date: selectedDate,
-    });
-
-    if (!preview.success) {
-      setError((preview as { message?: string }).message || 'Could not preview OT rules');
-      return;
-    }
-
-    const pdata = (preview as {
-      data?: { rawExtraHours?: number; policy?: { eligible: boolean; finalHours: number; steps?: string[] } };
-    }).data;
-    const pol = pdata?.policy;
-
-    if (!pol?.eligible) {
-      setError(
-        `Extra hours do not qualify under OT rules (${Number(pdata?.rawExtraHours).toFixed(2)}h raw). ${(pol?.steps || []).join('; ')}`
-      );
-      return;
-    }
-
-    if (
-      !confirm(
-        `Create a pending OT request for ${Number(pol.finalHours).toFixed(2)}h (raw ${Number(pdata?.rawExtraHours).toFixed(2)}h after automatic rules) for ${selectedDate}?`
-      )
-    ) {
-      return;
-    }
+    setShowSingleOtConfirmModal(true);
+    setSingleOtConfirmLoading(true);
+    setSingleOtConfirmError('');
+    setSingleOtConfirmData(null);
 
     try {
-      setConvertingToOT(true);
-      setError('');
-      setSuccess('');
-
-      const response = await api.convertExtraHoursToOT({
+      const preview = await api.previewOTExtraHours({
         employeeId: selectedEmployee._id,
         employeeNumber: selectedEmployee.emp_no,
         date: selectedDate,
       });
+      if (!preview.success) {
+        setSingleOtConfirmError((preview as { message?: string }).message || 'Could not preview OT rules');
+        return;
+      }
+      const pdata = (preview as { data?: any }).data;
+      if (pdata?.hasExistingOt) {
+        setSingleOtConfirmError(
+          'An OT record already exists for this date (pending or approved). Refresh if this looks wrong.'
+        );
+        return;
+      }
+      const pol = pdata?.policy;
+      if (!pol?.eligible) {
+        setSingleOtConfirmError(
+          `Extra hours do not qualify under OT rules (${Number(pdata?.rawExtraHours).toFixed(2)}h raw). ${(pol?.steps || []).join('; ')}`
+        );
+        return;
+      }
+      setSingleOtConfirmData({
+        employeeId: selectedEmployee._id,
+        employeeNumber: selectedEmployee.emp_no,
+        employeeName: selectedEmployee.employee_name || selectedEmployee.emp_no,
+        date: selectedDate,
+        rawHours: Number(pdata?.rawExtraHours ?? 0),
+        finalHours: Number(pol.finalHours ?? 0),
+        steps: pol?.steps || [],
+      });
+    } catch (err: any) {
+      console.error('OT preview error:', err);
+      setSingleOtConfirmError(err?.message || 'Preview failed');
+    } finally {
+      setSingleOtConfirmLoading(false);
+    }
+  };
 
+  const handleConfirmSingleOtConvert = async () => {
+    if (!singleOtConfirmData) return;
+    try {
+      setConvertingToOT(true);
+      setError('');
+      setSuccess('');
+      const response = await api.convertExtraHoursToOT({
+        employeeId: singleOtConfirmData.employeeId,
+        employeeNumber: singleOtConfirmData.employeeNumber,
+        date: singleOtConfirmData.date,
+      });
       if (response.success) {
         setSuccess(response.message || 'OT conversion requested. Pending management approval.');
         setHasExistingOT(true);
         setOtRequestStatus('pending');
-
-        // Keep extraHours visible until OT is approved
-        // Reload monthly attendance to refresh the view
+        closeSingleOtConfirmModal();
         await loadMonthlyAttendance();
       } else {
-        setError(response.message || 'Failed to convert extra hours to OT');
+        setSingleOtConfirmError(response.message || 'Failed to convert extra hours to OT');
       }
     } catch (err: any) {
       console.error('Error converting extra hours to OT:', err);
-      setError(err.message || 'An error occurred while converting');
+      setSingleOtConfirmError(err?.message || 'An error occurred while converting');
     } finally {
       setConvertingToOT(false);
     }
@@ -1538,16 +1577,17 @@ export default function AttendancePage() {
   };
 
   const handleBulkConvertSelectedToOT = async () => {
-    if (!otAutoCreateEnabled || tableType !== 'ot') return;
+    if (tableType !== 'ot' || otAutoCreateEnabled) return;
     const selected = filteredMonthlyData.filter((item) => selectedOtEmployees[item.employee._id]);
     if (!selected.length) {
       setError('Select at least one employee in OT table');
       return;
     }
+    setBulkOtPreviewLoading(true);
+    setError('');
+    setSuccess('');
+    const skippedItems: Array<{ key: string; label: string; date: string; reason: string }> = [];
     try {
-      setError('');
-      setSuccess('');
-      let skipped = 0;
       const eligibleQueue: Array<{
         key: string;
         employeeId: string;
@@ -1556,45 +1596,99 @@ export default function AttendancePage() {
         date: string;
         rawHours: number;
         slabHours: number;
+        steps: string[];
       }> = [];
 
       for (const item of selected) {
         const employeeId = item.employee?._id;
         const employeeNumber = item.employee?.emp_no;
         const employeeName = item.employee?.employee_name || employeeNumber || 'Employee';
+        const empLabel = `${employeeName} (${employeeNumber})`;
         if (!employeeId || !employeeNumber) {
-          skipped += 1;
+          skippedItems.push({
+            key: `no-emp-${skippedItems.length}`,
+            label: empLabel,
+            date: '—',
+            reason: 'Missing employee ID or employee number',
+          });
           continue;
         }
         const entries = Object.entries(item.dailyAttendance || {});
         for (const [date, record] of entries) {
-          const rawExtra = Number((record as any)?.extraHours || 0);
-          if (rawExtra <= 0) continue;
+          const rawExtraGrid = Number((record as any)?.extraHours || 0);
+          if (rawExtraGrid <= 0) continue;
 
-          const preview = await api.previewOTExtraHours({ employeeId, employeeNumber, date });
-          const pdata = (preview as any)?.data;
-          const pol = pdata?.policy;
-          if (!preview.success || !pol?.eligible) {
-            skipped += 1;
+          const rowKey = `${employeeNumber}|${date}`;
+          let preview: any;
+          try {
+            preview = await api.previewOTExtraHours({ employeeId, employeeNumber, date });
+          } catch (e: any) {
+            skippedItems.push({
+              key: rowKey,
+              label: empLabel,
+              date,
+              reason: e?.message || 'Preview request failed',
+            });
             continue;
           }
-          const key = `${employeeNumber}|${date}`;
+          const pdata = preview?.data;
+          if (!preview.success) {
+            skippedItems.push({
+              key: rowKey,
+              label: empLabel,
+              date,
+              reason: (preview as { message?: string }).message || 'Preview failed',
+            });
+            continue;
+          }
+          if (pdata?.hasExistingOt) {
+            skippedItems.push({
+              key: rowKey,
+              label: empLabel,
+              date,
+              reason: 'OT already exists for this date (pending or approved)',
+            });
+            continue;
+          }
+          const pol = pdata?.policy;
+          if (!pol?.eligible) {
+            const detail = (pol?.steps || []).join('; ') || 'Does not meet OT slab/threshold rules';
+            skippedItems.push({
+              key: rowKey,
+              label: empLabel,
+              date,
+              reason: detail,
+            });
+            continue;
+          }
           eligibleQueue.push({
-            key,
+            key: rowKey,
             employeeId,
             employeeNumber,
             employeeName,
             date,
             rawHours: Number(pdata?.rawExtraHours || 0),
             slabHours: Number(pol?.finalHours || 0),
+            steps: pol?.steps || [],
           });
         }
       }
 
+      setBulkOtSkippedItems(skippedItems);
+
       if (!eligibleQueue.length) {
-        setSuccess('No eligible OT conversion days found for selected employees under current OT slab/threshold settings.');
+        setBulkOtSkippedExpanded(skippedItems.length > 0);
+        setBulkOtEligibleQueue([]);
+        setSelectedBulkOtKeys({});
+        if (skippedItems.length) {
+          setShowBulkOtPreviewModal(true);
+          setSuccess('No eligible days to convert. Review skipped days in the dialog.');
+        } else {
+          setSuccess('No days with extra hours found for the selected employees.');
+        }
         return;
       }
+
       setBulkOtEligibleQueue(eligibleQueue);
       const allSelected: Record<string, boolean> = {};
       eligibleQueue.forEach((q) => {
@@ -1602,12 +1696,17 @@ export default function AttendancePage() {
       });
       setSelectedBulkOtKeys(allSelected);
       setShowBulkOtPreviewModal(true);
-      if (skipped > 0) {
-        setSuccess(`${eligibleQueue.length} eligible day(s) ready. ${skipped} day(s) skipped by policy/no extra.`);
+      setBulkOtSkippedExpanded(skippedItems.length > 0);
+      if (skippedItems.length) {
+        setSuccess(
+          `${eligibleQueue.length} eligible day(s) ready. ${skippedItems.length} day(s) skipped — expand Skipped days for details.`
+        );
       }
     } catch (err: any) {
       console.error('Bulk OT conversion error:', err);
       setError(err?.message || 'Bulk OT conversion failed');
+    } finally {
+      setBulkOtPreviewLoading(false);
     }
   };
 
@@ -1625,7 +1724,11 @@ export default function AttendancePage() {
       let converted = 0;
       let failed = 0;
       for (const item of selectedQueue) {
-        const resp = await api.convertExtraHoursToOT(item);
+        const resp = await api.convertExtraHoursToOT({
+          employeeId: item.employeeId,
+          employeeNumber: item.employeeNumber,
+          date: item.date,
+        });
         if (resp.success) converted += 1;
         else failed += 1;
       }
@@ -1634,6 +1737,8 @@ export default function AttendancePage() {
       setShowBulkOtPreviewModal(false);
       setBulkOtEligibleQueue([]);
       setSelectedBulkOtKeys({});
+      setBulkOtSkippedItems([]);
+      setBulkOtSkippedExpanded(false);
       await loadMonthlyAttendance();
     } catch (err: any) {
       console.error('Bulk OT conversion error:', err);
@@ -2415,6 +2520,21 @@ export default function AttendancePage() {
     return `${h}:${String(m).padStart(2, '0')}`;
   };
 
+  const formatHoursHHMM = (hours: number | null | undefined) => {
+    if (hours === null || hours === undefined || Number.isNaN(Number(hours))) return '-';
+    const totalMinutes = Math.round(Number(hours) * 60);
+    const h = Math.floor(totalMinutes / 60);
+    const m = totalMinutes % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  };
+
+  const formatOtPolicyStepLineForDisplay = (line: string) =>
+    line.replace(/(\d+(?:\.\d+)?)h\b/g, (match, numStr) => {
+      const v = parseFloat(numStr);
+      if (!Number.isFinite(v)) return match;
+      return formatHoursHHMM(v);
+    });
+
   const daysInMonth = getDaysInMonth();
   const daysArray = useMemo(() => {
     if (!cycleDates.startDate || !cycleDates.endDate) return [];
@@ -2739,7 +2859,7 @@ export default function AttendancePage() {
 
         {/* Attendance Table */}
         <div className="mb-2 flex items-center justify-end gap-2">
-          {tableType === 'ot' && otAutoCreateEnabled && (
+          {tableType === 'ot' && !otAutoCreateEnabled && (
             <>
               <label className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
                 <input
@@ -2756,11 +2876,15 @@ export default function AttendancePage() {
               <button
                 type="button"
                 onClick={handleBulkConvertSelectedToOT}
-                disabled={convertingToOT || filteredMonthlyData.length === 0}
+                disabled={convertingToOT || bulkOtPreviewLoading || filteredMonthlyData.length === 0}
                 className="rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
                 title="Convert eligible extra hours for selected employees"
               >
-                {convertingToOT ? 'Converting...' : 'Convert Selected to OT'}
+                {bulkOtPreviewLoading
+                  ? 'Checking…'
+                  : convertingToOT
+                    ? 'Converting...'
+                    : 'Convert Selected to OT'}
               </button>
             </>
           )}
@@ -3139,7 +3263,7 @@ export default function AttendancePage() {
                       <td className={`sticky left-0 z-10 border-r border-slate-200 px-3 py-2 text-[11px] font-medium text-slate-900 dark:border-slate-700 dark:text-white w-[200px] min-w-[200px] ${isHighAbsenteeism ? 'bg-red-50 dark:bg-red-900/20' : 'bg-white dark:bg-slate-900'}`}>
                         <div>
                           <div className="flex items-center gap-2">
-                            {tableType === 'ot' && otAutoCreateEnabled && item.employee?._id && (
+                            {tableType === 'ot' && !otAutoCreateEnabled && item.employee?._id && (
                               <input
                                 type="checkbox"
                                 checked={Boolean(selectedOtEmployees[item.employee._id])}
@@ -3550,22 +3674,49 @@ export default function AttendancePage() {
           <div ref={observerTarget} className="h-4 w-full" />
         </div>
 
+        {bulkOtPreviewLoading && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-sm">
+            <div className="flex max-w-sm flex-col items-center gap-4 rounded-2xl border border-slate-200 bg-white px-8 py-7 shadow-2xl dark:border-slate-600 dark:bg-slate-900">
+              <svg className="h-8 w-8 animate-spin text-green-600" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                />
+              </svg>
+              <p className="text-center text-sm font-semibold text-slate-800 dark:text-slate-100">
+                Checking OT rules for selected employees…
+              </p>
+              <p className="text-center text-xs text-slate-500 dark:text-slate-400">
+                This can take a moment when many days are scanned.
+              </p>
+            </div>
+          </div>
+        )}
+
         {showBulkOtPreviewModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/55 p-4 backdrop-blur-sm">
-            <div className="w-full max-w-4xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+            <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
               <div className="mb-4 flex items-start justify-between gap-3">
                 <div>
                   <h3 className="text-lg font-bold text-slate-900 dark:text-white">
                     Eligible OT Days (Selected Employees)
                   </h3>
                   <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    OT rules (slab/threshold) already applied
+                    OT rules (slab/threshold) already applied — raw vs credited (slab) hours are shown per day.
+                  </p>
+                  <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-medium text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-200">
+                    Creates pending OT requests only. Management must approve before they count as approved OT for payroll.
                   </p>
                 </div>
                 <button
+                  type="button"
                   onClick={() => {
                     if (convertingToOT) return;
                     setShowBulkOtPreviewModal(false);
+                    setBulkOtSkippedItems([]);
+                    setBulkOtSkippedExpanded(false);
                   }}
                   className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800"
                 >
@@ -3574,92 +3725,149 @@ export default function AttendancePage() {
                   </svg>
                 </button>
               </div>
-              <div className="mb-3 flex items-center justify-between rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs dark:border-green-900/50 dark:bg-green-900/20">
-                <span className="font-semibold text-green-800 dark:text-green-300">
-                  Only selected employees and listed dates will be created.
-                </span>
-                <div className="flex items-center gap-2">
-                  <label className="inline-flex items-center gap-1 rounded-md border border-green-300 bg-white/80 px-2 py-1 text-[11px] font-semibold text-green-800 dark:border-green-800 dark:bg-green-950/40 dark:text-green-300">
-                    <input
-                      type="checkbox"
-                      checked={bulkOtEligibleQueue.length > 0 && bulkOtEligibleQueue.every((q) => selectedBulkOtKeys[q.key])}
-                      onChange={(e) => {
-                        const next: Record<string, boolean> = {};
-                        bulkOtEligibleQueue.forEach((q) => {
-                          next[q.key] = e.target.checked;
-                        });
-                        setSelectedBulkOtKeys(next);
-                      }}
-                      className="h-3.5 w-3.5 rounded border-slate-300 text-green-600"
-                    />
-                    Select all
-                  </label>
-                  <span className="rounded-full bg-green-600 px-2 py-0.5 text-[11px] font-bold text-white">
-                    {bulkOtEligibleQueue.filter((q) => selectedBulkOtKeys[q.key]).length}/{bulkOtEligibleQueue.length}
+              {bulkOtEligibleQueue.length > 0 && (
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs dark:border-green-900/50 dark:bg-green-900/20">
+                  <span className="font-semibold text-green-800 dark:text-green-300">
+                    Only ticked employees/dates will create OT requests.
                   </span>
-                </div>
-              </div>
-              <div className="max-h-80 space-y-2 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/60">
-                {Object.entries(groupedBulkOtEligibility).map(([employeeLabel, rows]) => (
-                  <div key={employeeLabel} className="rounded-lg border border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-900">
-                    <div className="mb-2 flex items-center justify-between border-b border-slate-200 pb-2 text-xs dark:border-slate-700">
-                      <label className="inline-flex items-center gap-2 font-semibold text-slate-800 dark:text-slate-100">
-                        <input
-                          type="checkbox"
-                          checked={rows.every((r) => selectedBulkOtKeys[r.key])}
-                          onChange={(e) => {
-                            const next = { ...selectedBulkOtKeys };
-                            rows.forEach((r) => {
-                              next[r.key] = e.target.checked;
-                            });
-                            setSelectedBulkOtKeys(next);
-                          }}
-                          className="h-3.5 w-3.5 rounded border-slate-300 text-green-600"
-                        />
-                        {employeeLabel}
-                      </label>
-                      <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                        {rows.filter((r) => selectedBulkOtKeys[r.key]).length}/{rows.length} selected
-                      </span>
-                    </div>
-                    <div className="space-y-1">
-                      {rows.map((row) => (
-                        <label
-                          key={row.key}
-                          className="grid cursor-pointer grid-cols-[auto_90px_1fr] items-center gap-2 rounded-md border border-slate-100 px-2 py-1.5 text-xs hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800"
-                        >
-                          <span className="inline-flex items-center gap-2 text-slate-700 dark:text-slate-200">
-                            <input
-                              type="checkbox"
-                              checked={Boolean(selectedBulkOtKeys[row.key])}
-                              onChange={(e) =>
-                                setSelectedBulkOtKeys((prev) => ({ ...prev, [row.key]: e.target.checked }))
-                              }
-                              className="h-3.5 w-3.5 rounded border-slate-300 text-green-600"
-                            />
-                            {row.date}
-                          </span>
-                          <span className="font-medium text-slate-600 dark:text-slate-300">
-                            raw {row.rawHours.toFixed(2)}h
-                          </span>
-                          <span className="font-semibold text-indigo-700 dark:text-indigo-300">
-                            slab {row.slabHours.toFixed(2)}h
-                          </span>
-                        </label>
-                      ))}
-                    </div>
+                  <div className="flex items-center gap-2">
+                    <label className="inline-flex items-center gap-1 rounded-md border border-green-300 bg-white/80 px-2 py-1 text-[11px] font-semibold text-green-800 dark:border-green-800 dark:bg-green-950/40 dark:text-green-300">
+                      <input
+                        type="checkbox"
+                        checked={
+                          bulkOtEligibleQueue.length > 0 &&
+                          bulkOtEligibleQueue.every((q) => selectedBulkOtKeys[q.key])
+                        }
+                        onChange={(e) => {
+                          const next: Record<string, boolean> = {};
+                          bulkOtEligibleQueue.forEach((q) => {
+                            next[q.key] = e.target.checked;
+                          });
+                          setSelectedBulkOtKeys(next);
+                        }}
+                        className="h-3.5 w-3.5 rounded border-slate-300 text-green-600"
+                      />
+                      Select all eligible
+                    </label>
+                    <span className="rounded-full bg-green-600 px-2 py-0.5 text-[11px] font-bold text-white">
+                      {bulkOtEligibleQueue.filter((q) => selectedBulkOtKeys[q.key]).length}/{bulkOtEligibleQueue.length}
+                    </span>
                   </div>
-                ))}
+                </div>
+              )}
+              <div className="max-h-80 space-y-2 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/60">
+                {Object.keys(groupedBulkOtEligibility).length === 0 ? (
+                  <p className="py-10 text-center text-sm text-slate-500 dark:text-slate-400">
+                    No eligible days in this run. Expand &quot;Skipped days&quot; below for reasons.
+                  </p>
+                ) : (
+                  Object.entries(groupedBulkOtEligibility).map(([employeeLabel, rows]) => (
+                    <div key={employeeLabel} className="rounded-lg border border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-900">
+                      <div className="mb-2 flex items-center justify-between border-b border-slate-200 pb-2 text-xs dark:border-slate-700">
+                        <label className="inline-flex items-center gap-2 font-semibold text-slate-800 dark:text-slate-100">
+                          <input
+                            type="checkbox"
+                            checked={rows.length > 0 && rows.every((r) => selectedBulkOtKeys[r.key])}
+                            onChange={(e) => {
+                              const next = { ...selectedBulkOtKeys };
+                              rows.forEach((r) => {
+                                next[r.key] = e.target.checked;
+                              });
+                              setSelectedBulkOtKeys(next);
+                            }}
+                            className="h-3.5 w-3.5 rounded border-slate-300 text-green-600"
+                          />
+                          {employeeLabel}
+                        </label>
+                        <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                          {rows.filter((r) => selectedBulkOtKeys[r.key]).length}/{rows.length} selected
+                        </span>
+                      </div>
+                      <div className="space-y-1">
+                        {rows.map((row) => (
+                          <label
+                            key={row.key}
+                            className="flex cursor-pointer flex-col gap-1 rounded-md border border-slate-100 px-2 py-1.5 text-xs hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800"
+                          >
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                              <span className="inline-flex items-center gap-2 text-slate-700 dark:text-slate-200">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(selectedBulkOtKeys[row.key])}
+                                  onChange={(e) =>
+                                    setSelectedBulkOtKeys((prev) => ({ ...prev, [row.key]: e.target.checked }))
+                                  }
+                                  className="h-3.5 w-3.5 rounded border-slate-300 text-green-600"
+                                />
+                                {row.date}
+                              </span>
+                              <span className="font-medium text-slate-600 dark:text-slate-300">
+                                raw {formatHoursHHMM(row.rawHours)}
+                              </span>
+                              <span className="font-semibold text-indigo-700 dark:text-indigo-300">
+                                slab {formatHoursHHMM(row.slabHours)}
+                              </span>
+                            </div>
+                            {row.steps && row.steps.length > 0 ? (
+                              <p className="pl-6 text-[10px] leading-snug text-slate-500 dark:text-slate-400">
+                                {row.steps.map((st) => formatOtPolicyStepLineForDisplay(st)).join(' · ')}
+                              </p>
+                            ) : null}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
+
+              {bulkOtSkippedItems.length > 0 && (
+                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/80 dark:border-amber-800/50 dark:bg-amber-950/20">
+                  <button
+                    type="button"
+                    onClick={() => setBulkOtSkippedExpanded((v) => !v)}
+                    className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-xs font-bold text-amber-900 dark:text-amber-200"
+                  >
+                    <span>
+                      Skipped days ({bulkOtSkippedItems.length}) — grid extra hours, existing OT, or policy rules
+                    </span>
+                    <span className="text-lg leading-none">{bulkOtSkippedExpanded ? '−' : '+'}</span>
+                  </button>
+                  {bulkOtSkippedExpanded && (
+                    <ul className="max-h-52 space-y-2 overflow-y-auto border-t border-amber-200/80 px-3 py-2 dark:border-amber-800/40">
+                      {bulkOtSkippedItems.map((s) => (
+                        <li
+                          key={s.key}
+                          className="rounded-lg border border-amber-100 bg-white/90 px-2 py-2 text-[11px] dark:border-amber-900/40 dark:bg-slate-900/60"
+                        >
+                          <div className="font-semibold text-slate-800 dark:text-slate-100">
+                            {s.label} · <span className="tabular-nums text-slate-600 dark:text-slate-300">{s.date}</span>
+                          </div>
+                          <p className="mt-0.5 text-slate-600 dark:text-slate-400">
+                            {formatOtPolicyStepLineForDisplay(s.reason)}
+                          </p>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+
               <div className="mt-5 flex justify-end gap-3">
                 <button
-                  onClick={() => setShowBulkOtPreviewModal(false)}
+                  type="button"
+                  onClick={() => {
+                    setShowBulkOtPreviewModal(false);
+                    setBulkOtSkippedItems([]);
+                    setBulkOtSkippedExpanded(false);
+                  }}
                   disabled={convertingToOT}
                   className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition-all hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
                 >
                   Cancel
                 </button>
                 <button
+                  type="button"
                   onClick={handleConfirmBulkConvertSelectedToOT}
                   disabled={
                     convertingToOT ||
@@ -3671,6 +3879,92 @@ export default function AttendancePage() {
                   {convertingToOT
                     ? 'Creating...'
                     : `Create OT (${bulkOtEligibleQueue.filter((q) => selectedBulkOtKeys[q.key]).length})`}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showSingleOtConfirmModal && (
+          <div className="fixed inset-0 z-[55] flex items-center justify-center bg-slate-900/55 p-4 backdrop-blur-sm">
+            <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+              <div className="mb-4 flex items-start justify-between gap-2">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Confirm convert to OT</h3>
+                <button
+                  type="button"
+                  onClick={closeSingleOtConfirmModal}
+                  disabled={convertingToOT || singleOtConfirmLoading}
+                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 disabled:opacity-40"
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              {singleOtConfirmLoading ? (
+                <div className="flex flex-col items-center gap-3 py-8">
+                  <svg className="h-8 w-8 animate-spin text-indigo-600" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    />
+                  </svg>
+                  <p className="text-sm text-slate-600 dark:text-slate-300">Loading OT rule preview…</p>
+                </div>
+              ) : singleOtConfirmError ? (
+                <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-3 text-sm text-rose-800 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-200">
+                  {formatOtPolicyStepLineForDisplay(singleOtConfirmError)}
+                </div>
+              ) : singleOtConfirmData ? (
+                <div className="space-y-3 text-sm text-slate-700 dark:text-slate-200">
+                  <p className="rounded-lg border border-indigo-100 bg-indigo-50/80 px-3 py-2 text-xs dark:border-indigo-900/40 dark:bg-indigo-950/30">
+                    <span className="font-semibold text-slate-900 dark:text-white">{singleOtConfirmData.employeeName}</span>
+                    <span className="text-slate-500"> ({singleOtConfirmData.employeeNumber})</span>
+                    <br />
+                    <span className="tabular-nums">Date {singleOtConfirmData.date}</span>
+                  </p>
+                  <p>
+                    Credited OT (after rules):{' '}
+                    <span className="font-bold text-indigo-700 dark:text-indigo-300">
+                      {formatHoursHHMM(singleOtConfirmData.finalHours)}
+                    </span>{' '}
+                    from raw extra{' '}
+                    <span className="font-semibold tabular-nums">{formatHoursHHMM(singleOtConfirmData.rawHours)}</span>
+                  </p>
+                  {singleOtConfirmData.steps.length > 0 && (
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:border-slate-600 dark:bg-slate-800/80 dark:text-slate-300">
+                      <span className="font-bold text-slate-700 dark:text-slate-200">Policy steps: </span>
+                      {singleOtConfirmData.steps.map((st) => formatOtPolicyStepLineForDisplay(st)).join(' · ')}
+                    </div>
+                  )}
+                  <p className="text-xs text-amber-800 dark:text-amber-200">
+                    This creates a pending OT request. Management approval is required before it is treated as approved OT.
+                  </p>
+                </div>
+              ) : null}
+              <div className="mt-6 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={closeSingleOtConfirmModal}
+                  disabled={convertingToOT || singleOtConfirmLoading}
+                  className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmSingleOtConvert}
+                  disabled={
+                    convertingToOT ||
+                    singleOtConfirmLoading ||
+                    !singleOtConfirmData ||
+                    Boolean(singleOtConfirmError)
+                  }
+                  className="rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 px-4 py-2 text-sm font-bold text-white shadow-md disabled:opacity-50"
+                >
+                  {convertingToOT ? 'Creating…' : 'Create pending OT'}
                 </button>
               </div>
             </div>
@@ -4019,10 +4313,14 @@ export default function AttendancePage() {
                       <div className="text-right">
                         <button
                           onClick={handleConvertExtraHoursToOT}
-                          disabled={convertingToOT}
+                          disabled={convertingToOT || singleOtConfirmLoading}
                           className="rounded-lg bg-gradient-to-r from-purple-500 to-indigo-500 px-4 py-2 text-xs font-bold text-white shadow-md shadow-purple-500/20 transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
                         >
-                          {convertingToOT ? 'Converting...' : 'Convert Extra to OT'}
+                          {convertingToOT
+                            ? 'Converting...'
+                            : singleOtConfirmLoading
+                              ? 'Checking…'
+                              : 'Convert Extra to OT'}
                         </button>
                         {otPolicyPreview?.policy?.eligible && (
                           <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
