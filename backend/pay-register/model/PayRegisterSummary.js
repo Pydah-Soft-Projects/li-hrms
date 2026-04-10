@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const { isEarlyOutCountableSecondHalf } = require('../services/totalsCalculationService');
+const { contributingDatesShape } = require('../../shared/schemas/contributingDatesSchema');
 
 /**
  * Pay Register Summary Model
@@ -571,6 +572,20 @@ const payRegisterSummarySchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       default: null,
+    },
+
+    /** Same shape as MonthlyAttendanceSummary.contributingDates — grid click highlights / explainability */
+    contributingDates: contributingDatesShape,
+
+    contributingDatesUpdatedAt: {
+      type: Date,
+      default: null,
+    },
+
+    /** Set by contributingDatesService: `monthly_summary` when copied from MAS, `daily_grid` when rebuilt from edits. */
+    contributingDatesDerivedFrom: {
+      type: String,
+      enum: ['monthly_summary', 'daily_grid'],
     },
 
     // ADDITIONAL METADATA
