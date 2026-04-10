@@ -162,7 +162,13 @@ interface AttendanceRecord {
 
   otHours?: number;
 
+  /** Slab / policy-credited OT (monthly grid) */
+  otSlabHours?: number;
+
   extraHours?: number;
+
+  /** Raw extra / actual OT hours before slab (monthly grid) */
+  otActualHours?: number;
 
   permissionHours?: number;
 
