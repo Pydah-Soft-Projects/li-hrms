@@ -1556,7 +1556,10 @@ export const api = {
     return await response.blob();
   },
 
-  getEmployees: async (filters?: { is_active?: boolean; department_id?: string; division_id?: string; designation_id?: string; employee_group_id?: string; includeLeft?: boolean; search?: string; startDate?: string; endDate?: string; page?: number; limit?: number }) => {
+  getEmployees: async (
+    filters?: { is_active?: boolean; department_id?: string; division_id?: string; designation_id?: string; employee_group_id?: string; includeLeft?: boolean; search?: string; startDate?: string; endDate?: string; page?: number; limit?: number },
+    fetchInit?: RequestInit
+  ) => {
     const params = new URLSearchParams();
     if (filters?.is_active !== undefined) params.append('is_active', String(filters.is_active));
     if (filters?.department_id) params.append('department_id', filters.department_id);
@@ -1570,7 +1573,12 @@ export const api = {
     if (filters?.page) params.append('page', String(filters.page));
     if (filters?.limit) params.append('limit', String(filters.limit));
     const query = params.toString() ? `?${params.toString()}` : '';
-    return apiRequest<any>(`/employees${query}`, { method: 'GET' });
+    return apiRequest<any>(`/employees${query}`, { method: 'GET', ...fetchInit });
+  },
+
+  /** Scoped lean payload for birthday calendar (DOB + org refs only). */
+  getBirthdaysSummary: async (fetchInit?: RequestInit) => {
+    return apiRequest<any>('/employees/birthdays-summary', { method: 'GET', ...fetchInit });
   },
 
   getEmployee: async (empNo: string) => {
