@@ -556,6 +556,97 @@ exports.getAllEmployees = async (req, res) => {
 };
 
 /**
+ * @desc    Scoped lean list for birthday UI (only employees with DOB; minimal fields)
+ * @route   GET /api/employees/birthdays-summary
+ * @access  Private (same scope as employee list)
+ */
+exports.getBirthdaysSummary = async (req, res) => {
+  try {
+    const { includeLeft } = req.query;
+    const scopeFilter = req.scopeFilter || {};
+    const settings = await getEmployeeSettings();
+
+    const filters = { ...scopeFilter };
+    if (includeLeft !== 'true') {
+      const startOfToday = new Date();
+      startOfToday.setUTCHours(0, 0, 0, 0);
+      filters.$and = filters.$and || [];
+      filters.$and.push({ $or: [{ leftDate: null }, { leftDate: { $gte: startOfToday } }] });
+    }
+    filters.dob = { $exists: true, $ne: null };
+
+    const mapMongoBirthdayRow = (emp) => ({
+      _id: emp._id,
+      emp_no: emp.emp_no,
+      employee_name: emp.employee_name,
+      dob: emp.dob,
+      division_id: emp.division_id,
+      department_id: emp.department_id,
+      designation_id: emp.designation_id,
+      division: emp.division_id,
+      department: emp.department_id,
+      designation: emp.designation_id,
+    });
+
+    let data = [];
+
+    if (settings.dataSource === 'mssql' && isHRMSConnected()) {
+      const mssqlEmployees = await getAllEmployeesMSSQL(filters);
+      const withDob = mssqlEmployees.filter((e) => {
+        const v = e.dob;
+        return v != null && String(v).trim() !== '';
+      });
+      const resolved = await resolveEmployeeReferences(withDob);
+      const empNos = resolved.map((e) => e.emp_no).filter(Boolean);
+      let mongoMap = new Map();
+      if (empNos.length > 0) {
+        const mongoMatches = await Employee.find({ emp_no: { $in: empNos } }).select('_id emp_no').lean();
+        mongoMap = new Map(mongoMatches.map((m) => [m.emp_no, m]));
+      }
+      data = resolved.map((row) => {
+        const m = mongoMap.get(row.emp_no);
+        return {
+          _id: m?._id || null,
+          emp_no: row.emp_no,
+          employee_name: row.employee_name,
+          dob: row.dob,
+          division_id: row.division_id,
+          department_id: row.department_id,
+          designation_id: row.designation_id,
+          division: row.division,
+          department: row.department,
+          designation: row.designation,
+        };
+      });
+    } else {
+      const query = { ...filters };
+      const mongoEmployees = await Employee.find(query)
+        .select('_id emp_no employee_name dob division_id department_id designation_id')
+        .populate('division_id', 'name code')
+        .populate('department_id', 'name code')
+        .populate('designation_id', 'name code')
+        .sort({ employee_name: 1 })
+        .lean();
+      data = mongoEmployees.map(mapMongoBirthdayRow);
+    }
+
+    res.status(200).json({
+      success: true,
+      count: data.length,
+      dataSource: settings.dataSource,
+      data,
+    });
+  } catch (error) {
+    console.error('[EmployeeController] Error fetching birthdays summary:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching birthdays summary',
+      error: error.message,
+    });
+  }
+};
+
+/**
  * @desc    Get single employee
  * @route   GET /api/employees/:empNo
  * @access  Private

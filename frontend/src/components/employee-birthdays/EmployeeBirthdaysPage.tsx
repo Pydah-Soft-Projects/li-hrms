@@ -19,6 +19,35 @@ import {
   RefreshCw,
 } from 'lucide-react';
 
+const BIRTHDAY_EMPLOYEES_CACHE_KEY = 'hrms_employee_birthdays_summary_v1';
+
+type BirthdayEmployeesCache = {
+  employees: Employee[];
+  fetchedAt: number;
+};
+
+const readBirthdayEmployeesCache = (): BirthdayEmployeesCache | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = sessionStorage.getItem(BIRTHDAY_EMPLOYEES_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as BirthdayEmployeesCache;
+    if (!parsed || !Array.isArray(parsed.employees)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+};
+
+const writeBirthdayEmployeesCache = (employees: Employee[]) => {
+  try {
+    const payload: BirthdayEmployeesCache = { employees, fetchedAt: Date.now() };
+    sessionStorage.setItem(BIRTHDAY_EMPLOYEES_CACHE_KEY, JSON.stringify(payload));
+  } catch {
+    // private mode / quota — ignore
+  }
+};
+
 type BirthdaySection = 'today' | 'upcoming' | 'past';
 
 type EmployeeBirthday = {
@@ -139,7 +168,7 @@ const classifyBirthday = (emp: Employee, today: Date): EmployeeBirthday | null =
   const turningAge = ageNow + (section === 'past' ? 1 : 0);
 
   return {
-    id: emp._id,
+    id: String(emp._id ?? emp.emp_no),
     empNo: emp.emp_no,
     name: emp.employee_name,
     dob: emp.dob,
@@ -226,8 +255,9 @@ const BirthdayList = ({
 };
 
 export default function EmployeeBirthdaysPage() {
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [employees, setEmployees] = useState<Employee[]>(() => readBirthdayEmployeesCache()?.employees ?? []);
+  const [loading, setLoading] = useState(() => readBirthdayEmployeesCache() === null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [selectedRange, setSelectedRange] = useState<'month' | 'week' | 'today' | 'tomorrow'>('month');
@@ -241,27 +271,37 @@ export default function EmployeeBirthdaysPage() {
   const [divisionFilter, setDivisionFilter] = useState('all');
   const [departmentFilter, setDepartmentFilter] = useState('all');
 
-  const fetchEmployees = async () => {
-    setLoading(true);
+  const fetchEmployees = async (opts?: { blocking?: boolean }) => {
+    const blocking = opts?.blocking ?? readBirthdayEmployeesCache() === null;
+    if (blocking) {
+      setLoading(true);
+    } else {
+      setIsRefreshing(true);
+    }
     setError(null);
     try {
-      const response = await api.getEmployees({ includeLeft: false, limit: 10000, page: 1 });
+      const response = await api.getBirthdaysSummary({ cache: 'no-store' });
       if (response?.success) {
-        setEmployees(Array.isArray(response.data) ? response.data : []);
-      } else {
+        const list = Array.isArray(response.data) ? response.data : [];
+        setEmployees(list);
+        writeBirthdayEmployeesCache(list);
+      } else if (blocking) {
         setEmployees([]);
         setError('Unable to load employee birthdays.');
       }
     } catch (err: any) {
-      setEmployees([]);
-      setError(err?.message || 'Unable to load employee birthdays.');
+      if (blocking) {
+        setEmployees([]);
+        setError(err?.message || 'Unable to load employee birthdays.');
+      }
     } finally {
-      setLoading(false);
+      if (blocking) setLoading(false);
+      setIsRefreshing(false);
     }
   };
 
   useEffect(() => {
-    fetchEmployees();
+    void fetchEmployees({ blocking: readBirthdayEmployeesCache() === null });
   }, []);
 
   const today = useMemo(() => toStartOfDay(new Date()), []);
@@ -438,11 +478,13 @@ export default function EmployeeBirthdaysPage() {
             </div>
             <div className="flex flex-col items-end gap-2">
               <button
-                onClick={fetchEmployees}
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-xs transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                type="button"
+                disabled={isRefreshing}
+                onClick={() => void fetchEmployees({ blocking: false })}
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-xs transition-colors hover:bg-slate-50 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
               >
-                <RefreshCw className="h-4 w-4" />
-                Refresh
+                <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                {isRefreshing ? 'Refreshing…' : 'Refresh'}
               </button>
               <button
                 onClick={() => {
