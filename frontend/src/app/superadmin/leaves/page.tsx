@@ -287,10 +287,25 @@ const getItemDivisionName = (item: any) => {
 
 // Helper: get designation name from item (top-level or nested on employeeId)
 const getItemDesignationName = (item: any) => {
-  const populated = item?.designation?.name || (item?.employeeId as any)?.designation?.name;
+  const emp = item?.employeeId as any;
+  const fromDesigId =
+    emp?.designation_id && typeof emp.designation_id === 'object' && emp.designation_id !== null && 'name' in emp.designation_id
+      ? String((emp.designation_id as { name?: string }).name || '')
+      : '';
+  const populated =
+    item?.designation?.name ||
+    emp?.designation?.name ||
+    fromDesigId;
   const fallback = item?.designation_name;
   const val = populated || fallback || '';
   return val === 'N/A' || val === 'undefined' ? '' : val;
+};
+
+const formatEmpNoWithDesignation = (item: any) => {
+  const no = item?.employeeId?.emp_no || item?.emp_no || '';
+  const des = getItemDesignationName(item);
+  if (no && des) return `${no} · ${des}`;
+  return no || des || '';
 };
 
 interface LeaveApplication {
@@ -301,6 +316,8 @@ interface LeaveApplication {
     first_name?: string;
     last_name?: string;
     emp_no: string;
+    designation?: { _id?: string; name?: string; code?: string };
+    designation_id?: { _id?: string; name?: string; code?: string } | string;
   };
   emp_no?: string;
   leaveType: string;
@@ -365,6 +382,8 @@ interface ODApplication {
     first_name?: string;
     last_name?: string;
     emp_no: string;
+    designation?: { _id?: string; name?: string; code?: string };
+    designation_id?: { _id?: string; name?: string; code?: string } | string;
   };
   emp_no?: string;
   odType: string;
@@ -745,7 +764,8 @@ export default function LeavesPage() {
     division: [] as string[],
     department: [] as string[],
     designation: [] as string[],
-    status: ''
+    status: '',
+    odPlace: ''
   });
 
   // Form validation for Apply button
@@ -875,6 +895,7 @@ export default function LeavesPage() {
   const getLeavesODFilters = () => ({
     search: searchTerm?.trim() || undefined,
     status: leaveFilters.status || undefined,
+    placeVisited: activeTab === 'od' ? (leaveFilters.odPlace || undefined) : undefined,
     department: leaveFilters.department.length > 0 ? leaveFilters.department : undefined,
     division: leaveFilters.division.length > 0 ? leaveFilters.division : undefined,
     designation: leaveFilters.designation.length > 0 ? leaveFilters.designation : undefined,
@@ -1963,7 +1984,12 @@ export default function LeavesPage() {
       const lowerSearch = searchTerm.toLowerCase();
       const empName = item.employeeId?.employee_name || item.employeeId?.first_name || '';
       const empNo = item.emp_no || item.employeeId?.emp_no || '';
-      if (!empName.toLowerCase().includes(lowerSearch) && !empNo.toLowerCase().includes(lowerSearch)) {
+      const desig = getItemDesignationName(item);
+      if (
+        !empName.toLowerCase().includes(lowerSearch) &&
+        !empNo.toLowerCase().includes(lowerSearch) &&
+        !(desig && desig.toLowerCase().includes(lowerSearch))
+      ) {
         return false;
       }
     }
@@ -2294,6 +2320,17 @@ export default function LeavesPage() {
             <option value="cancelled">Cancelled</option>
           </select>
 
+          {activeTab === 'od' && (
+            <select
+              value={leaveFilters.odPlace}
+              onChange={(e) => setLeaveFilters(prev => ({ ...prev, odPlace: e.target.value }))}
+              className="h-9 pl-3 pr-8 text-[11px] font-bold uppercase tracking-wider bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-300 shadow-sm min-w-[170px]"
+            >
+              <option value="">Place</option>
+              <option value="Organization Campus (Auto)">Organization Campus (Auto)</option>
+            </select>
+          )}
+
           <div className="relative min-w-[150px]">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
               <SearchIcon />
@@ -2384,7 +2421,7 @@ export default function LeavesPage() {
                       <div className="font-medium text-slate-900 dark:text-white">
                         {leave.employeeId?.employee_name || `${leave.employeeId?.first_name || ''} ${leave.employeeId?.last_name || ''}`.trim() || leave.emp_no}
                       </div>
-                      <div className="text-xs text-slate-500">{leave.employeeId?.emp_no || leave.emp_no}</div>
+                      <div className="text-xs text-slate-500">{formatEmpNoWithDesignation(leave)}</div>
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
                       {getItemDivisionName(leave)}
@@ -2499,7 +2536,7 @@ export default function LeavesPage() {
                       <div className="font-medium text-slate-900 dark:text-white">
                         {od.employeeId?.employee_name || `${od.employeeId?.first_name || ''} ${od.employeeId?.last_name || ''}`.trim() || od.emp_no}
                       </div>
-                      <div className="text-xs text-slate-500">{od.employeeId?.emp_no || od.emp_no}</div>
+                      <div className="text-xs text-slate-500">{formatEmpNoWithDesignation(od)}</div>
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">
                       {getItemDivisionName(od)}
@@ -2632,7 +2669,7 @@ export default function LeavesPage() {
                       >
                         <td className="px-4 py-3">
                           <div className="font-medium text-slate-900 dark:text-white">{getEmployeeName({ employee_name: leave.employeeId?.employee_name ?? '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no ?? leave.emp_no ?? '' } as Employee)}</div>
-                          <div className="text-xs text-slate-500">{leave.employeeId?.emp_no ?? leave.emp_no}</div>
+                          <div className="text-xs text-slate-500">{formatEmpNoWithDesignation(leave)}</div>
                         </td>
                         <td className="px-4 py-3">{getItemDivisionName(leave)}</td>
                         <td className="px-4 py-3">{getItemDepartmentName(leave)}</td>
@@ -2710,7 +2747,7 @@ export default function LeavesPage() {
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1 min-w-0">
                         <div className="font-medium text-slate-900 dark:text-white">{getEmployeeName({ employee_name: leave.employeeId?.employee_name ?? '', first_name: leave.employeeId?.first_name, last_name: leave.employeeId?.last_name, emp_no: leave.employeeId?.emp_no ?? leave.emp_no ?? '' } as Employee)}</div>
-                        <div className="text-xs text-slate-500">({leave.employeeId?.emp_no ?? leave.emp_no}) · {leave.leaveType} · {leave.numberOfDays}d</div>
+                        <div className="text-xs text-slate-500">({formatEmpNoWithDesignation(leave)}) · {leave.leaveType} · {leave.numberOfDays}d</div>
                         <div className="text-xs text-slate-600 dark:text-slate-400 mt-1">{formatDate(leave.fromDate)} – {formatDate(leave.toDate)}</div>
                         <span className={`inline-block mt-2 px-2 py-0.5 text-xs font-medium rounded ${getStatusColor(leave.status)}`}>{leave.status?.replace('_', ' ') ?? 'pending'}</span>
                       </div>
@@ -2784,7 +2821,7 @@ export default function LeavesPage() {
                       >
                         <td className="px-4 py-3">
                           <div className="font-medium text-slate-900 dark:text-white">{getEmployeeName({ employee_name: od.employeeId?.employee_name ?? '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no ?? od.emp_no ?? '' } as Employee)}</div>
-                          <div className="text-xs text-slate-500">{od.employeeId?.emp_no ?? od.emp_no}</div>
+                          <div className="text-xs text-slate-500">{formatEmpNoWithDesignation(od)}</div>
                         </td>
                         <td className="px-4 py-3">{getItemDivisionName(od)}</td>
                         <td className="px-4 py-3">{getItemDepartmentName(od)}</td>
@@ -2852,7 +2889,7 @@ export default function LeavesPage() {
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1 min-w-0">
                         <div className="font-medium text-slate-900 dark:text-white">{getEmployeeName({ employee_name: od.employeeId?.employee_name ?? '', first_name: od.employeeId?.first_name, last_name: od.employeeId?.last_name, emp_no: od.employeeId?.emp_no ?? od.emp_no ?? '' } as Employee)}</div>
-                        <div className="text-xs text-slate-500">({od.employeeId?.emp_no ?? od.emp_no}) · {od.odType} · {od.numberOfDays}d</div>
+                        <div className="text-xs text-slate-500">({formatEmpNoWithDesignation(od)}) · {od.odType} · {od.numberOfDays}d</div>
                         <div className="text-xs text-slate-600 dark:text-slate-400 mt-1">{formatDate(od.fromDate)} – {formatDate(od.toDate)}</div>
                         {od.placeVisited && <div className="text-xs text-slate-500 mt-0.5 truncate">{od.placeVisited}</div>}
                         <span className={`inline-block mt-2 px-2 py-0.5 text-xs font-medium rounded ${getStatusColor(od.status)}`}>{od.status?.replace('_', ' ') ?? 'pending'}</span>
@@ -3648,7 +3685,7 @@ export default function LeavesPage() {
                       {selectedItem.employeeId?.employee_name || `${(selectedItem.employeeId as any)?.first_name || ''} ${(selectedItem.employeeId as any)?.last_name || ''}`.trim() || selectedItem.emp_no}
                     </h3>
                     <p className="text-sm text-slate-500 font-bold uppercase tracking-tight">
-                      {selectedItem.employeeId?.emp_no || selectedItem.emp_no}
+                      {formatEmpNoWithDesignation(selectedItem)}
                     </p>
                     <div className="flex gap-2 mt-2">
                       {selectedItem.department?.name && (

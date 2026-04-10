@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const payRegisterController = require('./controllers/payRegisterController');
 const { protect, authorize } = require('../authentication/middleware/authMiddleware');
+const { applyScopeFilter } = require('../shared/middleware/dataScopeMiddleware');
 
 // All routes require authentication
 router.use(protect);
@@ -16,6 +17,9 @@ router.use((req, res, next) => {
   }
   next();
 });
+
+// Apply data scope filter at API boundary for all pay-register endpoints
+router.use(applyScopeFilter);
 
 // IMPORTANT: More specific routes must come before parameterized routes
 // Bulk upload monthly summary

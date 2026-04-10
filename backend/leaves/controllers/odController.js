@@ -225,7 +225,7 @@ const getWorkflowSettings = async () => {
 // @access  Private
 exports.getODs = async (req, res) => {
   try {
-    const { status, employeeId, department, division, designation, fromDate, toDate, search, page = 1, limit = 20 } = req.query;
+    const { status, employeeId, department, division, designation, placeVisited, fromDate, toDate, search, page = 1, limit = 20 } = req.query;
 
     // Multi-layered filter: Jurisdiction (Scope) AND Timing (Workflow)
     const scopeFilter = req.scopeFilter || { isActive: true };
@@ -278,6 +278,10 @@ exports.getODs = async (req, res) => {
       const ids = String(designation).split(',').filter(id => id && id !== 'all');
       if (ids.length > 0) filter.designation = ids.length > 1 ? { $in: ids } : ids[0];
     }
+    if (placeVisited && String(placeVisited).trim()) {
+      const placeRegex = new RegExp(`^${String(placeVisited).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+      filter.placeVisited = placeRegex;
+    }
     if (fromDate || toDate) {
       if (toDate) filter.fromDate = { ...filter.fromDate, $lte: new Date(toDate) };
       if (fromDate) filter.toDate = { ...filter.toDate, $gte: new Date(fromDate) };
@@ -309,10 +313,11 @@ exports.getODs = async (req, res) => {
       OD.find(filter)
         .populate({
           path: 'employeeId',
-          select: 'employee_name emp_no department_id division_id department',
+          select: 'employee_name emp_no first_name last_name department_id division_id designation_id department',
           populate: [
             { path: 'department', select: 'name code' },
-            { path: 'division', select: 'name code' }
+            { path: 'division', select: 'name code' },
+            { path: 'designation', select: 'name code' },
           ]
         })
         .populate('department', 'name')
@@ -378,10 +383,11 @@ exports.getMyODs = async (req, res) => {
     const ods = await OD.find(filter)
       .populate({
           path: 'employeeId',
-          select: 'employee_name emp_no department_id division_id department',
+          select: 'employee_name emp_no first_name last_name department_id division_id designation_id department',
           populate: [
             { path: 'department', select: 'name code' },
-            { path: 'division', select: 'name code' }
+            { path: 'division', select: 'name code' },
+            { path: 'designation', select: 'name code' },
           ]
         })
       .populate('department', 'name')
@@ -412,10 +418,11 @@ exports.getOD = async (req, res) => {
     const od = await OD.findById(req.params.id)
       .populate({
           path: 'employeeId',
-          select: 'employee_name emp_no email phone_number department_id division_id department',
+          select: 'employee_name emp_no first_name last_name email phone_number department_id division_id designation_id department',
           populate: [
             { path: 'department', select: 'name code' },
-            { path: 'division', select: 'name code' }
+            { path: 'division', select: 'name code' },
+            { path: 'designation', select: 'name code' },
           ]
         })
       .populate('department', 'name code')
@@ -959,7 +966,11 @@ exports.applyOD = async (req, res) => {
 
     // Populate for response
     await od.populate([
-      { path: 'employeeId', select: 'first_name last_name emp_no' },
+      {
+        path: 'employeeId',
+        select: 'first_name last_name emp_no employee_name designation_id',
+        populate: { path: 'designation', select: 'name code' },
+      },
       { path: 'department', select: 'name' },
       { path: 'designation', select: 'name' },
     ]);
@@ -1248,7 +1259,11 @@ exports.updateOD = async (req, res) => {
 
     // Populate for response
     await od.populate([
-      { path: 'employeeId', select: 'employee_name emp_no' },
+      {
+        path: 'employeeId',
+        select: 'employee_name emp_no first_name last_name designation_id',
+        populate: { path: 'designation', select: 'name code' },
+      },
       { path: 'department', select: 'name' },
       { path: 'designation', select: 'name' },
       { path: 'changeHistory.modifiedBy', select: 'name email role' },
@@ -1430,10 +1445,11 @@ exports.getPendingApprovals = async (req, res) => {
       OD.find(filter)
         .populate({
           path: 'employeeId',
-          select: 'employee_name emp_no first_name last_name department_id division_id department',
+          select: 'employee_name emp_no first_name last_name department_id division_id designation_id department',
           populate: [
             { path: 'department', select: 'name code' },
-            { path: 'division', select: 'name code' }
+            { path: 'division', select: 'name code' },
+            { path: 'designation', select: 'name code' },
           ]
         })
         .populate('department', 'name')
@@ -1865,7 +1881,11 @@ exports.processODAction = async (req, res) => {
     }
 
     await od.populate([
-      { path: 'employeeId', select: 'first_name last_name emp_no' },
+      {
+        path: 'employeeId',
+        select: 'first_name last_name emp_no employee_name designation_id',
+        populate: { path: 'designation', select: 'name code' },
+      },
       { path: 'department', select: 'name' },
     ]);
 

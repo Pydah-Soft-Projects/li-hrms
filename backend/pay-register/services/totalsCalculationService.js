@@ -58,6 +58,27 @@ async function ensureTotalsRespectRoster(totals, emp_no, startDate, endDate) {
 }
 
 /**
+ * Early-out counts in pay-register totals only if the second half is worked (present or OD).
+ * Split day present+leave: early counts only when the second half is present/OD (not first-half-only).
+ * Full non-split days: count when the day status is present, OD, or partial (both halves mirror full day).
+ * @param {Object} record - Daily pay register row
+ * @returns {boolean}
+ */
+function isEarlyOutCountableSecondHalf(record) {
+  const h2 = record.secondHalf && record.secondHalf.status;
+  if (h2 === 'present' || h2 === 'od') return true;
+
+  const h1 = record.firstHalf && record.firstHalf.status;
+  const looksSplit =
+    record.isSplit === true ||
+    (h1 && h2 && h1 !== h2);
+  if (looksSplit) return false;
+
+  const full = record.status || h1 || h2;
+  return full === 'present' || full === 'od' || full === 'partial';
+}
+
+/**
  * Calculate totals from dailyRecords array
  * @param {Array} dailyRecords - Array of daily record objects
  * @returns {Object} Calculated totals
@@ -212,7 +233,7 @@ function calculateTotals(dailyRecords) {
         totals.totalLateInMinutes += record.lateInMinutes;
       }
     }
-    if (record.isEarlyOut && isPresentOrPartial) {
+    if (record.isEarlyOut && isEarlyOutCountableSecondHalf(record)) {
       totals.earlyOutCount++;
       if (typeof record.earlyOutMinutes === 'number') {
         totals.totalEarlyOutMinutes += record.earlyOutMinutes;
@@ -379,5 +400,6 @@ module.exports = {
   getRosterWOHOLCounts,
   ensureTotalsRespectRoster,
   syncTotalsFromMonthlySummary,
+  isEarlyOutCountableSecondHalf,
 };
 

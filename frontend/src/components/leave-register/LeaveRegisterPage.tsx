@@ -473,8 +473,12 @@ export default function LeaveRegisterPage({
   const [financialYearOptions, setFinancialYearOptions] = useState<string[]>([fallbackFinancialYear]);
   const [divisionId, setDivisionId] = useState('');
   const [departmentId, setDepartmentId] = useState('');
+  const [designationId, setDesignationId] = useState('');
+  const [employeeGroupId, setEmployeeGroupId] = useState('');
   const [divisions, setDivisions] = useState<{ _id: string; name: string }[]>([]);
   const [departments, setDepartments] = useState<{ _id: string; name: string }[]>([]);
+  const [designations, setDesignations] = useState<{ _id: string; name: string }[]>([]);
+  const [employeeGroups, setEmployeeGroups] = useState<{ _id: string; name: string }[]>([]);
   const PAGE_SIZE = 25;
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<ListRow[]>([]);
@@ -552,9 +556,10 @@ export default function LeaveRegisterPage({
   useEffect(() => {
     (async () => {
       try {
-        const [divRes, deptRes] = await Promise.all([
+        const [divRes, deptRes, groupRes] = await Promise.all([
           api.getDivisions(true),
           api.getDepartments(true, divisionId || undefined),
+          api.getEmployeeGroups(true),
         ]);
         if (divRes.success && Array.isArray(divRes.data)) {
           setDivisions(divRes.data.map((d: any) => ({ _id: d._id, name: d.name })));
@@ -562,11 +567,31 @@ export default function LeaveRegisterPage({
         if (deptRes.success && Array.isArray(deptRes.data)) {
           setDepartments(deptRes.data.map((d: any) => ({ _id: d._id, name: d.name })));
         }
+        if (groupRes.success && Array.isArray(groupRes.data)) {
+          setEmployeeGroups(groupRes.data.map((d: any) => ({ _id: d._id, name: d.name })));
+        }
       } catch {
         /* ignore */
       }
     })();
   }, [divisionId]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await api.getDesignations(departmentId || undefined);
+        if (res.success && Array.isArray(res.data)) {
+          setDesignations(res.data.map((d: any) => ({ _id: d._id, name: d.name })));
+        } else {
+          setDesignations([]);
+        }
+      } catch {
+        /* ignore */
+      }
+    })();
+    // When department changes, we should ideally reset designation id if it's no longer valid
+    setDesignationId('');
+  }, [departmentId]);
 
   useEffect(() => {
     // Auto-select current financial year from backend policy settings.
@@ -607,7 +632,7 @@ export default function LeaveRegisterPage({
 
   useEffect(() => {
     setPage(1);
-  }, [debouncedSearch, financialYear, departmentId, divisionId]);
+  }, [debouncedSearch, financialYear, departmentId, divisionId, designationId, employeeGroupId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -618,6 +643,8 @@ export default function LeaveRegisterPage({
           financialYear: financialYear.trim() || undefined,
           departmentId: departmentId || undefined,
           divisionId: divisionId || undefined,
+          designationId: designationId || undefined,
+          employee_group_id: employeeGroupId || undefined,
           search: debouncedSearch || undefined,
           page,
           limit: PAGE_SIZE,
@@ -650,7 +677,7 @@ export default function LeaveRegisterPage({
     return () => {
       cancelled = true;
     };
-  }, [debouncedSearch, financialYear, departmentId, divisionId, page, registerListRefresh]);
+  }, [debouncedSearch, financialYear, departmentId, divisionId, designationId, employeeGroupId, page, registerListRefresh]);
 
   const openRegisterExportModal = (format: 'pdf' | 'xlsx') => {
     const fy = financialYear.trim();
@@ -682,6 +709,8 @@ export default function LeaveRegisterPage({
         financialYear: fy,
         departmentId: departmentId || undefined,
         divisionId: divisionId || undefined,
+        designationId: designationId || undefined,
+        employee_group_id: employeeGroupId || undefined,
         search: debouncedSearch || undefined,
         includeCL: pdfIncludeCasual,
         includeCCL: pdfIncludeCompensatory,
@@ -714,7 +743,7 @@ export default function LeaveRegisterPage({
     detailCacheRef.current = new Map();
     detailInflightRef.current = new Map();
     setExpandedIds([]);
-  }, [debouncedSearch, financialYear, departmentId, divisionId]);
+  }, [debouncedSearch, financialYear, departmentId, divisionId, designationId, employeeGroupId]);
 
   const prefetchRowDetail = async (employeeId: string) => {
     if (detailCacheRef.current.has(employeeId)) return;
@@ -1282,6 +1311,32 @@ export default function LeaveRegisterPage({
                 {departments.map((d) => (
                   <option key={d._id} value={d._id}>
                     {d.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={designationId}
+                onChange={(e) => setDesignationId(e.target.value)}
+                title="Designation"
+                className={`${compactSelectClass} max-w-[8.5rem]`}
+              >
+                <option value="">All designations</option>
+                {designations.map((d) => (
+                  <option key={d._id} value={d._id}>
+                    {d.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={employeeGroupId}
+                onChange={(e) => setEmployeeGroupId(e.target.value)}
+                title="Employee Group"
+                className={`${compactSelectClass} max-w-[8.5rem]`}
+              >
+                <option value="">All groups</option>
+                {employeeGroups.map((g) => (
+                  <option key={g._id} value={g._id}>
+                    {g.name}
                   </option>
                 ))}
               </select>

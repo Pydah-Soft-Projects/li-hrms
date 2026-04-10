@@ -254,10 +254,11 @@ exports.getLeaves = async (req, res) => {
       Leave.find(filter)
         .populate({
           path: 'employeeId',
-          select: 'employee_name emp_no department_id division_id department',
+          select: 'employee_name emp_no first_name last_name department_id division_id designation_id department',
           populate: [
             { path: 'department', select: 'name code' },
-            { path: 'division', select: 'name code' }
+            { path: 'division', select: 'name code' },
+            { path: 'designation', select: 'name code' },
           ]
         })
         .populate('department', 'name')
@@ -327,10 +328,11 @@ exports.getMyLeaves = async (req, res) => {
     const leaves = await Leave.find(filter)
       .populate({
           path: 'employeeId',
-          select: 'employee_name emp_no department_id division_id department',
+          select: 'employee_name emp_no first_name last_name department_id division_id designation_id department',
           populate: [
             { path: 'department', select: 'name code' },
-            { path: 'division', select: 'name code' }
+            { path: 'division', select: 'name code' },
+            { path: 'designation', select: 'name code' },
           ]
         })
       .populate('department', 'name')
@@ -360,10 +362,11 @@ exports.getLeave = async (req, res) => {
     const leave = await Leave.findById(req.params.id)
       .populate({
           path: 'employeeId',
-          select: 'employee_name emp_no email phone_number department_id division_id department',
+          select: 'employee_name emp_no first_name last_name email phone_number department_id division_id designation_id department',
           populate: [
             { path: 'department', select: 'name code' },
-            { path: 'division', select: 'name code' }
+            { path: 'division', select: 'name code' },
+            { path: 'designation', select: 'name code' },
           ]
         })
       .populate('department', 'name code')
@@ -918,7 +921,11 @@ exports.applyLeave = async (req, res) => {
 
     // Populate for response
     await leave.populate([
-      { path: 'employeeId', select: 'first_name last_name emp_no' },
+      {
+        path: 'employeeId',
+        select: 'first_name last_name emp_no employee_name designation_id',
+        populate: { path: 'designation', select: 'name code' },
+      },
       { path: 'department', select: 'name' },
       { path: 'designation', select: 'name' },
     ]);
@@ -1184,7 +1191,11 @@ exports.updateLeave = async (req, res) => {
 
     // Populate for response
     await leave.populate([
-      { path: 'employeeId', select: 'employee_name emp_no' },
+      {
+        path: 'employeeId',
+        select: 'employee_name emp_no first_name last_name designation_id',
+        populate: { path: 'designation', select: 'name code' },
+      },
       { path: 'department', select: 'name' },
       { path: 'designation', select: 'name' },
       { path: 'changeHistory.modifiedBy', select: 'name email role' },
@@ -1363,10 +1374,11 @@ exports.getPendingApprovals = async (req, res) => {
       Leave.find(filter)
         .populate({
           path: 'employeeId',
-          select: 'employee_name emp_no first_name last_name department_id division_id department',
+          select: 'employee_name emp_no first_name last_name department_id division_id designation_id department',
           populate: [
             { path: 'department', select: 'name code' },
-            { path: 'division', select: 'name code' }
+            { path: 'division', select: 'name code' },
+            { path: 'designation', select: 'name code' },
           ]
         })
         .populate('department', 'name')
@@ -1784,7 +1796,11 @@ exports.processLeaveAction = async (req, res) => {
     }
 
     await leave.populate([
-      { path: 'employeeId', select: 'first_name last_name emp_no' },
+      {
+        path: 'employeeId',
+        select: 'first_name last_name emp_no employee_name designation_id',
+        populate: { path: 'designation', select: 'name code' },
+      },
       { path: 'department', select: 'name' },
     ]);
 
@@ -2755,6 +2771,7 @@ exports.listLeaveRegister = async (req, res) => {
       departmentId,
       divisionId,
       designationId,
+      employee_group_id,
       employeeId,
       empNo,
       search,
@@ -2779,6 +2796,7 @@ exports.listLeaveRegister = async (req, res) => {
       divisionId: divisionId && mongoose.Types.ObjectId.isValid(String(divisionId)) ? new mongoose.Types.ObjectId(String(divisionId)) : undefined,
       departmentId: departmentId && mongoose.Types.ObjectId.isValid(String(departmentId)) ? new mongoose.Types.ObjectId(String(departmentId)) : undefined,
       designationId: designationId && mongoose.Types.ObjectId.isValid(String(designationId)) ? new mongoose.Types.ObjectId(String(designationId)) : undefined,
+      employee_group_id: employee_group_id && mongoose.Types.ObjectId.isValid(String(employee_group_id)) ? new mongoose.Types.ObjectId(String(employee_group_id)) : undefined,
       employeeId: employeeId && mongoose.Types.ObjectId.isValid(String(employeeId)) ? new mongoose.Types.ObjectId(String(employeeId)) : undefined,
       empNo: empNo && String(empNo).trim() ? String(empNo).trim() : undefined,
       searchTerm: search && String(search).trim() ? String(search).trim() : undefined,
@@ -3383,18 +3401,20 @@ exports.exportReportPDF = async (req, res) => {
     const [leaves, ods] = await Promise.all([
       includeLeaves === 'true' ? Leave.find(leaveFilter).populate({
           path: 'employeeId',
-          select: 'employee_name emp_no first_name last_name department_id division_id department',
+          select: 'employee_name emp_no first_name last_name department_id division_id designation_id department',
           populate: [
             { path: 'department', select: 'name code' },
-            { path: 'division', select: 'name code' }
+            { path: 'division', select: 'name code' },
+            { path: 'designation', select: 'name code' },
           ]
         }).lean() : [],
       includeODs === 'true' ? OD.find(odFilter).populate({
           path: 'employeeId',
-          select: 'employee_name emp_no first_name last_name department_id division_id department',
+          select: 'employee_name emp_no first_name last_name department_id division_id designation_id department',
           populate: [
             { path: 'department', select: 'name code' },
-            { path: 'division', select: 'name code' }
+            { path: 'division', select: 'name code' },
+            { path: 'designation', select: 'name code' },
           ]
         }).lean() : []
     ]);
@@ -3657,18 +3677,20 @@ exports.exportReportXLSX = async (req, res) => {
     const [leaves, ods] = await Promise.all([
       includeLeaves === 'true' ? Leave.find(leaveFilter).populate({
           path: 'employeeId',
-          select: 'employee_name emp_no department_id division_id',
+          select: 'employee_name emp_no department_id division_id designation_id',
           populate: [
             { path: 'department_id', select: 'name' },
-            { path: 'division_id', select: 'name' }
+            { path: 'division_id', select: 'name' },
+            { path: 'designation_id', select: 'name code' },
           ]
         }).lean() : [],
       includeODs === 'true' ? OD.find(baseFilter).populate({
           path: 'employeeId',
-          select: 'employee_name emp_no department_id division_id',
+          select: 'employee_name emp_no department_id division_id designation_id',
           populate: [
             { path: 'department_id', select: 'name' },
-            { path: 'division_id', select: 'name' }
+            { path: 'division_id', select: 'name' },
+            { path: 'designation_id', select: 'name code' },
           ]
         }).lean() : []
     ]);

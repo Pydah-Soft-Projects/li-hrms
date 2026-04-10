@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type MouseEvent } from 'react';
 import { useRouter } from "next/navigation";
 import Link from 'next/link';
 import { parseFile } from '@/lib/bulkUpload';
-import { api, apiRequest, Employee, Division } from '@/lib/api';
+import { api, apiRequest, Employee, Division, EmployeeGroup } from '@/lib/api';
 import ArrearsPayrollSection from '@/components/Arrears/ArrearsPayrollSection';
 import DeductionsPayrollSection from '@/components/ManualDeductions/DeductionsPayrollSection';
 import * as XLSX from 'xlsx';
@@ -94,6 +94,17 @@ interface PayRegisterSummary {
   isStub?: boolean;
   summaryLocked?: boolean;
   summaryLockedAt?: string | null;
+  /** Policy attendance deduction days (late/early + absent extra), same engine as payroll */
+  totalAttendanceDeductionDays?: number;
+  attendanceDeductionBreakdown?: {
+    daysDeducted?: number;
+    lateEarlyDaysDeducted?: number;
+    absentExtraDays?: number;
+    absentDays?: number;
+    lateInsCount?: number;
+    earlyOutsCount?: number;
+  } | null;
+  attendanceDeductionCalculatedAt?: string | null;
 }
 
 interface Shift {
@@ -132,6 +143,9 @@ export default function PayRegisterPage() {
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [selectedDivision, setSelectedDivision] = useState<string>('');
   const [selectedDepartment, setSelectedDepartment] = useState<string>('');
+  const [selectedEmployeeGroup, setSelectedEmployeeGroup] = useState<string>('');
+  const [employeeGroups, setEmployeeGroups] = useState<EmployeeGroup[]>([]);
+  const [customGroupingEnabled, setCustomGroupingEnabled] = useState(false);
   const [leaveTypes, setLeaveTypes] = useState<any[]>([]);
   const [calculatingId, setCalculatingId] = useState<string | null>(null);
   const [bulkCalculating, setBulkCalculating] = useState(false);
@@ -141,7 +155,13 @@ export default function PayRegisterPage() {
   const [calculationProgress, setCalculationProgress] = useState<any>(null);
   const [payrollStrategy, setPayrollStrategy] = useState<'new' | 'legacy' | 'dynamic'>('dynamic');
 
-
+  /** Same breakdown modal as Attendance page — pay register uses stored attendanceDeductionBreakdown */
+  const [attendanceDeductionInfo, setAttendanceDeductionInfo] = useState<{
+    employeeName: string;
+    total: number;
+    lateEarlyDays: number;
+    absentExtraDays: number;
+  } | null>(null);
 
   // Permission Request State
   const [showPermissionModal, setShowPermissionModal] = useState(false);
@@ -332,7 +352,25 @@ export default function PayRegisterPage() {
     loadDivisions();
     loadDepartments();
     loadLeaveTypes();
+    loadEmployeeGroupsAndSetting();
   }, []);
+  const loadEmployeeGroupsAndSetting = async () => {
+    try {
+      const [groupRes, settingRes] = await Promise.all([
+        api.getEmployeeGroups(true),
+        api.getSetting('custom_employee_grouping_enabled'),
+      ]);
+      if (groupRes.success) setEmployeeGroups(groupRes.data || []);
+      const enabled = !!(settingRes.success && settingRes.data && settingRes.data.value);
+      setCustomGroupingEnabled(enabled);
+      if (!enabled) setSelectedEmployeeGroup('');
+    } catch (err) {
+      console.error('Error loading employee groups/setting:', err);
+      setCustomGroupingEnabled(false);
+      setSelectedEmployeeGroup('');
+    }
+  };
+
 
   const loadDivisions = async () => {
     try {
@@ -357,13 +395,21 @@ export default function PayRegisterPage() {
   };
 
   useEffect(() => {
+    // Workspace users scoped to a single division should default to it
+    // instead of "All Divisions" so the filter reflects their actual scope.
+    if (divisions.length === 1 && !selectedDivision) {
+      setSelectedDivision(divisions[0]._id);
+    }
+  }, [divisions, selectedDivision]);
+
+  useEffect(() => {
     setPage(1);
     setHasMore(true);
     setSearchQuery('');
     setCommittedSearch('');
     loadPayRegisters(1, false, '');
     checkBatchLocks();
-  }, [year, month, selectedDepartment, selectedDivision]);
+  }, [year, month, selectedDepartment, selectedDivision, selectedEmployeeGroup]);
 
   const checkBatchLocks = async () => {
     try {
@@ -423,6 +469,10 @@ export default function PayRegisterPage() {
       // Ensure we pass undefined instead of empty string
       const targetDeptId = selectedDepartment && selectedDepartment.trim() !== '' ? selectedDepartment : undefined;
       const targetDivId = selectedDivision && selectedDivision.trim() !== '' ? selectedDivision : undefined;
+      const targetGroupId =
+        customGroupingEnabled && selectedEmployeeGroup && selectedEmployeeGroup.trim() !== ''
+          ? selectedEmployeeGroup
+          : undefined;
 
       const limit = PAGE_SIZE;
       const q =
@@ -436,7 +486,8 @@ export default function PayRegisterPage() {
         undefined,
         pageToLoad,
         limit,
-        q || undefined
+        q || undefined,
+        targetGroupId
       );
       const response = rawResponse as any;
 
@@ -526,7 +577,10 @@ export default function PayRegisterPage() {
         monthStr,
         selectedDepartment && selectedDepartment !== '' ? selectedDepartment : undefined,
         selectedDivision && selectedDivision !== '' ? selectedDivision : undefined,
-        committedSearch || undefined
+        committedSearch || undefined,
+        customGroupingEnabled && selectedEmployeeGroup && selectedEmployeeGroup !== ''
+          ? selectedEmployeeGroup
+          : undefined
       );
       const lockedRows =
         res.success && Array.isArray(res.data) ? res.data : [];
@@ -586,6 +640,10 @@ export default function PayRegisterPage() {
 
       const targetDeptId = selectedDepartment && selectedDepartment.trim() !== '' ? selectedDepartment : undefined;
       const targetDivId = selectedDivision && selectedDivision.trim() !== '' ? selectedDivision : undefined;
+      const targetGroupId =
+        customGroupingEnabled && selectedEmployeeGroup && selectedEmployeeGroup.trim() !== ''
+          ? selectedEmployeeGroup
+          : undefined;
       const fullRes = (await api.getEmployeesWithPayRegister(
         monthStr,
         targetDeptId,
@@ -593,7 +651,8 @@ export default function PayRegisterPage() {
         undefined,
         1,
         -1,
-        committedSearch || undefined
+        committedSearch || undefined,
+        targetGroupId
       )) as any;
 
       if (!fullRes?.success || !Array.isArray(fullRes.data) || fullRes.data.length === 0) {
@@ -723,6 +782,10 @@ export default function PayRegisterPage() {
         departmentId: selectedDepartment && selectedDepartment !== '' ? selectedDepartment : undefined,
         divisionId: selectedDivision && selectedDivision !== '' ? selectedDivision : undefined,
         search: committedSearch || undefined,
+        employeeGroupId:
+          customGroupingEnabled && selectedEmployeeGroup && selectedEmployeeGroup !== ''
+            ? selectedEmployeeGroup
+            : undefined,
       };
       const blob = await api.exportPayRegisterSummary(params);
       const url = window.URL.createObjectURL(blob);
@@ -898,6 +961,30 @@ export default function PayRegisterPage() {
       (totals?.totalUnpaidLeaveDays || 0) +
       (totals?.totalLopDays || 0));
 
+  /** Pay register stores late and early separately; UI "Lates" column is late + early (policy-aligned combined count). */
+  const getLateAndEarlyCount = (totals: any) =>
+    (Number(totals?.lateCount) || 0) + (Number(totals?.earlyOutCount) || 0);
+
+  const formatAttDeductionDays = (pr: PayRegisterSummary) => {
+    const br = pr.attendanceDeductionBreakdown;
+    const n = Number(pr.totalAttendanceDeductionDays ?? br?.daysDeducted ?? 0);
+    if (!Number.isFinite(n)) return '0';
+    return n.toFixed(2).replace(/\.?0+$/, '') || '0';
+  };
+
+  const openPayRegisterAttDeductionSplit = (e: MouseEvent<HTMLTableCellElement>, pr: PayRegisterSummary) => {
+    e.stopPropagation();
+    const breakdown = pr.attendanceDeductionBreakdown || {};
+    const total = Number(pr.totalAttendanceDeductionDays ?? breakdown.daysDeducted ?? 0);
+    const absentExtraDays = Number(breakdown.absentExtraDays ?? 0);
+    const lateEarlyDays = Number(breakdown.lateEarlyDaysDeducted ?? 0);
+    const employeeName =
+      typeof pr.employeeId === 'object' && pr.employeeId && 'employee_name' in pr.employeeId
+        ? String((pr.employeeId as Employee).employee_name)
+        : pr.emp_no || 'Employee';
+    setAttendanceDeductionInfo({ employeeName, total, lateEarlyDays, absentExtraDays });
+  };
+
   const getSummaryRows = () =>
     getFilteredPayRegisters().map((pr) => {
       const totals = pr.totals || {};
@@ -911,7 +998,7 @@ export default function PayRegisterPage() {
       const holidays = totals.totalHolidays || 0;
       const lop = totals.totalLopDays || 0;
       const paidLeave = totals.totalPaidLeaveDays || 0;
-      const lateCount = totals.lateCount || 0;
+      const lateCount = getLateAndEarlyCount(totals);
       const holidayAndWeekoffs = (totals.totalWeeklyOffs || 0) + (totals.totalHolidays || 0);
 
       const monthDays = pr.totalDaysInMonth || daysArray.length || daysInMonth;
@@ -921,6 +1008,9 @@ export default function PayRegisterPage() {
       const countedDays = present + absent + holidays + weeklyOffs + leave;
       const matchesMonth = Math.abs(countedDays - monthDays) < 0.001;
       const payableShifts = totals.totalPayableShifts ?? 0;
+      const attDedDays = Number(
+        pr.totalAttendanceDeductionDays ?? pr.attendanceDeductionBreakdown?.daysDeducted ?? 0
+      );
       return {
         pr,
         present,
@@ -935,6 +1025,7 @@ export default function PayRegisterPage() {
         lop,
         paidLeave,
         lateCount,
+        attDedDays,
         holidayAndWeekoffs,
         monthDays,
         countedDays,
@@ -1572,6 +1663,21 @@ export default function PayRegisterPage() {
                   ))}
               </select>
 
+              {customGroupingEnabled && (
+                <select
+                  value={selectedEmployeeGroup}
+                  onChange={(e) => setSelectedEmployeeGroup(e.target.value)}
+                  className="h-8 pl-2 pr-6 text-[11px] font-semibold bg-white dark:bg-slate-800 border-0 rounded-lg focus:ring-2 focus:ring-blue-500/20 text-slate-700 dark:text-slate-300 shadow-sm min-w-[110px] max-w-[150px]"
+                >
+                  <option value="">All Groups</option>
+                  {employeeGroups.map((group) => (
+                    <option key={group._id} value={group._id}>
+                      {group.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+
               {/* Payroll Engine selector (Previously Payroll Strategy) */}
               <select
                 value={payrollStrategy}
@@ -2006,7 +2112,8 @@ export default function PayRegisterPage() {
                     'Total OD',
                     'Total OT Hours',
                     'Total Extra Days',
-                    'Lates',
+                    'Lates (L+E)',
+                    'Att. ded. days',
                     'Holidays & Weekoffs',
                     'Present Days',
                     'Payable Shifts',
@@ -2029,7 +2136,7 @@ export default function PayRegisterPage() {
                       <div className="h-4 w-32 rounded bg-slate-200 dark:bg-slate-700" />
                       <div className="mt-1 h-3 w-24 rounded bg-slate-200 dark:bg-slate-700" />
                     </td>
-                    {Array.from({ length: 14 }).map((_, j) => (
+                    {Array.from({ length: 15 }).map((_, j) => (
                       <td key={j} className="px-2 py-2 text-center">
                         <div className="h-4 w-8 mx-auto rounded bg-slate-200 dark:bg-slate-700" />
                       </td>
@@ -2062,7 +2169,8 @@ export default function PayRegisterPage() {
                     'Total OD',
                     'Total OT Hours',
                     'Total Extra Days',
-                    'Lates',
+                    'Lates (L+E)',
+                    'Att. ded. days',
                     'Holidays & Weekoffs',
                     'Present Days',
                     'Payable Shifts',
@@ -2121,7 +2229,31 @@ export default function PayRegisterPage() {
                       <td className="text-center px-2 py-2">{row.od.toFixed(1)}</td>
                       <td className="text-center px-2 py-2">{row.ot.toFixed(1)}</td>
                       <td className="text-center px-2 py-2">{row.extra.toFixed(1)}</td>
-                      <td className="text-center px-2 py-2 font-bold text-amber-600 dark:text-amber-400">{row.lateCount}</td>
+                      <td
+                        className="text-center px-2 py-2 font-bold text-amber-600 dark:text-amber-400"
+                        title={`Late in: ${row.pr.totals?.lateCount ?? 0}, Early out: ${row.pr.totals?.earlyOutCount ?? 0}`}
+                      >
+                        {row.lateCount}
+                      </td>
+                      <td
+                        role="button"
+                        tabIndex={0}
+                        onClick={(e) => openPayRegisterAttDeductionSplit(e, row.pr)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            openPayRegisterAttDeductionSplit(e as unknown as MouseEvent<HTMLTableCellElement>, row.pr);
+                          }
+                        }}
+                        className="text-center px-2 py-2 font-bold text-rose-600 dark:text-rose-400 cursor-pointer hover:underline decoration-rose-400/80"
+                        title={
+                          row.pr.attendanceDeductionBreakdown
+                            ? `Late/early days: ${Number(row.pr.attendanceDeductionBreakdown.lateEarlyDaysDeducted ?? 0).toFixed(2)}, Absent extra: ${Number(row.pr.attendanceDeductionBreakdown.absentExtraDays ?? 0).toFixed(2)} — click for split`
+                            : 'Policy attendance deduction days (pay register) — click for split'
+                        }
+                      >
+                        {Number.isFinite(row.attDedDays) ? row.attDedDays.toFixed(2).replace(/\.?0+$/, '') || '0' : '0'}
+                      </td>
                       <td className="text-center px-2 py-2">{row.holidayAndWeekoffs.toFixed(1)}</td>
                       <td className="text-center px-2 py-2 font-medium text-green-600 dark:text-green-400" title="Includes OD days">{row.present.toFixed(1)}</td>
                       <td className="text-center px-2 py-2 font-bold text-slate-700 dark:text-slate-300">{row.payableShifts.toFixed(1)}</td>
@@ -2301,7 +2433,7 @@ export default function PayRegisterPage() {
                     {daysArray.map((day) => (
                       <th
                         key={day}
-                        className={'w-[calc((100%-180px-' + (activeTable === 'leaves' ? '320px' : activeTable === 'all' ? '560px' : '80px') + '/' + daysArray.length + ')] border-r border-slate-200 px-1 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'}
+                        className={'w-[calc((100%-180px-' + (activeTable === 'leaves' ? '320px' : activeTable === 'all' ? '640px' : '80px') + '/' + daysArray.length + ')] border-r border-slate-200 px-1 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'}
                       >
                         {parseInt(day.split('-')[2])}
                       </th>
@@ -2326,8 +2458,17 @@ export default function PayRegisterPage() {
                         <th className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-blue-50 dark:bg-blue-900/20" title="Payable Shifts + Week Offs + Holidays + Paid Leaves">
                           Paid Days
                         </th>
-                        <th className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-amber-50 dark:bg-amber-900/20">
-                          Lates
+                        <th
+                          className="w-[80px] border-r border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-amber-50 dark:bg-amber-900/20"
+                          title="Late in + early out (combined). Week off / holiday excluded from totals."
+                        >
+                          Lates (L+E)
+                        </th>
+                        <th
+                          className="w-[80px] border-r-0 border-slate-200 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wider text-slate-700 dark:border-slate-700 dark:text-slate-300 bg-rose-50 dark:bg-rose-900/20"
+                          title="Policy attendance deduction days (late/early + absent extra), aligned with payroll"
+                        >
+                          Att. ded.
                         </th>
                       </>
                     )}
@@ -2382,7 +2523,7 @@ export default function PayRegisterPage() {
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
                   {getFilteredPayRegisters().length === 0 ? (
                     <tr>
-                      <td colSpan={daysArray.length + (activeTable === 'leaves' ? 4 : activeTable === 'all' ? 7 : 1)} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                      <td colSpan={daysArray.length + (activeTable === 'leaves' ? 4 : activeTable === 'all' ? 8 : 1)} className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
                         No records found{activeTable !== 'all' ? ` for ${activeTable === 'shifts' ? 'shifts' : activeTable} table` : ''}
                       </td>
                     </tr>
@@ -2605,8 +2746,30 @@ export default function PayRegisterPage() {
                                 <td className="border-r border-slate-200 bg-blue-50 dark:bg-blue-900/20 px-2 py-2 text-center text-[11px] font-bold text-blue-700 dark:text-blue-300" title="Payable + Week Offs + Holidays + Paid Leaves">
                                   {paidDays.toFixed(1)}
                                 </td>
-                                <td className="border-r-0 border-slate-200 bg-amber-50 dark:bg-amber-900/20 px-2 py-2 text-center text-[11px] font-bold text-amber-700 dark:text-amber-300">
-                                  {pr.totals?.lateCount || 0}
+                                <td
+                                  className="border-r border-slate-200 bg-amber-50 dark:bg-amber-900/20 px-2 py-2 text-center text-[11px] font-bold text-amber-700 dark:text-amber-300"
+                                  title={`Late: ${pr.totals?.lateCount ?? 0}, Early out: ${pr.totals?.earlyOutCount ?? 0}`}
+                                >
+                                  {getLateAndEarlyCount(pr.totals)}
+                                </td>
+                                <td
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={(e) => openPayRegisterAttDeductionSplit(e, pr)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                      e.preventDefault();
+                                      openPayRegisterAttDeductionSplit(e as unknown as MouseEvent<HTMLTableCellElement>, pr);
+                                    }
+                                  }}
+                                  className="border-r-0 border-slate-200 bg-rose-50 dark:bg-rose-900/20 px-2 py-2 text-center text-[11px] font-bold text-rose-700 dark:text-rose-300 cursor-pointer hover:underline decoration-rose-600/70"
+                                  title={
+                                    pr.attendanceDeductionBreakdown
+                                      ? `Late/early deduction days: ${Number(pr.attendanceDeductionBreakdown.lateEarlyDaysDeducted ?? 0).toFixed(2)}, Absent extra: ${Number(pr.attendanceDeductionBreakdown.absentExtraDays ?? 0).toFixed(2)} — click for split`
+                                      : 'Policy attendance deduction days — click for split'
+                                  }
+                                >
+                                  {formatAttDeductionDays(pr)}
                                 </td>
                               </>
                             );
@@ -3247,6 +3410,50 @@ export default function PayRegisterPage() {
           </div>
         )
       }
+
+      {attendanceDeductionInfo && (
+        <div
+          className="fixed inset-0 z-[1100] flex items-start justify-center bg-black/20 px-4 pt-24"
+          onClick={() => setAttendanceDeductionInfo(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-xl border border-violet-200 bg-white p-4 shadow-2xl dark:border-violet-800 dark:bg-slate-900"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-2 flex items-center justify-between">
+              <h4 className="text-sm font-bold text-violet-900 dark:text-violet-200">Attendance Deduction Split</h4>
+              <button
+                type="button"
+                className="rounded px-2 py-1 text-xs text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+                onClick={() => setAttendanceDeductionInfo(null)}
+              >
+                Close
+              </button>
+            </div>
+            <p className="mb-3 text-xs text-slate-600 dark:text-slate-300">{attendanceDeductionInfo.employeeName}</p>
+            <div className="space-y-2 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-600 dark:text-slate-300">Late/Early deduction days</span>
+                <span className="font-semibold text-rose-700 dark:text-rose-300">
+                  {attendanceDeductionInfo.lateEarlyDays.toFixed(2).replace(/\.?0+$/, '') || '0'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-600 dark:text-slate-300">Absent extra deduction days</span>
+                <span className="font-semibold text-red-700 dark:text-red-300">
+                  {attendanceDeductionInfo.absentExtraDays.toFixed(2).replace(/\.?0+$/, '') || '0'}
+                </span>
+              </div>
+              <div className="mt-2 flex items-center justify-between border-t border-slate-200 pt-2 dark:border-slate-700">
+                <span className="font-semibold text-slate-800 dark:text-slate-200">Total deduction days</span>
+                <span className="font-bold text-violet-900 dark:text-violet-200">
+                  {attendanceDeductionInfo.total.toFixed(2).replace(/\.?0+$/, '') || '0'}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Arrears Section - Placed at the bottom of the page */}
       <div className="mt-8 bg-white dark:bg-slate-800 rounded-lg shadow p-6">

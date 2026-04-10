@@ -15,6 +15,9 @@ export interface RosterFiltersProps {
     selectedDept: string;
     setSelectedDept: (val: string) => void;
     departments: Array<{ _id: string; name: string }>;
+    selectedDesignation: string;
+    setSelectedDesignation: (val: string) => void;
+    designations: Array<{ _id: string; name: string }>;
     selectedGroup: string;
     setSelectedGroup: (val: string) => void;
     groups: any[];

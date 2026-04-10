@@ -73,7 +73,16 @@ const getStatusLabel = (status: string) => {
 
 interface Arrears {
   _id: string;
-  employee: { _id: string; emp_no: string; employee_name?: string; first_name?: string; last_name?: string };
+  employee: {
+    _id: string;
+    emp_no: string;
+    employee_name?: string;
+    first_name?: string;
+    last_name?: string;
+    division_id?: string;
+    department_id?: string;
+    designation_id?: string;
+  };
   type?: 'incremental' | 'direct';
   startMonth?: string;
   endMonth?: string;
@@ -100,6 +109,7 @@ export default function ArrearsPage() {
   const [employees, setEmployees] = useState([]);
   const [divisions, setDivisions] = useState<any[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
+  const [designations, setDesignations] = useState<any[]>([]);
   const [bulkDivisionId, setBulkDivisionId] = useState('');
   const [bulkDepartmentId, setBulkDepartmentId] = useState('');
   const [bulkRows, setBulkRows] = useState<BulkArrearRow[]>([]);
@@ -112,6 +122,7 @@ export default function ArrearsPage() {
     loadEmployees();
     api.getDivisions?.().then((r: any) => { if (r?.success && r?.data) setDivisions(r.data); if (Array.isArray(r)) setDivisions(r); }).catch(() => {});
     api.getDepartments?.().then((r: any) => { if (r?.success && r?.data) setDepartments(r.data); if (Array.isArray(r)) setDepartments(r); }).catch(() => {});
+    api.getAllDesignations?.().then((r: any) => { if (r?.success && r?.data) setDesignations(r.data); if (Array.isArray(r)) setDesignations(r); }).catch(() => {});
   }, []);
 
   const loadData = () => {
@@ -185,6 +196,46 @@ export default function ArrearsPage() {
     if (emp.first_name && emp.last_name) return `${emp.first_name} ${emp.last_name}`;
     if (emp.first_name) return emp.first_name;
     return emp.emp_no;
+  };
+
+  const sanitizeDisplayValue = (value: any) => {
+    if (value === null || value === undefined) return '';
+    const text = String(value).trim();
+    if (!text) return '';
+    const lowered = text.toLowerCase();
+    if (lowered === 'null' || lowered === 'undefined' || lowered === 'n/a') return '';
+    return text;
+  };
+
+  const resolveEntityName = (value: any, items: any[]) => {
+    if (value && typeof value === 'object') {
+      return sanitizeDisplayValue((value as any).name) || sanitizeDisplayValue((value as any).code);
+    }
+    const id = sanitizeDisplayValue(value);
+    if (!id) return '';
+    const found = items.find((item: any) => String(item?._id) === String(id));
+    return sanitizeDisplayValue(found?.name) || sanitizeDisplayValue(found?.code);
+  };
+
+  const getDivisionName = (employee: any) => {
+    return (
+      resolveEntityName(employee?.division_id, divisions as any[]) ||
+      sanitizeDisplayValue(employee?.division_name)
+    );
+  };
+
+  const getDepartmentName = (employee: any) => {
+    return (
+      resolveEntityName(employee?.department_id, departments as any[]) ||
+      sanitizeDisplayValue(employee?.department_name)
+    );
+  };
+
+  const getDesignationName = (employee: any) => {
+    return (
+      resolveEntityName(employee?.designation_id, designations as any[]) ||
+      sanitizeDisplayValue(employee?.designation_name)
+    );
   };
 
   const filteredBulkDepartments = React.useMemo(() => {
@@ -483,9 +534,19 @@ export default function ArrearsPage() {
                         <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-semibold text-sm">
                           {getEmployeeName(ar.employee).charAt(0).toUpperCase()}
                         </div>
-                        <div>
-                          <p className="font-medium text-slate-900 dark:text-white">{getEmployeeName(ar.employee)}</p>
-                          <p className="text-xs text-slate-500 dark:text-slate-400">{ar.employee.emp_no}</p>
+                        <div className="min-w-0">
+                          <p className="truncate font-medium text-slate-900 dark:text-white">
+                            {(() => {
+                              const employeeName = getEmployeeName(ar.employee);
+                              const extra = [
+                                sanitizeDisplayValue(ar.employee.emp_no),
+                                getDivisionName(ar.employee),
+                                getDepartmentName(ar.employee),
+                                getDesignationName(ar.employee),
+                              ].filter(Boolean).join(' | ');
+                              return extra ? `${employeeName} | ${extra}` : employeeName;
+                            })()}
+                          </p>
                         </div>
                       </div>
                     </td>

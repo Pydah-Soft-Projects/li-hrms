@@ -1415,9 +1415,10 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     payrollRecord.markModified('loanAdvance');
 
     // Process arrears
-    let arrearsSettlements = options.arrearsSettlements;
-    // Auto-fetch if not provided OR if empty array provided (default from frontend)
-    if (!arrearsSettlements || arrearsSettlements.length === 0) {
+    const hasExplicitArrearsSelection = Array.isArray(options.arrearsSettlements);
+    let arrearsSettlements = hasExplicitArrearsSelection ? options.arrearsSettlements : undefined;
+    // Auto-fetch only when selection is not explicitly provided by caller.
+    if (!hasExplicitArrearsSelection) {
       try {
         const pendingArrears = await ArrearsPayrollIntegrationService.getPendingArrearsForPayroll(employeeId);
         if (pendingArrears && pendingArrears.length > 0) {
@@ -1430,7 +1431,13 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
         console.error("Error auto-fetching pending arrears in calculatePayrollNew", e);
       }
     }
-    arrearsSettlements = arrearsSettlements || [];
+    arrearsSettlements = Array.isArray(arrearsSettlements) ? arrearsSettlements : [];
+    if (hasExplicitArrearsSelection && arrearsSettlements.length === 0) {
+      payrollRecord.set('arrearsAmount', 0);
+      payrollRecord.set('arrearsSettlements', []);
+      payrollRecord.markModified('arrearsAmount');
+      payrollRecord.markModified('arrearsSettlements');
+    }
     if (arrearsSettlements && arrearsSettlements.length > 0) {
       console.log(`\n--- Processing Arrears Settlements: ${arrearsSettlements.length} items ---`);
       try {

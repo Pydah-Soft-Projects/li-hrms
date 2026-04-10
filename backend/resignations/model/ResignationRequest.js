@@ -63,6 +63,8 @@ const ResignationRequestSchema = new mongoose.Schema(
           actionByName: String,
           actionByRole: String,
           comments: String,
+          updatedAt: Date,
+          updatedAtIST: String,
           canEditLWD: { type: Boolean, default: false },
         },
       ],
@@ -71,12 +73,13 @@ const ResignationRequestSchema = new mongoose.Schema(
       history: [
         {
           step: String,
-          action: { type: String, enum: ['submitted', 'approved', 'rejected', 'cancelled', 'lwd_changed'] },
+          action: { type: String, enum: ['submitted', 'approved', 'rejected', 'cancelled', 'lwd_changed', 'workflow_reopened'] },
           actionBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
           actionByName: String,
           actionByRole: String,
           comments: String,
           timestamp: { type: Date, default: Date.now },
+          timestampIST: String,
         },
       ],
     },
@@ -90,6 +93,7 @@ const ResignationRequestSchema = new mongoose.Schema(
         updatedByRole: String,
         comments: String,
         timestamp: { type: Date, default: Date.now },
+        timestampIST: String,
       },
     ],
     // Whether LWD was manually set/changed by a user. If false, LWD is calculated at final approval.

@@ -27,6 +27,9 @@ router.get('/count', applyScopeFilter, employeeController.getEmployeeCount);
 // Get all employees (with data scope filtering)
 router.get('/', applyScopeFilter, employeeController.getAllEmployees);
 
+// Lean list for birthday calendar (scoped, DOB + org refs only) — must be before /:empNo
+router.get('/birthdays-summary', applyScopeFilter, employeeController.getBirthdaysSummary);
+
 // Export employees
 router.post('/export', applyScopeFilter, employeeController.exportEmployees);
 

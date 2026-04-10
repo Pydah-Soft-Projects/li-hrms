@@ -118,13 +118,29 @@ router.get('/logs/latest', async (req, res) => {
 
 /**
  * POST /api/sync
- * Trigger manual sync from all devices
+ * Trigger manual sync from all enabled devices (TCP → MongoDB).
+ * Body (optional): { startDate?: 'YYYY-MM-DD', endDate?: 'YYYY-MM-DD' }
+ * If either date is set, only punches in that inclusive window are inserted (full device read, filtered).
+ * If omitted, incremental sync (only rows newer than device lastLogTimestamp).
  */
 router.post('/sync', async (req, res) => {
     try {
-        logger.info('API: Manual sync triggered');
+        const body = req.body || {};
+        const startDate = body.startDate && String(body.startDate).trim() ? String(body.startDate).trim() : undefined;
+        const endDate = body.endDate && String(body.endDate).trim() ? String(body.endDate).trim() : undefined;
 
-        // Get device service from app
+        if (startDate && !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
+            return res.status(400).json({ success: false, error: 'startDate must be YYYY-MM-DD' });
+        }
+        if (endDate && !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+            return res.status(400).json({ success: false, error: 'endDate must be YYYY-MM-DD' });
+        }
+        if (startDate && endDate && startDate > endDate) {
+            return res.status(400).json({ success: false, error: 'startDate must be before or equal to endDate' });
+        }
+
+        logger.info('API: Manual sync triggered', { startDate, endDate });
+
         const deviceService = req.app.get('deviceService');
 
         if (!deviceService) {
@@ -134,8 +150,7 @@ router.post('/sync', async (req, res) => {
             });
         }
 
-        // Trigger sync
-        const result = await deviceService.fetchLogsFromAllDevices();
+        const result = await deviceService.fetchLogsFromAllDevices({ startDate, endDate });
 
         res.json({
             success: true,

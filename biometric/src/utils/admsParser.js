@@ -39,6 +39,40 @@ const admsParser = {
     },
 
     /**
+     * Parse ZK / iClock USERINFO lines where fields look like:
+     *   USER PIN=1026   Name=John Doe   Pri=0   Passwd=   Card=   Grp=1
+     * Uses every `Word=` occurrence so single-space gaps and names with spaces work.
+     * (Generic parseKeyValueLine often fails when devices use single spaces between keys.)
+     */
+    parseUserInfoAdmsLine: (line) => {
+        if (!line || typeof line !== 'string') return null;
+        const s = line.replace(/^\s*USER\s+/i, '').trim();
+        if (!s || !s.includes('=')) return null;
+
+        const keyPattern = /([A-Za-z][A-Za-z0-9_.]*)\s*=/g;
+        const positions = [];
+        let m;
+        while ((m = keyPattern.exec(s)) !== null) {
+            positions.push({
+                key: m[1],
+                eqEnd: m.index + m[0].length,
+                keyStart: m.index
+            });
+        }
+        if (positions.length === 0) return null;
+
+        const result = {};
+        for (let i = 0; i < positions.length; i++) {
+            const valStart = positions[i].eqEnd;
+            const valEnd = i + 1 < positions.length ? positions[i + 1].keyStart : s.length;
+            const value = s.slice(valStart, valEnd).trim();
+            admsParser._setNormalizedKey(result, positions[i].key.toUpperCase(), value);
+        }
+
+        return Object.keys(result).length > 0 ? result : null;
+    },
+
+    /**
      * Parse ADMS Key-Value lines (USERINFO, FINGERTMP, FACE, etc.)
      * Example: PIN=1	Name=John	Password=123	Group=1
      */

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
+import TodayBirthdayTicker from '@/components/employee-birthdays/TodayBirthdayTicker';
 
 interface DashboardStats {
   totalEmployees: number;
@@ -87,6 +88,7 @@ export default function SuperAdminDashboard() {
   const [stats, setStats] = useState<DashboardStats>(DEFAULT_STATS);
   const [currentDate] = useState(new Date());
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [todayBirthdayItems, setTodayBirthdayItems] = useState<Array<{ id: string; name: string; designationName: string }>>([]);
 
   useEffect(() => {
     loadDashboardData();
@@ -96,7 +98,10 @@ export default function SuperAdminDashboard() {
     try {
       setLoading(true);
       setConnectionError(null);
-      const res = await api.getDashboardAnalytics();
+      const [res, empRes] = await Promise.all([
+        api.getDashboardAnalytics(),
+        api.getEmployees({ includeLeft: false, limit: 10000, page: 1 }),
+      ]);
       if (res.success && res.data) {
         setStats(res.data);
       } else {
@@ -107,9 +112,36 @@ export default function SuperAdminDashboard() {
           setConnectionError(msg || 'Could not load dashboard. Ensure the backend is running (e.g. port 5000).');
         }
       }
+
+      if (empRes?.success && Array.isArray(empRes.data)) {
+        const today = new Date();
+        const month = today.getMonth();
+        const date = today.getDate();
+
+        const items = empRes.data
+          .filter((emp: any) => {
+            if (!emp?.dob) return false;
+            const dob = new Date(emp.dob);
+            if (Number.isNaN(dob.getTime())) return false;
+            return dob.getMonth() === month && dob.getDate() === date;
+          })
+          .map((emp: any) => ({
+            id: emp._id || emp.emp_no,
+            name: emp.employee_name || emp.emp_no || 'Employee',
+            designationName:
+              (typeof emp.designation_id === 'object' && emp.designation_id?.name) ||
+              (typeof emp.designation === 'object' && emp.designation?.name) ||
+              '—',
+          }));
+
+        setTodayBirthdayItems(items);
+      } else {
+        setTodayBirthdayItems([]);
+      }
     } catch (err) {
       setStats(DEFAULT_STATS);
       setConnectionError(err instanceof Error ? err.message : 'Failed to load dashboard data.');
+      setTodayBirthdayItems([]);
     } finally {
       setLoading(false);
     }
@@ -278,6 +310,12 @@ export default function SuperAdminDashboard() {
             <span>{currentDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
           </div>
         </div>
+
+        {todayBirthdayItems.length > 0 && (
+          <div className="mb-5">
+            <TodayBirthdayTicker items={todayBirthdayItems} />
+          </div>
+        )}
 
         {/* KPI Cards Grid */}
         {loading ? (

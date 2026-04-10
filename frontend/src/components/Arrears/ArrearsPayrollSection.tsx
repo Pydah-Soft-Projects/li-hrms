@@ -51,6 +51,18 @@ export const ArrearsPayrollSection: React.FC<ArrearsPayrollSectionProps> = ({
   const [selectedArrears, setSelectedArrears] = useState<Record<string, number>>({});
 
   useEffect(() => {
+    const selection = Object.entries(selectedArrears).map(([id, amount]) => {
+      const arrear = arrears.find((a) => a._id === id);
+      return {
+        id,
+        amount,
+        employeeId: arrear?.employee._id,
+      };
+    });
+    onArrearsSelected(selection);
+  }, [selectedArrears, arrears, onArrearsSelected]);
+
+  useEffect(() => {
     fetchArrears();
   }, [month, year]);
 
@@ -89,18 +101,6 @@ export const ArrearsPayrollSection: React.FC<ArrearsPayrollSectionProps> = ({
         initialSelected[arr._id] = arr.remainingAmount || (arr.totalAmount - (arr.settledAmount || 0));
       });
       setSelectedArrears(initialSelected);
-      // NOTE: We pass ALL arrears initially selected, regardless of department filter
-      // Parent component (Page) should decide which ones to use based on the context (Calculate for specific employee)
-      onArrearsSelected(
-        Object.entries(initialSelected).map(([id, amount]) => {
-          const arrear = arrearsData.find((a: ArrearsForPayroll) => a._id === id);
-          return {
-            id,
-            amount,
-            employeeId: arrear?.employee._id
-          };
-        })
-      );
     } catch (error) {
       console.error('Error fetching arrears:', error);
       toast.error('Failed to load arrears data');
@@ -115,23 +115,6 @@ export const ArrearsPayrollSection: React.FC<ArrearsPayrollSectionProps> = ({
       ...prev,
       [id]: amount
     }));
-
-    // Notify parent component of the updated selection
-    const updatedSelection = Object.entries({
-      ...selectedArrears,
-      [id]: amount
-    }).map(([arrId, amt]) => {
-      // Find the arrear object to get the employee ID
-      const arrear = arrears.find(a => a._id === arrId);
-      return {
-        id: arrId,
-        amount: amt,
-        employeeId: arrear?.employee._id // Include employee ID
-      };
-    });
-
-    // @ts-ignore - Ignore type error during transition
-    onArrearsSelected(updatedSelection);
   };
 
   const toggleArrear = (id: string, isChecked: boolean) => {
@@ -147,18 +130,6 @@ export const ArrearsPayrollSection: React.FC<ArrearsPayrollSectionProps> = ({
       } else {
         delete updated[id];
       }
-
-      // Notify parent component of the updated selection
-      const updatedSelection = Object.entries(updated).map(([arrId, amt]) => {
-        const arrear = arrears.find(a => a._id === arrId);
-        return {
-          id: arrId,
-          amount: amt,
-          employeeId: arrear?.employee._id
-        }
-      });
-      onArrearsSelected(updatedSelection);
-
       return updated;
     });
   };

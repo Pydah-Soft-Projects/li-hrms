@@ -76,7 +76,7 @@ app.get('/', (req, res) => {
         endpoints: {
             logs: 'GET /api/logs?employeeId=&startDate=&endDate=&logType=',
             employeeLogs: 'GET /api/logs/employee/:employeeId',
-            sync: 'POST /api/sync',
+            sync: 'POST /api/sync (optional JSON { startDate, endDate } YYYY-MM-DD)',
             deviceStatus: 'GET /api/devices/status',
             stats: 'GET /api/stats',
             latestSync: 'GET /api/logs/latest',
@@ -87,7 +87,14 @@ app.get('/', (req, res) => {
                 add: 'POST /api/devices',
                 update: 'PUT /api/devices/:deviceId',
                 delete: 'DELETE /api/devices/:deviceId',
-                toggle: 'PATCH /api/devices/:deviceId/toggle'
+                toggle: 'PATCH /api/devices/:deviceId/toggle',
+                attendanceSummary: 'GET /api/devices/:deviceId/attendance/summary?startDate=&endDate=&employeeIds=',
+                attendanceBackup: 'POST /api/devices/:deviceId/attendance/backup',
+                attendanceBackupAdmsPush: 'POST /api/devices/:deviceId/attendance/backup-adms-push (MongoDB push log export)',
+                attendanceBackupAdmsFresh: 'POST /api/devices/:deviceId/attendance/backup-adms-fresh (queue ATTLOG, wait until pushes quiet; body: hardCapMs, quietPeriodMs, …)',
+                triggerAdmsAttlogSync: 'POST /api/devices/:deviceId/attendance/trigger-adms-attlog-sync (queue DATA QUERY ATTLOG)',
+                attendanceSyncDb: 'POST /api/devices/:deviceId/attendance/sync (optional JSON { startDate, endDate })',
+                attendanceClear: 'POST /api/devices/:deviceId/attendance/clear (body.confirmClear=CLEAR_ALL_ATTLOG)'
             }
         }
     });

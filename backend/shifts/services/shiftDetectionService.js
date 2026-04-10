@@ -13,6 +13,7 @@ const PreScheduledShift = require('../model/PreScheduledShift');
 const ConfusedShift = require('../model/ConfusedShift');
 const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
 const Settings = require('../../settings/model/Settings');
+const { isCustomEmployeeGroupingEnabled } = require('../../shared/utils/customEmployeeGrouping');
 const { extractISTComponents, createISTDate } = require('../../shared/utils/dateUtils');
 
 /**
@@ -117,13 +118,15 @@ const isWithinShiftWindow = (punchTime, shiftStartTime, gracePeriodMinutes = 15)
 };
 
 /**
- * Filter shift configurations based on employee gender
+ * Filter shift configurations based on employee attributes.
  * Handles both new config objects and legacy ID arrays
  * @param {Array} shiftConfigs - Array of shift configs ({shiftId, gender}) or IDs
  * @param {String} employeeGender - Employee's gender (Male/Female/Other)
+ * @param {String|null} employeeGroupId - Employee's custom group ObjectId
+ * @param {Boolean} groupingEnabled - Whether custom grouping feature is enabled
  * @returns {Array} - Array of Shift IDs
  */
-const filterShiftsByGender = (shiftConfigs, employeeGender) => {
+const filterShiftsByEmployeeAttributes = (shiftConfigs, employeeGender, employeeGroupId, groupingEnabled = false) => {
   if (!shiftConfigs || !Array.isArray(shiftConfigs) || shiftConfigs.length === 0) {
     return [];
   }
@@ -136,10 +139,16 @@ const filterShiftsByGender = (shiftConfigs, employeeGender) => {
     return shiftConfigs;
   }
 
-  // New Structure: Filter by gender
+  // New Structure: Filter by gender + optional employee group
   return shiftConfigs
     .filter(config => {
       if (!config || !config.shiftId) return false;
+
+      // Group check is feature-flagged. When enabled, a config-level group means strict match.
+      if (groupingEnabled && config.employee_group_id) {
+        const cfgGroup = config.employee_group_id.toString();
+        if (!employeeGroupId || cfgGroup !== employeeGroupId.toString()) return false;
+      }
 
       // If no gender specified or 'All', allow it
       if (!config.gender || config.gender === 'All') return true;
@@ -175,6 +184,8 @@ const getShiftsForEmployee = async (employeeNumber, date, options = {}) => {
     const department_id = employee.department_id?._id;
     const designation_id = employee.designation_id?._id;
     const employeeGender = employee.gender;
+    const employeeGroupId = employee.employee_group_id || null;
+    const groupingEnabled = await isCustomEmployeeGroupingEnabled();
 
     if (!division_id) {
       console.warn(`[ShiftDetection] Employee ${employeeNumber} has no division_id assigned.`);
@@ -236,7 +247,7 @@ const getShiftsForEmployee = async (employeeNumber, date, options = {}) => {
             ds.department?.toString() === department_id.toString()
         );
         if (contextOverride && contextOverride.shifts?.length > 0) {
-          shiftIds = filterShiftsByGender(contextOverride.shifts, employeeGender);
+          shiftIds = filterShiftsByEmployeeAttributes(contextOverride.shifts, employeeGender, employeeGroupId, groupingEnabled);
         }
       }
 
@@ -246,13 +257,13 @@ const getShiftsForEmployee = async (employeeNumber, date, options = {}) => {
           dd => dd.division?.toString() === division_id.toString()
         );
         if (divisionDefault && divisionDefault.shifts?.length > 0) {
-          shiftIds = filterShiftsByGender(divisionDefault.shifts, employeeGender);
+          shiftIds = filterShiftsByEmployeeAttributes(divisionDefault.shifts, employeeGender, employeeGroupId, groupingEnabled);
         }
       }
 
       // Tier 4: Backward Compatibility Fallback (Global designation shifts)
       if (shiftIds.length === 0 && !division_id && desig.shifts?.length > 0) {
-        shiftIds = filterShiftsByGender(desig.shifts, employeeGender);
+        shiftIds = filterShiftsByEmployeeAttributes(desig.shifts, employeeGender, employeeGroupId, groupingEnabled);
       }
 
       if (shiftIds.length > 0) {
@@ -274,12 +285,12 @@ const getShiftsForEmployee = async (employeeNumber, date, options = {}) => {
           dd => dd.division?.toString() === division_id.toString()
         );
         if (divDeptDefault && divDeptDefault.shifts?.length > 0) {
-          deptShiftIds = filterShiftsByGender(divDeptDefault.shifts, employeeGender);
+          deptShiftIds = filterShiftsByEmployeeAttributes(divDeptDefault.shifts, employeeGender, employeeGroupId, groupingEnabled);
         }
       }
 
       if (deptShiftIds.length === 0 && !division_id && dept.shifts?.length > 0) {
-        deptShiftIds = filterShiftsByGender(dept.shifts, employeeGender);
+        deptShiftIds = filterShiftsByEmployeeAttributes(dept.shifts, employeeGender, employeeGroupId, groupingEnabled);
       }
 
       if (deptShiftIds.length > 0) {
@@ -297,7 +308,7 @@ const getShiftsForEmployee = async (employeeNumber, date, options = {}) => {
     if (allCandidateShifts.size === 0 && division_id && employee.division_id) {
       const division = employee.division_id;
       if (division.shifts && division.shifts.length > 0) {
-        const filteredDivisionShifts = filterShiftsByGender(division.shifts, employeeGender);
+        const filteredDivisionShifts = filterShiftsByEmployeeAttributes(division.shifts, employeeGender, employeeGroupId, groupingEnabled);
         const divisionShifts = await Shift.find({ _id: { $in: filteredDivisionShifts }, isActive: true });
         divisionShifts.forEach(s => {
           s.sourcePriority = 4; // Division Priority

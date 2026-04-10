@@ -26,6 +26,7 @@ import {
     Briefcase,
     Gift,
     Clock,
+    Cake,
     CalendarHeart,
     CalendarClock,
     CalendarDays,
@@ -79,6 +80,7 @@ const moduleIcons: Record<string, any> = {
     HOLIDAY_CALENDAR: CalendarHeart,
     RESIGNATION: LogOut,
     PROMOTIONS_TRANSFERS: TrendingUp,
+    EMPLOYEE_BIRTHDAYS: Cake,
 };
 
 export default function WorkspaceSidebar() {
@@ -136,8 +138,8 @@ export default function WorkspaceSidebar() {
         fetchFeatureControl();
     }, [user?.role, user?.featureControl]);
 
-    const handleLogout = () => {
-        auth.logout();
+    const handleLogout = async () => {
+        if (!(await auth.logoutWithConfirmation())) return;
         router.push('/login');
     };
 
@@ -223,6 +225,7 @@ export default function WorkspaceSidebar() {
                                                 (module.code === 'CCL' && pathname === '/ccl') ||
                                                 (module.code === 'RESIGNATION' && pathname === '/resignations') ||
                                                 (module.code === 'PROMOTIONS_TRANSFERS' && pathname === '/promotions-transfers') ||
+                                                (module.code === 'EMPLOYEE_BIRTHDAYS' && pathname === '/employee-birthdays') ||
                                                 (module.code === 'EMPLOYEE_GROUPS' && pathname === '/employee-groups');
 
                                             const Icon = moduleIcons[module.code] || LayoutDashboard;

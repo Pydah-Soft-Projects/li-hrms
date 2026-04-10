@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { isEarlyOutCountableSecondHalf } = require('../services/totalsCalculationService');
 
 /**
  * Pay Register Summary Model
@@ -524,6 +525,31 @@ const payRegisterSummarySchema = new mongoose.Schema(
       },
     ],
 
+    // Policy attendance deduction (late/early + optional absent extra) — same rules as payroll; refreshed when register totals change
+    totalAttendanceDeductionDays: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    attendanceDeductionBreakdown: {
+      lateInsCount: { type: Number, default: 0 },
+      earlyOutsCount: { type: Number, default: 0 },
+      combinedCount: { type: Number, default: 0 },
+      freeAllowedPerMonth: { type: Number, default: 0 },
+      effectiveCount: { type: Number, default: 0 },
+      daysDeducted: { type: Number, default: 0 },
+      lateEarlyDaysDeducted: { type: Number, default: 0 },
+      absentExtraDays: { type: Number, default: 0 },
+      absentDays: { type: Number, default: 0 },
+      lopDaysPerAbsent: { type: Number, default: null },
+      deductionType: { type: String, default: null },
+      calculationMode: { type: String, default: null },
+    },
+    attendanceDeductionCalculatedAt: {
+      type: Date,
+      default: null,
+    },
+
     // STATUS
     status: {
       type: String,
@@ -666,10 +692,30 @@ payRegisterSummarySchema.methods.recalculateTotals = function () {
       if (record.status === 'week_off') totals.totalWeeklyOffs += 1;
     }
 
-    // 2. Track Work Hours and Exceptions (Unconditional)
+    const isHoliday =
+      record.status === 'holiday' ||
+      record.firstHalf?.status === 'holiday' ||
+      record.secondHalf?.status === 'holiday';
+    const isWeekOff =
+      record.status === 'week_off' ||
+      record.firstHalf?.status === 'week_off' ||
+      record.secondHalf?.status === 'week_off';
+
+    // 2. OT + late/early — align with totalsCalculationService.calculateTotals:
+    //    no late/early in monthly totals on holiday/week_off; otherwise only when present/od/partial.
     totals.totalOTHours += record.otHours || 0;
-    if (record.isLate) totals.lateCount++;
-    if (record.isEarlyOut) totals.earlyOutCount++;
+    if (!isHoliday && !isWeekOff) {
+      const isPresentOrPartial =
+        record.status === 'present' ||
+        record.status === 'partial' ||
+        record.status === 'od' ||
+        record.firstHalf?.status === 'present' ||
+        record.secondHalf?.status === 'present' ||
+        record.firstHalf?.status === 'od' ||
+        record.secondHalf?.status === 'od';
+      if (record.isLate && isPresentOrPartial) totals.lateCount++;
+      if (record.isEarlyOut && isEarlyOutCountableSecondHalf(record)) totals.earlyOutCount++;
+    }
 
     // 3. Track Attendance Categories (Present, Absent, Leave, OD)
     // Process these UNLESS the status is strictly holiday/week_off for the half/day
