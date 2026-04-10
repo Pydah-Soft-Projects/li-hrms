@@ -101,7 +101,21 @@ const permissionSchema = new mongoose.Schema(
     // Status: pending, approved, rejected; checked_out/checked_in driven by gate scans only
     status: {
       type: String,
-      enum: ['pending', 'manager_approved', 'manager_rejected', 'approved', 'rejected', 'checked_out', 'checked_in'],
+      enum: [
+        'pending',
+        'manager_approved',
+        'hod_approved',
+        'hr_approved',
+        'sub_admin_approved',
+        'super_admin_approved',
+        'reporting_manager_approved',
+        'final_authority_approved',
+        'manager_rejected',
+        'approved',
+        'rejected',
+        'checked_out',
+        'checked_in',
+      ],
       default: 'pending',
       index: true,
     },

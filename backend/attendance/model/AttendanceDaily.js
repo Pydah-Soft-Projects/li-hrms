@@ -162,7 +162,14 @@ const attendanceDailySchema = new mongoose.Schema(
     editHistory: [{
       action: {
         type: String,
-        enum: ['OUT_TIME_UPDATE', 'SHIFT_CHANGE', 'OT_CONVERSION', 'IN_TIME_UPDATE'],
+        enum: [
+          'OUT_TIME_UPDATE',
+          'SHIFT_CHANGE',
+          'OT_CONVERSION',
+          'OT_CONVERSION_REQUESTED',
+          'OT_AUTO_REQUESTED',
+          'IN_TIME_UPDATE',
+        ],
         required: true,
       },
       modifiedBy: {

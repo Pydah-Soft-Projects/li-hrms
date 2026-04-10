@@ -571,6 +571,14 @@ LeaveSchema.post('save', async function () {
       const { syncPayRegisterFromLeave } = require('../../pay-register/services/autoSyncService');
       await syncPayRegisterFromLeave(this);
     }
+
+    // ESI leave OT sync: approved => create/update OT from punches, non-approved => deactivate ESI-converted OT
+    if (this.isModified('status')) {
+      const { syncEsiLeaveOtForLeave, isEsiLeaveType } = require('../../overtime/services/esiLeaveOtService');
+      if (isEsiLeaveType(this.leaveType)) {
+        await syncEsiLeaveOtForLeave(this);
+      }
+    }
   } catch (error) {
     // Don't throw - this is a background operation
     console.error('Error updating monthly summary/leave record on leave status change:', error);

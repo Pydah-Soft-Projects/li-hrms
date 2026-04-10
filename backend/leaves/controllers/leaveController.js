@@ -1123,6 +1123,14 @@ exports.updateLeave = async (req, res) => {
     }
 
     await leave.save();
+    try {
+      const { syncEsiLeaveOtForLeave, isEsiLeaveType } = require('../../overtime/services/esiLeaveOtService');
+      if (isEsiLeaveType(leave.leaveType)) {
+        await syncEsiLeaveOtForLeave(leave, { requestedByUserId: req.user._id });
+      }
+    } catch (esiErr) {
+      console.error('ESI OT sync failed after leave cancel:', esiErr);
+    }
 
     if (affectsMonthlyApply) {
       try {
@@ -1699,6 +1707,14 @@ exports.processLeaveAction = async (req, res) => {
     leave.markModified('approvals');
 
     await leave.save();
+    try {
+      const { syncEsiLeaveOtForLeave, isEsiLeaveType } = require('../../overtime/services/esiLeaveOtService');
+      if (isEsiLeaveType(leave.leaveType)) {
+        await syncEsiLeaveOtForLeave(leave, { requestedByUserId: req.user._id });
+      }
+    } catch (esiErr) {
+      console.error('ESI OT sync failed after leave action:', esiErr);
+    }
 
     // Monthly slot: await only for final approval or canonical final rejection (`rejected`).
     // Intermediate pipeline outcomes (`hod_approved`, `hod_rejected`, etc.) use deferred sync.
@@ -1936,6 +1952,14 @@ exports.revokeLeaveApproval = async (req, res) => {
     leave.markModified('workflow');
     leave.markModified('approvals');
     await leave.save();
+    try {
+      const { syncEsiLeaveOtForLeave, isEsiLeaveType } = require('../../overtime/services/esiLeaveOtService');
+      if (isEsiLeaveType(leave.leaveType)) {
+        await syncEsiLeaveOtForLeave(leave, { requestedByUserId: req.user._id });
+      }
+    } catch (esiErr) {
+      console.error('ESI OT sync failed after leave revoke:', esiErr);
+    }
 
     leaveRegisterYearMonthlyApplyService.scheduleSyncMonthApply(leave.employeeId, leave.fromDate);
 
@@ -1981,6 +2005,14 @@ exports.deleteLeave = async (req, res) => {
 
     leave.isActive = false;
     await leave.save();
+    try {
+      const { syncEsiLeaveOtForLeave, isEsiLeaveType } = require('../../overtime/services/esiLeaveOtService');
+      if (isEsiLeaveType(leave.leaveType)) {
+        await syncEsiLeaveOtForLeave(leave, { requestedByUserId: req.user._id });
+      }
+    } catch (esiErr) {
+      console.error('ESI OT sync failed after leave delete:', esiErr);
+    }
 
     leaveRegisterYearMonthlyApplyService.scheduleSyncMonthApply(leave.employeeId, leave.fromDate);
 
