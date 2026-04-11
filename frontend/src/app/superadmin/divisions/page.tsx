@@ -113,6 +113,11 @@ export default function DivisionsPage() {
     const [managerId, setManagerId] = useState('');
     const [selectedDeptIds, setSelectedDeptIds] = useState<string[]>([]);
     const [linkDeptSearch, setLinkDeptSearch] = useState('');
+    const [linkConfirmData, setLinkConfirmData] = useState<{
+        affectedDepartments: { departmentId: string; departmentName: string; employeeCount: number }[];
+        safeUnlinkedCount: number;
+        addedCount: number;
+    } | null>(null);
     const [selectedShifts, setSelectedShifts] = useState<{ shiftId: string; gender: string; employee_group_id?: string | null }[]>([]);
     const [employeeGroups, setEmployeeGroups] = useState<EmployeeGroup[]>([]);
     const [customGroupingEnabled, setCustomGroupingEnabled] = useState(false);
@@ -282,20 +287,51 @@ export default function DivisionsPage() {
         }
     };
 
-    const handleLinkDepartments = async (e: React.FormEvent) => {
+    const handleLinkDepartments = async (e: React.FormEvent, force = false) => {
         e.preventDefault();
         if (!showLinkDeptDialog) return;
         try {
-            const res = await api.linkDepartmentsToDivision(showLinkDeptDialog._id, { departmentIds: selectedDeptIds, action: 'link' });
+            const res = await api.linkDepartmentsToDivision(
+                showLinkDeptDialog._id,
+                { departmentIds: selectedDeptIds, action: 'set', force }
+            );
             if (res.success) {
+                setLinkConfirmData(null);
+                setShowLinkDeptDialog(null);
+                setLinkDeptSearch('');
+                loadData();
+            } else if ((res as any).requiresConfirmation) {
+                setLinkConfirmData({
+                    affectedDepartments: (res as any).affectedDepartments || [],
+                    safeUnlinkedCount: (res as any).safeUnlinkedCount || 0,
+                    addedCount: (res as any).addedCount || 0,
+                });
+            } else {
+                setError(res.message || 'Failed to update departments');
+            }
+        } catch (err) {
+            console.error('Link error:', err);
+            setError('An error occurred');
+        }
+    };
+
+    const handleForceUnlink = async () => {
+        if (!showLinkDeptDialog) return;
+        try {
+            const res = await api.linkDepartmentsToDivision(
+                showLinkDeptDialog._id,
+                { departmentIds: selectedDeptIds, action: 'set', force: true }
+            );
+            if (res.success) {
+                setLinkConfirmData(null);
                 setShowLinkDeptDialog(null);
                 setLinkDeptSearch('');
                 loadData();
             } else {
-                setError(res.message || 'Failed to link departments');
+                setError(res.message || 'Failed to update departments');
             }
         } catch (err) {
-            console.error('Link error:', err);
+            console.error('Force unlink error:', err);
             setError('An error occurred');
         }
     };
@@ -646,86 +682,86 @@ export default function DivisionsPage() {
                 {/* Link Departments Dialog */}
                 {showLinkDeptDialog && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => { setShowLinkDeptDialog(null); setLinkDeptSearch(''); }} />
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => { if (!linkConfirmData) { setShowLinkDeptDialog(null); setLinkDeptSearch(''); } }} />
                         <div className="relative z-50 w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950">
-                            <h2 className="text-xl font-semibold mb-4">Link Departments to {showLinkDeptDialog.name}</h2>
-                            <form onSubmit={handleLinkDepartments} className="space-y-4">
-                                {/* Search */}
-                                <div className="relative">
-                                    <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                                    </svg>
-                                    <input
-                                        type="text"
-                                        placeholder="Search departments by name or code..."
-                                        value={linkDeptSearch}
-                                        onChange={(e) => setLinkDeptSearch(e.target.value)}
-                                        className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-4 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
-                                    />
+
+                            {linkConfirmData ? (
+                                <div className="space-y-4">
+                                    <div className="flex items-start gap-3">
+                                        <div className="shrink-0 w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center">
+                                            <svg className="w-5 h-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                                            </svg>
+                                        </div>
+                                        <div>
+                                            <h2 className="text-lg font-bold text-slate-900">Some Departments Require Confirmation</h2>
+                                            <p className="text-sm text-slate-500 mt-1">The following departments still have active employees assigned to <span className="font-semibold text-slate-700">{showLinkDeptDialog.name}</span>. Your other changes were already saved.</p>
+                                        </div>
+                                    </div>
+                                    {(linkConfirmData.safeUnlinkedCount > 0 || linkConfirmData.addedCount > 0) && (
+                                        <div className="rounded-xl bg-emerald-50 border border-emerald-100 px-4 py-3 flex flex-wrap gap-3">
+                                            {linkConfirmData.addedCount > 0 && (
+                                                <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700">
+                                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                                    {linkConfirmData.addedCount} department{linkConfirmData.addedCount !== 1 ? 's' : ''} linked
+                                                </span>
+                                            )}
+                                            {linkConfirmData.safeUnlinkedCount > 0 && (
+                                                <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700">
+                                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                                    {linkConfirmData.safeUnlinkedCount} department{linkConfirmData.safeUnlinkedCount !== 1 ? 's' : ''} unlinked (no employees)
+                                                </span>
+                                            )}
+                                        </div>
+                                    )}
+                                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Still needs confirmation</p>
+                                    <div className="rounded-2xl border border-amber-100 bg-amber-50 divide-y divide-amber-100">
+                                        {linkConfirmData.affectedDepartments.map((d) => (
+                                            <div key={d.departmentId} className="flex items-center justify-between px-4 py-3">
+                                                <span className="text-sm font-semibold text-slate-800">{d.departmentName}</span>
+                                                <span className="inline-flex items-center gap-1 text-xs font-bold text-amber-700 bg-amber-100 px-2.5 py-1 rounded-full">
+                                                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                                                    {d.employeeCount} employee{d.employeeCount !== 1 ? 's' : ''}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div className="space-y-2 pt-2">
+                                        <button type="button" onClick={handleForceUnlink} className="w-full rounded-2xl bg-amber-500 px-4 py-3 text-sm font-semibold text-white hover:bg-amber-600 shadow-lg shadow-amber-500/30">Yes, Unlink Anyway</button>
+                                        <button type="button" onClick={() => { setLinkConfirmData(null); setShowLinkDeptDialog(null); setLinkDeptSearch(''); loadData(); }} className="w-full rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-600 shadow-lg shadow-emerald-500/30">Keep Safe Changes Only</button>
+                                        <button type="button" onClick={() => setLinkConfirmData(null)} className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-600 hover:bg-slate-50">Go Back to Selection</button>
+                                    </div>
                                 </div>
-                                {/* Select All / Deselect All */}
-                                <div className="flex gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            const filtered = departments.filter((dept) => {
-                                                const search = linkDeptSearch.toLowerCase();
-                                                if (!search) return true;
-                                                const name = (dept.name || '').toLowerCase();
-                                                const code = (dept.code || '').toLowerCase();
-                                                return name.includes(search) || code.includes(search);
-                                            });
-                                            const filteredIds = filtered.map((d) => d._id);
-                                            setSelectedDeptIds((prev) => [...new Set([...prev, ...filteredIds])]);
-                                        }}
-                                        className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-900/20 dark:text-indigo-400 dark:hover:bg-indigo-900/40"
-                                    >
-                                        Select All
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            const filtered = departments.filter((dept) => {
-                                                const search = linkDeptSearch.toLowerCase();
-                                                if (!search) return true;
-                                                const name = (dept.name || '').toLowerCase();
-                                                const code = (dept.code || '').toLowerCase();
-                                                return name.includes(search) || code.includes(search);
-                                            });
-                                            const filteredIds = new Set(filtered.map((d) => d._id));
-                                            setSelectedDeptIds((prev) => prev.filter((id) => !filteredIds.has(id)));
-                                        }}
-                                        className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
-                                    >
-                                        Deselect All
-                                    </button>
-                                </div>
-                                <div className="max-h-96 overflow-y-auto rounded-2xl border border-slate-100 p-2 dark:border-slate-800">
-                                    {departments
-                                        .filter((dept) => {
-                                            const search = linkDeptSearch.toLowerCase();
-                                            if (!search) return true;
-                                            const name = (dept.name || '').toLowerCase();
-                                            const code = (dept.code || '').toLowerCase();
-                                            return name.includes(search) || code.includes(search);
-                                        })
-                                        .map(dept => (
-                                        <label key={dept._id} className="flex items-center gap-3 rounded-xl p-3 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors">
-                                            <input
-                                                type="checkbox"
-                                                checked={selectedDeptIds.includes(dept._id)}
-                                                onChange={() => setSelectedDeptIds(prev => prev.includes(dept._id) ? prev.filter(id => id !== dept._id) : [...prev, dept._id])}
-                                                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-4 w-4"
-                                            />
-                                            <span className="text-sm text-slate-700 dark:text-slate-300 font-medium">{dept.name} <span className="text-xs text-slate-400">({dept.code})</span></span>
-                                        </label>
-                                    ))}
-                                </div>
-                                <div className="flex gap-3 pt-4">
-                                    <button type="submit" className="flex-1 rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white hover:bg-indigo-700 shadow-lg shadow-indigo-500/30">Save Selection</button>
-                                    <button type="button" onClick={() => { setShowLinkDeptDialog(null); setLinkDeptSearch(''); }} className="flex-1 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">Cancel</button>
-                                </div>
-                            </form>
+                            ) : (
+                                <>
+                                    <h2 className="text-xl font-semibold mb-4">Link Departments to {showLinkDeptDialog.name}</h2>
+                                    <form onSubmit={handleLinkDepartments} className="space-y-4">
+                                        <div className="relative">
+                                            <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                            </svg>
+                                            <input type="text" placeholder="Search departments by name or code..." value={linkDeptSearch} onChange={(e) => setLinkDeptSearch(e.target.value)} className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-4 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-900 dark:text-white" />
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <button type="button" onClick={() => { const filtered = departments.filter((dept) => { const search = linkDeptSearch.toLowerCase(); if (!search) return true; return (dept.name || '').toLowerCase().includes(search) || (dept.code || '').toLowerCase().includes(search); }); setSelectedDeptIds((prev) => [...new Set([...prev, ...filtered.map((d) => d._id)])]); }} className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-100">Select All</button>
+                                            <button type="button" onClick={() => { const filtered = departments.filter((dept) => { const search = linkDeptSearch.toLowerCase(); if (!search) return true; return (dept.name || '').toLowerCase().includes(search) || (dept.code || '').toLowerCase().includes(search); }); const filteredIds = new Set(filtered.map((d) => d._id)); setSelectedDeptIds((prev) => prev.filter((id) => !filteredIds.has(id))); }} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">Deselect All</button>
+                                        </div>
+                                        <div className="max-h-80 overflow-y-auto rounded-2xl border border-slate-100 p-2 dark:border-slate-800">
+                                            {departments.filter((dept) => { const search = linkDeptSearch.toLowerCase(); if (!search) return true; return (dept.name || '').toLowerCase().includes(search) || (dept.code || '').toLowerCase().includes(search); }).map(dept => (
+                                                <label key={dept._id} className="flex items-center gap-3 rounded-xl p-3 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors">
+                                                    <input type="checkbox" checked={selectedDeptIds.includes(dept._id)} onChange={() => setSelectedDeptIds(prev => prev.includes(dept._id) ? prev.filter(id => id !== dept._id) : [...prev, dept._id])} className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-4 w-4" />
+                                                    <span className="text-sm text-slate-700 dark:text-slate-300 font-medium">{dept.name} <span className="text-xs text-slate-400">({dept.code})</span></span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                        {error && <p className="text-sm text-red-500">{error}</p>}
+                                        <div className="flex gap-3 pt-2">
+                                            <button type="submit" className="flex-1 rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white hover:bg-indigo-700 shadow-lg shadow-indigo-500/30">Save Selection</button>
+                                            <button type="button" onClick={() => { setShowLinkDeptDialog(null); setLinkDeptSearch(''); setLinkConfirmData(null); }} className="flex-1 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-medium hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">Cancel</button>
+                                        </div>
+                                    </form>
+                                </>
+                            )}
                         </div>
                     </div>
                 )}
