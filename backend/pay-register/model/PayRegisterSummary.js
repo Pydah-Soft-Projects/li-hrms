@@ -415,6 +415,11 @@ const payRegisterSummarySchema = new mongoose.Schema(
         default: 0,
         min: 0,
       },
+      /** EL days override for payroll; omit or leave unset to use policy + employee EL balance (legacy). */
+      elUsedInPayroll: {
+        type: Number,
+        min: 0,
+      },
       totalWeeklyOffs: {
         type: Number,
         default: 0,
@@ -684,6 +689,9 @@ payRegisterSummarySchema.methods.recalculateTotals = function () {
     earlyOutCount: 0,
     extraDays: this.totals.extraDays || 0,
   };
+  if (this.totals && this.totals.elUsedInPayroll !== undefined && this.totals.elUsedInPayroll !== null) {
+    totals.elUsedInPayroll = Math.max(0, Number(this.totals.elUsedInPayroll) || 0);
+  }
 
   if (!this.dailyRecords || this.dailyRecords.length === 0) {
     this.totals = totals;
