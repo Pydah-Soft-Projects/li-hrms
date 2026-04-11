@@ -340,9 +340,10 @@ async function updateEarnedLeaveForAllEmployees(month = null, year = null) {
                     await leaveRegisterService.addEarnedLeaveCredit(
                         employee._id,
                         calculation.elEarned,
-                        month,
-                        year,
-                        calculation.breakdown
+                        periodInfo.payrollCycle.month,
+                        periodInfo.payrollCycle.year,
+                        calculation.breakdown,
+                        periodInfo.payrollCycle.endDate
                     );
 
                     // Record EL history for audit (idempotent via LeaveRegisterYear guard above)
@@ -350,8 +351,8 @@ async function updateEarnedLeaveForAllEmployees(month = null, year = null) {
                         await ELHistory.create({
                             employeeId: employee._id,
                             empNo: employee.emp_no,
-                            month: Number(month),
-                            year: Number(year),
+                            month: Number(periodInfo.payrollCycle.month),
+                            year: Number(periodInfo.payrollCycle.year),
                             days: calculation.elEarned,
                             type: 'CREDIT',
                             source: 'AUTO_ACCRUAL',
