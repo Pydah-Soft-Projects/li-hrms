@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const { isEarlyOutCountableSecondHalf } = require('../services/totalsCalculationService');
+const { contributingDatesShape } = require('../../shared/schemas/contributingDatesSchema');
 
 /**
  * Pay Register Summary Model
@@ -414,6 +415,11 @@ const payRegisterSummarySchema = new mongoose.Schema(
         default: 0,
         min: 0,
       },
+      /** EL days override for payroll; omit or leave unset to use policy + employee EL balance (legacy). */
+      elUsedInPayroll: {
+        type: Number,
+        min: 0,
+      },
       totalWeeklyOffs: {
         type: Number,
         default: 0,
@@ -573,6 +579,20 @@ const payRegisterSummarySchema = new mongoose.Schema(
       default: null,
     },
 
+    /** Same shape as MonthlyAttendanceSummary.contributingDates — grid click highlights / explainability */
+    contributingDates: contributingDatesShape,
+
+    contributingDatesUpdatedAt: {
+      type: Date,
+      default: null,
+    },
+
+    /** Set by contributingDatesService: `monthly_summary` when copied from MAS, `daily_grid` when rebuilt from edits. */
+    contributingDatesDerivedFrom: {
+      type: String,
+      enum: ['monthly_summary', 'daily_grid'],
+    },
+
     // ADDITIONAL METADATA
     notes: {
       type: String,
@@ -669,6 +689,9 @@ payRegisterSummarySchema.methods.recalculateTotals = function () {
     earlyOutCount: 0,
     extraDays: this.totals.extraDays || 0,
   };
+  if (this.totals && this.totals.elUsedInPayroll !== undefined && this.totals.elUsedInPayroll !== null) {
+    totals.elUsedInPayroll = Math.max(0, Number(this.totals.elUsedInPayroll) || 0);
+  }
 
   if (!this.dailyRecords || this.dailyRecords.length === 0) {
     this.totals = totals;

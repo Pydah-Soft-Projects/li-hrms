@@ -88,17 +88,49 @@ const otSchema = new mongoose.Schema(
       required: true,
     },
 
-    // Calculated OT hours
+    // Calculated OT hours (policy-applied / final)
     otHours: {
       type: Number,
       required: true,
       min: 0,
     },
 
+    /** Raw OT hours before policy (threshold / rounding), for audit */
+    rawOtHours: {
+      type: Number,
+      default: null,
+      min: 0,
+    },
+
+    /** Copy of otHours after policy; optional explicit field for reporting */
+    computedOtHours: {
+      type: Number,
+      default: null,
+      min: 0,
+    },
+
+    /** Resolved policy + pay inputs at creation time */
+    otPolicySnapshot: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
+    },
+
     // Status: pending, approved, rejected
     status: {
       type: String,
-      enum: ['pending', 'manager_approved', 'manager_rejected', 'approved', 'rejected'],
+      enum: [
+        'pending',
+        'manager_approved',
+        'hod_approved',
+        'hr_approved',
+        'sub_admin_approved',
+        'super_admin_approved',
+        'reporting_manager_approved',
+        'final_authority_approved',
+        'manager_rejected',
+        'approved',
+        'rejected',
+      ],
       default: 'pending',
       index: true,
     },
@@ -181,7 +213,7 @@ const otSchema = new mongoose.Schema(
     },
     source: {
       type: String,
-      enum: ['manual_request', 'attendance_conversion', 'auto_detected'],
+      enum: ['manual_request', 'attendance_conversion', 'auto_detected', 'esi_leave_conversion'],
       default: 'manual_request',
     },
 

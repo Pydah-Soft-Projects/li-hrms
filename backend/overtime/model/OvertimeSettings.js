@@ -28,6 +28,72 @@ const OvertimeSettingsSchema = new mongoose.Schema(
             min: 0,
         },
 
+        /** none | threshold_full — below threshold → 0; at/above → full raw hours */
+        recognitionMode: {
+            type: String,
+            enum: ['none', 'threshold_full'],
+            default: 'none',
+        },
+        /** When recognitionMode is threshold_full, minimum decimal hours before OT counts */
+        thresholdHours: {
+            type: Number,
+            default: null,
+            min: 0,
+        },
+        /**
+         * Whole-hour rounding: if fractional minutes (of the hour) >= this value, round up to next hour; else floor.
+         * null/undefined = disabled. Example: 45 → 1h45m → 2h; 1h30m → 1h.
+         */
+        roundUpIfFractionMinutesGte: {
+            type: Number,
+            default: null,
+            min: 0,
+            max: 59,
+        },
+        /** Slab mapping: raw OT range (minutes) -> credited OT (minutes) */
+        otHourRanges: {
+            type: [
+                {
+                    minMinutes: { type: Number, required: true, min: 0 },
+                    maxMinutes: { type: Number, required: true, min: 0 },
+                    creditedMinutes: { type: Number, required: true, min: 0 },
+                    label: { type: String, default: '', trim: true },
+                },
+            ],
+            default: [],
+        },
+        /** When true, extra-hours detection can create a pending OT request automatically */
+        autoCreateOtRequest: {
+            type: Boolean,
+            default: false,
+        },
+        /** Fallback working hours per day (x) when department/group not set */
+        defaultWorkingHoursPerDay: {
+            type: Number,
+            default: 8,
+            min: 0.5,
+            max: 24,
+        },
+        // Application date window
+        allowBackdated: {
+            type: Boolean,
+            default: false,
+        },
+        maxBackdatedDays: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
+        allowFutureDated: {
+            type: Boolean,
+            default: true,
+        },
+        maxAdvanceDays: {
+            type: Number,
+            default: 365,
+            min: 0,
+        },
+
         // Workflow configuration
         workflow: {
             isEnabled: {

@@ -128,6 +128,36 @@ class SecondSalaryService {
         }
 
         await batch.save();
+
+        // When 2nd salary batch completes: debit EL used as paid days (same policy as regular payroll).
+        // If regular payroll for the same month already completed, addELUsedInPayroll is idempotent per payroll month.
+        if (status === 'complete') {
+            const leaveRegisterService = require('../../leaves/services/leaveRegisterService');
+            const recIds = (batch.employeePayrolls || []).filter(Boolean);
+            if (recIds.length > 0) {
+                const records = await SecondSalaryRecord.find({ _id: { $in: recIds } })
+                    .select('employeeId month attendance.elUsedInPayroll')
+                    .lean();
+                for (const rec of records) {
+                    const days = Number(rec.attendance?.elUsedInPayroll) || 0;
+                    if (days <= 0 || !rec.employeeId || !rec.month) continue;
+                    try {
+                        await leaveRegisterService.addELUsedInPayroll(
+                            rec.employeeId,
+                            days,
+                            rec.month,
+                            batch._id
+                        );
+                    } catch (err) {
+                        console.error(
+                            `[SecondSalaryService] EL used in payroll debit failed for employee ${rec.employeeId}:`,
+                            err.message
+                        );
+                    }
+                }
+            }
+        }
+
         return batch;
     }
     /**

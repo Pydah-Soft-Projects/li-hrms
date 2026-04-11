@@ -1,5 +1,36 @@
 const mongoose = require('mongoose');
 
+/** Optional overrides for global LeavePolicySettings.earnedLeave (per department / division). */
+const departmentEarnedLeaveOverrideSchema = new mongoose.Schema(
+  {
+    enabled: { type: Boolean, default: null },
+    earningType: {
+      type: String,
+      enum: ['attendance_based', 'fixed'],
+    },
+    useAsPaidInPayroll: { type: Boolean, default: null },
+    attendanceRules: {
+      minDaysForFirstEL: { type: Number, default: null, min: 1, max: 31 },
+      daysPerEL: { type: Number, default: null, min: 1, max: 31 },
+      maxELPerMonth: { type: Number, default: null, min: 0, max: 10 },
+      maxELPerYear: { type: Number, default: null, min: 0, max: 365 },
+      attendanceRanges: [
+        {
+          minDays: { type: Number, required: true },
+          maxDays: { type: Number, required: true },
+          elEarned: { type: Number, required: true },
+          description: { type: String, default: '', trim: true },
+        },
+      ],
+    },
+    fixedRules: {
+      elPerMonth: { type: Number, default: null, min: 0, max: 10 },
+      maxELPerYear: { type: Number, default: null, min: 0, max: 365 },
+    },
+  },
+  { _id: false }
+);
+
 /**
  * Department Settings Model
  * Stores department-specific settings that override global defaults
@@ -64,6 +95,11 @@ const departmentSettingsSchema = new mongoose.Schema(
         type: Number,
         default: null,
         min: 0,
+      },
+      // Full/partial EL policy overrides (merged with global leave policy earnedLeave)
+      earnedLeave: {
+        type: departmentEarnedLeaveOverrideSchema,
+        default: undefined,
       },
     },
 
@@ -268,6 +304,105 @@ const departmentSettingsSchema = new mongoose.Schema(
         type: Number,
         default: null, // null = use global default
         min: 0,
+      },
+      /** Nearest N minutes for OT duration (0 = inherit global; global default 15) */
+      roundingMinutes: {
+        type: Number,
+        default: null,
+        min: 0,
+        max: 60,
+      },
+      recognitionMode: {
+        type: String,
+        default: null,
+        trim: true,
+      },
+      thresholdHours: {
+        type: Number,
+        default: null,
+        min: 0,
+      },
+      roundUpIfFractionMinutesGte: {
+        type: Number,
+        default: null,
+        min: 0,
+        max: 59,
+      },
+      otHourRanges: {
+        type: [
+          {
+            minMinutes: { type: Number, required: true, min: 0 },
+            maxMinutes: { type: Number, required: true, min: 0 },
+            creditedMinutes: { type: Number, required: true, min: 0 },
+            label: { type: String, default: '', trim: true },
+          },
+        ],
+        default: undefined,
+      },
+      autoCreateOtRequest: {
+        type: Boolean,
+        default: null,
+      },
+      defaultWorkingHoursPerDay: {
+        type: Number,
+        default: null,
+        min: 0.5,
+        max: 24,
+      },
+      /** Department default x (hours per day) when employee group has no override */
+      workingHoursPerDay: {
+        type: Number,
+        default: null,
+        min: 0.5,
+        max: 24,
+      },
+      /** Per employee-group x */
+      groupWorkingHours: {
+        type: [
+          {
+            employeeGroupId: {
+              type: mongoose.Schema.Types.ObjectId,
+              ref: 'EmployeeGroup',
+              required: true,
+            },
+            hoursPerDay: {
+              type: Number,
+              required: true,
+              min: 0.5,
+              max: 24,
+            },
+          },
+        ],
+        default: undefined,
+      },
+      otMultiplier: {
+        type: Number,
+        default: null,
+        min: 0,
+      },
+      /** null = inherit global OvertimeSettings */
+      allowBackdated: {
+        type: Boolean,
+        default: null,
+      },
+      maxBackdatedDays: {
+        type: Number,
+        default: null,
+        min: 0,
+      },
+      allowFutureDated: {
+        type: Boolean,
+        default: null,
+      },
+      maxAdvanceDays: {
+        type: Number,
+        default: null,
+        min: 0,
+      },
+      /** Full override of global OT workflow when set; null/omit = inherit global */
+      workflow: {
+        type: mongoose.Schema.Types.Mixed,
+        default: undefined,
       },
     },
 

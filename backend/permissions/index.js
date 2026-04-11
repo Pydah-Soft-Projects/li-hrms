@@ -39,11 +39,11 @@ router.get('/:id', getPermission);
 // Get QR code for permission
 router.get('/:id/qr', getQRCode);
 
-// Approve permission request (HOD, HR, Super Admin)
-router.put('/:id/approve', authorize('super_admin', 'sub_admin', 'hr', 'hod'), approvePermission);
+// Approve permission request (workflow roles incl. manager/reporting-manager path)
+router.put('/:id/approve', authorize('super_admin', 'sub_admin', 'hr', 'hod', 'manager'), approvePermission);
 
-// Reject permission request (HOD, HR, Super Admin)
-router.put('/:id/reject', authorize('super_admin', 'sub_admin', 'hr', 'hod'), rejectPermission);
+// Reject permission request (workflow roles incl. manager/reporting-manager path)
+router.put('/:id/reject', authorize('super_admin', 'sub_admin', 'hr', 'hod', 'manager'), rejectPermission);
 
 // Settings Routes (Must come before dynamic routes)
 // Get permission deduction settings

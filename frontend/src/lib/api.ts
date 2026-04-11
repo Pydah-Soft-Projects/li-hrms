@@ -1327,6 +1327,30 @@ export const api = {
       paidLeavesCount?: number | null;
       dailyLimit?: number | null;
       monthlyLimit?: number | null;
+      elEarningType?: 'attendance_based' | 'fixed' | null;
+      elMaxCarryForward?: number | null;
+      cclExpiryMonths?: number | null;
+      earnedLeave?: null | {
+        enabled?: boolean | null;
+        earningType?: 'attendance_based' | 'fixed';
+        useAsPaidInPayroll?: boolean | null;
+        attendanceRules?: {
+          minDaysForFirstEL?: number | null;
+          daysPerEL?: number | null;
+          maxELPerMonth?: number | null;
+          maxELPerYear?: number | null;
+          attendanceRanges?: Array<{
+            minDays: number;
+            maxDays: number;
+            elEarned: number;
+            description?: string;
+          }>;
+        };
+        fixedRules?: {
+          elPerMonth?: number | null;
+          maxELPerYear?: number | null;
+        };
+      };
     };
     loans?: {
       interestRate?: number | null;
@@ -1355,7 +1379,11 @@ export const api = {
       monthlyLimit?: number | null;
       deductFromSalary?: boolean | null;
       deductionAmount?: number | null;
+      deductionRules?: Record<string, unknown>;
     };
+    ot?: Record<string, unknown>;
+    attendance?: Record<string, unknown>;
+    payroll?: Record<string, unknown>;
   }, divisionId?: string) => {
     let url = `/departments/${deptId}/settings`;
     if (divisionId) url += `?divisionId=${divisionId}`;
@@ -3218,7 +3246,19 @@ export const api = {
   },
 
   // Create permission request
-  createPermission: async (data: { employeeId: string; employeeNumber: string; date: string; permissionStartTime: string; permissionEndTime: string; purpose: string; comments?: string; photoEvidence?: any; geoLocation?: any }) => {
+  createPermission: async (data: {
+    employeeId: string;
+    employeeNumber: string;
+    date: string;
+    permissionStartTime?: string;
+    permissionEndTime?: string;
+    purpose: string;
+    comments?: string;
+    photoEvidence?: any;
+    geoLocation?: any;
+    permissionType?: 'mid_shift' | 'late_in' | 'early_out';
+    permittedEdgeTime?: string;
+  }) => {
     return apiRequest<any>('/permissions', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -3420,11 +3460,43 @@ export const api = {
     multiplier?: number;
     minOTHours?: number;
     roundingMinutes?: number;
-    workflow?: any
+    recognitionMode?: string;
+    thresholdHours?: number | null;
+    roundUpIfFractionMinutesGte?: number | null;
+    otHourRanges?: Array<{
+      minMinutes: number;
+      maxMinutes: number;
+      creditedMinutes: number;
+      label?: string;
+    }>;
+    autoCreateOtRequest?: boolean;
+    defaultWorkingHoursPerDay?: number;
+    allowBackdated?: boolean;
+    maxBackdatedDays?: number;
+    allowFutureDated?: boolean;
+    maxAdvanceDays?: number;
+    workflow?: any;
   }) => {
     return apiRequest<any>('/ot/settings', {
       method: 'POST',
       body: JSON.stringify(data),
+    });
+  },
+
+  previewOTExtraHours: async (params: { employeeId: string; employeeNumber: string; date: string }) => {
+    const q = new URLSearchParams(params).toString();
+    return apiRequest<any>(`/ot/preview-extra-hours?${q}`, { method: 'GET' });
+  },
+
+  simulateOtHoursPolicy: async (body: {
+    rawHours: number;
+    departmentId?: string;
+    divisionId?: string;
+    policy?: Record<string, unknown>;
+  }) => {
+    return apiRequest<any>('/ot/simulate-hours-policy', {
+      method: 'POST',
+      body: JSON.stringify(body),
     });
   },
 

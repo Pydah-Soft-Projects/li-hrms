@@ -2,10 +2,20 @@ const AttendanceDaily = require('../model/AttendanceDaily');
 const AttendanceRawLog = require('../model/AttendanceRawLog');
 const Leave = require('../../leaves/model/Leave');
 const OD = require('../../leaves/model/OD');
+const OT = require('../../overtime/model/OT');
+const { getMergedOtConfig } = require('../../overtime/services/otConfigResolver');
+const { applyOtHoursPolicy } = require('../../overtime/services/otHoursPolicyService');
 const { calculateMonthlySummary } = require('./summaryCalculationService');
 const { extractISTComponents } = require('../../shared/utils/dateUtils');
 const dateCycleService = require('../../leaves/services/dateCycleService');
 const { filterMonthlySummaryForEmploymentBounds } = require('./employmentBoundsSummaryFilter');
+
+function getSegmentCumulativeExtraHours(record) {
+  const shifts = Array.isArray(record?.shifts) ? record.shifts : [];
+  if (!shifts.length) return 0;
+  const total = shifts.reduce((sum, s) => sum + (Number(s?.extraHours) || 0), 0);
+  return Math.round(total * 100) / 100;
+}
 
 /**
  * Get attendance data for calendar view (Single Employee)
@@ -29,6 +39,29 @@ exports.getCalendarViewData = async (employee, year, month) => {
   })
     .populate('shifts.shiftId', 'name startTime endTime duration payableShifts')
     .sort({ date: 1 });
+
+  const approvedOtRows = await OT.find({
+    employeeId: employee._id,
+    date: { $gte: startDateStr, $lte: endDateStr },
+    status: 'approved',
+    isActive: true,
+  })
+    .select('date otHours rawOtHours computedOtHours')
+    .lean();
+  const approvedOtByDate = new Map(
+    (approvedOtRows || []).map((ot) => [
+      String(ot.date),
+      {
+        considered: Number(ot.computedOtHours ?? ot.otHours) || 0,
+        actual: Number(ot.rawOtHours ?? ot.otHours) || 0,
+      },
+    ])
+  );
+
+  const mergedPolicy = await getMergedOtConfig(
+    employee.department_id?._id || employee.department_id || null,
+    employee.division_id?._id || employee.division_id || null
+  );
 
   // Fetch approved leaves and ODs
   const startDateObj = periodInfo.payrollCycle.startDate;
@@ -176,6 +209,10 @@ exports.getCalendarViewData = async (employee, year, month) => {
     if (leftDateStr && record.date > leftDateStr) return;
 
     const hasLeave = !!leaveMap[record.date];
+    const isEsiLeaveDay =
+      hasLeave &&
+      String(leaveMap[record.date]?.leaveType || '').trim().toUpperCase() === 'ESI' &&
+      !leaveMap[record.date]?.isHalfDay;
     const odInfo = odMap[record.date];
     const hasOD = !!odInfo;
     const hasAttendance = record.status === 'PRESENT' || record.status === 'PARTIAL';
@@ -183,12 +220,15 @@ exports.getCalendarViewData = async (employee, year, month) => {
     const odIsHalfDay = odInfo?.odType_extended === 'half_day' || odInfo?.isHalfDay;
     const isConflict = (hasLeave || (hasOD && !odIsHourBased && !odIsHalfDay)) && hasAttendance;
 
+    const approvedOtForDate = approvedOtByDate.get(String(record.date));
+    const segmentExtra = getSegmentCumulativeExtraHours(record);
+    const slabPreview = segmentExtra > 0 ? applyOtHoursPolicy(segmentExtra, mergedPolicy) : null;
     attendanceMap[record.date] = {
       date: record.date,
       // Map from first/last shift for display, or use shifts array in frontend
       // inTime and outTime are now provided within the shifts array for multi-shift support
       totalHours: record.totalWorkingHours, // Use aggregate
-      status: record.status,
+      status: isEsiLeaveDay ? 'LEAVE' : record.status,
       shiftId: record.shifts && record.shifts.length > 0 ? record.shifts[0].shiftId : null,
       shiftName: record.shifts && record.shifts.length > 0 && record.shifts[0].shiftId ? record.shifts[0].shiftId.name : null,
       isLateIn: record.totalLateInMinutes > 0,
@@ -197,7 +237,9 @@ exports.getCalendarViewData = async (employee, year, month) => {
       earlyOutMinutes: record.totalEarlyOutMinutes || 0,
       earlyOutDeduction: record.earlyOutDeduction || null,
       expectedHours: record.totalExpectedHours || (record.shifts && record.shifts.length > 0 && record.shifts[0].shiftId ? record.shifts[0].shiftId.duration : null),
-      otHours: Math.max(record.otHours || 0, record.totalOTHours || 0),
+      otHours: approvedOtForDate?.considered ?? Math.max(record.otHours || 0, record.totalOTHours || 0),
+      otActualHours: approvedOtForDate?.actual ?? 0,
+      otSlabHours: approvedOtForDate?.considered ?? (slabPreview?.eligible ? Number(slabPreview.finalHours) || 0 : 0),
       extraHours: record.extraHours || 0,
       permissionHours: record.permissionHours || 0,
       permissionCount: record.permissionCount || 0,
@@ -205,11 +247,13 @@ exports.getCalendarViewData = async (employee, year, month) => {
       leaveInfo: leaveMap[record.date] || null,
       hasOD: hasOD,
       odInfo: odMap[record.date] || null,
-      isConflict: isConflict,
+      isConflict: isEsiLeaveDay ? false : isConflict,
+      isEsiLeaveDay,
       isEdited: record.isEdited || false,
       editHistory: record.editHistory || [],
       source: record.source || [],
-      shifts: record.shifts || []
+      shifts: record.shifts || [],
+      policyMeta: record.policyMeta || null,
     };
   });
 
@@ -295,13 +339,22 @@ exports.getMonthlyTableViewData = async (employees, year, month, startQueryDate,
     employeeNumber: { $in: empNos },
     date: { $gte: startDate, $lte: endDateStr },
   })
-    .select('employeeNumber date status shifts totalWorkingHours totalLateInMinutes totalEarlyOutMinutes totalExpectedHours totalOTHours extraHours permissionHours permissionCount notes earlyOutDeduction isEdited editHistory')
+    .select('employeeNumber date status shifts totalWorkingHours totalLateInMinutes totalEarlyOutMinutes totalExpectedHours totalOTHours extraHours permissionHours permissionCount notes earlyOutDeduction isEdited editHistory policyMeta')
     .populate('shifts.shiftId', 'name startTime endTime duration payableShifts')
     .sort({ employeeNumber: 1, date: 1 })
     .lean();
 
-  // Get all approved leaves
   const empIds = employees.map(e => e._id);
+  const approvedOTs = await OT.find({
+    employeeId: { $in: empIds },
+    date: { $gte: startDate, $lte: endDateStr },
+    status: 'approved',
+    isActive: true,
+  })
+    .select('employeeId employeeNumber date otHours rawOtHours computedOtHours')
+    .lean();
+
+  // Get all approved leaves
   const allLeaves = await Leave.find({
     employeeId: { $in: empIds },
     status: 'approved',
@@ -398,6 +451,29 @@ exports.getMonthlyTableViewData = async (employees, year, month, startQueryDate,
     attendanceMap[record.employeeNumber][record.date] = record;
   });
 
+  const approvedOtMap = {};
+  approvedOTs.forEach((ot) => {
+    const empNo = String(ot.employeeNumber || '').toUpperCase();
+    if (!empNo) return;
+    if (!approvedOtMap[empNo]) approvedOtMap[empNo] = {};
+    approvedOtMap[empNo][ot.date] = {
+      considered: Number(ot.computedOtHours ?? ot.otHours) || 0,
+      actual: Number(ot.rawOtHours ?? ot.otHours) || 0,
+    };
+  });
+
+  const employeePolicyMap = {};
+  await Promise.all(
+    employees.map(async (emp) => {
+      const key = String(emp.emp_no || '').toUpperCase();
+      if (!key) return;
+      employeePolicyMap[key] = await getMergedOtConfig(
+        emp.department_id?._id || emp.department_id || null,
+        emp.division_id?._id || emp.division_id || null
+      );
+    })
+  );
+
   // Optimize Summary Retrieval: Fetch all summaries at once instead of in a loop
   const MonthlyAttendanceSummary = require('../model/MonthlyAttendanceSummary');
   const monthStr = `${targetYear}-${String(targetMonth).padStart(2, '0')}`;
@@ -435,6 +511,10 @@ exports.getMonthlyTableViewData = async (employees, year, month, startQueryDate,
       const leaveInfo = leaveMapByEmployee[emp.emp_no]?.[dateStr] || null;
       const odInfo = odMapByEmployee[emp.emp_no]?.[dateStr] || null;
       const hasLeave = !!leaveInfo;
+      const isEsiLeaveDay =
+        hasLeave &&
+        String(leaveInfo?.leaveType || '').trim().toUpperCase() === 'ESI' &&
+        !leaveInfo?.isHalfDay;
       const hasOD = !!odInfo;
       const hasAttendance = !!record && (record.status === 'PRESENT' || record.status === 'PARTIAL');
       const odIsHourBased = odInfo?.odType_extended === 'hours';
@@ -456,10 +536,15 @@ exports.getMonthlyTableViewData = async (employees, year, month, startQueryDate,
       // Pre-joining, post-resignation and future date checks take priority over any DB record
       if (isBeforeJoining || isAfterResignation) status = '';
       else if (isFutureDate) status = '-';
+      else if (isEsiLeaveDay) status = 'LEAVE';
       else if (record) status = record.status;
       else if (hasLeave) status = 'LEAVE';
       else if (hasOD) status = 'OD';
 
+      const approvedOtForDate = approvedOtMap[emp.emp_no]?.[dateStr] || null;
+      const segmentExtra = getSegmentCumulativeExtraHours(record);
+      const mergedPolicyForEmp = employeePolicyMap[String(emp.emp_no || '').toUpperCase()] || null;
+      const slabPreview = segmentExtra > 0 && mergedPolicyForEmp ? applyOtHoursPolicy(segmentExtra, mergedPolicyForEmp) : null;
       dailyAttendance[dateStr] = {
         date: dateStr,
         status: status,
@@ -472,7 +557,9 @@ exports.getMonthlyTableViewData = async (employees, year, month, startQueryDate,
         shiftId: record?.shifts && record.shifts.length > 0 ? record.shifts[0].shiftId : null,
         shifts: record?.shifts || [],
         expectedHours: record?.totalExpectedHours || (record?.shifts && record.shifts.length > 0 && record.shifts[0].shiftId ? record.shifts[0].shiftId.duration : 0),
-        otHours: Math.max(record?.otHours || 0, record?.totalOTHours || 0),
+        otHours: approvedOtForDate?.considered ?? Math.max(record?.otHours || 0, record?.totalOTHours || 0),
+        otActualHours: approvedOtForDate?.actual ?? 0,
+        otSlabHours: approvedOtForDate?.considered ?? (slabPreview?.eligible ? Number(slabPreview.finalHours) || 0 : 0),
         extraHours: record?.extraHours || 0,
         permissionHours: record?.permissionHours || 0,
         permissionCount: record?.permissionCount || 0,
@@ -482,10 +569,12 @@ exports.getMonthlyTableViewData = async (employees, year, month, startQueryDate,
         leaveInfo,
         hasOD,
         odInfo,
-        isConflict,
+        isConflict: isEsiLeaveDay ? false : isConflict,
+        isEsiLeaveDay,
         isEdited: record?.isEdited || false,
         editHistory: record?.editHistory || [],
-        source: record?.source || []
+        source: record?.source || [],
+        policyMeta: record?.policyMeta || null,
       };
     }
 
