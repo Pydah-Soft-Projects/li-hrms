@@ -1,5 +1,7 @@
 'use client';
 
+import { Calculator } from 'lucide-react';
+
 /** Form state for department EL overrides (null / empty = inherit global leave policy). */
 export interface DepartmentEarnedLeaveForm {
   enabled: boolean | null;
@@ -108,10 +110,12 @@ function TriBoolSelect({
   value,
   onChange,
   id,
+  className,
 }: {
   value: boolean | null;
   onChange: (v: boolean | null) => void;
   id?: string;
+  className?: string;
 }) {
   return (
     <select
@@ -121,7 +125,10 @@ function TriBoolSelect({
         const v = e.target.value;
         onChange(v === '' ? null : v === '1');
       }}
-      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+      className={
+        className ??
+        'w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white'
+      }
     >
       <option value="">Use global default</option>
       <option value="1">Yes</option>
@@ -136,14 +143,29 @@ export function DepartmentEarnedLeaveOverridesSection({
   effectiveEarnedLeave,
   onClearServerOverrides,
   clearingServer,
+  presentation = 'default',
 }: {
   value: DepartmentEarnedLeaveForm;
   onChange: (next: DepartmentEarnedLeaveForm) => void;
   effectiveEarnedLeave?: Record<string, unknown> | null;
   onClearServerOverrides?: () => void | Promise<void>;
   clearingServer?: boolean;
+  /** `policy` matches global Leave Policy “EL Earning Rules” card styling. */
+  presentation?: 'default' | 'policy';
 }) {
   const er = value;
+  const policy = presentation === 'policy';
+
+  const ic =
+    'w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all';
+  const icSlate =
+    'w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white';
+  const inputClass = policy ? ic : icSlate;
+
+  const lbl =
+    policy
+      ? 'mb-1.5 block text-xs font-medium text-gray-600 dark:text-gray-400'
+      : 'mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300';
 
   const patch = (partial: Partial<DepartmentEarnedLeaveForm>) => onChange({ ...er, ...partial });
   const patchAr = (partial: Partial<DepartmentEarnedLeaveForm['attendanceRules']>) =>
@@ -172,16 +194,16 @@ export function DepartmentEarnedLeaveOverridesSection({
     });
   };
 
-  return (
-    <div className="mt-8 border-t border-slate-200 pt-6 dark:border-slate-600">
-      <h3 className="mb-1 text-sm font-bold text-slate-900 dark:text-white">Earned leave (EL) — department overrides</h3>
-      <p className="mb-4 text-[11px] text-slate-500 dark:text-slate-400">
-        Overrides merge with the global leave policy. Leave controls on &quot;Use global default&quot; to inherit. Monthly accrual and
-        payroll EL-as-paid use the effective settings for this department (and division-specific row, if any).
-      </p>
-
+  const body = (
+    <>
       {effectiveEarnedLeave && (
-        <div className="mb-4 rounded-xl border border-indigo-100 bg-indigo-50/80 p-3 text-[11px] text-indigo-900 dark:border-indigo-900/40 dark:bg-indigo-950/40 dark:text-indigo-200">
+        <div
+          className={
+            policy
+              ? 'rounded-xl border border-indigo-100 bg-indigo-50/80 p-3 text-[11px] text-indigo-900 dark:border-indigo-900/40 dark:bg-indigo-950/40 dark:text-indigo-200'
+              : 'mb-4 rounded-xl border border-indigo-100 bg-indigo-50/80 p-3 text-[11px] text-indigo-900 dark:border-indigo-900/40 dark:bg-indigo-950/40 dark:text-indigo-200'
+          }
+        >
           <span className="font-semibold">Effective EL (merged)</span>
           <span className="ml-2 opacity-90">
             enabled: {String((effectiveEarnedLeave as any).enabled)}, type: {(effectiveEarnedLeave as any).earningType}, EL as paid
@@ -191,19 +213,34 @@ export function DepartmentEarnedLeaveOverridesSection({
         </div>
       )}
 
+      {!policy && (
+        <>
+          <h3 className="mb-1 text-sm font-bold text-slate-900 dark:text-white">Earned leave (EL) — department overrides</h3>
+          <p className="mb-4 text-[11px] text-slate-500 dark:text-slate-400">
+            Overrides merge with the global leave policy. Leave controls on &quot;Use global default&quot; to inherit. Monthly accrual and
+            payroll EL-as-paid use the effective settings for this department (and division-specific row, if any).
+          </p>
+        </>
+      )}
+
+      {policy && (
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          Values here override the organization leave policy for this department only. Use &quot;Use global default&quot; to inherit each
+          field.
+        </p>
+      )}
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <div>
-          <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">EL enabled</label>
-          <TriBoolSelect value={er.enabled} onChange={(v) => patch({ enabled: v })} />
+          <label className={lbl}>EL enabled</label>
+          <TriBoolSelect value={er.enabled} onChange={(v) => patch({ enabled: v })} className={policy ? inputClass : undefined} />
         </div>
         <div>
-          <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">EL earning type</label>
+          <label className={lbl}>EL earning type</label>
           <select
             value={er.earningType}
-            onChange={(e) =>
-              patch({ earningType: (e.target.value || '') as '' | 'attendance_based' | 'fixed' })
-            }
-            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+            onChange={(e) => patch({ earningType: (e.target.value || '') as '' | 'attendance_based' | 'fixed' })}
+            className={inputClass}
           >
             <option value="">Use global default</option>
             <option value="attendance_based">Attendance based</option>
@@ -211,15 +248,19 @@ export function DepartmentEarnedLeaveOverridesSection({
           </select>
         </div>
         <div>
-          <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">Use EL as paid in payroll</label>
-          <TriBoolSelect value={er.useAsPaidInPayroll} onChange={(v) => patch({ useAsPaidInPayroll: v })} />
+          <label className={lbl}>Use EL as paid in payroll</label>
+          <TriBoolSelect
+            value={er.useAsPaidInPayroll}
+            onChange={(v) => patch({ useAsPaidInPayroll: v })}
+            className={policy ? inputClass : undefined}
+          />
         </div>
       </div>
 
       {(er.earningType === '' || er.earningType === 'attendance_based') && (
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">Min days for first EL</label>
+            <label className={lbl}>Min days for first EL</label>
             <input
               type="number"
               min={1}
@@ -231,25 +272,23 @@ export function DepartmentEarnedLeaveOverridesSection({
                 })
               }
               placeholder="Global"
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+              className={inputClass}
             />
           </div>
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">Days per 1 EL</label>
+            <label className={lbl}>Days per 1 EL</label>
             <input
               type="number"
               min={1}
               max={31}
               value={er.attendanceRules.daysPerEL ?? ''}
-              onChange={(e) =>
-                patchAr({ daysPerEL: e.target.value === '' ? null : parseInt(e.target.value, 10) })
-              }
+              onChange={(e) => patchAr({ daysPerEL: e.target.value === '' ? null : parseInt(e.target.value, 10) })}
               placeholder="Global"
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+              className={inputClass}
             />
           </div>
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">Max EL per month</label>
+            <label className={lbl}>Max EL per month</label>
             <input
               type="number"
               min={0}
@@ -259,11 +298,11 @@ export function DepartmentEarnedLeaveOverridesSection({
                 patchAr({ maxELPerMonth: e.target.value === '' ? null : parseInt(e.target.value, 10) })
               }
               placeholder="Global"
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+              className={inputClass}
             />
           </div>
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">Max EL per year</label>
+            <label className={lbl}>Max EL per year</label>
             <input
               type="number"
               min={0}
@@ -273,28 +312,115 @@ export function DepartmentEarnedLeaveOverridesSection({
                 patchAr({ maxELPerYear: e.target.value === '' ? null : parseInt(e.target.value, 10) })
               }
               placeholder="Global"
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+              className={inputClass}
             />
           </div>
         </div>
       )}
 
       {(er.earningType === '' || er.earningType === 'attendance_based') && (
-        <div className="mt-4">
-          <div className="mb-2 flex items-center justify-between">
-            <label className="text-xs font-medium text-slate-700 dark:text-slate-300">
-              Custom attendance ranges (optional — replaces global ranges when non-empty)
-            </label>
+        <div className="mt-4 border-t border-gray-200 pt-4 dark:border-gray-800">
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <h4 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">
+                Attendance ranges (cumulative)
+              </h4>
+              <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                Optional — when non-empty, replaces global policy ranges for this department. Same stacking rule as global: each range adds its EL when{' '}
+                <strong>credit days</strong> reach that range&apos;s <strong>min</strong> threshold (then max EL/month cap).
+              </p>
+            </div>
             <button
               type="button"
               onClick={addRange}
-              className="rounded-lg bg-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-800 hover:bg-slate-300 dark:bg-slate-600 dark:text-white dark:hover:bg-slate-500"
+              className={
+                policy
+                  ? 'rounded-xl bg-indigo-600 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-indigo-700'
+                  : 'rounded-lg bg-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-800 hover:bg-slate-300 dark:bg-slate-600 dark:text-white dark:hover:bg-slate-500'
+              }
             >
-              + Add range
+              Add range
             </button>
           </div>
           {er.attendanceRules.attendanceRanges.length === 0 ? (
-            <p className="text-[10px] text-slate-400">No department ranges — global policy ranges apply.</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              No department ranges — global policy ranges apply.
+            </p>
+          ) : policy ? (
+            <div className="grid grid-cols-1 gap-4">
+              {er.attendanceRules.attendanceRanges.map((range, index) => (
+                <div
+                  key={index}
+                  className="space-y-4 rounded-xl border border-gray-100 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/50"
+                >
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-medium text-gray-900 dark:text-white">Range {index + 1}</h4>
+                    <button
+                      type="button"
+                      onClick={() => removeRange(index)}
+                      className="rounded-xl bg-red-600 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-red-700"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400">
+                        Min Days
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={31}
+                        value={range.minDays}
+                        onChange={(e) => updateRange(index, 'minDays', parseInt(e.target.value, 10))}
+                        className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-medium text-gray-900 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-700 dark:bg-[#0F172A] dark:text-white"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400">
+                        Max Days
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={31}
+                        value={range.maxDays}
+                        onChange={(e) => updateRange(index, 'maxDays', parseInt(e.target.value, 10))}
+                        className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-medium text-gray-900 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-700 dark:bg-[#0F172A] dark:text-white"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400">
+                        EL Earned
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={10}
+                        value={range.elEarned}
+                        onChange={(e) => updateRange(index, 'elEarned', parseInt(e.target.value, 10))}
+                        className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-medium text-gray-900 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-700 dark:bg-[#0F172A] dark:text-white"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="block text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400">
+                        Description
+                      </label>
+                      <input
+                        type="text"
+                        value={range.description || ''}
+                        onChange={(e) => updateRange(index, 'description', e.target.value)}
+                        className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-medium text-gray-900 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-700 dark:bg-[#0F172A] dark:text-white"
+                      />
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-gray-100 bg-gray-50 p-3 text-xs text-gray-500 dark:border-gray-700 dark:bg-gray-800/50 dark:text-gray-400">
+                    {String(range.minDays).padStart(2, '0')}-{range.maxDays} days = {range.elEarned} EL
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : (
             <div className="space-y-2">
               {er.attendanceRules.attendanceRanges.map((row, index) => (
@@ -347,37 +473,33 @@ export function DepartmentEarnedLeaveOverridesSection({
       {(er.earningType === '' || er.earningType === 'fixed') && (
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">
-              Fixed EL per month (unless using paid-leaves count ÷ 12 below)
-            </label>
+            <label className={lbl}>Fixed EL per month</label>
             <input
               type="number"
               min={0}
               max={10}
               step={0.5}
               value={er.fixedRules.elPerMonth ?? ''}
-              onChange={(e) =>
-                patchFr({ elPerMonth: e.target.value === '' ? null : parseFloat(e.target.value) })
-              }
-              placeholder="Global / use paid leaves ÷ 12"
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+              onChange={(e) => patchFr({ elPerMonth: e.target.value === '' ? null : parseFloat(e.target.value) })}
+              placeholder="Global"
+              className={inputClass}
             />
-            <p className="mt-1 text-[10px] text-slate-400">
-              If &quot;Paid leaves count&quot; is set above, fixed EL may use that ÷ 12 instead (existing behaviour).
-            </p>
+            {!policy && (
+              <p className="mt-1 text-[10px] text-slate-400">
+                If &quot;Paid leaves count&quot; is set elsewhere, fixed EL may use that ÷ 12 instead (existing behaviour).
+              </p>
+            )}
           </div>
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-slate-700 dark:text-slate-300">Max EL per year (fixed)</label>
+            <label className={lbl}>Max EL per year (fixed)</label>
             <input
               type="number"
               min={0}
               max={365}
               value={er.fixedRules.maxELPerYear ?? ''}
-              onChange={(e) =>
-                patchFr({ maxELPerYear: e.target.value === '' ? null : parseInt(e.target.value, 10) })
-              }
+              onChange={(e) => patchFr({ maxELPerYear: e.target.value === '' ? null : parseInt(e.target.value, 10) })}
               placeholder="Global"
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+              className={inputClass}
             />
           </div>
         </div>
@@ -387,7 +509,11 @@ export function DepartmentEarnedLeaveOverridesSection({
         <button
           type="button"
           onClick={() => onChange(defaultEarnedLeaveForm())}
-          className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
+          className={
+            policy
+              ? 'rounded-xl border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800'
+              : 'rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700'
+          }
         >
           Reset EL form (inherit global)
         </button>
@@ -402,6 +528,27 @@ export function DepartmentEarnedLeaveOverridesSection({
           </button>
         )}
       </div>
-    </div>
+    </>
   );
+
+  if (policy) {
+    return (
+      <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-[#1E293B]">
+        <div className="flex items-center gap-3 border-b border-gray-100 px-6 py-6 dark:border-gray-800 sm:px-8">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-indigo-100 bg-indigo-50 text-indigo-600 dark:border-indigo-800/50 dark:bg-indigo-900/30 dark:text-indigo-400">
+            <Calculator className="h-5 w-5" />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold uppercase tracking-wider text-gray-900 dark:text-white">EL Earning Rules</h3>
+            <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+              Same structure as global leave policy — department overrides only.
+            </p>
+          </div>
+        </div>
+        <div className="space-y-6 p-6 sm:p-8">{body}</div>
+      </section>
+    );
+  }
+
+  return <div className="mt-8 border-t border-slate-200 pt-6 dark:border-slate-600">{body}</div>;
 }

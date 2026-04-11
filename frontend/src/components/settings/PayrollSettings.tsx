@@ -5,7 +5,8 @@ import { api, apiRequest } from '@/lib/api';
 import { toast } from 'react-toastify';
 import Spinner from '@/components/Spinner';
 import { SettingsSkeleton } from './SettingsSkeleton';
-import { Rocket, Info, Save, ChevronRight } from 'lucide-react';
+import { Rocket, Save, ChevronRight } from 'lucide-react';
+import { IncludeMissingPayrollComponentsCard } from './shared/IncludeMissingPayrollComponentsCard';
 
 const PayrollSettings = () => {
     const [payslipReleaseRequired, setPayslipReleaseRequired] = useState<boolean>(true);
@@ -206,23 +207,10 @@ const PayrollSettings = () => {
                                 </div>
                             </div>
 
-                            <div className="p-6 rounded-xl bg-blue-50/50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/20 flex items-center justify-between">
-                                <div className="flex items-center gap-4">
-                                    <div className="p-2.5 rounded-lg bg-white dark:bg-[#1E293B] shadow-sm border border-blue-100/50 dark:border-blue-800">
-                                        <Info className="h-4 w-4 text-blue-500" />
-                                    </div>
-                                    <div className="space-y-0.5">
-                                        <p className="text-sm font-bold text-blue-900 dark:text-blue-100">Include Missing Components</p>
-                                        <p className="text-[10px] text-blue-700 dark:text-blue-400/80">Include standard allowances/deductions even if employee has no overrides.</p>
-                                    </div>
-                                </div>
-                                <button
-                                    onClick={() => setIncludeMissing(!includeMissing)}
-                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-300 ${includeMissing ? 'bg-blue-600 shadow-[0_0_12px_rgba(37,99,235,0.3)]' : 'bg-gray-200'}`}
-                                >
-                                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-300 ${includeMissing ? 'translate-x-6' : 'translate-x-1'}`} />
-                                </button>
-                            </div>
+                            <IncludeMissingPayrollComponentsCard
+                                checked={includeMissing}
+                                onChange={setIncludeMissing}
+                            />
                         </div>
                     </section>
 

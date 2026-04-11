@@ -12,10 +12,41 @@ const { detectAndAssignShift } = require('../../shifts/services/shiftDetectionSe
 const { calculateMonthlySummary } = require('../../attendance/services/summaryCalculationService');
 const { validateOTRequest } = require('../../shared/services/conflictValidationService');
 const { checkJurisdiction } = require('../../shared/middleware/dataScopeMiddleware');
-const OvertimeSettings = require('../model/OvertimeSettings');
 const Settings = require('../../settings/model/Settings');
 const { getMergedOtConfig } = require('./otConfigResolver');
 const { applyOtHoursPolicy } = require('./otHoursPolicyService');
+
+function validateOtApplicationDateWindow(date, mergedPolicy, userRole) {
+  if (userRole === 'super_admin') {
+    return { ok: true };
+  }
+  const policy = mergedPolicy || {};
+  const now = new Date();
+  const istNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  const today = new Date(istNow.getFullYear(), istNow.getMonth(), istNow.getDate());
+  const minDate = new Date(today);
+  const maxDate = new Date(today);
+
+  if (policy.allowBackdated && (policy.maxBackdatedDays ?? 0) > 0) {
+    minDate.setDate(minDate.getDate() - Number(policy.maxBackdatedDays || 0));
+  }
+  if (policy.allowFutureDated && (policy.maxAdvanceDays ?? 0) > 0) {
+    maxDate.setDate(maxDate.getDate() + Number(policy.maxAdvanceDays || 0));
+  }
+
+  const toYmd = (d) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const minDateStr = toYmd(minDate);
+  const maxDateStr = toYmd(maxDate);
+
+  if (date < minDateStr || date > maxDateStr) {
+    return {
+      ok: false,
+      message: `OT date must be within allowed range (${minDateStr} to ${maxDateStr}) as per OT settings.`,
+    };
+  }
+  return { ok: true };
+}
 
 function buildOtWorkflow(userId, otSettings) {
   const approvalSteps = [];
@@ -98,7 +129,7 @@ function resolveSegmentPunchWindow(attendanceRecord) {
  * @param {String} userId - User ID creating the request
  * @returns {Object} - Result
  */
-const createOTRequest = async (data, userId) => {
+const createOTRequest = async (data, userId, options = {}) => {
   try {
     const {
       employeeId,
@@ -134,6 +165,21 @@ const createOTRequest = async (data, userId) => {
       { path: 'division_id', select: 'name' },
       { path: 'department_id', select: 'name' }
     ]);
+
+    const deptIdEarly = employee.department_id?._id || employee.department_id;
+    const divIdEarly = employee.division_id?._id || employee.division_id;
+    const mergedPolicyEarly = await getMergedOtConfig(deptIdEarly, divIdEarly);
+    const dateWindow = validateOtApplicationDateWindow(
+      date,
+      mergedPolicyEarly,
+      options.userRole
+    );
+    if (!dateWindow.ok) {
+      return {
+        success: false,
+        message: dateWindow.message,
+      };
+    }
 
     // Validate OT request - check conflicts and attendance
     const validation = await validateOTRequest(employeeId, employeeNumber, date);
@@ -244,9 +290,7 @@ const createOTRequest = async (data, userId) => {
     const diffMs = otOutTimeDate.getTime() - otInTime.getTime();
     let otHoursRaw = Math.round((diffMs / (1000 * 60 * 60)) * 100) / 100;
 
-    const deptId = employee.department_id?._id || employee.department_id;
-    const divId = employee.division_id?._id || employee.division_id;
-    const mergedPolicy = await getMergedOtConfig(deptId, divId);
+    const mergedPolicy = mergedPolicyEarly;
     const policyResult = applyOtHoursPolicy(otHoursRaw, mergedPolicy);
     if (!policyResult.eligible) {
       return {
@@ -277,8 +321,7 @@ const createOTRequest = async (data, userId) => {
       };
     }
 
-    const otSettings = await OvertimeSettings.getActiveSettings();
-    const workflowData = buildOtWorkflow(userId, otSettings);
+    const workflowData = buildOtWorkflow(userId, { workflow: mergedPolicy.workflow });
 
     const otPolicySnapshot = {
       rawOtHours: policyResult.rawHours,
@@ -768,8 +811,7 @@ const convertExtraHoursToOT = async (employeeId, employeeNumber, date, userId, u
       };
     }
 
-    const otSettings = await OvertimeSettings.getActiveSettings();
-    const workflowData = buildOtWorkflow(userId, otSettings);
+    const workflowData = buildOtWorkflow(userId, { workflow: mergedPolicy.workflow });
 
     const otPolicySnapshot = {
       rawOtHours: policyResult.rawHours,

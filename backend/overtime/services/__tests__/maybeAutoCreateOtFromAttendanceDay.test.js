@@ -9,7 +9,6 @@ jest.mock('../../../attendance/model/AttendanceDaily');
 jest.mock('../../model/OT');
 jest.mock('../../../shifts/model/Shift');
 jest.mock('../../../employees/model/Employee');
-jest.mock('../../model/OvertimeSettings');
 jest.mock('../../../attendance/services/summaryCalculationService', () => ({
   calculateMonthlySummary: jest.fn().mockResolvedValue(undefined),
 }));
@@ -20,7 +19,6 @@ const AttendanceDaily = require('../../../attendance/model/AttendanceDaily');
 const OT = require('../../model/OT');
 const Shift = require('../../../shifts/model/Shift');
 const Employee = require('../../../employees/model/Employee');
-const OvertimeSettings = require('../../model/OvertimeSettings');
 const User = require('../../../users/model/User');
 const { getMergedOtConfig } = require('../otConfigResolver');
 
@@ -34,6 +32,7 @@ const eligibleMerged = {
   roundingMinutes: null,
   roundUpIfFractionMinutesGte: null,
   otHourRanges: [],
+  workflow: { steps: [], finalAuthority: { role: 'hr', anyHRCanApprove: false } },
 };
 
 function makeEmployee() {
@@ -73,7 +72,6 @@ function makeAttendance(empNo, date, extraHours, shiftId) {
 beforeEach(() => {
   jest.clearAllMocks();
   getMergedOtConfig.mockResolvedValue(eligibleMerged);
-  OvertimeSettings.getActiveSettings = jest.fn().mockResolvedValue({ workflow: { steps: [] } });
   Shift.findById.mockResolvedValue({ endTime: '18:00' });
   User.findOne.mockResolvedValueOnce({ _id: new mongoose.Types.ObjectId() });
 });

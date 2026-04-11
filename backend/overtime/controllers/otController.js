@@ -7,7 +7,6 @@ const OT = require('../model/OT');
 const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
 const ConfusedShift = require('../../shifts/model/ConfusedShift');
 const Employee = require('../../employees/model/Employee');
-const OvertimeSettings = require('../model/OvertimeSettings');
 const {
   createOTRequest,
   approveOTRequest,
@@ -45,41 +44,6 @@ exports.createOT = async (req, res) => {
         success: false,
         message: 'Employee, date, and OT out time are required',
       });
-    }
-
-    // Validate date window from OT settings.
-    if (req.user?.role !== 'super_admin') {
-      const settings = await OvertimeSettings.getActiveSettings();
-      const policy = settings || {
-        allowBackdated: false,
-        maxBackdatedDays: 0,
-        allowFutureDated: true,
-        maxAdvanceDays: 365,
-      };
-
-      const now = new Date();
-      const istNow = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-      const today = new Date(istNow.getFullYear(), istNow.getMonth(), istNow.getDate());
-      const minDate = new Date(today);
-      const maxDate = new Date(today);
-
-      if (policy.allowBackdated && (policy.maxBackdatedDays ?? 0) > 0) {
-        minDate.setDate(minDate.getDate() - Number(policy.maxBackdatedDays || 0));
-      }
-      if (policy.allowFutureDated && (policy.maxAdvanceDays ?? 0) > 0) {
-        maxDate.setDate(maxDate.getDate() + Number(policy.maxAdvanceDays || 0));
-      }
-
-      const toYmd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      const minDateStr = toYmd(minDate);
-      const maxDateStr = toYmd(maxDate);
-
-      if (date < minDateStr || date > maxDateStr) {
-        return res.status(400).json({
-          success: false,
-          message: `OT date must be within allowed range (${minDateStr} to ${maxDateStr}) as per OT settings.`,
-        });
-      }
     }
 
     // --- SCOPING & AUTHORIZATION (New Logic) ---
@@ -151,7 +115,8 @@ exports.createOT = async (req, res) => {
         photoEvidence,
         geoLocation
       },
-      req.user?.userId || req.user?._id
+      req.user?.userId || req.user?._id,
+      { userRole: req.user?.role }
     );
 
     if (!result.success) {

@@ -380,6 +380,30 @@ const departmentSettingsSchema = new mongoose.Schema(
         default: null,
         min: 0,
       },
+      /** null = inherit global OvertimeSettings */
+      allowBackdated: {
+        type: Boolean,
+        default: null,
+      },
+      maxBackdatedDays: {
+        type: Number,
+        default: null,
+        min: 0,
+      },
+      allowFutureDated: {
+        type: Boolean,
+        default: null,
+      },
+      maxAdvanceDays: {
+        type: Number,
+        default: null,
+        min: 0,
+      },
+      /** Full override of global OT workflow when set; null/omit = inherit global */
+      workflow: {
+        type: mongoose.Schema.Types.Mixed,
+        default: undefined,
+      },
     },
 
     // Attendance Deduction Rules (Combined Late-in + Early-out)

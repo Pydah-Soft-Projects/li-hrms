@@ -36,6 +36,24 @@ async function getMergedOtConfig(departmentId, divisionId = null) {
     return def;
   };
 
+  const boolPick = (key, fallback) => {
+    if (d[key] !== undefined && d[key] !== null) return Boolean(d[key]);
+    if (g[key] !== undefined && g[key] !== null) return Boolean(g[key]);
+    return Boolean(fallback);
+  };
+
+  const intPick = (key, fallback) => {
+    if (d[key] !== undefined && d[key] !== null) return num(d[key], fallback);
+    if (g[key] !== undefined && g[key] !== null) return num(g[key], fallback);
+    return num(fallback, 0);
+  };
+
+  // OT approval workflow is organization-wide only; department `ot.workflow` is ignored.
+  const workflowMerged =
+    g.workflow && typeof g.workflow === 'object'
+      ? g.workflow
+      : { isEnabled: false, steps: [], finalAuthority: { role: 'hr', anyHRCanApprove: false } };
+
   const minFromDeptOrGlobal =
     d.minOTHours !== undefined && d.minOTHours !== null
       ? d.minOTHours
@@ -61,11 +79,14 @@ async function getMergedOtConfig(departmentId, divisionId = null) {
     minOTHours: num(minFromDeptOrGlobal, 0),
     roundingMinutes: roundingMinutesMerged,
     roundUpIfFractionMinutesGte: pick('roundUpIfFractionMinutesGte', null),
-    otHourRanges: Array.isArray(d.otHourRanges)
-      ? d.otHourRanges
-      : Array.isArray(g.otHourRanges)
-        ? g.otHourRanges
-        : [],
+    // Only treat department slabs as an override when at least one range is defined;
+    // an empty array would otherwise wipe global slabs after save.
+    otHourRanges:
+      Array.isArray(d.otHourRanges) && d.otHourRanges.length > 0
+        ? d.otHourRanges
+        : Array.isArray(g.otHourRanges)
+          ? g.otHourRanges
+          : [],
     autoCreateOtRequest: autoInherited,
     defaultWorkingHoursPerDay: num(pick('defaultWorkingHoursPerDay', 8), 8),
     workingHoursPerDay:
@@ -85,6 +106,11 @@ async function getMergedOtConfig(departmentId, divisionId = null) {
       d.otMultiplier !== undefined && d.otMultiplier !== null ? d.otMultiplier : g.multiplier,
       1.5
     ),
+    allowBackdated: boolPick('allowBackdated', false),
+    maxBackdatedDays: intPick('maxBackdatedDays', 0),
+    allowFutureDated: boolPick('allowFutureDated', true),
+    maxAdvanceDays: intPick('maxAdvanceDays', 365),
+    workflow: workflowMerged,
   };
 }
 

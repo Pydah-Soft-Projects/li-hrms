@@ -2,7 +2,7 @@ const Leave = require('../../leaves/model/Leave');
 const OT = require('../model/OT');
 const Employee = require('../../employees/model/Employee');
 const Shift = require('../../shifts/model/Shift');
-const OvertimeSettings = require('../model/OvertimeSettings');
+const { getMergedOtConfig } = require('./otConfigResolver');
 
 const ACTIVE_OT_STATUSES = ['pending', 'manager_approved', 'approved'];
 
@@ -191,8 +191,10 @@ async function upsertEsiOtForAttendanceDay({
     return { success: true, action: 'updated', data: ot, punchHours, otHours };
   }
 
-  const otSettings = await OvertimeSettings.getActiveSettings();
-  const workflow = createOtWorkflow(requestedByUserId, otSettings);
+  const deptId = employee.department_id?._id || employee.department_id;
+  const divId = employee.division_id?._id || employee.division_id;
+  const mergedOt = await getMergedOtConfig(deptId, divId);
+  const workflow = createOtWorkflow(requestedByUserId, { workflow: mergedOt.workflow });
   ot = await OT.create({
     employeeId: employee._id,
     employeeNumber: employee.emp_no,
