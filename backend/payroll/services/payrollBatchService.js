@@ -205,9 +205,8 @@ class PayrollBatchService {
 
             await batch.save();
 
-            await PayrollBatchService.syncSecondSalaryBatchStatusForRegularBatch(batch, newStatus, userId, reason);
-
-            // When batch is completed: debit EL used in payroll, then settle arrears and deductions
+            // When batch is completed: debit EL used in payroll, then settle arrears and deductions.
+            // Mirror second-salary batch status only after EL/settlement so balances match downstream flows.
             if (newStatus === 'complete') {
                 const elRecords = await PayrollRecord.find({
                     payrollBatchId: batch._id,
@@ -296,6 +295,8 @@ class PayrollBatchService {
                     }
                 }
             }
+
+            await PayrollBatchService.syncSecondSalaryBatchStatusForRegularBatch(batch, newStatus, userId, reason);
 
             return batch;
         } catch (error) {

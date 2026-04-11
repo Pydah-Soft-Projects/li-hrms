@@ -17,6 +17,8 @@ import {
   Search,
   ChevronRight,
   Settings,
+  Info,
+  Building2,
 } from 'lucide-react';
 import {
   DepartmentEarnedLeaveOverridesSection,
@@ -166,9 +168,20 @@ const DEPT_SETTINGS_MENU: {
   { id: 'payroll', label: 'Payroll', icon: Receipt, color: 'text-cyan-500', group: 'Finance' },
 ];
 
+const DEPT_CARD =
+  'overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm shadow-slate-200/30 ring-1 ring-slate-950/[0.02] dark:border-slate-800 dark:bg-[#1E293B] dark:shadow-none dark:ring-white/[0.04]';
+const DEPT_CARD_HEADER =
+  'flex flex-col gap-1 border-b border-slate-100 bg-gradient-to-b from-slate-50/90 to-white px-6 py-5 dark:border-slate-800 dark:from-slate-900/50 dark:to-[#1E293B] sm:px-8 sm:py-6';
+const DEPT_CARD_TITLE =
+  'text-base font-bold tracking-tight text-slate-900 dark:text-white';
+const DEPT_CARD_DESC =
+  'text-sm font-normal normal-case tracking-normal text-slate-600 dark:text-slate-400';
 const DEPT_INPUT =
-  'w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-medium text-gray-900 placeholder:text-gray-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-700 dark:bg-[#0F172A] dark:text-white transition-all';
-const DEPT_LABEL = 'mb-1.5 block text-xs font-bold text-gray-500 uppercase tracking-widest dark:text-gray-400';
+  'w-full rounded-xl border border-slate-200 bg-slate-50/90 px-4 py-2.5 text-sm font-medium text-slate-900 placeholder:text-slate-400 transition-all focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-600 dark:bg-[#0F172A] dark:text-white dark:placeholder:text-slate-500 dark:focus:border-indigo-400 dark:focus:ring-indigo-400/20';
+const DEPT_LABEL =
+  'mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400';
+const DEPT_NAV_GROUP =
+  'mb-2 px-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 sm:px-4';
 
 export default function DepartmentalSettingsPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -734,7 +747,7 @@ export default function DepartmentalSettingsPage() {
   const activeDeptTabLabel = DEPT_SETTINGS_MENU.find((m) => m.id === activeDeptTab)?.label ?? '';
 
   return (
-    <div className="flex min-h-screen overflow-x-hidden bg-[#F8FAFC] dark:bg-[#0F172A] -m-4 sm:-m-5 lg:-m-6">
+    <div className="flex min-h-screen items-start bg-[#F8FAFC] dark:bg-[#0F172A] -m-4 sm:-m-5 lg:-m-6">
       <button
         type="button"
         onClick={() => setDeptMobileMenuOpen(!deptMobileMenuOpen)}
@@ -752,32 +765,30 @@ export default function DepartmentalSettingsPage() {
       )}
 
       <aside
-        className={`fixed top-0 z-40 flex h-screen w-64 flex-shrink-0 flex-col overflow-hidden border-r border-gray-200 bg-white transition-transform duration-300 ease-in-out dark:border-gray-800 dark:bg-[#1E293B] sm:w-72 lg:sticky lg:flex lg:translate-x-0 ${
+        className={`fixed top-0 z-40 flex h-screen w-[17.5rem] shrink-0 flex-col overflow-hidden border-r border-slate-200/90 bg-white shadow-xl shadow-slate-300/20 transition-transform duration-300 ease-in-out dark:border-slate-800 dark:bg-[#1E293B] dark:shadow-none sm:w-72 lg:sticky lg:top-0 lg:flex lg:h-[min(100dvh,100vh)] lg:max-h-screen lg:translate-x-0 lg:self-start lg:shadow-none ${
           deptMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         }`}
       >
-        <div className="p-4 sm:p-6">
-          <div className="flex items-center gap-2 sm:gap-3">
-            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl bg-indigo-600 shadow-lg shadow-indigo-500/20 sm:h-10 sm:w-10">
-              <Settings className="h-4 w-4 text-white sm:h-5 sm:w-5" />
+        <div className="border-b border-slate-100 p-4 dark:border-slate-800 sm:p-6">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl bg-indigo-600 shadow-lg shadow-indigo-500/30">
+              <Settings className="h-5 w-5 text-white" />
             </div>
             <div className="min-w-0 flex-1">
-              <h1 className="truncate text-base font-bold text-gray-900 dark:text-white sm:text-lg">Dept. settings</h1>
-              <p className="truncate text-[9px] font-bold uppercase tracking-widest text-gray-400 sm:text-[10px]">
-                Superadmin · division scope
-              </p>
+              <h1 className="truncate text-lg font-bold tracking-tight text-slate-900 dark:text-white">Departmental settings</h1>
+              <p className="mt-0.5 truncate text-xs font-medium text-slate-500 dark:text-slate-400">Superadmin · division scope</p>
             </div>
           </div>
 
-          <div className="relative mt-4">
-            <label className={`${DEPT_LABEL} text-[10px] tracking-wider text-gray-400`}>Division (optional)</label>
+          <div className="relative mt-5">
+            <label className={DEPT_LABEL}>Division (optional)</label>
             <select
               value={selectedDivisionId}
               onChange={(e) => {
                 setSelectedDivisionId(e.target.value);
                 setSelectedDepartmentId('');
               }}
-              className={`${DEPT_INPUT} px-3 py-2 text-xs`}
+              className={`${DEPT_INPUT} mt-1.5 text-sm`}
             >
               <option value="">All divisions</option>
               {divisions.map((div) => (
@@ -788,12 +799,12 @@ export default function DepartmentalSettingsPage() {
             </select>
           </div>
 
-          <div className="relative mt-3">
-            <label className={`${DEPT_LABEL} text-[10px] tracking-wider text-gray-400`}>Department</label>
+          <div className="relative mt-4">
+            <label className={DEPT_LABEL}>Department</label>
             <select
               value={selectedDepartmentId}
               onChange={(e) => setSelectedDepartmentId(e.target.value)}
-              className={`${DEPT_INPUT} px-3 py-2 text-xs`}
+              className={`${DEPT_INPUT} mt-1.5 text-sm`}
               disabled={loading}
             >
               <option value="">Select department…</option>
@@ -805,24 +816,22 @@ export default function DepartmentalSettingsPage() {
             </select>
           </div>
 
-          <div className="relative mt-4 sm:mt-5">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+          <div className="relative mt-4">
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
-              placeholder="Search sections..."
+              placeholder="Search sections…"
               value={deptMenuSearch}
               onChange={(e) => setDeptMenuSearch(e.target.value)}
-              className="w-full rounded-xl border-none bg-gray-50 py-2 pl-9 pr-3 text-xs font-medium text-gray-900 shadow-sm placeholder:text-gray-400 focus:ring-2 focus:ring-indigo-500 dark:bg-[#0F172A] dark:text-white"
+              className="w-full rounded-xl border border-slate-200 bg-slate-50/80 py-2.5 pl-10 pr-3 text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-[#0F172A] dark:text-white dark:focus:border-indigo-400"
             />
           </div>
         </div>
 
-        <nav className="custom-scrollbar-dept flex-1 space-y-5 overflow-y-auto px-3 pb-8 sm:space-y-7 sm:px-4">
+        <nav className="custom-scrollbar-dept flex-1 space-y-6 overflow-y-auto px-3 pb-6 sm:space-y-8 sm:px-4 sm:pb-8">
           {Object.entries(groupedDeptMenu).map(([group, items]) => (
             <div key={group} className="space-y-1">
-              <h3 className="mb-2 truncate px-3 text-[9px] font-bold uppercase tracking-[0.2em] text-gray-400 sm:px-4 sm:text-[10px]">
-                {group}
-              </h3>
+              <h3 className={DEPT_NAV_GROUP}>{group}</h3>
               {(items as typeof DEPT_SETTINGS_MENU).map((item) => (
                 <button
                   key={item.id}
@@ -832,25 +841,25 @@ export default function DepartmentalSettingsPage() {
                     setActiveDeptTab(item.id);
                     setDeptMobileMenuOpen(false);
                   }}
-                  className={`group flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs font-semibold transition-all sm:px-4 sm:py-2.5 sm:text-sm disabled:cursor-not-allowed disabled:opacity-40 ${
+                  className={`group flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition-all sm:px-4 sm:py-3 disabled:cursor-not-allowed disabled:opacity-40 ${
                     activeDeptTab === item.id
-                      ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-400'
-                      : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-[#0F172A] dark:hover:text-white'
+                      ? 'bg-indigo-50 text-indigo-900 shadow-sm ring-1 ring-indigo-200/80 dark:bg-indigo-950/40 dark:text-indigo-100 dark:ring-indigo-800/60'
+                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-900/60 dark:hover:text-white'
                   }`}
                 >
-                  <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
+                  <div className="flex min-w-0 flex-1 items-center gap-3">
                     <item.icon
-                      className={`h-3.5 w-3.5 flex-shrink-0 sm:h-4 sm:w-4 ${
+                      className={`h-4 w-4 flex-shrink-0 ${
                         activeDeptTab === item.id
                           ? item.color
-                          : 'text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300'
+                          : 'text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300'
                       }`}
                     />
                     <span className="truncate">{item.label}</span>
                   </div>
                   <ChevronRight
-                    className={`h-3 w-3 flex-shrink-0 transition-transform ${
-                      activeDeptTab === item.id ? 'translate-x-1' : 'opacity-0 group-hover:opacity-100'
+                    className={`h-4 w-4 flex-shrink-0 text-slate-400 transition-transform dark:text-slate-500 ${
+                      activeDeptTab === item.id ? 'translate-x-0.5 text-indigo-500 dark:text-indigo-300' : 'opacity-0 group-hover:opacity-100'
                     }`}
                   />
                 </button>
@@ -859,60 +868,75 @@ export default function DepartmentalSettingsPage() {
           ))}
         </nav>
 
-        <div className="border-t border-gray-100 p-3 dark:border-gray-800 sm:p-4">
-          <div className="rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-700 p-3 text-[10px] text-white shadow-xl sm:p-4 sm:text-xs">
-            <p className="mb-1 font-bold opacity-90">Division-aware overrides</p>
-            <p className="leading-tight opacity-70">
-              Pick a division to edit division-specific rows; leave “All divisions” for department defaults.
-            </p>
+        <div className="border-t border-slate-100 p-3 dark:border-slate-800 sm:p-4">
+          <div className="flex gap-3 rounded-2xl border border-indigo-100 bg-indigo-50/90 p-4 dark:border-indigo-900/40 dark:bg-indigo-950/25">
+            <Info className="mt-0.5 h-5 w-5 flex-shrink-0 text-indigo-600 dark:text-indigo-400" aria-hidden />
+            <div>
+              <p className="text-xs font-bold text-indigo-950 dark:text-indigo-100">Division-aware overrides</p>
+              <p className="mt-1 text-xs leading-relaxed text-indigo-900/75 dark:text-indigo-200/80">
+                Choose a division to edit division-specific settings, or leave &quot;All divisions&quot; for the department default row.
+              </p>
+            </div>
           </div>
         </div>
       </aside>
 
       <main className="min-w-0 flex-1 overflow-x-hidden">
-        <div className="mx-auto w-full max-w-7xl p-3 sm:p-6 lg:p-8">
+        <div className="mx-auto w-full max-w-7xl p-4 sm:p-6 lg:p-10">
           {!selectedDepartmentId ? (
-            <div className="animate-in fade-in rounded-2xl border border-gray-200 bg-white p-12 text-center shadow-sm duration-500 dark:border-gray-800 dark:bg-[#1E293B]">
-              <Settings className="mx-auto h-12 w-12 text-gray-300 dark:text-gray-600" />
-              <h3 className="mt-4 text-lg font-bold text-gray-900 dark:text-white">Select a department</h3>
-              <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-                Optionally filter by division, then choose a department from the sidebar.
+            <div className={`${DEPT_CARD} animate-in fade-in p-10 text-center duration-500 sm:p-14`}>
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100 dark:bg-slate-800">
+                <Building2 className="h-8 w-8 text-slate-400 dark:text-slate-500" aria-hidden />
+              </div>
+              <h3 className="mt-6 text-xl font-bold tracking-tight text-slate-900 dark:text-white">Choose scope</h3>
+              <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-slate-600 dark:text-slate-400">
+                Optionally pick a division, then select a department in the sidebar. Division-specific rows override the department default
+                when a division is selected.
               </p>
             </div>
           ) : loadingSettings ? (
-            <div className="flex items-center justify-center py-16">
+            <div className="flex min-h-[40vh] flex-col items-center justify-center gap-4 rounded-2xl border border-slate-200/90 bg-white py-20 dark:border-slate-800 dark:bg-[#1E293B]">
               <Spinner />
-              <span className="ml-3 text-sm text-gray-600 dark:text-gray-400">Loading settings…</span>
+              <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Loading department settings…</span>
             </div>
           ) : (
-            <div className="animate-in fade-in slide-in-from-bottom-4 space-y-10 duration-500">
-              <div className="border-b border-gray-200 pb-5 dark:border-gray-800">
-                <div className="mb-2 flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400">
-                  <span>Settings</span>
-                  <ChevronRight className="h-3 w-3" />
-                  <span className="text-indigo-600 dark:text-indigo-400">Departmental</span>
-                  <ChevronRight className="h-3 w-3" />
-                  <span className="text-gray-600 dark:text-gray-300">{activeDeptTabLabel}</span>
+            <div className="animate-in fade-in slide-in-from-bottom-4 space-y-8 duration-500 sm:space-y-10">
+              <div className={DEPT_CARD}>
+                <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:p-5">
+                  <div className="min-w-0 flex-1">
+                    <h2 className="truncate text-lg font-semibold tracking-tight text-slate-900 dark:text-white sm:text-xl">
+                      {selectedDepartment?.name ?? 'Department'}
+                      {selectedDepartment?.code ? (
+                        <span className="ml-2 font-mono text-sm font-normal text-slate-500 dark:text-slate-400">
+                          {selectedDepartment.code}
+                        </span>
+                      ) : null}
+                    </h2>
+                    <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">
+                      {selectedDivisionId
+                        ? `${divisions.find((d) => d._id === selectedDivisionId)?.name ?? 'Division'} · division override`
+                        : 'All divisions · default row'}
+                    </p>
+                  </div>
+                  <div className="flex flex-shrink-0 items-center gap-2 sm:justify-end">
+                    <span className="inline-flex max-w-full items-center truncate rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700 ring-1 ring-slate-200/80 dark:bg-slate-800/80 dark:text-slate-200 dark:ring-slate-600/60">
+                      {activeDeptTabLabel}
+                    </span>
+                  </div>
                 </div>
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white">Department overrides</h2>
-                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                  {selectedDepartment?.name ?? 'Department'}
-                  {selectedDivisionId
-                    ? ` — ${divisions.find((d) => d._id === selectedDivisionId)?.name ?? 'Division'} (division-specific)`
-                    : ' — department default (all divisions)'}
-                  . Leave fields blank to inherit organization defaults.
-                </p>
               </div>
 
-              <div className="grid grid-cols-1 gap-10 xl:grid-cols-3">
+              <div className="grid grid-cols-1 gap-8 xl:grid-cols-3 xl:gap-10">
                 <div className="space-y-8 xl:col-span-2">
                   {activeDeptTab === 'leaves' && (
                     <div className="space-y-6">
-                      <p className="text-sm text-gray-500 dark:text-gray-400">
-                        Earned leave (EL) overrides use the same layout as <strong>Admin → Settings → Leave Policy</strong>. Other leave
-                        quotas stay on the global policy for now; save still applies EL overrides with <strong>Save all settings</strong> (or
-                        use the actions inside the EL card).
-                      </p>
+                      <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50/50 p-4 dark:border-emerald-900/40 dark:bg-emerald-950/20 sm:p-5">
+                        <p className="text-sm leading-relaxed text-emerald-950/90 dark:text-emerald-100/90">
+                          <span className="font-semibold text-emerald-900 dark:text-emerald-100">Earned leave (EL)</span> matches{' '}
+                          <strong>Admin → Settings → Leave Policy</strong>. Use <strong>Save all settings</strong> on the right or the actions
+                          inside the EL card.
+                        </p>
+                      </div>
             <DepartmentEarnedLeaveOverridesSection
                         presentation="policy"
               value={formData.leaves.earnedLeave ?? defaultEarnedLeaveForm()}
@@ -954,7 +978,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.loans.interestRate ?? ''}
                   onChange={(e) => handleInputChange('loans', 'interestRate', e.target.value ? parseFloat(e.target.value) : null)}
                   placeholder="e.g., 8, 10"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  className={DEPT_INPUT}
                 />
               </div>
               <div>
@@ -964,7 +988,7 @@ export default function DepartmentalSettingsPage() {
                 <select
                   value={formData.loans.isInterestApplicable === null ? '' : formData.loans.isInterestApplicable ? 'true' : 'false'}
                   onChange={(e) => handleInputChange('loans', 'isInterestApplicable', e.target.value === '' ? null : e.target.value === 'true')}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  className={DEPT_INPUT}
                 >
                   <option value="">Use Global Default</option>
                   <option value="true">Yes</option>
@@ -981,7 +1005,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.loans.minTenure ?? ''}
                   onChange={(e) => handleInputChange('loans', 'minTenure', e.target.value ? parseInt(e.target.value) : null)}
                   placeholder="e.g., 12"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  className={DEPT_INPUT}
                 />
               </div>
               <div>
@@ -994,7 +1018,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.loans.maxTenure ?? ''}
                   onChange={(e) => handleInputChange('loans', 'maxTenure', e.target.value ? parseInt(e.target.value) : null)}
                   placeholder="e.g., 24"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  className={DEPT_INPUT}
                 />
               </div>
               <div>
@@ -1007,7 +1031,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.loans.minAmount ?? ''}
                   onChange={(e) => handleInputChange('loans', 'minAmount', e.target.value ? parseFloat(e.target.value) : null)}
                   placeholder="e.g., 1000"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  className={DEPT_INPUT}
                 />
               </div>
               <div>
@@ -1020,7 +1044,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.loans.maxAmount ?? ''}
                   onChange={(e) => handleInputChange('loans', 'maxAmount', e.target.value ? parseFloat(e.target.value) : null)}
                   placeholder="Leave blank for unlimited"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  className={DEPT_INPUT}
                 />
               </div>
               <div>
@@ -1033,7 +1057,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.loans.maxPerEmployee ?? ''}
                   onChange={(e) => handleInputChange('loans', 'maxPerEmployee', e.target.value ? parseFloat(e.target.value) : null)}
                   placeholder="Leave blank for unlimited"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  className={DEPT_INPUT}
                 />
               </div>
               <div>
@@ -1046,7 +1070,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.loans.maxActivePerEmployee ?? ''}
                   onChange={(e) => handleInputChange('loans', 'maxActivePerEmployee', e.target.value ? parseInt(e.target.value) : null)}
                   placeholder="e.g., 1"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  className={DEPT_INPUT}
                 />
               </div>
               <div>
@@ -1059,7 +1083,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.loans.minServicePeriod ?? ''}
                   onChange={(e) => handleInputChange('loans', 'minServicePeriod', e.target.value ? parseInt(e.target.value) : null)}
                   placeholder="e.g., 6"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  className={DEPT_INPUT}
                 />
               </div>
             </div>
@@ -1089,7 +1113,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.salaryAdvance.interestRate ?? ''}
                   onChange={(e) => handleInputChange('salaryAdvance', 'interestRate', e.target.value ? parseFloat(e.target.value) : null)}
                   placeholder="e.g., 8, 10"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  className={DEPT_INPUT}
                 />
               </div>
               <div>
@@ -1099,7 +1123,7 @@ export default function DepartmentalSettingsPage() {
                 <select
                   value={formData.salaryAdvance.isInterestApplicable === null ? '' : formData.salaryAdvance.isInterestApplicable ? 'true' : 'false'}
                   onChange={(e) => handleInputChange('salaryAdvance', 'isInterestApplicable', e.target.value === '' ? null : e.target.value === 'true')}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  className={DEPT_INPUT}
                 >
                   <option value="">Use Global Default</option>
                   <option value="true">Yes</option>
@@ -1116,7 +1140,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.salaryAdvance.minTenure ?? ''}
                   onChange={(e) => handleInputChange('salaryAdvance', 'minTenure', e.target.value ? parseInt(e.target.value) : null)}
                   placeholder="e.g., 1"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  className={DEPT_INPUT}
                 />
               </div>
               <div>
@@ -1129,7 +1153,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.salaryAdvance.maxTenure ?? ''}
                   onChange={(e) => handleInputChange('salaryAdvance', 'maxTenure', e.target.value ? parseInt(e.target.value) : null)}
                   placeholder="e.g., 3"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  className={DEPT_INPUT}
                 />
               </div>
               <div>
@@ -1142,7 +1166,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.salaryAdvance.minAmount ?? ''}
                   onChange={(e) => handleInputChange('salaryAdvance', 'minAmount', e.target.value ? parseFloat(e.target.value) : null)}
                   placeholder="e.g., 1000"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  className={DEPT_INPUT}
                 />
               </div>
               <div>
@@ -1155,7 +1179,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.salaryAdvance.maxAmount ?? ''}
                   onChange={(e) => handleInputChange('salaryAdvance', 'maxAmount', e.target.value ? parseFloat(e.target.value) : null)}
                   placeholder="Leave blank for unlimited"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  className={DEPT_INPUT}
                 />
               </div>
               <div>
@@ -1168,7 +1192,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.salaryAdvance.maxPerEmployee ?? ''}
                   onChange={(e) => handleInputChange('salaryAdvance', 'maxPerEmployee', e.target.value ? parseFloat(e.target.value) : null)}
                   placeholder="Leave blank for unlimited"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  className={DEPT_INPUT}
                 />
               </div>
               <div>
@@ -1181,7 +1205,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.salaryAdvance.maxActivePerEmployee ?? ''}
                   onChange={(e) => handleInputChange('salaryAdvance', 'maxActivePerEmployee', e.target.value ? parseInt(e.target.value) : null)}
                   placeholder="e.g., 1"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  className={DEPT_INPUT}
                 />
               </div>
               <div>
@@ -1194,7 +1218,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.salaryAdvance.minServicePeriod ?? ''}
                   onChange={(e) => handleInputChange('salaryAdvance', 'minServicePeriod', e.target.value ? parseInt(e.target.value) : null)}
                   placeholder="e.g., 0"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  className={DEPT_INPUT}
                 />
               </div>
             </div>
@@ -1222,7 +1246,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.permissions.perDayLimit ?? ''}
                   onChange={(e) => handleInputChange('permissions', 'perDayLimit', e.target.value ? parseInt(e.target.value) : null)}
                   placeholder="0 = unlimited"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  className={DEPT_INPUT}
                 />
               </div>
               <div>
@@ -1235,7 +1259,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.permissions.monthlyLimit ?? ''}
                   onChange={(e) => handleInputChange('permissions', 'monthlyLimit', e.target.value ? parseInt(e.target.value) : null)}
                   placeholder="0 = unlimited"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  className={DEPT_INPUT}
                 />
               </div>
               <div>
@@ -1245,7 +1269,7 @@ export default function DepartmentalSettingsPage() {
                 <select
                   value={formData.permissions.deductFromSalary === null ? '' : formData.permissions.deductFromSalary ? 'true' : 'false'}
                   onChange={(e) => handleInputChange('permissions', 'deductFromSalary', e.target.value === '' ? null : e.target.value === 'true')}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  className={DEPT_INPUT}
                 >
                   <option value="">Use Global Default</option>
                   <option value="true">Yes</option>
@@ -1262,7 +1286,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.permissions.deductionAmount ?? ''}
                   onChange={(e) => handleInputChange('permissions', 'deductionAmount', e.target.value ? parseFloat(e.target.value) : null)}
                   placeholder="Amount per permission"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  className={DEPT_INPUT}
                 />
               </div>
             </div>
@@ -1391,7 +1415,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.attendance?.deductionRules?.combinedCountThreshold ?? ''}
                   onChange={(e) => handleInputChange('attendance', 'deductionRules', e.target.value ? parseInt(e.target.value) : null, 'combinedCountThreshold')}
                   placeholder="e.g., 4"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  className={DEPT_INPUT}
                 />
                 <p className="mt-1 text-[10px] text-slate-400 dark:text-slate-500">Combined count (late-ins + early-outs)</p>
               </div>
@@ -1402,7 +1426,7 @@ export default function DepartmentalSettingsPage() {
                 <select
                   value={formData.attendance?.deductionRules?.deductionType ?? ''}
                   onChange={(e) => handleInputChange('attendance', 'deductionRules', e.target.value || null, 'deductionType')}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  className={DEPT_INPUT}
                 >
                   <option value="">Select Type</option>
                   <option value="half_day">Half Day</option>
@@ -1422,7 +1446,7 @@ export default function DepartmentalSettingsPage() {
                     value={formData.attendance?.deductionRules?.deductionAmount ?? ''}
                     onChange={(e) => handleInputChange('attendance', 'deductionRules', e.target.value ? parseFloat(e.target.value) : null, 'deductionAmount')}
                     placeholder="e.g., 500"
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                    className={DEPT_INPUT}
                   />
                 </div>
               )}
@@ -1436,7 +1460,7 @@ export default function DepartmentalSettingsPage() {
                   value={formData.attendance?.deductionRules?.minimumDuration ?? ''}
                   onChange={(e) => handleInputChange('attendance', 'deductionRules', e.target.value ? parseInt(e.target.value) : null, 'minimumDuration')}
                   placeholder="e.g., 60 (1 hour)"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  className={DEPT_INPUT}
                 />
                 <p className="mt-1 text-[10px] text-slate-400 dark:text-slate-500">Only count late-ins/early-outs {'>='} this duration</p>
               </div>
@@ -1447,7 +1471,7 @@ export default function DepartmentalSettingsPage() {
                 <select
                   value={formData.attendance?.deductionRules?.calculationMode ?? ''}
                   onChange={(e) => handleInputChange('attendance', 'deductionRules', e.target.value || null, 'calculationMode')}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  className={DEPT_INPUT}
                 >
                   <option value="">Select Mode</option>
                   <option value="proportional">Proportional (with partial deductions)</option>
@@ -1497,7 +1521,7 @@ export default function DepartmentalSettingsPage() {
                   min="0"
                   value={formData.attendance?.earlyOut?.allowedDurationMinutes ?? 0}
                   onChange={(e) => handleInputChange('attendance', 'earlyOut', e.target.value ? parseInt(e.target.value) : 0, 'allowedDurationMinutes')}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  className={DEPT_INPUT}
                 />
                 <p className="mt-1 text-[10px] text-slate-400 dark:text-slate-500">Minutes allowed without deduction</p>
               </div>
@@ -1510,7 +1534,7 @@ export default function DepartmentalSettingsPage() {
                   min="0"
                   value={formData.attendance?.earlyOut?.minimumDuration ?? 0}
                   onChange={(e) => handleInputChange('attendance', 'earlyOut', e.target.value ? parseInt(e.target.value) : 0, 'minimumDuration')}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                  className={DEPT_INPUT}
                 />
                 <p className="mt-1 text-[10px] text-slate-400 dark:text-slate-500">Only early-outs {'>='} this duration will count</p>
               </div>
@@ -1687,35 +1711,35 @@ export default function DepartmentalSettingsPage() {
                   )}
                 </div>
 
-                <div className="space-y-8">
-                  <div className="rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-700 p-8 text-white shadow-xl shadow-indigo-500/20">
-                    <h3 className="text-lg font-bold">Save changes</h3>
-                    <p className="mt-2 text-xs leading-relaxed opacity-80">
-                      Applies all overrides for{' '}
-                      <span className="font-semibold">{selectedDepartment?.name ?? 'this department'}</span>
-                      {selectedDivisionId
-                        ? ` in ${divisions.find((d) => d._id === selectedDivisionId)?.name ?? 'division'}`
-                        : ''}
-                      .
-                    </p>
-                    <div className="mt-6 flex flex-col gap-3">
+                <div className="space-y-6 xl:sticky xl:top-6 xl:self-start">
+                  <div className={DEPT_CARD}>
+                    <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800 sm:px-6">
+                      <h3 className={DEPT_CARD_TITLE}>Save</h3>
+                      <p className={`${DEPT_CARD_DESC} mt-1`}>
+                        <span className="font-medium text-slate-700 dark:text-slate-300">{selectedDepartment?.name ?? 'Department'}</span>
+                        {selectedDivisionId
+                          ? ` · ${divisions.find((d) => d._id === selectedDivisionId)?.name ?? 'division'}`
+                          : ' · all divisions'}
+                      </p>
+                    </div>
+                    <div className="flex flex-col gap-3 p-5 sm:p-6">
+                      <button
+                        type="button"
+                        onClick={handleSave}
+                        disabled={saving}
+                        className="w-full rounded-xl bg-indigo-600 px-4 py-3.5 text-sm font-bold text-white shadow-md shadow-indigo-500/25 transition hover:bg-indigo-500 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 dark:shadow-indigo-900/40"
+                      >
+                        {saving ? 'Saving…' : 'Save all settings'}
+                      </button>
                       <button
                         type="button"
                         onClick={() => {
                           setSelectedDepartmentId('');
                           resetForm();
                         }}
-                        className="w-full rounded-xl border border-white/30 bg-white/10 px-4 py-3 text-xs font-bold transition hover:bg-white/20"
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
                       >
-                        Clear department
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleSave}
-                        disabled={saving}
-                        className="w-full rounded-xl bg-white px-4 py-3 text-xs font-bold text-indigo-600 shadow-lg transition hover:bg-gray-50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {saving ? 'Saving…' : 'Save all settings'}
+                        Switch department
                       </button>
                     </div>
                   </div>
