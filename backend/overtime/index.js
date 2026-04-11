@@ -15,6 +15,8 @@ const {
   rejectOT,
   checkConfusedShift,
   convertExtraHoursToOT,
+  previewExtraHoursOt,
+  simulateHoursPolicy,
 } = require('./controllers/otController');
 const { getSettings, saveSettings } = require('./controllers/overtimeSettingsController');
 
@@ -33,6 +35,16 @@ router.get('/pending-approvals', authorize('manager', 'hod', 'hr', 'sub_admin', 
 
 // Get OT requests - employee allowed; applyScopeFilter restricts to own/scope
 router.get('/', authorize('employee', 'manager', 'hod', 'hr', 'sub_admin', 'super_admin'), applyScopeFilter, getOTRequests);
+
+// Preview extra-hours → OT (policy only; must be before /:id)
+router.get('/preview-extra-hours', authorize('manager', 'super_admin', 'sub_admin', 'hr', 'hod'), previewExtraHoursOt);
+
+// Simulate policy for arbitrary raw hours (uses form draft when body.policy sent)
+router.post(
+  '/simulate-hours-policy',
+  authorize('super_admin', 'sub_admin', 'hr'),
+  simulateHoursPolicy
+);
 
 // Get single OT request
 router.get('/:id', getOTRequest);

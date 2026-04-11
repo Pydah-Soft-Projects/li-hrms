@@ -1133,7 +1133,10 @@ const LeavePolicySettings = () => {
                                     </button>
                                 </div>
                                 <p className="text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800/50 p-3 rounded-xl mb-4 border border-gray-100 dark:border-gray-700">
-                                    Each range adds EL when attendance falls in that band. Example: 25 days → 0+1+1+2 = 4 EL.
+                                    Bands <strong>stack</strong>: for each range, when <strong>credit days</strong> for the payroll period reach that range&apos;s{' '}
+                                    <strong>minimum</strong> days, its <strong>EL earned</strong> value is <strong>added</strong> to the month total (ranges are sorted by min days, then capped by{' '}
+                                    <strong>Max EL / month</strong>). Example: (1–10: 0), (11–20: 1), (21–25: 1), (26–31: 2) → at <strong>25</strong> credit days you get 0+1+1 ={' '}
+                                    <strong>2</strong> EL; at <strong>27</strong> you also clear 26–31 → 0+1+1+2 = <strong>4</strong> EL.
                                 </p>
                                 <div className="grid grid-cols-1 gap-4">
                                         {(settings.earnedLeave?.attendanceRules?.attendanceRanges ?? []).map((range: any, index: number) => (

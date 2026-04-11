@@ -26,8 +26,13 @@ const {
   getAbsentDeductionSettings,
   buildBaseComponents,
 } = require('./allowanceDeductionResolverService');
-const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
 const { createISTDate, getPayrollDateRange } = require('../../shared/utils/dateUtils');
+const {
+  resolveElUsedRawForPayroll,
+  loadPriorPayrollRecordLean,
+  applyExplicitElToPaidLeaveAndPayable,
+  capElUsedForPolicy,
+} = require('./elUsedInPayrollHelper');
 const outputColumnService = require('./outputColumnService');
 const ArrearsPayrollIntegrationService = require('../../arrears/services/arrearsPayrollIntegrationService');
 const DeductionIntegrationService = require('./deductionIntegrationService');
@@ -270,7 +275,16 @@ async function runRequiredServices(required, record, employee, employeeId, month
 
   if (required.needsOT) {
     const departmentIdStr = (employee?.department_id?._id || employee?.department_id)?.toString() || departmentId?.toString();
-    const otPayResult = await otPayService.calculateOTPay(attendanceSummary.totalOTHours || 0, departmentIdStr);
+    const divStr = (employee?.division_id?._id || employee?.division_id)?.toString() || divisionId?.toString() || null;
+    const otPayResult = await otPayService.calculateOTPay(
+      attendanceSummary.totalOTHours || 0,
+      departmentIdStr,
+      divStr,
+      {
+        employee,
+        totalDaysInMonth: attendanceSummary.totalDaysInMonth,
+      }
+    );
     if (!record.earnings) record.earnings = {};
     record.earnings.otPay = otPayResult.otPay ?? 0;
     record.earnings.otHours = attendanceSummary.totalOTHours ?? 0;
@@ -573,7 +587,7 @@ function getValueByPath(obj, path) {
  * Month days and pay-cycle alignment: use getPayrollDateRange (pay cycle start/end from settings) so
  * totalDaysInMonth and present days respect the configured pay cycle.
  */
-async function buildAttendanceFromSummary(payRegisterSummary, employee, month) {
+async function buildAttendanceFromSummary(payRegisterSummary, employee, month, ctx = {}) {
   let monthDays = 30;
   try {
     const [year, monthNum] = (month || '').split('-').map(Number);
@@ -594,20 +608,39 @@ async function buildAttendanceFromSummary(payRegisterSummary, employee, month) {
   let paidLeaveDays = payRegisterSummary.totals?.totalPaidLeaveDays || 0;
   let elUsedInPayroll = 0;
   try {
-    const policy = await LeavePolicySettings.getSettings();
-    if (
-      policy.earnedLeave &&
-      policy.earnedLeave.enabled === true &&
-      policy.earnedLeave.useAsPaidInPayroll === true
-    ) {
-      const elBalance = Math.max(0, Number(employee.paidLeaves) || 0);
-      if (elBalance > 0) {
-        elUsedInPayroll = Math.min(elBalance, monthDays);
-        payableShifts += elUsedInPayroll;
-        paidLeaveDays += elUsedInPayroll;
-      }
+    const departmentId = employee.department_id?._id || employee.department_id;
+    const divisionId = employee.division_id?._id || employee.division_id;
+    if (departmentId) {
+      const prior =
+        ctx.priorPayrollRecord !== undefined
+          ? ctx.priorPayrollRecord
+          : await loadPriorPayrollRecordLean(employee._id, month);
+      const elRaw = await resolveElUsedRawForPayroll({
+        payRegisterSummary,
+        priorPayrollRecord: prior,
+        priorSecondSalaryRecord: ctx.priorSecondSalaryRecord,
+        options: ctx.options || {},
+        employee,
+        departmentId,
+        divisionId,
+        monthDays,
+      });
+      const out = await applyExplicitElToPaidLeaveAndPayable({
+        basePaidLeaveDays: paidLeaveDays,
+        basePayableShifts: payableShifts,
+        explicitRaw: elRaw,
+        employee,
+        departmentId,
+        divisionId,
+        monthDays,
+      });
+      paidLeaveDays = out.paidLeaveDays;
+      payableShifts = out.payableShifts;
+      elUsedInPayroll = out.elUsedInPayroll;
     }
-  } catch (e) { /* ignore */ }
+  } catch (e) {
+    /* ignore */
+  }
   const presentDays = payRegisterSummary.totals?.totalPresentDays || 0;
   const odDays = payRegisterSummary.totals?.totalODDays || 0;
   const weeklyOffs = payRegisterSummary.totals?.totalWeeklyOffs || 0;
@@ -631,6 +664,7 @@ async function buildAttendanceFromSummary(payRegisterSummary, employee, month) {
     totalLeaveDays: payRegisterSummary.totals?.totalLeaveDays || 0,
     lateCount,
     earlyOutCount: payRegisterSummary.totals?.earlyOutCount || 0,
+    elUsedInPayroll,
   };
 
   const attendance = {
@@ -754,6 +788,26 @@ async function resolveFieldValue(fieldPath, employee, employeeId, month, payRegi
     return manualDeductionsAmount;
   }
 
+  // EL used in payroll: same sources as buildAttendanceFromSummary (explicit overrides, else policy + EL balance).
+  if (path === 'attendance.elUsedInPayroll') {
+    const monthDays =
+      Number(record.attendance?.totalDaysInMonth) || Number(payRegisterSummary.totalDaysInMonth) || 30;
+    const raw = await resolveElUsedRawForPayroll({
+      payRegisterSummary,
+      priorPayrollRecord: options.priorPayrollRecord,
+      priorSecondSalaryRecord: options.priorSecondSalaryRecord,
+      options: options || {},
+      employee,
+      departmentId,
+      divisionId,
+      monthDays,
+    });
+    const capped = await capElUsedForPolicy(departmentId, divisionId, employee, raw, monthDays);
+    if (!record.attendance) record.attendance = {};
+    record.attendance.elUsedInPayroll = capped;
+    return capped;
+  }
+
   // Already in record (from a previous step)? Coerce only numeric paths.
   const existing = getValueByPath(record, path);
   if (existing !== '' && existing !== undefined && existing !== null) {
@@ -798,7 +852,16 @@ async function resolveFieldValue(fieldPath, employee, employeeId, month, payRegi
   // earnings.otPay, otHours, otRatePerHour
   if (path.startsWith('earnings.ot')) {
     const departmentIdStr = (employee?.department_id?._id || employee?.department_id)?.toString() || departmentId?.toString();
-    const otPayResult = await otPayService.calculateOTPay(attendanceSummary.totalOTHours || 0, departmentIdStr);
+    const divStr = (employee?.division_id?._id || employee?.division_id)?.toString() || divisionId?.toString() || null;
+    const otPayResult = await otPayService.calculateOTPay(
+      attendanceSummary.totalOTHours || 0,
+      departmentIdStr,
+      divStr,
+      {
+        employee,
+        totalDaysInMonth: attendanceSummary.totalDaysInMonth,
+      }
+    );
     if (!record.earnings) record.earnings = {};
     record.earnings.otPay = otPayResult.otPay || 0;
     record.earnings.otHours = attendanceSummary.totalOTHours || 0;
@@ -1228,7 +1291,11 @@ async function calculatePayrollFromOutputColumns(employeeId, month, userId, opti
     employeeId,
   });
 
-  const { attendanceSummary, attendance } = await buildAttendanceFromSummary(payRegisterSummary, employee, month);
+  const priorPayrollRecord = await loadPriorPayrollRecordLean(employeeId, month);
+  const { attendanceSummary, attendance } = await buildAttendanceFromSummary(payRegisterSummary, employee, month, {
+    options,
+    priorPayrollRecord,
+  });
 
   const record = {
     month: createISTDate(`${month}-01`).toLocaleString('en-IN', { month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' }),
@@ -1325,6 +1392,7 @@ async function calculatePayrollFromOutputColumns(employeeId, month, userId, opti
             config,
             arrearsSettlements: options.arrearsSettlements,
             deductionSettlements: options.deductionSettlements,
+            priorPayrollRecord,
           }
         )
         : 0;

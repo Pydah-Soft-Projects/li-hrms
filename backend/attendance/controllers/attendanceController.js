@@ -15,6 +15,11 @@ const Settings = require('../../settings/model/Settings');
 const { extractISTComponents, getPayrollDateRange } = require('../../shared/utils/dateUtils');
 const { buildLeftDuringPeriodOrClause, mergeScopeWithEmployeeClauses } = require('../services/attendanceEmployeeQuery');
 const dateCycleService = require('../../leaves/services/dateCycleService');
+const {
+  getApprovedEsiLeaveForDate,
+  sumPunchHours,
+  upsertEsiOtForAttendanceDay,
+} = require('../../overtime/services/esiLeaveOtService');
 
 /**
  * Format date to YYYY-MM-DD
@@ -233,19 +238,95 @@ exports.getAttendanceDetail = async (req, res) => {
 
     // Check for OT request (pending or approved) for Convert button logic
     const OT = require('../../overtime/model/OT');
+    const Permission = require('../../permissions/model/Permission');
     const otRequest = await OT.findOne({
       employeeId: allowedEmployee._id,
       date: date,
       status: { $in: ['pending', 'approved', 'manager_approved', 'hod_approved'] },
       isActive: true,
-    }).select('status otHours').lean();
+    }).select('status otHours source rawOtHours computedOtHours otPolicySnapshot').lean();
+
+    const approvedOt = await OT.findOne({
+      employeeId: allowedEmployee._id,
+      date: date,
+      status: 'approved',
+      isActive: true,
+    }).select('otHours source rawOtHours computedOtHours otPolicySnapshot').lean();
+
+    const permissionRequests = await Permission.find({
+      employeeId: allowedEmployee._id,
+      date,
+      isActive: true,
+      status: { $in: ['pending', 'approved', 'checked_out', 'checked_in'] },
+    })
+      .select('permissionType permittedEdgeTime permissionStartTime permissionEndTime permissionHours status gateOutTime gateInTime purpose comments')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const approvedEsiLeave = await getApprovedEsiLeaveForDate(employeeNumber, date);
+    const punchHours = sumPunchHours(record);
+    const esiConversion = approvedEsiLeave
+      ? {
+        leaveId: approvedEsiLeave._id,
+        isHalfDay: !!approvedEsiLeave.isHalfDay,
+        halfDayType: approvedEsiLeave.halfDayType || null,
+        punchHours,
+        maxConvertibleHours: punchHours,
+        consideredOtHours: Number(otRequest?.otHours) || 0,
+        approvedOtHours: Number(approvedOt?.otHours) || 0,
+        remainingHoursForAttendance: Math.max(0, (punchHours || 0) - (Number(otRequest?.otHours) || 0)),
+      }
+      : null;
+
+    const isEsiLeaveDay =
+      !!approvedEsiLeave &&
+      String(approvedEsiLeave.leaveType || '').trim().toUpperCase() === 'ESI' &&
+      !approvedEsiLeave.isHalfDay;
+    const maskedRawLogs = isEsiLeaveDay ? [] : rawLogs;
+    const maskedShifts = isEsiLeaveDay
+      ? (record.shifts || []).map((s) => {
+        const shiftObj = typeof s?.toObject === 'function' ? s.toObject() : s;
+        return {
+          ...shiftObj,
+          inTime: null,
+          outTime: null,
+          punchHours: 0,
+        };
+      })
+      : record.shifts;
 
     res.status(200).json({
       success: true,
       data: {
         ...record.toObject(),
-        rawLogs,
-        otRequest: otRequest ? { status: otRequest.status, otHours: otRequest.otHours } : null,
+        status: isEsiLeaveDay ? 'LEAVE' : record.status,
+        shifts: maskedShifts,
+        totalWorkingHours: isEsiLeaveDay ? 0 : record.totalWorkingHours,
+        rawLogs: maskedRawLogs,
+        otRequest: otRequest
+          ? {
+            status: otRequest.status,
+            otHours: otRequest.otHours,
+            source: otRequest.source || null,
+            rawOtHours: Number(otRequest.rawOtHours ?? otRequest.otHours) || 0,
+            consideredOtHours: Number(otRequest.computedOtHours ?? otRequest.otHours) || 0,
+            otPolicySnapshot: otRequest.otPolicySnapshot || null,
+          }
+          : null,
+        approvedOtHours: Number(approvedOt?.otHours) || 0,
+        approvedOtActualHours: Number(approvedOt?.rawOtHours ?? approvedOt?.otHours) || 0,
+        approvedOtConsideredHours: Number(approvedOt?.computedOtHours ?? approvedOt?.otHours) || 0,
+        approvedEsiLeave: approvedEsiLeave
+          ? {
+            id: approvedEsiLeave._id,
+            leaveType: approvedEsiLeave.leaveType,
+            isHalfDay: !!approvedEsiLeave.isHalfDay,
+            halfDayType: approvedEsiLeave.halfDayType || null,
+          }
+          : null,
+        esiConversion,
+        punchesHiddenDueToEsiLeave: isEsiLeaveDay,
+        permissionRequests,
         leftDate: allowedEmployee.leftDate || null,
       },
     });
@@ -255,6 +336,83 @@ exports.getAttendanceDetail = async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to fetch attendance detail',
+    });
+  }
+};
+
+/**
+ * @desc    Set ESI half-day OT hours for a date (create/update OT)
+ * @route   PUT /api/attendance/:employeeNumber/:date/esi-halfday-ot
+ * @access  Private (Manager/HR/Admin/HOD)
+ */
+exports.setEsiHalfDayOtHours = async (req, res) => {
+  try {
+    const { employeeNumber, date } = req.params;
+    const { otHours } = req.body || {};
+
+    const allowedEmployee = await Employee.findOne({
+      ...req.scopeFilter,
+      emp_no: employeeNumber.toUpperCase(),
+    });
+    if (!allowedEmployee) {
+      return res.status(403).json({ success: false, message: 'Access denied or employee not found' });
+    }
+
+    const approvedEsiLeave = await getApprovedEsiLeaveForDate(employeeNumber, date);
+    if (!approvedEsiLeave) {
+      return res.status(400).json({ success: false, message: 'No approved ESI leave found for this date' });
+    }
+    if (!approvedEsiLeave.isHalfDay) {
+      return res.status(400).json({ success: false, message: 'This endpoint is only for half-day ESI leaves' });
+    }
+
+    const attendanceRecord = await AttendanceDaily.findOne({
+      employeeNumber: employeeNumber.toUpperCase(),
+      date,
+    });
+    if (!attendanceRecord) {
+      return res.status(404).json({ success: false, message: 'Attendance record not found' });
+    }
+
+    const punchHours = sumPunchHours(attendanceRecord);
+    const parsedOt = Number(otHours);
+    if (!Number.isFinite(parsedOt) || parsedOt < 0 || parsedOt > punchHours) {
+      return res.status(400).json({
+        success: false,
+        message: `otHours must be between 0 and ${punchHours}`,
+      });
+    }
+
+    const result = await upsertEsiOtForAttendanceDay({
+      leave: approvedEsiLeave,
+      employee: allowedEmployee,
+      attendanceRecord,
+      date,
+      requestedByUserId: req.user?._id || req.user?.userId,
+      selectedOtHours: parsedOt,
+    });
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        message: result.message || 'Failed to apply ESI half-day OT conversion',
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `ESI half-day OT ${result.action} successfully`,
+      data: {
+        otId: result.data?._id || null,
+        otHours: result.otHours,
+        punchHours: result.punchHours,
+        remainingHoursForAttendance: Math.max(0, (result.punchHours || 0) - (result.otHours || 0)),
+      },
+    });
+  } catch (error) {
+    console.error('Error setting ESI half-day OT hours:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to set ESI half-day OT hours',
     });
   }
 };

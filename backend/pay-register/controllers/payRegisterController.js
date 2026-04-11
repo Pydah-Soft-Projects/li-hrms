@@ -11,6 +11,12 @@ const { updateDailyRecord } = require('../services/dailyRecordUpdateService');
 const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
 const { manualSyncPayRegister } = require('../services/autoSyncService');
 const { processSummaryBulkUpload } = require('../services/summaryUploadService');
+const {
+  applyContributingDatesFromMonthlySummary,
+  applyContributingDatesFromDailyGrid,
+  cloneContributingDatesFromSummaryPlain,
+  rebuildContributingDatesFromDailyRecords,
+} = require('../services/contributingDatesService');
 const { recalculatePayRegisterAttendanceDeduction } = require('../services/payRegisterAttendanceDeductionService');
 const XLSX = require('xlsx');
 const mongoose = require('mongoose');
@@ -168,9 +174,11 @@ exports.getPayRegister = async (req, res) => {
 
       if (summary) {
         syncTotalsFromMonthlySummary(payRegister, summary);
+        applyContributingDatesFromMonthlySummary(payRegister, summary);
       } else {
         payRegister.totals = calculateTotals(payRegister.dailyRecords);
         payRegister.recalculateTotals();
+        applyContributingDatesFromDailyGrid(payRegister);
       }
 
       let startDate = payRegister.startDate;
@@ -234,9 +242,15 @@ exports.getPayRegister = async (req, res) => {
           monthNum
         );
         syncTotalsFromMonthlySummary(payRegisterObj, summary);
+        payRegisterObj.contributingDates = cloneContributingDatesFromSummaryPlain(summary);
+        payRegisterObj.contributingDatesUpdatedAt = new Date();
+        payRegisterObj.contributingDatesDerivedFrom = 'monthly_summary';
       } else {
         payRegisterObj.totals = calculateTotals(dailyRecords);
         await ensureTotalsRespectRoster(payRegisterObj.totals, employee.emp_no, startDate, endDate);
+        payRegisterObj.contributingDates = rebuildContributingDatesFromDailyRecords(dailyRecords);
+        payRegisterObj.contributingDatesUpdatedAt = new Date();
+        payRegisterObj.contributingDatesDerivedFrom = 'daily_grid';
       }
 
       payRegister = await PayRegisterSummary.create({
@@ -312,6 +326,9 @@ exports.createPayRegister = async (req, res) => {
 
     const summary = await getSummaryData(employeeId, employee.emp_no, year, monthNum);
     let totals;
+    let contributingDates;
+    let contributingDatesUpdatedAt = new Date();
+    let contributingDatesDerivedFrom;
     if (summary) {
       await applyPayRegisterParityFromMonthlySummary(
         dailyRecords,
@@ -324,9 +341,13 @@ exports.createPayRegister = async (req, res) => {
       const tmp = { totals: {} };
       syncTotalsFromMonthlySummary(tmp, summary);
       totals = tmp.totals;
+      contributingDates = cloneContributingDatesFromSummaryPlain(summary);
+      contributingDatesDerivedFrom = 'monthly_summary';
     } else {
       totals = calculateTotals(dailyRecords);
       await ensureTotalsRespectRoster(totals, employee.emp_no, startDate, endDate);
+      contributingDates = rebuildContributingDatesFromDailyRecords(dailyRecords);
+      contributingDatesDerivedFrom = 'daily_grid';
     }
 
     const payRegister = await PayRegisterSummary.create({
@@ -341,6 +362,9 @@ exports.createPayRegister = async (req, res) => {
       endDate,
       dailyRecords,
       totals,
+      contributingDates,
+      contributingDatesUpdatedAt,
+      contributingDatesDerivedFrom,
       status: 'draft',
       lastAutoSyncedAt: new Date(),
     });
@@ -373,7 +397,7 @@ exports.updatePayRegister = async (req, res) => {
   try {
     const { employeeId, month } = req.params;
     if (!(await ensureEmployeeInScope(req, res, employeeId))) return;
-    const { dailyRecords, status, notes } = req.body;
+    const { dailyRecords, status, notes, totals: totalsBody } = req.body;
 
     const payRegister = await PayRegisterSummary.findOne({ employeeId, month });
     if (!payRegister) {
@@ -385,8 +409,12 @@ exports.updatePayRegister = async (req, res) => {
 
     // Update dailyRecords if provided; recalc totals so any day/half marked OD (e.g. edited from absent) is included in present days; WO/HOL from roster
     if (dailyRecords && Array.isArray(dailyRecords)) {
+      const preservedElUsedInPayroll = payRegister.totals?.elUsedInPayroll;
       payRegister.dailyRecords = dailyRecords;
       payRegister.totals = calculateTotals(dailyRecords);
+      if (preservedElUsedInPayroll !== undefined && preservedElUsedInPayroll !== null) {
+        payRegister.totals.elUsedInPayroll = Math.max(0, Number(preservedElUsedInPayroll) || 0);
+      }
       payRegister.recalculateTotals();
       let startDate = payRegister.startDate;
       let endDate = payRegister.endDate;
@@ -399,8 +427,16 @@ exports.updatePayRegister = async (req, res) => {
         payRegister.endDate = endDate;
       }
       await ensureTotalsRespectRoster(payRegister.totals, payRegister.emp_no, startDate, endDate);
+      applyContributingDatesFromDailyGrid(payRegister);
       applySummaryLockFromEdit(payRegister, req.user);
       await recalculatePayRegisterAttendanceDeduction(payRegister);
+    }
+
+    // Optional: set EL days used as paid in payroll (not from leave grid); used by payroll engine when "EL as paid" is on
+    if (totalsBody && typeof totalsBody === 'object' && totalsBody.elUsedInPayroll !== undefined && totalsBody.elUsedInPayroll !== null) {
+      if (!payRegister.totals) payRegister.totals = {};
+      payRegister.totals.elUsedInPayroll = Math.max(0, Number(totalsBody.elUsedInPayroll) || 0);
+      payRegister.markModified('totals');
     }
 
     // Update status if provided
@@ -482,7 +518,11 @@ exports.updateDailyRecord = async (req, res) => {
     await updateDailyRecord(payRegister, date, updateData, req.user);
 
     // Recalculate totals so any day/half edited from absent to OD is included in totalPresentDays; WO/HOL from roster
+    const preservedElUsedInPayrollDaily = payRegister.totals?.elUsedInPayroll;
     payRegister.totals = calculateTotals(payRegister.dailyRecords);
+    if (preservedElUsedInPayrollDaily !== undefined && preservedElUsedInPayrollDaily !== null) {
+      payRegister.totals.elUsedInPayroll = Math.max(0, Number(preservedElUsedInPayrollDaily) || 0);
+    }
     payRegister.recalculateTotals();
     await ensureTotalsRespectRoster(payRegister.totals, payRegister.emp_no, startDate, endDate);
     if (!payRegister.startDate || !payRegister.endDate) {
@@ -490,6 +530,7 @@ exports.updateDailyRecord = async (req, res) => {
       payRegister.endDate = endDate;
     }
 
+    applyContributingDatesFromDailyGrid(payRegister);
     applySummaryLockFromEdit(payRegister, req.user);
 
     await recalculatePayRegisterAttendanceDeduction(payRegister);

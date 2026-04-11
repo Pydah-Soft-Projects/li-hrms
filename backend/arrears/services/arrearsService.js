@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { mongoSupportsTransactions } = require('../../utils/mongoSupportsTransactions');
 const ArrearsRequest = require('../model/ArrearsRequest');
 const Employee = require('../../employees/model/Employee');
 const EMPLOYEE_ORG_POPULATE = {
@@ -278,15 +279,32 @@ class ArrearsService {
    * @returns {Array} Settlement results
    */
   static async processSettlement(employeeId, month, arrearsSettlements, userId, payrollId) {
-    const session = await mongoose.startSession();
-    session.startTransaction();
+    let useTx = await mongoSupportsTransactions();
+    let session = null;
+    if (useTx) {
+      session = await mongoose.startSession();
+      try {
+        session.startTransaction();
+      } catch (e) {
+        try {
+          session.endSession();
+        } catch (_) { /* ignore */ }
+        session = null;
+        useTx = false;
+        if (!/replica set|mongos|Transaction numbers/i.test(String(e.message))) {
+          throw e;
+        }
+      }
+    }
 
     try {
       const settlementDate = new Date();
       const results = [];
 
       for (const settlement of arrearsSettlements) {
-        const ar = await ArrearsRequest.findById(settlement.arrearId).session(session);
+        const ar = useTx && session
+          ? await ArrearsRequest.findById(settlement.arrearId).session(session)
+          : await ArrearsRequest.findById(settlement.arrearId);
 
         if (!ar) {
           continue;
@@ -328,7 +346,7 @@ class ArrearsService {
         });
 
         ar.updatedBy = userId;
-        await ar.save({ session });
+        await ar.save(useTx && session ? { session } : {});
 
         results.push({
           arrearId: ar._id,
@@ -338,13 +356,23 @@ class ArrearsService {
         });
       }
 
-      await session.commitTransaction();
+      if (useTx && session) {
+        await session.commitTransaction();
+      }
       return results;
     } catch (error) {
-      await session.abortTransaction();
+      if (useTx && session) {
+        try {
+          await session.abortTransaction();
+        } catch (_) { /* ignore */ }
+      }
       throw new Error(`Failed to process settlement: ${error.message}`);
     } finally {
-      session.endSession();
+      if (session) {
+        try {
+          session.endSession();
+        } catch (_) { /* ignore */ }
+      }
     }
   }
 

@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { mongoSupportsTransactions } = require('../../utils/mongoSupportsTransactions');
 const DeductionRequest = require('../model/DeductionRequest');
 const Employee = require('../../employees/model/Employee');
 
@@ -180,13 +181,30 @@ class DeductionService {
   }
 
   static async processSettlement(employeeId, month, deductionSettlements, userId, payrollId) {
-    const session = await mongoose.startSession();
-    session.startTransaction();
+    let useTx = await mongoSupportsTransactions();
+    let session = null;
+    if (useTx) {
+      session = await mongoose.startSession();
+      try {
+        session.startTransaction();
+      } catch (e) {
+        try {
+          session.endSession();
+        } catch (_) { /* ignore */ }
+        session = null;
+        useTx = false;
+        if (!/replica set|mongos|Transaction numbers/i.test(String(e.message))) {
+          throw e;
+        }
+      }
+    }
     try {
       const settlementDate = new Date();
       const results = [];
       for (const settlement of deductionSettlements) {
-        const dr = await DeductionRequest.findById(settlement.deductionId).session(session);
+        const dr = useTx && session
+          ? await DeductionRequest.findById(settlement.deductionId).session(session)
+          : await DeductionRequest.findById(settlement.deductionId);
         if (!dr) continue;
         if (dr.employee.toString() !== employeeId) {
           throw new Error(`Deduction ${settlement.deductionId} does not belong to employee ${employeeId}`);
@@ -209,16 +227,26 @@ class DeductionService {
           payrollId
         });
         dr.updatedBy = userId;
-        await dr.save({ session });
+        await dr.save(useTx && session ? { session } : {});
         results.push({ deductionId: dr._id, settledAmount: settleAmount, remainingAmount: dr.remainingAmount, status: dr.status });
       }
-      await session.commitTransaction();
+      if (useTx && session) {
+        await session.commitTransaction();
+      }
       return results;
     } catch (error) {
-      await session.abortTransaction();
+      if (useTx && session) {
+        try {
+          await session.abortTransaction();
+        } catch (_) { /* ignore */ }
+      }
       throw new Error(`Failed to process settlement: ${error.message}`);
     } finally {
-      session.endSession();
+      if (session) {
+        try {
+          session.endSession();
+        } catch (_) { /* ignore */ }
+      }
     }
   }
 

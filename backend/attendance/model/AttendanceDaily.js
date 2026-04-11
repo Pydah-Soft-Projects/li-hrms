@@ -54,6 +54,10 @@ const attendanceDailySchema = new mongoose.Schema(
         type: Number, // working hours added from OD gap filling
         default: 0,
       },
+      edgePermissionHours: {
+        type: Number, // late_in / early_out gate-verified credit toward expected hours
+        default: 0,
+      },
       otHours: {
         type: Number, // OT hours for this shift
         default: 0,
@@ -158,7 +162,14 @@ const attendanceDailySchema = new mongoose.Schema(
     editHistory: [{
       action: {
         type: String,
-        enum: ['OUT_TIME_UPDATE', 'SHIFT_CHANGE', 'OT_CONVERSION', 'IN_TIME_UPDATE'],
+        enum: [
+          'OUT_TIME_UPDATE',
+          'SHIFT_CHANGE',
+          'OT_CONVERSION',
+          'OT_CONVERSION_REQUESTED',
+          'OT_AUTO_REQUESTED',
+          'IN_TIME_UPDATE',
+        ],
         required: true,
       },
       modifiedBy: {
@@ -189,6 +200,82 @@ const attendanceDailySchema = new mongoose.Schema(
       type: String,
       trim: true,
       default: null,
+    },
+    // Policy-derived metadata used for auditability of summary/pay-register half splits.
+    policyMeta: {
+      partialDayRule: {
+        applied: {
+          type: Boolean,
+          default: false,
+        },
+        ruleCode: {
+          type: String,
+          default: null,
+        },
+        firstHalfStatus: {
+          type: String,
+          enum: ['present', 'absent', 'leave', 'od', 'holiday', 'week_off', 'blank', null],
+          default: null,
+        },
+        secondHalfStatus: {
+          type: String,
+          enum: ['present', 'absent', 'leave', 'od', 'holiday', 'week_off', 'blank', null],
+          default: null,
+        },
+        presentPortion: {
+          type: Number,
+          default: 0,
+        },
+        lopPortion: {
+          type: Number,
+          default: 0,
+        },
+        coveredPortion: {
+          type: Number,
+          default: 0,
+        },
+        note: {
+          type: String,
+          default: null,
+        },
+        updatedAt: {
+          type: Date,
+          default: null,
+        },
+      },
+      sandwichRule: {
+        applied: {
+          type: Boolean,
+          default: false,
+        },
+        ruleCode: {
+          type: String,
+          default: null,
+        },
+        previousNeighborKind: {
+          type: String,
+          enum: ['LEAVE', 'ABSENT', 'PRESENT', 'NONE', null],
+          default: null,
+        },
+        nextNeighborKind: {
+          type: String,
+          enum: ['LEAVE', 'ABSENT', 'PRESENT', 'NONE', null],
+          default: null,
+        },
+        effect: {
+          type: String,
+          enum: ['strip_non_working', 'strip_non_working_add_lop', null],
+          default: null,
+        },
+        note: {
+          type: String,
+          default: null,
+        },
+        updatedAt: {
+          type: Date,
+          default: null,
+        },
+      },
     },
     // Overtime and extra hours
     otHours: {

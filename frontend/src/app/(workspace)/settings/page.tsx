@@ -238,7 +238,7 @@ const SettingsPage = () => {
 
   return (
 
-    <div className="flex min-h-screen bg-[#F8FAFC] dark:bg-[#0F172A] -m-4 sm:-m-5 lg:-m-6 overflow-x-hidden">
+    <div className="flex min-h-screen items-start bg-[#F8FAFC] dark:bg-[#0F172A] -m-4 sm:-m-5 lg:-m-6">
 
       {/* Mobile Menu Button */}
 
@@ -276,13 +276,17 @@ const SettingsPage = () => {
 
       <aside className={`
 
-        fixed lg:sticky top-0 z-40 h-screen w-64 sm:w-72 flex-col border-r border-gray-200 bg-white dark:border-gray-800 dark:bg-[#1E293B] flex-shrink-0
+        fixed z-40 flex h-screen w-64 shrink-0 flex-col overflow-hidden border-r border-gray-200 bg-white
 
         transition-transform duration-300 ease-in-out
 
+        dark:border-gray-800 dark:bg-[#1E293B]
+
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
 
-        lg:flex overflow-hidden
+        top-0 lg:sticky lg:top-0 lg:flex lg:h-[min(100dvh,100vh)] lg:max-h-screen lg:self-start
+
+        sm:w-72
 
       `}>
 

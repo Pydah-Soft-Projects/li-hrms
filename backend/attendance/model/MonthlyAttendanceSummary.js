@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const { createISTDate, extractISTComponents } = require('../../shared/utils/dateUtils');
+const { contributingDatesShape } = require('../../shared/schemas/contributingDatesSchema');
 
 /**
  * Monthly Attendance Summary Model
@@ -272,22 +273,7 @@ const monthlyAttendanceSummarySchema = new mongoose.Schema(
      * This is used by the frontend to highlight relevant cells when a summary value is clicked.
      * For `partial`, `value` is payable-shift contribution on that PARTIAL day (same basis as payableShifts).
      */
-    contributingDates: {
-      present: [{ date: String, value: Number, label: String }],
-      leaves: [{ date: String, value: Number, label: String }],
-      ods: [{ date: String, value: Number, label: String }],
-      partial: [{ date: String, value: Number, label: String }],
-      weeklyOffs: [{ date: String, value: Number, label: String }],
-      holidays: [{ date: String, value: Number, label: String }],
-      payableShifts: [{ date: String, value: Number, label: String }],
-      otHours: [{ date: String, value: Number, label: String }],
-      extraHours: [{ date: String, value: Number, label: String }],
-      lateIn: [{ date: String, value: Number, label: String }],
-      earlyOut: [{ date: String, value: Number, label: String }],
-      permissions: [{ date: String, value: Number, label: String }],
-      absent: [{ date: String, value: Number, label: String }],
-      conflicts: [{ date: String, value: Number, label: String }],
-    },
+    contributingDates: contributingDatesShape,
 
     /**
      * Per-date pay register row alignment (firstHalf/secondHalf/status) derived from this same monthly calc.

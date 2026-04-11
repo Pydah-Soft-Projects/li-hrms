@@ -43,6 +43,12 @@ const detectExtraHours = async (employeeNumber, date) => {
     // because the engine already calculates per-shift extra hours which aggregate into the daily total.
     if (attendanceRecord.shifts && attendanceRecord.shifts.length > 0) {
       console.log(`[ExtraHours] Skipping legacy detection for ${employeeNumber} on ${date} (Multi-shift/Smart-Pairing engine handled it)`);
+      try {
+        const { maybeAutoCreateOtFromAttendanceDay } = require('../../overtime/services/otService');
+        await maybeAutoCreateOtFromAttendanceDay(attendanceRecord.employeeNumber, date);
+      } catch (e) {
+        console.warn('[ExtraHours] Auto OT hook failed:', e.message);
+      }
       return {
         success: true,
         message: 'Multi-shift engine take precedence',
@@ -143,6 +149,13 @@ const detectExtraHours = async (employeeNumber, date) => {
 
         if (employee) {
           await calculateMonthlySummary(employee._id, employee.emp_no, year, month);
+        }
+
+        try {
+          const { maybeAutoCreateOtFromAttendanceDay } = require('../../overtime/services/otService');
+          await maybeAutoCreateOtFromAttendanceDay(attendanceRecord.employeeNumber, date);
+        } catch (e) {
+          console.warn('[ExtraHours] Auto OT hook failed:', e.message);
         }
 
         return {
