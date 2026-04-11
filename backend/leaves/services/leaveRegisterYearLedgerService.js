@@ -190,19 +190,30 @@ function findMonthIndex(doc, payrollMonth, payrollYear) {
   const months = doc.months || [];
   const pm = Number(payrollMonth);
   const py = Number(payrollYear);
-  const idx = months.findIndex(
+  return months.findIndex(
     (m) => Number(m.payrollCycleMonth) === pm && Number(m.payrollCycleYear) === py
   );
-  if (idx >= 0) return idx;
-  return months.length > 0 ? 0 : -1;
 }
 
 async function addTransaction(transactionData) {
   const periodInfo = await dateCycleService.getPeriodInfo(transactionData.startDate);
   const doc = await ensureYearDocument(transactionData, periodInfo);
-  const mi = findMonthIndex(doc, periodInfo.payrollCycle.month, periodInfo.payrollCycle.year);
+  const forcedPm = Number(transactionData.payrollCycleMonth);
+  const forcedPy = Number(transactionData.payrollCycleYear);
+  const useForced =
+    Number.isFinite(forcedPm) &&
+    forcedPm >= 1 &&
+    forcedPm <= 12 &&
+    Number.isFinite(forcedPy) &&
+    forcedPy > 0;
+  const slotMonth = useForced ? forcedPm : periodInfo.payrollCycle.month;
+  const slotYear = useForced ? forcedPy : periodInfo.payrollCycle.year;
+  const mi = findMonthIndex(doc, slotMonth, slotYear);
   if (mi < 0) {
-    throw new Error('LeaveRegisterYear has no month slots for this financial year.');
+    throw new Error(
+      `LeaveRegisterYear (${doc.financialYear}) has no payroll slot for ${slotMonth}/${slotYear}. ` +
+        'Regenerate the leave register year or fix payrollCycleMonth/payrollCycleYear on the transaction.'
+    );
   }
 
   if (!doc.months[mi].transactions) doc.months[mi].transactions = [];
