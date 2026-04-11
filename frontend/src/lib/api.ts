@@ -1104,8 +1104,12 @@ export const api = {
     return apiRequest<any>('/dashboard/stats', { method: 'GET' });
   },
 
-  getDashboardAnalytics: async () => {
-    return apiRequest<any>('/dashboard/analytics', { method: 'GET' });
+  getDashboardAnalytics: async (trackerPeriod?: 'week' | 'month' | 'lastMonth') => {
+    const q =
+      trackerPeriod && ['week', 'month', 'lastMonth'].includes(trackerPeriod)
+        ? `?trackerPeriod=${encodeURIComponent(trackerPeriod)}`
+        : '';
+    return apiRequest<any>(`/dashboard/analytics${q}`, { method: 'GET' });
   },
 
   getEmployeesWithoutAccount: async () => {
@@ -2938,9 +2942,13 @@ export const api = {
     return apiRequest<any>(`/attendance/detail?${params.toString()}`, { method: 'GET' });
   },
 
-  getEmployeesWithAttendance: async (date?: string) => {
-    const query = date ? `?date=${date}` : '';
-    return apiRequest<any>(`/attendance/employees${query}`, { method: 'GET' });
+  getEmployeesWithAttendance: async (date?: string, page?: number, limit?: number) => {
+    const params = new URLSearchParams();
+    if (date) params.append('date', date);
+    if (page != null) params.append('page', String(page));
+    if (limit != null) params.append('limit', String(limit));
+    const q = params.toString();
+    return apiRequest<any>(`/attendance/employees${q ? `?${q}` : ''}`, { method: 'GET' });
   },
 
   getMonthlyAttendance: async (year: number, month: number, filters?: { page?: number; limit?: number; search?: string; divisionId?: string; departmentId?: string; designationId?: string; startDate?: string; endDate?: string }) => {

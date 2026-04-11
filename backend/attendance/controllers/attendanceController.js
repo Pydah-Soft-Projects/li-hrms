@@ -280,7 +280,8 @@ exports.getEmployeesWithAttendance = async (req, res) => {
     const employeesFilter = mergeScopeWithEmployeeClauses(req.scopeFilter, [rosterVisibility]);
 
     let employeeQuery = Employee.find(employeesFilter)
-      .select('emp_no employee_name department_id designation_id')
+      .select('emp_no employee_name email division_id department_id designation_id doj')
+      .populate('division_id', 'name')
       .populate('department_id', 'name')
       .populate('designation_id', 'name')
       .sort({ emp_no: 1 });
@@ -306,10 +307,13 @@ exports.getEmployeesWithAttendance = async (req, res) => {
       });
     }
 
-    const employeesWithAttendance = employees.map(emp => ({
-      ...emp.toObject(),
-      attendance: attendanceMap[emp.emp_no] || null,
-    }));
+    const employeesWithAttendance = employees.map(emp => {
+      const no = String(emp.emp_no || '').trim().toUpperCase();
+      return {
+        ...emp.toObject(),
+        attendance: (no && attendanceMap[no]) || null,
+      };
+    });
 
     res.status(200).json({
       success: true,

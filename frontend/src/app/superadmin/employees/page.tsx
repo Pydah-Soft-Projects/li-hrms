@@ -392,6 +392,34 @@ const getFieldLabel = (fieldId: string, formSettings: any) => {
   return fieldId.replace(/_/g, ' ');
 };
 
+const getGroupLabel = (groupId: string, formSettings: any, fallback: string) => {
+  if (!formSettings?.groups) return fallback;
+  const group = formSettings.groups.find((g: any) => g.id === groupId);
+  return group?.label || fallback;
+};
+
+const renderCustomFieldsForSystemGroup = (groupId: string, hardcodedFieldIds: string[], employee: any, settings: any) => {
+  if (!settings?.groups) return null;
+  const group = settings.groups.find((g: any) => g.id === groupId);
+  if (!group) return null;
+  const customFields = group.fields?.filter((f: any) => f.isEnabled !== false && !hardcodedFieldIds.includes(f.id)) || [];
+  
+  return customFields.sort((a: any, b: any) => (a.order || 0) - (b.order || 0)).map((field: any) => {
+    let val = employee.dynamicFields?.[field.id] ?? employee[field.id];
+    if (groupId === 'salaries') {
+      val = employee.salaries?.[field.id] ?? val;
+    }
+    const displayVal = (val === undefined || val === null || val === '') ? '-' : String(val);
+    return (
+      <div key={field.id}>
+        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{field.label}</label>
+        <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{displayVal}</p>
+      </div>
+    );
+  });
+};
+
+
 export default function EmployeesPage() {
   const [activeTab, setActiveTab] = useState<'employees' | 'applications' | 'requests'>('employees');
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -6113,7 +6141,7 @@ export default function EmployeesPage() {
 
                       {/* Basic Information */}
                       <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                        <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Basic Information</h3>
+                        <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">{getGroupLabel('basic_info', formSettings, 'Basic Information')}</h3>
                         <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
                           <div className="lg:col-span-4 xl:col-span-3">
                             <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Profile Photo</label>
@@ -6131,19 +6159,19 @@ export default function EmployeesPage() {
                           </div>
                           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:col-span-8 xl:col-span-9 xl:grid-cols-3">
                           <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Employee Number</label>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('emp_no', formSettings) || 'Employee Number'}</label>
                             <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.emp_no || '-'}</p>
                           </div>
                           <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Name</label>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('employee_name', formSettings) || 'Name'}</label>
                             <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.employee_name || '-'}</p>
                           </div>
                           <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Department</label>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('department_id', formSettings) || 'Department'}</label>
                             <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.department?.name || '-'}</p>
                           </div>
                           <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Designation</label>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('designation_id', formSettings) || 'Designation'}</label>
                             <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.designation?.name || '-'}</p>
                           </div>
                           {customEmployeeGroupingEnabled && (
@@ -6155,28 +6183,28 @@ export default function EmployeesPage() {
                             </div>
                           )}
                           <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Date of Joining</label>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('doj', formSettings) || 'Date of Joining'}</label>
                             <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{formatDateDayMonthYear(viewingEmployee.doj)}</p>
                           </div>
                           <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Date of Birth</label>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('dob', formSettings) || 'Date of Birth'}</label>
                             <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{formatDateDayMonthYear(viewingEmployee.dob)}</p>
                           </div>
 
                           <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Gender</label>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('gender', formSettings) || 'Gender'}</label>
                             <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.gender || '-'}</p>
                           </div>
                           <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Marital Status</label>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('marital_status', formSettings) || 'Marital Status'}</label>
                             <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.marital_status || '-'}</p>
                           </div>
                           <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Blood Group</label>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('blood_group', formSettings) || 'Blood Group'}</label>
                             <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.blood_group || '-'}</p>
                           </div>
                           <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Phone Number</label>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('phone_number', formSettings) || 'Phone Number'}</label>
                             <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
                               {viewingEmployee.phone_number ||
                                 (viewingEmployee as any).contact_number ||
@@ -6186,11 +6214,11 @@ export default function EmployeesPage() {
                             </p>
                           </div>
                           <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Alternate Phone</label>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('alt_phone_number', formSettings) || 'Alternate Phone'}</label>
                             <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.alt_phone_number || '-'}</p>
                           </div>
                           <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Father Name</label>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('father_name', formSettings) || 'Father Name'}</label>
                             <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
                               {(viewingEmployee as any).father_name ||
                                 (viewingEmployee as any).dynamicFields?.father_name ||
@@ -6198,7 +6226,7 @@ export default function EmployeesPage() {
                             </p>
                           </div>
                           <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Mother Name</label>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('mother_name', formSettings) || 'Mother Name'}</label>
                             <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
                               {(viewingEmployee as any).mother_name ||
                                 (viewingEmployee as any).dynamicFields?.mother_name ||
@@ -6206,7 +6234,7 @@ export default function EmployeesPage() {
                             </p>
                           </div>
                           <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Caste</label>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('caste', formSettings) || 'Caste'}</label>
                             <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
                               {(viewingEmployee as any).caste ||
                                 (viewingEmployee as any).dynamicFields?.caste ||
@@ -6225,7 +6253,7 @@ export default function EmployeesPage() {
                         </div>
                         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
                           <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Email</label>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('email', formSettings) || 'Email'}</label>
                             <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
                               {viewingEmployee.email ||
                                 (viewingEmployee as any).dynamicFields?.email ||
@@ -6243,7 +6271,7 @@ export default function EmployeesPage() {
                             </p>
                           </div>
                           <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Permanent Address</label>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('permanent_address', formSettings) || 'Permanent Address'}</label>
                             <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
                               {(viewingEmployee as any).permanent_address ||
                                 (viewingEmployee as any).dynamicFields?.permanent_address ||
@@ -6301,10 +6329,10 @@ export default function EmployeesPage() {
 
                       {/* Financial Information */}
                       <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                        <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Financial Information</h3>
+                        <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">{getGroupLabel('bank_details', formSettings, 'Financial Information')}</h3>
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                           <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">PF Number</label>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('pf_number', formSettings) || 'PF Number'}</label>
                             <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
                               {(viewingEmployee as any).pf_number ||
                                 (viewingEmployee as any).dynamicFields?.pf_number ||
@@ -6322,7 +6350,7 @@ export default function EmployeesPage() {
                             </p>
                           </div>
                           <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Aadhar Number</label>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('aadhar_no', formSettings) || 'Aadhar Number'}</label>
                             <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
                               {(viewingEmployee as any).aadhar_number ||
                                 (viewingEmployee as any).aadhaar_number ||
@@ -6333,7 +6361,7 @@ export default function EmployeesPage() {
                             </p>
                           </div>
                           <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Account Number</label>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('account_no', formSettings) || 'Account Number'}</label>
                             <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
                               {(viewingEmployee as any).bank_account_no ||
                                 (viewingEmployee as any).dynamicFields?.bank_account_no ||
@@ -6344,7 +6372,7 @@ export default function EmployeesPage() {
                             </p>
                           </div>
                           <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Bank Name</label>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('bank_name', formSettings) || 'Bank Name'}</label>
                             <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
                               {(viewingEmployee as any).bank_name ||
                                 (viewingEmployee as any).dynamicFields?.bank_name ||
@@ -6362,7 +6390,7 @@ export default function EmployeesPage() {
                             </p>
                           </div>
                           <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">IFSC Code</label>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('ifsc_code', formSettings) || 'IFSC Code'}</label>
                             <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
                               {(viewingEmployee as any).ifsc_code ||
                                 (viewingEmployee as any).dynamicFields?.ifsc_code ||
@@ -6371,7 +6399,7 @@ export default function EmployeesPage() {
                             </p>
                           </div>
                           <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Salary Mode</label>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('salary_mode', formSettings) || 'Salary Mode'}</label>
                             <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
                               {(viewingEmployee as any).salary_mode ||
                                 (viewingEmployee as any).dynamicFields?.salary_mode ||
@@ -6459,7 +6487,7 @@ export default function EmployeesPage() {
 
                       {/* Professional Information */}
                       <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                        <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Professional Information</h3>
+                        <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">{getGroupLabel('personal_info', formSettings, 'Professional Information')}</h3>
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                           <div className="sm:col-span-2 lg:col-span-3">
                             <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -6548,18 +6576,19 @@ export default function EmployeesPage() {
 
                       {/* Salary and Leave Details */}
                       <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                        <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Salary and Leave Details</h3>
+                        <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">{getGroupLabel('salaries', formSettings, 'Salary and Leave Details')}</h3>
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                            {renderCustomFieldsForSystemGroup('salaries', ['gross_salary', 'proposedSalary', 'second_salary', 'paid_leaves', 'casual_leaves', 'allottedLeaves', 'ctcSalary', 'calculatedSalary'], viewingEmployee, formSettings)}
                           <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Gross Salary</label>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('gross_salary', formSettings) || 'Gross Salary'}</label>
                             <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.gross_salary ? `₹${viewingEmployee.gross_salary.toLocaleString()}` : '-'}</p>
                           </div>
                           <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Second Salary</label>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('second_salary', formSettings) || 'Second Salary'}</label>
                             <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.second_salary ? `₹${viewingEmployee.second_salary.toLocaleString()}` : '-'}</p>
                           </div>
                           <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Paid Leaves</label>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('paid_leaves', formSettings) || 'Monthly Paid Leaves'}</label>
                             {pendingAppForViewing ? (
                               <input
                                 type="number"
@@ -6571,17 +6600,17 @@ export default function EmployeesPage() {
                             ) : (
                               <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
                                 {(() => {
-                                  const val = (viewingEmployee as any).paid_leaves ?? viewingEmployee.dynamicFields?.paid_leaves;
+                                  const val = (viewingEmployee as any).paid_leaves ?? viewingEmployee.dynamicFields?.paid_leaves ?? viewingEmployee.paidLeaves;
                                   return val !== undefined && val !== null ? String(val) : '0';
                                 })()}
                               </p>
                             )}
                             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                              Total paid leaves balance
+                              Recurring monthly paid leaves
                             </p>
                           </div>
                           <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Casual Leaves</label>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('casual_leaves', formSettings) || 'Casual Leaves'}</label>
                             {pendingAppForViewing ? (
                               <input
                                 type="number"
@@ -6602,9 +6631,20 @@ export default function EmployeesPage() {
                               Casual leaves count
                             </p>
                           </div>
+                          <div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('allottedLeaves', formSettings) || 'Yearly Allotted Leaves'}</label>
+                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
+                              {viewingEmployee.allottedLeaves !== undefined && viewingEmployee.allottedLeaves !== null
+                                ? `${viewingEmployee.allottedLeaves} days/year`
+                                : '0 days/year'}
+                            </p>
+                            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                              Total for without_pay/LOP leaves
+                            </p>
+                          </div>
                           {((viewingEmployee as any).ctcSalary !== undefined && (viewingEmployee as any).ctcSalary !== null) && (
                             <div>
-                              <label className="text-xs font-medium text-slate-500 dark:text-slate-400">CTC Salary</label>
+                              <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('ctcSalary', formSettings) || 'CTC Salary'}</label>
                               <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
                                 ₹{Number((viewingEmployee as any).ctcSalary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                               </p>
@@ -6612,7 +6652,7 @@ export default function EmployeesPage() {
                           )}
                           {((viewingEmployee as any).calculatedSalary !== undefined && (viewingEmployee as any).calculatedSalary !== null) && (
                             <div>
-                              <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Calculated Salary (Net)</label>
+                              <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('calculatedSalary', formSettings) || 'Calculated Salary (Net)'}</label>
                               <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">
                                 ₹{Number((viewingEmployee as any).calculatedSalary || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                               </p>
@@ -7304,11 +7344,11 @@ export default function EmployeesPage() {
                         <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Leave Information</h3>
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                           <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Monthly Paid Leaves</label>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('paid_leaves', formSettings) || 'Monthly Paid Leaves'}</label>
                             <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.paidLeaves ?? 0} days/month</p>
                           </div>
                           <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Yearly Allotted Leaves</label>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('allottedLeaves', formSettings) || 'Yearly Allotted Leaves'}</label>
                             <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.allottedLeaves ?? 0} days/year</p>
                           </div>
                         </div>
@@ -7407,7 +7447,7 @@ export default function EmployeesPage() {
                       {/* Reporting Authority */}
                       {((viewingEmployee as any).reporting_to || (viewingEmployee as any).reporting_to_) && (
                         <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                          <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">Reporting Authority</h3>
+                          <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">{getGroupLabel('reporting_authority', formSettings, 'Reporting Authority')}</h3>
                           <p className="text-sm text-slate-500 dark:text-slate-400">Managers assigned.</p>
                         </div>
                       )}

@@ -1,8 +1,32 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/api';
-import TodayBirthdayTicker from '@/components/employee-birthdays/TodayBirthdayTicker';
+import { Calendar } from 'lucide-react';
+
+interface WeeklyDay {
+  label: string;
+  date: string;
+  present: number;
+  leave: number;
+  od: number;
+}
+
+interface DivisionAttendance {
+  name: string;
+  present: number;
+  total: number;
+  rate: number;
+}
+
+interface OnLeaveRow {
+  id: string;
+  name: string;
+  empNo: string;
+  leaveType: string;
+  daysLeft: number;
+  photo: string | null;
+}
 
 interface DashboardStats {
   totalEmployees: number;
@@ -20,6 +44,8 @@ interface DashboardStats {
   pendingLeaves: number;
   pendingODs: number;
   pendingPermissions: number;
+  pendingApplications: number;
+  pendingSalaryVerification?: number;
   monthlyPresent: number;
   monthlyAbsent: number;
   monthlyLeaves: number;
@@ -27,36 +53,71 @@ interface DashboardStats {
   leaveUtilization: number;
   departmentLeaveDistribution: Record<string, number>;
   departmentODDistribution: Record<string, number>;
+  newEmployeesThisMonth?: number;
+  newEmployeesLastMonth?: number;
+  resignedThisMonth?: number;
+  resignedLastMonth?: number;
+  trendNewEmployeesPct?: number;
+  trendResignedPct?: number;
+  trendOnLeavePct?: number;
+  trendApplicationsPct?: number;
+  weeklyTracker?: WeeklyDay[];
+  divisionAttendanceToday?: DivisionAttendance[];
+  onLeaveEmployeesList?: OnLeaveRow[];
+  presentRateToday?: number;
+  presentRateYesterday?: number;
+  performanceDeltaVsYesterday?: number;
+  /** IST calendar date (YYYY-MM-DD) used for all analytics queries — use for attendance list */
+  analyticsDateStr?: string;
+  trackerPeriod?: string;
 }
 
-interface DashboardCardProps {
-  title: string;
-  value: string | number;
-  description: React.ReactNode;
-  change?: string;
-  statusBadge?: React.ReactNode;
+interface BirthdayItem {
+  id: string;
+  name: string;
+  dateLabel: string;
 }
 
-const DashboardCard = ({ title, value, description, change, statusBadge }: DashboardCardProps) => (
-  <div className="rounded-xl border border-border-base bg-bg-surface/70 backdrop-blur p-2.5 md:p-4 hover:bg-bg-surface/80 transition shadow-sm">
-    <div className="flex justify-between items-center mb-1.5 md:mb-2 gap-2">
-      <p className="text-xs md:text-sm font-medium text-text-primary truncate">{title}</p>
-      {statusBadge && (
-        <span className="text-[10px] md:text-xs bg-accent/15 text-accent px-1.5 py-0.5 md:px-2 md:py-0.5 rounded font-medium shrink-0">
-          {statusBadge}
-        </span>
-      )}
-    </div>
+function formatYmd(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
 
-    <div className="flex flex-col gap-0.5 md:gap-1">
-      <p className="text-lg md:text-2xl font-bold text-text-primary mb-0.5 md:mb-1 truncate">{value}</p>
-      <div className="flex items-center justify-between gap-1">
-        <p className="text-[10px] md:text-xs text-text-secondary font-normal truncate">{description}</p>
-        {change && <span className="text-[9px] md:text-[10px] text-text-secondary shrink-0">{change}</span>}
-      </div>
-    </div>
-  </div>
-);
+function nextBirthdayFromDob(dob: Date, from: Date): Date {
+  const m = dob.getMonth();
+  const day = dob.getDate();
+  let y = from.getFullYear();
+  let next = new Date(y, m, day);
+  next.setHours(0, 0, 0, 0);
+  if (next < from) next = new Date(y + 1, m, day);
+  return next;
+}
+
+function buildUpcomingBirthdays(employees: any[], daysAhead: number): BirthdayItem[] {
+  const from = new Date();
+  from.setHours(0, 0, 0, 0);
+  const until = new Date(from);
+  until.setDate(until.getDate() + daysAhead);
+  const raw: (BirthdayItem & { sort: number })[] = [];
+  for (const emp of employees) {
+    if (!emp?.dob) continue;
+    const dob = new Date(emp.dob);
+    if (Number.isNaN(dob.getTime())) continue;
+    const next = nextBirthdayFromDob(dob, from);
+    if (next >= from && next <= until) {
+      raw.push({
+        id: String(emp._id || emp.emp_no),
+        name: emp.employee_name || emp.emp_no || 'Employee',
+        dateLabel: next.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        sort: next.getTime(),
+      });
+    }
+  }
+  raw.sort((a, b) => a.sort - b.sort);
+  return raw.map(({ sort: _s, ...rest }) => rest);
+}
 
 const DEFAULT_STATS: DashboardStats = {
   totalEmployees: 0,
@@ -74,6 +135,8 @@ const DEFAULT_STATS: DashboardStats = {
   pendingLeaves: 0,
   pendingODs: 0,
   pendingPermissions: 0,
+  pendingApplications: 0,
+  pendingSalaryVerification: 0,
   monthlyPresent: 0,
   monthlyAbsent: 0,
   monthlyLeaves: 0,
@@ -81,426 +144,515 @@ const DEFAULT_STATS: DashboardStats = {
   leaveUtilization: 0,
   departmentLeaveDistribution: {},
   departmentODDistribution: {},
+  newEmployeesThisMonth: 0,
+  newEmployeesLastMonth: 0,
+  resignedThisMonth: 0,
+  resignedLastMonth: 0,
+  trendNewEmployeesPct: 0,
+  trendResignedPct: 0,
+  trendOnLeavePct: 0,
+  trendApplicationsPct: 0,
+  weeklyTracker: [],
+  divisionAttendanceToday: [],
+  onLeaveEmployeesList: [],
+  presentRateToday: 0,
+  presentRateYesterday: 0,
+  performanceDeltaVsYesterday: 0,
 };
 
 export default function SuperAdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<DashboardStats>(DEFAULT_STATS);
-  const [currentDate] = useState(new Date());
   const [connectionError, setConnectionError] = useState<string | null>(null);
-  const [todayBirthdayItems, setTodayBirthdayItems] = useState<Array<{ id: string; name: string; designationName: string }>>([]);
+  const [upcomingBirthdays, setUpcomingBirthdays] = useState<BirthdayItem[]>([]);
+  const [trackerPeriod, setTrackerPeriod] = useState<'week' | 'month' | 'lastMonth'>('week');
+  const [barDetail, setBarDetail] = useState<null | { kind: 'tracker'; day: WeeklyDay }>(null);
 
-  useEffect(() => {
-    loadDashboardData();
-  }, []);
+  const fallbackDateStr = useMemo(() => formatYmd(new Date()), []);
+  const displayDateStr = stats.analyticsDateStr || fallbackDateStr;
 
-  const loadDashboardData = async () => {
+  const loadDashboardData = useCallback(async () => {
     try {
       setLoading(true);
       setConnectionError(null);
-      const [res, empRes] = await Promise.all([
-        api.getDashboardAnalytics(),
-        api.getEmployees({ includeLeft: false, limit: 10000, page: 1 }),
-      ]);
+      const res = await api.getDashboardAnalytics(trackerPeriod);
+      let attendanceDate = fallbackDateStr;
+
       if (res.success && res.data) {
-        setStats(res.data);
+        const merged = { ...DEFAULT_STATS, ...res.data };
+        setStats(merged);
+        if (res.data.analyticsDateStr) attendanceDate = res.data.analyticsDateStr;
       } else {
         setStats(DEFAULT_STATS);
         const msg = (res as { message?: string }).message || '';
-        const isNetworkError = msg.includes('connect to server') || msg.includes('network') || msg.includes('Failed to fetch');
+        const isNetworkError =
+          msg.includes('connect to server') || msg.includes('network') || msg.includes('Failed to fetch');
         if (isNetworkError || !res.success) {
           setConnectionError(msg || 'Could not load dashboard. Ensure the backend is running (e.g. port 5000).');
         }
       }
 
+      const empRes = await api.getEmployees({ includeLeft: false, limit: 10000, page: 1 });
+
       if (empRes?.success && Array.isArray(empRes.data)) {
-        const today = new Date();
-        const month = today.getMonth();
-        const date = today.getDate();
-
-        const items = empRes.data
-          .filter((emp: any) => {
-            if (!emp?.dob) return false;
-            const dob = new Date(emp.dob);
-            if (Number.isNaN(dob.getTime())) return false;
-            return dob.getMonth() === month && dob.getDate() === date;
-          })
-          .map((emp: any) => ({
-            id: emp._id || emp.emp_no,
-            name: emp.employee_name || emp.emp_no || 'Employee',
-            designationName:
-              (typeof emp.designation_id === 'object' && emp.designation_id?.name) ||
-              (typeof emp.designation === 'object' && emp.designation?.name) ||
-              '—',
-          }));
-
-        setTodayBirthdayItems(items);
+        setUpcomingBirthdays(buildUpcomingBirthdays(empRes.data, 7));
       } else {
-        setTodayBirthdayItems([]);
+        setUpcomingBirthdays([]);
       }
+
     } catch (err) {
       setStats(DEFAULT_STATS);
       setConnectionError(err instanceof Error ? err.message : 'Failed to load dashboard data.');
-      setTodayBirthdayItems([]);
+      setUpcomingBirthdays([]);
     } finally {
       setLoading(false);
     }
-  };
+  }, [trackerPeriod, fallbackDateStr]);
 
-  // Get top departments for leaves and ODs
-  const topLeaveDepartments = stats?.departmentLeaveDistribution
-    ? Object.entries(stats.departmentLeaveDistribution)
-      .sort(([, a], [, b]) => b - a)
-      .slice(0, 3)
-      .map(([name, count]) => `${name}: ${count}`)
-      .join(', ')
-    : 'None';
+  useEffect(() => {
+    loadDashboardData();
+  }, [loadDashboardData]);
 
-  const topODDepartments = stats?.departmentODDistribution
-    ? Object.entries(stats.departmentODDistribution)
-      .sort(([, a], [, b]) => b - a)
-      .slice(0, 3)
-      .map(([name, count]) => `${name}: ${count}`)
-      .join(', ')
-    : 'None';
+  const weekly = stats.weeklyTracker?.length ? stats.weeklyTracker : DEFAULT_STATS.weeklyTracker!;
+  const maxStack = Math.max(...weekly.map((d) => d.present + d.leave + d.od), 1);
 
-  const KPICards = [
-    {
-      title: 'Today Present',
-      value: stats?.todayPresent || 0,
-      change: `${stats?.todayAbsent || 0} absent`,
-      icon: (
-        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-        </svg>
-      ),
-      color: 'from-green-500 to-green-500',
-      bgColor: 'bg-green-50 dark:bg-green-900/20',
-    },
-    {
-      title: 'On Leave Today',
-      value: stats?.todayOnLeave || 0,
-      change: 'Approved leaves',
-      icon: (
-        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-        </svg>
-      ),
-      color: 'from-orange-500 to-amber-500',
-      bgColor: 'bg-orange-50 dark:bg-orange-900/20',
-    },
-    {
-      title: 'On OD Today',
-      value: stats?.todayODs || 0,
-      change: 'Approved ODs',
-      icon: (
-        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-        </svg>
-      ),
-      color: 'from-blue-500 to-cyan-500',
-      bgColor: 'bg-blue-50 dark:bg-blue-900/20',
-    },
-    {
-      title: 'Total Employees',
-      value: stats?.activeEmployees ?? 0,
-      change: (() => {
-        const total = stats?.totalEmployees ?? 0;
-        const active = stats?.activeEmployees ?? 0;
-        const inactive = Math.max(0, total - active);
-        return (
-          <span className="text-orange-500 dark:text-orange-400 font-medium text-[10px] md:text-xs">{inactive} inactive</span>
-        );
-      })(),
-      icon: (
-        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-        </svg>
-      ),
-      color: 'from-indigo-500 to-purple-500',
-      bgColor: 'bg-indigo-50 dark:bg-indigo-900/20',
-    },
-    {
-      title: 'Attendance Rate',
-      value: `${(stats?.attendanceRate || 0).toFixed(1)}%`,
-      change: 'This month',
-      icon: (
-        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-        </svg>
-      ),
-      color: 'from-purple-500 to-red-500',
-      bgColor: 'bg-purple-50 dark:bg-purple-900/20',
-    },
-    {
-      title: 'Leave Distribution',
-      value: Object.keys(stats?.departmentLeaveDistribution || {}).length || 0,
-      change: topLeaveDepartments || 'No leaves',
-      icon: (
-        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-        </svg>
-      ),
-      color: 'from-red-500 to-red-500',
-      bgColor: 'bg-red-50 dark:bg-red-900/20',
-    },
-    {
-      title: 'OD Distribution',
-      value: Object.keys(stats?.departmentODDistribution || {}).length || 0,
-      change: topODDepartments || 'No ODs',
-      icon: (
-        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-        </svg>
-      ),
-      color: 'from-green-500 to-cyan-500',
-      bgColor: 'bg-green-50 dark:bg-green-900/20',
-    },
-    {
-      title: 'Pending Approvals',
-      value: (stats?.pendingLeaves || 0) + (stats?.pendingODs || 0),
-      change: `${stats?.pendingLeaves || 0} leaves, ${stats?.pendingODs || 0} ODs`,
-      icon: (
-        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
-      ),
-      color: 'from-yellow-500 to-orange-500',
-      bgColor: 'bg-yellow-50 dark:bg-yellow-900/20',
-    },
-  ];
+  const divisionsList = stats.divisionAttendanceToday?.length ? stats.divisionAttendanceToday : [];
+  const inactiveEmployees = Math.max(0, (stats.totalEmployees ?? 0) - (stats.activeEmployees ?? 0));
+  const trackerDense = trackerPeriod !== 'week';
 
   return (
-    <div className="relative min-h-screen">
-      <div className="relative z-10 mx-auto max-w-[1920px] ">
+    <div className="relative min-h-screen bg-zinc-50 dark:bg-zinc-950">
+      <div className="relative z-10 mx-auto max-w-[1920px] px-3 pb-10 pt-2 sm:px-4">
         {connectionError && (
-          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20 px-4 py-3 flex items-center justify-between gap-3">
-            <p className="text-sm text-amber-800 dark:text-amber-200">{connectionError}</p>
-            <div className="flex items-center gap-2 shrink-0">
+          <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-800 dark:bg-amber-950/30">
+            <p className="text-sm text-amber-900 dark:text-amber-200">{connectionError}</p>
+            <div className="flex shrink-0 items-center gap-2">
               <button
                 type="button"
-                onClick={() => { setConnectionError(null); loadDashboardData(); }}
-                className="rounded-lg bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 text-xs font-medium"
+                onClick={() => {
+                  setConnectionError(null);
+                  loadDashboardData();
+                }}
+                className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700"
               >
                 Retry
               </button>
               <button
                 type="button"
                 onClick={() => setConnectionError(null)}
-                className="rounded-lg border border-amber-300 dark:border-amber-700 px-3 py-1.5 text-xs font-medium text-amber-800 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-900/30"
+                className="rounded-lg border border-amber-300 px-3 py-1.5 text-xs font-medium text-amber-900 hover:bg-amber-100 dark:border-amber-700 dark:text-amber-200 dark:hover:bg-amber-900/30"
               >
                 Dismiss
               </button>
             </div>
           </div>
         )}
-        {/* Header */}
+
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-text-primary">Dashboard</h1>
-            <p className="mt-1 text-xs text-text-secondary font-normal">Overview of your HRMS </p>
+            <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white">Dashboard</h1>
+            <p className="mt-1 text-sm font-normal text-[#7E7E7E] dark:text-zinc-400">
+              Super admin overview — attendance, people, and applications
+            </p>
           </div>
-
-          <div className="flex items-center gap-2 text-xs font-medium text-text-secondary bg-bg-surface/50 px-3 py-1.5 rounded-full border border-border-base backdrop-blur-sm">
-            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-            <span>{currentDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+          <div className="flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-[#7E7E7E] dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+            <Calendar className="h-3.5 w-3.5 shrink-0" />
+            <span>
+              {new Date().toLocaleDateString('en-US', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+              })}
+            </span>
           </div>
         </div>
 
-        {todayBirthdayItems.length > 0 && (
-          <div className="mb-5">
-            <TodayBirthdayTicker items={todayBirthdayItems} />
-          </div>
-        )}
-
-        {/* KPI Cards Grid */}
-        {loading ? (
-          <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-              <div key={i} className="animate-pulse rounded-xl border border-border-base bg-white dark:bg-bg-surface/50 backdrop-blur p-4">
-                <div className="h-3.5 w-1/2 bg-gray-200 dark:bg-white/5 rounded"></div>
-                <div className="mt-3 h-7 w-1/3 bg-gray-200 dark:bg-white/5 rounded"></div>
-                <div className="mt-2 h-2.5 w-2/5 bg-gray-200 dark:bg-white/5 rounded"></div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {KPICards.map((card, index) => (
-              <DashboardCard
-                key={index}
-                title={card.title}
-                value={card.value}
-                description={typeof card.change === 'string' ? card.change : card.change}
-                statusBadge={
-                  (typeof card.change === 'string' && (card.change.includes('absent') || card.change.includes('No'))) ? (
-                    null
-                  ) : (
-                    <span className="flex items-center gap-1">
-                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-                      </svg>
-                      Active
-                    </span>
-                  )
-                }
-              />
-            ))}
-          </div>
-        )}
-
-        {/* Analytics and Recent Activities Row */}
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-          {/* Yesterday's Stats */}
-          <div className="lg:col-span-2 space-y-3.5">
-            <h2 className="text-base font-semibold tracking-tight text-text-primary">Yesterday's Overview</h2>
-            {loading ? (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
-                {[1, 2, 3, 4].map((i) => (
-                  <div key={i} className="animate-pulse rounded-xl border border-border-base bg-white dark:bg-bg-surface/50 backdrop-blur p-2.5 md:p-4">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <div className="h-3.5 md:h-5 w-12 md:w-16 bg-gray-200 dark:bg-white/5 rounded mb-1 md:mb-2"></div>
-                        <div className="h-2 md:h-2.5 w-16 md:w-24 bg-gray-200 dark:bg-white/5 rounded"></div>
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_340px]">
+          {/* Main column */}
+          <div className="space-y-5">
+            {/* Compact KPIs + Employee tracker */}
+            <div className="overflow-hidden rounded-[16px] border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+              {loading ? (
+                <div className="flex min-h-[240px] animate-pulse flex-col lg:flex-row">
+                  <div className="grid flex-1 grid-cols-2 gap-px bg-zinc-100 p-px dark:bg-zinc-800">
+                    {[1, 2, 3, 4].map((i) => (
+                      <div key={i} className="bg-white p-3 dark:bg-zinc-900">
+                        <div className="h-8 w-8 rounded-lg bg-zinc-100 dark:bg-zinc-800" />
+                        <div className="mt-2 h-6 w-14 bg-zinc-100 dark:bg-zinc-800" />
                       </div>
-                      <div className="h-5 w-5 md:h-7 md:w-7 bg-gray-200 dark:bg-white/5 rounded-lg"></div>
+                    ))}
+                  </div>
+                  <div className="min-h-[200px] flex-1 border-t border-zinc-100 p-4 dark:border-zinc-800 lg:border-l lg:border-t-0">
+                    <div className="h-4 w-32 bg-zinc-100 dark:bg-zinc-800" />
+                    <div className="mt-6 flex h-32 items-end gap-2">
+                      {[1, 2, 3, 4, 5, 6, 7].map((i) => (
+                        <div key={i} className="flex-1 rounded-t bg-zinc-100 dark:bg-zinc-800" style={{ height: `${16 + i * 6}px` }} />
+                      ))}
                     </div>
                   </div>
-                ))}
+                </div>
+              ) : (
+                <div className="flex flex-col lg:flex-row">
+                  <div className="grid flex-1 grid-cols-2 gap-px bg-zinc-100 p-px dark:bg-zinc-800 sm:grid-cols-3">
+                    {[
+                      {
+                        title: 'Total Employees',
+                        value: stats.totalEmployees ?? 0,
+                        iconBg: 'bg-amber-100 dark:bg-amber-950/50',
+                        icon: (
+                          <svg className="h-4 w-4 text-[#FFB800]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                          </svg>
+                        ),
+                      },
+                      {
+                        title: 'Active Employees',
+                        value: stats.activeEmployees ?? 0,
+                        iconBg: 'bg-sky-100 dark:bg-sky-950/50',
+                        icon: (
+                          <svg className="h-4 w-4 text-[#2D5BFF]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                          </svg>
+                        ),
+                      },
+                      {
+                        title: 'Inactive Employees',
+                        value: inactiveEmployees,
+                        iconBg: 'bg-sky-100 dark:bg-sky-950/50',
+                        icon: (
+                          <svg className="h-4 w-4 text-[#00A3FF]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                        ),
+                      },
+                      {
+                        title: 'New Hires (MTD)',
+                        value: stats.newEmployeesThisMonth ?? 0,
+                        iconBg: 'bg-pink-100 dark:bg-pink-950/40',
+                        icon: (
+                          <svg className="h-4 w-4 text-[#FF4D81]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                          </svg>
+                        ),
+                      },
+                      {
+                        title: 'Resigned (MTD)',
+                        value: stats.resignedThisMonth ?? 0,
+                        iconBg: 'bg-rose-100 dark:bg-rose-950/40',
+                        icon: (
+                          <svg className="h-4 w-4 text-[#FF4D81]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                          </svg>
+                        ),
+                      },
+                      {
+                        title: 'Pending Applications',
+                        value: stats.pendingApplications ?? 0,
+                        iconBg: 'bg-pink-100 dark:bg-pink-950/40',
+                        icon: (
+                          <svg className="h-4 w-4 text-[#FF4D81]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                        ),
+                      },
+                    ].map((cell) => (
+                      <div
+                        key={cell.title}
+                        className="flex items-center justify-between gap-2 bg-white px-3 py-2.5 dark:bg-zinc-900 sm:px-3.5"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-[10px] font-medium uppercase tracking-wide text-[#7E7E7E] dark:text-zinc-500">
+                            {cell.title}
+                          </p>
+                          <p className="mt-0.5 text-lg font-bold tabular-nums tracking-tight text-zinc-900 dark:text-white">
+                            {cell.value}
+                          </p>
+                        </div>
+                        <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${cell.iconBg}`}>
+                          {cell.icon}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex min-w-0 flex-1 flex-col border-t border-zinc-100 p-3 sm:p-4 dark:border-zinc-800 lg:border-l lg:border-t-0">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h2 className="text-sm font-bold text-zinc-900 dark:text-white">Employee Tracker</h2>
+                      <label className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
+                        <span className="sr-only">Period</span>
+                        <select
+                          value={trackerPeriod}
+                          onChange={(e) => setTrackerPeriod(e.target.value as 'week' | 'month' | 'lastMonth')}
+                          className="rounded-lg border border-zinc-200 bg-white py-1.5 pl-2 pr-8 text-xs font-medium text-zinc-800 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200"
+                        >
+                          <option value="week">This week</option>
+                          <option value="month">This month</option>
+                          <option value="lastMonth">Last month</option>
+                        </select>
+                      </label>
+                    </div>
+                    <p className="mt-1 text-[10px] text-[#7E7E7E] dark:text-zinc-500">
+                      {trackerPeriod === 'week' && 'Mon–Sun (IST) · click a bar for details'}
+                      {trackerPeriod === 'month' && 'Each day MTD (IST) · scroll horizontally on small screens'}
+                      {trackerPeriod === 'lastMonth' && 'Full previous calendar month (IST)'}
+                    </p>
+                    <div
+                      className={
+                        trackerDense
+                          ? 'mt-4 flex max-w-full flex-1 items-end gap-0.5 overflow-x-auto pb-1 pt-1'
+                          : 'mt-5 flex flex-1 items-end justify-between gap-1 sm:gap-2'
+                      }
+                    >
+                      {weekly.map((day) => {
+                        const total = day.present + day.leave + day.od;
+                        const barPct = maxStack > 0 ? Math.max(8, (total / maxStack) * 100) : 8;
+                        const flex = (n: number) => (total > 0 ? Math.max(n, 0.15) : 0.05);
+                        return (
+                          <button
+                            key={`${day.date}-${day.label}`}
+                            type="button"
+                            className={
+                              trackerDense
+                                ? 'flex w-7 shrink-0 flex-col items-center gap-1 rounded-lg p-0.5 outline-none hover:bg-zinc-50 focus-visible:ring-2 focus-visible:ring-violet-400 dark:hover:bg-zinc-800/50'
+                                : 'flex flex-1 flex-col items-center gap-1.5 rounded-xl p-1 outline-none transition hover:bg-zinc-50 focus-visible:ring-2 focus-visible:ring-violet-400 dark:hover:bg-zinc-800/50'
+                            }
+                            onClick={() => setBarDetail({ kind: 'tracker', day })}
+                          >
+                            <div
+                              className={
+                                trackerDense
+                                  ? 'flex h-28 w-full max-w-[22px] flex-col justify-end'
+                                  : 'flex h-36 w-full max-w-[40px] flex-col justify-end sm:h-44 sm:max-w-[48px]'
+                              }
+                            >
+                              <div
+                                className="flex w-full flex-col-reverse overflow-hidden rounded-t-md"
+                                style={{ height: `${barPct}%` }}
+                              >
+                                <div className="min-h-[2px] w-full bg-[#1e3a5f]" style={{ flex: flex(day.present) }} />
+                                <div className="min-h-[2px] w-full bg-[#00A3FF]" style={{ flex: flex(day.leave) }} />
+                                <div className="min-h-[2px] w-full bg-[#FFB800]" style={{ flex: flex(day.od) }} />
+                              </div>
+                            </div>
+                            <span className="max-w-[2.25rem] truncate text-center text-[9px] font-medium text-[#7E7E7E] dark:text-zinc-500">
+                              {day.label}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="mt-1 text-center text-[10px] text-[#7E7E7E] dark:text-zinc-500">Click a bar for counts</p>
+                    <div className="mt-2 flex flex-wrap items-center justify-center gap-3 text-[10px] text-[#7E7E7E] dark:text-zinc-400">
+                      <span className="inline-flex items-center gap-1">
+                        <span className="h-1.5 w-1.5 rounded-sm bg-[#1e3a5f]" /> Present
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <span className="h-1.5 w-1.5 rounded-sm bg-[#00A3FF]" /> Leave
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <span className="h-1.5 w-1.5 rounded-sm bg-[#FFB800]" /> OD
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Quick stats */}
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+              {[
+                { title: 'Pending Leaves', value: stats.pendingLeaves, dot: 'bg-amber-400' },
+                { title: 'Pending ODs', value: stats.pendingODs, dot: 'bg-sky-500' },
+                { title: 'Pending Permissions', value: stats.pendingPermissions, dot: 'bg-violet-500' },
+                { title: 'Monthly attendance rate', value: `${(stats.attendanceRate || 0).toFixed(1)}%`, dot: 'bg-emerald-500' },
+              ].map((q) => (
+                <div
+                  key={q.title}
+                  className="flex items-center justify-between rounded-xl border border-zinc-200 bg-white px-3 py-2 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+                >
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${q.dot}`} />
+                    <span className="truncate text-xs font-medium text-zinc-700 dark:text-zinc-200">{q.title}</span>
+                  </div>
+                  <span className="shrink-0 text-sm font-bold tabular-nums text-zinc-900 dark:text-white">{q.value}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Onboarding & Verifications Group */}
+            <div className="rounded-[16px] border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+              <div className="flex items-center justify-between mb-5">
+                <div>
+                  <h2 className="text-base font-bold text-zinc-900 dark:text-white">Onboarding & Verifications</h2>
+                  <p className="text-[11px] text-[#7E7E7E] dark:text-zinc-500">Employee lifecycle status overview</p>
+                </div>
+                <div className="h-10 w-10 flex items-center justify-center rounded-xl bg-violet-100 dark:bg-violet-950/40">
+                  <svg className="h-5 w-5 text-violet-600 dark:text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.040 12.02 12.02 0 00-1.131 10.141c.83 2.13 2.58 3.83 4.823 4.746L12 22l4.926-2.127c2.243-.916 3.992-2.616 4.823-4.746a12.02 12.02 0 00-1.131-10.141z" />
+                  </svg>
+                </div>
               </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
-                <div className="rounded-xl border border-border-base bg-white dark:bg-bg-surface/70 backdrop-blur p-2.5 md:p-4 hover:bg-gray-50 dark:hover:bg-bg-surface/80 transition shadow-sm">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <h5 className="text-base md:text-lg font-bold text-text-primary tracking-tight truncate">{stats?.yesterdayPresent || 0}</h5>
-                      <p className="text-[10px] md:text-sm font-medium text-text-primary mt-1 truncate">Present</p>
-                      <p className="mt-0.5 text-[9px] md:text-xs text-text-secondary font-normal truncate">Employees</p>
-                    </div>
-                    <div className="rounded bg-status-positive/15 p-1 md:p-1.5 text-status-positive shrink-0">
-                      <svg className="h-3.5 w-3.5 md:h-4 md:w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                      </svg>
-                    </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="flex flex-col gap-1 p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-100 dark:border-zinc-800/60">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#7E7E7E] dark:text-zinc-500">Joined this month</span>
+                  <span className="text-2xl font-black text-zinc-900 dark:text-white">{stats.newEmployeesThisMonth}</span>
+                  <div className="mt-1 flex items-center gap-1.5">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                    <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">New Hires</span>
                   </div>
                 </div>
-
-                <div className="rounded-xl border border-border-base bg-white dark:bg-bg-surface/70 backdrop-blur p-2.5 md:p-4 hover:bg-gray-50 dark:hover:bg-bg-surface/80 transition shadow-sm">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <h5 className="text-base md:text-lg font-bold text-text-primary tracking-tight truncate">{stats?.yesterdayAbsent || 0}</h5>
-                      <p className="text-[10px] md:text-sm font-medium text-text-primary mt-1 truncate">Absent</p>
-                      <p className="mt-0.5 text-[9px] md:text-xs text-text-secondary font-normal truncate">Employees</p>
-                    </div>
-                    <div className="rounded bg-status-negative/15 p-1 md:p-1.5 text-status-negative shrink-0">
-                      <svg className="h-3.5 w-3.5 md:h-4 md:w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </div>
+                <div className="flex flex-col gap-1 p-4 rounded-2xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-100/50 dark:border-amber-900/30">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-500">Pending Verification</span>
+                  <span className="text-2xl font-black text-amber-600 dark:text-amber-400">{stats.pendingApplications}</span>
+                  <div className="mt-1 flex items-center gap-1.5">
+                    <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                    <span className="text-[10px] font-medium text-amber-600/80">Awaiting HR Review</span>
                   </div>
                 </div>
-
-                <div className="rounded-xl border border-border-base bg-white dark:bg-bg-surface/70 backdrop-blur p-2.5 md:p-4 hover:bg-gray-50 dark:hover:bg-bg-surface/80 transition shadow-sm">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <h5 className="text-base md:text-lg font-bold text-text-primary tracking-tight truncate">{stats?.yesterdayOnLeave || 0}</h5>
-                      <p className="text-[10px] md:text-sm font-medium text-text-primary mt-1 truncate">Leaves</p>
-                      <p className="mt-0.5 text-[9px] md:text-xs text-text-secondary font-normal truncate">Approved</p>
-                    </div>
-                    <div className="rounded bg-status-warning/15 p-1 md:p-1.5 text-status-warning shrink-0">
-                      <svg className="h-3.5 w-3.5 md:h-4 md:w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="rounded-xl border border-border-base bg-white dark:bg-bg-surface/70 backdrop-blur p-2.5 md:p-4 hover:bg-gray-50 dark:hover:bg-bg-surface/80 transition shadow-sm">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <h5 className="text-base md:text-lg font-bold text-text-primary tracking-tight truncate">{stats?.yesterdayODs || 0}</h5>
-                      <p className="text-[10px] md:text-sm font-medium text-text-primary mt-1 truncate">ODs</p>
-                      <p className="mt-0.5 text-[9px] md:text-xs text-text-secondary font-normal truncate">Approved</p>
-                    </div>
-                    <div className="rounded bg-blue-500/15 p-1 md:p-1.5 text-blue-500 shrink-0"> {/* OD uses blue by convention if needed, or map to warning/info */}
-                      <svg className="h-3.5 w-3.5 md:h-4 md:w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                      </svg>
-                    </div>
+                <div className="flex flex-col gap-1 p-4 rounded-2xl bg-sky-50/50 dark:bg-sky-950/20 border border-sky-100/50 dark:border-sky-900/30">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-sky-700 dark:text-sky-500">Salary Verification</span>
+                  <span className="text-2xl font-black text-sky-600 dark:text-sky-400">{stats.pendingSalaryVerification}</span>
+                  <div className="mt-1 flex items-center gap-1.5">
+                    <span className="h-1.5 w-1.5 rounded-full bg-sky-400" />
+                    <span className="text-[10px] font-medium text-sky-600/80">Pending Final Approval</span>
                   </div>
                 </div>
               </div>
-            )}
+            </div>
+
+            {/* All divisions — today (IST) */}
+            <div className="overflow-hidden rounded-[16px] border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+              <div className="border-b border-zinc-100 px-5 py-4 dark:border-zinc-800">
+                <h2 className="text-base font-bold text-zinc-900 dark:text-white">Divisions attendance (today)</h2>
+                <p className="mt-1 text-xs text-[#7E7E7E] dark:text-zinc-500">
+                  Present includes partial · Date: {displayDateStr} (IST) · {divisionsList.length} division
+                  {divisionsList.length === 1 ? '' : 's'}
+                </p>
+              </div>
+              {loading ? (
+                <div className="grid animate-pulse grid-cols-1 gap-3 p-5 sm:grid-cols-2 lg:grid-cols-3">
+                  {[1, 2, 3, 4, 5, 6].map((i) => (
+                    <div key={i} className="h-24 rounded-xl bg-zinc-100 dark:bg-zinc-800" />
+                  ))}
+                </div>
+              ) : divisionsList.length === 0 ? (
+                <p className="p-6 text-sm text-zinc-500">No division assignment data for active employees.</p>
+              ) : (
+                <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  {divisionsList.map((d, idx) => (
+                    <div
+                      key={`${d.name}-${idx}`}
+                      className="rounded-xl border border-zinc-100 bg-zinc-50/80 p-4 dark:border-zinc-800 dark:bg-zinc-800/40"
+                    >
+                      <p className="line-clamp-2 text-sm font-bold text-zinc-900 dark:text-white" title={d.name}>
+                        {d.name}
+                      </p>
+                      <p className="mt-2 text-2xl font-bold tabular-nums text-zinc-900 dark:text-white">
+                        {d.rate.toFixed(1)}%
+                      </p>
+                      <p className="text-xs text-[#7E7E7E] dark:text-zinc-400">
+                        {d.present} / {d.total} present
+                      </p>
+                      <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-violet-600 to-sky-500 transition-all"
+                          style={{ width: `${Math.min(100, d.rate)}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Recent Activities Live Feed */}
+          {/* Right column */}
+          <aside className="space-y-5">
+            <div className="rounded-[16px] border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-base font-bold text-zinc-900 dark:text-white">Upcoming birthdays</h2>
+                <span className="text-xs font-medium text-[#7E7E7E] dark:text-zinc-400">Next 7 days</span>
+              </div>
+              {loading ? (
+                <div className="mt-4 space-y-3 animate-pulse">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="h-12 rounded-xl bg-zinc-100 dark:bg-zinc-800" />
+                  ))}
+                </div>
+              ) : upcomingBirthdays.length === 0 ? (
+                <p className="mt-4 text-sm text-[#7E7E7E] dark:text-zinc-400">No birthdays in the next week.</p>
+              ) : (
+                <ul className="mt-4 space-y-3">
+                  {upcomingBirthdays.map((b) => (
+                    <li
+                      key={b.id}
+                      className="flex items-center justify-between rounded-xl border border-zinc-100 bg-zinc-50/80 px-3 py-2.5 dark:border-zinc-800 dark:bg-zinc-800/50"
+                    >
+                      <span className="font-semibold text-zinc-900 dark:text-white">{b.name}</span>
+                      <span className="text-xs font-semibold text-violet-600 dark:text-violet-400">{b.dateLabel}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
 
+          </aside>
         </div>
 
-        {/* Quick Stats Row */}
-        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-xl border border-border-base bg-bg-surface/70 backdrop-blur p-4 hover:bg-bg-surface/80 transition shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-text-primary">Pending Leaves</p>
-                <p className="mt-3 text-2xl font-bold text-text-primary">{stats?.pendingLeaves || 0}</p>
+        {barDetail && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="bar-detail-title"
+            onClick={() => setBarDetail(null)}
+            onKeyDown={(e) => e.key === 'Escape' && setBarDetail(null)}
+          >
+            <div
+              className="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-6 shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 id="bar-detail-title" className="text-lg font-bold text-zinc-900 dark:text-white">
+                Employee tracker — day detail
+              </h3>
+              <div className="mt-4 space-y-3 text-sm text-zinc-700 dark:text-zinc-300">
+                <p>
+                  <span className="font-semibold text-zinc-900 dark:text-white">{barDetail.day.label}</span>
+                  <span className="text-[#7E7E7E] dark:text-zinc-500"> · {barDetail.day.date}</span>
+                </p>
+                <ul className="space-y-2 rounded-xl border border-zinc-100 bg-zinc-50/80 p-4 dark:border-zinc-800 dark:bg-zinc-800/40">
+                  <li className="flex justify-between gap-2">
+                    <span className="text-[#7E7E7E] dark:text-zinc-400">Present (incl. partial)</span>
+                    <span className="font-bold tabular-nums text-zinc-900 dark:text-white">{barDetail.day.present}</span>
+                  </li>
+                  <li className="flex justify-between gap-2">
+                    <span className="text-[#7E7E7E] dark:text-zinc-400">On approved leave</span>
+                    <span className="font-bold tabular-nums text-sky-600 dark:text-sky-400">{barDetail.day.leave}</span>
+                  </li>
+                  <li className="flex justify-between gap-2">
+                    <span className="text-[#7E7E7E] dark:text-zinc-400">On duty (OD)</span>
+                    <span className="font-bold tabular-nums text-amber-600 dark:text-amber-400">{barDetail.day.od}</span>
+                  </li>
+                  <li className="flex justify-between gap-2 border-t border-zinc-200 pt-2 dark:border-zinc-700">
+                    <span className="font-medium text-zinc-900 dark:text-white">Total (stack height)</span>
+                    <span className="font-bold tabular-nums text-zinc-900 dark:text-white">
+                      {barDetail.day.present + barDetail.day.leave + barDetail.day.od}
+                    </span>
+                  </li>
+                </ul>
               </div>
-              <div className="rounded bg-status-warning/15 p-1.5 text-status-warning">
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-              </div>
+              <button
+                type="button"
+                className="mt-6 w-full rounded-xl bg-zinc-900 py-2.5 text-sm font-semibold text-white hover:bg-zinc-800 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
+                onClick={() => setBarDetail(null)}
+              >
+                Close
+              </button>
             </div>
           </div>
-
-          <div className="rounded-xl border border-border-base bg-bg-surface/70 backdrop-blur p-4 hover:bg-bg-surface/80 transition shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-text-primary">Pending ODs</p>
-                <p className="mt-3 text-2xl font-bold text-text-primary">{stats?.pendingODs || 0}</p>
-              </div>
-              <div className="rounded bg-blue-500/15 p-1.5 text-blue-500">
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-border-base bg-bg-surface/70 backdrop-blur p-4 hover:bg-bg-surface/80 transition shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-text-primary">Pending Permissions</p>
-                <p className="mt-3 text-2xl font-bold text-text-primary">{stats?.pendingPermissions || 0}</p>
-              </div>
-              <div className="rounded bg-purple-500/15 p-1.5 text-purple-500">
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-border-base bg-bg-surface/70 backdrop-blur p-4 hover:bg-bg-surface/80 transition shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-text-primary">Monthly Leaves</p>
-                <p className="mt-3 text-2xl font-bold text-text-primary">{stats?.monthlyLeaves || 0}</p>
-              </div>
-              <div className="rounded bg-status-positive/15 p-1.5 text-status-positive">
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-            </div>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );

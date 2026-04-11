@@ -1663,7 +1663,7 @@ export default function AttendancePage() {
         const weekOffs = item.summary?.totalWeeklyOffs ?? dailyValues.filter((r: any) => r?.status === 'WEEK_OFF').length;
         const holidays = item.summary?.totalHolidays ?? dailyValues.filter((r: any) => r?.status === 'HOLIDAY').length;
         const monthPresent = dailyValues.reduce((sum, r: any) => {
-          if (r?.status === 'PRESENT') return sum + 1;
+          if (r?.status === 'PRESENT' || r?.status === 'PARTIAL') return sum + 1;
           if (r?.status === 'HALF_DAY') return sum + 0.5;
           return sum;
         }, 0);
@@ -1758,7 +1758,11 @@ export default function AttendancePage() {
         const dayResults = daysArrayExport.map(d => getStatusWithLateEarly((dailyAttendance as Record<string, any>)[d]));
         completeLateEarlyFlags.push(dayResults.map(d => ({ isLate: d.isLate, isEarly: d.isEarly })));
         const dayCells = dayResults.map(d => d.text);
-        const monthPresent = dailyValues.reduce((sum, r: any) => { if (r?.status === 'PRESENT') return sum + 1; if (r?.status === 'HALF_DAY') return sum + 0.5; return sum; }, 0);
+        const monthPresent = dailyValues.reduce((sum, r: any) => {
+          if (r?.status === 'PRESENT' || r?.status === 'PARTIAL') return sum + 1;
+          if (r?.status === 'HALF_DAY') return sum + 0.5;
+          return sum;
+        }, 0);
         const totalLeaves = item.summary?.totalLeaves ?? dailyValues.filter((r: any) => r?.status === 'LEAVE' || r?.hasLeave).length;
         const monthAbsentRow = getAbsentCountForRow(item as MonthlyAttendanceData, dailyValues);
         const wo = item.summary?.totalWeeklyOffs ?? dailyValues.filter((r: any) => r?.status === 'WEEK_OFF').length;
@@ -1808,7 +1812,11 @@ export default function AttendancePage() {
         const dayResults = daysArrayExport.map(d => getStatusWithLateEarly((dailyAttendance as Record<string, any>)[d]));
         paLateEarlyFlags.push(dayResults.map(d => ({ isLate: d.isLate, isEarly: d.isEarly })));
         const dayCells = dayResults.map(d => d.text);
-        const monthPresent = dailyValues.reduce((sum, r: any) => { if (r?.status === 'PRESENT') return sum + 1; if (r?.status === 'HALF_DAY') return sum + 0.5; return sum; }, 0);
+        const monthPresent = dailyValues.reduce((sum, r: any) => {
+          if (r?.status === 'PRESENT' || r?.status === 'PARTIAL') return sum + 1;
+          if (r?.status === 'HALF_DAY') return sum + 0.5;
+          return sum;
+        }, 0);
         const monthAbsent = getAbsentCountForRow(item as MonthlyAttendanceData, dailyValues);
         return [
           item.employee?.emp_no || '',
@@ -2812,7 +2820,7 @@ export default function AttendancePage() {
                       : dailyValues.reduce((sum, record: any) => {
                         if (!record) return sum;
                         let contribution = 0;
-                        if (record.status === 'PRESENT') contribution = 1;
+                        if (record.status === 'PRESENT' || record.status === 'PARTIAL') contribution = 1;
                         else if (record.status === 'HALF_DAY') contribution = 0.5;
                         return Math.round((sum + contribution) * 100) / 100;
                       }, 0);
@@ -2821,7 +2829,7 @@ export default function AttendancePage() {
                     item.summary?.totalPayableShifts ?? item.payableShifts ?? 0
                   );
                   const monthPresent = dailyValues.reduce((sum, r: any) => {
-                    if (r?.status === 'PRESENT') return sum + 1;
+                    if (r?.status === 'PRESENT' || r?.status === 'PARTIAL') return sum + 1;
                     if (r?.status === 'HALF_DAY') return sum + 0.5;
                     return sum;
                   }, 0);

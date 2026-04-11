@@ -264,8 +264,79 @@ export default function LoansPage() {
       if (selectedLoan.duration) {
         setApprovalDuration(selectedLoan.duration.toString());
       }
+
+      // Fetch settings for the specific request type to generate the timeline
+      loadLoanSettings(selectedLoan.requestType);
     }
   }, [showDetailDialog, selectedLoan?._id]);
+
+  const timelineSteps = useMemo(() => {
+    if (!selectedLoan || !loanSettings || loanSettings.type !== selectedLoan.requestType) return [];
+
+    const history = (selectedLoan as any).workflow?.history || [];
+    const workflowSteps = (loanSettings as any).workflow?.steps || [];
+    const finalAuth = (loanSettings as any).workflow?.finalAuthority;
+    const currentApprover = (selectedLoan as any).workflow?.nextApprover;
+    const isCompleted = (selectedLoan as any).workflow?.currentStep === 'completed';
+
+    const steps: any[] = [];
+
+    // 1. Employee Submission
+    const submission = history.find((h: any) => h.action === 'submitted');
+    steps.push({
+      label: 'Employee Application',
+      status: 'approved',
+      actionByName: submission?.actionByName,
+      actionByRole: 'Employee',
+      timestamp: submission?.timestamp,
+      comments: submission?.comments
+    });
+
+    // 2. Default HOD Step
+    const hodEntry = history.find((h: any) => h.step === 'hod' && h.action !== 'submitted');
+    const isHodCurrent = !isCompleted && currentApprover === 'hod';
+    steps.push({
+      label: 'HOD Approval',
+      status: hodEntry ? (hodEntry.action === 'approved' ? 'approved' : 'rejected') : (isHodCurrent ? 'current' : 'pending'),
+      actionByName: hodEntry?.actionByName,
+      actionByRole: hodEntry?.actionByRole || 'HOD',
+      timestamp: hodEntry?.timestamp,
+      comments: hodEntry?.comments
+    });
+
+    // 3. Dynamic Steps
+    workflowSteps.filter((s: any) => s.isActive).forEach((step: any) => {
+      const historyEntry = history.find((h: any) => h.step === step.approverRole);
+      const isCurrent = !isCompleted && currentApprover === step.approverRole;
+
+      steps.push({
+        label: step.stepName || `${step.approverRole.replace(/_/g, ' ')} Approval`,
+        role: step.approverRole,
+        status: historyEntry ? (historyEntry.action === 'approved' ? 'approved' : 'rejected') : (isCurrent ? 'current' : 'pending'),
+        actionByName: historyEntry?.actionByName,
+        actionByRole: historyEntry?.actionByRole || step.approverRole,
+        timestamp: historyEntry?.timestamp,
+        comments: historyEntry?.comments
+      });
+    });
+
+    // 4. Final Authority
+    if (finalAuth && finalAuth.role) {
+      const finalEntry = history.find((h: any) => h.step === 'final_authority');
+      const isCurrent = !isCompleted && currentApprover === 'final_authority';
+
+      steps.push({
+        label: 'Final Approval',
+        status: finalEntry ? (finalEntry.action === 'approved' ? 'approved' : 'rejected') : (isCurrent ? 'current' : 'pending'),
+        actionByName: finalEntry?.actionByName,
+        actionByRole: finalEntry?.actionByRole || 'Admin',
+        timestamp: finalEntry?.timestamp,
+        comments: finalEntry?.comments
+      });
+    }
+
+    return steps;
+  }, [selectedLoan, loanSettings]);
 
   // Fetch eligibility when viewing/editing a salary advance
   useEffect(() => {
@@ -900,9 +971,9 @@ export default function LoansPage() {
     }
   };
 
-  const loadLoanSettings = async () => {
+  const loadLoanSettings = async (type: 'loan' | 'salary_advance' = 'loan') => {
     try {
-      const response = await api.getLoanSettings('loan');
+      const response = await api.getLoanSettings(type);
       if (response.success && response.data) {
         setLoanSettings(response.data);
       }
@@ -1944,62 +2015,77 @@ export default function LoansPage() {
               )}
 
 
-              {/* Approval History */}
-              {selectedLoan.workflow?.history && selectedLoan.workflow.history.length > 0 && (
-                <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700">
-                  <p className="text-xs text-green-500 uppercase font-semibold tracking-wide mb-3">
-                    Approval History ({selectedLoan.workflow.history.length})
-                  </p>
-                  <div className="space-y-3">
-                    {selectedLoan.workflow.history.map((entry: any, idx: number) => (
-                      <div key={idx} className="p-3 rounded-lg bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700">
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-2">
-                            {entry.action === 'approved' && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
-                                ✓ Approved
+              {/* Approval Timeline */}
+              {timelineSteps.length > 0 && (
+                <div className="p-4 sm:p-6 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 shadow-sm scrollbar-hide">
+                  <p className="text-xs uppercase font-black text-slate-400 mb-6 tracking-widest">Approval Timeline</p>
+                  
+                  {/* Progress bar */}
+                  <div className="mb-8">
+                    <div className="flex justify-between text-[10px] font-black text-slate-500 uppercase tracking-wider mb-2">
+                       <span>{timelineSteps.filter(s => s.status === 'approved' || s.status === 'rejected').length} of {timelineSteps.length} processed</span>
+                       <span>{Math.round((timelineSteps.filter(s => s.status === 'approved' || s.status === 'rejected').length / timelineSteps.length) * 100)}%</span>
+                    </div>
+                    <div className="h-1.5 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden shadow-inner">
+                      <div
+                        className="h-full bg-gradient-to-r from-blue-500 to-indigo-600 transition-all duration-500 ease-out shadow-lg"
+                        style={{ width: `${(timelineSteps.filter(s => s.status === 'approved' || s.status === 'rejected').length / timelineSteps.length) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Vertical steps */}
+                  <div className="relative pl-6 border-l-2 border-slate-200 dark:border-slate-800 ml-1.5">
+                    {timelineSteps.map((step: any, idx: number) => {
+                      const isApproved = step.status === 'approved';
+                      const isRejected = step.status === 'rejected';
+                      const isCurrent = step.status === 'current';
+                      const isPending = step.status === 'pending';
+                      
+                      let nodeColor = 'bg-slate-200 dark:bg-slate-800';
+                      if (isApproved) nodeColor = 'bg-green-500 ring-4 ring-green-100 dark:ring-green-900/30';
+                      else if (isRejected) nodeColor = 'bg-red-500 ring-4 ring-red-100 dark:ring-red-900/30';
+                      else if (isCurrent) nodeColor = 'bg-blue-600 ring-4 ring-blue-100 dark:ring-blue-900/30 animate-pulse';
+
+                      return (
+                        <div key={idx} className="relative pb-8 last:pb-0">
+                          {/* Circle node */}
+                          <div className={`absolute -left-[31px] top-0 w-4 h-4 rounded-full ${nodeColor} border-2 border-white dark:border-slate-900 shadow-md z-10`} />
+                          
+                          <div className="ml-2">
+                            <div className="flex items-center gap-3">
+                              <span className={`text-sm font-black uppercase tracking-tight ${isPending ? 'text-slate-400' : 'text-slate-900 dark:text-white'}`}>
+                                {step.label}
                               </span>
+                              
+                              {isApproved && <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 shadow-sm border border-green-200/50">✓ Processed</span>}
+                              {isRejected && <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 shadow-sm border border-red-200/50">✗ Rejected</span>}
+                              {isCurrent && <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 shadow-sm border border-blue-200/50">⏳ Your Turn</span>}
+                              {isPending && <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500 shadow-sm border border-slate-200/50">○ Pending</span>}
+                            </div>
+
+                            {(isApproved || isRejected) && (
+                              <div className="mt-2 space-y-1">
+                                <div className="text-[11px] text-slate-600 dark:text-slate-400 font-bold uppercase tracking-tight flex items-center gap-2">
+                                  <span className="p-0.5 rounded bg-slate-100 dark:bg-slate-800">{step.actionByName}</span>
+                                  <span className="text-slate-300 dark:text-slate-600">({step.actionByRole})</span>
+                                  {step.timestamp && (
+                                    <span className="text-[10px] text-slate-400 font-medium">
+                                      · {new Date(step.timestamp).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                    </span>
+                                  )}
+                                </div>
+                                {step.comments && (
+                                  <p className="text-[11px] text-slate-500 italic font-medium bg-white dark:bg-slate-800/80 p-2.5 rounded-xl border border-slate-100 dark:border-slate-700/50 leading-relaxed shadow-sm">
+                                    "{step.comments}"
+                                  </p>
+                                )}
+                              </div>
                             )}
-                            {entry.action === 'rejected' && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400">
-                                ✗ Rejected
-                              </span>
-                            )}
-                            {entry.action === 'forwarded' && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
-                                → Forwarded
-                              </span>
-                            )}
-                            {entry.action === 'submitted' && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400">
-                                ⊕ Submitted
-                              </span>
-                            )}
-                            <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase">
-                              {entry.step?.replace(/_/g, ' ')}
-                            </span>
                           </div>
-                          <span className="text-xs text-slate-500">
-                            {new Date(entry.timestamp).toLocaleString('en-GB', {
-                              day: '2-digit',
-                              month: 'short',
-                              year: 'numeric',
-                              hour: '2-digit',
-                              minute: '2-digit'
-                            })}
-                          </span>
                         </div>
-                        <div className="text-sm text-slate-600 dark:text-slate-400">
-                          <span className="font-medium">{entry.actionByName}</span>
-                          <span className="text-slate-400 dark:text-slate-500"> ({entry.actionByRole})</span>
-                        </div>
-                        {entry.comments && (
-                          <p className="text-xs text-slate-500 mt-2 italic bg-white dark:bg-slate-800 p-2 rounded border border-slate-100 dark:border-slate-700">
-                            "{entry.comments}"
-                          </p>
-                        )}
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
