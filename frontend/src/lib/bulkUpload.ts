@@ -274,11 +274,28 @@ export const parseFile = (file: File): Promise<BulkUploadResult> => {
 
                 // 1. Handle native JS Date objects (returned by xlsx with cellDates:true)
                 if (Object.prototype.toString.call(value) === '[object Date]') {
-                  parsedDate = value as unknown as Date;
+                  const d = value as unknown as Date;
+                  if (!isNaN(d.getTime())) {
+                    // Extract date parts using "Mid-Day UTC" normalization
+                    const midDay = new Date(d.getTime() + (12 * 60 * 60 * 1000));
+                    const year = midDay.getUTCFullYear();
+                    const month = String(midDay.getUTCMonth() + 1).padStart(2, '0');
+                    const day = String(midDay.getUTCDate()).padStart(2, '0');
+                    value = `${year}-${month}-${day}`;
+                  }
                 }
                 // 2. Handle Excel serial numbers (numbers)
                 else if (typeof value === 'number') {
-                  parsedDate = new Date(Math.round((value - 25569) * 86400 * 1000));
+                  // Excel serial to JS Date (UTC midnight)
+                  const d = new Date(Math.round((value - 25569) * 86400 * 1000));
+                  if (!isNaN(d.getTime())) {
+                    // Even for serials, mid-day UTC extraction is safest
+                    const midDay = new Date(d.getTime() + (12 * 60 * 60 * 1000));
+                    const year = midDay.getUTCFullYear();
+                    const month = String(midDay.getUTCMonth() + 1).padStart(2, '0');
+                    const day = String(midDay.getUTCDate()).padStart(2, '0');
+                    value = `${year}-${month}-${day}`;
+                  }
                 }
                 // 3. Handle string dates
                 else if (typeof value === 'string') {
@@ -298,27 +315,31 @@ export const parseFile = (file: File): Promise<BulkUploadResult> => {
                       y = parseInt(parts[2]);
                       const p1 = parseInt(parts[0]);
                       const p2 = parseInt(parts[1]);
-                      // Guess DD-MM vs MM-DD
+                      // Guess DD-MM vs MM-DD (Try to be smart, but default to DD-MM)
                       if (p1 > 12) { d = p1; m = p2 - 1; }
                       else if (p2 > 12) { d = p2; m = p1 - 1; }
-                      else { d = p1; m = p2 - 1; } // Default to DD-MM (common)
+                      else { d = p1; m = p2 - 1; } 
                     }
 
                     if (y && m !== undefined && d) {
-                      parsedDate = new Date(y, m, d);
+                      const finalDate = new Date(y, m, d);
+                      if (!isNaN(finalDate.getTime())) {
+                        const year = finalDate.getFullYear();
+                        const month = String(finalDate.getMonth() + 1).padStart(2, '0');
+                        const day = String(finalDate.getDate()).padStart(2, '0');
+                        value = `${year}-${month}-${day}`;
+                      }
                     }
                   } else {
                     // Fallback to native parsing
                     const d = new Date(cleanValue);
-                    if (!isNaN(d.getTime())) parsedDate = d;
+                    if (!isNaN(d.getTime())) {
+                      const year = d.getFullYear();
+                      const month = String(d.getMonth() + 1).padStart(2, '0');
+                      const day = String(d.getDate()).padStart(2, '0');
+                      value = `${year}-${month}-${day}`;
+                    }
                   }
-                }
-
-                if (parsedDate && !isNaN(parsedDate.getTime())) {
-                  const year = parsedDate.getFullYear();
-                  const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
-                  const day = String(parsedDate.getDate()).padStart(2, '0');
-                  value = `${year}-${month}-${day}`;
                 }
               } catch (err) {
                 console.warn(`Failed to parse date for ${key}: ${value}`, err);

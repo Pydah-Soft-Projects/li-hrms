@@ -130,6 +130,12 @@ const LoanSettingsSchema = new mongoose.Schema(
         default: false,
       },
 
+      // When true, higher authorities (admin/super_admin/hr) can approve even if it's at an earlier step
+      allowHigherAuthorityToApproveLowerLevels: {
+        type: Boolean,
+        default: false,
+      },
+
       // Default approval flow
       // Each step defines who approves and what happens next
       steps: [

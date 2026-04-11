@@ -3,11 +3,34 @@ const Employee = require('../../employees/model/Employee');
 const Leave = require('../../leaves/model/Leave');
 const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
 const Department = require('../../departments/model/Department');
+const Division = require('../../departments/model/Division');
 const EmployeeApplication = require('../../employee-applications/model/EmployeeApplication');
 const OD = require('../../leaves/model/OD');
+const Permission = require('../../permissions/model/Permission');
 const LeaveRegisterYear = require('../../leaves/model/LeaveRegisterYear');
 const dateCycleService = require('../../leaves/services/dateCycleService');
 const { getEmployeeIdsInScope } = require('../../shared/middleware/dataScopeMiddleware');
+const { extractISTComponents, createISTDate, getTodayISTDateString } = require('../../shared/utils/dateUtils');
+
+function addCalendarDaysIST(dateStr, delta) {
+  const base = createISTDate(dateStr, '12:00');
+  return extractISTComponents(new Date(base.getTime() + delta * 86400000)).dateStr;
+}
+
+function istMondayWeekStart(dateStr) {
+  const ref = createISTDate(dateStr, '12:00');
+  const short = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Kolkata', weekday: 'short' }).format(ref);
+  const map = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  const wd = map[short] ?? 0;
+  const diff = wd === 0 ? -6 : 1 - wd;
+  return addCalendarDaysIST(dateStr, diff);
+}
+
+function normalizeEmpNos(employees) {
+  return [...new Set(
+    employees.map((e) => String(e.emp_no || '').trim().toUpperCase()).filter(Boolean)
+  )];
+}
 
 /**
  * Format a Date object to YYYY-MM-DD string (IST-safe)
@@ -56,7 +79,7 @@ exports.getDashboardStats = async (req, res) => {
       // AttendanceDaily.date is stored as a YYYY-MM-DD string
       const todayPresent = await AttendanceDaily.countDocuments({
         date: todayStr,
-        status: { $in: ['PRESENT', 'HALF_DAY'] },
+        status: { $in: ['PRESENT', 'HALF_DAY', 'PARTIAL'] },
       });
 
       stats = {
@@ -88,7 +111,7 @@ exports.getDashboardStats = async (req, res) => {
       const todayPresent = scopedEmpNos.length > 0
         ? await AttendanceDaily.countDocuments({
           date: todayStr,
-          status: { $in: ['PRESENT', 'HALF_DAY'] },
+          status: { $in: ['PRESENT', 'HALF_DAY', 'PARTIAL'] },
           employeeNumber: { $in: scopedEmpNos }
         })
         : 0;
@@ -120,7 +143,7 @@ exports.getDashboardStats = async (req, res) => {
         ? await AttendanceDaily.countDocuments({
           date: todayStr,
           employeeNumber: { $in: scopedEmpNos },
-          status: { $in: ['PRESENT', 'HALF_DAY'] },
+          status: { $in: ['PRESENT', 'HALF_DAY', 'PARTIAL'] },
         })
         : 0;
 
@@ -146,7 +169,7 @@ exports.getDashboardStats = async (req, res) => {
         ? await AttendanceDaily.countDocuments({
           employeeNumber: { $in: scopedEmpNos },
           date: { $gte: startOfMonthStr, $lte: todayStr },
-          status: { $in: ['PRESENT', 'HALF_DAY'] }
+          status: { $in: ['PRESENT', 'HALF_DAY', 'PARTIAL'] }
         })
         : 0;
 
@@ -212,7 +235,7 @@ exports.getDashboardStats = async (req, res) => {
       const myAttendance = await AttendanceDaily.countDocuments({
         employeeNumber: empNoUpper,
         date: { $gte: startOfMonthStr, $lte: todayStr },
-        status: { $in: ['PRESENT', 'HALF_DAY'] }
+        status: { $in: ['PRESENT', 'HALF_DAY', 'PARTIAL'] }
       });
 
       const leaveBalance = myApprovedLeaves - myPendingLeaves;
@@ -281,20 +304,30 @@ exports.getSuperAdminAnalytics = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Not authorized' });
     }
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    const todayStr = getTodayISTDateString();
+    const yesterdayStr = addCalendarDaysIST(todayStr, -1);
+    const istNow = extractISTComponents(new Date());
+    const startOfMonthStr = `${istNow.year}-${String(istNow.month).padStart(2, '0')}-01`;
+    const endOfPrevMonthStr = addCalendarDaysIST(startOfMonthStr, -1);
+    const [epy, epm] = endOfPrevMonthStr.split('-');
+    const startOfPrevMonthStr = `${epy}-${epm}-01`;
 
-    const startOfToday = new Date(today);
-    const endOfToday = new Date(today);
-    endOfToday.setHours(23, 59, 59, 999);
+    const startOfToday = createISTDate(todayStr, '00:00');
+    const endOfToday = createISTDate(todayStr, '23:59');
+    const startOfYesterday = createISTDate(yesterdayStr, '00:00');
+    const endOfYesterday = createISTDate(yesterdayStr, '23:59');
 
-    // Convert to YYYY-MM-DD strings for AttendanceDaily queries
-    const todayStr = toDateStr(today);
-    const yesterdayStr = toDateStr(yesterday);
-    const startOfMonthStr = toDateStr(startOfMonth);
+    const startOfMonth = createISTDate(startOfMonthStr, '00:00');
+    const startOfPrevMonth = createISTDate(startOfPrevMonthStr, '00:00');
+    const endOfPrevMonth = createISTDate(endOfPrevMonthStr, '23:59');
+
+    const weekAgoDate = createISTDate(addCalendarDaysIST(todayStr, -7), '00:00');
+    const twoWeeksAgoDate = createISTDate(addCalendarDaysIST(todayStr, -14), '00:00');
+
+    const trendPct = (current, previous) => {
+      if (previous === 0) return current === 0 ? 0 : 100;
+      return Math.round(((current - previous) / previous) * 100);
+    };
 
     const [
       totalEmployees,
@@ -307,10 +340,21 @@ exports.getSuperAdminAnalytics = async (req, res) => {
       yesterdayAbsentCount,
       pendingLeaves,
       pendingODs,
+      pendingPermissions,
       pendingApplications,
       monthlyPresentDocs,
       allLeaves,
-      allODs
+      allODs,
+      newEmployeesThisMonth,
+      newEmployeesLastMonth,
+      resignedThisMonth,
+      resignedLastMonth,
+      yesterdayOnLeaveCount,
+      yesterdayODsCount,
+      applicationsThisWeek,
+      applicationsPrevWeek,
+      onLeaveTodayRaw,
+      pendingSalaryVerification,
     ] = await Promise.all([
       Employee.countDocuments(),
       Employee.countDocuments(Employee.getCurrentlyActiveFilter()),
@@ -320,7 +364,7 @@ exports.getSuperAdminAnalytics = async (req, res) => {
       // Today present - using string date
       AttendanceDaily.countDocuments({
         date: todayStr,
-        status: { $in: ['PRESENT', 'HALF_DAY'] }
+        status: { $in: ['PRESENT', 'HALF_DAY', 'PARTIAL'] }
       }),
       // Today absent
       AttendanceDaily.countDocuments({
@@ -331,7 +375,7 @@ exports.getSuperAdminAnalytics = async (req, res) => {
       // Yesterday present
       AttendanceDaily.countDocuments({
         date: yesterdayStr,
-        status: { $in: ['PRESENT', 'HALF_DAY'] }
+        status: { $in: ['PRESENT', 'HALF_DAY', 'PARTIAL'] }
       }),
       // Yesterday absent
       AttendanceDaily.countDocuments({
@@ -341,12 +385,13 @@ exports.getSuperAdminAnalytics = async (req, res) => {
 
       Leave.countDocuments({ status: 'pending' }),
       OD.countDocuments ? OD.countDocuments({ status: 'pending' }).catch(() => 0) : Promise.resolve(0),
+      Permission.countDocuments ? Permission.countDocuments({ status: 'pending' }).catch(() => 0) : Promise.resolve(0),
       EmployeeApplication.countDocuments({ status: 'pending' }),
 
       // Monthly present count using string date range
       AttendanceDaily.countDocuments({
         date: { $gte: startOfMonthStr, $lte: todayStr },
-        status: { $in: ['PRESENT', 'HALF_DAY'] }
+        status: { $in: ['PRESENT', 'HALF_DAY', 'PARTIAL'] }
       }),
 
       // Active leave approvals today
@@ -360,7 +405,44 @@ exports.getSuperAdminAnalytics = async (req, res) => {
         status: 'approved',
         fromDate: { $lte: endOfToday },
         toDate: { $gte: startOfToday }
-      }).populate('department', 'name').catch(() => []) : Promise.resolve([])
+      }).populate('department', 'name').catch(() => []) : Promise.resolve([]),
+
+      Employee.countDocuments({
+        doj: { $gte: startOfMonth, $lte: endOfToday },
+      }),
+      Employee.countDocuments({
+        doj: { $gte: startOfPrevMonth, $lte: endOfPrevMonth },
+      }),
+      Employee.countDocuments({
+        leftDate: { $gte: startOfMonth, $lte: endOfToday },
+      }),
+      Employee.countDocuments({
+        leftDate: { $gte: startOfPrevMonth, $lte: endOfPrevMonth },
+      }),
+      Leave.countDocuments({
+        status: 'approved',
+        fromDate: { $lte: endOfYesterday },
+        toDate: { $gte: startOfYesterday },
+      }),
+      OD.countDocuments ? OD.countDocuments({
+        status: 'approved',
+        fromDate: { $lte: endOfYesterday },
+        toDate: { $gte: startOfYesterday },
+      }).catch(() => 0) : Promise.resolve(0),
+      EmployeeApplication.countDocuments({ createdAt: { $gte: weekAgoDate } }),
+      EmployeeApplication.countDocuments({
+        createdAt: { $gte: twoWeeksAgoDate, $lt: weekAgoDate },
+      }),
+      Leave.find({
+        status: 'approved',
+        fromDate: { $lte: endOfToday },
+        toDate: { $gte: startOfToday },
+      })
+        .populate('employeeId', 'employee_name profilePhoto emp_no')
+        .sort({ toDate: 1 })
+        .limit(18)
+        .lean(),
+      Employee.countDocuments({ salaryStatus: 'pending_approval' }),
     ]);
 
     // Process Distributions
@@ -376,8 +458,128 @@ exports.getSuperAdminAnalytics = async (req, res) => {
       deptODDist[name] = (deptODDist[name] || 0) + 1;
     });
 
-    const daysPassed = today.getDate();
+    const trackerPeriodRaw = String(req.query.trackerPeriod || 'week').toLowerCase();
+    const trackerPeriod = ['week', 'month', 'lastmonth'].includes(trackerPeriodRaw)
+      ? trackerPeriodRaw
+      : 'week';
+
+    const enumerateDateStrRange = (fromStr, toStr) => {
+      const out = [];
+      let ds = fromStr;
+      while (ds <= toStr) {
+        out.push(ds);
+        ds = addCalendarDaysIST(ds, 1);
+      }
+      return out;
+    };
+
+    const fetchDayTrackerBuckets = async (ds) => {
+      const dayStart = createISTDate(ds, '00:00');
+      const dayEnd = createISTDate(ds, '23:59');
+      const [present, leave, od] = await Promise.all([
+        AttendanceDaily.countDocuments({ date: ds, status: { $in: ['PRESENT', 'HALF_DAY', 'PARTIAL'] } }),
+        Leave.countDocuments({
+          status: 'approved',
+          fromDate: { $lte: dayEnd },
+          toDate: { $gte: dayStart },
+        }),
+        OD.countDocuments({ status: 'approved', fromDate: { $lte: dayEnd }, toDate: { $gte: dayStart } }).catch(() => 0),
+      ]);
+      return { present, leave, od };
+    };
+
+    let weeklyTracker;
+    if (trackerPeriod === 'week') {
+      const weekStartStr = istMondayWeekStart(todayStr);
+      const weekLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      weeklyTracker = await Promise.all(
+        [...Array(7)].map(async (_, i) => {
+          const ds = addCalendarDaysIST(weekStartStr, i);
+          const b = await fetchDayTrackerBuckets(ds);
+          return { label: weekLabels[i], date: ds, ...b };
+        })
+      );
+    } else if (trackerPeriod === 'month') {
+      const dayStrs = enumerateDateStrRange(startOfMonthStr, todayStr);
+      weeklyTracker = await Promise.all(
+        dayStrs.map(async (ds) => {
+          const b = await fetchDayTrackerBuckets(ds);
+          const dayNum = parseInt(ds.slice(8, 10), 10);
+          return { label: String(dayNum), date: ds, ...b };
+        })
+      );
+    } else {
+      const dayStrs = enumerateDateStrRange(startOfPrevMonthStr, endOfPrevMonthStr);
+      weeklyTracker = await Promise.all(
+        dayStrs.map(async (ds) => {
+          const b = await fetchDayTrackerBuckets(ds);
+          const dayNum = parseInt(ds.slice(8, 10), 10);
+          return { label: String(dayNum), date: ds, ...b };
+        })
+      );
+    }
+
+    const activeFilter = Employee.getCurrentlyActiveFilter();
+    const divGroups = await Employee.aggregate([
+      { $match: activeFilter },
+      { $group: { _id: '$division_id', count: { $sum: 1 } } },
+    ]);
+    const topDivGroups = divGroups.filter((g) => g._id);
+    const divIdsForGauge = topDivGroups.map((g) => g._id);
+    const divisionsMeta = divIdsForGauge.length
+      ? await Division.find({ _id: { $in: divIdsForGauge } }).select('name').lean()
+      : [];
+    const divIdToName = Object.fromEntries(divisionsMeta.map((d) => [String(d._id), d.name]));
+
+    const divisionAttendanceToday = (
+      await Promise.all(
+        topDivGroups.map(async (g) => {
+          const divId = g._id;
+          if (!divId) return null;
+          const emps = await Employee.find({ division_id: divId, ...activeFilter }).select('emp_no').lean();
+          const empNos = normalizeEmpNos(emps);
+          const total = empNos.length;
+          if (total === 0) return null;
+          const present = await AttendanceDaily.countDocuments({
+            date: todayStr,
+            employeeNumber: { $in: empNos },
+            status: { $in: ['PRESENT', 'HALF_DAY', 'PARTIAL'] },
+          });
+          const rate = Math.round((present / total) * 1000) / 10;
+          return { name: divIdToName[String(divId)] || 'Division', present, total, rate };
+        })
+      )
+    )
+      .filter(Boolean)
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+
+    const onLeaveEmployeesList = (onLeaveTodayRaw || []).map((l) => {
+      const emp = l.employeeId;
+      const name = emp?.employee_name || l.emp_no || 'Employee';
+      const to = new Date(l.toDate);
+      const fromDay = new Date(startOfToday);
+      fromDay.setHours(0, 0, 0, 0);
+      to.setHours(0, 0, 0, 0);
+      const diffDays = Math.round((to.getTime() - fromDay.getTime()) / 86400000);
+      const daysLeft = Math.max(1, diffDays + 1);
+      return {
+        id: String(l._id),
+        name,
+        empNo: (emp?.emp_no || l.emp_no || '').toString().toUpperCase(),
+        leaveType: l.leaveType || 'Leave',
+        daysLeft,
+        photo: emp?.profilePhoto || null,
+      };
+    });
+
+    const daysPassed = Math.max(1, istNow.day);
     const attendanceRate = activeEmployees > 0 ? (monthlyPresentDocs / (activeEmployees * daysPassed)) * 100 : 0;
+    const presentRateToday = activeEmployees > 0
+      ? Math.round((todayPresentCount / activeEmployees) * 1000) / 10
+      : 0;
+    const presentRateYesterday = activeEmployees > 0
+      ? Math.round((yesterdayPresentCount / activeEmployees) * 1000) / 10
+      : 0;
 
     const data = {
       totalEmployees,
@@ -390,16 +592,33 @@ exports.getSuperAdminAnalytics = async (req, res) => {
       todayODs: allODs.length,
       yesterdayPresent: yesterdayPresentCount,
       yesterdayAbsent: yesterdayAbsentCount,
-      yesterdayOnLeave: 0,
-      yesterdayODs: 0,
+      yesterdayOnLeave: yesterdayOnLeaveCount,
+      yesterdayODs: yesterdayODsCount,
       pendingLeaves,
       pendingODs,
-      pendingPermissions: 0,
+      pendingPermissions,
       pendingApplications,
+      pendingSalaryVerification,
       monthlyPresent: monthlyPresentDocs,
       attendanceRate: Math.min(100, attendanceRate),
       departmentLeaveDistribution: deptLeaveDist,
-      departmentODDistribution: deptODDist
+      departmentODDistribution: deptODDist,
+      newEmployeesThisMonth,
+      newEmployeesLastMonth,
+      resignedThisMonth,
+      resignedLastMonth,
+      trendNewEmployeesPct: trendPct(newEmployeesThisMonth, newEmployeesLastMonth),
+      trendResignedPct: trendPct(resignedThisMonth, resignedLastMonth),
+      trendOnLeavePct: trendPct(allLeaves.length, yesterdayOnLeaveCount),
+      trendApplicationsPct: trendPct(applicationsThisWeek, applicationsPrevWeek),
+      weeklyTracker,
+      divisionAttendanceToday,
+      onLeaveEmployeesList,
+      presentRateToday,
+      presentRateYesterday,
+      performanceDeltaVsYesterday: Math.round((presentRateToday - presentRateYesterday) * 10) / 10,
+      analyticsDateStr: todayStr,
+      trackerPeriod: trackerPeriod === 'lastmonth' ? 'lastMonth' : trackerPeriod,
     };
 
     res.status(200).json({ success: true, data });

@@ -44,11 +44,63 @@ const STATIC_HEADER_TO_FIELD = {
 };
 
 /**
+ * Normalizes a value from Excel to a YYYY-MM-DD string if it's a date.
+ */
+const normalizeDate = (val) => {
+    if (val === undefined || val === null || val === '') return null;
+
+    let d;
+    if (Object.prototype.toString.call(val) === '[object Date]') {
+        d = val;
+    } else if (typeof val === 'number') {
+        // Excel serial
+        d = new Date(Math.round((val - 25569) * 86400 * 1000));
+    } else {
+        // Handle common string formats
+        const cleanVal = String(val).trim().replace(/[./]/g, '-');
+        const parts = cleanVal.split('-');
+        if (parts.length === 3) {
+            let y, m, day;
+            if (parts[0].length === 4) { // YYYY-MM-DD
+                y = parseInt(parts[0]);
+                m = parseInt(parts[1]) - 1;
+                day = parseInt(parts[2]);
+            } else if (parts[2].length === 4) { // DD-MM-YYYY or MM-DD-YYYY
+                y = parseInt(parts[2]);
+                const p1 = parseInt(parts[0]);
+                const p2 = parseInt(parts[1]);
+                if (p1 > 12) { day = p1; m = p2 - 1; }
+                else if (p2 > 12) { day = p2; m = p1 - 1; }
+                else { day = p1; m = p2 - 1; } // Default to DD-MM
+            }
+
+            if (y && m !== undefined && day) {
+                d = new Date(y, m, day);
+            }
+        }
+        
+        if (!d || isNaN(d.getTime())) {
+            d = new Date(val);
+        }
+    }
+
+    if (!d || isNaN(d.getTime())) return val;
+
+    // Extract date parts using "Mid-Day UTC" normalization
+    // This handles both UTC-midnight and Local-midnight dates safely (+/- 12h)
+    const midDay = new Date(d.getTime() + (12 * 60 * 60 * 1000));
+    const year = midDay.getUTCFullYear();
+    const month = String(midDay.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(midDay.getUTCDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
+/**
  * Service to handle second salary updates
  */
 const processSecondSalaryUpload = async (fileBuffer) => {
     try {
-        const workbook = xlsx.read(fileBuffer, { type: 'buffer' });
+        const workbook = xlsx.read(fileBuffer, { type: 'buffer', cellDates: true });
         const sheetName = workbook.SheetNames[0];
         const sheet = workbook.Sheets[sheetName];
         const data = xlsx.utils.sheet_to_json(sheet);
@@ -326,7 +378,7 @@ const processEmployeeUpdateUpload = async (fileBuffer) => {
 
         const lookups = await buildRefLookups();
 
-        const workbook = xlsx.read(fileBuffer, { type: 'buffer' });
+        const workbook = xlsx.read(fileBuffer, { type: 'buffer', cellDates: true });
         const data = xlsx.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
 
         if (!data || data.length === 0) return { success: false, message: 'No data found', stats: { total: 0, updated: 0, failed: 0 } };
@@ -360,7 +412,12 @@ const processEmployeeUpdateUpload = async (fileBuffer) => {
                         errors.push({ empNo: empNo || '(unknown)', error: `Unknown ${fieldId.replace('_id', '')} (use name or code): "${cellValue}"` });
                     }
                 } else {
-                    updateData[fieldId] = cellValue;
+                    // Normalize dates if it's a date field
+                    const isDate = fieldId.toLowerCase().includes('dob') || 
+                                 fieldId.toLowerCase().includes('doj') || 
+                                 fieldId.toLowerCase().includes('date');
+                    
+                    updateData[fieldId] = isDate ? normalizeDate(cellValue) : cellValue;
                 }
             });
 
@@ -577,7 +634,7 @@ module.exports = {
      * Blank cell => remove override for that master from employee overrides.
      */
     processEmployeeADUpdateUpload: async (fileBuffer) => {
-        const workbook = xlsx.read(fileBuffer, { type: 'buffer' });
+        const workbook = xlsx.read(fileBuffer, { type: 'buffer', cellDates: true });
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
         const rows = xlsx.utils.sheet_to_json(sheet);
 

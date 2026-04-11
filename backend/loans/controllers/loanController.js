@@ -8,9 +8,7 @@ const { getResolvedLoanSettings } = require('../../departments/controllers/depar
 const { getEmployeeIdsInScope } = require('../../shared/middleware/dataScopeMiddleware');
 
 // ============================================
-// TESTING FLAG - Set to false to disable Super Admin bypass
-// ============================================
-const ENABLE_SUPERADMIN_BYPASS = false; // Set to true for production, false for testing workflow
+// NO HARDCODED BYPASS - Uses database setting: workflow.allowHigherAuthorityToApproveLowerLevels
 // ============================================
 
 /**
@@ -862,22 +860,28 @@ exports.applyLoan = async (req, res) => {
         totalInstallments: duration,
         nextPaymentDate: requestType === 'loan' ? loanConfig.startDate : null,
       },
-      workflow: {
-        currentStep: 'hod',
-        nextApprover: 'hod',
-        history: [
-          {
-            step: 'employee',
-            action: 'submitted',
-            actionBy: req.user._id,
-            actionByName: req.user.name,
-            actionByRole: req.user.role,
-            comments: `${requestType === 'loan' ? 'Loan' : 'Salary advance'} application submitted`,
-            timestamp: new Date(),
-          },
-        ],
-      },
     });
+
+    // Determine initial workflow step
+    // Fixed requirement: Always start with HOD as the default first step
+    const initialStep = 'hod';
+    const initialApprover = 'hod';
+
+    loan.workflow = {
+      currentStep: initialStep,
+      nextApprover: initialApprover,
+      history: [
+        {
+          step: 'employee',
+          action: 'submitted',
+          actionBy: req.user._id,
+          actionByName: req.user.name,
+          actionByRole: req.user.role,
+          comments: `${requestType === 'loan' ? 'Loan' : 'Salary advance'} application submitted`,
+          timestamp: new Date(),
+        },
+      ],
+    };
 
     await loan.save();
 
@@ -923,7 +927,7 @@ exports.getGuarantorRequests = async (req, res) => {
     }
 
     if (!mongoEmployeeId) {
-       return res.status(404).json({
+      return res.status(404).json({
         success: false,
         error: 'Associated employee record not found',
       });
@@ -1260,7 +1264,7 @@ exports.getPendingApprovals = async (req, res) => {
     } else if (userRole === 'hr') {
       filter['workflow.nextApprover'] = { $in: ['hr', 'final_authority'] };
     } else if (['sub_admin', 'super_admin'].includes(userRole)) {
-      filter.status = { $nin: ['approved', 'rejected', 'cancelled', 'completed'] };
+      filter.status = { $nin: ['approved', 'rejected', 'cancelled', 'completed', 'disbursed', 'active', 'hod_rejected', 'manager_rejected', 'hr_rejected'] };
     } else {
       return res.status(403).json({
         success: false,
@@ -1305,15 +1309,48 @@ exports.processLoanAction = async (req, res) => {
       });
     }
 
+    if (loan.workflow.currentStep === 'completed') {
+      return res.status(400).json({
+        success: false,
+        error: 'This application has already been processed and is in a terminal state.',
+      });
+    }
+
     const userRole = req.user.role;
-    const currentApprover = loan.workflow.nextApprover || 'hod'; // Default to hod if not set
-    const isSuperAdmin = userRole === 'super_admin';
+    const currentApprover = loan.workflow.nextApprover;
+    if (!currentApprover) {
+      return res.status(400).json({
+        success: false,
+        error: 'Current approval step is missing from the record.',
+      });
+    }
+    const isSuperAdmin = ['super_admin', 'sub_admin'].includes(userRole);
+    const isHR = userRole === 'hr';
+
+    // Fetch active settings for the loan type
+    const settings = await LoanSettings.findOne({ type: loan.requestType, isActive: true });
+    const allowBypass = settings?.workflow?.allowHigherAuthorityToApproveLowerLevels || false;
 
     // Validate user can perform this action
     let canProcess = false;
+    
     if (isSuperAdmin) {
-      canProcess = true;
-    } else if (currentApprover === 'reporting_manager') {
+      // Super Admin can process if it's their step OR if bypass is enabled
+      if (allowBypass || ['hr', 'admin', 'super_admin', 'final_authority'].includes(currentApprover)) {
+        canProcess = true;
+      }
+    }
+    
+    if (!canProcess && isHR) {
+      // HR can process if it's their step OR if bypass is enabled (they are considered higher than HOD/Manager)
+      if (['hr', 'final_authority'].includes(currentApprover)) {
+        canProcess = true;
+      } else if (allowBypass) {
+        canProcess = true;
+      }
+    }
+
+    if (!canProcess && currentApprover === 'reporting_manager') {
       // 1. Check if user is the assigned Reporting Manager
       const targetEmployee = await Employee.findById(loan.employeeId);
       const managers = targetEmployee?.dynamicFields?.reporting_to;
@@ -1421,217 +1458,156 @@ exports.processLoanAction = async (req, res) => {
       timestamp: new Date(),
     };
 
+    // DYAMIC WORKFLOW ROUTING ENGINE
+    const workflowSteps = settings?.workflow?.steps || [];
+    const currentStepConfig = workflowSteps.find(s => s.approverRole === currentApprover && s.isActive);
+    
+    // Determine the next step in the chain
+    let nextStepOrder = currentStepConfig ? currentStepConfig.nextStepOnApprove : null;
+    let nextRole = null;
+    let nextStepEnum = 'completed';
+    let isFinalStep = false;
+
+    // Special Logic: If current is the default HOD (not in dynamic steps), move to Step 1
+    if (currentApprover === 'hod' && !currentStepConfig) {
+      const firstStep = workflowSteps.find(s => s.stepOrder === 1 && s.isActive);
+      if (firstStep) {
+        nextRole = firstStep.approverRole;
+        if (['hod', 'manager', 'hr'].includes(nextRole)) nextStepEnum = nextRole;
+        else nextStepEnum = 'final';
+      } else {
+        // No dynamic steps - go to final authority
+        const finalAuth = settings?.workflow?.finalAuthority;
+        if (finalAuth && finalAuth.role) {
+          nextRole = 'final_authority';
+          nextStepEnum = 'final';
+        } else {
+          isFinalStep = true;
+        }
+      }
+    } else if (nextStepOrder !== null) {
+      const nextStep = workflowSteps.find(s => s.stepOrder === nextStepOrder && s.isActive);
+      if (nextStep) {
+        nextRole = nextStep.approverRole;
+        // Map role to workflow enum
+        if (['hod', 'manager', 'hr'].includes(nextRole)) nextStepEnum = nextRole;
+        else nextStepEnum = 'final';
+      }
+    } else {
+      // Check for final authority
+      const finalAuth = settings?.workflow?.finalAuthority;
+      if (finalAuth && finalAuth.role && currentApprover !== 'final_authority') {
+        nextRole = 'final_authority';
+        nextStepEnum = 'final';
+      } else {
+        isFinalStep = true;
+      }
+    }
+
+    // AUTH CHECK FOR FOR FINAL AUTHORITY
+    if (currentApprover === 'final_authority' || isFinalStep) {
+      const finalAuth = settings?.workflow?.finalAuthority;
+      let authorized = false;
+      if (isSuperAdmin) authorized = true;
+      else if (finalAuth) {
+        if (finalAuth.role === 'hr' && userRole === 'hr') {
+          if (finalAuth.anyHRCanApprove) authorized = true;
+          else if (finalAuth.authorizedHRUsers?.some(id => id.toString() === req.user._id.toString())) authorized = true;
+        } else if (finalAuth.role === 'specific_user') {
+          if (finalAuth.userId?.toString() === req.user._id.toString()) authorized = true;
+        }
+      } else if (isHR) {
+        authorized = true; // Fallback to HR if no final auth defined
+      }
+      
+      if (!authorized) {
+        return res.status(403).json({
+          success: false,
+          error: 'You are not authorized for final authority action.',
+        });
+      }
+      isFinalStep = true; // Ensure terminal state
+    }
+
     switch (action) {
       case 'approve':
         historyEntry.action = 'approved';
 
-        // Super Admin Bypass Feature: Can approve at any stage (if enabled)
-        if (isSuperAdmin && ENABLE_SUPERADMIN_BYPASS) {
+        // Super Admin/HR Bypass Feature: Can approve at any stage (if enabled in settings)
+        if (allowBypass && (isSuperAdmin || isHR) && !isFinalStep) {
           loan.status = 'approved';
           loan.workflow.currentStep = 'completed';
           loan.workflow.nextApprover = null;
 
-          // Legacy status support
           loan.approvals.final = {
             status: 'approved',
             approvedBy: req.user._id,
             approvedAt: new Date(),
-            comments: comments || 'Final approval by Super Admin',
+            comments: `${comments || ''} (Ultimate Approval by Higher Authority: ${userRole})`,
           };
 
-          historyEntry.comments = `${comments || ''} (Ultimate Approval by Super Admin)`;
+          historyEntry.comments = `${comments || ''} (Action by Higher Authority)`;
           break;
         }
 
-        console.log('[Loan Approval] Processing approval for:', {
-          currentApprover,
-          loanId: loan._id,
-          currentStatus: loan.status,
-          userRole,
-          action
-        });
-
-        if (currentApprover === 'hod') {
-          console.log('[HOD Approval] Setting status to hod_approved');
-          loan.status = 'hod_approved';
-          loan.approvals.hod = {
-            status: 'approved',
-            approvedBy: req.user._id,
-            approvedAt: new Date(),
-            comments,
-          };
-
-          // Check if division has manager
-          const Division = require('../../departments/model/Division');
-          const division = await Division.findById(loan.division_id).populate('manager');
-
-          if (division && division.manager) {
-            console.log('[HOD Approval] Division has manager, routing to manager');
-            loan.workflow.currentStep = 'manager';
-            loan.workflow.nextApprover = 'manager';
-          } else {
-            console.log('[HOD Approval] No manager, routing to HR');
-            loan.workflow.currentStep = 'hr';
-            loan.workflow.nextApprover = 'hr';
-          }
-
-          console.log('[HOD Approval] Final state:', {
-            status: loan.status,
-            currentStep: loan.workflow.currentStep,
-            nextApprover: loan.workflow.nextApprover
-          });
-        } else if (currentApprover === 'manager') {
-          loan.status = 'manager_approved';
-          loan.approvals.manager = {
-            status: 'approved',
-            approvedBy: req.user._id,
-            approvedAt: new Date(),
-            comments,
-          };
-          loan.workflow.currentStep = 'hr';
-          loan.workflow.nextApprover = 'hr';
-        } else if (currentApprover === 'hr') {
-          // HR Approval - Check if HR is the final authority
-          const settings = await LoanSettings.findOne({ type: loan.requestType, isActive: true });
-          const finalAuth = settings?.workflow?.finalAuthority;
-
-          let isFinalStep = false;
-
-          if (finalAuth && finalAuth.role === 'hr') {
-            // HR is configured as final authority
-            if (finalAuth.anyHRCanApprove) {
-              isFinalStep = true;
-            } else if (finalAuth.authorizedHRUsers && finalAuth.authorizedHRUsers.length > 0) {
-              isFinalStep = finalAuth.authorizedHRUsers.some(userId =>
-                userId.toString() === req.user._id.toString()
-              );
-            }
-          }
-          // If HR is NOT final authority, isFinalStep stays false → routes to final_authority
-
-          console.log('[Loan Approval] HR Approval Check:', {
-            currentApprover,
-            userRole,
-            finalAuthRole: finalAuth?.role,
-            isFinalStep,
-            userId: req.user._id.toString()
-          });
-
-          if (isFinalStep) {
-            // HR is the final authority - fully approve
-            loan.status = 'approved';
-            loan.workflow.currentStep = 'completed';
-            loan.workflow.nextApprover = null;
-
-            loan.approvals.final = {
+        // Apply dynamic status and routing
+        if (!isFinalStep) {
+          loan.status = currentStepConfig?.approvedStatus || `${currentApprover}_approved`;
+          loan.workflow.currentStep = nextStepEnum;
+          loan.workflow.nextApprover = nextRole;
+          
+          // Legacy approval record
+          if (currentApprover && loan.approvals[currentApprover]) {
+            loan.approvals[currentApprover] = {
               status: 'approved',
               approvedBy: req.user._id,
               approvedAt: new Date(),
               comments,
             };
-          } else {
-            // HR is NOT final authority - route to final authority (admin)
-            loan.status = 'hr_approved';
-            loan.workflow.currentStep = 'final';
-            loan.workflow.nextApprover = 'final_authority';
           }
-
-          loan.approvals.hr = {
+        } else {
+          // Final Approval
+          loan.status = 'approved';
+          loan.workflow.currentStep = 'completed';
+          loan.workflow.nextApprover = null;
+          loan.approvals.final = {
             status: 'approved',
             approvedBy: req.user._id,
             approvedAt: new Date(),
             comments,
           };
-
-        } else if (currentApprover === 'final_authority') {
-          // Final Authority Approval - Check if current user is authorized
-          const settings = await LoanSettings.findOne({ type: loan.requestType, isActive: true });
-          const finalAuth = settings?.workflow?.finalAuthority;
-
-          let isFinalStep = false;
-
-          if (finalAuth) {
-            if (finalAuth.role === 'admin' && (userRole === 'super_admin' || userRole === 'sub_admin')) {
-              // Admin is final authority and current user is admin
-              isFinalStep = true;
-            } else if (finalAuth.role === 'hr' && userRole === 'hr') {
-              // HR can also be final authority
-              if (finalAuth.anyHRCanApprove) {
-                isFinalStep = true;
-              } else if (finalAuth.authorizedHRUsers && finalAuth.authorizedHRUsers.length > 0) {
-                isFinalStep = finalAuth.authorizedHRUsers.some(userId =>
-                  userId.toString() === req.user._id.toString()
-                );
-              }
-            } else if (finalAuth.role === 'specific_user') {
-              // Check if current user is in the authorized list
-              if (finalAuth.authorizedHRUsers && finalAuth.authorizedHRUsers.length > 0) {
-                isFinalStep = finalAuth.authorizedHRUsers.some(userId =>
-                  userId.toString() === req.user._id.toString()
-                );
-              }
-            }
-          } else {
-            // No final authority configured - default to admin as final authority
-            if (userRole === 'super_admin' || userRole === 'sub_admin') {
-              isFinalStep = true;
-            }
-          }
-
-          console.log('[Loan Approval] Final Authority Check:', {
-            currentApprover,
-            userRole,
-            finalAuthRole: finalAuth?.role,
-            isFinalStep,
-            userId: req.user._id.toString()
-          });
-
-          if (isFinalStep) {
-            // This is the final approval
-            loan.status = 'approved';
-            loan.workflow.currentStep = 'completed';
-            loan.workflow.nextApprover = null;
-
-            loan.approvals.final = {
-              status: 'approved',
-              approvedBy: req.user._id,
-              approvedAt: new Date(),
-              comments,
-            };
-          } else {
-            // User is not authorized as final authority
-            return res.status(403).json({
-              success: false,
-              error: 'You are not authorized to give final approval for this loan',
-            });
-          }
         }
         break;
 
       case 'reject':
-        loan.workflow.currentStep = 'completed';
-        loan.workflow.nextApprover = null;
         historyEntry.action = 'rejected';
 
-        if (currentApprover === 'hod') {
-          loan.status = 'hod_rejected';
-          loan.approvals.hod = {
-            status: 'rejected',
-            approvedBy: req.user._id,
-            approvedAt: new Date(),
-            comments,
-          };
-        } else if (currentApprover === 'manager') {
-          loan.status = 'manager_rejected';
-          loan.approvals.manager = {
-            status: 'rejected',
-            approvedBy: req.user._id,
-            approvedAt: new Date(),
-            comments,
-          };
+        // Add special marker for higher authority rejection
+        if (allowBypass && (isSuperAdmin || isHR) && !isFinalStep) {
+          historyEntry.comments = `${comments || ''} (Action by Higher Authority)`;
+        }
+
+        // Apply dynamic status and routing (moves to next step even on reject as per user request)
+        if (!isFinalStep) {
+          loan.status = currentStepConfig?.rejectedStatus || `${currentApprover}_rejected`;
+          loan.workflow.currentStep = nextStepEnum;
+          loan.workflow.nextApprover = nextRole;
+
+          // Legacy approval record
+          if (currentApprover && loan.approvals[currentApprover]) {
+            loan.approvals[currentApprover] = {
+              status: 'rejected',
+              approvedBy: req.user._id,
+              approvedAt: new Date(),
+              comments,
+            };
+          }
         } else {
-          loan.status = 'hr_rejected';
-          loan.approvals.hr = {
+          // Final Rejection
+          loan.status = 'rejected';
+          loan.workflow.currentStep = 'completed';
+          loan.workflow.nextApprover = null;
+          loan.approvals.final = {
             status: 'rejected',
             approvedBy: req.user._id,
             approvedAt: new Date(),
