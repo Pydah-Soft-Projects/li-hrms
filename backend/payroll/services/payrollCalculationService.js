@@ -23,8 +23,12 @@ const {
 } = require('./allowanceDeductionResolverService');
 const statutoryDeductionService = require('./statutoryDeductionService');
 const Settings = require('../../settings/model/Settings');
-const { resolveEffectiveEarnedLeaveForDepartment } = require('../../leaves/services/earnedLeavePolicyResolver');
 const { createISTDate, extractISTComponents } = require('../../shared/utils/dateUtils');
+const {
+  resolveElUsedRawForPayroll,
+  loadPriorPayrollRecordLean,
+  applyExplicitElToPaidLeaveAndPayable,
+} = require('./elUsedInPayrollHelper');
 
 /**
  * Normalize employee override payloads to ensure consistent structure
@@ -994,22 +998,42 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     const lateCount = attendanceSummary.lateCount || 0;
     const earlyOutCount = attendanceSummary.earlyOutCount || 0;
 
-    // When "Use EL as paid in payroll" is ON: add employee's EL balance to payable shifts (extra paid days). Employee does not "avail" these as leave; they are consumed when batch is completed.
+    // EL as paid: only when an explicit amount exists (pay register totals, prior payroll, or options).
+    // Do not add the employee's full EL balance to paid leave / payable shifts by default.
     let elUsedInPayroll = 0;
     try {
-      const effectiveEL = await resolveEffectiveEarnedLeaveForDepartment(departmentId, divisionId);
-      if (effectiveEL.enabled && effectiveEL.useAsPaidInPayroll !== false) {
-        const elBalance = Math.max(0, Number(employee.paidLeaves) || 0);
-        if (elBalance > 0) {
-          elUsedInPayroll = Math.min(elBalance, monthDays);
-          payableShifts = payableShifts + elUsedInPayroll;
-          paidLeaveDays = paidLeaveDays + elUsedInPayroll;
-          attendanceSummary.totalPayableShifts = payableShifts;
-          attendanceSummary.totalPaidLeaveDays = paidLeaveDays;
-        }
+      const priorPayrollRecord = await loadPriorPayrollRecordLean(employeeId, month);
+      let prForEl = payRegisterSummary;
+      if (!prForEl) {
+        prForEl = await PayRegisterSummary.findOne({ employeeId, month }).lean();
       }
+      const elRaw = await resolveElUsedRawForPayroll({
+        payRegisterSummary: prForEl || {},
+        priorPayrollRecord,
+        priorSecondSalaryRecord: null,
+        options,
+        employee,
+        departmentId,
+        divisionId,
+        monthDays,
+      });
+      const out = await applyExplicitElToPaidLeaveAndPayable({
+        basePaidLeaveDays: paidLeaveDays,
+        basePayableShifts: payableShifts,
+        explicitRaw: elRaw,
+        employee,
+        departmentId,
+        divisionId,
+        monthDays,
+      });
+      paidLeaveDays = out.paidLeaveDays;
+      payableShifts = out.payableShifts;
+      elUsedInPayroll = out.elUsedInPayroll;
+      attendanceSummary.totalPayableShifts = payableShifts;
+      attendanceSummary.totalPaidLeaveDays = paidLeaveDays;
+      attendanceSummary.elUsedInPayroll = elUsedInPayroll;
     } catch (e) {
-      console.warn('[Payroll] Effective EL policy check failed:', e.message);
+      console.warn('[Payroll] EL used-in-payroll apply failed:', e.message);
     }
 
     console.log('Attendance Data:');
@@ -1327,6 +1351,7 @@ async function calculatePayrollNew(employeeId, month, userId, options = { source
     payrollRecord.set('attendance.holidays', Number(holidays) || 0);
     payrollRecord.set('attendance.absentDays', Number(absentDays) || 0);
     payrollRecord.set('attendance.payableShifts', Number(payableShifts) || 0);
+    payrollRecord.set('attendance.elUsedInPayroll', Number(elUsedInPayroll) || 0);
     payrollRecord.set('attendance.extraDays', Number(extraDays) || 0);
     payrollRecord.set('attendance.totalPaidDays', Number(totalPaidDays) || 0);
     payrollRecord.set('attendance.otHours', Number(otHours) || 0);

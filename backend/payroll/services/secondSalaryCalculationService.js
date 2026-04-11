@@ -12,7 +12,12 @@ const secondSalaryLoanAdvanceService = require('./secondSalaryLoanAdvanceService
 const SecondSalaryBatchService = require('./secondSalaryBatchService');
 const allowanceDeductionResolverService = require('./allowanceDeductionResolverService');
 const statutoryDeductionService = require('./statutoryDeductionService');
-const { resolveEffectiveEarnedLeaveForDepartment } = require('../../leaves/services/earnedLeavePolicyResolver');
+const {
+    resolveElUsedRawForPayroll,
+    loadPriorPayrollRecordLean,
+    loadPriorSecondSalaryRecordLean,
+    applyExplicitElToPaidLeaveAndPayable,
+} = require('./elUsedInPayrollHelper');
 
 /**
  * Normalize overrides (same logic as regular payroll)
@@ -116,25 +121,39 @@ async function calculateSecondSalary(employeeId, month, userId, sharedContext = 
         }
 
         let elUsedInPayroll = 0;
-        // NOTE: totalPayableShifts from PayRegisterSummary already includes paid leave days
-        // (it is computed as present + OD + paid leaves in the regular payroll flow).
-        // Do NOT add paidLeaveDays again — that was causing paid leaves to be counted twice.
+        // Pay register totalPayableShifts is present+OD (see totalsCalculationService); paid leaves are separate.
+        // EL-as-paid is merged into paidLeaveDays only — basic pay sums payableShifts + paidLeaveDays, so EL must not be added to both.
         let paidLeaveDays = attendanceSummary.totalPaidLeaveDays || 0;
         let payableShifts = attendanceSummary.totalPayableShifts || 0;
         const monthDays = attendanceSummary.totalDaysInMonth;
 
         try {
-            const effectiveEL = await resolveEffectiveEarnedLeaveForDepartment(departmentId, divisionId);
-            if (effectiveEL.enabled && effectiveEL.useAsPaidInPayroll !== false) {
-                const elBalance = Math.max(0, Number(employee.paidLeaves) || 0);
-                if (elBalance > 0) {
-                    elUsedInPayroll = Math.min(elBalance, monthDays);
-                    payableShifts = payableShifts + elUsedInPayroll;
-                    paidLeaveDays = paidLeaveDays + elUsedInPayroll;
-                }
-            }
+            const priorPayrollRecord = await loadPriorPayrollRecordLean(employeeId, month);
+            const priorSecondSalaryRecord = await loadPriorSecondSalaryRecordLean(employeeId, month);
+            const elRaw = await resolveElUsedRawForPayroll({
+                payRegisterSummary: payRegisterSummary || {},
+                priorPayrollRecord,
+                priorSecondSalaryRecord,
+                options: {},
+                employee,
+                departmentId,
+                divisionId,
+                monthDays,
+            });
+            const out = await applyExplicitElToPaidLeaveAndPayable({
+                basePaidLeaveDays: paidLeaveDays,
+                basePayableShifts: payableShifts,
+                explicitRaw: elRaw,
+                employee,
+                departmentId,
+                divisionId,
+                monthDays,
+            });
+            paidLeaveDays = out.paidLeaveDays;
+            payableShifts = out.payableShifts;
+            elUsedInPayroll = out.elUsedInPayroll;
         } catch (e) {
-            console.warn('[SecondSalary] Effective EL policy check failed:', e.message);
+            console.warn('[SecondSalary] EL used-in-payroll apply failed:', e.message);
         }
 
         const modifiedAttendanceSummary = {
