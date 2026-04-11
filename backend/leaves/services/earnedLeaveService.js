@@ -4,10 +4,12 @@
  */
 
 const Employee = require('../../employees/model/Employee');
-const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
+const MonthlyAttendanceSummary = require('../../attendance/model/MonthlyAttendanceSummary');
+const { calculateMonthlySummary } = require('../../attendance/services/summaryCalculationService');
 const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
 const DepartmentSettings = require('../../departments/model/DepartmentSettings');
 const { resolveEffectiveEarnedLeave } = require('./earnedLeavePolicyResolver');
+const { accumulateAttendanceRangeEl } = require('./earnedLeaveRangeAccumulation');
 const leaveRegisterService = require('./leaveRegisterService');
 const leaveRegisterYearLedgerService = require('./leaveRegisterYearLedgerService');
 const ELHistory = require('../model/ELHistory');
@@ -95,7 +97,7 @@ async function calculateEarnedLeave(employeeId, month, year, cycleStart = null, 
         const elPolicyWrapper = { earnedLeave: effectiveEL, compliance: settings.compliance };
 
         // Get attendance data for the specific payroll cycle
-        const attendanceData = await getAttendanceData(employeeId, month, year, settings, employee, cycleStart, cycleEnd);
+        const attendanceData = await getAttendanceData(employeeId, month, year, employee, cycleStart, cycleEnd);
 
         // Calculate EL based on earning type (rules = global policy + department overrides)
         let elCalculation;
@@ -135,52 +137,42 @@ async function calculateEarnedLeave(employeeId, month, year, cycleStart = null, 
 }
 
 /**
- * Get attendance data for EL calculation based on exact cycle bounds
+ * EL attendance input: **monthly attendance summary only** (same engine as payroll / pay register).
+ * Credit-day basis = totalPayableShifts + totalWeeklyOffs + totalHolidays (capped at pay-period days).
  */
-async function getAttendanceData(employeeId, month, year, settings, employee, cycleStart, cycleEnd) {
-    // Get daily attendance records strictly within cycle
-    const attendanceRecords = await AttendanceDaily.find({
-        employeeNumber: employee.emp_no,
-        date: { $gte: cycleStart, $lte: cycleEnd }
-    }).select('date status workingHours overtimeHours extraHours permissionCount isHoliday isWeeklyOff').lean();
+async function getAttendanceData(employeeId, month, year, employee, cycleStart, cycleEnd) {
+    const empNoRaw = employee.emp_no && String(employee.emp_no).trim();
+    const empNo = empNoRaw ? empNoRaw.toUpperCase() : employee.emp_no;
+    const monthStr = `${year}-${String(month).padStart(2, '0')}`;
 
-    let attendanceDays = 0;
-    let presentDays = 0;
-    let payableShifts = 0;
-    let weeklyOffs = 0;
-    let holidays = 0;
-    let workedDays = 0;
+    let summary = await MonthlyAttendanceSummary.findOne({ employeeId, month: monthStr }).lean();
 
-    for (const record of attendanceRecords) {
-        const status = (record.status || '').toLowerCase();
-
-        if (record.payableShifts !== undefined && record.payableShifts !== null) {
-            payableShifts += Number(record.payableShifts) || 0;
-        }
-
-        // Count as present based on settings
-        if (status === 'present' || status === 'half_day') {
-            presentDays++;
-            attendanceDays++;
-        } else if (status === 'weekly_off') {
-            weeklyOffs++;
-            if (settings.compliance.considerWeeklyOffs) {
-                attendanceDays++;
-            }
-        } else if (status === 'holiday') {
-            holidays++;
-            if (settings.compliance.considerPaidHolidays) {
-                attendanceDays++;
-            }
-        }
-
-        if (status === 'present' || status === 'half_day') {
-            workedDays++;
-        }
+    if (!summary) {
+        await calculateMonthlySummary(employeeId, empNo, year, month);
+        summary = await MonthlyAttendanceSummary.findOne({ employeeId, month: monthStr }).lean();
     }
 
-    const totalDays = Math.round((cycleEnd.getTime() - cycleStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-    const effectiveDays = Math.min(totalDays, Math.max(presentDays, payableShifts));
+    if (!summary) {
+        throw new Error(
+            `Monthly attendance summary missing for ${monthStr} after recalculate (employee ${empNo || employeeId})`
+        );
+    }
+
+    const totalDays =
+        Number(summary.totalDaysInMonth) ||
+        Math.round((cycleEnd.getTime() - cycleStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    const payableShifts = Number(summary.totalPayableShifts) || 0;
+    const weeklyOffs = Number(summary.totalWeeklyOffs) || 0;
+    const holidays = Number(summary.totalHolidays) || 0;
+    const presentDays = Number(summary.totalPresentDays) || 0;
+
+    const creditDaysRaw = payableShifts + weeklyOffs + holidays;
+    const creditDays = Math.round(creditDaysRaw * 1000) / 1000;
+    const effectiveDays = Math.min(totalDays, creditDays);
+
+    // Single "days" figure exposed on EL API = same basis used for range + ratio EL
+    const attendanceDays = effectiveDays;
+    const workedDays = presentDays;
 
     return {
         month,
@@ -188,12 +180,17 @@ async function getAttendanceData(employeeId, month, year, settings, employee, cy
         totalDays,
         presentDays,
         payableShifts,
-        effectiveDays,
         weeklyOffs,
         holidays,
         workedDays,
         attendanceDays,
-        attendanceRecords
+        effectiveDays,
+        monthlySummaryMonth: summary.month,
+        summaryStartDate: summary.startDate,
+        summaryEndDate: summary.endDate,
+        creditDays,
+        attendanceRecords: [],
+        monthlySummaryId: summary._id,
     };
 }
 
@@ -206,60 +203,61 @@ function calculateAttendanceBasedEL(attendanceData, settings) {
     const breakdown = [];
 
     // Use attendance ranges if configured (cumulative logic)
-    // effectiveDays = min(monthDays, max(presentDays, payableShifts)) for range matching
+    // effectiveDays = min(periodDays, payableShifts + weeklyOffs + holidays) from monthly summary
     if (rules.attendanceRanges && rules.attendanceRanges.length > 0) {
         const effectiveDays = attendanceData.effectiveDays !== undefined
             ? attendanceData.effectiveDays
             : attendanceData.attendanceDays;
-        const rangeBreakdown = [];
 
-        // Sort a shallow copy to avoid mutating shared settings
-        const sortedRanges = [...rules.attendanceRanges].sort((a, b) => a.minDays - b.minDays);
-
-        for (const range of sortedRanges) {
-            if (effectiveDays >= range.minDays && effectiveDays <= range.maxDays) {
-                elEarned += range.elEarned;
-                rangeBreakdown.push({
-                    range: `${range.minDays}-${range.maxDays} days`,
-                    elEarned: range.elEarned,
-                    description: range.description,
-                    cumulative: true
-                });
-            }
-        }
-
-        elEarned = Math.min(elEarned, rules.maxELPerMonth);
+        const { elEarned: stacked, rangeBreakdown } = accumulateAttendanceRangeEl(
+            rules.attendanceRanges,
+            effectiveDays,
+            rules.maxELPerMonth
+        );
+        elEarned = stacked;
 
         breakdown.push({
             type: 'attendance_ranges_cumulative',
             effectiveDays,
             attendanceDays: attendanceData.attendanceDays,
             payableShifts: attendanceData.payableShifts,
+            weeklyOffs: attendanceData.weeklyOffs,
+            holidays: attendanceData.holidays,
+            presentDays: attendanceData.presentDays,
+            creditDays: attendanceData.creditDays,
+            summaryMonth: attendanceData.monthlySummaryMonth,
             totalEL: elEarned,
             maxELForMonth: rules.maxELPerMonth,
             ranges: rangeBreakdown,
-            calculation: 'effectiveDays = min(monthDays, max(presentDays, payableShifts)); range match on effectiveDays'
+            calculation:
+                'creditDays = totalPayableShifts+totalWeeklyOffs+totalHolidays (monthly summary); effectiveDays=min(periodDays,creditDays); EL=sum(range.elEarned for each range with effectiveDays>=minDays), then cap maxELPerMonth',
         });
 
     } else {
-        // Standard attendance-based calculation (fallback)
-        const attendanceDays = attendanceData.attendanceDays;
+        // Standard attendance-based calculation (fallback) — same monthly-summary credit days as ranges
+        const daysBasis =
+            attendanceData.effectiveDays !== undefined && attendanceData.effectiveDays !== null
+                ? attendanceData.effectiveDays
+                : attendanceData.attendanceDays;
 
-        if (attendanceDays >= rules.minDaysForFirstEL) {
-            // Calculate EL based on days per EL ratio
-            elEarned = Math.floor(attendanceDays / rules.daysPerEL);
-
-            // Apply monthly maximum
+        if (daysBasis >= rules.minDaysForFirstEL) {
+            elEarned = Math.floor(daysBasis / rules.daysPerEL);
             elEarned = Math.min(elEarned, rules.maxELPerMonth);
 
             breakdown.push({
                 type: 'attendance_based',
-                attendanceDays,
+                attendanceDays: daysBasis,
+                effectiveDays: attendanceData.effectiveDays,
+                payableShifts: attendanceData.payableShifts,
+                weeklyOffs: attendanceData.weeklyOffs,
+                holidays: attendanceData.holidays,
+                presentDays: attendanceData.presentDays,
+                creditDays: attendanceData.creditDays,
                 minDaysRequired: rules.minDaysForFirstEL,
                 daysPerEL: rules.daysPerEL,
-                calculatedEL: Math.floor(attendanceDays / rules.daysPerEL),
+                calculatedEL: Math.floor(daysBasis / rules.daysPerEL),
                 maxELForMonth: rules.maxELPerMonth,
-                finalEL: elEarned
+                finalEL: elEarned,
             });
         }
     }

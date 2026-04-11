@@ -5,7 +5,7 @@ jest.mock('../../model/OT');
 jest.mock('../../../employees/model/Employee');
 jest.mock('../../../shifts/model/Shift');
 jest.mock('../../../attendance/model/AttendanceDaily');
-jest.mock('../../model/OvertimeSettings');
+jest.mock('../otConfigResolver');
 jest.mock('../../../users/model/User');
 
 const Leave = require('../../../leaves/model/Leave');
@@ -13,7 +13,7 @@ const OT = require('../../model/OT');
 const Employee = require('../../../employees/model/Employee');
 const Shift = require('../../../shifts/model/Shift');
 const AttendanceDaily = require('../../../attendance/model/AttendanceDaily');
-const OvertimeSettings = require('../../model/OvertimeSettings');
+const { getMergedOtConfig } = require('../otConfigResolver');
 const User = require('../../../users/model/User');
 
 const {
@@ -55,7 +55,7 @@ function makeAttendance(date = '2026-04-10') {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  OvertimeSettings.getActiveSettings.mockResolvedValue({ workflow: { steps: [] } });
+  getMergedOtConfig.mockResolvedValue({ workflow: { steps: [] } });
   User.findOne.mockImplementation(() => {
     const doc = { _id: new mongoose.Types.ObjectId() };
     return {

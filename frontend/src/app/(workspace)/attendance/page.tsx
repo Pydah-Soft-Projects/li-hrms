@@ -833,6 +833,8 @@ export default function AttendancePage() {
     allowShiftChange: boolean;
   }>({ allowInTimeEditing: true, allowOutTimeEditing: true, allowAttendanceUpload: true, allowShiftChange: true });
   const [otAutoCreateEnabled, setOtAutoCreateEnabled] = useState(false);
+  /** Merged org+dept auto-OT flag for the currently selected employee; null = use global only */
+  const [resolvedOtAutoCreateForEmployee, setResolvedOtAutoCreateForEmployee] = useState<boolean | null>(null);
   const [otPolicyEligibleForConvert, setOtPolicyEligibleForConvert] = useState(false);
   const [otPolicyPreview, setOtPolicyPreview] = useState<any | null>(null);
   const [selectedOtEmployees, setSelectedOtEmployees] = useState<Record<string, boolean>>({});
@@ -921,6 +923,50 @@ export default function AttendancePage() {
     };
     loadFlags();
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!selectedEmployee) {
+        setResolvedOtAutoCreateForEmployee(null);
+        return;
+      }
+      const deptRaw = (selectedEmployee as { department_id?: unknown }).department_id;
+      const divRaw = (selectedEmployee as { division_id?: unknown }).division_id;
+      const deptId = deptRaw
+        ? typeof deptRaw === 'object' && deptRaw !== null && '_id' in (deptRaw as object)
+          ? String((deptRaw as { _id: string })._id)
+          : String(deptRaw)
+        : '';
+      if (!deptId) {
+        setResolvedOtAutoCreateForEmployee(null);
+        return;
+      }
+      const divId =
+        divRaw && typeof divRaw === 'object' && divRaw !== null && '_id' in (divRaw as object)
+          ? String((divRaw as { _id: string })._id)
+          : divRaw
+            ? String(divRaw)
+            : undefined;
+      try {
+        const res = await api.getResolvedDepartmentSettings(deptId, 'ot', divId);
+        if (cancelled) return;
+        if (res?.success && res.data?.ot && typeof (res.data.ot as { autoCreateOtRequest?: boolean }).autoCreateOtRequest === 'boolean') {
+          setResolvedOtAutoCreateForEmployee(Boolean((res.data.ot as { autoCreateOtRequest: boolean }).autoCreateOtRequest));
+        } else {
+          setResolvedOtAutoCreateForEmployee(null);
+        }
+      } catch {
+        if (!cancelled) setResolvedOtAutoCreateForEmployee(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedEmployee]);
+
+  const effectiveOtAutoCreateForSelectedEmployee =
+    resolvedOtAutoCreateForEmployee !== null ? resolvedOtAutoCreateForEmployee : otAutoCreateEnabled;
 
   useEffect(() => {
     let cancelled = false;
@@ -5826,7 +5872,7 @@ export default function AttendancePage() {
                           <div className="text-sm font-semibold text-purple-600 dark:text-purple-400">
                             {formatHours(attendanceDetail.extraHours)} hrs
                           </div>
-                          {!hasExistingOT && (attendanceDetail.shiftId || attendanceDetail.shifts?.length > 0) && (!otAutoCreateEnabled || otPolicyEligibleForConvert) && (
+                          {!hasExistingOT && (attendanceDetail.shiftId || attendanceDetail.shifts?.length > 0) && (!effectiveOtAutoCreateForSelectedEmployee || otPolicyEligibleForConvert) && (
                             <div className="ml-3 text-right">
                               <button
                                 onClick={handleConvertExtraHoursToOT}
@@ -5848,7 +5894,7 @@ export default function AttendancePage() {
                             </div>
 
                           )}
-                          {!hasExistingOT && (attendanceDetail.shiftId || attendanceDetail.shifts?.length > 0) && otAutoCreateEnabled && !otPolicyEligibleForConvert && (
+                          {!hasExistingOT && (attendanceDetail.shiftId || attendanceDetail.shifts?.length > 0) && effectiveOtAutoCreateForSelectedEmployee && !otPolicyEligibleForConvert && (
                             <div className="ml-3 text-right">
                               <span className="rounded-full px-2 py-1 text-[10px] font-medium bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">
                                 Not eligible to convert to OT
