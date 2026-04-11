@@ -562,6 +562,13 @@ class LeaveRegisterService {
                 return { idempotent: true, existingTransaction: existing };
             }
         }
+        const existingForMonth = await leaveRegisterYearLedgerService.findExistingPayrollElDebitForPayrollMonth(
+            employeeId,
+            month
+        );
+        if (existingForMonth) {
+            return { idempotent: true, existingTransaction: existingForMonth };
+        }
         const employee = await Employee.findById(employeeId)
             .select('_id emp_no employee_name designation_id department_id division_id doj is_active')
             .populate('designation_id', 'name')

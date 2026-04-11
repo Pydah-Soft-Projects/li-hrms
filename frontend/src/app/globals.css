@@ -2,13 +2,22 @@
 @import "tailwindcss";
 @import "../styles/responsive.css";
 
-/* Global overflow prevention */
+/* Global overflow prevention.
+   overflow-x:hidden on html/body breaks position:sticky for local nav sidebars;
+   clip clips horizontal overflow without that scrollport issue (where supported). */
 html,
 body {
   overflow-x: hidden;
   max-width: 100vw;
   position: relative;
   scroll-behavior: smooth;
+}
+
+@supports (overflow-x: clip) {
+  html,
+  body {
+    overflow-x: clip;
+  }
 }
 
 * {
