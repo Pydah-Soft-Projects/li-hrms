@@ -1262,7 +1262,7 @@ export const api = {
     return apiRequest<void>(`/employee-groups/${id}`, { method: 'DELETE' });
   },
 
-  linkDepartmentsToDivision: async (id: string, data: { departmentIds: string[]; action: 'link' | 'unlink' }) => {
+  linkDepartmentsToDivision: async (id: string, data: { departmentIds: string[]; action: 'link' | 'unlink' | 'set'; force?: boolean }) => {
     return apiRequest<any>(`/divisions/${id}/departments`, {
       method: 'POST',
       body: JSON.stringify(data),

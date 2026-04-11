@@ -336,13 +336,19 @@ exports.deleteDivision = async (req, res, next) => {
 };
 
 /**
- * @desc    Link/Unlink departments to division
+ * @desc    Link/Unlink/Set departments to division
  * @route   POST /api/divisions/:id/departments
  * @access  Private/Admin
+ *
+ * action: 'link'   - add departmentIds to division (additive)
+ * action: 'unlink' - remove departmentIds from division
+ * action: 'set'    - replace the full department list; diffs current vs desired,
+ *                    checks for employees in removed depts, returns requiresConfirmation
+ *                    if any found (unless force:true is passed)
  */
 exports.linkDepartments = async (req, res, next) => {
     try {
-        const { departmentIds, action } = req.body; // action: 'link' or 'unlink'
+        const { departmentIds, action, force } = req.body;
         const divisionId = req.params.id;
 
         const division = await Division.findById(divisionId);
@@ -354,6 +360,7 @@ exports.linkDepartments = async (req, res, next) => {
         }
 
         if (action === 'link') {
+            // --- Pure additive ---
             await Division.findByIdAndUpdate(divisionId, {
                 $addToSet: { departments: { $each: departmentIds } },
             });
@@ -361,7 +368,9 @@ exports.linkDepartments = async (req, res, next) => {
                 { _id: { $in: departmentIds } },
                 { $addToSet: { divisions: divisionId } }
             );
+
         } else if (action === 'unlink') {
+            // --- Explicit unlink (with employee check) ---
             await Division.findByIdAndUpdate(divisionId, {
                 $pull: { departments: { $in: departmentIds } },
             });
@@ -369,6 +378,78 @@ exports.linkDepartments = async (req, res, next) => {
                 { _id: { $in: departmentIds } },
                 { $pull: { divisions: divisionId } }
             );
+
+        } else if (action === 'set') {
+            // --- Replace / sync the full list ---
+            const Employee = require('../../employees/model/Employee');
+
+            const currentDeptIds = division.departments.map((d) => d.toString());
+            const newDeptIds = (departmentIds || []).map((id) => id.toString());
+
+            const toAdd       = newDeptIds.filter((id) => !currentDeptIds.includes(id));
+            const allToRemove = currentDeptIds.filter((id) => !newDeptIds.includes(id));
+
+            // --- Split removals into safe (no employees) vs risky (has employees) ---
+            let safeToRemove  = [...allToRemove]; // default: treat all as safe (force mode or no removals)
+            let affectedDepts = [];
+
+            if (!force && allToRemove.length > 0) {
+                safeToRemove = [];
+                for (const deptId of allToRemove) {
+                    const count = await Employee.countDocuments({
+                        division_id:   divisionId,
+                        department_id: deptId,
+                        is_active:     { $ne: false },
+                    });
+                    if (count > 0) {
+                        const dept = await Department.findById(deptId).select('name code').lean();
+                        affectedDepts.push({
+                            departmentId:   deptId,
+                            departmentName: dept ? `${dept.name} (${dept.code})` : deptId,
+                            employeeCount:  count,
+                        });
+                    } else {
+                        safeToRemove.push(deptId);
+                    }
+                }
+            }
+
+            // Always apply adds
+            if (toAdd.length > 0) {
+                await Division.findByIdAndUpdate(divisionId, {
+                    $addToSet: { departments: { $each: toAdd } },
+                });
+                await Department.updateMany(
+                    { _id: { $in: toAdd } },
+                    { $addToSet: { divisions: divisionId } }
+                );
+            }
+
+            // Always apply safe removals (no employees)
+            if (safeToRemove.length > 0) {
+                await Division.findByIdAndUpdate(divisionId, {
+                    $pull: { departments: { $in: safeToRemove } },
+                });
+                await Department.updateMany(
+                    { _id: { $in: safeToRemove } },
+                    { $pull: { divisions: divisionId } }
+                );
+            }
+
+            // If risky depts remain, flush cache and return warning
+            // The frontend will re-submit with force:true for only the remaining risky ones
+            if (affectedDepts.length > 0) {
+                const cacheService = require('../../shared/services/cacheService');
+                await cacheService.delByPattern('departments:*');
+                return res.status(200).json({
+                    success: false,
+                    requiresConfirmation: true,
+                    affectedDepartments: affectedDepts,
+                    safeUnlinkedCount: safeToRemove.length,
+                    addedCount: toAdd.length,
+                    message: 'Some departments have active employees. Confirm to unlink them too.',
+                });
+            }
         }
 
         const cacheService = require('../../shared/services/cacheService');
