@@ -19,6 +19,38 @@ const {
   buildWorkflowVisibilityFilter,
   getEmployeeIdsInScope
 } = require('../../shared/middleware/dataScopeMiddleware');
+const { notifyWorkflowEvent } = require('../../notifications/services/notificationService');
+
+const formatOTDate = (value) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' });
+};
+
+const formatOTTime = (value) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+};
+
+const buildOTLocationText = (ot) => {
+  const parts = [];
+  if (ot?.geoLocation?.address) parts.push(String(ot.geoLocation.address).trim());
+  if (ot?.geoLocation?.latitude != null && ot?.geoLocation?.longitude != null) {
+    parts.push(`Lat ${ot.geoLocation.latitude}, Lng ${ot.geoLocation.longitude}`);
+  }
+  return parts.length ? parts.join(' | ') : 'Location not captured';
+};
+
+const buildOTWindowText = (ot) => {
+  const otIn = formatOTTime(ot?.otInTime);
+  const otOut = formatOTTime(ot?.otOutTime);
+  if (otIn && otOut) return `${otIn} - ${otOut}`;
+  if (otOut) return `Out: ${otOut}`;
+  return 'Time not specified';
+};
 
 /**
  * @desc    Create OT request
@@ -133,6 +165,17 @@ exports.createOT = async (req, res) => {
       message: result.message,
       data: otRequest,
     });
+
+    notifyWorkflowEvent({
+      module: 'ot_permission',
+      eventType: 'OT_REQUEST_APPLIED',
+      record: otRequest,
+      actor: req.user,
+      title: `OT Submitted: ${otRequest?.employeeId?.employee_name || otRequest?.employeeNumber}`,
+      message: `${otRequest?.employeeId?.employee_name || otRequest?.employeeNumber} submitted OT for ${formatOTDate(otRequest?.date)} (${buildOTWindowText(otRequest)}). OT hours: ${Number(otRequest?.otHours || 0).toFixed(2)}. Location: ${buildOTLocationText(otRequest)}. Current status: ${otRequest?.status}.`,
+      nextApproverRole: otRequest?.workflow?.nextApproverRole || otRequest?.workflow?.nextApprover || null,
+      priority: 'medium',
+    }).catch((err) => console.error('[Notification] OT_REQUEST_APPLIED failed:', err.message));
 
   } catch (error) {
     console.error('Error creating OT:', error);
@@ -317,6 +360,17 @@ exports.approveOT = async (req, res) => {
       data: otRequest,
     });
 
+    notifyWorkflowEvent({
+      module: 'ot_permission',
+      eventType: 'OT_REQUEST_APPROVED',
+      record: otRequest,
+      actor: req.user,
+      title: `OT Approved: ${otRequest?.employeeId?.employee_name || otRequest?.employeeNumber}`,
+      message: `${otRequest?.employeeId?.employee_name || otRequest?.employeeNumber}'s OT for ${formatOTDate(otRequest?.date)} (${buildOTWindowText(otRequest)}) was approved by ${req.user.name} (${req.user.role}). OT hours: ${Number(otRequest?.otHours || 0).toFixed(2)}. Location: ${buildOTLocationText(otRequest)}. Current status: ${otRequest?.status}.`,
+      nextApproverRole: otRequest?.workflow?.nextApproverRole || otRequest?.workflow?.nextApprover || null,
+      priority: 'medium',
+    }).catch((err) => console.error('[Notification] OT_REQUEST_APPROVED failed:', err.message));
+
   } catch (error) {
     console.error('Error approving OT:', error);
     res.status(500).json({
@@ -356,6 +410,16 @@ exports.rejectOT = async (req, res) => {
       message: result.message,
       data: otRequest,
     });
+
+    notifyWorkflowEvent({
+      module: 'ot_permission',
+      eventType: 'OT_REQUEST_REJECTED',
+      record: otRequest,
+      actor: req.user,
+      title: `OT Rejected: ${otRequest?.employeeId?.employee_name || otRequest?.employeeNumber}`,
+      message: `${otRequest?.employeeId?.employee_name || otRequest?.employeeNumber}'s OT for ${formatOTDate(otRequest?.date)} (${buildOTWindowText(otRequest)}) was rejected by ${req.user.name} (${req.user.role}). OT hours: ${Number(otRequest?.otHours || 0).toFixed(2)}. Location: ${buildOTLocationText(otRequest)}. Current status: ${otRequest?.status}.${reason ? ` Reason: ${reason}` : ''}`,
+      priority: 'high',
+    }).catch((err) => console.error('[Notification] OT_REQUEST_REJECTED failed:', err.message));
 
   } catch (error) {
     console.error('Error rejecting OT:', error);

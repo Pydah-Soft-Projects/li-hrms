@@ -25,7 +25,10 @@ const { buildLeaveRegisterXlsxBuffer } = require('../services/leaveRegisterXlsxE
 const dateCycleService = require('../services/dateCycleService');
 const leaveRegisterYearMonthlyApplyService = require('../services/leaveRegisterYearMonthlyApplyService');
 const leaveRegisterYearService = require('../services/leaveRegisterYearService');
+const { notifyWorkflowEvent } = require('../../notifications/services/notificationService');
 const MONTH_SLOT_EDIT_PERMISSION = 'LEAVE_REGISTER_MONTH_EDIT:write';
+
+const formatLeaveDate = (value) => dayjs(value).format('DD MMM YYYY');
 
 function canEditLeaveRegisterMonthSlot(user) {
   if (!user) return false;
@@ -932,6 +935,23 @@ exports.applyLeave = async (req, res) => {
 
     leaveRegisterYearMonthlyApplyService.scheduleSyncMonthApply(employee._id, leave.fromDate);
 
+    const applicantName = employee?.employee_name || leave?.employeeId?.employee_name || leave.emp_no || 'Employee';
+    const appliedRange =
+      formatLeaveDate(leave.fromDate) === formatLeaveDate(leave.toDate)
+        ? formatLeaveDate(leave.fromDate)
+        : `${formatLeaveDate(leave.fromDate)} to ${formatLeaveDate(leave.toDate)}`;
+
+    notifyWorkflowEvent({
+      module: 'leave',
+      eventType: 'LEAVE_APPLIED',
+      record: leave,
+      actor: req.user,
+      title: `Leave Submitted: ${applicantName}`,
+      message: `${applicantName} submitted ${leave.leaveType} leave for ${leave.numberOfDays} day(s) on ${appliedRange}. Current status: ${leave.status}.`,
+      nextApproverRole: leave?.workflow?.nextApprover || leave?.workflow?.nextApproverRole || null,
+      priority: 'medium',
+    }).catch((err) => console.error('[Notification] LEAVE_APPLIED failed:', err.message));
+
     res.status(201).json({
       success: true,
       message: 'Leave application submitted successfully',
@@ -1271,6 +1291,22 @@ exports.cancelLeave = async (req, res) => {
     await leave.save();
 
     leaveRegisterYearMonthlyApplyService.scheduleSyncMonthApply(leave.employeeId, leave.fromDate);
+
+    const leaveEmpName = leave?.employeeId?.employee_name || leave.emp_no || 'Employee';
+    const cancelledRange =
+      formatLeaveDate(leave.fromDate) === formatLeaveDate(leave.toDate)
+        ? formatLeaveDate(leave.fromDate)
+        : `${formatLeaveDate(leave.fromDate)} to ${formatLeaveDate(leave.toDate)}`;
+
+    notifyWorkflowEvent({
+      module: 'leave',
+      eventType: 'LEAVE_CANCELLED',
+      record: leave,
+      actor: req.user,
+      title: `Leave Cancelled: ${leaveEmpName}`,
+      message: `${leaveEmpName}'s ${leave.leaveType} leave (${leave.numberOfDays} day(s), ${cancelledRange}) was cancelled by ${req.user.name}. Status: ${leave.status}.${reason ? ` Reason: ${reason}` : ''}`,
+      priority: 'high',
+    }).catch((err) => console.error('[Notification] LEAVE_CANCELLED failed:', err.message));
 
     res.status(200).json({
       success: true,
@@ -1813,6 +1849,24 @@ exports.processLeaveAction = async (req, res) => {
     if (approvalWarnings && approvalWarnings.length > 0) {
       response.warnings = approvalWarnings;
     }
+
+    const actionLabel = action === 'approve' ? 'Approved' : action === 'reject' ? 'Rejected' : 'Updated';
+    const leaveOwnerName = leave?.employeeId?.employee_name || leave.emp_no || 'Employee';
+    const actionRange =
+      formatLeaveDate(leave.fromDate) === formatLeaveDate(leave.toDate)
+        ? formatLeaveDate(leave.fromDate)
+        : `${formatLeaveDate(leave.fromDate)} to ${formatLeaveDate(leave.toDate)}`;
+
+    notifyWorkflowEvent({
+      module: 'leave',
+      eventType: action === 'approve' ? 'LEAVE_ACTION_APPROVED' : action === 'reject' ? 'LEAVE_ACTION_REJECTED' : 'LEAVE_ACTION_UPDATED',
+      record: leave,
+      actor: req.user,
+      title: `Leave ${actionLabel}: ${leaveOwnerName}`,
+      message: `${leaveOwnerName}'s ${leave.leaveType} leave (${leave.numberOfDays} day(s), ${actionRange}) was ${actionLabel.toLowerCase()} by ${req.user.name} (${req.user.role}). Current status: ${leave.status}.`,
+      nextApproverRole: leave?.workflow?.nextApprover || leave?.workflow?.nextApproverRole || null,
+      priority: action === 'reject' ? 'high' : 'medium',
+    }).catch((err) => console.error('[Notification] LEAVE_ACTION failed:', err.message));
 
     res.status(200).json(response);
 

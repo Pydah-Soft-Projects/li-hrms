@@ -19,6 +19,7 @@ import {
 } from '@/lib/payPeriodRange';
 
 const LocationMap = dynamic(() => import('@/components/LocationMap'), { ssr: false });
+const ODRequestsMap = dynamic(() => import('@/components/ODRequestsMap'), { ssr: false });
 
 
 // Status Breakdown Modal Component
@@ -767,6 +768,43 @@ export default function LeavesPage() {
     status: '',
     odPlace: ''
   });
+  const [showODMap, setShowODMap] = useState(false);
+  const [odMapRequests, setODMapRequests] = useState<ODApplication[]>([]);
+  const [odMapLoading, setODMapLoading] = useState(false);
+  const statsRequestRef = useRef(0);
+  const dataRequestRef = useRef(0);
+
+  const odStatusFilterOptions = useMemo(
+    () => [
+      { value: '', label: 'Status' },
+      { value: 'pending', label: 'Pending' },
+      { value: 'reporting_manager_approved', label: 'Reporting Manager Approved' },
+      { value: 'manager_approved', label: 'Manager Approved' },
+      { value: 'hod_approved', label: 'HOD Approved' },
+      { value: 'hr_approved', label: 'HR Approved' },
+      { value: 'principal_approved', label: 'Principal Approved' },
+      { value: 'approved', label: 'Approved (Final)' },
+      { value: 'reporting_manager_rejected', label: 'Reporting Manager Rejected' },
+      { value: 'manager_rejected', label: 'Manager Rejected' },
+      { value: 'hod_rejected', label: 'HOD Rejected' },
+      { value: 'hr_rejected', label: 'HR Rejected' },
+      { value: 'principal_rejected', label: 'Principal Rejected' },
+      { value: 'rejected', label: 'Rejected (Final)' },
+      { value: 'cancelled', label: 'Cancelled' },
+    ],
+    []
+  );
+
+  const odMapFilterSummary = useMemo(() => {
+    const parts: string[] = [];
+    if (leaveFilters.status) parts.push(`Status: ${leaveFilters.status.replaceAll('_', ' ')}`);
+    if (leaveFilters.odPlace) parts.push(`Place: ${leaveFilters.odPlace}`);
+    if (searchTerm?.trim()) parts.push(`Search: ${searchTerm.trim()}`);
+    if (leaveFilters.division.length > 0) parts.push(`Divisions: ${leaveFilters.division.length}`);
+    if (leaveFilters.department.length > 0) parts.push(`Departments: ${leaveFilters.department.length}`);
+    if (leaveFilters.designation.length > 0) parts.push(`Designations: ${leaveFilters.designation.length}`);
+    return parts.length > 0 ? parts.join(' | ') : 'All filters';
+  }, [leaveFilters, searchTerm]);
 
   // Form validation for Apply button
   const isFormValid = () => {
@@ -873,14 +911,10 @@ export default function LeavesPage() {
     fetchSettings();
   }, []);
 
-  // Re-fetch when date range changes
+  // Unified refresh for leaves/OD + stats when filters/date/search change.
+  // Keeping this as one effect avoids duplicate API calls.
   useEffect(() => {
     loadData();
-  }, [dateRange.from, dateRange.to, leaveFilters]);
-
-  useEffect(() => {
-    loadLeavesData(1);
-    loadODsData(1);
     loadDashboardStats();
   }, [searchTerm, leaveFilters, dateRange.from, dateRange.to]);
 
@@ -903,6 +937,59 @@ export default function LeavesPage() {
     toDate: dateRange.to || undefined,
   });
 
+  const fetchAllODMapRequests = async () => {
+    if (activeTab !== 'od') return;
+    setODMapLoading(true);
+    try {
+      const baseFilters = getLeavesODFilters();
+      const pageSize = 200;
+      const first = await api.getODs({ ...baseFilters, page: 1, limit: pageSize });
+
+      if (!first.success) {
+        setODMapRequests([]);
+        return;
+      }
+
+      const all = [...(first.data || [])];
+      const total = Number((first as any).total || all.length);
+      const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+      if (totalPages > 1) {
+        const pagePromises: Promise<any>[] = [];
+        for (let page = 2; page <= totalPages; page += 1) {
+          pagePromises.push(api.getODs({ ...baseFilters, page, limit: pageSize }));
+        }
+        const rest = await Promise.all(pagePromises);
+        rest.forEach((res) => {
+          if (res?.success && Array.isArray(res.data)) all.push(...res.data);
+        });
+      }
+
+      setODMapRequests(all);
+    } catch (err) {
+      console.error('Failed to load OD map records:', err);
+      setODMapRequests([]);
+    } finally {
+      setODMapLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!showODMap) return;
+    fetchAllODMapRequests();
+  }, [
+    showODMap,
+    activeTab,
+    searchTerm,
+    leaveFilters.status,
+    leaveFilters.odPlace,
+    leaveFilters.division,
+    leaveFilters.department,
+    leaveFilters.designation,
+    dateRange.from,
+    dateRange.to,
+  ]);
+
   const hasActiveFilter = !!(
     searchTerm?.trim() || 
     leaveFilters.division.length > 0 || 
@@ -911,13 +998,14 @@ export default function LeavesPage() {
   );
 
   const loadDashboardStats = async () => {
+    const requestId = ++statsRequestRef.current;
     setLoadingStats(true);
     try {
       // Always pass filters to ensure stats respect date range + search/dept/div
       const filters = getLeavesODFilters();
       const res = await api.getLeaveDashboardStats(filters);
       const data = (res as any)?.data;
-      if ((res as any)?.success && data) {
+      if (requestId === statsRequestRef.current && (res as any)?.success && data) {
         setDashboardStats({
           totalLeaves: data.totalLeaves ?? 0,
           totalODs: data.totalODs ?? 0,
@@ -936,11 +1024,14 @@ export default function LeavesPage() {
     } catch {
       // non-blocking
     } finally {
-      setLoadingStats(false);
+      if (requestId === statsRequestRef.current) {
+        setLoadingStats(false);
+      }
     }
   };
 
   const loadData = async () => {
+    const requestId = ++dataRequestRef.current;
     setLoading(true);
     const filters = getLeavesODFilters();
     try {
@@ -948,12 +1039,12 @@ export default function LeavesPage() {
         api.getLeaves({ ...filters, page: 1, limit: leavesLimit }),
         api.getODs({ ...filters, page: 1, limit: odsLimit }),
       ]);
-      if (leavesRes.success) {
+      if (requestId === dataRequestRef.current && leavesRes.success) {
         setLeaves(leavesRes.data || []);
         setLeavesTotal((leavesRes as any).total ?? 0);
         setLeavesPage(1);
       }
-      if (odsRes.success) {
+      if (requestId === dataRequestRef.current && odsRes.success) {
         setODs(odsRes.data || []);
         setODsTotal((odsRes as any).total ?? 0);
         setODsPage(1);
@@ -961,7 +1052,9 @@ export default function LeavesPage() {
     } catch (err: any) {
       toast.error(err.message || 'Failed to load data');
     } finally {
-      setLoading(false);
+      if (requestId === dataRequestRef.current) {
+        setLoading(false);
+      }
     }
   };
 
@@ -998,17 +1091,6 @@ export default function LeavesPage() {
       setLoading(false);
     }
   };
-
-  // When filters/search change, refetch leaves and OD with page 1 (skip initial mount to avoid double fetch)
-  const filtersLoadedOnce = useRef(false);
-  useEffect(() => {
-    if (!filtersLoadedOnce.current) {
-      filtersLoadedOnce.current = true;
-      return;
-    }
-    loadData();
-    loadDashboardStats();
-  }, [searchTerm, leaveFilters]);
 
   const getPendingFilters = () => ({
     search: searchTerm?.trim() || undefined,
@@ -2313,11 +2395,15 @@ export default function LeavesPage() {
             onChange={(e) => setLeaveFilters(prev => ({ ...prev, status: e.target.value }))}
             className="h-9 pl-3 pr-8 text-[11px] font-bold uppercase tracking-wider bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-300 shadow-sm"
           >
-            <option value="">Status</option>
-            <option value="pending">Pending</option>
-            <option value="approved">Approved</option>
-            <option value="rejected">Rejected</option>
-            <option value="cancelled">Cancelled</option>
+            {(activeTab === 'od' ? odStatusFilterOptions : [
+              { value: '', label: 'Status' },
+              { value: 'pending', label: 'Pending' },
+              { value: 'approved', label: 'Approved' },
+              { value: 'rejected', label: 'Rejected' },
+              { value: 'cancelled', label: 'Cancelled' },
+            ]).map((opt) => (
+              <option key={opt.value || 'all'} value={opt.value}>{opt.label}</option>
+            ))}
           </select>
 
           {activeTab === 'od' && (
@@ -2343,6 +2429,15 @@ export default function LeavesPage() {
               className="block w-full h-9 rounded-lg border border-slate-200 bg-white pl-9 pr-3 py-1 text-[11px] font-bold shadow-sm focus:border-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
             />
           </div>
+          {activeTab === 'od' && (
+            <button
+              onClick={() => setShowODMap(true)}
+              className="h-9 px-3 inline-flex items-center justify-center gap-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-[11px] font-black uppercase tracking-wider shadow-sm"
+            >
+              <Briefcase className="w-3.5 h-3.5" />
+              Open OD Map
+            </button>
+          )}
 
         </div>
       </div>
@@ -2466,6 +2561,37 @@ export default function LeavesPage() {
 
         {activeTab === 'od' && (
           <>
+            {showODMap && (
+              <div className="fixed inset-0 z-[120] bg-slate-900/70 backdrop-blur-sm p-4 sm:p-6">
+                <div className="mx-auto w-full max-w-7xl h-[90vh] bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xl overflow-hidden flex flex-col">
+                  <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-slate-200 dark:border-slate-700">
+                    <div>
+                      <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white uppercase tracking-wider">OD Location Map</h3>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                        {dateRange.from} to {dateRange.to} | {odMapFilterSummary} | Records: {odMapRequests.length}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setShowODMap(false)}
+                      className="h-9 w-9 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-500 hover:text-slate-700 dark:text-slate-300 dark:hover:text-white flex items-center justify-center transition-colors"
+                      aria-label="Close OD map"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="p-4 sm:p-6 flex-1 overflow-hidden">
+                    {odMapLoading ? (
+                      <div className="h-[72vh] rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 flex items-center justify-center text-sm font-bold text-slate-500 dark:text-slate-300">
+                        Loading all OD requests...
+                      </div>
+                    ) : (
+                      <ODRequestsMap requests={odMapRequests as any} height="72vh" />
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Pagination at top for OD */}
             <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50">
               <span className="text-sm text-slate-600 dark:text-slate-400">

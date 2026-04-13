@@ -4835,4 +4835,34 @@ export const api = {
     }
     return await response.blob();
   },
+
+  // ==========================================
+  // IN-APP NOTIFICATIONS
+  // ==========================================
+  getNotifications: async (params?: {
+    page?: number;
+    limit?: number;
+    isRead?: boolean;
+    module?: string;
+  }) => {
+    const query = new URLSearchParams();
+    if (params?.page != null) query.append('page', String(params.page));
+    if (params?.limit != null) query.append('limit', String(params.limit));
+    if (typeof params?.isRead === 'boolean') query.append('isRead', String(params.isRead));
+    if (params?.module) query.append('module', params.module);
+    const suffix = query.toString() ? `?${query.toString()}` : '';
+    return apiRequest<any>(`/notifications${suffix}`, { method: 'GET' });
+  },
+
+  getNotificationUnreadCount: async () => {
+    return apiRequest<any>('/notifications/unread-count', { method: 'GET' });
+  },
+
+  markNotificationRead: async (id: string) => {
+    return apiRequest<any>(`/notifications/${id}/read`, { method: 'PATCH' });
+  },
+
+  markAllNotificationsRead: async () => {
+    return apiRequest<any>('/notifications/read-all', { method: 'PATCH' });
+  },
 };

@@ -10,6 +10,49 @@ const {
   buildWorkflowVisibilityFilter,
   getEmployeeIdsInScope
 } = require('../../shared/middleware/dataScopeMiddleware');
+const { notifyWorkflowEvent } = require('../../notifications/services/notificationService');
+
+const formatPermissionDate = (value) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' });
+};
+
+const formatPermissionTime = (value) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+};
+
+const permissionTypeLabel = (type) => {
+  if (type === 'late_in') return 'Late In';
+  if (type === 'early_out') return 'Early Out';
+  return 'Mid Shift';
+};
+
+const buildPermissionWindowText = (permission) => {
+  const pType = permission?.permissionType || 'mid_shift';
+  if (pType === 'late_in' && permission?.permittedEdgeTime) {
+    return `Late-In allowed till ${permission.permittedEdgeTime}`;
+  }
+  if (pType === 'early_out' && permission?.permittedEdgeTime) {
+    return `Early-Out allowed from ${permission.permittedEdgeTime}`;
+  }
+  const start = formatPermissionTime(permission?.permissionStartTime);
+  const end = formatPermissionTime(permission?.permissionEndTime);
+  return start && end ? `${start} - ${end}` : 'Time not specified';
+};
+
+const buildPermissionLocationText = (permission) => {
+  const parts = [];
+  if (permission?.geoLocation?.address) parts.push(String(permission.geoLocation.address).trim());
+  if (permission?.geoLocation?.latitude != null && permission?.geoLocation?.longitude != null) {
+    parts.push(`Lat ${permission.geoLocation.latitude}, Lng ${permission.geoLocation.longitude}`);
+  }
+  return parts.length ? parts.join(' | ') : 'Location not captured';
+};
 
 /**
  * @desc    Create permission request
@@ -171,6 +214,17 @@ exports.createPermission = async (req, res) => {
       message: result.message,
       data: permissionRequest,
     });
+
+    notifyWorkflowEvent({
+      module: 'ot_permission',
+      eventType: 'OT_PERMISSION_APPLIED',
+      record: permissionRequest,
+      actor: req.user,
+      title: `Permission Submitted: ${permissionRequest?.employeeId?.employee_name || permissionRequest?.employeeNumber}`,
+      message: `${permissionRequest?.employeeId?.employee_name || permissionRequest?.employeeNumber} submitted ${permissionTypeLabel(permissionRequest?.permissionType)} permission on ${formatPermissionDate(permissionRequest?.date)} (${buildPermissionWindowText(permissionRequest)}). Purpose: ${permissionRequest?.purpose || 'N/A'}. Location: ${buildPermissionLocationText(permissionRequest)}. Current status: ${permissionRequest?.status}.`,
+      nextApproverRole: permissionRequest?.workflow?.nextApproverRole || permissionRequest?.workflow?.nextApprover || null,
+      priority: 'medium',
+    }).catch((err) => console.error('[Notification] OT_PERMISSION_APPLIED failed:', err.message));
 
   } catch (error) {
     console.error('Error creating permission:', error);
@@ -363,6 +417,17 @@ exports.approvePermission = async (req, res) => {
 
     res.status(200).json(response);
 
+    notifyWorkflowEvent({
+      module: 'ot_permission',
+      eventType: 'OT_PERMISSION_APPROVED',
+      record: permission,
+      actor: req.user,
+      title: `Permission Approved: ${permission?.employeeId?.employee_name || permission?.employeeNumber}`,
+      message: `${permission?.employeeId?.employee_name || permission?.employeeNumber}'s ${permissionTypeLabel(permission?.permissionType)} permission on ${formatPermissionDate(permission?.date)} (${buildPermissionWindowText(permission)}) was approved by ${req.user.name} (${req.user.role}). Location: ${buildPermissionLocationText(permission)}. Current status: ${permission?.status}.`,
+      nextApproverRole: permission?.workflow?.nextApproverRole || permission?.workflow?.nextApprover || null,
+      priority: 'medium',
+    }).catch((err) => console.error('[Notification] OT_PERMISSION_APPROVED failed:', err.message));
+
   } catch (error) {
     console.error('Error approving permission:', error);
     res.status(500).json({
@@ -402,6 +467,16 @@ exports.rejectPermission = async (req, res) => {
       message: result.message,
       data: permission,
     });
+
+    notifyWorkflowEvent({
+      module: 'ot_permission',
+      eventType: 'OT_PERMISSION_REJECTED',
+      record: permission,
+      actor: req.user,
+      title: `Permission Rejected: ${permission?.employeeId?.employee_name || permission?.employeeNumber}`,
+      message: `${permission?.employeeId?.employee_name || permission?.employeeNumber}'s ${permissionTypeLabel(permission?.permissionType)} permission on ${formatPermissionDate(permission?.date)} (${buildPermissionWindowText(permission)}) was rejected by ${req.user.name} (${req.user.role}). Location: ${buildPermissionLocationText(permission)}. Current status: ${permission?.status}.${reason ? ` Reason: ${reason}` : ''}`,
+      priority: 'high',
+    }).catch((err) => console.error('[Notification] OT_PERMISSION_REJECTED failed:', err.message));
 
   } catch (error) {
     console.error('Error rejecting permission:', error);

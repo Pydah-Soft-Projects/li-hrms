@@ -16,8 +16,12 @@ import {
   Star,
   LayoutDashboard,
   ChevronRight,
-  Coffee
+  Coffee,
+  Bell,
+  X,
+  CheckCheck
 } from 'lucide-react';
+import { useSocket } from '@/contexts/SocketContext';
 
 interface DashboardStats {
   totalEmployees?: number;
@@ -49,6 +53,16 @@ interface DashboardCardProps {
   icon?: React.ReactElement<{ className?: string }>;
 }
 
+interface InAppNotification {
+  _id: string;
+  title: string;
+  message: string;
+  module: string;
+  eventType: string;
+  createdAt: string;
+  isRead: boolean;
+}
+
 const DashboardCard = ({ title, value, description, change, statusBadge, icon }: DashboardCardProps) => (
   <div className="rounded-xl border border-border-base bg-bg-surface/70 backdrop-blur p-3 md:p-6 hover:bg-bg-surface/80 transition-all duration-300 shadow-sm group">
     <div className="flex justify-between items-start mb-3 md:mb-4 gap-2">
@@ -74,11 +88,16 @@ const DashboardCard = ({ title, value, description, change, statusBadge, icon }:
 export default function DashboardPage() {
   const { activeWorkspace } = useWorkspace();
   const { user } = useAuth();
+  const { socket } = useSocket();
   const [stats, setStats] = useState<DashboardStats>({});
   const [loading, setLoading] = useState(true);
   const [attendanceData, setAttendanceData] = useState<any[] | null>(null);
   const [currentDate] = useState(new Date());
   const [todayBirthdayItems, setTodayBirthdayItems] = useState<Array<{ id: string; name: string; designationName: string }>>([]);
+  const [notifications, setNotifications] = useState<InAppNotification[]>([]);
+  const [notificationPanelOpen, setNotificationPanelOpen] = useState(false);
+  const [notificationLoading, setNotificationLoading] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -146,6 +165,65 @@ export default function DashboardPage() {
     }
   }, [user]);
 
+  useEffect(() => {
+    if (!user) return;
+    const loadNotifications = async () => {
+      try {
+        setNotificationLoading(true);
+        const [listRes, countRes] = await Promise.all([
+          api.getNotifications({ page: 1, limit: 25 }),
+          api.getNotificationUnreadCount(),
+        ]);
+        if (listRes?.success) setNotifications(listRes.data || []);
+        if (countRes?.success) setUnreadCount((countRes as any).unreadCount || 0);
+      } catch (err) {
+        console.error('Failed to load notifications:', err);
+      } finally {
+        setNotificationLoading(false);
+      }
+    };
+    loadNotifications();
+  }, [user]);
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const onNew = (n: InAppNotification) => {
+      setNotifications((prev) => [n, ...prev].slice(0, 25));
+      if (!n.isRead) setUnreadCount((c) => c + 1);
+    };
+    const onCount = (payload: { unreadCount: number }) => {
+      setUnreadCount(Number(payload?.unreadCount || 0));
+    };
+
+    socket.on('in_app_notification', onNew);
+    socket.on('notification_unread_count', onCount);
+    return () => {
+      socket.off('in_app_notification', onNew);
+      socket.off('notification_unread_count', onCount);
+    };
+  }, [socket]);
+
+  const markOneRead = async (id: string) => {
+    try {
+      await api.markNotificationRead(id);
+      setNotifications((prev) => prev.map((n) => (n._id === id ? { ...n, isRead: true } : n)));
+      setUnreadCount((c) => Math.max(0, c - 1));
+    } catch (err) {
+      console.error('Failed to mark notification read:', err);
+    }
+  };
+
+  const markAllRead = async () => {
+    try {
+      await api.markAllNotificationsRead();
+      setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+      setUnreadCount(0);
+    } catch (err) {
+      console.error('Failed to mark all read:', err);
+    }
+  };
+
   const userRole = user?.role || activeWorkspace?.type || 'employee';
 
   if (loading) {
@@ -211,6 +289,18 @@ export default function DashboardPage() {
               {currentDate.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' })}
             </span>
           </div>
+          <button
+            onClick={() => setNotificationPanelOpen(true)}
+            className="relative h-9 w-9 md:h-10 md:w-10 rounded-full bg-bg-surface/70 border border-border-base text-text-secondary hover:text-text-primary transition-colors flex items-center justify-center"
+            aria-label="Open notifications"
+          >
+            <Bell className="w-4 h-4 md:w-5 md:h-5" />
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-black flex items-center justify-center">
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            )}
+          </button>
         </div>
 
         {todayBirthdayItems.length > 0 && (
@@ -359,6 +449,68 @@ export default function DashboardPage() {
         {/* Role-specific dashboards */}
         {renderDashboardContent()}
       </div>
+
+      {notificationPanelOpen && (
+        <div className="fixed inset-0 z-[140]">
+          <button
+            onClick={() => setNotificationPanelOpen(false)}
+            className="absolute inset-0 bg-slate-900/45"
+            aria-label="Close notifications overlay"
+          />
+          <div className="absolute inset-y-0 right-0 w-full max-w-md bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-700 shadow-2xl flex flex-col">
+            <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">Notifications</h3>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">Unread: {unreadCount}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={markAllRead}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+                >
+                  <CheckCheck className="w-3.5 h-3.5" />
+                  Read All
+                </button>
+                <button
+                  onClick={() => setNotificationPanelOpen(false)}
+                  className="h-8 w-8 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 flex items-center justify-center"
+                  aria-label="Close notifications"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-3 space-y-2">
+              {notificationLoading ? (
+                <div className="text-xs text-slate-500 p-3">Loading notifications...</div>
+              ) : notifications.length === 0 ? (
+                <div className="text-xs text-slate-500 p-3">No notifications yet.</div>
+              ) : (
+                notifications.map((n) => (
+                  <button
+                    key={n._id}
+                    onClick={() => !n.isRead && markOneRead(n._id)}
+                    className={`w-full text-left p-3 rounded-xl border transition-colors ${
+                      n.isRead
+                        ? 'bg-slate-50 dark:bg-slate-800/30 border-slate-200 dark:border-slate-700'
+                        : 'bg-indigo-50/70 dark:bg-indigo-950/20 border-indigo-200 dark:border-indigo-800'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-xs font-black text-slate-900 dark:text-white">{n.title}</p>
+                      {!n.isRead && <span className="mt-1 h-2 w-2 rounded-full bg-indigo-500" />}
+                    </div>
+                    <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1">{n.message}</p>
+                    <p className="text-[10px] text-slate-400 mt-2 uppercase tracking-wider">
+                      {n.module.replace('_', ' ')} | {new Date(n.createdAt).toLocaleString()}
+                    </p>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
