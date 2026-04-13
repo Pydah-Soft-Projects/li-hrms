@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/api';
-import { Calendar } from 'lucide-react';
+import { Calendar, Bell, X, CheckCheck } from 'lucide-react';
+import { useSocket } from '@/contexts/SocketContext';
 
 interface WeeklyDay {
   label: string;
@@ -76,6 +77,16 @@ interface BirthdayItem {
   id: string;
   name: string;
   dateLabel: string;
+}
+
+interface InAppNotification {
+  _id: string;
+  title: string;
+  message: string;
+  module: string;
+  eventType: string;
+  createdAt: string;
+  isRead: boolean;
 }
 
 function formatYmd(d: Date): string {
@@ -161,12 +172,17 @@ const DEFAULT_STATS: DashboardStats = {
 };
 
 export default function SuperAdminDashboard() {
+  const { socket } = useSocket();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<DashboardStats>(DEFAULT_STATS);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [upcomingBirthdays, setUpcomingBirthdays] = useState<BirthdayItem[]>([]);
   const [trackerPeriod, setTrackerPeriod] = useState<'week' | 'month' | 'lastMonth'>('week');
   const [barDetail, setBarDetail] = useState<null | { kind: 'tracker'; day: WeeklyDay }>(null);
+  const [notifications, setNotifications] = useState<InAppNotification[]>([]);
+  const [notificationPanelOpen, setNotificationPanelOpen] = useState(false);
+  const [notificationLoading, setNotificationLoading] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   const fallbackDateStr = useMemo(() => formatYmd(new Date()), []);
   const displayDateStr = stats.analyticsDateStr || fallbackDateStr;
@@ -213,6 +229,62 @@ export default function SuperAdminDashboard() {
     loadDashboardData();
   }, [loadDashboardData]);
 
+  useEffect(() => {
+    const loadNotifications = async () => {
+      try {
+        setNotificationLoading(true);
+        const [listRes, countRes] = await Promise.all([
+          api.getNotifications({ page: 1, limit: 25 }),
+          api.getNotificationUnreadCount(),
+        ]);
+        if (listRes?.success) setNotifications(listRes.data || []);
+        if (countRes?.success) setUnreadCount(countRes.unreadCount || 0);
+      } catch (err) {
+        console.error('Failed to load notifications:', err);
+      } finally {
+        setNotificationLoading(false);
+      }
+    };
+    loadNotifications();
+  }, []);
+
+  useEffect(() => {
+    if (!socket) return;
+    const onNew = (n: InAppNotification) => {
+      setNotifications((prev) => [n, ...prev].slice(0, 25));
+      if (!n.isRead) setUnreadCount((c) => c + 1);
+    };
+    const onCount = (payload: { unreadCount: number }) => {
+      setUnreadCount(Number(payload?.unreadCount || 0));
+    };
+    socket.on('in_app_notification', onNew);
+    socket.on('notification_unread_count', onCount);
+    return () => {
+      socket.off('in_app_notification', onNew);
+      socket.off('notification_unread_count', onCount);
+    };
+  }, [socket]);
+
+  const markOneRead = async (id: string) => {
+    try {
+      await api.markNotificationRead(id);
+      setNotifications((prev) => prev.map((n) => (n._id === id ? { ...n, isRead: true } : n)));
+      setUnreadCount((c) => Math.max(0, c - 1));
+    } catch (err) {
+      console.error('Failed to mark notification read:', err);
+    }
+  };
+
+  const markAllRead = async () => {
+    try {
+      await api.markAllNotificationsRead();
+      setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+      setUnreadCount(0);
+    } catch (err) {
+      console.error('Failed to mark all read:', err);
+    }
+  };
+
   const weekly = stats.weeklyTracker?.length ? stats.weeklyTracker : DEFAULT_STATS.weeklyTracker!;
   const maxStack = Math.max(...weekly.map((d) => d.present + d.leave + d.od), 1);
 
@@ -255,16 +327,30 @@ export default function SuperAdminDashboard() {
               Super admin overview — attendance, people, and applications
             </p>
           </div>
-          <div className="flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-[#7E7E7E] dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
-            <Calendar className="h-3.5 w-3.5 shrink-0" />
-            <span>
-              {new Date().toLocaleDateString('en-US', {
-                weekday: 'long',
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric',
-              })}
-            </span>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-[#7E7E7E] dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+              <Calendar className="h-3.5 w-3.5 shrink-0" />
+              <span>
+                {new Date().toLocaleDateString('en-US', {
+                  weekday: 'long',
+                  year: 'numeric',
+                  month: 'long',
+                  day: 'numeric',
+                })}
+              </span>
+            </div>
+            <button
+              onClick={() => setNotificationPanelOpen(true)}
+              className="relative h-9 w-9 rounded-full border border-zinc-200 bg-white text-zinc-600 hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:text-white flex items-center justify-center"
+              aria-label="Open notifications"
+            >
+              <Bell className="h-4 w-4" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-black flex items-center justify-center">
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
+              )}
+            </button>
           </div>
         </div>
 
@@ -650,6 +736,68 @@ export default function SuperAdminDashboard() {
               >
                 Close
               </button>
+            </div>
+          </div>
+        )}
+
+        {notificationPanelOpen && (
+          <div className="fixed inset-0 z-[140]">
+            <button
+              onClick={() => setNotificationPanelOpen(false)}
+              className="absolute inset-0 bg-slate-900/45"
+              aria-label="Close notifications overlay"
+            />
+            <div className="absolute inset-y-0 right-0 w-full max-w-md bg-white dark:bg-zinc-900 border-l border-zinc-200 dark:border-zinc-700 shadow-2xl flex flex-col">
+              <div className="p-4 border-b border-zinc-200 dark:border-zinc-700 flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-black text-zinc-900 dark:text-white uppercase tracking-wider">Notifications</h3>
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1">Unread: {unreadCount}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={markAllRead}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+                  >
+                    <CheckCheck className="w-3.5 h-3.5" />
+                    Read All
+                  </button>
+                  <button
+                    onClick={() => setNotificationPanelOpen(false)}
+                    className="h-8 w-8 rounded-lg border border-zinc-200 dark:border-zinc-700 text-zinc-500 flex items-center justify-center"
+                    aria-label="Close notifications"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                {notificationLoading ? (
+                  <div className="text-xs text-zinc-500 p-3">Loading notifications...</div>
+                ) : notifications.length === 0 ? (
+                  <div className="text-xs text-zinc-500 p-3">No notifications yet.</div>
+                ) : (
+                  notifications.map((n) => (
+                    <button
+                      key={n._id}
+                      onClick={() => !n.isRead && markOneRead(n._id)}
+                      className={`w-full text-left p-3 rounded-xl border transition-colors ${
+                        n.isRead
+                          ? 'bg-zinc-50 dark:bg-zinc-800/30 border-zinc-200 dark:border-zinc-700'
+                          : 'bg-indigo-50/70 dark:bg-indigo-950/20 border-indigo-200 dark:border-indigo-800'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-xs font-black text-zinc-900 dark:text-white">{n.title}</p>
+                        {!n.isRead && <span className="mt-1 h-2 w-2 rounded-full bg-indigo-500" />}
+                      </div>
+                      <p className="text-[11px] text-zinc-600 dark:text-zinc-300 mt-1">{n.message}</p>
+                      <p className="text-[10px] text-zinc-400 mt-2 uppercase tracking-wider">
+                        {n.module.replace('_', ' ')} | {new Date(n.createdAt).toLocaleString()}
+                      </p>
+                    </button>
+                  ))
+                )}
+              </div>
             </div>
           </div>
         )}

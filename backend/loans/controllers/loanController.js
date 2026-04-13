@@ -6,6 +6,7 @@ const User = require('../../users/model/User');
 const { isHRMSConnected, getEmployeeByIdMSSQL } = require('../../employees/config/sqlHelper');
 const { getResolvedLoanSettings } = require('../../departments/controllers/departmentSettingsController');
 const { getEmployeeIdsInScope } = require('../../shared/middleware/dataScopeMiddleware');
+const { notifyWorkflowEvent } = require('../../notifications/services/notificationService');
 
 // ============================================
 // NO HARDCODED BYPASS - Uses database setting: workflow.allowHigherAuthorityToApproveLowerLevels
@@ -897,6 +898,17 @@ exports.applyLoan = async (req, res) => {
       message: `${requestType === 'loan' ? 'Loan' : 'Salary advance'} application submitted successfully`,
       data: loan,
     });
+
+    notifyWorkflowEvent({
+      module: requestType === 'loan' ? 'loan' : 'salary_advance',
+      eventType: requestType === 'loan' ? 'LOAN_APPLIED' : 'SALARY_ADVANCE_APPLIED',
+      record: loan,
+      actor: req.user,
+      title: requestType === 'loan' ? 'Loan Request Submitted' : 'Salary Advance Request Submitted',
+      message: `${requestType === 'loan' ? 'Loan' : 'Salary advance'} request submitted by ${req.user.name}.`,
+      nextApproverRole: loan?.workflow?.nextApprover || null,
+      priority: 'medium',
+    }).catch((err) => console.error('[Notification] LOAN_APPLIED failed:', err.message));
   } catch (error) {
     console.error('Error applying loan:', error);
     res.status(500).json({
@@ -1035,6 +1047,17 @@ exports.processGuarantorAction = async (req, res) => {
       message: `Request successfully ${action}`,
       data: loan,
     });
+
+    notifyWorkflowEvent({
+      module: loan.requestType === 'loan' ? 'loan' : 'salary_advance',
+      eventType: action === 'accepted' ? 'LOAN_GUARANTOR_ACCEPTED' : 'LOAN_GUARANTOR_REJECTED',
+      record: loan,
+      actor: req.user,
+      title: `Guarantor ${action === 'accepted' ? 'Accepted' : 'Rejected'}: ${req.user.name}`,
+      message: `${req.user.name} (${req.user.employeeId || 'guarantor'}) ${action} as guarantor for ${loan.requestType === 'loan' ? 'loan' : 'salary advance'} request of ${loan.emp_no}. Current loan status: ${loan.status}.`,
+      nextApproverRole: loan?.workflow?.nextApprover || null,
+      priority: action === 'rejected' ? 'high' : 'medium',
+    }).catch((err) => console.error('[Notification] LOAN_GUARANTOR_ACTION failed:', err.message));
   } catch (error) {
     console.error('Error processing guarantor action:', error);
     res.status(500).json({
@@ -1645,6 +1668,26 @@ exports.processLoanAction = async (req, res) => {
       message: `Loan application ${action}d successfully`,
       data: loan,
     });
+
+    notifyWorkflowEvent({
+      module: loan.requestType === 'loan' ? 'loan' : 'salary_advance',
+      eventType:
+        action === 'approve'
+          ? loan.requestType === 'loan'
+            ? 'LOAN_APPROVED'
+            : 'SALARY_ADVANCE_APPROVED'
+          : action === 'reject'
+            ? loan.requestType === 'loan'
+              ? 'LOAN_REJECTED'
+              : 'SALARY_ADVANCE_REJECTED'
+            : 'LOAN_WORKFLOW_UPDATED',
+      record: loan,
+      actor: req.user,
+      title: `${loan.requestType === 'loan' ? 'Loan' : 'Salary Advance'} ${action === 'approve' ? 'Approved' : action === 'reject' ? 'Rejected' : 'Updated'}`,
+      message: `${loan.requestType === 'loan' ? 'Loan' : 'Salary advance'} request ${action}d by ${req.user.name}.`,
+      nextApproverRole: loan?.workflow?.nextApprover || null,
+      priority: action === 'reject' ? 'high' : 'medium',
+    }).catch((err) => console.error('[Notification] LOAN_ACTION failed:', err.message));
   } catch (error) {
     console.error('Error processing loan action:', error);
     res.status(500).json({
@@ -1711,6 +1754,16 @@ exports.cancelLoan = async (req, res) => {
       message: 'Loan cancelled successfully',
       data: loan,
     });
+
+    notifyWorkflowEvent({
+      module: loan.requestType === 'loan' ? 'loan' : 'salary_advance',
+      eventType: loan.requestType === 'loan' ? 'LOAN_CANCELLED' : 'SALARY_ADVANCE_CANCELLED',
+      record: loan,
+      actor: req.user,
+      title: `${loan.requestType === 'loan' ? 'Loan' : 'Salary Advance'} Cancelled`,
+      message: `${loan.requestType === 'loan' ? 'Loan' : 'Salary advance'} request cancelled.`,
+      priority: 'high',
+    }).catch((err) => console.error('[Notification] LOAN_CANCELLED failed:', err.message));
   } catch (error) {
     console.error('Error cancelling loan:', error);
     res.status(500).json({
@@ -1810,6 +1863,16 @@ exports.disburseLoan = async (req, res) => {
       message: 'Loan disbursed successfully',
       data: loan,
     });
+
+    notifyWorkflowEvent({
+      module: loan.requestType === 'loan' ? 'loan' : 'salary_advance',
+      eventType: loan.requestType === 'loan' ? 'LOAN_DISBURSED' : 'SALARY_ADVANCE_DISBURSED',
+      record: loan,
+      actor: req.user,
+      title: `${loan.requestType === 'loan' ? 'Loan' : 'Salary Advance'} Disbursed`,
+      message: `${loan.requestType === 'loan' ? 'Loan' : 'Salary advance'} was disbursed.`,
+      priority: 'high',
+    }).catch((err) => console.error('[Notification] LOAN_DISBURSED failed:', err.message));
   } catch (error) {
     console.error('Error disbursing loan:', error);
     res.status(500).json({
