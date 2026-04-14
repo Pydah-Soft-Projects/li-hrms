@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { api } from '@/lib/api';
+import { api, type InAppNotification } from '@/lib/api';
 import TodayBirthdayTicker from '@/components/employee-birthdays/TodayBirthdayTicker';
 import Link from 'next/link';
 import {
@@ -51,16 +51,6 @@ interface DashboardCardProps {
   change?: string;
   statusBadge?: React.ReactNode;
   icon?: React.ReactElement<{ className?: string }>;
-}
-
-interface InAppNotification {
-  _id: string;
-  title: string;
-  message: string;
-  module: string;
-  eventType: string;
-  createdAt: string;
-  isRead: boolean;
 }
 
 const DashboardCard = ({ title, value, description, change, statusBadge, icon }: DashboardCardProps) => (
@@ -175,7 +165,9 @@ export default function DashboardPage() {
           api.getNotificationUnreadCount(),
         ]);
         if (listRes?.success) setNotifications(listRes.data || []);
-        if (countRes?.success) setUnreadCount((countRes as any).unreadCount || 0);
+        if (countRes?.success) {
+          setUnreadCount(Number(countRes.unreadCount ?? countRes.data?.unreadCount ?? 0));
+        }
       } catch (err) {
         console.error('Failed to load notifications:', err);
       } finally {
