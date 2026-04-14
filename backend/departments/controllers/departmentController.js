@@ -90,9 +90,8 @@ exports.getAllDepartments = async (req, res) => {
       query.isActive = isActive === 'true';
     }
 
-    if (division) {
-      query.divisions = division;
-    }
+    // Note: 'division' from req.query is already handled by applyMetadataScopeFilter middleware
+    // which populates req.metadataScopeFilter with the correct divisions filter.
 
     console.log('Executing Department Query:', JSON.stringify(query));
 

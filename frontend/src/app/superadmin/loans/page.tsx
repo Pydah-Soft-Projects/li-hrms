@@ -292,17 +292,21 @@ export default function LoansPage() {
       comments: submission?.comments
     });
 
-    // 2. Default HOD Step
-    const hodEntry = history.find((h: any) => h.step === 'hod' && h.action !== 'submitted');
-    const isHodCurrent = !isCompleted && currentApprover === 'hod';
-    steps.push({
-      label: 'HOD Approval',
-      status: hodEntry ? (hodEntry.action === 'approved' ? 'approved' : 'rejected') : (isHodCurrent ? 'current' : 'pending'),
-      actionByName: hodEntry?.actionByName,
-      actionByRole: hodEntry?.actionByRole || 'HOD',
-      timestamp: hodEntry?.timestamp,
-      comments: hodEntry?.comments
-    });
+    // 2. HOD Step (Hardcoded fallback or Dynamic)
+    const dynamicHod = workflowSteps.find((s: any) => s.approverRole === 'hod' && s.isActive);
+    
+    if (!dynamicHod) {
+      const hodEntry = history.find((h: any) => h.step === 'hod' && h.action !== 'submitted');
+      const isHodCurrent = !isCompleted && currentApprover === 'hod';
+      steps.push({
+        label: 'HOD Approval',
+        status: hodEntry ? (hodEntry.action === 'approved' ? 'approved' : 'rejected') : (isHodCurrent ? 'current' : 'pending'),
+        actionByName: hodEntry?.actionByName,
+        actionByRole: hodEntry?.actionByRole || 'HOD',
+        timestamp: hodEntry?.timestamp,
+        comments: hodEntry?.comments
+      });
+    }
 
     // 3. Dynamic Steps
     workflowSteps.filter((s: any) => s.isActive).forEach((step: any) => {

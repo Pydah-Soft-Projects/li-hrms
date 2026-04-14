@@ -6,11 +6,12 @@ import AttendanceReportsTab from './attendance-reports-tab';
 import ThumbReportsTab from './thumb-reports-tab';
 import LeaveReportsTab from './leave-reports-tab';
 import ODReportsTab from './od-reports-tab';
+import LoanReportsTab from './loan-reports-tab';
 import { auth } from '@/lib/auth';
 import { canViewReports, canViewFinancialReports } from '@/lib/permissions';
-import { BarChart2, Fingerprint, CreditCard, Lock, FileText, Briefcase } from 'lucide-react';
+import { BarChart2, Fingerprint, CreditCard, Lock, FileText, Briefcase, Wallet } from 'lucide-react';
 
-type TabType = 'payroll' | 'attendance' | 'biometric' | 'leaves' | 'od';
+type TabType = 'payroll' | 'attendance' | 'biometric' | 'leaves' | 'od' | 'loans';
 
 const TAB_CONFIG = {
   payroll: { label: 'Payroll', icon: CreditCard, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-950/30', border: 'border-violet-500', activeBg: 'bg-violet-600' },
@@ -18,6 +19,7 @@ const TAB_CONFIG = {
   biometric: { label: 'Biometric', icon: Fingerprint, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-950/30', border: 'border-emerald-500', activeBg: 'bg-emerald-600' },
   leaves: { label: 'Leaves', icon: FileText, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-950/30', border: 'border-blue-500', activeBg: 'bg-blue-600' },
   od: { label: 'OD', icon: Briefcase, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-950/30', border: 'border-amber-500', activeBg: 'bg-amber-600' },
+  loans: { label: 'Loans', icon: Wallet, color: 'text-rose-600 dark:text-rose-400', bg: 'bg-rose-50 dark:bg-rose-950/30', border: 'border-rose-500', activeBg: 'bg-rose-600' },
 };
 
 export default function ReportsPage() {
@@ -40,7 +42,7 @@ export default function ReportsPage() {
   }
 
   const tabs: TabType[] = [];
-  if (hasFinancialAccess) tabs.push('payroll');
+  if (hasFinancialAccess) tabs.push('payroll', 'loans');
   tabs.push('attendance', 'biometric', 'leaves', 'od');
 
   const currentTab: TabType = tabs.includes(activeTab) ? activeTab : tabs[0];
@@ -89,6 +91,7 @@ export default function ReportsPage() {
         {currentTab === 'biometric' && <ThumbReportsTab />}
         {currentTab === 'leaves' && <LeaveReportsTab />}
         {currentTab === 'od' && <ODReportsTab />}
+        {currentTab === 'loans' && <LoanReportsTab />}
       </div>
     </div>
   );

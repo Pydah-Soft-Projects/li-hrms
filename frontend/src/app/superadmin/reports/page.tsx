@@ -6,9 +6,10 @@ import AttendanceReportsTab from '../../(workspace)/reports/attendance-reports-t
 import ThumbReportsTab from '../../(workspace)/reports/thumb-reports-tab';
 import LeaveReportsTab from '../../(workspace)/reports/leave-reports-tab';
 import ODReportsTab from '../../(workspace)/reports/od-reports-tab';
-import { BarChart2, Fingerprint, CreditCard, FileText, Briefcase } from 'lucide-react';
+import LoanReportsTab from '../../(workspace)/reports/loan-reports-tab';
+import { BarChart2, Fingerprint, CreditCard, FileText, Briefcase, Wallet } from 'lucide-react';
 
-type TabType = 'payroll' | 'attendance' | 'biometric' | 'leaves' | 'od';
+type TabType = 'payroll' | 'attendance' | 'biometric' | 'leaves' | 'od' | 'loans';
 
 const TAB_CONFIG = {
   payroll: { label: 'Payroll', icon: CreditCard, activeBg: 'bg-violet-600' },
@@ -16,9 +17,10 @@ const TAB_CONFIG = {
   biometric: { label: 'Biometric', icon: Fingerprint, activeBg: 'bg-emerald-600' },
   leaves: { label: 'Leaves', icon: FileText, activeBg: 'bg-blue-600' },
   od: { label: 'OD', icon: Briefcase, activeBg: 'bg-amber-600' },
+  loans: { label: 'Loans', icon: Wallet, activeBg: 'bg-rose-600' },
 };
 
-const ALL_TABS: TabType[] = ['payroll', 'attendance', 'biometric', 'leaves', 'od'];
+const ALL_TABS: TabType[] = ['payroll', 'attendance', 'biometric', 'leaves', 'od', 'loans'];
 
 export default function ReportsPage() {
   const [activeTab, setActiveTab] = useState<TabType>('attendance');
@@ -62,6 +64,7 @@ export default function ReportsPage() {
         {activeTab === 'biometric' && <ThumbReportsTab />}
         {activeTab === 'leaves' && <LeaveReportsTab />}
         {activeTab === 'od' && <ODReportsTab />}
+        {activeTab === 'loans' && <LoanReportsTab />}
       </div>
     </div>
   );

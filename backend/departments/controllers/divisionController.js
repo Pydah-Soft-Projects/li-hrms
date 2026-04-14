@@ -81,7 +81,7 @@ exports.getDivisions = async (req, res, next) => {
         }
 
         let divisions = await Division.find(query)
-            .populate('departments', 'name code')
+            .populate('departments', 'name code isActive')
             .populate('manager', 'name email')
             .lean();
 
