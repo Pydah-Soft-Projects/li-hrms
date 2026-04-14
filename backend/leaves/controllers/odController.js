@@ -15,6 +15,53 @@ const EmployeeHistory = require('../../employees/model/EmployeeHistory');
 const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
 const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
 const leaveRegisterService = require('../services/leaveRegisterService');
+const { notifyWorkflowEvent } = require('../../notifications/services/notificationService');
+
+const formatODDate = (value) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' });
+};
+
+const buildODDateRangeText = (od) => {
+  const from = formatODDate(od?.fromDate);
+  const to = formatODDate(od?.toDate);
+  if (!from && !to) return 'date not specified';
+  if (from && to && from === to) return from;
+  return `${from || '-'} to ${to || '-'}`;
+};
+
+const buildODDurationText = (od) => {
+  if (!od) return '';
+  if (od.odType_extended === 'hours' && od.durationHours != null) {
+    const start = od.odStartTime ? ` (${od.odStartTime}` : '';
+    const end = od.odEndTime ? `${start ? '-' : '('}${od.odEndTime}` : '';
+    const timeRange = start || end ? `${start}${end})` : '';
+    return `${Number(od.durationHours).toFixed(2)} hour(s)${timeRange}`;
+  }
+  if (od.isHalfDay) {
+    const half = od.halfDayType === 'first_half' ? 'First Half' : od.halfDayType === 'second_half' ? 'Second Half' : 'Half Day';
+    return `${Number(od.numberOfDays || 0.5)} day(s) (${half})`;
+  }
+  return `${Number(od.numberOfDays || 0)} day(s)`;
+};
+
+const buildODLocationText = (od) => {
+  const locationParts = [];
+  if (od?.placeVisited) locationParts.push(String(od.placeVisited).trim());
+  if (Array.isArray(od?.placesVisited) && od.placesVisited.length > 0) {
+    const names = od.placesVisited.map((p) => p?.name).filter(Boolean).join(', ');
+    if (names) locationParts.push(names);
+  }
+  if (od?.geoLocation?.address) {
+    locationParts.push(String(od.geoLocation.address).trim());
+  }
+  if (od?.geoLocation?.latitude != null && od?.geoLocation?.longitude != null) {
+    locationParts.push(`Lat ${od.geoLocation.latitude}, Lng ${od.geoLocation.longitude}`);
+  }
+  return locationParts.length ? locationParts.join(' | ') : 'Location not specified';
+};
 
 /** Portal user submitted the OD, or system OD (null appliedBy) for this employee. */
 function isOdApplicantOwner(od, user) {
@@ -981,6 +1028,17 @@ exports.applyOD = async (req, res) => {
       data: od,
       warnings: warnings.length > 0 ? warnings : undefined, // Include warnings if any
     });
+
+    notifyWorkflowEvent({
+      module: 'od',
+      eventType: 'OD_APPLIED',
+      record: od,
+      actor: req.user,
+      title: `OD Submitted: ${od?.employeeId?.employee_name || employee?.employee_name || od.emp_no}`,
+      message: `${od?.employeeId?.employee_name || employee?.employee_name || od.emp_no} submitted OD for ${buildODDurationText(od)} on ${buildODDateRangeText(od)}. Location: ${buildODLocationText(od)}. Purpose: ${od?.purpose || 'N/A'}. Current status: ${od?.status}.`,
+      nextApproverRole: od?.workflow?.nextApprover || od?.workflow?.nextApproverRole || null,
+      priority: 'medium',
+    }).catch((err) => console.error('[Notification] OD_APPLIED failed:', err.message));
   } catch (error) {
     console.error('Error applying OD:', error);
     res.status(500).json({
@@ -1336,6 +1394,16 @@ exports.cancelOD = async (req, res) => {
     });
 
     await od.save();
+
+    notifyWorkflowEvent({
+      module: 'od',
+      eventType: 'OD_CANCELLED',
+      record: od,
+      actor: req.user,
+      title: `OD Cancelled: ${od?.employeeId?.employee_name || od.emp_no}`,
+      message: `${od?.employeeId?.employee_name || od.emp_no}'s OD (${buildODDurationText(od)}, ${buildODDateRangeText(od)}) was cancelled by ${req.user.name} (${req.user.role}). Location: ${buildODLocationText(od)}.${reason ? ` Reason: ${reason}` : ''} Current status: ${od.status}.`,
+      priority: 'high',
+    }).catch((err) => console.error('[Notification] OD_CANCELLED failed:', err.message));
 
     res.status(200).json({
       success: true,
@@ -1888,6 +1956,17 @@ exports.processODAction = async (req, res) => {
       },
       { path: 'department', select: 'name' },
     ]);
+
+    notifyWorkflowEvent({
+      module: 'od',
+      eventType: action === 'approve' ? 'OD_ACTION_APPROVED' : action === 'reject' ? 'OD_ACTION_REJECTED' : 'OD_ACTION_UPDATED',
+      record: od,
+      actor: req.user,
+      title: `OD ${action === 'approve' ? 'Approved' : action === 'reject' ? 'Rejected' : 'Updated'}: ${od?.employeeId?.employee_name || od.emp_no}`,
+      message: `${od?.employeeId?.employee_name || od.emp_no}'s OD (${buildODDurationText(od)}, ${buildODDateRangeText(od)}) was ${action === 'approve' ? 'approved' : action === 'reject' ? 'rejected' : 'updated'} by ${req.user.name} (${req.user.role}). Location: ${buildODLocationText(od)}. Current status: ${od.status}.${comments ? ` Remarks: ${comments}` : ''}`,
+      nextApproverRole: od?.workflow?.nextApprover || od?.workflow?.nextApproverRole || null,
+      priority: action === 'reject' ? 'high' : 'medium',
+    }).catch((err) => console.error('[Notification] OD_ACTION failed:', err.message));
 
     res.status(200).json({
       success: true,

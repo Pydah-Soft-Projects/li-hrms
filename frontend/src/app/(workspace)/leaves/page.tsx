@@ -23,6 +23,7 @@ import LocationPhotoCapture from '@/components/LocationPhotoCapture';
 import EmployeeSelect from '@/components/EmployeeSelect';
 
 const LocationMap = dynamic(() => import('@/components/LocationMap'), { ssr: false });
+const ODRequestsMap = dynamic(() => import('@/components/ODRequestsMap'), { ssr: false });
 import {
   Calendar,
   Briefcase,
@@ -738,6 +739,9 @@ export default function LeavesPage() {
     department: [] as string[],
     designation: [] as string[],
   });
+  const [showODMap, setShowODMap] = useState(false);
+  const [odMapRequests, setODMapRequests] = useState<ODApplication[]>([]);
+  const [odMapLoading, setODMapLoading] = useState(false);
 
   // Evidence State
   const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
@@ -2229,6 +2233,101 @@ export default function LeavesPage() {
   const filteredInProgressLeaves = useMemo(() => filterData(inProgressLeaves), [inProgressLeaves, leaveFilters]);
   const filteredInProgressODs = useMemo(() => filterData(inProgressODs), [inProgressODs, leaveFilters]);
 
+  const fetchAllODMapRequests = async () => {
+    if (activeTab !== 'od') return;
+    setODMapLoading(true);
+    try {
+      const baseFilters = {
+        status: leaveFilters.status || undefined,
+        division: leaveFilters.division.length > 0 ? leaveFilters.division : undefined,
+        department: leaveFilters.department.length > 0 ? leaveFilters.department : undefined,
+        designation: leaveFilters.designation.length > 0 ? leaveFilters.designation : undefined,
+        search: leaveFilters.employeeNumber?.trim() || undefined,
+        placeVisited: leaveFilters.odPlace || undefined,
+        fromDate: dateRange.from || undefined,
+        toDate: dateRange.to || undefined,
+      };
+
+      const pageSize = 200;
+      const first = await api.getODs({ ...baseFilters, page: 1, limit: pageSize });
+      if (!first.success) {
+        setODMapRequests([]);
+        return;
+      }
+
+      const all = [...(first.data || [])];
+      const total = Number((first as any).total || all.length);
+      const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+      if (totalPages > 1) {
+        const pagePromises: Promise<any>[] = [];
+        for (let page = 2; page <= totalPages; page += 1) {
+          pagePromises.push(api.getODs({ ...baseFilters, page, limit: pageSize }));
+        }
+        const rest = await Promise.all(pagePromises);
+        rest.forEach((res) => {
+          if (res?.success && Array.isArray(res.data)) all.push(...res.data);
+        });
+      }
+
+      setODMapRequests(all);
+    } catch (err) {
+      console.error('Failed to load OD map records:', err);
+      setODMapRequests([]);
+    } finally {
+      setODMapLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!showODMap) return;
+    fetchAllODMapRequests();
+  }, [
+    showODMap,
+    activeTab,
+    leaveFilters.status,
+    leaveFilters.employeeNumber,
+    leaveFilters.odPlace,
+    leaveFilters.division,
+    leaveFilters.department,
+    leaveFilters.designation,
+    dateRange.from,
+    dateRange.to,
+  ]);
+
+  const odStatusFilterOptions = useMemo(
+    () => [
+      { value: '', label: 'All Status' },
+      { value: 'pending', label: 'Pending' },
+      { value: 'reporting_manager_approved', label: 'Reporting Manager Approved' },
+      { value: 'manager_approved', label: 'Manager Approved' },
+      { value: 'hod_approved', label: 'HOD Approved' },
+      { value: 'hr_approved', label: 'HR Approved' },
+      { value: 'principal_approved', label: 'Principal Approved' },
+      { value: 'approved', label: 'Approved (Final)' },
+      { value: 'reporting_manager_rejected', label: 'Reporting Manager Rejected' },
+      { value: 'manager_rejected', label: 'Manager Rejected' },
+      { value: 'hod_rejected', label: 'HOD Rejected' },
+      { value: 'hr_rejected', label: 'HR Rejected' },
+      { value: 'principal_rejected', label: 'Principal Rejected' },
+      { value: 'rejected', label: 'Rejected (Final)' },
+      { value: 'cancelled', label: 'Cancelled' },
+    ],
+    []
+  );
+
+  const odMapFilterSummary = useMemo(() => {
+    const parts: string[] = [];
+    if (leaveFilters.status) parts.push(`Status: ${leaveFilters.status.replaceAll('_', ' ')}`);
+    if (leaveFilters.leaveType) parts.push(`Type: ${leaveFilters.leaveType.replaceAll('_', ' ')}`);
+    if (leaveFilters.odPlace) parts.push(`Place: ${leaveFilters.odPlace}`);
+    if (leaveFilters.employeeNumber?.trim()) parts.push(`Search: ${leaveFilters.employeeNumber.trim()}`);
+    if (leaveFilters.division.length > 0) parts.push(`Divisions: ${leaveFilters.division.length}`);
+    if (leaveFilters.department.length > 0) parts.push(`Departments: ${leaveFilters.department.length}`);
+    if (leaveFilters.designation.length > 0) parts.push(`Designations: ${leaveFilters.designation.length}`);
+    return parts.length > 0 ? parts.join(' | ') : 'All filters';
+  }, [leaveFilters]);
+
   const stats = useMemo(() => {
     const calc = (items: any[], pendingList: any[]) => {
       const pendingIds = new Set(pendingList.map(p => p._id));
@@ -2755,10 +2854,16 @@ export default function LeavesPage() {
                     onChange={(e) => setLeaveFilters(prev => ({ ...prev, status: e.target.value }))}
                     className="h-10 pl-9 pr-8 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all appearance-none cursor-pointer w-full"
                   >
-                    <option value="">All Status</option>
-                    <option value="pending">Pending</option>
-                    <option value="approved">Approved</option>
-                    <option value="rejected">Rejected</option>
+                    {(activeTab === 'od' ? odStatusFilterOptions : [
+                      { value: '', label: 'All Status' },
+                      { value: 'pending', label: 'Pending' },
+                      { value: 'approved', label: 'Approved' },
+                      { value: 'rejected', label: 'Rejected' },
+                    ]).map((opt) => (
+                      <option key={opt.value || 'all'} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
@@ -2830,6 +2935,17 @@ export default function LeavesPage() {
                   />
                 )}
               </div>
+              {activeTab === 'od' && (
+                <div className="w-full md:w-auto md:ml-auto">
+                  <button
+                    onClick={() => setShowODMap(true)}
+                    className="w-full md:w-auto inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-black uppercase tracking-wider transition-all"
+                  >
+                    <MapPin className="w-3.5 h-3.5" />
+                    Open OD Map
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -3107,6 +3223,37 @@ export default function LeavesPage() {
 
           {activeTab === 'od' && (
             <>
+              {showODMap && (
+                <div className="fixed inset-0 z-[120] bg-slate-900/70 backdrop-blur-sm p-4 sm:p-6">
+                  <div className="mx-auto w-full max-w-7xl h-[90vh] bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xl overflow-hidden flex flex-col">
+                    <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-slate-200 dark:border-slate-700">
+                      <div>
+                        <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white uppercase tracking-wider">OD Location Map</h3>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                          {dateRange.from} to {dateRange.to} | {odMapFilterSummary} | Records: {odMapRequests.length}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => setShowODMap(false)}
+                        className="h-9 w-9 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-500 hover:text-slate-700 dark:text-slate-300 dark:hover:text-white flex items-center justify-center transition-colors"
+                        aria-label="Close OD map"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <div className="p-4 sm:p-6 flex-1 overflow-hidden">
+                      {odMapLoading ? (
+                        <div className="h-[72vh] rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 flex items-center justify-center text-sm font-bold text-slate-500 dark:text-slate-300">
+                          Loading all OD requests...
+                        </div>
+                      ) : (
+                        <ODRequestsMap requests={odMapRequests as any} height="72vh" />
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Desktop Table View */}
               <div className="hidden md:block overflow-x-auto scrollbar-hide bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/60 dark:border-slate-800 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-500">
                 <table className="w-full text-left border-collapse">
