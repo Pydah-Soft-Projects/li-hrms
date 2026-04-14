@@ -174,6 +174,10 @@ app.use('/api/holidays', holidayRoutes);
 const dashboardRoutes = require('./dashboard/index.js');
 app.use('/api/dashboard', dashboardRoutes);
 
+// In-app notifications routes
+const notificationRoutes = require('./notifications/index.js');
+app.use('/api/notifications', notificationRoutes);
+
 // Job routes
 const jobRoutes = require('./shared/routes/jobRoutes');
 app.use('/api/jobs', jobRoutes);

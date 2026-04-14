@@ -6,6 +6,7 @@ const User = require('../../users/model/User');
 const { isHRMSConnected, getEmployeeByIdMSSQL } = require('../../employees/config/sqlHelper');
 const { getResolvedLoanSettings } = require('../../departments/controllers/departmentSettingsController');
 const { getEmployeeIdsInScope } = require('../../shared/middleware/dataScopeMiddleware');
+const { notifyWorkflowEvent } = require('../../notifications/services/notificationService');
 const Division = require('../../departments/model/Division');
 const Department = require('../../departments/model/Department');
 const XLSX = require('xlsx');
@@ -36,16 +37,16 @@ const getEmployeeSettings = async () => {
  * Internal helper to cast ids to ObjectId for aggregation pipelines
  */
 const toObjectId = (id) => {
-    if (!id) return id;
-    if (Array.isArray(id)) return id.map(toObjectId).filter(Boolean);
-    try {
-        if (mongoose.Types.ObjectId.isValid(id)) {
-            return new mongoose.Types.ObjectId(id.toString());
-        }
-    } catch (e) {
-        return id;
+  if (!id) return id;
+  if (Array.isArray(id)) return id.map(toObjectId).filter(Boolean);
+  try {
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      return new mongoose.Types.ObjectId(id.toString());
     }
+  } catch (e) {
     return id;
+  }
+  return id;
 };
 
 
@@ -919,6 +920,17 @@ exports.applyLoan = async (req, res) => {
       message: `${requestType === 'loan' ? 'Loan' : 'Salary advance'} application submitted successfully`,
       data: loan,
     });
+
+    notifyWorkflowEvent({
+      module: requestType === 'loan' ? 'loan' : 'salary_advance',
+      eventType: requestType === 'loan' ? 'LOAN_APPLIED' : 'SALARY_ADVANCE_APPLIED',
+      record: loan,
+      actor: req.user,
+      title: requestType === 'loan' ? 'Loan Request Submitted' : 'Salary Advance Request Submitted',
+      message: `${requestType === 'loan' ? 'Loan' : 'Salary advance'} request submitted by ${req.user.name}.`,
+      nextApproverRole: loan?.workflow?.nextApprover || null,
+      priority: 'medium',
+    }).catch((err) => console.error('[Notification] LOAN_APPLIED failed:', err.message));
   } catch (error) {
     console.error('Error applying loan:', error);
     res.status(500).json({
@@ -1057,6 +1069,17 @@ exports.processGuarantorAction = async (req, res) => {
       message: `Request successfully ${action}`,
       data: loan,
     });
+
+    notifyWorkflowEvent({
+      module: loan.requestType === 'loan' ? 'loan' : 'salary_advance',
+      eventType: action === 'accepted' ? 'LOAN_GUARANTOR_ACCEPTED' : 'LOAN_GUARANTOR_REJECTED',
+      record: loan,
+      actor: req.user,
+      title: `Guarantor ${action === 'accepted' ? 'Accepted' : 'Rejected'}: ${req.user.name}`,
+      message: `${req.user.name} (${req.user.employeeId || 'guarantor'}) ${action} as guarantor for ${loan.requestType === 'loan' ? 'loan' : 'salary advance'} request of ${loan.emp_no}. Current loan status: ${loan.status}.`,
+      nextApproverRole: loan?.workflow?.nextApprover || null,
+      priority: action === 'rejected' ? 'high' : 'medium',
+    }).catch((err) => console.error('[Notification] LOAN_GUARANTOR_ACTION failed:', err.message));
   } catch (error) {
     console.error('Error processing guarantor action:', error);
     res.status(500).json({
@@ -1355,14 +1378,14 @@ exports.processLoanAction = async (req, res) => {
 
     // Validate user can perform this action
     let canProcess = false;
-    
+
     if (isSuperAdmin) {
       // Super Admin can process if it's their step OR if bypass is enabled
       if (allowBypass || ['hr', 'admin', 'super_admin', 'final_authority'].includes(currentApprover)) {
         canProcess = true;
       }
     }
-    
+
     if (!canProcess && isHR) {
       // HR can process if it's their step OR if bypass is enabled (they are considered higher than HOD/Manager)
       if (['hr', 'final_authority'].includes(currentApprover)) {
@@ -1483,7 +1506,7 @@ exports.processLoanAction = async (req, res) => {
     // DYAMIC WORKFLOW ROUTING ENGINE
     const workflowSteps = settings?.workflow?.steps || [];
     const currentStepConfig = workflowSteps.find(s => s.approverRole === currentApprover && s.isActive);
-    
+
     // Determine the next step in the chain
     let nextStepOrder = currentStepConfig ? currentStepConfig.nextStepOnApprove : null;
     let nextRole = null;
@@ -1541,7 +1564,7 @@ exports.processLoanAction = async (req, res) => {
       } else if (isHR) {
         authorized = true; // Fallback to HR if no final auth defined
       }
-      
+
       if (!authorized) {
         return res.status(403).json({
           success: false,
@@ -1560,10 +1583,10 @@ exports.processLoanAction = async (req, res) => {
           loan.status = currentStepConfig?.approvedStatus || `${currentApprover}_approved`;
           loan.workflow.currentStep = nextStepEnum;
           loan.workflow.nextApprover = nextRole;
-          
+
           // Add special marker for higher authority action in history
           if (allowBypass && (isSuperAdmin || isHR)) {
-             historyEntry.comments = `${comments || ''} (Action by Higher Authority: ${userRole})`;
+            historyEntry.comments = `${comments || ''} (Action by Higher Authority: ${userRole})`;
           }
 
           // Legacy approval record
@@ -1655,6 +1678,26 @@ exports.processLoanAction = async (req, res) => {
       message: `Loan application ${action}d successfully`,
       data: loan,
     });
+
+    notifyWorkflowEvent({
+      module: loan.requestType === 'loan' ? 'loan' : 'salary_advance',
+      eventType:
+        action === 'approve'
+          ? loan.requestType === 'loan'
+            ? 'LOAN_APPROVED'
+            : 'SALARY_ADVANCE_APPROVED'
+          : action === 'reject'
+            ? loan.requestType === 'loan'
+              ? 'LOAN_REJECTED'
+              : 'SALARY_ADVANCE_REJECTED'
+            : 'LOAN_WORKFLOW_UPDATED',
+      record: loan,
+      actor: req.user,
+      title: `${loan.requestType === 'loan' ? 'Loan' : 'Salary Advance'} ${action === 'approve' ? 'Approved' : action === 'reject' ? 'Rejected' : 'Updated'}`,
+      message: `${loan.requestType === 'loan' ? 'Loan' : 'Salary advance'} request ${action}d by ${req.user.name}.`,
+      nextApproverRole: loan?.workflow?.nextApprover || null,
+      priority: action === 'reject' ? 'high' : 'medium',
+    }).catch((err) => console.error('[Notification] LOAN_ACTION failed:', err.message));
   } catch (error) {
     console.error('Error processing loan action:', error);
     res.status(500).json({
@@ -1721,6 +1764,16 @@ exports.cancelLoan = async (req, res) => {
       message: 'Loan cancelled successfully',
       data: loan,
     });
+
+    notifyWorkflowEvent({
+      module: loan.requestType === 'loan' ? 'loan' : 'salary_advance',
+      eventType: loan.requestType === 'loan' ? 'LOAN_CANCELLED' : 'SALARY_ADVANCE_CANCELLED',
+      record: loan,
+      actor: req.user,
+      title: `${loan.requestType === 'loan' ? 'Loan' : 'Salary Advance'} Cancelled`,
+      message: `${loan.requestType === 'loan' ? 'Loan' : 'Salary advance'} request cancelled.`,
+      priority: 'high',
+    }).catch((err) => console.error('[Notification] LOAN_CANCELLED failed:', err.message));
   } catch (error) {
     console.error('Error cancelling loan:', error);
     res.status(500).json({
@@ -1820,6 +1873,16 @@ exports.disburseLoan = async (req, res) => {
       message: 'Loan disbursed successfully',
       data: loan,
     });
+
+    notifyWorkflowEvent({
+      module: loan.requestType === 'loan' ? 'loan' : 'salary_advance',
+      eventType: loan.requestType === 'loan' ? 'LOAN_DISBURSED' : 'SALARY_ADVANCE_DISBURSED',
+      record: loan,
+      actor: req.user,
+      title: `${loan.requestType === 'loan' ? 'Loan' : 'Salary Advance'} Disbursed`,
+      message: `${loan.requestType === 'loan' ? 'Loan' : 'Salary advance'} was disbursed.`,
+      priority: 'high',
+    }).catch((err) => console.error('[Notification] LOAN_DISBURSED failed:', err.message));
   } catch (error) {
     console.error('Error disbursing loan:', error);
     res.status(500).json({
@@ -2382,7 +2445,7 @@ exports.exportLoanReport = async (req, res) => {
     XLSX.utils.book_append_sheet(wb, ws, 'Loans Report');
 
     const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-    
+
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename=loans_report_${dayjs().format('YYYYMMDD')}.xlsx`);
     res.status(200).send(buffer);
@@ -2430,7 +2493,7 @@ exports.exportLoanReportPDF = async (req, res) => {
       .lean();
 
     const doc = new PDFDocument({ margin: 30, size: 'A4', layout: 'landscape' });
-    
+
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename=loans_report_${dayjs().format('YYYYMMDD')}.pdf`);
     doc.pipe(res);
@@ -2440,13 +2503,13 @@ exports.exportLoanReportPDF = async (req, res) => {
     const formatINR = (val) => Number(val || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
     const drawCard = (x, y, w, h, title, value, color) => {
-        doc.save();
-        doc.roundedRect(x, y, w, h, 8).fill(`${color}10`); // Light fill
-        doc.roundedRect(x, y, w, h, 8).lineWidth(0.5).strokeColor(color).stroke();
-        
-        doc.fontSize(8).font('Helvetica-Bold').fillColor(color).text(title.toUpperCase(), x + 10, y + 10);
-        doc.fontSize(14).font('Helvetica-Bold').fillColor('#1e293b').text(`₹${formatINR(value)}`, x + 10, y + 22);
-        doc.restore();
+      doc.save();
+      doc.roundedRect(x, y, w, h, 8).fill(`${color}10`); // Light fill
+      doc.roundedRect(x, y, w, h, 8).lineWidth(0.5).strokeColor(color).stroke();
+
+      doc.fontSize(8).font('Helvetica-Bold').fillColor(color).text(title.toUpperCase(), x + 10, y + 10);
+      doc.fontSize(14).font('Helvetica-Bold').fillColor('#1e293b').text(`₹${formatINR(value)}`, x + 10, y + 22);
+      doc.restore();
     };
 
     // Header
@@ -2455,10 +2518,10 @@ exports.exportLoanReportPDF = async (req, res) => {
 
     // Summary Cards
     const stats = {
-        distributed: loans.reduce((sum, l) => sum + (l.amount || 0), 0),
-        recovered: loans.reduce((sum, l) => sum + (l.repayment?.totalPaid || 0), 0),
-        outstanding: loans.reduce((sum, l) => sum + (l.repayment?.remainingBalance || 0), 0),
-        interest: loans.reduce((sum, l) => sum + (l.loanConfig?.totalInterest || 0), 0)
+      distributed: loans.reduce((sum, l) => sum + (l.amount || 0), 0),
+      recovered: loans.reduce((sum, l) => sum + (l.repayment?.totalPaid || 0), 0),
+      outstanding: loans.reduce((sum, l) => sum + (l.repayment?.remainingBalance || 0), 0),
+      interest: loans.reduce((sum, l) => sum + (l.loanConfig?.totalInterest || 0), 0)
     };
 
     const cardW = (innerW - 40) / 4;
@@ -2485,7 +2548,7 @@ exports.exportLoanReportPDF = async (req, res) => {
     doc.save();
     doc.roundedRect(MARGIN, currentY, innerW, 20, 4).fill('#4f46e5');
     doc.fontSize(8).font('Helvetica-Bold').fillColor('#ffffff');
-    
+
     let currentX = MARGIN + 5;
     columns.forEach((col, i) => {
       doc.text(col, currentX, currentY + 6, { width: colWidths[i] - 10, align: colAligns[i] });
@@ -2500,7 +2563,7 @@ exports.exportLoanReportPDF = async (req, res) => {
       if (currentY > 520) {
         doc.addPage({ layout: 'landscape', margin: 30 });
         currentY = 40;
-        
+
         // Redraw Header on new page
         doc.save();
         doc.roundedRect(MARGIN, currentY, innerW, 20, 4).fill('#4f46e5');
@@ -2517,7 +2580,7 @@ exports.exportLoanReportPDF = async (req, res) => {
 
       // Zebra striping
       if (index % 2 === 1) {
-          doc.save().fillColor('#f8fafc').rect(MARGIN, currentY, innerW, 18).fill().restore();
+        doc.save().fillColor('#f8fafc').rect(MARGIN, currentY, innerW, 18).fill().restore();
       }
 
       currentX = MARGIN + 5;
@@ -2551,13 +2614,13 @@ exports.exportLoanReportPDF = async (req, res) => {
     // Footer
     const pages = doc.bufferedPageRange();
     for (let i = 0; i < pages.count; i++) {
-        doc.switchToPage(i);
-        doc.fontSize(7).fillColor('#94a3b8').text(
-            `Page ${i + 1} of ${pages.count}  |  Generated by HRMS System`,
-            MARGIN,
-            doc.page.height - 20,
-            { align: 'center', width: innerW }
-        );
+      doc.switchToPage(i);
+      doc.fontSize(7).fillColor('#94a3b8').text(
+        `Page ${i + 1} of ${pages.count}  |  Generated by HRMS System`,
+        MARGIN,
+        doc.page.height - 20,
+        { align: 'center', width: innerW }
+      );
     }
 
     doc.end();
