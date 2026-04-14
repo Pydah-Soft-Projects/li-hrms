@@ -148,6 +148,27 @@ function timeStringToDate(timeStr, refDate, isNextDay = false) {
 }
 
 /**
+ * Multi-shift path only: drop consecutive punches of the same type within 5 minutes.
+ * OUT then IN (or IN then OUT) close together are both kept — valid overnight close + next shift open.
+ * Input is sorted by timestamp so dedupe is always chronological.
+ * @param {Array<{ timestamp: string|Date, type: string }>} punches raw or pre-sorted punches
+ */
+function dedupePunchesForMultiShift(punches) {
+    const DEDUP_WINDOW_MS = 5 * 60 * 1000;
+    const ordered = [...(punches || [])].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    const deduplicatedPunches = [];
+    for (const p of ordered) {
+        const last = deduplicatedPunches[deduplicatedPunches.length - 1];
+        const sameType = last && p.type === last.type;
+        if (last && sameType && (new Date(p.timestamp) - new Date(last.timestamp)) < DEDUP_WINDOW_MS) {
+            continue;
+        }
+        deduplicatedPunches.push(p);
+    }
+    return deduplicatedPunches;
+}
+
+/**
  * Process multi-shift attendance for a single employee on a single date
  * @param {String} employeeNumber - Employee number
  * @param {String} date - Date in YYYY-MM-DD format
@@ -175,18 +196,8 @@ async function processMultiShiftAttendance(employeeNumber, date, rawLogs, genera
         const splitMinGapHours = processingMode.splitMinGapHours ?? 3;
 
         // Prepare Raw Logs (already filtered by getPunchesForPairing above)
-        let sortedPunches = filteredRawLogs.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-
-        // DEDUPLICATION: Ignore punches within 5 minutes of each other (double-tap / accidental repeat)
-        const DEDUP_WINDOW_MS = 5 * 60 * 1000;
-        const deduplicatedPunches = [];
-        for (const p of sortedPunches) {
-            const last = deduplicatedPunches[deduplicatedPunches.length - 1];
-            if (last && (new Date(p.timestamp) - new Date(last.timestamp)) < DEDUP_WINDOW_MS) {
-                continue; // Skip double-taps
-            }
-            deduplicatedPunches.push(p);
-        }
+        const sortedPunches = filteredRawLogs.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        const deduplicatedPunches = dedupePunchesForMultiShift(sortedPunches);
 
         // Respect log type: only CHECK-IN (type IN) starts a shift; only CHECK-OUT (type OUT) ends it.
         const punchesOnDate = deduplicatedPunches.filter(p => isSameDay(new Date(p.timestamp), date));
@@ -965,4 +976,5 @@ module.exports = {
     processMultiShiftAttendance,
     processMultiShiftBatch,
     formatDate,
+    dedupePunchesForMultiShift,
 };

@@ -1,130 +1,77 @@
 /**
- * Test Redundancy Filter Logic
- * This script tests the 30-minute redundancy filtering
+ * Test Redundancy Filter Logic (30-minute window, last-accepted same-type rule)
+ *
+ * Run:  npm run test:punch-pipeline --prefix backend
+ *   or: node backend/attendance/test/redundancyFilterTest.js
  */
 
+'use strict';
+
+const assert = require('assert').strict;
 const { filterRedundantLogs } = require('../services/attendanceSyncService');
 
-async function testRedundancyFilter() {
-    console.log('🧪 Testing 30-Minute Redundancy Filter...\n');
+function testRedundancyFilter() {
+  console.log('🧪 Testing 30-Minute Redundancy Filter...\n');
 
-    // Test Case 1: Same employee, same type, within 30 minutes
-    const testLogs1 = [
-        {
-            employeeNumber: 'EMP001',
-            timestamp: '2026-02-23T09:00:00Z',
-            type: 'IN',
-            source: 'test'
-        },
-        {
-            employeeNumber: 'EMP001',
-            timestamp: '2026-02-23T09:15:00Z', // 15 minutes later
-            type: 'IN',
-            source: 'test'
-        },
-        {
-            employeeNumber: 'EMP001',
-            timestamp: '2026-02-23T09:45:00Z', // 45 minutes later (should be kept)
-            type: 'IN',
-            source: 'test'
-        }
-    ];
+  // Case 1: Same employee, same type, within 30 minutes
+  const testLogs1 = [
+    { employeeNumber: 'EMP001', timestamp: '2026-02-23T09:00:00Z', type: 'IN', source: 'test' },
+    { employeeNumber: 'EMP001', timestamp: '2026-02-23T09:15:00Z', type: 'IN', source: 'test' },
+    { employeeNumber: 'EMP001', timestamp: '2026-02-23T09:45:00Z', type: 'IN', source: 'test' },
+  ];
+  const filtered1 = filterRedundantLogs(testLogs1, 30);
+  console.log('📋 Case 1: same employee, duplicate IN — middle dropped');
+  assert.equal(filtered1.length, 2, 'expected first + third IN');
+  console.log('   ✓ pass\n');
 
-    console.log('📋 Test Case 1: Same employee, same type, different times');
-    console.log('Input logs:', testLogs1.length);
-    
-    const filtered1 = filterRedundantLogs(testLogs1, 30);
-    console.log('Filtered logs:', filtered1.length);
-    console.log('Expected: 2 (first and third logs kept, second filtered)');
-    console.log('✅ Pass:', filtered1.length === 2 ? 'YES' : 'NO');
-    console.log('');
+  // Case 2: Different types
+  const testLogs2 = [
+    { employeeNumber: 'EMP002', timestamp: '2026-02-23T09:00:00Z', type: 'IN', source: 'test' },
+    { employeeNumber: 'EMP002', timestamp: '2026-02-23T09:15:00Z', type: 'OUT', source: 'test' },
+  ];
+  assert.equal(filterRedundantLogs(testLogs2, 30).length, 2);
+  console.log('📋 Case 2: IN then OUT — both kept');
+  console.log('   ✓ pass\n');
 
-    // Test Case 2: Different types should not be filtered
-    const testLogs2 = [
-        {
-            employeeNumber: 'EMP002',
-            timestamp: '2026-02-23T09:00:00Z',
-            type: 'IN',
-            source: 'test'
-        },
-        {
-            employeeNumber: 'EMP002',
-            timestamp: '2026-02-23T09:15:00Z', // 15 minutes later
-            type: 'OUT', // Different type - should be kept
-            source: 'test'
-        }
-    ];
+  // Case 3: Different employees
+  const testLogs3 = [
+    { employeeNumber: 'EMP003', timestamp: '2026-02-23T09:00:00Z', type: 'IN', source: 'test' },
+    { employeeNumber: 'EMP004', timestamp: '2026-02-23T09:15:00Z', type: 'IN', source: 'test' },
+  ];
+  assert.equal(filterRedundantLogs(testLogs3, 30).length, 2);
+  console.log('📋 Case 3: different employees');
+  console.log('   ✓ pass\n');
 
-    console.log('📋 Test Case 2: Same employee, different types');
-    console.log('Input logs:', testLogs2.length);
-    
-    const filtered2 = filterRedundantLogs(testLogs2, 30);
-    console.log('Filtered logs:', filtered2.length);
-    console.log('Expected: 2 (both logs kept - different types)');
-    console.log('✅ Pass:', filtered2.length === 2 ? 'YES' : 'NO');
-    console.log('');
+  // Case 4: Exactly 30 minutes apart (inclusive window → second dropped)
+  const testLogs4 = [
+    { employeeNumber: 'EMP005', timestamp: '2026-02-23T09:00:00Z', type: 'IN', source: 'test' },
+    { employeeNumber: 'EMP005', timestamp: '2026-02-23T09:30:00Z', type: 'IN', source: 'test' },
+  ];
+  assert.equal(filterRedundantLogs(testLogs4, 30).length, 1);
+  console.log('📋 Case 4: two IN exactly 30 min apart — second redundant');
+  console.log('   ✓ pass\n');
 
-    // Test Case 3: Different employees should not be filtered
-    const testLogs3 = [
-        {
-            employeeNumber: 'EMP003',
-            timestamp: '2026-02-23T09:00:00Z',
-            type: 'IN',
-            source: 'test'
-        },
-        {
-            employeeNumber: 'EMP004',
-            timestamp: '2026-02-23T09:15:00Z', // 15 minutes later
-            type: 'IN',
-            source: 'test'
-        }
-    ];
+  // Case 5: IN → OUT → IN (regression: second IN must not be dropped vs first IN)
+  const testLogs5 = [
+    { employeeNumber: 'EMP006', timestamp: '2026-02-23T08:00:00Z', type: 'IN', source: 'test' },
+    { employeeNumber: 'EMP006', timestamp: '2026-02-23T08:10:00Z', type: 'OUT', source: 'test' },
+    { employeeNumber: 'EMP006', timestamp: '2026-02-23T08:20:00Z', type: 'IN', source: 'test' },
+  ];
+  assert.equal(filterRedundantLogs(testLogs5, 30).length, 3);
+  console.log('📋 Case 5: IN → OUT → IN within 30 min — all kept');
+  console.log('   ✓ pass\n');
 
-    console.log('📋 Test Case 3: Different employees');
-    console.log('Input logs:', testLogs3.length);
-    
-    const filtered3 = filterRedundantLogs(testLogs3, 30);
-    console.log('Filtered logs:', filtered3.length);
-    console.log('Expected: 2 (both logs kept - different employees)');
-    console.log('✅ Pass:', filtered3.length === 2 ? 'YES' : 'NO');
-    console.log('');
-
-    // Test Case 4: Edge case - exactly 30 minutes
-    const testLogs4 = [
-        {
-            employeeNumber: 'EMP005',
-            timestamp: '2026-02-23T09:00:00Z',
-            type: 'IN',
-            source: 'test'
-        },
-        {
-            employeeNumber: 'EMP005',
-            timestamp: '2026-02-23T09:30:00Z', // Exactly 30 minutes later
-            type: 'IN',
-            source: 'test'
-        }
-    ];
-
-    console.log('📋 Test Case 4: Exactly 30 minutes apart');
-    console.log('Input logs:', testLogs4.length);
-    
-    const filtered4 = filterRedundantLogs(testLogs4, 30);
-    console.log('Filtered logs:', filtered4.length);
-    console.log('Expected: 1 (second filtered - exactly 30min window)');
-    console.log('✅ Pass:', filtered4.length === 1 ? 'YES' : 'NO');
-    console.log('');
-
-    console.log('🎯 Redundancy Filter Test Complete!');
-    console.log('📝 Summary: The filter should only remove logs that are:');
-    console.log('   - Same employee');
-    console.log('   - Same type (IN/OUT)');
-    console.log('   - Within 30-minute window');
-    console.log('   - Different employees, types, or >30min apart should be kept');
+  console.log('🎯 Redundancy filter: all cases passed.');
 }
 
-// Run test if called directly
 if (require.main === module) {
-    testRedundancyFilter().catch(console.error);
+  try {
+    testRedundancyFilter();
+    setTimeout(() => process.exit(0), 150);
+  } catch (e) {
+    console.error('❌ Redundancy filter test failed:', e.message);
+    process.exit(1);
+  }
 }
 
 module.exports = { testRedundancyFilter };

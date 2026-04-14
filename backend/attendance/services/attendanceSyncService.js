@@ -314,6 +314,8 @@ const syncAttendanceFromMSSQL = async (fromDate = null, toDate = null) => {
 
 /**
  * Filter redundant logs within specified time window
+ * Same-type only, compared to the last accepted punch per employee (not every prior punch of that type).
+ * So e.g. IN → OUT → IN within 30 minutes does not drop the second IN as "redundant" with the first IN.
  * @param {Array} logs - Array of raw log objects
  * @param {number} windowMinutes - Time window in minutes (default: 30)
  * @returns {Array} - Filtered logs array
@@ -322,30 +324,29 @@ const filterRedundantLogs = (logs, windowMinutes = 30) => {
   const filteredLogs = [];
   const windowMs = windowMinutes * 60 * 1000;
 
-  // Sort logs chronologically for processing
-  const sortedLogs = logs.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+  const sortedLogs = [...logs].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+  const lastAcceptedByEmployee = new Map();
 
   for (const log of sortedLogs) {
     const logTimestamp = new Date(log.timestamp);
-    const logType = log.type || 'IN';
-    
-    // Check if this log is redundant with any previously accepted log
-    const isRedundant = filteredLogs.some(existingLog => {
-      const existingTimestamp = new Date(existingLog.timestamp);
-      const existingType = existingLog.type || 'IN';
-      
-      // Same employee, same type, within time window
-      return (
-        existingLog.employeeNumber === log.employeeNumber &&
-        existingType === logType &&
-        Math.abs(existingTimestamp.getTime() - logTimestamp.getTime()) <= windowMs
-      );
-    });
+    const logType = log.type != null && log.type !== '' ? log.type : 'IN';
+    const empKey = String(log.employeeNumber || '').toUpperCase();
+
+    const prev = lastAcceptedByEmployee.get(empKey);
+    let isRedundant = false;
+    if (prev) {
+      const prevTs = new Date(prev.timestamp);
+      const prevType = prev.type != null && prev.type !== '' ? prev.type : 'IN';
+      if (prevType === logType && Math.abs(prevTs.getTime() - logTimestamp.getTime()) <= windowMs) {
+        isRedundant = true;
+      }
+    }
 
     if (!isRedundant) {
       filteredLogs.push(log);
+      lastAcceptedByEmployee.set(empKey, log);
     } else {
-      console.log(`🚫 Filtered redundant log: Employee ${log.employeeNumber}, Time ${logTimestamp.toISOString()}, Type ${logType} (within ${windowMinutes}min window)`);
+      console.log(`🚫 Filtered redundant log: Employee ${log.employeeNumber}, Time ${logTimestamp.toISOString()}, Type ${logType} (within ${windowMinutes}min window, same-type consecutive)`);
     }
   }
 
