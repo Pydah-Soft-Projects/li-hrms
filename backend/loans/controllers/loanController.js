@@ -6,6 +6,11 @@ const User = require('../../users/model/User');
 const { isHRMSConnected, getEmployeeByIdMSSQL } = require('../../employees/config/sqlHelper');
 const { getResolvedLoanSettings } = require('../../departments/controllers/departmentSettingsController');
 const { getEmployeeIdsInScope } = require('../../shared/middleware/dataScopeMiddleware');
+const Division = require('../../departments/model/Division');
+const Department = require('../../departments/model/Department');
+const XLSX = require('xlsx');
+const PDFDocument = require('pdfkit');
+const dayjs = require('dayjs');
 
 // ============================================
 // NO HARDCODED BYPASS - Uses database setting: workflow.allowHigherAuthorityToApproveLowerLevels
@@ -26,6 +31,23 @@ const getEmployeeSettings = async () => {
     return { dataSource: 'mongodb' };
   }
 };
+
+/**
+ * Internal helper to cast ids to ObjectId for aggregation pipelines
+ */
+const toObjectId = (id) => {
+    if (!id) return id;
+    if (Array.isArray(id)) return id.map(toObjectId).filter(Boolean);
+    try {
+        if (mongoose.Types.ObjectId.isValid(id)) {
+            return new mongoose.Types.ObjectId(id.toString());
+        }
+    } catch (e) {
+        return id;
+    }
+    return id;
+};
+
 
 /**
  * Find employee by emp_no - respects employee settings
@@ -1533,29 +1555,17 @@ exports.processLoanAction = async (req, res) => {
       case 'approve':
         historyEntry.action = 'approved';
 
-        // Super Admin/HR Bypass Feature: Can approve at any stage (if enabled in settings)
-        if (allowBypass && (isSuperAdmin || isHR) && !isFinalStep) {
-          loan.status = 'approved';
-          loan.workflow.currentStep = 'completed';
-          loan.workflow.nextApprover = null;
-
-          loan.approvals.final = {
-            status: 'approved',
-            approvedBy: req.user._id,
-            approvedAt: new Date(),
-            comments: `${comments || ''} (Ultimate Approval by Higher Authority: ${userRole})`,
-          };
-
-          historyEntry.comments = `${comments || ''} (Action by Higher Authority)`;
-          break;
-        }
-
         // Apply dynamic status and routing
         if (!isFinalStep) {
           loan.status = currentStepConfig?.approvedStatus || `${currentApprover}_approved`;
           loan.workflow.currentStep = nextStepEnum;
           loan.workflow.nextApprover = nextRole;
           
+          // Add special marker for higher authority action in history
+          if (allowBypass && (isSuperAdmin || isHR)) {
+             historyEntry.comments = `${comments || ''} (Action by Higher Authority: ${userRole})`;
+          }
+
           // Legacy approval record
           if (currentApprover && loan.approvals[currentApprover]) {
             loan.approvals[currentApprover] = {
@@ -2161,6 +2171,399 @@ exports.getTransactions = async (req, res) => {
       success: false,
       error: error.message || 'Failed to fetch transactions',
     });
+  }
+};
+
+// @desc    Get loan report summary (stats + grouped data)
+// @route   GET /api/loans/reports/summary
+// @access  Private
+exports.getLoanReportSummary = async (req, res) => {
+  try {
+    const { divisionId, departmentId, employeeId, groupBy, requestType, status } = req.query;
+
+    const query = { isActive: true, ...(req.scopeFilter || {}) };
+
+    if (requestType) query.requestType = requestType;
+    if (status) query.status = status;
+    else query.status = { $in: ['disbursed', 'active', 'completed'] }; // Default to shown active/completed loans
+
+    // Filter by Division/Department/Employee
+    if (employeeId && employeeId !== 'all') {
+      const empIds = String(employeeId).split(',').filter(id => id && id !== 'all');
+      if (empIds.length > 0) {
+        query.employeeId = { $in: empIds.map(toObjectId) };
+      }
+    } else if (departmentId && departmentId !== 'all') {
+      const deptIds = String(departmentId).split(',').filter(id => id && id !== 'all');
+      if (deptIds.length > 0) {
+        query.department = { $in: deptIds.map(toObjectId) };
+      }
+    } else if (divisionId && divisionId !== 'all') {
+      const divIds = String(divisionId).split(',').filter(id => id && id !== 'all');
+      if (divIds.length > 0) {
+        query.division_id = { $in: divIds.map(toObjectId) };
+      }
+    }
+
+    // Calculate overall stats
+    const statsData = await Loan.aggregate([
+      { $match: query },
+      {
+        $group: {
+          _id: null,
+          totalDistributed: { $sum: "$amount" },
+          totalRecovered: { $sum: "$repayment.totalPaid" },
+          totalOutstanding: { $sum: "$repayment.remainingBalance" },
+          totalInterest: { $sum: "$loanConfig.totalInterest" }
+        }
+      }
+    ]);
+
+    const stats = statsData[0] || {
+      totalDistributed: 0,
+      totalRecovered: 0,
+      totalOutstanding: 0,
+      totalInterest: 0
+    };
+
+    // Grouped summaries
+    let summaries = [];
+    if (groupBy === 'division' || groupBy === 'department' || groupBy === 'employee') {
+      let children = [];
+      if (groupBy === 'division') {
+        const divQuery = { isActive: { $ne: false } };
+        if (divisionId && divisionId !== 'all') {
+          const divIds = String(divisionId).split(',').filter(id => id && id !== 'all');
+          divQuery._id = { $in: divIds.map(toObjectId) };
+        }
+        children = await Division.find(divQuery).select('name').lean();
+      } else if (groupBy === 'department') {
+        const deptQuery = { isActive: { $ne: false } };
+        if (departmentId && departmentId !== 'all') {
+          const deptIds = String(departmentId).split(',').filter(id => id && id !== 'all');
+          deptQuery._id = { $in: deptIds.map(toObjectId) };
+        } else if (divisionId && divisionId !== 'all') {
+          const divIds = String(divisionId).split(',').filter(id => id && id !== 'all');
+          deptQuery.divisions = { $in: divIds.map(toObjectId) };
+        }
+        children = await Department.find(deptQuery).select('name').lean();
+      } else if (groupBy === 'employee') {
+        const empQuery = { is_active: { $ne: false } };
+        if (employeeId && employeeId !== 'all') {
+          const empIds = String(employeeId).split(',').filter(id => id && id !== 'all');
+          empQuery._id = { $in: empIds.map(toObjectId) };
+        } else if (departmentId && departmentId !== 'all') {
+          const deptIds = String(departmentId).split(',').filter(id => id && id !== 'all');
+          empQuery.department_id = { $in: deptIds.map(toObjectId) };
+        } else if (divisionId && divisionId !== 'all') {
+          const divIds = String(divisionId).split(',').filter(id => id && id !== 'all');
+          empQuery.division_id = { $in: divIds.map(toObjectId) };
+        }
+        const emps = await Employee.find(empQuery).select('employee_name emp_no').lean();
+        children = emps.map(e => ({ _id: e._id, name: `${e.employee_name} (${e.emp_no})` }));
+      }
+
+      for (const child of children) {
+        const childQuery = { ...query };
+        if (groupBy === 'division') childQuery.division_id = toObjectId(child._id);
+        else if (groupBy === 'department') childQuery.department = toObjectId(child._id);
+        else if (groupBy === 'employee') childQuery.employeeId = toObjectId(child._id);
+
+        const childStatsResult = await Loan.aggregate([
+          { $match: childQuery },
+          {
+            $group: {
+              _id: null,
+              distributed: { $sum: "$amount" },
+              recovered: { $sum: "$repayment.totalPaid" },
+              outstanding: { $sum: "$repayment.remainingBalance" },
+              interest: { $sum: "$loanConfig.totalInterest" },
+              count: { $sum: 1 }
+            }
+          }
+        ]);
+
+        const cStats = childStatsResult[0] || { distributed: 0, recovered: 0, outstanding: 0, interest: 0, count: 0 };
+        if (cStats.count > 0) {
+          summaries.push({
+            id: child._id,
+            name: child.name,
+            ...cStats
+          });
+        }
+      }
+    }
+
+    // Detailed records for current view (paginated)
+    const limit = parseInt(req.query.limit) || 50;
+    const page = parseInt(req.query.page) || 1;
+    const skip = (page - 1) * limit;
+
+    const [loans, total] = await Promise.all([
+      Loan.find(query)
+        .populate('employeeId', 'employee_name emp_no')
+        .populate('department', 'name')
+        .populate('division_id', 'name')
+        .sort({ appliedAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Loan.countDocuments(query)
+    ]);
+
+    res.status(200).json({
+      success: true,
+      stats,
+      summaries,
+      data: loans,
+      total,
+      page,
+      totalPages: Math.ceil(total / limit)
+    });
+  } catch (error) {
+    console.error('Error in getLoanReportSummary:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * @desc    Export loan report as XLSX
+ * @route   GET /api/loans/reports/export
+ * @access  Private
+ */
+exports.exportLoanReport = async (req, res) => {
+  try {
+    const { divisionId, departmentId, employeeId, requestType, status } = req.query;
+
+    const query = { isActive: true, ...(req.scopeFilter || {}) };
+    if (requestType) query.requestType = requestType;
+    if (status) query.status = status;
+    else query.status = { $in: ['disbursed', 'active', 'completed'] };
+
+    if (employeeId && employeeId !== 'all') {
+      const empIds = String(employeeId).split(',').filter(id => id && id !== 'all');
+      query.employeeId = { $in: empIds.map(toObjectId) };
+    } else if (departmentId && departmentId !== 'all') {
+      const deptIds = String(departmentId).split(',').filter(id => id && id !== 'all');
+      query.department = { $in: deptIds.map(toObjectId) };
+    } else if (divisionId && divisionId !== 'all') {
+      const divIds = String(divisionId).split(',').filter(id => id && id !== 'all');
+      query.division_id = { $in: divIds.map(toObjectId) };
+    }
+
+    const loans = await Loan.find(query)
+      .populate('employeeId', 'employee_name emp_no')
+      .populate('department', 'name')
+      .populate('division_id', 'name')
+      .populate('designation', 'name')
+      .sort({ appliedAt: -1 })
+      .lean();
+
+    const rows = loans.map((loan, index) => ({
+      'S.No': index + 1,
+      'Emp No': loan.employeeId?.emp_no || loan.emp_no,
+      'Employee Name': loan.employeeId?.employee_name || 'N/A',
+      'Division': loan.division_id?.name || 'N/A',
+      'Department': loan.department?.name || 'N/A',
+      'Designation': loan.designation?.name || 'N/A',
+      'Type': loan.requestType === 'loan' ? 'Loan' : 'Salary Advance',
+      'Amount': loan.amount,
+      'Recovered': loan.repayment?.totalPaid || 0,
+      'Outstanding': loan.repayment?.remainingBalance || 0,
+      'Interest': loan.loanConfig?.totalInterest || 0,
+      'Total Payable': (loan.amount || 0) + (loan.loanConfig?.totalInterest || 0),
+      'Status': loan.status,
+      'Applied Date': loan.appliedAt ? dayjs(loan.appliedAt).format('DD-MMM-YYYY') : 'N/A',
+      'Disbursed Date': loan.disbursement?.disbursedAt ? dayjs(loan.disbursement.disbursedAt).format('DD-MMM-YYYY') : 'N/A'
+    }));
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wb, ws, 'Loans Report');
+
+    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename=loans_report_${dayjs().format('YYYYMMDD')}.xlsx`);
+    res.status(200).send(buffer);
+  } catch (error) {
+    console.error('Error in exportLoanReport:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * @desc    Export loan report as PDF
+ * @route   GET /api/loans/reports/export-pdf
+ * @access  Private
+ */
+/**
+ * @desc    Export loan report as PDF with premium styling
+ * @route   GET /api/loans/reports/export-pdf
+ * @access  Private
+ */
+exports.exportLoanReportPDF = async (req, res) => {
+  try {
+    const { divisionId, departmentId, employeeId, requestType, status } = req.query;
+
+    const query = { isActive: true, ...(req.scopeFilter || {}) };
+    if (requestType) query.requestType = requestType;
+    if (status) query.status = status;
+    else query.status = { $in: ['disbursed', 'active', 'completed'] };
+
+    if (employeeId && employeeId !== 'all') {
+      const empIds = String(employeeId).split(',').filter(id => id && id !== 'all');
+      query.employeeId = { $in: empIds.map(toObjectId) };
+    } else if (departmentId && departmentId !== 'all') {
+      const deptIds = String(departmentId).split(',').filter(id => id && id !== 'all');
+      query.department = { $in: deptIds.map(toObjectId) };
+    } else if (divisionId && divisionId !== 'all') {
+      const divIds = String(divisionId).split(',').filter(id => id && id !== 'all');
+      query.division_id = { $in: divIds.map(toObjectId) };
+    }
+
+    const loans = await Loan.find(query)
+      .populate('employeeId', 'employee_name emp_no')
+      .populate('department', 'name')
+      .populate('division_id', 'name')
+      .sort({ appliedAt: -1 })
+      .lean();
+
+    const doc = new PDFDocument({ margin: 30, size: 'A4', layout: 'landscape' });
+    
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=loans_report_${dayjs().format('YYYYMMDD')}.pdf`);
+    doc.pipe(res);
+
+    const MARGIN = 30;
+    const innerW = doc.page.width - MARGIN * 2;
+    const formatINR = (val) => Number(val || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+
+    const drawCard = (x, y, w, h, title, value, color) => {
+        doc.save();
+        doc.roundedRect(x, y, w, h, 8).fill(`${color}10`); // Light fill
+        doc.roundedRect(x, y, w, h, 8).lineWidth(0.5).strokeColor(color).stroke();
+        
+        doc.fontSize(8).font('Helvetica-Bold').fillColor(color).text(title.toUpperCase(), x + 10, y + 10);
+        doc.fontSize(14).font('Helvetica-Bold').fillColor('#1e293b').text(`₹${formatINR(value)}`, x + 10, y + 22);
+        doc.restore();
+    };
+
+    // Header
+    doc.fontSize(18).font('Helvetica-Bold').fillColor('#1e1b4b').text('Loans & Salary Advances Report', MARGIN, MARGIN);
+    doc.fontSize(8).font('Helvetica').fillColor('#64748b').text(`Generated on: ${dayjs().format('DD MMM YYYY, HH:mm')}`, MARGIN, MARGIN + 22);
+
+    // Summary Cards
+    const stats = {
+        distributed: loans.reduce((sum, l) => sum + (l.amount || 0), 0),
+        recovered: loans.reduce((sum, l) => sum + (l.repayment?.totalPaid || 0), 0),
+        outstanding: loans.reduce((sum, l) => sum + (l.repayment?.remainingBalance || 0), 0),
+        interest: loans.reduce((sum, l) => sum + (l.loanConfig?.totalInterest || 0), 0)
+    };
+
+    const cardW = (innerW - 40) / 4;
+    let cardX = MARGIN;
+    let cardY = MARGIN + 45;
+
+    drawCard(cardX, cardY, cardW, 50, 'Total Distributed', stats.distributed, '#4f46e5');
+    cardX += cardW + 13.3;
+    drawCard(cardX, cardY, cardW, 50, 'Total Recovered', stats.recovered, '#059669');
+    cardX += cardW + 13.3;
+    drawCard(cardX, cardY, cardW, 50, 'Total Outstanding', stats.outstanding, '#e11d48');
+    cardX += cardW + 13.3;
+    drawCard(cardX, cardY, cardW, 50, 'Total Interest', stats.interest, '#0284c7');
+
+    // Table
+    const tableTop = cardY + 70;
+    const colWidths = [25, 50, 140, 100, 70, 70, 70, 70, 90, 70];
+    const columns = ['#', 'Emp No', 'Employee Name', 'Department', 'Principal', 'Interest', 'Total', 'Paid', 'Balance', 'Status'];
+    const colAligns = ['center', 'left', 'left', 'left', 'right', 'right', 'right', 'right', 'right', 'center'];
+
+    let currentY = tableTop;
+
+    // Header Row
+    doc.save();
+    doc.roundedRect(MARGIN, currentY, innerW, 20, 4).fill('#4f46e5');
+    doc.fontSize(8).font('Helvetica-Bold').fillColor('#ffffff');
+    
+    let currentX = MARGIN + 5;
+    columns.forEach((col, i) => {
+      doc.text(col, currentX, currentY + 6, { width: colWidths[i] - 10, align: colAligns[i] });
+      currentX += colWidths[i];
+    });
+    doc.restore();
+
+    currentY += 20;
+    doc.font('Helvetica').fontSize(8).fillColor('#334155');
+
+    loans.forEach((loan, index) => {
+      if (currentY > 520) {
+        doc.addPage({ layout: 'landscape', margin: 30 });
+        currentY = 40;
+        
+        // Redraw Header on new page
+        doc.save();
+        doc.roundedRect(MARGIN, currentY, innerW, 20, 4).fill('#4f46e5');
+        doc.fontSize(8).font('Helvetica-Bold').fillColor('#ffffff');
+        let hX = MARGIN + 5;
+        columns.forEach((col, i) => {
+          doc.text(col, hX, currentY + 6, { width: colWidths[i] - 10, align: colAligns[i] });
+          hX += colWidths[i];
+        });
+        doc.restore();
+        currentY += 20;
+        doc.font('Helvetica').fontSize(7.5).fillColor('#334155');
+      }
+
+      // Zebra striping
+      if (index % 2 === 1) {
+          doc.save().fillColor('#f8fafc').rect(MARGIN, currentY, innerW, 18).fill().restore();
+      }
+
+      currentX = MARGIN + 5;
+      doc.text(index + 1, currentX, currentY + 5, { width: colWidths[0] - 10, align: colAligns[0] });
+      currentX += colWidths[0];
+      doc.text(loan.employeeId?.emp_no || loan.emp_no, currentX, currentY + 5, { width: colWidths[1] - 10, align: colAligns[1] });
+      currentX += colWidths[1];
+      doc.text(loan.employeeId?.employee_name || 'N/A', currentX, currentY + 5, { width: colWidths[2] - 10, align: colAligns[2], ellipsis: true });
+      currentX += colWidths[2];
+      doc.text(loan.department?.name || 'N/A', currentX, currentY + 5, { width: colWidths[3] - 10, align: colAligns[3], ellipsis: true });
+      currentX += colWidths[3];
+      doc.text(formatINR(loan.amount), currentX, currentY + 5, { width: colWidths[4] - 10, align: colAligns[4] });
+      currentX += colWidths[4];
+      doc.text(formatINR(loan.loanConfig?.totalInterest || 0), currentX, currentY + 5, { width: colWidths[5] - 10, align: colAligns[5] });
+      currentX += colWidths[5];
+      doc.text(formatINR((loan.amount || 0) + (loan.loanConfig?.totalInterest || 0)), currentX, currentY + 5, { width: colWidths[6] - 10, align: colAligns[6] });
+      currentX += colWidths[6];
+      doc.text(formatINR(loan.repayment?.totalPaid || 0), currentX, currentY + 5, { width: colWidths[7] - 10, align: colAligns[7] });
+      currentX += colWidths[7];
+      doc.text(formatINR(loan.repayment?.remainingBalance || 0), currentX, currentY + 5, { width: colWidths[8] - 10, align: colAligns[8] });
+      currentX += colWidths[8];
+
+      // Status Badge in PDF
+      const s = loan.status;
+      const sColor = s === 'completed' ? '#059669' : (s === 'active' || s === 'disbursed' ? '#2563eb' : '#64748b');
+      doc.save().font('Helvetica-Bold').fillColor(sColor).text(s.toUpperCase(), currentX, currentY + 5, { width: colWidths[9] - 10, align: colAligns[9] }).restore();
+
+      currentY += 18;
+    });
+
+    // Footer
+    const pages = doc.bufferedPageRange();
+    for (let i = 0; i < pages.count; i++) {
+        doc.switchToPage(i);
+        doc.fontSize(7).fillColor('#94a3b8').text(
+            `Page ${i + 1} of ${pages.count}  |  Generated by HRMS System`,
+            MARGIN,
+            doc.page.height - 20,
+            { align: 'center', width: innerW }
+        );
+    }
+
+    doc.end();
+  } catch (error) {
+    console.error('Error in exportLoanReportPDF:', error);
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 

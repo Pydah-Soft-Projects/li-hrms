@@ -2793,6 +2793,60 @@ export const api = {
     return apiRequest<any>(`/loans${query}`, { method: 'GET' });
   },
 
+  // Get loan report summary
+  getLoanReportSummary: async (filters?: any) => {
+    const params = new URLSearchParams();
+    if (filters) {
+      Object.keys(filters).forEach(key => {
+        if (filters[key] !== undefined && filters[key] !== null) {
+          params.append(key, String(filters[key]));
+        }
+      });
+    }
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return apiRequest<any>(`/loans/reports/summary${query}`, { method: 'GET' });
+  },
+
+  // Export loans report (XLSX)
+  exportLoanReport: async (filters?: any) => {
+    const params = new URLSearchParams();
+    if (filters) {
+      Object.keys(filters).forEach(key => {
+        if (filters[key] !== undefined && filters[key] !== null) {
+          params.append(key, String(filters[key]));
+        }
+      });
+    }
+    const query = params.toString() ? `?${params.toString()}` : '';
+    const response = await fetch(`${API_BASE_URL}/loans/reports/export${query}`, {
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      }
+    });
+    if (!response.ok) throw new Error('Export failed');
+    return response.blob();
+  },
+
+  // Export loans report (PDF)
+  exportLoanReportPDF: async (filters?: any) => {
+    const params = new URLSearchParams();
+    if (filters) {
+      Object.keys(filters).forEach(key => {
+        if (filters[key] !== undefined && filters[key] !== null) {
+          params.append(key, String(filters[key]));
+        }
+      });
+    }
+    const query = params.toString() ? `?${params.toString()}` : '';
+    const response = await fetch(`${API_BASE_URL}/loans/reports/export-pdf${query}`, {
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      }
+    });
+    if (!response.ok) throw new Error('Export failed');
+    return response.blob();
+  },
+
   // Get my loans
   getMyLoans: async (filters?: { status?: string; requestType?: string }) => {
     const params = new URLSearchParams();

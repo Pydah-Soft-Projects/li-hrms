@@ -82,5 +82,12 @@ router.get('/:id/transactions', loanController.getTransactions);
 // Get early settlement preview
 router.get('/:id/settlement-preview', loanController.getSettlementPreview);
 
+// ==========================================
+// REPORT ROUTES
+// ==========================================
+router.get('/reports/summary', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), loanController.getLoanReportSummary);
+router.get('/reports/export', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), loanController.exportLoanReport);
+router.get('/reports/export-pdf', authorize('manager', 'hod', 'hr', 'sub_admin', 'super_admin'), loanController.exportLoanReportPDF);
+
 module.exports = router;
 
