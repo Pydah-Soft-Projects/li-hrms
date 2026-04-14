@@ -323,21 +323,35 @@ const syncAttendanceFromMSSQL = async (fromDate = null, toDate = null) => {
 const filterRedundantLogs = (logs, windowMinutes = 30) => {
   const filteredLogs = [];
   const windowMs = windowMinutes * 60 * 1000;
+  const CLOSE_OPPOSITE_TYPE_WINDOW_MS = 2 * 60 * 1000;
 
   const sortedLogs = [...logs].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
   const lastAcceptedByEmployee = new Map();
+  const openInCountByEmployeeDate = new Map();
 
   for (const log of sortedLogs) {
     const logTimestamp = new Date(log.timestamp);
     const logType = log.type != null && log.type !== '' ? log.type : 'IN';
     const empKey = String(log.employeeNumber || '').toUpperCase();
+    const dayKey = formatDate(logTimestamp);
+    const empDateKey = `${empKey}::${dayKey}`;
+    const openInCount = openInCountByEmployeeDate.get(empDateKey) || 0;
 
     const prev = lastAcceptedByEmployee.get(empKey);
     let isRedundant = false;
     if (prev) {
       const prevTs = new Date(prev.timestamp);
       const prevType = prev.type != null && prev.type !== '' ? prev.type : 'IN';
-      if (prevType === logType && Math.abs(prevTs.getTime() - logTimestamp.getTime()) <= windowMs) {
+      const sameTimestamp = prevTs.getTime() === logTimestamp.getTime();
+      const sameTypeWithinWindow = prevType === logType && Math.abs(prevTs.getTime() - logTimestamp.getTime()) <= windowMs;
+      const closeOutThenInWithOpenIn = (
+        prevType === 'OUT' &&
+        logType === 'IN' &&
+        (logTimestamp.getTime() - prevTs.getTime()) >= 0 &&
+        (logTimestamp.getTime() - prevTs.getTime()) <= CLOSE_OPPOSITE_TYPE_WINDOW_MS &&
+        openInCount > 0
+      );
+      if (sameTimestamp || sameTypeWithinWindow || closeOutThenInWithOpenIn) {
         isRedundant = true;
       }
     }
@@ -345,8 +359,13 @@ const filterRedundantLogs = (logs, windowMinutes = 30) => {
     if (!isRedundant) {
       filteredLogs.push(log);
       lastAcceptedByEmployee.set(empKey, log);
+      if (logType === 'IN') {
+        openInCountByEmployeeDate.set(empDateKey, openInCount + 1);
+      } else if (logType === 'OUT') {
+        openInCountByEmployeeDate.set(empDateKey, Math.max(0, openInCount - 1));
+      }
     } else {
-      console.log(`🚫 Filtered redundant log: Employee ${log.employeeNumber}, Time ${logTimestamp.toISOString()}, Type ${logType} (within ${windowMinutes}min window, same-type consecutive)`);
+      console.log(`🚫 Filtered redundant log: Employee ${log.employeeNumber}, Time ${logTimestamp.toISOString()}, Type ${logType} (same timestamp OR within ${windowMinutes}min window for same-type consecutive OR close OUT->IN with open IN)`);
     }
   }
 

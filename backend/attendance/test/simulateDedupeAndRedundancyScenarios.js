@@ -39,6 +39,16 @@ function main() {
     assert.equal(out[1].type, 'IN');
   });
 
+  run('Exact same timestamp with opposite types — second dropped', () => {
+    const punches = [
+      { timestamp: '2026-04-12T00:50:00.000Z', type: 'OUT' },
+      { timestamp: '2026-04-12T00:50:00.000Z', type: 'IN' },
+    ];
+    const out = dedupePunchesForMultiShift(punches);
+    assert.equal(out.length, 1);
+    assert.equal(out[0].type, 'OUT');
+  });
+
   run('Double IN: two IN 2 minutes apart — second dropped', () => {
     const punches = [
       { timestamp: '2026-04-12T09:00:00.000Z', type: 'IN' },
@@ -93,6 +103,28 @@ function main() {
       { employeeNumber: 'EMP_SIM', timestamp: '2026-04-12T09:15:00.000Z', type: 'IN' },
     ];
     assert.equal(filterRedundantLogs(logs, 30).length, 3);
+  });
+
+  run('If day still has unmatched IN, then OUT followed by IN in 1 minute — trailing IN dropped', () => {
+    const logs = [
+      { employeeNumber: 'EMP_SMART', timestamp: '2026-04-12T08:00:00.000Z', type: 'IN' },
+      { employeeNumber: 'EMP_SMART', timestamp: '2026-04-12T08:31:00.000Z', type: 'IN' },
+      { employeeNumber: 'EMP_SMART', timestamp: '2026-04-12T09:00:00.000Z', type: 'OUT' },
+      { employeeNumber: 'EMP_SMART', timestamp: '2026-04-12T09:01:00.000Z', type: 'IN' },
+    ];
+    const out = filterRedundantLogs(logs, 30);
+    assert.equal(out.length, 3);
+    assert.equal(out[0].type, 'IN');
+    assert.equal(out[1].type, 'IN');
+    assert.equal(out[2].type, 'OUT');
+  });
+
+  run('Same timestamp with different type (employee stream) — later one dropped', () => {
+    const logs = [
+      { employeeNumber: 'EMP_SAME_TS', timestamp: '2026-04-12T09:00:00.000Z', type: 'OUT' },
+      { employeeNumber: 'EMP_SAME_TS', timestamp: '2026-04-12T09:00:00.000Z', type: 'IN' },
+    ];
+    assert.equal(filterRedundantLogs(logs, 30).length, 1);
   });
 
   run('IN → IN 15 min apart — second IN dropped', () => {
