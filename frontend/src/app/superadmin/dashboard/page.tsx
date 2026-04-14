@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { api } from '@/lib/api';
+import { api, type InAppNotification } from '@/lib/api';
 import { Calendar, Bell, X, CheckCheck } from 'lucide-react';
 import { useSocket } from '@/contexts/SocketContext';
 
@@ -77,16 +77,6 @@ interface BirthdayItem {
   id: string;
   name: string;
   dateLabel: string;
-}
-
-interface InAppNotification {
-  _id: string;
-  title: string;
-  message: string;
-  module: string;
-  eventType: string;
-  createdAt: string;
-  isRead: boolean;
 }
 
 function formatYmd(d: Date): string {
@@ -238,7 +228,9 @@ export default function SuperAdminDashboard() {
           api.getNotificationUnreadCount(),
         ]);
         if (listRes?.success) setNotifications(listRes.data || []);
-        if (countRes?.success) setUnreadCount(countRes.unreadCount || 0);
+        if (countRes?.success) {
+          setUnreadCount(Number(countRes.unreadCount ?? countRes.data?.unreadCount ?? 0));
+        }
       } catch (err) {
         console.error('Failed to load notifications:', err);
       } finally {

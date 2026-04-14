@@ -379,6 +379,22 @@ export interface ApiResponse<T> {
   generatedPassword?: string;
   summaries?: any[];
   isHolidayOrWeekOff?: boolean;
+  unreadCount?: number;
+  updated?: number;
+}
+
+export interface InAppNotification {
+  _id: string;
+  title: string;
+  message: string;
+  module: string;
+  eventType: string;
+  createdAt: string;
+  isRead: boolean;
+}
+
+export interface NotificationUnreadCountResponse {
+  unreadCount: number;
 }
 
 export interface LoginResponse {
@@ -4844,18 +4860,18 @@ export const api = {
     limit?: number;
     isRead?: boolean;
     module?: string;
-  }) => {
+  }): Promise<ApiResponse<InAppNotification[]>> => {
     const query = new URLSearchParams();
     if (params?.page != null) query.append('page', String(params.page));
     if (params?.limit != null) query.append('limit', String(params.limit));
     if (typeof params?.isRead === 'boolean') query.append('isRead', String(params.isRead));
     if (params?.module) query.append('module', params.module);
     const suffix = query.toString() ? `?${query.toString()}` : '';
-    return apiRequest<any>(`/notifications${suffix}`, { method: 'GET' });
+    return apiRequest<InAppNotification[]>(`/notifications${suffix}`, { method: 'GET' });
   },
 
-  getNotificationUnreadCount: async () => {
-    return apiRequest<any>('/notifications/unread-count', { method: 'GET' });
+  getNotificationUnreadCount: async (): Promise<ApiResponse<NotificationUnreadCountResponse>> => {
+    return apiRequest<NotificationUnreadCountResponse>('/notifications/unread-count', { method: 'GET' });
   },
 
   markNotificationRead: async (id: string) => {
