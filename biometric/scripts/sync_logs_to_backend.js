@@ -51,9 +51,9 @@ if (!SYSTEM_KEY) {
     console.error('ERROR: HRMS_MICROSERVICE_SECRET_KEY not configured in biometric service .env');
     process.exit(1);
 }
-const BATCH_SIZE = 200; // Optimal batch size with delays
-const RETRY_ATTEMPTS = 3;
-const DELAY_BETWEEN_BATCHES = 1000; // 1s delay to prevent backend overload
+const BATCH_SIZE = parseInt(process.env.SYNC_BATCH_SIZE || 50); 
+const RETRY_ATTEMPTS = parseInt(process.env.SYNC_RETRY || 5);
+const DELAY_BETWEEN_BATCHES = parseInt(process.env.SYNC_DELAY || 2000); 
 
 function parseMonth(monthStr) {
     const m = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(String(monthStr || '').trim());
@@ -204,7 +204,7 @@ async function main() {
         await mongoose.connect(mongoURI);
         console.log(`✅ Connected to: ${mongoURI}\n`);
 
-        const allScope = isAllScope();
+        let allScope = isAllScope();
         let scope = {
             division: { name: 'ALL', code: '' },
             departments: [],
@@ -212,21 +212,48 @@ async function main() {
             activeDeptName: null,
         };
 
-        if (allScope) {
-            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-            console.log('Sync scope: ALL (SYNC_SCOPE=all or SYNC_DIVISION_NAME=all)');
-            console.log('   No division/department filter — all biometric logs in the date range.');
-            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
-        } else {
-            const hrmsMongoUri = process.env.HRMS_MONGODB_URI;
-            if (!hrmsMongoUri) {
-                throw new Error('Missing HRMS_MONGODB_URI in biometric .env (needed to scope sync by division).');
-            }
-
+        const hrmsMongoUri = process.env.HRMS_MONGODB_URI;
+        if (hrmsMongoUri) {
             hrmsConn = mongoose.createConnection(hrmsMongoUri, { maxPoolSize: 5 });
             await hrmsConn.asPromise();
             console.log(`✅ HRMS DB connected: ${hrmsMongoUri}\n`);
 
+            // Interactive Scope/Division selection
+            if (!allScope && !process.env.SYNC_DIVISION_NAME && process.stdin.isTTY) {
+                const Division = hrmsConn.models.HrmsDivision || hrmsConn.model('HrmsDivision', hrmsDivisionSchema);
+                const divisions = await Division.find({}).select('name code').sort({ name: 1 }).lean();
+
+                if (divisions.length > 0) {
+                    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                    console.log('🏢 Organization Scope Selection');
+                    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                    const scopeType = await prompt('Select Sync Scope: (1) All Divisions, (2) Specific Division [Default: 2]: ');
+                    
+                    if (scopeType === '1') {
+                        allScope = true;
+                    } else if (divisions.length > 0) {
+                        console.log(`\nAvailable Divisions (${divisions.length}):`);
+                        divisions.forEach((d, i) => {
+                            console.log(`   ${String(i + 1).padStart(2)}. ${d.name}${d.code ? ` (${d.code})` : ''}`);
+                        });
+                        const divInput = await prompt(`\nSelect Division Number (1-${divisions.length}) [Default: 1]: `);
+                        const idx = divInput ? parseInt(divInput) - 1 : 0;
+                        if (divisions[idx]) {
+                            process.env.SYNC_DIVISION_NAME = divisions[idx].name;
+                        }
+                    }
+                }
+            }
+        } else if (!allScope) {
+            throw new Error('Missing HRMS_MONGODB_URI in biometric .env (needed to scope sync by division).');
+        }
+
+        if (allScope) {
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            console.log('Sync scope: ALL DIVISIONS');
+            console.log('   No division/department filter — all biometric logs in the date range.');
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+        } else {
             const SYNC_DIVISION_NAME = process.env.SYNC_DIVISION_NAME || DEFAULT_SYNC_DIVISION_NAME;
             let SYNC_DEPT = process.env.SYNC_DEPT;
             scope = await loadDivisionScope(hrmsConn, SYNC_DIVISION_NAME, SYNC_DEPT);
@@ -244,7 +271,7 @@ async function main() {
             });
 
             // Interactive selection if not provided in env
-            if (!SYNC_DEPT && process.stdin.isTTY) {
+            if (!SYNC_DEPT && process.stdin.isTTY && scope.departments.length > 0) {
                 const input = await prompt(`\nSelect Department Number (1-${scope.departments.length}) or press Enter for ALL: `);
                 if (input && !isNaN(input)) {
                     const idx = parseInt(input) - 1;
@@ -268,13 +295,34 @@ async function main() {
             }
         }
 
-        // ── STEP 2: Resend logs to backend (Filtered by month) ───────────────────
-        // ── Configure Filter ───────────────────
+        // ── STEP 2: Configure Filter ───────────────────
         const SYNC_EMP = process.env.SYNC_EMP;
-        const SYNC_START = process.env.SYNC_START; // Format: YYYY-MM-DD
-        const SYNC_END = process.env.SYNC_END;     // Format: YYYY-MM-DD
-        const SYNC_MONTH = process.env.SYNC_MONTH || '2026-03';
+        let SYNC_START = process.env.SYNC_START; // Format: YYYY-MM-DD
+        let SYNC_END = process.env.SYNC_END;     // Format: YYYY-MM-DD
+        let SYNC_MONTH_ARG = process.env.SYNC_MONTH;
 
+        // Interactive Date Selection
+        if (!SYNC_START && !SYNC_END && !SYNC_MONTH_ARG && process.stdin.isTTY) {
+            console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            console.log('📅 Date Range Selection');
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            const type = await prompt('Select Sync Mode: (1) Specific Date Range, (2) Payroll Month [Default: 2]: ');
+            
+            if (type === '1') {
+                SYNC_START = await prompt('   Enter Start Date (YYYY-MM-DD): ');
+                SYNC_END = await prompt('   Enter End Date (YYYY-MM-DD): ');
+                if (!SYNC_START || !SYNC_END) {
+                    console.log('   ⚠️  Incomplete range. Falling back to default payroll month.');
+                    SYNC_START = null;
+                    SYNC_END = null;
+                }
+            } else {
+                const monthInput = await prompt('   Enter Payroll Month (YYYY-MM) [Press Enter for default]: ');
+                if (monthInput) SYNC_MONTH_ARG = monthInput;
+            }
+        }
+
+        const SYNC_MONTH = SYNC_MONTH_ARG || '2026-03';
         let START_DATE, END_DATE;
 
         if (SYNC_START && SYNC_END) {
@@ -284,7 +332,7 @@ async function main() {
             // Fallback to month-based logic
             const monthCfg = parseMonth(SYNC_MONTH);
             if (!monthCfg) {
-                throw new Error('Invalid SYNC_MONTH. Use YYYY-MM (example: 2026-03)');
+                throw new Error(`Invalid month format: "${SYNC_MONTH}". Use YYYY-MM (example: 2026-03)`);
             }
             const { year, month } = monthCfg;
             // Payroll cycle: 26th of prev month to 25th of current month
@@ -363,7 +411,7 @@ async function main() {
                     try {
                         const response = await axios.post(SYNC_ENDPOINT, payload, {
                             headers: { 'x-system-key': SYSTEM_KEY },
-                            timeout: 180000, // 3 minutes timeout
+                            timeout: parseInt(process.env.SYNC_TIMEOUT || 600000), // 10 minutes timeout
                         });
                         processed += logs.length;
                         successBatches++;
