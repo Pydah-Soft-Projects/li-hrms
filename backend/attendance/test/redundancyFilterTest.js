@@ -61,6 +61,21 @@ function testRedundancyFilter() {
   console.log('📋 Case 5: IN → OUT → IN within 30 min — all kept');
   console.log('   ✓ pass\n');
 
+  // Case 6: Smart rule - if day has open IN, close OUT then immediate IN should be ignored
+  const testLogs6 = [
+    { employeeNumber: 'EMP007', timestamp: '2026-02-23T08:00:00Z', type: 'IN', source: 'test' },
+    { employeeNumber: 'EMP007', timestamp: '2026-02-23T08:31:00Z', type: 'IN', source: 'test' },
+    { employeeNumber: 'EMP007', timestamp: '2026-02-23T09:00:00Z', type: 'OUT', source: 'test' },
+    { employeeNumber: 'EMP007', timestamp: '2026-02-23T09:01:00Z', type: 'IN', source: 'test' },
+  ];
+  const filtered6 = filterRedundantLogs(testLogs6, 30);
+  assert.equal(filtered6.length, 3, 'expected trailing IN to be dropped by smart OUT->IN rule');
+  assert.equal(filtered6[0].type, 'IN');
+  assert.equal(filtered6[1].type, 'IN');
+  assert.equal(filtered6[2].type, 'OUT');
+  console.log('📋 Case 6: unmatched IN exists + OUT then IN in 1 min — trailing IN dropped');
+  console.log('   ✓ pass\n');
+
   console.log('🎯 Redundancy filter: all cases passed.');
 }
 

@@ -159,9 +159,19 @@ function dedupePunchesForMultiShift(punches) {
     const deduplicatedPunches = [];
     for (const p of ordered) {
         const last = deduplicatedPunches[deduplicatedPunches.length - 1];
-        const sameType = last && p.type === last.type;
-        if (last && sameType && (new Date(p.timestamp) - new Date(last.timestamp)) < DEDUP_WINDOW_MS) {
-            continue;
+        if (last) {
+            const lastTs = new Date(last.timestamp).getTime();
+            const currentTs = new Date(p.timestamp).getTime();
+            const sameType = p.type === last.type;
+
+            // Reject exact same-time events even if operation type differs.
+            if (currentTs === lastTs) {
+                continue;
+            }
+
+            if (sameType && (currentTs - lastTs) < DEDUP_WINDOW_MS) {
+                continue;
+            }
         }
         deduplicatedPunches.push(p);
     }
