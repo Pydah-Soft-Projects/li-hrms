@@ -11,6 +11,7 @@
     "test:api": "jest tests/api",
     "test:health": "jest tests/api/health.test.js",
     "test:attendance": "node tests/attendance-dual-mode-comprehensive.test.js",
+    "test:punch-pipeline": "node attendance/test/simulateDedupeAndRedundancyScenarios.js && node attendance/test/redundancyFilterTest.js",
     "test:single-shift-partial": "node scripts/test_single_shift_out_only_partial.js",
     "sync:atlas-biometric": "node scripts/sync_atlas_biometric_to_attendance.js",
     "test:watch": "jest --watch",
