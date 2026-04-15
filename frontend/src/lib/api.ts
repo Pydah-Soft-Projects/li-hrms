@@ -1933,6 +1933,11 @@ export const api = {
     return apiRequest<any[]>(`/employee-updates${query}`, { method: 'GET' });
   },
 
+  getMyEmployeeUpdateRequests: async (params?: { status?: string }) => {
+    const query = params?.status ? `?status=${params.status}` : '';
+    return apiRequest<any[]>(`/employee-updates/my${query}`, { method: 'GET' });
+  },
+
   createEmployeeUpdateRequest: async (data: { requestedChanges: any; comments?: string; type?: string; employeeId?: string }) => {
     return apiRequest<any>('/employee-updates', {
       method: 'POST',

@@ -235,6 +235,73 @@ exports.getRequests = async (req, res) => {
 };
 
 /**
+ * @desc    Get current user's update requests
+ * @route   GET /api/employee-updates/my
+ * @access  Private
+ */
+exports.getMyRequests = async (req, res) => {
+    try {
+        const { status } = req.query;
+        const ownershipFilters = [];
+
+        if (req.user?._id && mongoose.Types.ObjectId.isValid(req.user._id)) {
+            ownershipFilters.push({ createdBy: req.user._id });
+        }
+
+        if (req.user?.employeeRef && mongoose.Types.ObjectId.isValid(req.user.employeeRef)) {
+            ownershipFilters.push({ employeeId: req.user.employeeRef });
+        }
+
+        if (req.user?.employeeId) {
+            if (mongoose.Types.ObjectId.isValid(req.user.employeeId)) {
+                ownershipFilters.push({ employeeId: req.user.employeeId });
+            } else {
+                ownershipFilters.push({ emp_no: req.user.employeeId });
+            }
+        }
+
+        if (req.user?.emp_no) {
+            ownershipFilters.push({ emp_no: req.user.emp_no });
+        }
+
+        if (!ownershipFilters.length) {
+            return res.json({
+                success: true,
+                data: []
+            });
+        }
+
+        const query = { $or: ownershipFilters };
+        if (status) query.status = status;
+
+        const requests = await EmployeeUpdateApplication.find(query)
+            .populate({
+                path: 'employeeId',
+                // IMPORTANT: division/department/designation are virtuals; must include *_id refs for populate.
+                // Include fields needed for "meaningful change" detection, same as superadmin modal.
+                select: 'employee_name profilePhoto emp_no division_id department_id designation_id dynamicFields salaries email phone_number address blood_group qualifications dob doj gender marital_status gross_salary bank_account_no bank_name bank_place ifsc_code pf_number esi_number salary_mode ctcSalary calculatedSalary paidLeaves allottedLeaves casualLeaves sickLeaves maternityLeaves onDutyLeaves compensatoryOffs second_salary is_active leftDate leftReason applyProfessionTax applyESI applyPF applyAttendanceDeduction deductLateIn deductEarlyOut deductPermission deductAbsent',
+                populate: [
+                    { path: 'division', select: 'name' },
+                    { path: 'department', select: 'name' },
+                    { path: 'designation', select: 'name' }
+                ]
+            })
+            .populate('createdBy', 'name email')
+            .sort({ updatedAt: -1, createdAt: -1 });
+
+        res.json({
+            success: true,
+            data: requests
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+};
+
+/**
  * @desc    Approve an update request (Superadmin)
  * @route   PUT /api/employee-updates/:id/approve
  * @access  Private (Superadmin)
@@ -277,16 +344,31 @@ exports.approveRequest = async (req, res) => {
 
         const { selectedFields } = req.body;
         let updates = { ...request.requestedChanges };
+        let rejectedUpdates = {};
 
         // If granular approval is requested, filter the changes
         if (selectedFields && Array.isArray(selectedFields)) {
             const filteredUpdates = {};
+            const rejectedSubset = {};
             selectedFields.forEach(field => {
                 if (updates.hasOwnProperty(field)) {
                     filteredUpdates[field] = updates[field];
                 }
             });
+            Object.keys(updates).forEach(field => {
+                if (!selectedFields.includes(field)) {
+                    rejectedSubset[field] = updates[field];
+                }
+            });
             updates = filteredUpdates;
+            rejectedUpdates = rejectedSubset;
+        }
+
+        if (!Object.keys(updates).length) {
+            return res.status(400).json({
+                success: false,
+                message: 'No fields selected for approval'
+            });
         }
 
         const permanentUpdates = {};
@@ -356,10 +438,42 @@ exports.approveRequest = async (req, res) => {
             }
         }).catch(err => console.error('Failed to log history:', err));
 
-        // 4. Update request status
+        // 4. Update request status and persist approved subset
+        const originalPreviousValues = request.previousValues && typeof request.previousValues === 'object'
+            ? { ...request.previousValues }
+            : null;
+        request.requestedChanges = updates;
+        if (originalPreviousValues) {
+            const approvedPreviousValues = {};
+            Object.keys(updates).forEach((key) => {
+                approvedPreviousValues[key] = originalPreviousValues[key];
+            });
+            request.previousValues = approvedPreviousValues;
+        }
         request.status = 'approved';
         request.approvedBy = req.user._id;
         await request.save();
+
+        // 5. Persist rejected remainder as a separate request for audit/UI visibility
+        if (Object.keys(rejectedUpdates).length > 0) {
+            const rejectedPreviousValues = {};
+            Object.keys(rejectedUpdates).forEach((key) => {
+                rejectedPreviousValues[key] = originalPreviousValues ? originalPreviousValues[key] : null;
+            });
+
+            await EmployeeUpdateApplication.create({
+                employeeId: request.employeeId,
+                emp_no: request.emp_no,
+                requestedChanges: rejectedUpdates,
+                previousValues: rejectedPreviousValues,
+                status: 'rejected',
+                type: request.type || 'profile',
+                createdBy: request.createdBy,
+                approvedBy: req.user._id,
+                parentRequestId: request._id,
+                comments: request.comments || 'Rejected during partial approval'
+            });
+        }
 
         res.json({
             success: true,

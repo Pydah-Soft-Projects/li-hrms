@@ -88,6 +88,7 @@ interface UpdateRequest {
   };
   comments?: string;
   createdAt: string;
+  updatedAt?: string;
 }
 
 const normalizeValue = (v: any) => {
@@ -1639,7 +1640,23 @@ export default function EmployeesPage() {
         status: updateRequestStatusFilter !== 'all' ? updateRequestStatusFilter : undefined
       });
       if (res.success) {
-        setUpdateRequests(res.data || []);
+        const rows = (res.data || []) as UpdateRequest[];
+        const sortedRows = [...rows].sort((a, b) => {
+          const getTs = (value?: string) => {
+            const ts = value ? new Date(value).getTime() : 0;
+            return Number.isFinite(ts) ? ts : 0;
+          };
+
+          if (updateRequestStatusFilter === 'approved' || updateRequestStatusFilter === 'rejected') {
+            // Processed tabs: show most recently status-updated first.
+            return getTs(b.updatedAt || b.createdAt) - getTs(a.updatedAt || a.createdAt);
+          }
+
+          // Keep latest-first order for other tabs.
+          return getTs(b.createdAt) - getTs(a.createdAt);
+        });
+
+        setUpdateRequests(sortedRows);
       }
     } catch (err) {
       console.error('Failed to fetch update requests');
@@ -2685,6 +2702,85 @@ export default function EmployeesPage() {
     }
   };
 
+  const openEmployeeViewFromApplication = async (application: EmployeeApplication) => {
+    // Open unified employee view from applications workflow.
+    const mappedEmployee: any = {
+      emp_no: application.emp_no,
+      employee_name: application.employee_name,
+      division_id: application.division_id,
+      department_id: application.department_id,
+      designation_id: application.designation_id,
+      employee_group_id: (application as any).employee_group_id,
+      employee_group: (application as any).employee_group,
+      department: application.department,
+      designation: application.designation,
+      doj: application.doj,
+      dob: application.dob,
+      gross_salary: (application as any).gross_salary ?? application.proposedSalary,
+      proposedSalary: application.proposedSalary,
+      approvedSalary: application.approvedSalary,
+      second_salary: (application as any).second_salary,
+      gender: application.gender,
+      marital_status: application.marital_status,
+      blood_group: application.blood_group,
+      qualifications: application.qualifications,
+      experience: application.experience,
+      address: application.address,
+      location: application.location,
+      aadhar_number: application.aadhar_number,
+      phone_number: application.phone_number,
+      alt_phone_number: application.alt_phone_number,
+      email: application.email,
+      pf_number: application.pf_number,
+      esi_number: application.esi_number,
+      bank_account_no: application.bank_account_no,
+      bank_name: application.bank_name,
+      bank_place: application.bank_place,
+      ifsc_code: application.ifsc_code,
+      is_active: true,
+      qualificationStatus: (application as any).qualificationStatus,
+      profilePhoto: (application as any).profilePhoto,
+    };
+
+    setViewingEmployee(mappedEmployee as Employee);
+    setEmployeeViewTab('profile');
+    setEmployeeHistory([]);
+    setShowViewDialog(true);
+
+    // Keep selected application context for verify/finalize actions in unified dialog.
+    setSelectedApplication(application);
+    if (application.status === 'verified') {
+      initApprovalState(application);
+    }
+
+    // Refresh with actual employee record when it exists.
+    try {
+      if (application.emp_no) {
+        const response = await api.getEmployee(application.emp_no);
+        if (response.success && response.data) {
+          setViewingEmployee(response.data);
+        }
+      }
+    } catch (error) {
+      console.error('Error refreshing employee data from application view:', error);
+    }
+
+    // Fetch employee history when available.
+    try {
+      if (application.emp_no) {
+        setEmployeeHistoryLoading(true);
+        const historyRes = await api.getEmployeeHistory(application.emp_no);
+        if (historyRes.success && Array.isArray(historyRes.data)) {
+          setEmployeeHistory(historyRes.data);
+        } else {
+          setEmployeeHistory([]);
+        }
+      }
+    } finally {
+      setEmployeeHistoryLoading(false);
+    }
+  };
+
 
 
   const openCreateDialog = () => {
@@ -2854,8 +2950,22 @@ export default function EmployeesPage() {
 
       if (response.success) {
         setSuccess('Application verified and employee created! Now awaiting final salary approval.');
-        loadApplications();
-        loadEmployees();
+        await loadApplications();
+        await loadEmployees();
+
+        // Keep the same unified dialog context and promote to verified flow.
+        try {
+          const refreshed = await api.getEmployeeApplications({
+            search: application.emp_no || application.employee_name || undefined,
+          });
+          const updatedApp = (refreshed.data || []).find((a: any) => a._id === application._id);
+          if (updatedApp && updatedApp.status === 'verified') {
+            setSelectedApplication(updatedApp);
+            initApprovalState(updatedApp);
+          }
+        } catch (e) {
+          // Non-blocking: UI can still continue with current state.
+        }
       } else {
         setError(response.message || 'Verification failed');
       }
@@ -3583,7 +3693,7 @@ export default function EmployeesPage() {
                               </td>
                               <td className="px-6 py-4 text-right">
                                 <button
-                                  onClick={() => handleVerifyApplication(app)}
+                                  onClick={() => openEmployeeViewFromApplication(app)}
                                   className="px-4 py-1.5 rounded-lg bg-indigo-600 text-white text-[10px] font-bold uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-600/20"
                                 >
                                   Verify
@@ -3631,7 +3741,7 @@ export default function EmployeesPage() {
                               <td className="px-6 py-4 text-right">
                                 {canFinalizeSalary({ role: userRole } as any) && (
                                   <button
-                                    onClick={() => openApprovalDialog(app)}
+                                    onClick={() => openEmployeeViewFromApplication(app)}
                                     className="px-4 py-1.5 rounded-lg bg-green-600 text-white text-[10px] font-bold uppercase tracking-widest hover:bg-green-700 transition-all shadow-lg shadow-green-600/20"
                                   >
                                     Finalize Salary
@@ -3995,14 +4105,6 @@ export default function EmployeesPage() {
                             const oldValue = req.previousValues?.[field] ??
                               (req.employeeId as any)[field] ??
                               (req.employeeId.dynamicFields?.[field]);
-
-                            const nOld = normalizeValue(oldValue);
-                            const nNew = normalizeValue(newValue);
-                            if (JSON.stringify(nOld) === JSON.stringify(nNew)) return null;
-
-                            const fOld = formatValue(oldValue);
-                            const fNew = formatValue(newValue);
-                            if (fOld === fNew && fOld !== 'Object' && !fOld.startsWith('List')) return null;
 
                             return (
                               <div key={field} className="rounded-xl border border-slate-100 bg-slate-50/50 p-3 transition-colors hover:border-indigo-100 hover:bg-white dark:border-slate-800 dark:bg-slate-900/50 dark:hover:bg-slate-900">
@@ -4506,50 +4608,6 @@ export default function EmployeesPage() {
                     </div>
                   )}
 
-                  {/* Leave Settings (Optional) */}
-                  <div className="rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
-                    <h3 className="mb-3 text-base font-semibold text-slate-900 dark:text-slate-100">Leave Settings (Optional)</h3>
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                      <div>
-                        <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                          Monthly Paid Leaves
-                        </label>
-                          <input
-                            type="number"
-                            name="paidLeaves"
-                            value={applicationFormData.paidLeaves ?? ''}
-                            onChange={handleApplicationInputChange}
-                            onWheel={(e) => e.currentTarget.blur()}
-                            min="0"
-                            step="0.5"
-                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 no-spinner"
-                            placeholder="Optional"
-                          />
-                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                          Monthly recurring paid leaves
-                        </p>
-                      </div>
-                      <div>
-                        <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                          Yearly Allotted Leaves
-                        </label>
-                          <input
-                            type="number"
-                            name="allottedLeaves"
-                            value={applicationFormData.allottedLeaves ?? ''}
-                            onChange={handleApplicationInputChange}
-                            onWheel={(e) => e.currentTarget.blur()}
-                            min="0"
-                            step="0.5"
-                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 no-spinner"
-                            placeholder="Optional"
-                          />
-                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                          Yearly total for without_pay/LOP leaves
-                        </p>
-                      </div>
-                    </div>
-                  </div>
                   {/* Allowances & Deductions Overrides */}
                   <div className="space-y-4 rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
                     <div className="flex items-center justify-between">
@@ -6015,6 +6073,31 @@ export default function EmployeesPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    {activeTab === 'applications' && selectedApplication?.status === 'pending' && (
+                      <button
+                        onClick={() => handleVerifyApplication(selectedApplication)}
+                        className="rounded-xl bg-violet-600 px-4 py-2 text-xs font-bold uppercase tracking-widest text-white shadow-lg shadow-violet-600/20 transition-all hover:bg-violet-700"
+                      >
+                        Verify
+                      </button>
+                    )}
+                    {activeTab === 'applications' && selectedApplication?.status === 'verified' && canFinalizeSalary({ role: userRole } as any) && (
+                      <button
+                        onClick={() => {
+                          if (selectedApplication) {
+                            initApprovalState(selectedApplication);
+                          }
+                          setEmployeeViewTab('profile');
+                          setTimeout(() => {
+                            const element = document.getElementById('salary-approval-section');
+                            element?.scrollIntoView({ behavior: 'smooth' });
+                          }, 100);
+                        }}
+                        className="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-bold uppercase tracking-widest text-white shadow-lg shadow-indigo-600/20 transition-all hover:bg-indigo-700"
+                      >
+                        Finalize Salary
+                      </button>
+                    )}
                     {viewingEmployee.leftDate && (
                       <button
                         onClick={() => {

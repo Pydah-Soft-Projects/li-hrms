@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { api, Department, Division, Designation } from '@/lib/api';
 import { auth } from '@/lib/auth';
@@ -547,8 +548,17 @@ const getRequestedDays = (fromDate: string, toDate: string, isHalfDay: boolean):
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
 };
 
-export default function LeavesPage() {
+function LeavesPageContent() {
+  const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<'leaves' | 'od' | 'pending'>('leaves');
+
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab === 'pending' || tab === 'od' || tab === 'leaves') {
+      setActiveTab(tab as any);
+    }
+  }, [searchParams]);
+
   const [leaves, setLeaves] = useState<LeaveApplication[]>([]);
   const [ods, setODs] = useState<ODApplication[]>([]);
   const [pendingLeaves, setPendingLeaves] = useState<LeaveApplication[]>([]);
@@ -4997,6 +5007,14 @@ export default function LeavesPage() {
         breakdown={breakdownModal.data}
       />
     </div >
+  );
+}
+
+export default function LeavesPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>}>
+      <LeavesPageContent />
+    </Suspense>
   );
 }
 

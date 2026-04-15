@@ -21,6 +21,9 @@ interface UpdateRequestReviewModalProps {
         };
         requestedChanges: Record<string, unknown>;
         previousValues?: Record<string, unknown>;
+        createdBy?: {
+            name?: string;
+        };
     };
     rejectComments: string;
     setRejectComments: (comments: string) => void;
@@ -185,11 +188,13 @@ export default function UpdateRequestReviewModal({
                 .filter(([field, newValue]) => {
                     const isNoise = field.startsWith('_') || noiseFields.some(nf => nf.toLowerCase() === field.toLowerCase());
                     if (isNoise) return false;
-
                     const empData = (request.employeeId || request.employee_id) as Record<string, unknown>;
-                    const oldValue = request.previousValues?.[field] ??
-                        empData?.[field] ??
-                        (empData?.dynamicFields as any)?.[field];
+                    const hasSnapshot = Object.prototype.hasOwnProperty.call(request.previousValues || {}, field);
+                    const oldValue = hasSnapshot
+                        ? request.previousValues?.[field]
+                        : (request.status === 'pending'
+                            ? (empData?.[field] ?? (empData?.dynamicFields as any)?.[field])
+                            : undefined);
 
                     const normalize = (v: any) => {
                         if (v === null || v === undefined || v === '' || v === 0 || v === '0' || v === false || v === 'false') return null;
@@ -204,6 +209,9 @@ export default function UpdateRequestReviewModal({
                     const nOld = normalize(oldValue);
                     const nNew = normalize(newValue);
                     if (JSON.stringify(nOld) === JSON.stringify(nNew)) return false;
+
+                    // For processed requests, if no old snapshot exists, keep the field visible.
+                    if (request.status !== 'pending' && !hasSnapshot) return true;
 
                     const formattedOld = resolveValue(oldValue, field);
                     const formattedNew = resolveValue(newValue, field);
@@ -236,6 +244,7 @@ export default function UpdateRequestReviewModal({
                         <div>
                             <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100">Review Update Request</h3>
                             <p className="text-sm text-slate-500">From {(request.employeeId || request.employee_id)?.employee_name} ({request.emp_no})</p>
+                            <p className="text-xs text-slate-400 mt-1">Applied by: {request.createdBy?.name || 'Unknown User'}</p>
                         </div>
                     </div>
                     <button
@@ -267,11 +276,13 @@ export default function UpdateRequestReviewModal({
                                 
                                 const isNoise = field.startsWith('_') || noiseFields.some(nf => nf.toLowerCase() === field.toLowerCase());
                                 if (isNoise) return false;
-
                                 const empData = (request.employeeId || request.employee_id) as Record<string, unknown>;
-                                const oldValue = request.previousValues?.[field] ??
-                                    empData?.[field] ??
-                                    (empData?.dynamicFields as any)?.[field];
+                                const hasSnapshot = Object.prototype.hasOwnProperty.call(request.previousValues || {}, field);
+                                const oldValue = hasSnapshot
+                                    ? request.previousValues?.[field]
+                                    : (request.status === 'pending'
+                                        ? (empData?.[field] ?? (empData?.dynamicFields as any)?.[field])
+                                        : undefined);
 
                                 const normalize = (v: any) => {
                                     if (v === null || v === undefined || v === '' || v === 0 || v === '0' || v === false || v === 'false') return null;
@@ -286,6 +297,8 @@ export default function UpdateRequestReviewModal({
                                 const nOld = normalize(oldValue);
                                 const nNew = normalize(newValue);
                                 if (JSON.stringify(nOld) === JSON.stringify(nNew)) return false;
+
+                                if (request.status !== 'pending' && !hasSnapshot) return true;
 
                                 const formattedOld = resolveValue(oldValue, field);
                                 const formattedNew = resolveValue(newValue, field);
@@ -303,7 +316,7 @@ export default function UpdateRequestReviewModal({
                                 const formattedOld = resolveValue(oldValue, field);
                                 const formattedNew = resolveValue(newValue, field);
 
-                                if (formattedOld === formattedNew) return null;
+                                if (request.status === 'pending' && formattedOld === formattedNew) return null;
 
                                 return (
                                     <div 
@@ -330,7 +343,7 @@ export default function UpdateRequestReviewModal({
                                                     {getFieldLabel(field, formGroups)}
                                                 </span>
                                             </div>
-                                            {isSelected && <span className="text-[10px] font-bold text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity">Selected for update</span>}
+                                            {request.status === 'pending' && isSelected && <span className="text-[10px] font-bold text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity">Selected for update</span>}
                                         </div>
                                         <div className="grid grid-cols-2 gap-8">
                                             <div className={`text-sm ${typeof formattedOld === 'string' ? 'text-slate-500 line-through decoration-red-300/50' : ''}`}>

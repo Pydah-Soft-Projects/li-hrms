@@ -7,7 +7,7 @@ import 'react-toastify/dist/ReactToastify.css';
 import { api } from '@/lib/api';
 import DeductionForm from '@/components/ManualDeductions/DeductionForm';
 import Spinner from '@/components/Spinner';
-import { Plus, Search, Eye, CheckCircle, Clock, TrendingDown, XCircle, AlertCircle, Users, Loader2, Trash2 } from 'lucide-react';
+import { Plus, Search, Eye, CheckCircle, Clock, TrendingDown, XCircle, AlertCircle, Users, Loader2, Trash2, Pencil } from 'lucide-react';
 
 const StatCard = ({ title, value, icon: Icon, bgClass, iconClass }: { title: string; value: number | string; icon: any; bgClass: string; iconClass: string }) => (
   <div className="rounded-3xl border border-slate-300 bg-slate-50/90 p-6 dark:border-slate-800 dark:bg-slate-900">
@@ -764,6 +764,17 @@ function DeductionDetailModal({ deductionId, onClose, onUpdate }: { deductionId:
     if (typeof entity === 'string') return entity;
     return entity.name || entity.title || entity.code || '—';
   };
+  const getEmployeeName = (emp: any) =>
+    emp?.employee_name ||
+    ([emp?.first_name, emp?.last_name].filter(Boolean).join(' ') || '') ||
+    emp?.emp_no ||
+    '—';
+  const formatDateTime = (value?: string) => {
+    if (!value) return '—';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '—';
+    return format(date, 'dd MMM yyyy, hh:mm a');
+  };
 
   const refresh = () => {
     if (!deductionId) return;
@@ -826,6 +837,7 @@ function DeductionDetailModal({ deductionId, onClose, onUpdate }: { deductionId:
 
   const handleSaveEdit = async () => {
     if (!deductionId || !deduction) return;
+    const previousStatus = deduction.status;
     const payload: any = {
       reason: editForm.reason.trim(),
       totalAmount: Number(editForm.totalAmount),
@@ -858,8 +870,15 @@ function DeductionDetailModal({ deductionId, onClose, onUpdate }: { deductionId:
     }
     setSavingEdit(true);
     try {
-      await api.editDeduction(deductionId, payload);
-      toast.success('Deduction request updated');
+      const res: any = await api.editDeduction(deductionId, payload);
+      const nextStatus = res?.data?.status ?? res?.data?.displayStatus ?? '';
+      const msg = res?.message || 'Deduction request updated';
+      toast.success(msg);
+
+      if (previousStatus !== 'pending_hod' && nextStatus === 'pending_hod') {
+        toast.info('Workflow moved to Pending HOD for re-approval.');
+        setActionComment('');
+      }
       onUpdate();
       await refresh();
     } catch (e: any) {
@@ -891,113 +910,194 @@ function DeductionDetailModal({ deductionId, onClose, onUpdate }: { deductionId:
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="fixed inset-0 bg-slate-900/50" onClick={onClose} />
-      <div className="relative z-50 w-full max-w-lg rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-xl overflow-hidden">
-        <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 px-6 py-4">
-          <h2 className="text-lg font-bold text-slate-950 dark:text-white">Deduction Details</h2>
-          <button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">×</button>
+      <div className="fixed inset-0 bg-slate-900/55 backdrop-blur-[2px]" onClick={onClose} />
+      <div className="relative z-50 w-full max-w-4xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+        <div className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 px-6 py-4 backdrop-blur dark:border-slate-700 dark:bg-slate-900/95">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">Deduction details</p>
+              {deduction ? (
+                <>
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <h2 className="truncate text-lg font-black tracking-tight text-slate-950 dark:text-white">{getEmployeeName(deduction.employee)}</h2>
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                      {deduction.employee?.emp_no || '—'}
+                    </span>
+                    <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${getStatusColor(deduction.status)}`}>
+                      {getStatusLabel(deduction.status)}
+                    </span>
+                  </div>
+                  <p className="mt-1 truncate text-xs text-slate-600 dark:text-slate-400">
+                    {getEntityName(deduction.employee?.division_id)} / {getEntityName(deduction.employee?.department_id)} / {getEntityName(deduction.employee?.designation_id)}
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <span className="inline-flex rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-black text-rose-700 dark:border-rose-900/40 dark:bg-rose-900/20 dark:text-rose-300">
+                      Amount: ₹{Number(deduction.totalAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </span>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400">Created: {formatDateTime(deduction.createdAt)}</span>
+                  </div>
+                </>
+              ) : (
+                <h2 className="mt-1 text-lg font-black tracking-tight text-slate-950 dark:text-white">Deduction Details</h2>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {deduction && canEdit && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (editMode) {
+                      setEditMode(false);
+                      setEditForm({
+                        startMonth: deduction.startMonth || '',
+                        endMonth: deduction.endMonth || '',
+                        monthlyAmount: deduction.monthlyAmount != null ? String(deduction.monthlyAmount) : '',
+                        totalAmount: deduction.totalAmount != null ? String(deduction.totalAmount) : '',
+                        reason: deduction.reason || '',
+                      });
+                    } else {
+                      setEditMode(true);
+                    }
+                  }}
+                  disabled={savingEdit}
+                  title={editMode ? 'Cancel edit' : 'Edit deduction'}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 text-slate-700 transition-colors hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800 disabled:opacity-50"
+                >
+                  <Pencil className="h-4 w-4" />
+                </button>
+              )}
+              {deduction && canRemove && (
+                <button
+                  type="button"
+                  onClick={handleRemove}
+                  disabled={removeLoading}
+                  title="Remove deduction"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-rose-300 text-rose-700 transition-colors hover:bg-rose-50 dark:border-rose-800 dark:text-rose-300 dark:hover:bg-rose-900/30 disabled:opacity-50"
+                >
+                  {removeLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                </button>
+              )}
+              <button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200">×</button>
+            </div>
+          </div>
         </div>
-        <div className="p-6">
+        <div className="max-h-[82vh] overflow-y-auto bg-slate-50/70 p-6 dark:bg-slate-950/40">
           {loading ? (
             <div className="flex justify-center py-8"><Spinner /></div>
           ) : deduction ? (
-            <div className="space-y-4 text-sm">
-              <p><span className="font-semibold text-slate-600 dark:text-slate-400">Employee:</span> {deduction.employee?.employee_name || deduction.employee?.emp_no || '—'}</p>
-              <p><span className="font-semibold text-slate-600 dark:text-slate-400">Employee code:</span> {deduction.employee?.emp_no || '—'}</p>
-              <p><span className="font-semibold text-slate-600 dark:text-slate-400">Division:</span> {getEntityName(deduction.employee?.division_id)}</p>
-              <p><span className="font-semibold text-slate-600 dark:text-slate-400">Department:</span> {getEntityName(deduction.employee?.department_id)}</p>
-              <p><span className="font-semibold text-slate-600 dark:text-slate-400">Designation:</span> {getEntityName(deduction.employee?.designation_id)}</p>
-              <p><span className="font-semibold text-slate-600 dark:text-slate-400">Type:</span> {deduction.type === 'direct' ? 'Direct' : 'Incremental'}</p>
-              {deduction.type !== 'direct' && (
-                <div className="grid grid-cols-2 gap-3">
-                  <label className="text-xs">
-                    <span className="font-semibold text-slate-600 dark:text-slate-400">Start month</span>
-                    {editMode ? (
-                      <input
-                        type="month"
-                        value={editForm.startMonth}
-                        onChange={(e) => setEditForm((p) => ({ ...p, startMonth: e.target.value }))}
-                        className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white px-2 py-1.5"
-                      />
-                    ) : (
-                      <span className="block">{deduction.startMonth || '—'}</span>
-                    )}
-                  </label>
-                  <label className="text-xs">
-                    <span className="font-semibold text-slate-600 dark:text-slate-400">End month</span>
-                    {editMode ? (
-                      <input
-                        type="month"
-                        value={editForm.endMonth}
-                        onChange={(e) => setEditForm((p) => ({ ...p, endMonth: e.target.value }))}
-                        className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white px-2 py-1.5"
-                      />
-                    ) : (
-                      <span className="block">{deduction.endMonth || '—'}</span>
-                    )}
-                  </label>
-                </div>
-              )}
-              {deduction.type !== 'direct' && (
-                <label className="text-xs block">
-                  <span className="font-semibold text-slate-600 dark:text-slate-400">Monthly amount</span>
-                  {editMode ? (
-                    <input
-                      type="number"
-                      min={0}
-                      step={0.01}
-                      value={editForm.monthlyAmount}
-                      onChange={(e) => setEditForm((p) => ({ ...p, monthlyAmount: e.target.value }))}
-                      className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white px-2 py-1.5"
-                    />
-                  ) : (
-                    <span className="block">₹{Number(deduction.monthlyAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                  )}
-                </label>
-              )}
-              <label className="text-xs block">
-                <span className="font-semibold text-slate-600 dark:text-slate-400">Total amount</span>
-                {editMode ? (
-                  <input
-                    type="number"
-                    min={0}
-                    step={0.01}
-                    value={editForm.totalAmount}
-                    onChange={(e) => setEditForm((p) => ({ ...p, totalAmount: e.target.value }))}
-                    className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white px-2 py-1.5"
-                  />
-                ) : (
-                  <span className="block text-rose-700 dark:text-rose-400 font-bold">₹{Number(deduction.totalAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                )}
-              </label>
-              <p><span className="font-semibold text-slate-600 dark:text-slate-400">Remaining:</span> ₹{Number(deduction.remainingAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
-              <p><span className="font-semibold text-slate-600 dark:text-slate-400">Status:</span> {getStatusLabel(deduction.status)}</p>
-              <label className="text-xs block">
-                <span className="font-semibold text-slate-600 dark:text-slate-400">Reason</span>
-                {editMode ? (
-                  <textarea
-                    value={editForm.reason}
-                    onChange={(e) => setEditForm((p) => ({ ...p, reason: e.target.value }))}
-                    rows={2}
-                    className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white px-3 py-2 resize-none"
-                  />
-                ) : (
-                  <span className="block">{deduction.reason || '—'}</span>
-                )}
-              </label>
+            <div className="space-y-5 text-sm">
+              <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 text-xs shadow-sm dark:border-slate-700 dark:bg-slate-900/70">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Deduction details</h3>
+                      <p className="mt-1 text-xs font-black text-slate-950 dark:text-white">
+                        {deduction.type === 'direct' ? 'Direct' : 'Incremental'}
+                      </p>
+                    </div>
+                    <span className={`inline-flex shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${getStatusColor(deduction.status)}`}>
+                      {getStatusLabel(deduction.status)}
+                    </span>
+                  </div>
 
-              {canEdit && (
-                <div className="flex flex-wrap gap-2">
-                  {!editMode ? (
-                    <button
-                      type="button"
-                      onClick={() => setEditMode(true)}
-                      className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 text-xs font-semibold"
-                    >
-                      Edit Request
-                    </button>
-                  ) : (
-                    <>
+                  {deduction.type !== 'direct' && (
+                    <div className="mt-4 grid grid-cols-2 gap-3">
+                      <label className="text-xs">
+                        <span className="font-semibold text-slate-600 dark:text-slate-400">Start month</span>
+                        {editMode ? (
+                          <input
+                            type="month"
+                            value={editForm.startMonth}
+                            onChange={(e) => setEditForm((p) => ({ ...p, startMonth: e.target.value }))}
+                            className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white px-2 py-1.5"
+                          />
+                        ) : (
+                          <span className="mt-1 block text-slate-900 dark:text-slate-100">{deduction.startMonth || '—'}</span>
+                        )}
+                      </label>
+                      <label className="text-xs">
+                        <span className="font-semibold text-slate-600 dark:text-slate-400">End month</span>
+                        {editMode ? (
+                          <input
+                            type="month"
+                            value={editForm.endMonth}
+                            onChange={(e) => setEditForm((p) => ({ ...p, endMonth: e.target.value }))}
+                            className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white px-2 py-1.5"
+                          />
+                        ) : (
+                          <span className="mt-1 block text-slate-900 dark:text-slate-100">{deduction.endMonth || '—'}</span>
+                        )}
+                      </label>
+                    </div>
+                  )}
+
+                  {deduction.type !== 'direct' && (
+                    <label className="mt-4 block text-xs">
+                      <span className="font-semibold text-slate-600 dark:text-slate-400">Monthly amount</span>
+                      {editMode ? (
+                        <input
+                          type="number"
+                          min={0}
+                          step={0.01}
+                          value={editForm.monthlyAmount}
+                          onChange={(e) => setEditForm((p) => ({ ...p, monthlyAmount: e.target.value }))}
+                          className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white px-2 py-1.5"
+                        />
+                      ) : (
+                        <span className="mt-1 block font-bold text-slate-900 dark:text-slate-100">
+                          ₹{Number(deduction.monthlyAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </span>
+                      )}
+                    </label>
+                  )}
+
+                  <label className="mt-4 block text-xs">
+                    <span className="font-semibold text-slate-600 dark:text-slate-400">Total amount</span>
+                    {editMode ? (
+                      <input
+                        type="number"
+                        min={0}
+                        step={0.01}
+                        value={editForm.totalAmount}
+                        onChange={(e) => setEditForm((p) => ({ ...p, totalAmount: e.target.value }))}
+                        className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white px-2 py-1.5"
+                      />
+                    ) : (
+                      <span className="mt-1 block text-rose-700 dark:text-rose-400 font-black">
+                        ₹{Number(deduction.totalAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </span>
+                    )}
+                  </label>
+
+                  <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/30">
+                      <div className="font-semibold text-slate-600 dark:text-slate-400">Remaining</div>
+                      <div className="mt-1 font-bold text-slate-950 dark:text-white">
+                        ₹{Number(deduction.remainingAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900/30">
+                      <div className="font-semibold text-slate-600 dark:text-slate-400">Status</div>
+                      <div className="mt-1 font-bold text-slate-950 dark:text-white">{getStatusLabel(deduction.status)}</div>
+                    </div>
+                  </div>
+
+                  <label className="mt-4 block text-xs">
+                    <span className="font-semibold text-slate-600 dark:text-slate-400">Reason</span>
+                    {editMode ? (
+                      <textarea
+                        value={editForm.reason}
+                        onChange={(e) => setEditForm((p) => ({ ...p, reason: e.target.value }))}
+                        rows={2}
+                        className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 dark:text-white px-3 py-2 resize-none"
+                      />
+                    ) : (
+                      <span className="mt-1 block break-words text-slate-800 dark:text-slate-200">{deduction.reason || '—'}</span>
+                    )}
+                  </label>
+
+                  {editMode && (
+                    <div className="mt-4 flex flex-wrap gap-2">
                       <button
                         type="button"
                         onClick={handleSaveEdit}
@@ -1007,69 +1107,70 @@ function DeductionDetailModal({ deductionId, onClose, onUpdate }: { deductionId:
                         {savingEdit ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                         Save Changes
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditMode(false);
-                          setEditForm({
-                            startMonth: deduction.startMonth || '',
-                            endMonth: deduction.endMonth || '',
-                            monthlyAmount: deduction.monthlyAmount != null ? String(deduction.monthlyAmount) : '',
-                            totalAmount: deduction.totalAmount != null ? String(deduction.totalAmount) : '',
-                            reason: deduction.reason || '',
-                          });
-                        }}
-                        disabled={savingEdit}
-                        className="inline-flex items-center gap-2 rounded-xl bg-slate-200 dark:bg-slate-700 px-4 py-2 text-xs font-semibold text-slate-800 dark:text-slate-100 disabled:opacity-50"
-                      >
-                        Cancel Edit
-                      </button>
-                    </>
+                    </div>
                   )}
                 </div>
-              )}
-              {canRemove && (
-                <button
-                  type="button"
-                  onClick={handleRemove}
-                  disabled={removeLoading}
-                  className="inline-flex items-center gap-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 text-xs font-semibold disabled:opacity-50"
-                >
-                  {removeLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                  Remove Request
-                </button>
-              )}
 
-              {/* Approval history: HOD → HR → Admin with comments */}
-              {(deduction.hodApproval?.approved != null || deduction.hrApproval?.approved != null || deduction.adminApproval?.approved != null) && (
-                <div className="pt-4 mt-4 border-t border-slate-200 dark:border-slate-700 space-y-3">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Approval history</h3>
-                  {deduction.hodApproval?.approved != null && (
-                    <div className="rounded-lg bg-slate-50 dark:bg-slate-800/50 p-3 text-xs">
-                      <p className="font-semibold text-slate-700 dark:text-slate-300">HOD</p>
-                      <p className="text-slate-600 dark:text-slate-400">{deduction.hodApproval.approved ? 'Approved' : 'Rejected'}{deduction.hodApproval.approvedAt ? ` · ${format(new Date(deduction.hodApproval.approvedAt), 'dd MMM yyyy, HH:mm')}` : ''}</p>
-                      {(deduction.hodApproval as any).approvedBy?.name && <p className="text-slate-500 dark:text-slate-400">By: {(deduction.hodApproval as any).approvedBy.name}</p>}
-                      {(deduction.hodApproval as any).comments && <p className="mt-1 text-slate-600 dark:text-slate-300 italic">{(deduction.hodApproval as any).comments}</p>}
+                <div>
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4 text-xs shadow-sm dark:border-slate-700 dark:bg-slate-900/70">
+                    <h3 className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Workflow stage</h3>
+                    <div className="mt-3 space-y-2">
+                      {[
+                        { key: 'pending_hod', label: 'HOD Approval' },
+                        { key: 'pending_hr', label: 'HR Approval' },
+                        { key: 'pending_admin', label: 'Admin Approval' },
+                        { key: 'approved', label: 'Approved' },
+                      ].map((step, idx) => {
+                        const s = deduction.status;
+                        const currentIndex = ['pending_hod', 'pending_hr', 'pending_admin', 'approved'].indexOf(
+                          ['partially_settled', 'settled'].includes(s) ? 'approved' : s
+                        );
+                        const stepIndex = ['pending_hod', 'pending_hr', 'pending_admin', 'approved'].indexOf(step.key);
+                        const isDone = currentIndex > -1 && stepIndex < currentIndex && s !== 'rejected';
+                        const isCurrent = stepIndex === currentIndex && s !== 'rejected';
+                        const isRejected = s === 'rejected';
+                        const stepApproval =
+                          step.key === 'pending_hod'
+                            ? deduction.hodApproval
+                            : step.key === 'pending_hr'
+                              ? deduction.hrApproval
+                              : step.key === 'pending_admin'
+                                ? deduction.adminApproval
+                                : null;
+
+                        return (
+                          <div key={step.key} className="flex items-start gap-3 rounded-lg px-2 py-1.5">
+                            <div className="relative">
+                              <div
+                                className={[
+                                  'mt-0.5 h-3.5 w-3.5 rounded-full border-2',
+                                  isRejected ? 'border-rose-500 bg-rose-50' : isDone ? 'border-emerald-500 bg-emerald-50' : isCurrent ? 'border-indigo-600 bg-indigo-50' : 'border-slate-300 bg-white dark:border-slate-600 dark:bg-slate-900',
+                                ].join(' ')}
+                              />
+                              {idx < 3 && <div className="mx-auto mt-1 h-6 w-px bg-slate-200 dark:bg-slate-700" />}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="font-bold text-slate-900 dark:text-slate-100">{step.label}</p>
+                                {isCurrent && <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-black uppercase text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300">Current</span>}
+                                {isDone && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-black uppercase text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">Done</span>}
+                                {isRejected && <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-black uppercase text-rose-700 dark:bg-rose-900/30 dark:text-rose-300">Rejected</span>}
+                              </div>
+                              {stepApproval?.approved != null && (
+                                <p className="mt-0.5 text-[11px] text-slate-600 dark:text-slate-400">
+                                  {stepApproval.approved ? 'Approved' : 'Rejected'}
+                                  {stepApproval.approvedAt ? ` · ${formatDateTime(stepApproval.approvedAt)}` : ''}
+                                  {(stepApproval as any)?.approvedBy?.name ? ` · By: ${(stepApproval as any).approvedBy.name}` : ''}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                  )}
-                  {deduction.hrApproval?.approved != null && (
-                    <div className="rounded-lg bg-slate-50 dark:bg-slate-800/50 p-3 text-xs">
-                      <p className="font-semibold text-slate-700 dark:text-slate-300">HR</p>
-                      <p className="text-slate-600 dark:text-slate-400">{deduction.hrApproval.approved ? 'Approved' : 'Rejected'}{deduction.hrApproval.approvedAt ? ` · ${format(new Date(deduction.hrApproval.approvedAt), 'dd MMM yyyy, HH:mm')}` : ''}</p>
-                      {(deduction.hrApproval as any).approvedBy?.name && <p className="text-slate-500 dark:text-slate-400">By: {(deduction.hrApproval as any).approvedBy.name}</p>}
-                      {(deduction.hrApproval as any).comments && <p className="mt-1 text-slate-600 dark:text-slate-300 italic">{(deduction.hrApproval as any).comments}</p>}
-                    </div>
-                  )}
-                  {deduction.adminApproval?.approved != null && (
-                    <div className="rounded-lg bg-slate-50 dark:bg-slate-800/50 p-3 text-xs">
-                      <p className="font-semibold text-slate-700 dark:text-slate-300">Admin</p>
-                      <p className="text-slate-600 dark:text-slate-400">{deduction.adminApproval.approved ? 'Approved' : 'Rejected'}{deduction.adminApproval.approvedAt ? ` · ${format(new Date(deduction.adminApproval.approvedAt), 'dd MMM yyyy, HH:mm')}` : ''}</p>
-                      {(deduction.adminApproval as any).approvedBy?.name && <p className="text-slate-500 dark:text-slate-400">By: {(deduction.adminApproval as any).approvedBy.name}</p>}
-                      {(deduction.adminApproval as any).comments && <p className="mt-1 text-slate-600 dark:text-slate-300 italic">{(deduction.adminApproval as any).comments}</p>}
-                    </div>
-                  )}
+                  </div>
                 </div>
-              )}
+              </div>
 
               {canAct && (
                 <div className="pt-4 mt-4 border-t border-slate-200 dark:border-slate-700 space-y-3">

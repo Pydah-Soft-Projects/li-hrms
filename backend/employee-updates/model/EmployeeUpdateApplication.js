@@ -36,6 +36,10 @@ const EmployeeUpdateApplicationSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User'
     },
+    parentRequestId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'EmployeeUpdateApplication'
+    },
     comments: {
         type: String
     }

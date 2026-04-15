@@ -2456,11 +2456,6 @@ exports.exportLoanReport = async (req, res) => {
 };
 
 /**
- * @desc    Export loan report as PDF
- * @route   GET /api/loans/reports/export-pdf
- * @access  Private
- */
-/**
  * @desc    Export loan report as PDF with premium styling
  * @route   GET /api/loans/reports/export-pdf
  * @access  Private
@@ -2492,7 +2487,12 @@ exports.exportLoanReportPDF = async (req, res) => {
       .sort({ appliedAt: -1 })
       .lean();
 
-    const doc = new PDFDocument({ margin: 30, size: 'A4', layout: 'landscape' });
+    const doc = new PDFDocument({ 
+      margin: { top: 30, bottom: 0, left: 30, right: 30 }, 
+      size: 'A4', 
+      layout: 'landscape',
+      bufferPages: true
+    });
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename=loans_report_${dayjs().format('YYYYMMDD')}.pdf`);
@@ -2560,8 +2560,11 @@ exports.exportLoanReportPDF = async (req, res) => {
     doc.font('Helvetica').fontSize(8).fillColor('#334155');
 
     loans.forEach((loan, index) => {
-      if (currentY > 520) {
-        doc.addPage({ layout: 'landscape', margin: 30 });
+      if (currentY > 530) {
+        doc.addPage({ 
+          layout: 'landscape', 
+          margin: { top: 30, bottom: 0, left: 30, right: 30 } 
+        });
         currentY = 40;
 
         // Redraw Header on new page

@@ -9,9 +9,9 @@ import ODReportsTab from './od-reports-tab';
 import LoanReportsTab from './loan-reports-tab';
 import { auth } from '@/lib/auth';
 import { canViewReports, canViewFinancialReports } from '@/lib/permissions';
-import { BarChart2, Fingerprint, CreditCard, Lock, FileText, Briefcase, Wallet } from 'lucide-react';
+import { BarChart2, Fingerprint, CreditCard, Lock, FileText, Briefcase, Wallet, Banknote } from 'lucide-react';
 
-type TabType = 'payroll' | 'attendance' | 'biometric' | 'leaves' | 'od' | 'loans';
+type TabType = 'payroll' | 'attendance' | 'biometric' | 'leaves' | 'od' | 'loans' | 'salary_advance';
 
 const TAB_CONFIG = {
   payroll: { label: 'Payroll', icon: CreditCard, color: 'text-violet-600 dark:text-violet-400', bg: 'bg-violet-50 dark:bg-violet-950/30', border: 'border-violet-500', activeBg: 'bg-violet-600' },
@@ -20,6 +20,7 @@ const TAB_CONFIG = {
   leaves: { label: 'Leaves', icon: FileText, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-950/30', border: 'border-blue-500', activeBg: 'bg-blue-600' },
   od: { label: 'OD', icon: Briefcase, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-950/30', border: 'border-amber-500', activeBg: 'bg-amber-600' },
   loans: { label: 'Loans', icon: Wallet, color: 'text-rose-600 dark:text-rose-400', bg: 'bg-rose-50 dark:bg-rose-950/30', border: 'border-rose-500', activeBg: 'bg-rose-600' },
+  salary_advance: { label: 'Salary Advance', icon: Banknote, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-950/30', border: 'border-amber-500', activeBg: 'bg-amber-600' },
 };
 
 export default function ReportsPage() {
@@ -42,7 +43,7 @@ export default function ReportsPage() {
   }
 
   const tabs: TabType[] = [];
-  if (hasFinancialAccess) tabs.push('payroll', 'loans');
+  if (hasFinancialAccess) tabs.push('payroll', 'loans', 'salary_advance');
   tabs.push('attendance', 'biometric', 'leaves', 'od');
 
   const currentTab: TabType = tabs.includes(activeTab) ? activeTab : tabs[0];
@@ -59,7 +60,7 @@ export default function ReportsPage() {
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex items-center gap-1 mt-4">
+        <div className="flex items-center gap-1 mt-4 overflow-x-auto pb-1 no-scrollbar">
           {tabs.map((tabId) => {
             const cfg = TAB_CONFIG[tabId];
             const Icon = cfg.icon;
@@ -68,16 +69,13 @@ export default function ReportsPage() {
               <button
                 key={tabId}
                 onClick={() => setActiveTab(tabId)}
-                className={`relative flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 ${isActive
+                className={`relative flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 whitespace-nowrap ${isActive
                     ? `${cfg.activeBg} text-white shadow-md scale-[1.02]`
                     : `text-slate-500 hover:${cfg.bg} hover:${cfg.color} dark:text-slate-400`
                   }`}
               >
                 <Icon className={`h-3.5 w-3.5 ${isActive ? 'text-white' : ''}`} />
                 {cfg.label}
-                {isActive && (
-                  <span className="absolute inset-x-0 -bottom-4 h-0.5 bg-current rounded-full opacity-0" />
-                )}
               </button>
             );
           })}
@@ -91,8 +89,10 @@ export default function ReportsPage() {
         {currentTab === 'biometric' && <ThumbReportsTab />}
         {currentTab === 'leaves' && <LeaveReportsTab />}
         {currentTab === 'od' && <ODReportsTab />}
-        {currentTab === 'loans' && <LoanReportsTab />}
+        {currentTab === 'loans' && <LoanReportsTab defaultRequestType="loan" />}
+        {currentTab === 'salary_advance' && <LoanReportsTab defaultRequestType="salary_advance" />}
       </div>
     </div>
   );
 }
+

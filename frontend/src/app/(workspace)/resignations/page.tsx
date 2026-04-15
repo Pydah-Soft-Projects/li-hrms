@@ -59,6 +59,15 @@ interface ResignationRequest {
     division_id?: { _id: string; name: string };
     employee_group_id?: { _id: string; name: string };
     doj?: string;
+    dynamicFields?: Record<string, any>;
+    agreementStartDate?: string;
+    agreementEndDate?: string;
+    agreement_start_date?: string;
+    agreement_end_date?: string;
+    contractStartDate?: string;
+    contractEndDate?: string;
+    contract_start_date?: string;
+    contract_end_date?: string;
   };
   emp_no: string;
   leftDate: string;
@@ -80,6 +89,7 @@ interface ResignationRequest {
       actionByRole?: string;
       comments?: string;
       updatedAt?: string;
+      updatedAtIST?: string;
       canEditLWD?: boolean;
     }>;
     history?: Array<{
@@ -106,6 +116,16 @@ interface ResignationRequest {
 
 const getStatusColor = (status: string) => {
   switch (status) {
+    case 'final_approved':
+      return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300';
+    case 'hod_approved':
+      return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300';
+    case 'manager_approved':
+      return 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300';
+    case 'reporting_manager_approved':
+      return 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300';
+    case 'hr_approved':
+      return 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300';
     case 'approved':
       return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
     case 'pending':
@@ -116,6 +136,72 @@ const getStatusColor = (status: string) => {
     default:
       return 'bg-slate-100 text-slate-700 dark:bg-slate-900/30 dark:text-slate-400';
   }
+};
+
+const getDisplayStatus = (req?: ResignationRequest | null) => {
+  if (!req) return 'pending';
+  const baseStatus = (req.status || 'pending').toLowerCase();
+  if (baseStatus === 'pending') {
+    const hasApprovedStep = (req.workflow?.approvalChain || []).some(
+      (step) => (step.status || '').toLowerCase() === 'approved'
+    );
+    if (hasApprovedStep) return 'approved';
+  }
+  return baseStatus;
+};
+
+const normalizeApprovalStageLabel = (label?: string) => {
+  if (!label) return '';
+  return String(label).replace(/\s*approval\s*$/i, '').trim();
+};
+
+const toDisplayCase = (value: string) => {
+  return value
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => {
+      if (word === word.toUpperCase()) return word;
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
+    .join(' ');
+};
+
+const getLatestApprovedByLabel = (req?: ResignationRequest | null) => {
+  const approvedSteps = (req?.workflow?.approvalChain || []).filter(
+    (step) => (step.status || '').toLowerCase() === 'approved'
+  );
+  if (approvedSteps.length === 0) return '';
+  const latestApprovedStep = approvedSteps[approvedSteps.length - 1];
+  const fallbackRole = (latestApprovedStep.role || '').replace(/_/g, ' ');
+  return normalizeApprovalStageLabel(latestApprovedStep.label || fallbackRole);
+};
+
+const getStatusVisualKey = (req?: ResignationRequest | null) => {
+  const displayStatus = getDisplayStatus(req);
+  if (displayStatus !== 'approved') return displayStatus;
+
+  if ((req?.status || '').toLowerCase() === 'approved' || req?.workflow?.isCompleted) {
+    return 'final_approved';
+  }
+
+  const approvedBy = getLatestApprovedByLabel(req).toLowerCase();
+  if (approvedBy.includes('reporting manager')) return 'reporting_manager_approved';
+  if (approvedBy.includes('manager')) return 'manager_approved';
+  if (approvedBy.includes('hod') || approvedBy.includes('head of department')) return 'hod_approved';
+  if (approvedBy.includes('hr')) return 'hr_approved';
+  return 'approved';
+};
+
+const getDisplayStatusText = (req?: ResignationRequest | null) => {
+  const displayStatus = getDisplayStatus(req);
+  if (displayStatus === 'approved') {
+    if ((req?.status || '').toLowerCase() === 'approved' || req?.workflow?.isCompleted) {
+      return 'Approved';
+    }
+    const approvedBy = getLatestApprovedByLabel(req);
+    return approvedBy ? `${toDisplayCase(approvedBy)} approved` : 'Approved';
+  }
+  return toDisplayCase(displayStatus);
 };
 
 const formatDate = (dateStr: string, isManual?: boolean, status?: string) => {
@@ -147,6 +233,17 @@ const formatDateTime = (dateStr?: string) => {
   });
 };
 
+const formatDateDash = (dateStr?: string) => {
+  if (!dateStr) return '—';
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  }).replace(/\s+/g, '-');
+};
+
 /** Format date as YYYY-MM-DD in local time (avoids UTC shift that makes "today + 90" show as previous day) */
 const toLocalDateString = (d: Date) => {
   const y = d.getFullYear();
@@ -171,6 +268,36 @@ const getEmployeeInitials = (req: ResignationRequest) => {
     return `${parts[0][0] || ''}${parts[parts.length - 1][0] || ''}`.toUpperCase();
   }
   return (name[0] || 'E').toUpperCase();
+};
+
+const parseDateSafe = (value: any): Date | null => {
+  if (!value) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
+
+const getAgreementDatesFromEmployee = (emp: any): { startDate?: string; endDate?: string } => {
+  if (!emp) return {};
+  const dynamic = emp.dynamicFields || {};
+  const start =
+    emp.agreementStartDate ||
+    emp.agreement_start_date ||
+    emp.contractStartDate ||
+    emp.contract_start_date ||
+    dynamic.agreementStartDate ||
+    dynamic.agreement_start_date ||
+    dynamic.contractStartDate ||
+    dynamic.contract_start_date;
+  const end =
+    emp.agreementEndDate ||
+    emp.agreement_end_date ||
+    emp.contractEndDate ||
+    emp.contract_end_date ||
+    dynamic.agreementEndDate ||
+    dynamic.agreement_end_date ||
+    dynamic.contractEndDate ||
+    dynamic.contract_end_date;
+  return { startDate: start, endDate: end };
 };
 
 const isEmployeeRole = (user: any) => String(user?.role || '').toLowerCase() === 'employee';
@@ -200,6 +327,8 @@ export default function ResignationsPage() {
   const [showApplyModal, setShowApplyModal] = useState(false);
   const [applySelfOnly, setApplySelfOnly] = useState(false);
   const [applyEmployees, setApplyEmployees] = useState<{ emp_no: string; name: string }[]>([]);
+  const [applyEmployeeMeta, setApplyEmployeeMeta] = useState<Record<string, { agreementStartDate?: string; agreementEndDate?: string }>>({});
+  const [applyEmployeeSearch, setApplyEmployeeSearch] = useState('');
   const [applySelectedEmpNo, setApplySelectedEmpNo] = useState('');
   const [applyRemarks, setApplyRemarks] = useState('');
   const [applyLastWorkingDate, setApplyLastWorkingDate] = useState('');
@@ -220,6 +349,18 @@ export default function ResignationsPage() {
 
   const [resignationSettings, setResignationSettings] = useState<any>(null);
   const [viewType, setViewType] = useState<'card' | 'list'>('list');
+
+  const selectedApplyEmployeeAgreement = useMemo(() => {
+    return applyEmployeeMeta[applySelectedEmpNo] || {};
+  }, [applyEmployeeMeta, applySelectedEmpNo]);
+
+  const filteredApplyEmployees = useMemo(() => {
+    const q = applyEmployeeSearch.trim().toLowerCase();
+    if (!q) return applyEmployees;
+    return applyEmployees.filter((emp) =>
+      emp.name.toLowerCase().includes(q) || emp.emp_no.toLowerCase().includes(q)
+    );
+  }, [applyEmployees, applyEmployeeSearch]);
 
   useEffect(() => {
     const user = auth.getUser();
@@ -278,6 +419,7 @@ export default function ResignationsPage() {
       setApplySelectedEmpNo('');
     }
     setApplyRemarks('');
+    setApplyEmployeeSearch('');
     
     if (type === 'termination') {
       setApplyLastWorkingDate(toLocalDateString(new Date()));
@@ -313,6 +455,24 @@ export default function ResignationsPage() {
           minDate.setDate(minDate.getDate() + noticeDays);
           minDate.setHours(0, 0, 0, 0);
           setApplyLastWorkingDate(toLocalDateString(minDate));
+          const user = auth.getUser();
+          const myEmpNo = user?.emp_no || (user as any)?.employeeId;
+          if (myEmpNo) {
+            try {
+              const employeeRes = await api.getEmployee(String(myEmpNo));
+              if (!cancelled && employeeRes?.success && employeeRes?.data) {
+                const dates = getAgreementDatesFromEmployee(employeeRes.data);
+                setApplyEmployeeMeta({
+                  [String(myEmpNo)]: {
+                    agreementStartDate: dates.startDate,
+                    agreementEndDate: dates.endDate,
+                  },
+                });
+              }
+            } catch (_) {
+              if (!cancelled) setApplyEmployeeMeta({});
+            }
+          }
         } else {
           const [settingsRes, empRes] = await Promise.all([
             api.getResignationSettings(),
@@ -333,11 +493,24 @@ export default function ResignationsPage() {
               emp_no: e.emp_no,
               name: e.employee_name || [e.first_name, e.last_name].filter(Boolean).join(' ') || e.emp_no,
             }));
+          const meta: Record<string, { agreementStartDate?: string; agreementEndDate?: string }> = {};
+          arr.forEach((e: any) => {
+            if (!e?.emp_no) return;
+            const dates = getAgreementDatesFromEmployee(e);
+            meta[e.emp_no] = {
+              agreementStartDate: dates.startDate,
+              agreementEndDate: dates.endDate,
+            };
+          });
+          setApplyEmployeeMeta(meta);
           setApplyEmployees(options);
           if (options.length > 0 && !applySelectedEmpNo) setApplySelectedEmpNo(options[0].emp_no);
         }
       } catch (_) {
-        if (!cancelled && !applySelfOnly) setApplyEmployees([]);
+        if (!cancelled) {
+          if (!applySelfOnly) setApplyEmployees([]);
+          setApplyEmployeeMeta({});
+        }
       } finally {
         if (!cancelled) setApplyModalLoading(false);
       }
@@ -353,6 +526,27 @@ export default function ResignationsPage() {
     }
     setApplyLoading(true);
     try {
+      if (applyType === 'resignation') {
+        const agreementEnd = parseDateSafe(selectedApplyEmployeeAgreement.agreementEndDate);
+        const lwd = parseDateSafe(applyLastWorkingDate);
+        if (agreementEnd && lwd && lwd < agreementEnd) {
+          const now = new Date();
+          const remainingDays = Math.max(1, Math.ceil((agreementEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+          const result = await Swal.fire({
+            icon: 'warning',
+            title: 'Agreement period not completed',
+            text: `Agreement end date is ${agreementEnd.toLocaleDateString('en-IN')}. It still has around ${remainingDays} day(s). Do you want to continue resignation submission?`,
+            showCancelButton: true,
+            confirmButtonText: 'Yes, continue',
+            cancelButtonText: 'Cancel',
+          });
+          if (!result.isConfirmed) {
+            setApplyLoading(false);
+            return;
+          }
+        }
+      }
+
       const res = await api.createResignationRequest({
         emp_no: applySelectedEmpNo,
         leftDate: applyLastWorkingDate,
@@ -935,8 +1129,8 @@ export default function ResignationsPage() {
                         </div>
                       </td>
                       <td className="px-6 py-4 text-center font-bold">
-                        <span className={`inline-block rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-tighter ${getStatusColor(req.status)}`}>
-                          {req.status}
+                        <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-bold tracking-tight ${getStatusColor(getStatusVisualKey(req))}`}>
+                          {getDisplayStatusText(req)}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right">
@@ -1005,8 +1199,8 @@ export default function ResignationsPage() {
                       </div>
                     </div>
                     <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-                      <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(req.status)}`}>
-                        {req.status}
+                      <span className={`shrink-0 rounded-full px-2.5 py-1 text-sm font-semibold ${getStatusColor(getStatusVisualKey(req))}`}>
+                        {getDisplayStatusText(req)}
                       </span>
                       {req.requestType === 'termination' && (
                         <span className="shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black uppercase bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400">
@@ -1097,17 +1291,39 @@ export default function ResignationsPage() {
               <div className="space-y-4">
                 {!applySelfOnly && (
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Employee</label>
-                  <select
-                    value={applySelectedEmpNo}
-                    onChange={(e) => setApplySelectedEmpNo(e.target.value)}
-                    className="w-full h-11 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium text-slate-900 dark:text-white focus:ring-4 focus:ring-green-500/10 focus:border-green-500 outline-none transition-all"
-                  >
-                    <option value="">Select employee</option>
-                    {applyEmployees.map((emp) => (
-                      <option key={emp.emp_no} value={emp.emp_no}>{emp.name} ({emp.emp_no})</option>
-                    ))}
-                  </select>
+                  <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Search Employee</label>
+                  <input
+                    type="text"
+                    value={applyEmployeeSearch}
+                    onChange={(e) => {
+                      setApplyEmployeeSearch(e.target.value);
+                      if (applySelectedEmpNo) setApplySelectedEmpNo('');
+                    }}
+                    placeholder="Search by name or employee ID..."
+                    className="mb-3 w-full h-10 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-sm font-medium text-slate-900 dark:text-white focus:ring-4 focus:ring-green-500/10 focus:border-green-500 outline-none transition-all"
+                  />
+                  {applyEmployeeSearch.trim() && !applySelectedEmpNo && (
+                    <div className="mb-2 max-h-40 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
+                      {filteredApplyEmployees.length > 0 ? (
+                        filteredApplyEmployees.map((emp) => (
+                          <button
+                            key={emp.emp_no}
+                            type="button"
+                            onClick={() => {
+                              setApplySelectedEmpNo(emp.emp_no);
+                              setApplyEmployeeSearch(`${emp.name} (${emp.emp_no})`);
+                            }}
+                            className="flex w-full items-center justify-between px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-700"
+                          >
+                            <span className="font-medium">{emp.name}</span>
+                            <span className="text-xs text-slate-500 dark:text-slate-400">{emp.emp_no}</span>
+                          </button>
+                        ))
+                      ) : (
+                        <p className="px-3 py-2 text-sm text-slate-500 dark:text-slate-400">No employees found</p>
+                      )}
+                    </div>
+                  )}
                 </div>
                 )}
 
@@ -1168,6 +1384,27 @@ export default function ResignationsPage() {
                       : 'Auto-set from notice period; last day in office.'}
                   </p>
                 </div>
+                <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/40 p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Agreement period</p>
+                  <div className="mt-1.5 grid grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <p className="text-slate-400">Start date</p>
+                      <p className="font-semibold text-slate-800 dark:text-slate-200">{selectedApplyEmployeeAgreement.agreementStartDate ? new Date(selectedApplyEmployeeAgreement.agreementStartDate).toLocaleDateString('en-IN') : '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-slate-400">End date</p>
+                      <p className="font-semibold text-slate-800 dark:text-slate-200">{selectedApplyEmployeeAgreement.agreementEndDate ? new Date(selectedApplyEmployeeAgreement.agreementEndDate).toLocaleDateString('en-IN') : '—'}</p>
+                    </div>
+                  </div>
+                  {applyType === 'resignation' &&
+                    parseDateSafe(selectedApplyEmployeeAgreement.agreementEndDate) &&
+                    parseDateSafe(applyLastWorkingDate) &&
+                    parseDateSafe(applyLastWorkingDate)! < parseDateSafe(selectedApplyEmployeeAgreement.agreementEndDate)! && (
+                      <p className="mt-2 text-[11px] font-medium text-amber-700 dark:text-amber-400">
+                        Agreement end date is still pending. You will see a confirmation warning before submitting this resignation.
+                      </p>
+                    )}
+                </div>
                 {applyType === 'termination' && (
                   <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-900/10 border border-rose-100 dark:border-rose-900/30">
                     <p className="text-[11px] text-rose-600 dark:text-rose-400 leading-relaxed font-medium">
@@ -1194,11 +1431,94 @@ export default function ResignationsPage() {
       {showDetailDialog && selectedRequest && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => { setShowDetailDialog(false); setSelectedRequest(null); }} />
-          <div className="relative z-50 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl p-6">
-            <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-4">
-              {selectedRequest.requestType === 'termination' ? 'Termination request' : 'Resignation request'}
-            </h2>
-            <div className="space-y-3 text-sm">
+          <div className="relative z-50 w-full max-w-6xl max-h-[90vh] overflow-y-auto rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+                {selectedRequest.requestType === 'termination' ? 'Termination request' : 'Resignation request'}
+              </h2>
+              <button
+                type="button"
+                onClick={() => { setShowDetailDialog(false); setSelectedRequest(null); }}
+                className="rounded-lg border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50 hover:text-slate-700 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                aria-label="Close details"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="mb-4 border-b border-slate-200 pb-4 dark:border-slate-800">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">{getEmployeeName(selectedRequest)}</h3>
+                <span className={`rounded-full px-2.5 py-1 text-sm font-semibold ${getStatusColor(getStatusVisualKey(selectedRequest))}`}>{getDisplayStatusText(selectedRequest)}</span>
+              </div>
+              <p className="mt-0.5 text-sm font-semibold text-slate-500 dark:text-slate-400">Employee ID: {selectedRequest.emp_no}</p>
+              <div className="mt-3 grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
+                <div><p className="text-[10px] font-bold uppercase text-slate-400">Division</p><p className="mt-0.5 font-semibold text-slate-900 dark:text-white">{selectedRequest.employeeId?.division_id?.name || '—'}</p></div>
+                <div><p className="text-[10px] font-bold uppercase text-slate-400">Department</p><p className="mt-0.5 font-semibold text-slate-900 dark:text-white">{selectedRequest.employeeId?.department_id?.name || '—'}</p></div>
+                <div><p className="text-[10px] font-bold uppercase text-slate-400">Designation</p><p className="mt-0.5 font-semibold text-slate-900 dark:text-white">{(selectedRequest.employeeId as any)?.designation_id?.name || '—'}</p></div>
+                <div><p className="text-[10px] font-bold uppercase text-slate-400">Employee Group</p><p className="mt-0.5 font-semibold text-slate-900 dark:text-white">{selectedRequest.employeeId?.employee_group_id?.name || '—'}</p></div>
+              </div>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-5">
+              <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900 lg:col-span-3">
+                <h4 className="mb-3 text-[10px] font-black uppercase tracking-wider text-slate-400">Details</h4>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div><p className="text-[10px] font-bold uppercase text-slate-500">Date of joining</p><p className="mt-0.5 font-semibold text-slate-900 dark:text-white">{formatDateDash(selectedRequest.employeeId?.doj)}</p></div>
+                  <div><p className="text-[10px] font-bold uppercase text-slate-500">{selectedRequest.requestType === 'termination' ? 'Termination date' : 'Last working date'}</p><p className="mt-0.5 font-semibold text-slate-900 dark:text-white">{formatDateDash(selectedRequest.leftDate)}</p></div>
+                  <div><p className="text-[10px] font-bold uppercase text-slate-500">Agreement start date</p><p className="mt-0.5 font-semibold text-slate-900 dark:text-white">{(() => { const d = getAgreementDatesFromEmployee(selectedRequest.employeeId); return formatDateDash(d.startDate); })()}</p></div>
+                  <div><p className="text-[10px] font-bold uppercase text-slate-500">Agreement end date</p><p className="mt-0.5 font-semibold text-slate-900 dark:text-white">{(() => { const d = getAgreementDatesFromEmployee(selectedRequest.employeeId); return formatDateDash(d.endDate); })()}</p></div>
+                </div>
+                {selectedRequest.remarks && (
+                  <div className="mt-4">
+                    <p className="text-[10px] font-bold uppercase text-slate-400">Reason / Remarks</p>
+                    <p className="mt-1 text-sm text-slate-700 dark:text-slate-300">{selectedRequest.remarks}</p>
+                  </div>
+                )}
+                <div className="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase text-slate-400">Requested by</p>
+                    <p className="mt-0.5 font-medium text-slate-900 dark:text-white">{selectedRequest.requestedBy?.name || '—'}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase text-slate-400">Requested on</p>
+                    <p className="mt-0.5 font-medium text-slate-900 dark:text-white">{formatDateTime(selectedRequest.createdAt)}</p>
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900 lg:col-span-2">
+                <h3 className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3">Approval History</h3>
+                {selectedRequest.workflow?.approvalChain && selectedRequest.workflow.approvalChain.length > 0 ? (
+                  <div className="space-y-3">
+                    {selectedRequest.workflow.approvalChain.map((step, idx) => {
+                      const isPending = !step.status || step.status === 'pending';
+                      const isRejected = step.status === 'rejected';
+                      const isApproved = step.status === 'approved';
+                      return (
+                        <div key={idx} className="relative pl-6 border-l-2 border-slate-200 dark:border-slate-700 ml-1 pb-4 last:pb-0">
+                          <div className={`absolute -left-[9px] top-0.5 w-4 h-4 rounded-full border-2 border-white dark:border-slate-900 shadow-sm ${isApproved ? 'bg-green-500' : isRejected ? 'bg-red-500' : 'bg-slate-300 dark:bg-slate-600'}`} />
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{step.label || step.role}</span>
+                              <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${isApproved ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : isRejected ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-500'}`}>{step.status || 'pending'}</span>
+                            </div>
+                            {!isPending && (
+                              <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                                <p>By: <span className="font-semibold text-slate-700 dark:text-slate-200">{step.actionByName || '—'}</span></p>
+                                <p className="mt-0.5">Action date: <span className="font-semibold text-slate-700 dark:text-slate-200">{step.updatedAtIST || formatDateTime(step.updatedAt)}</span></p>
+                                {step.comments && <p className="mt-1 italic border-l-2 border-slate-200 dark:border-slate-700 pl-2">&quot;{step.comments}&quot;</p>}
+                              </div>
+                            )}
+                            {isPending && <p className="text-[11px] text-slate-500 dark:text-slate-400">Action date: <span className="font-semibold text-slate-700 dark:text-slate-200">Awaiting approval</span></p>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : <p className="text-sm text-slate-500 dark:text-slate-400">No approval history available.</p>}
+              </div>
+            </div>
+
+            <div className="hidden space-y-3 text-sm">
               <div className="flex justify-between items-start">
                 <span className="text-slate-500 dark:text-slate-400">Employee</span>
                 <div className="text-right">
@@ -1234,6 +1554,24 @@ export default function ResignationsPage() {
                     <p className="text-[10px] font-bold uppercase text-slate-400">Department</p>
                     <p className="mt-0.5 text-sm font-medium text-slate-900 dark:text-white">
                       {selectedRequest.employeeId?.department_id?.name || '—'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase text-slate-400">Agreement start date</p>
+                    <p className="mt-0.5 text-sm font-medium text-slate-900 dark:text-white">
+                      {(() => {
+                        const dates = getAgreementDatesFromEmployee(selectedRequest.employeeId);
+                        return dates.startDate ? new Date(dates.startDate).toLocaleDateString('en-IN') : '—';
+                      })()}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase text-slate-400">Agreement end date</p>
+                    <p className="mt-0.5 text-sm font-medium text-slate-900 dark:text-white">
+                      {(() => {
+                        const dates = getAgreementDatesFromEmployee(selectedRequest.employeeId);
+                        return dates.endDate ? new Date(dates.endDate).toLocaleDateString('en-IN') : '—';
+                      })()}
                     </p>
                   </div>
                 </div>
@@ -1289,7 +1627,7 @@ export default function ResignationsPage() {
               )}
               <div className="flex justify-between">
                 <span className="text-slate-500 dark:text-slate-400">Status</span>
-                <span className={`rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(selectedRequest.status)}`}>{selectedRequest.status}</span>
+                <span className={`rounded-full px-2.5 py-1 text-sm font-semibold ${getStatusColor(getStatusVisualKey(selectedRequest))}`}>{getDisplayStatusText(selectedRequest)}</span>
               </div>
               {selectedRequest.remarks && (
                 <div>
@@ -1306,7 +1644,7 @@ export default function ResignationsPage() {
             </div>
 
             {selectedRequest.workflow?.approvalChain && selectedRequest.workflow.approvalChain.length > 0 && (
-              <div className="mt-6 pt-4 border-t border-slate-200 dark:border-slate-700">
+              <div className="hidden mt-6 pt-4 border-t border-slate-200 dark:border-slate-700">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3">Approval workflow</h3>
                 <div className="space-y-3">
                   {selectedRequest.workflow.approvalChain.map((step, idx) => (
@@ -1342,13 +1680,26 @@ export default function ResignationsPage() {
 
             {selectedRequest.status === 'pending' && canPerformAction(selectedRequest) && canApproveResignation(currentUser as any) && (
               <div className="mt-6 pt-4 border-t border-slate-200 dark:border-slate-700 flex flex-col gap-3">
-                <textarea
-                  value={actionComment}
-                  onChange={(e) => setActionComment(e.target.value)}
-                  placeholder="Add a comment (optional)..."
-                  rows={2}
-                  className="w-full rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-2 text-sm dark:bg-slate-800 dark:text-white resize-none"
-                />
+                <div className={`grid gap-2 ${canEditLWDCurrentStep ? 'sm:grid-cols-2' : 'grid-cols-1'}`}>
+                  <textarea
+                    value={actionComment}
+                    onChange={(e) => setActionComment(e.target.value)}
+                    placeholder="Add a comment (optional)..."
+                    rows={2}
+                    className="w-full rounded-lg border border-slate-300 dark:border-slate-600 px-3 py-2 text-sm dark:bg-slate-800 dark:text-white resize-none"
+                  />
+                  {canEditLWDCurrentStep && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-2 dark:border-amber-800 dark:bg-amber-900/10">
+                      <label className="block text-[10px] font-bold uppercase text-amber-700 dark:text-amber-400 mb-1">Update Last Working Date</label>
+                      <input
+                        type="date"
+                        value={editableLWD || (selectedRequest.leftDate ? selectedRequest.leftDate.split('T')[0] : '')}
+                        onChange={(e) => setEditableLWD(e.target.value)}
+                        className="w-full h-9 rounded-lg border border-amber-200 dark:border-amber-700 bg-white dark:bg-slate-900 px-2 text-sm"
+                      />
+                    </div>
+                  )}
+                </div>
                 <div className="flex gap-2">
                   <button
                     type="button"
@@ -1369,14 +1720,6 @@ export default function ResignationsPage() {
                 </div>
               </div>
             )}
-
-            <button
-              type="button"
-              onClick={() => { setShowDetailDialog(false); setSelectedRequest(null); }}
-              className="mt-4 w-full py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
-            >
-              Close
-            </button>
           </div>
         </div>
       )}

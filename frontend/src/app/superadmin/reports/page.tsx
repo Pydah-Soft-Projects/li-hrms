@@ -7,9 +7,9 @@ import ThumbReportsTab from '../../(workspace)/reports/thumb-reports-tab';
 import LeaveReportsTab from '../../(workspace)/reports/leave-reports-tab';
 import ODReportsTab from '../../(workspace)/reports/od-reports-tab';
 import LoanReportsTab from '../../(workspace)/reports/loan-reports-tab';
-import { BarChart2, Fingerprint, CreditCard, FileText, Briefcase, Wallet } from 'lucide-react';
+import { BarChart2, Fingerprint, CreditCard, FileText, Briefcase, Wallet, Banknote } from 'lucide-react';
 
-type TabType = 'payroll' | 'attendance' | 'biometric' | 'leaves' | 'od' | 'loans';
+type TabType = 'payroll' | 'attendance' | 'biometric' | 'leaves' | 'od' | 'loans' | 'salary_advance';
 
 const TAB_CONFIG = {
   payroll: { label: 'Payroll', icon: CreditCard, activeBg: 'bg-violet-600' },
@@ -18,9 +18,10 @@ const TAB_CONFIG = {
   leaves: { label: 'Leaves', icon: FileText, activeBg: 'bg-blue-600' },
   od: { label: 'OD', icon: Briefcase, activeBg: 'bg-amber-600' },
   loans: { label: 'Loans', icon: Wallet, activeBg: 'bg-rose-600' },
+  salary_advance: { label: 'Salary Advance', icon: Banknote, activeBg: 'bg-amber-600' },
 };
 
-const ALL_TABS: TabType[] = ['payroll', 'attendance', 'biometric', 'leaves', 'od', 'loans'];
+const ALL_TABS: TabType[] = ['payroll', 'attendance', 'biometric', 'leaves', 'od', 'loans', 'salary_advance'];
 
 export default function ReportsPage() {
   const [activeTab, setActiveTab] = useState<TabType>('attendance');
@@ -35,7 +36,7 @@ export default function ReportsPage() {
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex items-center gap-1 mt-4">
+        <div className="flex items-center gap-1 mt-4 overflow-x-auto pb-1 no-scrollbar">
           {ALL_TABS.map((tabId) => {
             const cfg = TAB_CONFIG[tabId];
             const Icon = cfg.icon;
@@ -44,7 +45,7 @@ export default function ReportsPage() {
               <button
                 key={tabId}
                 onClick={() => setActiveTab(tabId)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 ${isActive
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 whitespace-nowrap ${isActive
                     ? `${cfg.activeBg} text-white shadow-md scale-[1.02]`
                     : 'text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
                   }`}
@@ -64,8 +65,10 @@ export default function ReportsPage() {
         {activeTab === 'biometric' && <ThumbReportsTab />}
         {activeTab === 'leaves' && <LeaveReportsTab />}
         {activeTab === 'od' && <ODReportsTab />}
-        {activeTab === 'loans' && <LoanReportsTab />}
+        {activeTab === 'loans' && <LoanReportsTab defaultRequestType="loan" />}
+        {activeTab === 'salary_advance' && <LoanReportsTab defaultRequestType="salary_advance" />}
       </div>
     </div>
   );
 }
+
