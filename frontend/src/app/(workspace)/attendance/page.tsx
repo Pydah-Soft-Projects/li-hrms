@@ -1653,12 +1653,9 @@ export default function AttendancePage() {
 
         // Refresh the detail view
 
-        const updatedResponse = await api.getAttendanceDetail(selectedEmployee.emp_no, selectedDate);
-
-        if (updatedResponse.success) {
-
-          setAttendanceDetail(updatedResponse.data);
-
+        const updatedDetail = await loadAttendanceDetailWithPermissions(selectedEmployee.emp_no, selectedDate);
+        if (updatedDetail) {
+          setAttendanceDetail(updatedDetail);
         }
 
 
@@ -1783,12 +1780,9 @@ export default function AttendancePage() {
 
         // Refresh the detail view
 
-        const updatedResponse = await api.getAttendanceDetail(selectedEmployee.emp_no, selectedDate);
-
-        if (updatedResponse.success) {
-
-          setAttendanceDetail(updatedResponse.data);
-
+        const updatedDetail = await loadAttendanceDetailWithPermissions(selectedEmployee.emp_no, selectedDate);
+        if (updatedDetail) {
+          setAttendanceDetail(updatedDetail);
         }
 
 
@@ -1891,12 +1885,9 @@ export default function AttendancePage() {
 
         // Refresh the detail view
 
-        const updatedResponse = await api.getAttendanceDetail(selectedEmployee.emp_no, selectedDate);
-
-        if (updatedResponse.success) {
-
-          setAttendanceDetail(updatedResponse.data);
-
+        const updatedDetail = await loadAttendanceDetailWithPermissions(selectedEmployee.emp_no, selectedDate);
+        if (updatedDetail) {
+          setAttendanceDetail(updatedDetail);
         }
 
 
@@ -1968,12 +1959,12 @@ export default function AttendancePage() {
           startDate: cycleDates.startDate || undefined,
           endDate: cycleDates.endDate || undefined,
         });
-        const detailRes = await api.getAttendanceDetail(selectedEmployee.emp_no, selectedDate);
-        if (detailRes.success) {
+        const detailBase = await loadAttendanceDetailWithPermissions(selectedEmployee.emp_no, selectedDate);
+        if (detailBase) {
           const list = monthRes.success ? normalizeWorkspaceAttendanceData(monthRes.data || []) : [];
           const item = list.find((i) => i.employee._id === selectedEmployee._id);
           const dayRecord = item?.dailyAttendance?.[selectedDate];
-          const base = detailRes.data;
+          const base = detailBase;
           if (dayRecord) {
             setAttendanceDetail({
               ...base,
@@ -2041,12 +2032,9 @@ export default function AttendancePage() {
 
         // Refresh the detail view
 
-        const updatedResponse = await api.getAttendanceDetail(selectedEmployee.emp_no, selectedDate);
-
-        if (updatedResponse.success) {
-
-          setAttendanceDetail(updatedResponse.data);
-
+        const updatedDetail = await loadAttendanceDetailWithPermissions(selectedEmployee.emp_no, selectedDate);
+        if (updatedDetail) {
+          setAttendanceDetail(updatedDetail);
         }
 
 
@@ -2081,6 +2069,52 @@ export default function AttendancePage() {
 
     }
 
+  };
+
+  const loadAttendanceDetailWithPermissions = async (employeeNumber: string, date: string) => {
+    const [detailRes, permissionsRes] = await Promise.all([
+      api.getAttendanceDetail(employeeNumber, date),
+      api.getPermissions({ employeeNumber, date, startDate: date, endDate: date }),
+    ]);
+
+    if (!detailRes.success) return null;
+
+    const base = detailRes.data || {};
+    const permissionRows = Array.isArray(permissionsRes?.data)
+      ? permissionsRes.data
+      : Array.isArray((permissionsRes as any)?.data?.permissions)
+        ? (permissionsRes as any).data.permissions
+        : Array.isArray((permissionsRes as any)?.data?.items)
+          ? (permissionsRes as any).data.items
+          : [];
+    const normalized = permissionRows
+      .filter((p: any) => {
+        const permDate = String(p?.date || '').slice(0, 10);
+        const permEmpNo = String(p?.employeeNumber || p?.employeeId?.emp_no || '');
+        return permDate === date && permEmpNo === employeeNumber;
+      })
+      .map((p: any) => ({
+        _id: p._id,
+        permissionType: p.permissionType,
+        permittedEdgeTime: p.permittedEdgeTime,
+        permissionStartTime: p.permissionStartTime,
+        permissionEndTime: p.permissionEndTime,
+        permissionHours: Number(p.permissionHours || 0),
+        status: p.status,
+        gateOutTime: p.gateOutTime,
+        gateInTime: p.gateInTime,
+        purpose: p.purpose,
+      }));
+
+    if (!normalized.length) return base;
+
+    const permissionHours = normalized.reduce((sum: number, p: any) => sum + Number(p.permissionHours || 0), 0);
+    return {
+      ...base,
+      permissionRequests: normalized,
+      permissionCount: normalized.length,
+      permissionHours: permissionHours > 0 ? permissionHours : Number(base.permissionHours || 0),
+    };
   };
 
 
@@ -2157,32 +2191,29 @@ export default function AttendancePage() {
 
       // If we have the record with leave/OD info, use it directly
 
-      if (dayRecord) {
-
+      const detail = await loadAttendanceDetailWithPermissions(employee.emp_no, date);
+      if (dayRecord && detail) {
         console.log('Day record from monthly data:', dayRecord);
-
         console.log('Leave info:', dayRecord.leaveInfo);
-
-        setAttendanceDetail(dayRecord);
-
+        setAttendanceDetail({
+          ...detail,
+          hasLeave: dayRecord.hasLeave,
+          leaveInfo: dayRecord.leaveInfo,
+          hasOD: dayRecord.hasOD,
+          odInfo: dayRecord.odInfo,
+          isConflict: dayRecord.isConflict,
+          isEdited: dayRecord.isEdited,
+          editHistory: dayRecord.editHistory,
+          source: dayRecord.source,
+        });
         setShowDetailDialog(true);
-
-      } else {
-
-        // Otherwise fetch from API
-
-        const response = await api.getAttendanceDetail(employee.emp_no, date);
-
-        if (response.success) {
-
-          console.log('Day record from API:', response.data);
-
-          setAttendanceDetail(response.data);
-
-          setShowDetailDialog(true);
-
-        }
-
+      } else if (detail) {
+        console.log('Day record from API:', detail);
+        setAttendanceDetail(detail);
+        setShowDetailDialog(true);
+      } else if (dayRecord) {
+        setAttendanceDetail(dayRecord);
+        setShowDetailDialog(true);
       }
 
     } catch (err) {
@@ -3065,8 +3096,8 @@ export default function AttendancePage() {
         setInTimeDialogValue('');
         await loadMonthlyAttendance();
         if (attendanceDetail && selectedRecordForInTime?.employee?.emp_no === attendanceDetail.employee?.emp_no && selectedRecordForInTime?.date === attendanceDetail.date) {
-          const updated = await api.getAttendanceDetail(selectedRecordForInTime.employee.emp_no, selectedRecordForInTime.date);
-          if (updated?.success && updated?.data) setAttendanceDetail(updated.data);
+          const updated = await loadAttendanceDetailWithPermissions(selectedRecordForInTime.employee.emp_no, selectedRecordForInTime.date);
+          if (updated) setAttendanceDetail(updated);
         }
       } else {
         setError(response.message || 'Failed to update in time');
@@ -3160,12 +3191,9 @@ export default function AttendancePage() {
 
         // Refresh detail
 
-        const detailRes = await api.getAttendanceDetail(attendanceDetail.employee.emp_no, attendanceDetail.date);
-
-        if (detailRes.success) {
-
-          setAttendanceDetail(detailRes.data);
-
+        const detailRes = await loadAttendanceDetailWithPermissions(attendanceDetail.employee.emp_no, attendanceDetail.date);
+        if (detailRes) {
+          setAttendanceDetail(detailRes);
         }
 
         // Also refresh monthly list
@@ -5916,15 +5944,6 @@ export default function AttendancePage() {
 
                       </div>
                     )}
-                    {attendanceDetail.permissionHours && attendanceDetail.permissionHours > 0 && (
-                      <div>
-                        <label className="text-xs font-medium text-slate-600 dark:text-slate-400">Permission Hours</label>
-                        <div className="mt-1 text-sm font-semibold text-cyan-600 dark:text-cyan-400">
-                          {formatHours(attendanceDetail.permissionHours)} hrs ({attendanceDetail.permissionCount || 0} permissions)
-                        </div>
-
-                      </div>
-                    )}
                     {!!attendanceDetail.permissionRequests?.length && (
                       <div className="col-span-2 rounded-xl bg-cyan-50/50 dark:bg-cyan-900/10 border border-cyan-100 dark:border-cyan-800/50 p-4">
                         <label className="text-[10px] font-black uppercase tracking-widest text-cyan-600/70 dark:text-cyan-400/70">Permission Details</label>
@@ -5932,17 +5951,122 @@ export default function AttendancePage() {
                           {attendanceDetail.permissionRequests.map((p: any) => {
                             const type = p.permissionType || 'mid_shift';
                             const typeLabel = type === 'late_in' ? 'Late In' : type === 'early_out' ? 'Early Out' : 'Mid Shift';
+                            const parseTimeToMinutes = (
+                              value: any,
+                              mode: 'late_in' | 'early_out' | 'mid_shift' = 'mid_shift',
+                              shiftRefMin?: number | null
+                            ): number | null => {
+                              if (!value) return null;
+                              const raw = String(value).trim();
+                              const ampmMatch = raw.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+                              if (ampmMatch) {
+                                let hh = Number(ampmMatch[1]);
+                                const mm = Number(ampmMatch[2]);
+                                const marker = ampmMatch[3].toUpperCase();
+                                if (marker === 'PM' && hh < 12) hh += 12;
+                                if (marker === 'AM' && hh === 12) hh = 0;
+                                return hh * 60 + mm;
+                              }
+                              const hhmmMatch = raw.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+                              if (hhmmMatch) {
+                                const h = Number(hhmmMatch[1]);
+                                const m = Number(hhmmMatch[2]);
+                                const candidates: number[] = [h * 60 + m];
+                                if (h >= 1 && h <= 11) candidates.push((h + 12) * 60 + m);
+                                if (h === 12) candidates.push(m);
+
+                                if (shiftRefMin != null) {
+                                  if (mode === 'early_out') {
+                                    const viable = candidates.filter((c) => c <= shiftRefMin);
+                                    if (viable.length) return viable.reduce((best, cur) =>
+                                      (shiftRefMin - cur) < (shiftRefMin - best) ? cur : best
+                                    );
+                                  }
+                                  if (mode === 'late_in') {
+                                    const viable = candidates.filter((c) => c >= shiftRefMin);
+                                    if (viable.length) return viable.reduce((best, cur) =>
+                                      (cur - shiftRefMin) < (best - shiftRefMin) ? cur : best
+                                    );
+                                  }
+                                }
+                                return candidates[0];
+                              }
+                              const parsed = new Date(raw);
+                              if (!isNaN(parsed.getTime())) return parsed.getHours() * 60 + parsed.getMinutes();
+                              return null;
+                            };
+                            const formatDiff = (mins: number | null) => (mins == null ? '-' : `${mins} min`);
+                            const shiftStartRaw =
+                              (attendanceDetail.shiftId && typeof attendanceDetail.shiftId === 'object' ? (attendanceDetail.shiftId as any).startTime : null)
+                              || (attendanceDetail.shifts?.[0]?.shiftStartTime)
+                              || (typeof attendanceDetail.shifts?.[0]?.shiftId === 'object' ? (attendanceDetail.shifts?.[0]?.shiftId as any)?.startTime : null);
+                            const shiftEndRaw =
+                              (attendanceDetail.shiftId && typeof attendanceDetail.shiftId === 'object' ? (attendanceDetail.shiftId as any).endTime : null)
+                              || (attendanceDetail.shifts?.[0]?.shiftEndTime)
+                              || (typeof attendanceDetail.shifts?.[0]?.shiftId === 'object' ? (attendanceDetail.shifts?.[0]?.shiftId as any)?.endTime : null);
+                            const shiftStartMin = parseTimeToMinutes(shiftStartRaw);
+                            const shiftEndMin = parseTimeToMinutes(shiftEndRaw);
+                            const permittedMin = parseTimeToMinutes(
+                              p.permittedEdgeTime,
+                              type,
+                              type === 'late_in' ? shiftStartMin : type === 'early_out' ? shiftEndMin : null
+                            );
+                            const lateAllowanceMin = type === 'late_in' && permittedMin != null && shiftStartMin != null ? Math.max(0, permittedMin - shiftStartMin) : null;
+                            const earlyAllowanceMin = type === 'early_out' && permittedMin != null && shiftEndMin != null ? Math.max(0, shiftEndMin - permittedMin) : null;
                             const timeLabel =
                               type === 'mid_shift'
                                 ? `${formatTime(p.permissionStartTime)} - ${formatTime(p.permissionEndTime)}`
                                 : `${type === 'late_in' ? 'Latest arrival' : 'Earliest exit'} ${p.permittedEdgeTime || '--:--'}`;
+                            const outRequired = type !== 'late_in';
+                            const inRequired = type !== 'early_out';
+                            const outVerified = Boolean(p.gateOutTime);
+                            const inVerified = Boolean(p.gateInTime);
                             return (
                               <div key={p._id} className="rounded-lg border border-cyan-200/70 dark:border-cyan-800/60 bg-white/80 dark:bg-slate-900/60 px-3 py-2">
                                 <div className="flex items-center justify-between gap-2">
                                   <p className="text-xs font-black text-slate-900 dark:text-slate-100">{typeLabel}</p>
                                   <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">{String(p.status || 'pending').replace(/_/g, ' ')}</span>
                                 </div>
-                                <p className="text-[11px] font-semibold text-cyan-700 dark:text-cyan-300 mt-1">{timeLabel}</p>
+                                <div className="mt-2 rounded-xl border border-cyan-200/70 dark:border-cyan-800/60 bg-cyan-50 dark:bg-cyan-900/20 px-3 py-2 text-center">
+                                  <p className="text-[9px] font-black uppercase tracking-[0.16em] text-cyan-600/80 dark:text-cyan-300/80">Permission Window</p>
+                                  <p className="mt-0.5 text-base sm:text-lg font-black text-cyan-800 dark:text-cyan-200">{timeLabel}</p>
+                                </div>
+                                <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                  <div className="rounded-md bg-cyan-100/60 dark:bg-cyan-900/30 px-2 py-1.5">
+                                    <p className="text-[9px] font-black uppercase tracking-wider text-cyan-700/80 dark:text-cyan-300/80">Type</p>
+                                    <p className="text-[11px] font-bold text-cyan-900 dark:text-cyan-100">{typeLabel}</p>
+                                  </div>
+                                  <div className="rounded-md bg-cyan-100/60 dark:bg-cyan-900/30 px-2 py-1.5">
+                                    <p className="text-[9px] font-black uppercase tracking-wider text-cyan-700/80 dark:text-cyan-300/80">Rule</p>
+                                    <p className="text-[11px] font-bold text-cyan-900 dark:text-cyan-100">
+                                      {type === 'mid_shift' ? 'Start + End window' : type === 'late_in' ? 'Latest arrival limit' : 'Earliest exit limit'}
+                                    </p>
+                                  </div>
+                                </div>
+                                {type !== 'mid_shift' && (
+                                  <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    <div className="rounded-md bg-slate-100 dark:bg-slate-800/70 px-2 py-1.5">
+                                      <p className="text-[9px] font-black uppercase tracking-wider text-slate-500">Shift {type === 'late_in' ? 'Start' : 'End'}</p>
+                                      <p className="text-[11px] font-bold text-slate-900 dark:text-slate-100">{formatTime(type === 'late_in' ? shiftStartRaw : shiftEndRaw)}</p>
+                                    </div>
+                                    <div className="rounded-md bg-slate-100 dark:bg-slate-800/70 px-2 py-1.5">
+                                      <p className="text-[9px] font-black uppercase tracking-wider text-slate-500">{type === 'late_in' ? 'Allowed Late' : 'Allowed Early'}</p>
+                                      <p className="text-[11px] font-bold text-slate-900 dark:text-slate-100">{formatDiff(type === 'late_in' ? lateAllowanceMin : earlyAllowanceMin)}</p>
+                                    </div>
+                                  </div>
+                                )}
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  {outRequired && (
+                                    <span className={`inline-flex items-center px-2 py-1 rounded-md text-[10px] font-black uppercase tracking-wider ${outVerified ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'}`}>
+                                      OUT QR {outVerified ? `Verified ${formatTime(p.gateOutTime)}` : 'Pending'}
+                                    </span>
+                                  )}
+                                  {inRequired && (
+                                    <span className={`inline-flex items-center px-2 py-1 rounded-md text-[10px] font-black uppercase tracking-wider ${inVerified ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'}`}>
+                                      IN QR {inVerified ? `Verified ${formatTime(p.gateInTime)}` : 'Pending'}
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                             );
                           })}
