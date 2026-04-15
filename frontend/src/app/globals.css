@@ -117,6 +117,47 @@ h1, h2, h3, h4, .font-display {
   animation: fadeInUp 0.6s ease-out forwards;
 }
 
+@keyframes bell-ring {
+  0% { transform: rotate(0deg); }
+  10% { transform: rotate(8deg); }
+  20% { transform: rotate(-8deg); }
+  30% { transform: rotate(7deg); }
+  40% { transform: rotate(-7deg); }
+  50% { transform: rotate(6deg); }
+  60% { transform: rotate(-6deg); }
+  70% { transform: rotate(5deg); }
+  80% { transform: rotate(-5deg); }
+  90% { transform: rotate(3deg); }
+  100% { transform: rotate(0deg); }
+}
+
+@keyframes bell-wrap-pulse {
+  0% { transform: scale(1); }
+  8% { transform: scale(1.08); }
+  16% { transform: scale(1); }
+  24% { transform: scale(1.06); }
+  32% { transform: scale(1); }
+  100% { transform: scale(1); }
+}
+
+.animate-bell-ring {
+  transform-origin: 50% 10%;
+  animation: bell-ring 0.26s linear infinite;
+}
+
+.animate-bell-wrap-pulse {
+  animation: bell-wrap-pulse 1.25s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-bell-ring {
+    animation: none;
+  }
+  .animate-bell-wrap-pulse {
+    animation: none;
+  }
+}
+
 /* Headline Loop Animation - Refined Cross-Fade */
 @keyframes headline-enter {
   0% { transform: translateY(10px) scale(0.98); opacity: 0; filter: blur(10px); }
