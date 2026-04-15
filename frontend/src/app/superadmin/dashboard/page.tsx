@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, type InAppNotification } from '@/lib/api';
-import { Calendar, Bell, X, CheckCheck } from 'lucide-react';
+import { Calendar, Bell, BellRing, X, CheckCheck } from 'lucide-react';
 import { useSocket } from '@/contexts/SocketContext';
 
 interface WeeklyDay {
@@ -333,10 +333,16 @@ export default function SuperAdminDashboard() {
             </div>
             <button
               onClick={() => setNotificationPanelOpen(true)}
-              className="relative h-9 w-9 rounded-full border border-zinc-200 bg-white text-zinc-600 hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:text-white flex items-center justify-center"
+              className={`relative h-9 w-9 rounded-full border border-zinc-200 bg-white text-zinc-600 hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:text-white flex items-center justify-center ${
+                unreadCount > 0 ? 'animate-bell-wrap-pulse' : ''
+              }`}
               aria-label="Open notifications"
             >
-              <Bell className="h-4 w-4" />
+              {unreadCount > 0 ? (
+                <BellRing className="h-4 w-4 animate-bell-ring" />
+              ) : (
+                <Bell className="h-4 w-4" />
+              )}
               {unreadCount > 0 && (
                 <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-black flex items-center justify-center">
                   {unreadCount > 99 ? '99+' : unreadCount}

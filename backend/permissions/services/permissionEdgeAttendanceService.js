@@ -7,7 +7,7 @@ const Permission = require('../model/Permission');
 const { createISTDate } = require('../../shared/utils/dateUtils');
 const { calculateLateIn, calculateEarlyOut } = require('../../shifts/services/shiftDetectionService');
 
-const DEFAULT_GRACE = 15;
+const DEFAULT_GRACE = 0;
 
 /**
  * @param {string} timeStr HH:MM
@@ -94,27 +94,27 @@ async function applyEdgePermissionAdjustmentsToShiftSegment({
   let lateMin =
     pShift.isLateIn && pShift.lateInMinutes != null
       ? Number(pShift.lateInMinutes)
-      : calculateLateIn(punchIn, shiftStart, DEFAULT_GRACE, date, globalGrace);
+      : calculateLateIn(punchIn, shiftStart, 0, date, 0);
 
   let earlyMin = 0;
   if (punchOut) {
     earlyMin =
       pShift.isEarlyOut && pShift.earlyOutMinutes != null
         ? Number(pShift.earlyOutMinutes)
-        : calculateEarlyOut(punchOut, shiftEnd, shiftStart, date, globalGrace) || 0;
+        : calculateEarlyOut(punchOut, shiftEnd, shiftStart, date, 0) || 0;
   }
 
   let edgeHours = 0;
 
   const shiftStartDate = createISTDate(date, shiftStart);
-  const shiftStartGraceMs = DEFAULT_GRACE * 60 * 1000;
+  const shiftStartGraceMs = 0;
   const shiftStartGraceDate = new Date(shiftStartDate.getTime() + shiftStartGraceMs);
 
   let shiftEndDate = createISTDate(date, shiftEnd);
   if (overnight) {
     shiftEndDate = new Date(shiftEndDate.getTime() + 24 * 60 * 60 * 1000);
   }
-  const shiftEndGraceDate = new Date(shiftEndDate.getTime() - globalGrace * 60 * 1000);
+  const shiftEndGraceDate = new Date(shiftEndDate.getTime());
 
   for (const perm of perms) {
     if (!perm.permittedEdgeTime || !/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(perm.permittedEdgeTime)) continue;

@@ -383,7 +383,7 @@ const approvePermissionRequest = async (permissionId, userId, baseUrl = '', user
           permissionRequest.generateQRCode();
           permissionRequest.outpassUrl = `${baseUrl}/outpass/${permissionRequest.qrCode}`;
         } else {
-          permissionRequest.qrCode = null;
+          permissionRequest.qrCode = undefined;
           permissionRequest.outpassUrl = null;
         }
 
@@ -448,7 +448,7 @@ const approvePermissionRequest = async (permissionId, userId, baseUrl = '', user
       permissionRequest.generateQRCode();
       permissionRequest.outpassUrl = `${baseUrl}/outpass/${permissionRequest.qrCode}`;
     } else {
-      permissionRequest.qrCode = null;
+      permissionRequest.qrCode = undefined;
       permissionRequest.outpassUrl = null;
     }
 
