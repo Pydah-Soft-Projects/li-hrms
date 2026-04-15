@@ -59,6 +59,15 @@ interface ResignationRequest {
     division_id?: { _id: string; name: string };
     employee_group_id?: { _id: string; name: string };
     doj?: string;
+    dynamicFields?: Record<string, any>;
+    agreementStartDate?: string;
+    agreementEndDate?: string;
+    agreement_start_date?: string;
+    agreement_end_date?: string;
+    contractStartDate?: string;
+    contractEndDate?: string;
+    contract_start_date?: string;
+    contract_end_date?: string;
   };
   emp_no: string;
   leftDate: string;
@@ -97,6 +106,16 @@ interface ResignationRequest {
 
 const getStatusColor = (status: string) => {
   switch (status) {
+    case 'final_approved':
+      return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300';
+    case 'hod_approved':
+      return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300';
+    case 'manager_approved':
+      return 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300';
+    case 'reporting_manager_approved':
+      return 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300';
+    case 'hr_approved':
+      return 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300';
     case 'approved':
       return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
     case 'pending':
@@ -107,6 +126,72 @@ const getStatusColor = (status: string) => {
     default:
       return 'bg-slate-100 text-slate-700 dark:bg-slate-900/30 dark:text-slate-400';
   }
+};
+
+const getDisplayStatus = (req?: ResignationRequest | null) => {
+  if (!req) return 'pending';
+  const baseStatus = (req.status || 'pending').toLowerCase();
+  if (baseStatus === 'pending') {
+    const hasApprovedStep = (req.workflow?.approvalChain || []).some(
+      (step) => (step.status || '').toLowerCase() === 'approved'
+    );
+    if (hasApprovedStep) return 'approved';
+  }
+  return baseStatus;
+};
+
+const normalizeApprovalStageLabel = (label?: string) => {
+  if (!label) return '';
+  return String(label).replace(/\s*approval\s*$/i, '').trim();
+};
+
+const toDisplayCase = (value: string) => {
+  return value
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => {
+      if (word === word.toUpperCase()) return word;
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
+    .join(' ');
+};
+
+const getLatestApprovedByLabel = (req?: ResignationRequest | null) => {
+  const approvedSteps = (req?.workflow?.approvalChain || []).filter(
+    (step) => (step.status || '').toLowerCase() === 'approved'
+  );
+  if (approvedSteps.length === 0) return '';
+  const latestApprovedStep = approvedSteps[approvedSteps.length - 1];
+  const fallbackRole = (latestApprovedStep.role || '').replace(/_/g, ' ');
+  return normalizeApprovalStageLabel(latestApprovedStep.label || fallbackRole);
+};
+
+const getStatusVisualKey = (req?: ResignationRequest | null) => {
+  const displayStatus = getDisplayStatus(req);
+  if (displayStatus !== 'approved') return displayStatus;
+
+  if ((req?.status || '').toLowerCase() === 'approved' || req?.workflow?.isCompleted) {
+    return 'final_approved';
+  }
+
+  const approvedBy = getLatestApprovedByLabel(req).toLowerCase();
+  if (approvedBy.includes('reporting manager')) return 'reporting_manager_approved';
+  if (approvedBy.includes('manager')) return 'manager_approved';
+  if (approvedBy.includes('hod') || approvedBy.includes('head of department')) return 'hod_approved';
+  if (approvedBy.includes('hr')) return 'hr_approved';
+  return 'approved';
+};
+
+const getDisplayStatusText = (req?: ResignationRequest | null) => {
+  const displayStatus = getDisplayStatus(req);
+  if (displayStatus === 'approved') {
+    if ((req?.status || '').toLowerCase() === 'approved' || req?.workflow?.isCompleted) {
+      return 'Approved';
+    }
+    const approvedBy = getLatestApprovedByLabel(req);
+    return approvedBy ? `${toDisplayCase(approvedBy)} approved` : 'Approved';
+  }
+  return toDisplayCase(displayStatus);
 };
 
 const formatDate = (dateStr: string) => {
@@ -130,6 +215,17 @@ const formatDateTime = (dateStr?: string) => {
     minute: '2-digit',
     hour12: true,
   });
+};
+
+const formatDateDash = (dateStr?: string) => {
+  if (!dateStr) return '—';
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  }).replace(/\s+/g, '-');
 };
 
 /** Format date as YYYY-MM-DD in local time (avoids UTC shift that makes "today + 90" show as previous day) */
@@ -158,6 +254,36 @@ const getEmployeeInitials = (req: ResignationRequest) => {
   return (name[0] || 'E').toUpperCase();
 };
 
+const parseDateSafe = (value: any): Date | null => {
+  if (!value) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
+
+const getAgreementDatesFromEmployee = (emp: any): { startDate?: string; endDate?: string } => {
+  if (!emp) return {};
+  const dynamic = emp.dynamicFields || {};
+  const start =
+    emp.agreementStartDate ||
+    emp.agreement_start_date ||
+    emp.contractStartDate ||
+    emp.contract_start_date ||
+    dynamic.agreementStartDate ||
+    dynamic.agreement_start_date ||
+    dynamic.contractStartDate ||
+    dynamic.contract_start_date;
+  const end =
+    emp.agreementEndDate ||
+    emp.agreement_end_date ||
+    emp.contractEndDate ||
+    emp.contract_end_date ||
+    dynamic.agreementEndDate ||
+    dynamic.agreement_end_date ||
+    dynamic.contractEndDate ||
+    dynamic.contract_end_date;
+  return { startDate: start, endDate: end };
+};
+
 const canCreateResignation = (user: any) => {
   if (!user?.role) return false;
   const role = String(user.role).toLowerCase();
@@ -179,6 +305,8 @@ export default function SuperAdminResignationsPage() {
 
   const [showApplyModal, setShowApplyModal] = useState(false);
   const [applyEmployees, setApplyEmployees] = useState<{ emp_no: string; name: string }[]>([]);
+  const [applyEmployeeMeta, setApplyEmployeeMeta] = useState<Record<string, { agreementStartDate?: string; agreementEndDate?: string }>>({});
+  const [applyEmployeeSearch, setApplyEmployeeSearch] = useState('');
   const [applySelectedEmpNo, setApplySelectedEmpNo] = useState('');
   const [applyRemarks, setApplyRemarks] = useState('');
   const [applyLastWorkingDate, setApplyLastWorkingDate] = useState('');
@@ -198,6 +326,18 @@ export default function SuperAdminResignationsPage() {
   const [departments, setDepartments] = useState<any[]>([]);
   const [groups, setGroups] = useState<any[]>([]);
   const [viewType, setViewType] = useState<'card' | 'list'>('list');
+
+  const selectedApplyEmployeeAgreement = useMemo(() => {
+    return applyEmployeeMeta[applySelectedEmpNo] || {};
+  }, [applyEmployeeMeta, applySelectedEmpNo]);
+
+  const filteredApplyEmployees = useMemo(() => {
+    const q = applyEmployeeSearch.trim().toLowerCase();
+    if (!q) return applyEmployees;
+    return applyEmployees.filter((emp) =>
+      emp.name.toLowerCase().includes(q) || emp.emp_no.toLowerCase().includes(q)
+    );
+  }, [applyEmployees, applyEmployeeSearch]);
 
   useEffect(() => {
     const user = auth.getUser();
@@ -253,6 +393,7 @@ export default function SuperAdminResignationsPage() {
 
   const openApplyModal = (type: 'resignation' | 'termination' = 'resignation') => {
     setApplySelectedEmpNo('');
+    setApplyEmployeeSearch('');
     setApplyRemarks('');
     setApplyType(type);
     if (type === 'termination') {
@@ -305,10 +446,24 @@ export default function SuperAdminResignationsPage() {
             emp_no: e.emp_no,
             name: e.employee_name || [e.first_name, e.last_name].filter(Boolean).join(' ') || e.emp_no,
           }));
+        const meta: Record<string, { agreementStartDate?: string; agreementEndDate?: string }> = {};
+        arr.forEach((e: any) => {
+          if (!e?.emp_no) return;
+          const agreementDates = getAgreementDatesFromEmployee(e);
+          meta[e.emp_no] = {
+            agreementStartDate: agreementDates.startDate,
+            agreementEndDate: agreementDates.endDate,
+          };
+        });
+        setApplyEmployeeMeta(meta);
         setApplyEmployees(options);
+      setApplyEmployeeSearch('');
         if (options.length > 0 && !applySelectedEmpNo) setApplySelectedEmpNo(options[0].emp_no);
       } catch (_) {
-        if (!cancelled) setApplyEmployees([]);
+        if (!cancelled) {
+          setApplyEmployees([]);
+          setApplyEmployeeMeta({});
+        }
       } finally {
         if (!cancelled) setApplyModalLoading(false);
       }
@@ -324,6 +479,27 @@ export default function SuperAdminResignationsPage() {
     }
     setApplyLoading(true);
     try {
+      if (applyType === 'resignation') {
+        const agreementEnd = parseDateSafe(selectedApplyEmployeeAgreement.agreementEndDate);
+        const lwd = parseDateSafe(applyLastWorkingDate);
+        if (agreementEnd && lwd && lwd < agreementEnd) {
+          const now = new Date();
+          const remainingDays = Math.max(1, Math.ceil((agreementEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+          const result = await Swal.fire({
+            icon: 'warning',
+            title: 'Agreement period not completed',
+            text: `Agreement end date is ${agreementEnd.toLocaleDateString('en-IN')}. It still has around ${remainingDays} day(s). Do you want to continue resignation submission?`,
+            showCancelButton: true,
+            confirmButtonText: 'Yes, continue',
+            cancelButtonText: 'Cancel',
+          });
+          if (!result.isConfirmed) {
+            setApplyLoading(false);
+            return;
+          }
+        }
+      }
+
       const res = await api.createResignationRequest({
         emp_no: applySelectedEmpNo,
         leftDate: applyLastWorkingDate,
@@ -725,8 +901,8 @@ export default function SuperAdminResignationsPage() {
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
-                            req.status === 'approved' ? 'bg-green-100 text-green-600 dark:bg-green-900/30' : 
-                            req.status === 'pending' ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30' : 'bg-rose-100 text-rose-600 dark:bg-rose-900/30'
+                            getStatusVisualKey(req).includes('approved') ? 'bg-green-100 text-green-600 dark:bg-green-900/30' :
+                            getDisplayStatus(req) === 'pending' ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30' : 'bg-rose-100 text-rose-600 dark:bg-rose-900/30'
                           }`}>
                             {getEmployeeInitials(req)}
                           </div>
@@ -771,8 +947,8 @@ export default function SuperAdminResignationsPage() {
                         </div>
                       </td>
                       <td className="px-6 py-4 text-center font-bold">
-                        <span className={`inline-block rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-tighter ${getStatusColor(req.status)}`}>
-                          {req.status}
+                        <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-bold ${getStatusColor(getStatusVisualKey(req))}`}>
+                          <span>{getDisplayStatusText(req)}</span>
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right">
@@ -819,14 +995,19 @@ export default function SuperAdminResignationsPage() {
               {filteredRequests.map((req) => (
                 <div key={req._id} className="group relative flex flex-col justify-between rounded-2xl border border-slate-200/60 bg-white p-5 shadow-sm transition-all hover:shadow-md hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900">
                   <div className={`absolute top-0 left-0 w-1 h-full rounded-l-2xl group-hover:w-1.5 transition-all ${
-                    req.status === 'approved' ? 'bg-green-500/80' : 
-                    req.status === 'pending' ? 'bg-amber-500/80' : 'bg-rose-500/80'
+                    getStatusVisualKey(req) === 'final_approved' ? 'bg-emerald-500/80' :
+                    getStatusVisualKey(req) === 'hod_approved' ? 'bg-blue-500/80' :
+                    getStatusVisualKey(req) === 'manager_approved' ? 'bg-violet-500/80' :
+                    getStatusVisualKey(req) === 'reporting_manager_approved' ? 'bg-cyan-500/80' :
+                    getStatusVisualKey(req) === 'hr_approved' ? 'bg-indigo-500/80' :
+                    getDisplayStatus(req) === 'approved' ? 'bg-green-500/80' :
+                    getDisplayStatus(req) === 'pending' ? 'bg-amber-500/80' : 'bg-rose-500/80'
                   }`} />
                   <div className="flex items-start justify-between gap-3 mb-3">
                     <div className="flex items-center gap-3">
                       <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full font-bold ${
-                        req.status === 'approved' ? 'bg-green-100 text-green-600 dark:bg-green-900/30' : 
-                        req.status === 'pending' ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30' : 'bg-rose-100 text-rose-600 dark:bg-rose-900/30'
+                        getStatusVisualKey(req).includes('approved') ? 'bg-green-100 text-green-600 dark:bg-green-900/30' :
+                        getDisplayStatus(req) === 'pending' ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30' : 'bg-rose-100 text-rose-600 dark:bg-rose-900/30'
                       }`}>
                         {getEmployeeInitials(req)}
                       </div>
@@ -835,8 +1016,8 @@ export default function SuperAdminResignationsPage() {
                         <p className="text-xs text-slate-500 dark:text-slate-400">{req.emp_no}</p>
                       </div>
                     </div>
-                    <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(req.status)}`}>
-                      {req.status}
+                    <span className={`shrink-0 rounded-full px-2.5 py-1 text-sm font-semibold ${getStatusColor(getStatusVisualKey(req))}`}>
+                      <span>{getDisplayStatusText(req)}</span>
                     </span>
                   </div>
                   
@@ -932,17 +1113,39 @@ export default function SuperAdminResignationsPage() {
             ) : (
               <div className="space-y-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Employee</label>
-                  <select
-                    value={applySelectedEmpNo}
-                    onChange={(e) => setApplySelectedEmpNo(e.target.value)}
-                    className="w-full h-11 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-medium text-slate-900 dark:text-white focus:ring-4 focus:ring-green-500/10 focus:border-green-500 outline-none"
-                  >
-                    <option value="">Select employee</option>
-                    {applyEmployees.map((emp) => (
-                      <option key={emp.emp_no} value={emp.emp_no}>{emp.name} ({emp.emp_no})</option>
-                    ))}
-                  </select>
+                  <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Search Employee</label>
+                  <input
+                    type="text"
+                    value={applyEmployeeSearch}
+                    onChange={(e) => {
+                      setApplyEmployeeSearch(e.target.value);
+                      if (applySelectedEmpNo) setApplySelectedEmpNo('');
+                    }}
+                    placeholder="Search by name or employee ID..."
+                    className="mb-3 w-full h-10 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 text-sm font-medium text-slate-900 dark:text-white focus:ring-4 focus:ring-green-500/10 focus:border-green-500 outline-none"
+                  />
+                  {applyEmployeeSearch.trim() && !applySelectedEmpNo && (
+                    <div className="mb-2 max-h-40 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
+                      {filteredApplyEmployees.length > 0 ? (
+                        filteredApplyEmployees.map((emp) => (
+                          <button
+                            key={emp.emp_no}
+                            type="button"
+                            onClick={() => {
+                              setApplySelectedEmpNo(emp.emp_no);
+                              setApplyEmployeeSearch(`${emp.name} (${emp.emp_no})`);
+                            }}
+                            className="flex w-full items-center justify-between px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-700"
+                          >
+                            <span className="font-medium">{emp.name}</span>
+                            <span className="text-xs text-slate-500 dark:text-slate-400">{emp.emp_no}</span>
+                          </button>
+                        ))
+                      ) : (
+                        <p className="px-3 py-2 text-sm text-slate-500 dark:text-slate-400">No employees found</p>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -993,6 +1196,27 @@ export default function SuperAdminResignationsPage() {
                   </div>
                   <p className="mt-1 text-[10px] text-slate-400">{applyType === 'termination' ? 'Defaults to today; employee will be deactivated upon final approval.' : 'Auto-set from notice period; last day in office.'}</p>
                 </div>
+                <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/40 p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Agreement period</p>
+                  <div className="mt-1.5 grid grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <p className="text-slate-400">Start date</p>
+                      <p className="font-semibold text-slate-800 dark:text-slate-200">{selectedApplyEmployeeAgreement.agreementStartDate ? new Date(selectedApplyEmployeeAgreement.agreementStartDate).toLocaleDateString('en-IN') : '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-slate-400">End date</p>
+                      <p className="font-semibold text-slate-800 dark:text-slate-200">{selectedApplyEmployeeAgreement.agreementEndDate ? new Date(selectedApplyEmployeeAgreement.agreementEndDate).toLocaleDateString('en-IN') : '—'}</p>
+                    </div>
+                  </div>
+                  {applyType === 'resignation' &&
+                    parseDateSafe(selectedApplyEmployeeAgreement.agreementEndDate) &&
+                    parseDateSafe(applyLastWorkingDate) &&
+                    parseDateSafe(applyLastWorkingDate)! < parseDateSafe(selectedApplyEmployeeAgreement.agreementEndDate)! && (
+                      <p className="mt-2 text-[11px] font-medium text-amber-700 dark:text-amber-400">
+                        Agreement end date is still pending. You will see a confirmation warning before submitting this resignation.
+                      </p>
+                    )}
+                </div>
                 <div className="flex gap-3 pt-2">
                   <button type="button" onClick={() => !applyLoading && setShowApplyModal(false)} className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-800">
                     Cancel
@@ -1010,19 +1234,104 @@ export default function SuperAdminResignationsPage() {
       {showDetailDialog && selectedRequest && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => { setShowDetailDialog(false); setSelectedRequest(null); }} />
-          <div className="relative z-50 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl p-6">
+          <div className="relative z-50 w-full max-w-6xl max-h-[90vh] overflow-y-auto rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-bold text-slate-900 dark:text-white">
                 {selectedRequest.requestType === 'termination' ? 'Termination request' : 'Resignation request'}
               </h2>
-              {selectedRequest.requestType === 'termination' && (
-                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-900/20 border border-rose-100 dark:border-rose-800/30">
-                  <X className="w-3 h-3 text-rose-500" />
-                  <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 tracking-tighter uppercase">Termination</span>
-                </div>
-              )}
+              <div className="flex items-center gap-2">
+                {selectedRequest.requestType === 'termination' && (
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-50 dark:bg-rose-900/20 border border-rose-100 dark:border-rose-800/30">
+                    <X className="w-3 h-3 text-rose-500" />
+                    <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 tracking-tighter uppercase">Termination</span>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => { setShowDetailDialog(false); setSelectedRequest(null); }}
+                  className="rounded-lg border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50 hover:text-slate-700 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                  aria-label="Close details"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
             </div>
-            <div className="space-y-3 text-sm">
+            <div className="mb-4 border-b border-slate-200 pb-4 dark:border-slate-800">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">{getEmployeeName(selectedRequest)}</h3>
+                <span className={`rounded-full px-2.5 py-1 text-sm font-semibold ${getStatusColor(getStatusVisualKey(selectedRequest))}`}>
+                  <span>{getDisplayStatusText(selectedRequest)}</span>
+                </span>
+              </div>
+              <p className="mt-0.5 text-sm font-semibold text-slate-500 dark:text-slate-400">Employee ID: {selectedRequest.emp_no}</p>
+              <div className="mt-3 grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
+                <div><p className="text-[10px] font-bold uppercase text-slate-400">Division</p><p className="mt-0.5 font-semibold text-slate-900 dark:text-white">{selectedRequest.employeeId?.division_id?.name || '—'}</p></div>
+                <div><p className="text-[10px] font-bold uppercase text-slate-400">Department</p><p className="mt-0.5 font-semibold text-slate-900 dark:text-white">{selectedRequest.employeeId?.department_id?.name || '—'}</p></div>
+                <div><p className="text-[10px] font-bold uppercase text-slate-400">Designation</p><p className="mt-0.5 font-semibold text-slate-900 dark:text-white">{(selectedRequest.employeeId as any)?.designation_id?.name || '—'}</p></div>
+                <div><p className="text-[10px] font-bold uppercase text-slate-400">Employee Group</p><p className="mt-0.5 font-semibold text-slate-900 dark:text-white">{selectedRequest.employeeId?.employee_group_id?.name || '—'}</p></div>
+              </div>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-5">
+              <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900 lg:col-span-3">
+                <h4 className="mb-3 text-[10px] font-black uppercase tracking-wider text-slate-400">Details</h4>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div><p className="text-[10px] font-bold uppercase text-slate-500">Date of joining</p><p className="mt-0.5 font-semibold text-slate-900 dark:text-white">{formatDateDash(selectedRequest.employeeId?.doj)}</p></div>
+                  <div><p className="text-[10px] font-bold uppercase text-slate-500">{selectedRequest.requestType === 'termination' ? 'Termination date' : 'Last working date'}</p><p className="mt-0.5 font-semibold text-slate-900 dark:text-white">{formatDateDash(selectedRequest.leftDate)}</p></div>
+                  <div><p className="text-[10px] font-bold uppercase text-slate-500">Agreement start date</p><p className="mt-0.5 font-semibold text-slate-900 dark:text-white">{(() => { const d = getAgreementDatesFromEmployee(selectedRequest.employeeId); return formatDateDash(d.startDate); })()}</p></div>
+                  <div><p className="text-[10px] font-bold uppercase text-slate-500">Agreement end date</p><p className="mt-0.5 font-semibold text-slate-900 dark:text-white">{(() => { const d = getAgreementDatesFromEmployee(selectedRequest.employeeId); return formatDateDash(d.endDate); })()}</p></div>
+                </div>
+                {selectedRequest.remarks && (
+                  <div className="mt-4">
+                    <p className="text-[10px] font-bold uppercase text-slate-400">Reason / Remarks</p>
+                    <p className="mt-1 text-sm text-slate-700 dark:text-slate-300">{selectedRequest.remarks}</p>
+                  </div>
+                )}
+                <div className="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase text-slate-400">Requested by</p>
+                    <p className="mt-0.5 font-medium text-slate-900 dark:text-white">{selectedRequest.requestedBy?.name || '—'}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase text-slate-400">Requested on</p>
+                    <p className="mt-0.5 font-medium text-slate-900 dark:text-white">{formatDateTime(selectedRequest.createdAt)}</p>
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900 lg:col-span-2">
+                <h3 className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3">Approval History</h3>
+                {selectedRequest.workflow?.approvalChain && selectedRequest.workflow.approvalChain.length > 0 ? (
+                  <div className="space-y-3">
+                    {selectedRequest.workflow.approvalChain.map((step, idx) => {
+                      const isPending = !step.status || step.status === 'pending';
+                      const isRejected = step.status === 'rejected';
+                      const isApproved = step.status === 'approved';
+                      return (
+                        <div key={idx} className="relative pl-6 border-l-2 border-slate-200 dark:border-slate-700 ml-1 pb-4 last:pb-0">
+                          <div className={`absolute -left-[9px] top-0.5 w-4 h-4 rounded-full border-2 border-white dark:border-slate-900 shadow-sm ${isApproved ? 'bg-green-500' : isRejected ? 'bg-red-500' : 'bg-slate-300 dark:bg-slate-600'}`} />
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{step.label || step.role}</span>
+                              <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${isApproved ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : isRejected ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-500'}`}>{step.status || 'pending'}</span>
+                            </div>
+                            {!isPending && (
+                              <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                                <p>By: <span className="font-semibold text-slate-700 dark:text-slate-200">{step.actionByName || '—'}</span></p>
+                                <p className="mt-0.5">Action date: <span className="font-semibold text-slate-700 dark:text-slate-200">{step.updatedAtIST || formatDateTime(step.updatedAt)}</span></p>
+                                {step.comments && <p className="mt-1 italic border-l-2 border-slate-200 dark:border-slate-700 pl-2">&quot;{step.comments}&quot;</p>}
+                              </div>
+                            )}
+                            {isPending && <p className="text-[11px] text-slate-500 dark:text-slate-400">Action date: <span className="font-semibold text-slate-700 dark:text-slate-200">Awaiting approval</span></p>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : <p className="text-sm text-slate-500 dark:text-slate-400">No approval history available.</p>}
+              </div>
+            </div>
+
+            <div className="hidden space-y-3 text-sm">
               <div className="flex justify-between items-start">
                 <span className="text-slate-500 dark:text-slate-400">Employee</span>
                 <div className="text-right">
@@ -1060,6 +1369,24 @@ export default function SuperAdminResignationsPage() {
                       {selectedRequest.employeeId?.department_id?.name || '—'}
                     </p>
                   </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase text-slate-400">Agreement start date</p>
+                    <p className="mt-0.5 text-sm font-medium text-slate-900 dark:text-white">
+                      {(() => {
+                        const dates = getAgreementDatesFromEmployee(selectedRequest.employeeId);
+                        return dates.startDate ? new Date(dates.startDate).toLocaleDateString('en-IN') : '—';
+                      })()}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase text-slate-400">Agreement end date</p>
+                    <p className="mt-0.5 text-sm font-medium text-slate-900 dark:text-white">
+                      {(() => {
+                        const dates = getAgreementDatesFromEmployee(selectedRequest.employeeId);
+                        return dates.endDate ? new Date(dates.endDate).toLocaleDateString('en-IN') : '—';
+                      })()}
+                    </p>
+                  </div>
                 </div>
               </div>
               <div className="flex justify-between items-center gap-4">
@@ -1093,7 +1420,9 @@ export default function SuperAdminResignationsPage() {
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500 dark:text-slate-400">Status</span>
-                <span className={`rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${getStatusColor(selectedRequest.status)}`}>{selectedRequest.status}</span>
+                <span className={`rounded-full px-2.5 py-1 text-sm font-semibold ${getStatusColor(getStatusVisualKey(selectedRequest))}`}>
+                  <span>{getDisplayStatusText(selectedRequest)}</span>
+                </span>
               </div>
               {selectedRequest.remarks && (
                 <div>
@@ -1110,7 +1439,7 @@ export default function SuperAdminResignationsPage() {
             </div>
 
             {selectedRequest.workflow?.approvalChain && selectedRequest.workflow.approvalChain.length > 0 && (
-              <div className="mt-6 pt-4 border-t border-slate-200 dark:border-slate-700">
+              <div className="hidden mt-6 pt-4 border-t border-slate-200 dark:border-slate-700">
                 <h3 className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3">Approval History</h3>
                 <div className="space-y-3">
                   {selectedRequest.workflow.approvalChain.map((step, idx) => {
@@ -1181,35 +1510,7 @@ export default function SuperAdminResignationsPage() {
 
             {selectedRequest.status === 'pending' && canPerformAction(selectedRequest) && (
               <div className="mt-6 pt-4 border-t border-slate-200 dark:border-slate-700 flex flex-col gap-4">
-                <div className="flex flex-col gap-2">
-                  <label className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500">Approver Action</label>
-                  
-                  {/* LWD Edit Option if enabled for this step */}
-                  {(() => {
-                    const currentStep = selectedRequest.workflow?.approvalChain?.find(s => s.status === 'pending' || !s.status);
-                    const userRole = (currentUser?.role || '').toLowerCase();
-                    const isSuperOrSubAdmin = ['super_admin', 'sub_admin'].includes(userRole);
-                    
-                    // Allow edit if step allows it OR if user is Super/Sub Admin
-                    if (currentStep?.canEditLWD || isSuperOrSubAdmin) {
-                      return (
-                        <div className="mb-2 p-3 rounded-xl bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/50">
-                          <label className="block text-[10px] font-black uppercase text-amber-700 dark:text-amber-500 mb-2">Update Last Working Date</label>
-                          <input
-                            type="date"
-                            value={newLeftDate || (selectedRequest.leftDate ? String(selectedRequest.leftDate).split('T')[0] : '')}
-                            onChange={(e) => setNewLeftDate(e.target.value)}
-                            className="w-full h-10 px-3 rounded-lg border border-orange-200 dark:border-orange-800 bg-white dark:bg-slate-900 text-sm outline-none focus:ring-2 focus:ring-orange-500 text-slate-800 dark:text-slate-100"
-                          />
-                          <p className="mt-1.5 text-[10px] text-amber-600 dark:text-amber-400 font-medium italic">
-                            {currentStep?.canEditLWD ? "This step allows LWD editing." : "Super Admin override: You can edit the LWD."}
-                          </p>
-                        </div>
-                      );
-                    }
-                    return null;
-                  })()}
-
+                <div className="grid gap-2 sm:grid-cols-2">
                   <textarea
                     value={actionComment}
                     onChange={(e) => setActionComment(e.target.value)}
@@ -1217,6 +1518,23 @@ export default function SuperAdminResignationsPage() {
                     rows={2}
                     className="w-full rounded-xl border border-slate-300 dark:border-slate-600 px-4 py-2 text-sm dark:bg-slate-800 dark:text-white resize-none outline-none focus:ring-2 focus:ring-green-500/20"
                   />
+                  {(() => {
+                    const currentStep = selectedRequest.workflow?.approvalChain?.find(s => s.status === 'pending' || !s.status);
+                    const userRole = (currentUser?.role || '').toLowerCase();
+                    const isSuperOrSubAdmin = ['super_admin', 'sub_admin'].includes(userRole);
+                    if (!(currentStep?.canEditLWD || isSuperOrSubAdmin)) return null;
+                    return (
+                      <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/50">
+                        <label className="block text-[10px] font-black uppercase text-amber-700 dark:text-amber-500 mb-2">Update Last Working Date</label>
+                        <input
+                          type="date"
+                          value={newLeftDate || (selectedRequest.leftDate ? String(selectedRequest.leftDate).split('T')[0] : '')}
+                          onChange={(e) => setNewLeftDate(e.target.value)}
+                          className="w-full h-10 px-3 rounded-lg border border-orange-200 dark:border-orange-800 bg-white dark:bg-slate-900 text-sm outline-none focus:ring-2 focus:ring-orange-500 text-slate-800 dark:text-slate-100"
+                        />
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div className="flex gap-2">
                   <button
@@ -1236,14 +1554,6 @@ export default function SuperAdminResignationsPage() {
                 </div>
               </div>
             )}
-
-            <button
-              type="button"
-              onClick={() => { setShowDetailDialog(false); setSelectedRequest(null); }}
-              className="mt-4 w-full py-2 border border-slate-300 dark:border-slate-600 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
-            >
-              Close
-            </button>
           </div>
         </div>
       )}

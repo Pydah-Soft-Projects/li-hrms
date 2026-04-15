@@ -150,6 +150,32 @@ interface EmployeeApplication {
   employeeDeductions?: any[];
 }
 
+interface UpdateRequest {
+  _id: string;
+  employeeId?: {
+    _id: string;
+    employee_name?: string;
+    emp_no?: string;
+    profilePhoto?: string;
+    division?: { name?: string };
+    department?: { name?: string };
+    designation?: { name?: string };
+  };
+  emp_no: string;
+  requestedChanges: Record<string, any>;
+  previousValues?: Record<string, any>;
+  status: 'pending' | 'approved' | 'rejected';
+  createdBy?: {
+    _id?: string;
+    name?: string;
+    employee_name?: string;
+  };
+  comments?: string;
+  createdAt: string;
+  updatedAt?: string;
+  parentRequestId?: string;
+}
+
 /** Format date as YYYY-MM-DD in local time (avoids UTC shift for resignation last working date) */
 const toLocalDateString = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
@@ -232,9 +258,12 @@ const renderCustomFieldsForSystemGroup = (groupId: string, hardcodedFieldIds: st
 // Start of Component
 export default function EmployeesPage() {
   const [currentUser, setCurrentUser] = useState<any>(null); // To track logged-in user for view logic
-  const [activeTab, setActiveTab] = useState<'employees' | 'applications'>('employees');
+  const [activeTab, setActiveTab] = useState<'employees' | 'applications' | 'requests'>('employees');
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [applications, setApplications] = useState<EmployeeApplication[]>([]);
+  const [updateRequests, setUpdateRequests] = useState<UpdateRequest[]>([]);
+  const [loadingUpdateRequests, setLoadingUpdateRequests] = useState(false);
+  const [requestViewFilter, setRequestViewFilter] = useState<'pending' | 'action_taken' | 'all'>('pending');
   const [divisions, setDivisions] = useState<Division[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [designations, setDesignations] = useState<Designation[]>([]);
@@ -251,6 +280,22 @@ export default function EmployeesPage() {
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [editingApplicationID, setEditingApplicationID] = useState<string | null>(null); // Track ID of application being edited
   const [showViewDialog, setShowViewDialog] = useState(false);
+  const [showProfileHistoryDialog, setShowProfileHistoryDialog] = useState(false);
+  const [selectedProfileHistoryEmployee, setSelectedProfileHistoryEmployee] = useState<{
+    employeeName: string;
+    empNo: string;
+    division?: string;
+    department?: string;
+    designation?: string;
+    requests: Array<{
+      key: string;
+      requestedAt: string;
+      pendingFields: string[];
+      approvedFields: string[];
+      rejectedFields: string[];
+      comments?: string;
+    }>;
+  } | null>(null);
   const [showBankUpdateDialog, setShowBankUpdateDialog] = useState(false);
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [selectedEmployeeForExport, setSelectedEmployeeForExport] = useState<Employee | null>(null);
@@ -769,6 +814,12 @@ export default function EmployeesPage() {
         return;
       }
       loadApplications();
+    } else if (activeTab === 'requests') {
+      if (!canViewApplications && userRole) {
+        setActiveTab('employees');
+        return;
+      }
+      loadUpdateRequests();
     }
   }, [activeTab, canViewApplications, userRole]);
 
@@ -1317,6 +1368,20 @@ export default function EmployeesPage() {
       console.error('Error loading applications:', err);
     } finally {
       setLoadingApplications(false);
+    }
+  };
+
+  const loadUpdateRequests = async () => {
+    try {
+      setLoadingUpdateRequests(true);
+      const response = await api.getMyEmployeeUpdateRequests();
+      if (response.success) {
+        setUpdateRequests((response.data || []) as UpdateRequest[]);
+      }
+    } catch (err) {
+      console.error('Error loading profile requests:', err);
+    } finally {
+      setLoadingUpdateRequests(false);
     }
   };
 
@@ -2062,6 +2127,63 @@ export default function EmployeesPage() {
     }
   };
 
+  const openEmployeeViewFromApplication = async (application: EmployeeApplication) => {
+    // Open the full Employee View dialog, using application data as initial snapshot.
+    setViewingApplication(application);
+
+    const mapped: any = {
+      emp_no: application.emp_no,
+      employee_name: application.employee_name,
+      division_id: application.division_id,
+      department_id: application.department_id,
+      designation_id: application.designation_id,
+      employee_group_id: (application as any).employee_group_id,
+      employee_group: (application as any).employee_group,
+      department: application.department,
+      designation: application.designation,
+      doj: application.doj,
+      dob: application.dob,
+      gross_salary: (application as any).gross_salary,
+      proposedSalary: application.proposedSalary,
+      approvedSalary: application.approvedSalary,
+      gender: application.gender,
+      marital_status: application.marital_status,
+      blood_group: application.blood_group,
+      qualifications: application.qualifications,
+      experience: application.experience,
+      address: application.address,
+      location: application.location,
+      aadhar_number: application.aadhar_number,
+      phone_number: application.phone_number,
+      alt_phone_number: application.alt_phone_number,
+      email: application.email,
+      pf_number: application.pf_number,
+      esi_number: application.esi_number,
+      bank_account_no: application.bank_account_no,
+      bank_name: application.bank_name,
+      bank_place: application.bank_place,
+      ifsc_code: application.ifsc_code,
+      is_active: true,
+      qualificationStatus: (application as any).qualificationStatus,
+      profilePhoto: (application as any).profilePhoto,
+    };
+
+    setViewingEmployee(mapped as Employee);
+    setShowViewDialog(true);
+
+    // If employee record already exists (post-verify), load the real employee details.
+    try {
+      if (application.emp_no) {
+        const res = await api.getEmployee(application.emp_no);
+        if (res?.success && res?.data) {
+          setViewingEmployee(res.data as Employee);
+        }
+      }
+    } catch (e) {
+      // Ignore; we still show mapped application snapshot.
+    }
+  };
+
   const openCreateDialog = () => {
     setEditingEmployee(null);
     setFormData(initialFormStateWithDefaults);
@@ -2139,6 +2261,233 @@ export default function EmployeesPage() {
   const verifiedApplications = filteredApplications.filter(app => app.status === 'verified');
   const approvedApplications = filteredApplications.filter(app => app.status === 'approved');
   const rejectedApplications = filteredApplications.filter(app => app.status === 'rejected');
+
+  const myProfileRequests = useMemo(() => updateRequests, [updateRequests]);
+
+  const getFilteredRequestFields = useCallback((req: UpdateRequest) => {
+    const noiseFields = [
+      'allData', 'AllData', 'division', 'department', 'designation',
+      'employeeGroup', 'employee_group', 'dynamicFields', 'GenQualifications',
+      'AllAllowanceDeductions', 'leave_stats', 'payroll_stats',
+      'employeeAllowances', 'employeeDeductions', 'isProfileRequest',
+      'getQualifications', 'setQualifications', 'updatedAt', 'lastLogin',
+      'createdAt', 'updated_at', 'last_login', 'created_at',
+      'v', '_v', '__v'
+    ];
+
+    const normalize = (v: any) => {
+      if (v === null || v === undefined || v === '' || v === 0 || v === '0' || v === false || v === 'false') return null;
+      if (v === true || v === 'true') return true;
+      if (typeof v === 'string' && !isNaN(Number(v)) && v.trim() !== '') return Number(v);
+      if (Array.isArray(v) && v.length === 0) return null;
+      if (typeof v === 'object' && v !== null && Object.keys(v).length === 0 && !(v instanceof Date)) return null;
+      if (typeof v === 'string') return v.trim();
+      return v;
+    };
+
+    const formatValue = (val: any) => {
+      if (val === null || val === undefined || val === '') return '—';
+
+      // Date object
+      if (val instanceof Date) {
+        const t = val.getTime();
+        if (!Number.isFinite(t)) return '—';
+        return val.toLocaleDateString('en-GB');
+      }
+
+      // ISO-like date string (YYYY-MM-DD or full ISO)
+      if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}/.test(val.trim())) {
+        const d = new Date(val);
+        if (!Number.isNaN(d.getTime())) return d.toLocaleDateString('en-GB');
+        return val.trim();
+      }
+
+      if (typeof val === 'object') {
+        if (Array.isArray(val)) return val.length > 0 ? `List (${val.length})` : '—';
+        if ((val as any)?.name) return (val as any).name;
+        return Object.keys(val).length > 0 ? 'Object' : '—';
+      }
+      return String(val);
+    };
+
+    return Object.entries(req.requestedChanges || {})
+      .filter(([field]) => !field.startsWith('_') && !noiseFields.some((nf) => nf.toLowerCase() === field.toLowerCase()))
+      .filter(([field, newValue]) => {
+        const empData = (req.employeeId || {}) as any;
+        const hasSnapshot = Object.prototype.hasOwnProperty.call(req.previousValues || {}, field);
+        const oldValue = hasSnapshot
+          ? (req.previousValues as any)?.[field]
+          : (req.status === 'pending'
+            ? (empData?.[field] ?? empData?.dynamicFields?.[field])
+            : undefined);
+
+        const nOld = normalize(oldValue);
+        const nNew = normalize(newValue);
+        if (JSON.stringify(nOld) === JSON.stringify(nNew)) return false;
+
+        // For processed requests, if no old snapshot exists, keep field visible.
+        if (req.status !== 'pending' && !hasSnapshot) return true;
+
+        const fOld = formatValue(oldValue);
+        const fNew = formatValue(newValue);
+        return fOld !== fNew;
+      })
+      .map(([field]) => field);
+  }, []);
+
+  const groupedProfileHistoryAll = useMemo(() => {
+    const groups = new Map<string, {
+      key: string;
+      requestedAt: string;
+      employeeName: string;
+      empNo: string;
+      division?: string;
+      department?: string;
+      designation?: string;
+      pendingFields: string[];
+      approvedFields: string[];
+      rejectedFields: string[];
+      comments?: string;
+    }>();
+
+    const sorted = [...myProfileRequests].sort((a, b) => {
+      const aTs = new Date(a.updatedAt || a.createdAt).getTime();
+      const bTs = new Date(b.updatedAt || b.createdAt).getTime();
+      return bTs - aTs;
+    });
+
+    sorted.forEach((req) => {
+      const fields = getFilteredRequestFields(req);
+      const groupKey = req.parentRequestId || req._id;
+      const existing = groups.get(groupKey);
+
+      if (!existing) {
+        groups.set(groupKey, {
+          key: groupKey,
+          requestedAt: req.createdAt,
+          employeeName: req.employeeId?.employee_name || 'Unknown Employee',
+          empNo: req.emp_no || req.employeeId?.emp_no || '-',
+          division: req.employeeId?.division?.name,
+          department: req.employeeId?.department?.name,
+          designation: req.employeeId?.designation?.name,
+          pendingFields: req.status === 'pending' ? fields : [],
+          approvedFields: req.status === 'approved' ? fields : [],
+          rejectedFields: req.status === 'rejected' ? fields : [],
+          comments: req.comments,
+        });
+      } else {
+        if (req.status === 'pending') existing.pendingFields.push(...fields);
+        if (req.status === 'approved') existing.approvedFields.push(...fields);
+        if (req.status === 'rejected') existing.rejectedFields.push(...fields);
+        if (!existing.comments && req.comments) existing.comments = req.comments;
+      }
+    });
+
+    const dedupe = (arr: string[]) => Array.from(new Set(arr));
+    const list = Array.from(groups.values()).map((item) => ({
+      ...item,
+      pendingFields: dedupe(item.pendingFields),
+      approvedFields: dedupe(item.approvedFields),
+      rejectedFields: dedupe(item.rejectedFields),
+    }));
+    return list;
+  }, [myProfileRequests, getFilteredRequestFields]);
+
+  const groupedProfileHistory = useMemo(() => {
+    if (requestViewFilter === 'pending') {
+      return groupedProfileHistoryAll.filter((item) => item.pendingFields.length > 0);
+    }
+    if (requestViewFilter === 'action_taken') {
+      return groupedProfileHistoryAll.filter((item) => item.approvedFields.length > 0 || item.rejectedFields.length > 0);
+    }
+    return groupedProfileHistoryAll;
+  }, [groupedProfileHistoryAll, requestViewFilter]);
+
+  // Stats should always reflect overall totals, not current filter.
+  const pendingProfileRequests = groupedProfileHistoryAll.filter((g) => g.pendingFields.length > 0);
+  const approvedProfileRequests = groupedProfileHistoryAll.filter((g) => g.approvedFields.length > 0);
+  const rejectedProfileRequests = groupedProfileHistoryAll.filter((g) => g.rejectedFields.length > 0);
+
+  const profileRequestsByEmployee = useMemo(() => {
+    const map = new Map<string, {
+      employeeName: string;
+      empNo: string;
+      division?: string;
+      department?: string;
+      designation?: string;
+      requests: Array<{
+        key: string;
+        requestedAt: string;
+        pendingFields: string[];
+        approvedFields: string[];
+        rejectedFields: string[];
+        comments?: string;
+      }>;
+      requestedFields: Set<string>;
+      approvedFields: Set<string>;
+      rejectedFields: Set<string>;
+    }>();
+
+    groupedProfileHistory.forEach((item) => {
+      const key = `${item.empNo}__${item.employeeName}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          employeeName: item.employeeName,
+          empNo: item.empNo,
+          division: item.division,
+          department: item.department,
+          designation: item.designation,
+          requests: [],
+          requestedFields: new Set<string>(),
+          approvedFields: new Set<string>(),
+          rejectedFields: new Set<string>(),
+        });
+      }
+      const row = map.get(key)!;
+      row.requests.push({
+        key: item.key,
+        requestedAt: item.requestedAt,
+        pendingFields: item.pendingFields,
+        approvedFields: item.approvedFields,
+        rejectedFields: item.rejectedFields,
+        comments: item.comments,
+      });
+      item.pendingFields.forEach((f) => row.requestedFields.add(f));
+      item.approvedFields.forEach((f) => {
+        row.requestedFields.add(f);
+        row.approvedFields.add(f);
+      });
+      item.rejectedFields.forEach((f) => {
+        row.requestedFields.add(f);
+        row.rejectedFields.add(f);
+      });
+    });
+
+    return Array.from(map.values()).map((row) => ({
+      ...row,
+      requests: row.requests
+        .sort((a, b) => new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime())
+        .filter((req, idx, arr) => {
+          // Collapse accidental duplicates with identical status-field payload.
+          const signature = JSON.stringify({
+            pending: [...req.pendingFields].sort(),
+            approved: [...req.approvedFields].sort(),
+            rejected: [...req.rejectedFields].sort(),
+            comments: req.comments || '',
+          });
+          const firstSameIdx = arr.findIndex((x) => JSON.stringify({
+            pending: [...x.pendingFields].sort(),
+            approved: [...x.approvedFields].sort(),
+            rejected: [...x.rejectedFields].sort(),
+            comments: x.comments || '',
+          }) === signature);
+          return firstSameIdx === idx;
+        }),
+      requestedFields: Array.from(row.requestedFields),
+      approvedFields: Array.from(row.approvedFields),
+      rejectedFields: Array.from(row.rejectedFields),
+    }));
+  }, [groupedProfileHistory]);
 
   const handleCreateApplication = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -2251,8 +2600,18 @@ export default function EmployeesPage() {
 
       if (response.success) {
         setSuccess('Application verified successfully! Employee record created and credentials sent.');
-        loadApplications();
-        loadEmployees();
+        await loadApplications();
+        await loadEmployees();
+
+        // Refresh view with actual employee record (if available)
+        try {
+          if (application.emp_no) {
+            const empRes = await api.getEmployee(application.emp_no);
+            if (empRes?.success && empRes?.data) {
+              setViewingEmployee(empRes.data as Employee);
+            }
+          }
+        } catch (e) { /* ignore */ }
       } else {
         setError(response.message || 'Failed to verify application');
       }
@@ -2775,12 +3134,17 @@ export default function EmployeesPage() {
 
             {/* Tab Slider or Single Badge */}
             {canViewApplications ? (
-              <div className="relative grid grid-cols-2 items-center rounded-2xl bg-bg-surface/50 border border-border-base p-1 backdrop-blur-md shadow-sm">
+              <div className="relative grid grid-cols-3 items-center rounded-2xl bg-bg-surface/50 border border-border-base p-1 backdrop-blur-md shadow-sm">
                 <div
                   className={`absolute h-8 rounded-xl bg-bg-base border border-border-base shadow-sm transition-all duration-300 ease-in-out`}
                   style={{
-                    width: activeTab === 'employees' ? 'calc(50% - 4px)' : 'calc(50% - 4px)',
-                    transform: activeTab === 'employees' ? 'translateX(0px)' : 'translateX(calc(100% + 4px))'
+                    width: 'calc(33.333% - 4px)',
+                    transform:
+                      activeTab === 'employees'
+                        ? 'translateX(0px)'
+                        : activeTab === 'applications'
+                          ? 'translateX(calc(100% + 2px))'
+                          : 'translateX(calc(200% + 4px))'
                   }}
                 />
                 <button
@@ -2804,6 +3168,21 @@ export default function EmployeesPage() {
                   {pendingApplications.length > 0 && (
                     <span className="flex h-4 min-w-[16px] md:h-5 md:min-w-[20px] items-center justify-center rounded-full bg-status-negative px-1 text-[9px] md:text-[10px] text-white font-bold">
                       {pendingApplications.length}
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={() => setActiveTab('requests')}
+                  className={`relative z-10 w-full px-2 py-1 md:px-4 md:py-1.5 text-[9px] md:text-xs font-black uppercase tracking-widest transition-colors flex items-center justify-center gap-2 ${activeTab === 'requests'
+                    ? 'text-text-primary'
+                    : 'text-text-secondary hover:text-text-primary'
+                    }`}
+                >
+                  <span className="md:hidden">Req</span>
+                  <span className="hidden md:inline">Profile Requests</span>
+                  {pendingProfileRequests.length > 0 && (
+                    <span className="flex h-4 min-w-[16px] md:h-5 md:min-w-[20px] items-center justify-center rounded-full bg-status-warning px-1 text-[9px] md:text-[10px] text-white font-bold">
+                      {pendingProfileRequests.length}
                     </span>
                   )}
                 </button>
@@ -2991,7 +3370,7 @@ export default function EmployeesPage() {
       </div>
 
       {/* Employee List with Skeleton Loading */}
-      {loading || (activeTab === 'applications' && loadingApplications) ? (
+      {loading || (activeTab === 'applications' && loadingApplications) || (activeTab === 'requests' && loadingUpdateRequests) ? (
         <div className="overflow-hidden rounded-3xl border border-border-base bg-bg-surface/50 backdrop-blur-md shadow-sm">
           <div className="overflow-x-auto scrollbar-hide">
             <table className="w-full">
@@ -3624,7 +4003,7 @@ export default function EmployeesPage() {
               </div>
             </div>
           </>
-        )) : (
+        )) : activeTab === 'applications' ? (
         /* Applications Tab */
         <>
           {/* Applications Bulk Actions */}
@@ -3747,7 +4126,7 @@ export default function EmployeesPage() {
                           <tr
                             key={app._id}
                             className="transition-all hover:bg-bg-base/80 group cursor-pointer"
-                            onClick={() => setViewingApplication(app)}
+                            onClick={() => openEmployeeViewFromApplication(app)}
                           >
                             <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
                               <input
@@ -3786,7 +4165,7 @@ export default function EmployeesPage() {
                             <td className="whitespace-nowrap px-6 py-4 text-right">
                               {hasManagePermission && (
                                 <button
-                                  onClick={(e) => { e.stopPropagation(); setViewingApplication(app); }}
+                                  onClick={(e) => { e.stopPropagation(); openEmployeeViewFromApplication(app); }}
                                   className="px-4 py-1.5 rounded-lg bg-indigo-500 text-white text-[10px] font-black uppercase tracking-widest hover:bg-indigo-600 transition-colors shadow-sm shadow-indigo-500/10"
                                 >
                                   View Details
@@ -3808,7 +4187,7 @@ export default function EmployeesPage() {
                     pendingApplications.map((app) => (
                       <div
                         key={app._id}
-                        onClick={() => setViewingApplication(app)}
+                        onClick={() => openEmployeeViewFromApplication(app)}
                         className="relative rounded-xl border border-border-base bg-bg-base/40 p-3 shadow-sm transition-all hover:shadow-md active:scale-[0.99] cursor-pointer"
                       >
                         {/* Checkbox */}
@@ -3864,7 +4243,7 @@ export default function EmployeesPage() {
                           <div className="mt-3 pt-2 border-t border-border-base/50 flex gap-2">
                             {app.status === 'pending' ? (
                               <button
-                                onClick={(e) => { e.stopPropagation(); setViewingApplication(app); }}
+                                onClick={(e) => { e.stopPropagation(); openEmployeeViewFromApplication(app); }}
                                 className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-indigo-500/10 px-2 py-1.5 text-[10px] font-black uppercase tracking-wider text-indigo-500 transition-colors hover:bg-indigo-500/20"
                               >
                                 <Eye className="h-3 w-3" />
@@ -3872,7 +4251,7 @@ export default function EmployeesPage() {
                               </button>
                             ) : app.status === 'verified' && canFinalizeSalary(userForPermissions as any) ? (
                               <button
-                                onClick={(e) => { e.stopPropagation(); openApprovalDialog(app); }}
+                                onClick={(e) => { e.stopPropagation(); openEmployeeViewFromApplication(app); }}
                                 className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-blue-500/10 px-2 py-1.5 text-[10px] font-black uppercase tracking-wider text-blue-500 transition-colors hover:bg-blue-500/20"
                               >
                                 <ShieldCheck className="h-3 w-3" />
@@ -3890,8 +4269,175 @@ export default function EmployeesPage() {
             </div>
           )}
         </>
+      ) : (
+        /* Profile Requests Tab */
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="rounded-2xl border border-border-base bg-bg-surface/50 p-4">
+              <p className="text-[10px] font-black uppercase tracking-widest text-text-secondary">Pending</p>
+              <p className="mt-2 text-2xl font-black text-status-warning">{pendingProfileRequests.length}</p>
+            </div>
+            <div className="rounded-2xl border border-border-base bg-bg-surface/50 p-4">
+              <p className="text-[10px] font-black uppercase tracking-widest text-text-secondary">Approved</p>
+              <p className="mt-2 text-2xl font-black text-status-positive">{approvedProfileRequests.length}</p>
+            </div>
+            <div className="rounded-2xl border border-border-base bg-bg-surface/50 p-4">
+              <p className="text-[10px] font-black uppercase tracking-widest text-text-secondary">Rejected</p>
+              <p className="mt-2 text-2xl font-black text-status-negative">{rejectedProfileRequests.length}</p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 rounded-2xl bg-bg-surface/50 p-1.5 border border-border-base w-fit">
+            <button
+              onClick={() => setRequestViewFilter('pending')}
+              className={`rounded-xl px-4 py-2 text-xs font-black uppercase tracking-widest transition-all ${requestViewFilter === 'pending' ? 'bg-bg-base text-text-primary shadow-sm border border-border-base' : 'text-text-secondary hover:text-text-primary'}`}
+            >
+              Pending
+            </button>
+            <button
+              onClick={() => setRequestViewFilter('action_taken')}
+              className={`rounded-xl px-4 py-2 text-xs font-black uppercase tracking-widest transition-all ${requestViewFilter === 'action_taken' ? 'bg-bg-base text-text-primary shadow-sm border border-border-base' : 'text-text-secondary hover:text-text-primary'}`}
+            >
+              Action Taken
+            </button>
+            <button
+              onClick={() => setRequestViewFilter('all')}
+              className={`rounded-xl px-4 py-2 text-xs font-black uppercase tracking-widest transition-all ${requestViewFilter === 'all' ? 'bg-bg-base text-text-primary shadow-sm border border-border-base' : 'text-text-secondary hover:text-text-primary'}`}
+            >
+              All
+            </button>
+          </div>
+
+          {profileRequestsByEmployee.length === 0 ? (
+            <div className="rounded-3xl border border-border-base bg-bg-surface/50 p-10 text-center">
+              <h3 className="text-lg font-black text-text-primary">No profile requests found</h3>
+              <p className="mt-2 text-sm text-text-secondary">No records available for this filter.</p>
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-3xl border border-border-base bg-bg-surface/50 backdrop-blur-md shadow-sm">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[1000px]">
+                  <thead>
+                    <tr className="border-b border-border-base bg-bg-base/50">
+                      <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Employee</th>
+                      <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Emp ID</th>
+                      <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Division</th>
+                      <th className="px-4 py-3 text-left text-[10px] font-black uppercase tracking-widest text-text-secondary">Department</th>
+                      <th className="px-4 py-3 text-center text-[10px] font-black uppercase tracking-widest text-text-secondary">View</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border-base">
+                    {profileRequestsByEmployee.map((row) => (
+                      <tr key={`${row.empNo}-${row.employeeName}`} className="align-top">
+                        <td className="px-4 py-3 text-xs font-bold text-text-primary">{row.employeeName}</td>
+                        <td className="px-4 py-3 text-xs font-bold text-indigo-500">{row.empNo}</td>
+                        <td className="px-4 py-3 text-xs text-text-secondary">{row.division || '-'}</td>
+                        <td className="px-4 py-3 text-xs text-text-secondary">{row.department || '-'}</td>
+                        <td className="px-4 py-3 text-center">
+                          <button
+                            onClick={() => {
+                              setSelectedProfileHistoryEmployee({
+                                employeeName: row.employeeName,
+                                empNo: row.empNo,
+                                division: row.division,
+                                department: row.department,
+                                designation: row.designation,
+                                requests: row.requests,
+                              });
+                              setShowProfileHistoryDialog(true);
+                            }}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border-base bg-bg-base/50 text-indigo-500 hover:bg-indigo-500/10 transition-colors"
+                            title="View request history"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
+
+      {/* Application Creation Dialog */}
+      {showProfileHistoryDialog && selectedProfileHistoryEmployee && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowProfileHistoryDialog(false)} />
+          <div className="relative z-50 max-h-[85vh] w-full max-w-5xl overflow-y-auto rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-black text-text-primary uppercase tracking-tight">{selectedProfileHistoryEmployee.employeeName}</h3>
+                <p className="text-xs font-bold text-text-secondary uppercase tracking-widest mt-1">
+                  {selectedProfileHistoryEmployee.empNo} • {selectedProfileHistoryEmployee.division || '-'} / {selectedProfileHistoryEmployee.department || '-'} / {selectedProfileHistoryEmployee.designation || '-'}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowProfileHistoryDialog(false)}
+                className="rounded-lg border border-border-base px-3 py-1.5 text-xs font-bold text-text-secondary hover:bg-bg-base/60"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {selectedProfileHistoryEmployee.requests.map((req, idx) => (
+                <div key={req.key} className="rounded-2xl border border-border-base bg-bg-surface/40 p-4 space-y-3">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-text-secondary">
+                    Request #{idx + 1} • {new Date(req.requestedAt).toLocaleDateString()}
+                  </p>
+
+                  {req.pendingFields.length > 0 && (
+                    <div>
+                      <p className="mb-1 text-[10px] font-black uppercase tracking-widest text-text-secondary">Requested (Pending)</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {req.pendingFields.map((field) => (
+                          <span key={field} className="inline-flex rounded-md px-2 py-0.5 text-[10px] font-bold border border-status-warning/20 bg-status-warning/10 text-status-warning">
+                            {getFieldLabel(field, formSettings)}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {req.approvedFields.length > 0 && (
+                    <div>
+                      <p className="mb-1 text-[10px] font-black uppercase tracking-widest text-text-secondary">Approved</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {req.approvedFields.map((field) => (
+                          <span key={field} className="inline-flex rounded-md px-2 py-0.5 text-[10px] font-bold border border-status-positive/20 bg-status-positive/10 text-status-positive">
+                            {getFieldLabel(field, formSettings)}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {req.rejectedFields.length > 0 && (
+                    <div>
+                      <p className="mb-1 text-[10px] font-black uppercase tracking-widest text-text-secondary">Rejected</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {req.rejectedFields.map((field) => (
+                          <span key={field} className="inline-flex rounded-md px-2 py-0.5 text-[10px] font-bold border border-status-negative/20 bg-status-negative/10 text-status-negative">
+                            {getFieldLabel(field, formSettings)}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {req.comments && (
+                    <p className="text-xs text-text-secondary rounded-lg border border-border-base bg-bg-base/50 p-2.5">{req.comments}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Application Creation Dialog */}
       {
@@ -4880,51 +5426,6 @@ export default function EmployeesPage() {
                   ]}
                 />
 
-                {/* Leave Settings */}
-                <div className="rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
-                  <h3 className="mb-3 text-base font-semibold text-slate-900 dark:text-slate-100">Leave Settings</h3>
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <div>
-                      <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                        Monthly Paid Leaves
-                      </label>
-                      <input
-                        type="number"
-                        name="paidLeaves"
-                        value={formData.paidLeaves ?? 0}
-                        onChange={handleInputChange}
-                        onWheel={(e) => e.currentTarget.blur()}
-                        min="0"
-                        step="0.5"
-                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 no-spinner"
-                        placeholder="0"
-                      />
-                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        Monthly recurring paid leaves
-                      </p>
-                    </div>
-                    <div>
-                      <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                        Yearly Allotted Leaves
-                      </label>
-                      <input
-                        type="number"
-                        name="allottedLeaves"
-                        value={formData.allottedLeaves ?? 0}
-                        onChange={handleInputChange}
-                        onWheel={(e) => e.currentTarget.blur()}
-                        min="0"
-                        step="0.5"
-                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm transition-all focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 no-spinner"
-                        placeholder="0"
-                      />
-                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        Yearly total for without_pay/LOP leaves (for balance tracking)
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
                 {/* Allowances & Deductions Overrides + Salary Summary */}
                 {userRole !== 'hod' && (
                   <div className="space-y-4 rounded-2xl border border-slate-200 bg-white/70 p-4 dark:border-slate-700 dark:bg-slate-900/60">
@@ -5476,9 +5977,36 @@ export default function EmployeesPage() {
                     <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                       Employee No: {viewingEmployee.emp_no}
                     </p>
+                    {activeTab === 'applications' && viewingApplication && (
+                      <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                        Application status: {viewingApplication.status}
+                      </p>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  {activeTab === 'applications' && viewingApplication && (
+                    <>
+                      {viewingApplication.status === 'pending' && hasVerifyPermission && (
+                        <button
+                          type="button"
+                          onClick={() => handleVerifyApplication(viewingApplication)}
+                          className="rounded-xl bg-violet-600 px-4 py-2 text-xs font-black uppercase tracking-widest text-white shadow-sm hover:bg-violet-700"
+                        >
+                          Verify
+                        </button>
+                      )}
+                      {viewingApplication.status === 'verified' && canFinalizeSalary(userForPermissions as any) && (
+                        <button
+                          type="button"
+                          onClick={() => openApprovalDialog(viewingApplication)}
+                          className="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-black uppercase tracking-widest text-white shadow-sm hover:bg-indigo-700"
+                        >
+                          Finalize Salary
+                        </button>
+                      )}
+                    </>
+                  )}
                   {hasBankUpdatePermission && (
                     <button
                       type="button"
@@ -6174,202 +6702,7 @@ export default function EmployeesPage() {
         )
       }
 
-      {/* Application View Dialog */}
-      {viewingApplication && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setViewingApplication(null)} />
-          <div className="relative z-50 max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950/95">
-            <div className="mb-6 flex items-center justify-between">
-              <div>
-                <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 uppercase tracking-tight">
-                  {viewingApplication.employee_name}
-                </h2>
-                <div className="mt-1 flex flex-wrap items-center gap-3">
-                  <p className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">
-                    ID: <span className="font-mono text-indigo-500">{viewingApplication._id}</span>
-                  </p>
-                  <span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-widest ${viewingApplication.status === 'pending'
-                    ? 'bg-amber-500/10 text-amber-500'
-                    : viewingApplication.status === 'verified'
-                      ? 'bg-indigo-500/10 text-indigo-500'
-                      : 'bg-green-500/10 text-green-500'
-                    }`}>
-                    <LucideClock className="w-3 h-3" />
-                    {viewingApplication.status}
-                  </span>
-                  {viewingApplication.verifiedBy && (
-                    <span className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-indigo-500">
-                      <ShieldCheck className="w-3 h-3" />
-                      Verified by {(viewingApplication.verifiedBy as any).name || viewingApplication.verifiedBy}
-                    </span>
-                  )}
-                </div>
-              </div>
-              <button
-                onClick={() => setViewingApplication(null)}
-                className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 transition hover:border-red-200 hover:text-red-500 dark:border-slate-700 dark:bg-slate-900"
-              >
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            <div className="space-y-6">
-              {/* Basic Information */}
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                <h3 className="mb-4 text-xs font-black text-slate-900 dark:text-slate-100 flex items-center gap-2 uppercase tracking-[0.2em]">
-                  <Users className="w-4 h-4 text-indigo-500" />
-                  Basic Information
-                </h3>
-                <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Proposed ID</label>
-                    <p className="mt-1 text-sm font-bold text-slate-900 dark:text-slate-100 uppercase">{viewingApplication.emp_no || '-'}</p>
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Full Name</label>
-                    <p className="mt-1 text-sm font-bold text-slate-900 dark:text-slate-100 uppercase">{viewingApplication.employee_name || '-'}</p>
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Division</label>
-                    <p className="mt-1 text-sm font-bold text-slate-900 dark:text-slate-100 uppercase">
-                      {divisions.find(d => d._id === (getEntityId(viewingApplication.division_id) || getEntityId((viewingApplication as any).division)))?.name || (viewingApplication.division_id as any)?.name || (viewingApplication as any).division?.name || '-'}
-                    </p>
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">{getFieldLabel('department_id', formSettings) || 'Department'}</label>
-                    <p className="mt-1 text-sm font-bold text-slate-900 dark:text-slate-100 uppercase">
-                      {departments.find(d => d._id === (getEntityId(viewingApplication.department_id) || getEntityId((viewingApplication as any).department)))?.name || (viewingApplication.department_id as any)?.name || (viewingApplication as any).department?.name || '-'}
-                    </p>
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">{getFieldLabel('designation_id', formSettings) || 'Designation'}</label>
-                    <p className="mt-1 text-sm font-bold text-slate-900 dark:text-slate-100 uppercase">
-                      {designations.find(d => d._id === (getEntityId(viewingApplication.designation_id) || getEntityId((viewingApplication as any).designation)))?.name || (viewingApplication.designation_id as any)?.name || (viewingApplication as any).designation?.name || '-'}
-                    </p>
-                  </div>
-                  {customEmployeeGroupingEnabled && (
-                    <div>
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Group</label>
-                      <p className="mt-1 text-sm font-bold text-slate-900 dark:text-slate-100 uppercase">
-                        {employeeGroups.find(g => g._id === (getEntityId((viewingApplication as any).employee_group_id) || getEntityId((viewingApplication as any).employee_group)))?.name || ((viewingApplication as any).employee_group_id as any)?.name || (viewingApplication as any).employee_group?.name || '-'}
-                      </p>
-                    </div>
-                  )}
-                  {userRole !== 'hod' && (
-                    <div>
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Proposed Salary</label>
-                      <p className="mt-1 text-sm font-black text-indigo-600 dark:text-indigo-400">₹{viewingApplication.proposedSalary?.toLocaleString() || '-'}</p>
-                    </div>
-                  )}
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Experience</label>
-                    <p className="mt-1 text-sm font-bold text-slate-900 dark:text-slate-100">{(viewingApplication as any).experience || 0} Years</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Personal Details */}
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                <h3 className="mb-4 text-xs font-black text-slate-900 dark:text-slate-100 flex items-center gap-2 uppercase tracking-[0.2em]">
-                  <Mail className="w-4 h-4 text-indigo-500" />
-                  Personal & Contact Details
-                </h3>
-                <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Email Address</label>
-                    <p className="mt-1 text-sm font-bold text-slate-900 dark:text-slate-100">{(viewingApplication as any).email || '-'}</p>
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">{getFieldLabel('phone_number', formSettings) || 'Phone Number'}</label>
-                    <p className="mt-1 text-sm font-bold text-slate-900 dark:text-slate-100">{(viewingApplication as any).phone_number || '-'}</p>
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">{getFieldLabel('gender', formSettings) || 'Gender'}</label>
-                    <p className="mt-1 text-sm font-bold text-slate-900 dark:text-slate-100 uppercase">{(viewingApplication as any).gender || '-'}</p>
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">{getFieldLabel('dob', formSettings) || 'Date of Birth'}</label>
-                    <p className="mt-1 text-sm font-bold text-slate-900 dark:text-slate-100">{(viewingApplication as any).dob ? new Date((viewingApplication as any).dob).toLocaleDateString() : '-'}</p>
-                  </div>
-                  {userRole !== 'hod' && (
-                    <div>
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">{getFieldLabel('aadhar_no', formSettings) || 'Aadhar Number'}</label>
-                      <p className="mt-1 text-sm font-bold text-slate-900 dark:text-slate-100 uppercase">{(viewingApplication as any).aadhar_number || '-'}</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Qualifications */}
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
-                <h3 className="mb-4 text-xs font-black text-slate-900 dark:text-slate-100 flex items-center gap-2 uppercase tracking-[0.2em]">
-                  <ShieldCheck className="w-4 h-4 text-indigo-500" />
-                  Qualifications
-                </h3>
-                <div className="space-y-3">
-                  {(() => {
-                    const quals = (viewingApplication as any).qualifications;
-                    if (!quals || (Array.isArray(quals) && quals.length === 0)) {
-                      return <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">No qualifications provided</p>;
-                    }
-
-                    if (Array.isArray(quals)) {
-                      return (
-                        <div className="grid gap-4 sm:grid-cols-2">
-                          {quals.map((qual: any, idx: number) => {
-                            const certificateUrl = qual.certificateUrl;
-                            return (
-                              <div key={idx} className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900 shadow-sm">
-                                <div className="space-y-1">
-                                  {Object.entries(qual).filter(([k]) => k !== 'certificateUrl').map(([k, v]) => (
-                                    <div key={k} className="flex justify-between text-xs">
-                                      <span className="text-slate-500 uppercase font-black text-[9px] tracking-wider">{k.replace(/_/g, ' ')}</span>
-                                      <span className="font-bold text-slate-900 dark:text-slate-100">{String(v || '-')}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                                {certificateUrl && (
-                                  <a href={certificateUrl} target="_blank" rel="noreferrer" className="mt-3 inline-block text-[10px] font-black text-indigo-500 uppercase tracking-widest hover:underline ring-1 ring-indigo-500/10 px-2 py-1 rounded-md bg-indigo-50/50">
-                                    View Certificate →
-                                  </a>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      );
-                    }
-                    return <p className="text-sm font-bold text-slate-900 dark:text-slate-100">{String(quals)}</p>;
-                  })()}
-                </div>
-              </div>
-            </div>
-
-            {/* Actions */}
-            <div className="mt-8 flex gap-3 border-t border-slate-100 pt-6 dark:border-slate-800">
-              {hasVerifyPermission && viewingApplication.status === 'pending' && (
-                <button
-                  onClick={() => {
-                    handleVerifyApplication(viewingApplication);
-                    setViewingApplication(null);
-                  }}
-                  className="flex-1 rounded-2xl bg-indigo-500 px-6 py-3 text-sm font-black uppercase tracking-[0.15em] text-white shadow-lg shadow-indigo-500/30 transition-all hover:scale-[1.02] active:scale-95"
-                >
-                  Verify Application
-                </button>
-              )}
-              <button
-                onClick={() => setViewingApplication(null)}
-                className="flex-1 rounded-2xl border border-slate-200 bg-white px-6 py-3 text-sm font-black uppercase tracking-[0.15em] text-slate-700 transition-all hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-              >
-                Close Details
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Application View Dialog removed: use the full Employee View Dialog for verify/finalize */}
       <BankUpdateDialog
         isOpen={showBankUpdateDialog}
         onClose={() => setShowBankUpdateDialog(false)}

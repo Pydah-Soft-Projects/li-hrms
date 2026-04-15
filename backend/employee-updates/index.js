@@ -8,6 +8,7 @@ router.use(protect);
 
 // Employee routes
 router.post('/', employeeUpdateController.createRequest);
+router.get('/my', employeeUpdateController.getMyRequests);
 
 // Superadmin routes
 router.get('/', authorize('super_admin', 'sub_admin'), employeeUpdateController.getRequests);

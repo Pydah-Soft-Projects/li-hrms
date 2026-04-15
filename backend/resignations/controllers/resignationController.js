@@ -223,11 +223,12 @@ exports.createResignationRequest = async (req, res) => {
     const populated = await ResignationRequest.findById(resignation._id)
       .populate({
         path: 'employeeId',
-        select: 'employee_name emp_no department_id division_id employee_group_id doj',
+        select: 'employee_name emp_no department_id division_id designation_id employee_group_id doj dynamicFields agreementStartDate agreementEndDate agreement_start_date agreement_end_date contractStartDate contractEndDate contract_start_date contract_end_date',
         populate: [
           { path: 'department_id', select: 'name' },
           { path: 'division_id', select: 'name' },
-          { path: 'employee_group_id', select: 'name' }
+          { path: 'employee_group_id', select: 'name' },
+          { path: 'designation_id', select: 'name' }
         ]
       })
       .populate('requestedBy', 'name email')
@@ -297,11 +298,12 @@ exports.getPendingApprovals = async (req, res) => {
     const list = await ResignationRequest.find(filter)
       .populate({
         path: 'employeeId',
-        select: 'employee_name emp_no department_id division_id employee_group_id doj',
+        select: 'employee_name emp_no department_id division_id designation_id employee_group_id doj dynamicFields agreementStartDate agreementEndDate agreement_start_date agreement_end_date contractStartDate contractEndDate contract_start_date contract_end_date',
         populate: [
           { path: 'department_id', select: 'name' },
           { path: 'division_id', select: 'name' },
-          { path: 'employee_group_id', select: 'name' }
+          { path: 'employee_group_id', select: 'name' },
+          { path: 'designation_id', select: 'name' }
         ]
       })
       .populate('requestedBy', 'name email')
@@ -674,11 +676,12 @@ exports.getResignationRequests = async (req, res) => {
     const list = await ResignationRequest.find(filter)
       .populate({
         path: 'employeeId',
-        select: 'employee_name emp_no department_id division_id employee_group_id doj',
+        select: 'employee_name emp_no department_id division_id designation_id employee_group_id doj dynamicFields agreementStartDate agreementEndDate agreement_start_date agreement_end_date contractStartDate contractEndDate contract_start_date contract_end_date',
         populate: [
           { path: 'department_id', select: 'name' },
           { path: 'division_id', select: 'name' },
-          { path: 'employee_group_id', select: 'name' }
+          { path: 'employee_group_id', select: 'name' },
+          { path: 'designation_id', select: 'name' }
         ]
       })
       .populate('requestedBy', 'name email')

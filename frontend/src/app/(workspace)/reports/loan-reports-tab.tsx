@@ -15,7 +15,9 @@ import {
     Wallet,
     Undo2,
     PieChart,
-    TrendingUp
+    TrendingUp,
+    Coins,
+    Banknote
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
@@ -59,7 +61,12 @@ interface LoanRecord {
     division_id?: { name: string };
 }
 
-export default function LoanReportsTab() {
+export default function LoanReportsTab({ 
+    defaultRequestType = 'loan' 
+}: { 
+    defaultRequestType?: 'loan' | 'salary_advance' 
+}) {
+    const isSpecialized = !!defaultRequestType;
     const [loading, setLoading] = useState(false);
     const [fetchingFilters, setFetchingFilters] = useState(false);
     const [records, setRecords] = useState<LoanRecord[]>([]);
@@ -86,7 +93,7 @@ export default function LoanReportsTab() {
     const [divisionIds, setDivisionIds] = useState<string[]>([]);
     const [departmentIds, setDepartmentIds] = useState<string[]>([]);
     const [employeeIds, setEmployeeIds] = useState<string[]>([]);
-    const [requestType, setRequestType] = useState<string>('');
+    const [requestType, setRequestType] = useState<string>(defaultRequestType || '');
     const [status, setStatus] = useState<string>('');
     
     // Drill-down states
@@ -164,8 +171,6 @@ export default function LoanReportsTab() {
 
         if (ids.length > 0) {
             setDrilldownLevel('division');
-            // Extract departments directly from the divisions state
-            // This is more reliable than separate API calls as it uses the Division-side link
             const selectedDivs = divisions.filter(d => ids.includes(d._id));
             const allDepts: Department[] = [];
             
@@ -173,7 +178,6 @@ export default function LoanReportsTab() {
                 if (div.departments && Array.isArray(div.departments)) {
                     div.departments.forEach(dept => {
                         if (typeof dept === 'object' && dept !== null) {
-                            // Only include active departments
                             if (dept.isActive !== false) {
                                 allDepts.push(dept as Department);
                             }
@@ -182,9 +186,7 @@ export default function LoanReportsTab() {
                 }
             });
 
-            // Ensure uniqueness by ID
             const uniqueDepts = Array.from(new Map(allDepts.map(item => [item._id, item])).values());
-            // Sort by name
             const sortedDepts = uniqueDepts.sort((a, b) => a.name.localeCompare(b.name));
             setDepartments(sortedDepts);
         } else {
@@ -237,7 +239,8 @@ export default function LoanReportsTab() {
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `loan_report_${dayjs().format('YYYYMMDD')}.${format}`;
+            const fileNamePrefix = requestType === 'salary_advance' ? 'salary_advance' : 'loan';
+            a.download = `${fileNamePrefix}_report_${dayjs().format('YYYYMMDD')}.${format}`;
             document.body.appendChild(a);
             a.click();
             window.URL.revokeObjectURL(url);
@@ -282,7 +285,8 @@ export default function LoanReportsTab() {
     };
 
     const getBreadcrumbs = () => {
-        const items = [{ label: 'Loans Report', level: 'all', id: 'all' }];
+        const baseLabel = requestType === 'salary_advance' ? 'Salary Advances' : 'Loans Report';
+        const items = [{ label: baseLabel, level: 'all', id: 'all' }];
         if (divisionIds.length === 1) {
             const div = divisions.find(d => d._id === divisionIds[0]);
             items.push({ label: div?.name || 'Division', level: 'division', id: divisionIds[0] });
@@ -326,7 +330,7 @@ export default function LoanReportsTab() {
                                 <th className="px-4 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Distributed</th>
                                 <th className="px-4 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Recovered</th>
                                 <th className="px-4 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Outstanding</th>
-                                <th className="px-4 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Interest</th>
+                                {requestType !== 'salary_advance' && <th className="px-4 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Interest</th>}
                                 <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">Count</th>
                             </tr>
                         </thead>
@@ -371,9 +375,11 @@ export default function LoanReportsTab() {
                                     <td className="px-4 py-4 text-right text-xs font-bold text-rose-600 dark:text-rose-400">
                                         {formatCurrency(item.outstanding)}
                                     </td>
-                                    <td className="px-4 py-4 text-right text-xs font-bold text-indigo-600 dark:text-indigo-400">
-                                        {formatCurrency(item.interest)}
-                                    </td>
+                                    {requestType !== 'salary_advance' && (
+                                        <td className="px-4 py-4 text-right text-xs font-bold text-indigo-600 dark:text-indigo-400">
+                                            {formatCurrency(item.interest)}
+                                        </td>
+                                    )}
                                     <td className="px-6 py-4 text-center">
                                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
                                             {item.count}
@@ -507,7 +513,9 @@ export default function LoanReportsTab() {
                             </div>
                         ))}
                     </div>
-                    <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Loan Analytics</h1>
+                    <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+                        {requestType === 'salary_advance' ? 'Salary Advance Analytics' : 'Loan Analytics'}
+                    </h1>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3">
@@ -551,7 +559,7 @@ export default function LoanReportsTab() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <div className="group bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:shadow-xl hover:shadow-indigo-500/5 transition-all duration-300 dark:bg-slate-900 dark:border-slate-800 relative overflow-hidden">
                     <div className="absolute top-0 right-0 p-4 opacity-[0.03] group-hover:scale-110 transition-transform">
-                        <Wallet className="h-24 w-24 text-slate-900 dark:text-white" />
+                        <Banknote className="h-24 w-24 text-slate-900 dark:text-white" />
                     </div>
                     <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Distributed</p>
                     <h3 className="text-2xl font-black text-slate-900 dark:text-white">{formatCurrency(reportStats.totalDistributed)}</h3>
@@ -582,21 +590,34 @@ export default function LoanReportsTab() {
                         <span className="text-[9px] font-bold text-rose-500 uppercase tracking-tight">Pending Principal</span>
                     </div>
                 </div>
-                <div className="group bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:shadow-xl hover:shadow-indigo-500/5 transition-all duration-300 dark:bg-slate-900 dark:border-slate-800 relative overflow-hidden">
-                    <div className="absolute top-0 right-0 p-4 opacity-[0.03] group-hover:scale-110 transition-transform">
-                        <TrendingUp className="h-24 w-24 text-slate-900 dark:text-white" />
+                
+                {requestType === 'salary_advance' ? (
+                    <div className="group bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:shadow-xl hover:shadow-amber-500/5 transition-all duration-300 dark:bg-slate-900 dark:border-slate-800 relative overflow-hidden">
+                        <div className="absolute top-0 right-0 p-4 opacity-[0.03] group-hover:scale-110 transition-transform">
+                            <Coins className="h-24 w-24 text-slate-900 dark:text-white" />
+                        </div>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Advance Count</p>
+                        <h3 className="text-2xl font-black text-amber-600">{totalCount}</h3>
+                        <div className="mt-4 flex items-center gap-2">
+                            <span className="text-[9px] font-bold text-amber-500 uppercase tracking-tight">Total Applications</span>
+                        </div>
                     </div>
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Interest</p>
-                    <h3 className="text-2xl font-black text-indigo-600">{formatCurrency(reportStats.totalInterest)}</h3>
-                    <div className="mt-4 flex items-center gap-2">
-                        <span className="text-[9px] font-bold text-indigo-500 uppercase tracking-tight">Revenue Generation</span>
+                ) : (
+                    <div className="group bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:shadow-xl hover:shadow-indigo-500/5 transition-all duration-300 dark:bg-slate-900 dark:border-slate-800 relative overflow-hidden">
+                        <div className="absolute top-0 right-0 p-4 opacity-[0.03] group-hover:scale-110 transition-transform">
+                            <TrendingUp className="h-24 w-24 text-slate-900 dark:text-white" />
+                        </div>
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Interest</p>
+                        <h3 className="text-2xl font-black text-indigo-600">{formatCurrency(reportStats.totalInterest)}</h3>
+                        <div className="mt-4 flex items-center gap-2">
+                            <span className="text-[9px] font-bold text-indigo-500 uppercase tracking-tight">Revenue Generation</span>
+                        </div>
                     </div>
-                </div>
+                )}
             </div>
 
             {/* Main Content Area */}
             <div className="grid grid-cols-1 xl:grid-cols-4 gap-8 items-start">
-                {/* Filters Sidebar */}
                 <div className="xl:col-span-1 space-y-6 sticky top-24">
                     <div className="bg-white rounded-3xl border border-slate-200 shadow-sm dark:bg-slate-900 dark:border-slate-800 overflow-hidden">
                         <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 dark:bg-slate-800/50 dark:border-slate-800 flex items-center justify-between">
@@ -637,7 +658,7 @@ export default function LoanReportsTab() {
                                 label="Employee"
                                 options={employees.map(e => ({ id: e._id, name: `${e.employee_name} (${e.emp_no})` }))}
                                 selectedIds={employeeIds}
-                                onChange={(ids) => {
+                                onChange={(ids: string[]) => {
                                     setEmployeeIds(ids);
                                     if (ids.length > 0) setDrilldownLevel('employee');
                                     else if (departmentIds.length > 0) setDrilldownLevel('department');
@@ -647,24 +668,26 @@ export default function LoanReportsTab() {
 
                             <div className="h-px bg-slate-100 dark:bg-slate-800 my-2" />
 
-                            <div>
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">
-                                    Request Type
-                                </label>
-                                <select
-                                    value={requestType}
-                                    onChange={(e) => setRequestType(e.target.value)}
-                                    className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl text-xs font-bold p-3 focus:ring-2 focus:ring-indigo-500 transition-all cursor-pointer"
-                                >
-                                    <option value="">All Types</option>
-                                    <option value="loan">Loan Only</option>
-                                    <option value="salary_advance">Salary Advance Only</option>
-                                </select>
-                            </div>
+                            {!isSpecialized && (
+                                <div>
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">
+                                        Request Type
+                                    </label>
+                                    <select
+                                        value={requestType}
+                                        onChange={(e) => setRequestType(e.target.value)}
+                                        className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl text-xs font-bold p-3 focus:ring-2 focus:ring-indigo-500 transition-all cursor-pointer"
+                                    >
+                                        <option value="">All Types</option>
+                                        <option value="loan">Loan Only</option>
+                                        <option value="salary_advance">Salary Advance Only</option>
+                                    </select>
+                                </div>
+                            )}
 
                             <div>
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">
-                                    Loan Status
+                                    {requestType === 'salary_advance' ? 'Advance Status' : 'Loan Status'}
                                 </label>
                                 <select
                                     value={status}

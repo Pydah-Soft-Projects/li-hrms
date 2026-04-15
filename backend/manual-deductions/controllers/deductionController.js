@@ -283,20 +283,6 @@ exports.editDeduction = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Valid total amount is required' });
     }
 
-    deduction.startMonth = nextStartMonth;
-    deduction.endMonth = nextEndMonth;
-    deduction.monthlyAmount = nextMonthlyAmount;
-    deduction.totalAmount = Number(nextTotalAmount);
-    deduction.reason = nextReason;
-
-    const settledAmount = (deduction.settlementHistory || []).reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
-    deduction.remainingAmount = Math.max(0, Number(nextTotalAmount) - settledAmount);
-    if (['approved', 'partially_settled', 'settled'].includes(deduction.status)) {
-      if (deduction.remainingAmount <= 0) deduction.status = 'settled';
-      else if (settledAmount > 0) deduction.status = 'partially_settled';
-      else deduction.status = 'approved';
-    }
-
     const changed = (
       originalAmount !== Number(nextTotalAmount) ||
       originalMonthlyAmount !== (nextMonthlyAmount == null ? null : Number(nextMonthlyAmount)) ||
@@ -305,7 +291,24 @@ exports.editDeduction = async (req, res) => {
       originalEndMonth !== nextEndMonth
     );
 
+    deduction.startMonth = nextStartMonth;
+    deduction.endMonth = nextEndMonth;
+    deduction.monthlyAmount = nextMonthlyAmount;
+    deduction.totalAmount = Number(nextTotalAmount);
+    deduction.reason = nextReason;
+
+    const settledAmount = (deduction.settlementHistory || []).reduce((sum, entry) => sum + Number(entry.amount || 0), 0);
+    deduction.remainingAmount = Math.max(0, Number(nextTotalAmount) - settledAmount);
+
     if (changed) {
+      const previousStatus = deduction.status;
+
+      // Any meaningful edit should restart the approval flow from the beginning.
+      deduction.status = 'pending_hod';
+      deduction.hodApproval = { approved: null };
+      deduction.hrApproval = { approved: null };
+      deduction.adminApproval = { approved: null };
+
       if (!deduction.editHistory) deduction.editHistory = [];
       deduction.editHistory.push({
         editedAt: new Date(),
@@ -320,13 +323,19 @@ exports.editDeduction = async (req, res) => {
         newMonthlyAmount: nextMonthlyAmount == null ? null : Number(nextMonthlyAmount),
         originalReason,
         newReason: nextReason,
-        reason: 'Manual deduction request edited after provisioning/approval',
-        status: deduction.status
+        reason: 'Manual deduction request edited and workflow reset to pending HOD',
+        status: previousStatus
       });
-    }
 
-    if (deduction.adminApproval?.approved) {
-      deduction.adminApproval.modifiedAmount = Number(nextTotalAmount);
+      if (!deduction.statusHistory) deduction.statusHistory = [];
+      deduction.statusHistory.push({
+        changedAt: new Date(),
+        changedBy: user._id,
+        previousStatus,
+        newStatus: 'pending_hod',
+        reason: 'Deduction edited; workflow reset to pending approval stage',
+        comments: 'Approval chain cleared after edit'
+      });
     }
     deduction.updatedBy = uid(req);
     await deduction.save();
@@ -337,7 +346,7 @@ exports.editDeduction = async (req, res) => {
       { path: 'statusHistory.changedBy', select: 'name email' },
       { path: 'employee', select: 'first_name last_name emp_no' }
     ]);
-    res.status(200).json({ success: true, message: 'Deduction updated successfully', data: deduction });
+    res.status(200).json({ success: true, message: changed ? 'Deduction updated and moved to pending HOD approval' : 'Deduction updated successfully', data: deduction });
   } catch (error) {
     res.status(400).json({ success: false, message: error.message });
   }

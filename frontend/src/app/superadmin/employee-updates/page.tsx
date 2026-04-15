@@ -40,7 +40,7 @@ interface UpdateRequest {
     requestedChanges: Record<string, any>;
     previousValues: Record<string, any>;
     status: 'pending' | 'approved' | 'rejected';
-    createdBy: { name: string };
+    createdBy?: { name?: string };
     comments?: string;
     createdAt: string;
 }
@@ -165,6 +165,32 @@ const UpdateRequestsPage = () => {
         });
     };
 
+    const getVisibleChangedFields = (request: UpdateRequest) => {
+        const noiseFields = [
+            'allData', 'AllData', 'division', 'department', 'designation',
+            'employeeGroup', 'employee_group', 'dynamicFields', 'GenQualifications',
+            'AllAllowanceDeductions', 'leave_stats', 'payroll_stats',
+            'employeeAllowances', 'employeeDeductions', 'isProfileRequest',
+            'getQualifications', 'setQualifications', 'updatedAt', 'lastLogin',
+            'createdAt', 'updated_at', 'last_login', 'created_at',
+            'v', '_v', '__v'
+        ];
+
+        const normalize = (v: any) => {
+            if (v === null || v === undefined || v === '' || v === 0 || v === '0') return null;
+            if (typeof v === 'string' && !isNaN(Number(v)) && v.trim() !== '') return Number(v);
+            if (Array.isArray(v) && v.length === 0) return null;
+            if (typeof v === 'object' && Object.keys(v).length === 0 && !(v instanceof Date)) return null;
+            return v;
+        };
+
+        return Object.entries(request.requestedChanges).filter(([key, newValue]) => {
+            if (key.startsWith('_') || noiseFields.some(nf => nf.toLowerCase() === key.toLowerCase())) return false;
+            const oldValue = request.previousValues?.[key];
+            return JSON.stringify(normalize(oldValue)) !== JSON.stringify(normalize(newValue));
+        });
+    };
+
     return (
         <div className="min-h-screen bg-slate-50 p-4 sm:p-6 lg:p-10">
             <div className="max-w-7xl mx-auto space-y-8">
@@ -214,7 +240,10 @@ const UpdateRequestsPage = () => {
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {requests.map((request) => (
+                        {requests.map((request) => {
+                            const visibleChangedFields = getVisibleChangedFields(request);
+
+                            return (
                             <div
                                 key={request._id}
                                 onClick={() => setSelectedRequest(request)}
@@ -244,34 +273,18 @@ const UpdateRequestsPage = () => {
 
                                 <div className="flex-1 space-y-4">
                                     <div>
+                                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Applied By</p>
+                                        <p className="text-xs font-semibold text-slate-700">
+                                            {request.createdBy?.name || 'Unknown User'}
+                                        </p>
+                                    </div>
+                                    <div>
                                         <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Requested Changes</p>
+                                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">
+                                            {request.status === 'approved' ? 'Approved Fields' : request.status === 'rejected' ? 'Rejected Fields' : 'Requested Fields'}: {visibleChangedFields.length}
+                                        </p>
                                         <div className="flex flex-wrap gap-1.5">
-                                            {Object.entries(request.requestedChanges)
-                                                .filter(([key, newValue]) => {
-                                                    const noiseFields = [
-                                                        'allData', 'AllData', 'division', 'department', 'designation', 
-                                                        'employeeGroup', 'employee_group', 'dynamicFields', 'GenQualifications', 
-                                                        'AllAllowanceDeductions', 'leave_stats', 'payroll_stats', 
-                                                        'employeeAllowances', 'employeeDeductions', 'isProfileRequest',
-                                                        'getQualifications', 'setQualifications', 'updatedAt', 'lastLogin', 
-                                                        'createdAt', 'updated_at', 'last_login', 'created_at',
-                                                        'v', '_v', '__v'
-                                                    ];
-                                                    if (key.startsWith('_') || noiseFields.some(nf => nf.toLowerCase() === key.toLowerCase())) return false;
-
-                                                    // Resolve old value for phantom change detection
-                                                    const oldValue = request.previousValues?.[key];
-                                                    
-                                                    const normalize = (v: any) => {
-                                                        if (v === null || v === undefined || v === '' || v === 0 || v === '0') return null;
-                                                        if (typeof v === 'string' && !isNaN(Number(v)) && v.trim() !== '') return Number(v);
-                                                        if (Array.isArray(v) && v.length === 0) return null;
-                                                        if (typeof v === 'object' && Object.keys(v).length === 0 && !(v instanceof Date)) return null;
-                                                        return v;
-                                                    };
-
-                                                    return JSON.stringify(normalize(oldValue)) !== JSON.stringify(normalize(newValue));
-                                                })
+                                            {visibleChangedFields
                                                 .map(([key]) => (
                                                     <span key={key} className="px-2 py-1 bg-indigo-50 text-indigo-700 rounded-md text-[10px] font-bold border border-indigo-100">
                                                         {getFieldLabel(key, formGroups)}
@@ -295,7 +308,7 @@ const UpdateRequestsPage = () => {
                                     <ArrowRight className="w-4 h-4 text-slate-300 group-hover:text-indigo-600 transform group-hover:translate-x-1 transition-all" />
                                 </div>
                             </div>
-                        ))}
+                        )})}
                     </div>
                 )}
             </div>

@@ -64,6 +64,7 @@ export default function ShiftsPage() {
   const hasManagePermission = user ? canEditShift(user as any) : false; // Write permission for ALL actions
   const canViewStructuredShifts = hasViewPermission;
   const canManageShifts = hasManagePermission;
+  const showShiftActions = false;
 
   // Skeleton Component
   const ShiftCardSkeleton = () => (
@@ -506,7 +507,7 @@ export default function ShiftsPage() {
         </span>
       </div>
 
-      {(allowManageOverride !== undefined ? allowManageOverride : canManageShifts) && (
+      {showShiftActions && (allowManageOverride !== undefined ? allowManageOverride : canManageShifts) && (
         <div className="flex gap-2 border-t border-slate-200 pt-3 dark:border-slate-800">
           <button
             onClick={() => handleEdit(shift)}
@@ -532,7 +533,7 @@ export default function ShiftsPage() {
   const renderShiftsDisplay = (shiftList: Shift[], allowManageOverride?: boolean) => {
     const list = dedupeShifts(shiftList);
     if (list.length === 0) return null;
-    const allowActions = allowManageOverride !== undefined ? allowManageOverride : canManageShifts;
+    const allowActions = showShiftActions && (allowManageOverride !== undefined ? allowManageOverride : canManageShifts);
 
     if (viewMode === 'grid') {
       return (

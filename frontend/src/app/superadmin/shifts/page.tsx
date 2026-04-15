@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { api, Shift } from '@/lib/api';
+import { api, Shift, Division, Department, Designation } from '@/lib/api';
 import Spinner from '@/components/Spinner';
 import { LayoutGrid, Table2 } from 'lucide-react';
 
@@ -20,6 +20,9 @@ const SHIFT_COLORS = [
 
 export default function ShiftsPage() {
   const [shifts, setShifts] = useState<Shift[]>([]);
+  const [scopedDivisions, setScopedDivisions] = useState<Division[]>([]);
+  const [scopedDepartments, setScopedDepartments] = useState<Department[]>([]);
+  const [scopedDesignations, setScopedDesignations] = useState<Designation[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingShift, setEditingShift] = useState<Shift | null>(null);
@@ -38,10 +41,12 @@ export default function ShiftsPage() {
   const [lastChanged, setLastChanged] = useState<'start' | 'end' | 'duration' | null>(null);
   const [color, setColor] = useState('#3b82f6');
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
+  const [shiftDisplayScope, setShiftDisplayScope] = useState<'all' | 'classified'>('all');
 
   useEffect(() => {
     loadShifts();
     loadAllowedDurations();
+    loadScopedStructure();
   }, []);
 
   const loadShifts = async () => {
@@ -76,6 +81,26 @@ export default function ShiftsPage() {
     } catch (err) {
       console.error('Error loading durations:', err);
       setAllowedDurations([]);
+    }
+  };
+
+  const loadScopedStructure = async () => {
+    try {
+      const response = await api.getScopedShiftData();
+      if (response.success && response.data) {
+        setScopedDivisions(response.data.divisions || []);
+        setScopedDepartments(response.data.departments || []);
+        setScopedDesignations(response.data.designations || []);
+      } else {
+        setScopedDivisions([]);
+        setScopedDepartments([]);
+        setScopedDesignations([]);
+      }
+    } catch (err) {
+      console.error('Error loading classified shift structure:', err);
+      setScopedDivisions([]);
+      setScopedDepartments([]);
+      setScopedDesignations([]);
     }
   };
 
@@ -297,6 +322,206 @@ export default function ShiftsPage() {
     resetForm();
   };
 
+  const resolveShiftReference = (shiftRef: any): Shift | null => {
+    let value = shiftRef;
+    if (value && typeof value === 'object' && 'shiftId' in value) {
+      value = value.shiftId;
+    }
+    const shiftId = typeof value === 'string' ? value : value?._id;
+    if (!shiftId) return null;
+    if (typeof value === 'string') {
+      return shifts.find((allShift) => allShift._id === shiftId) || null;
+    }
+    return value as Shift;
+  };
+
+  const dedupeShifts = (list: Shift[]) =>
+    Array.from(new Map(list.map((shift) => [shift._id, shift])).values());
+
+  const renderShiftCard = (shift: Shift) => (
+    <div
+      key={shift._id}
+      className="group relative overflow-hidden rounded-xl border border-slate-200 bg-white/80 p-4 shadow-lg transition-all hover:border-blue-300 hover:shadow-xl dark:border-slate-700 dark:bg-slate-900/80"
+    >
+      <div className="absolute top-0 left-0 h-1 w-full" style={{ backgroundColor: shift.color || '#3b82f6' }} />
+
+      <div className="mb-3 flex items-start justify-between">
+        <div className="min-w-0 flex-1">
+          <h3 className="truncate text-base font-semibold text-slate-900 dark:text-slate-100">{shift.name}</h3>
+          <div className="mt-1.5 space-y-1 text-xs">
+            <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
+              <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span className="truncate">{shift.startTime} - {shift.endTime}</span>
+            </div>
+            <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
+              <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span>{shift.duration} hours</span>
+            </div>
+            <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
+              <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span className="font-medium">{shift.payableShifts || 1} payable shift{(shift.payableShifts || 1) !== 1 ? 's' : ''}</span>
+            </div>
+          </div>
+        </div>
+        <span
+          className={`ml-2 shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${shift.isActive
+            ? 'bg-green-100 text-green-700 shadow-sm dark:bg-green-900/30 dark:text-green-400'
+            : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+            }`}
+        >
+          {shift.isActive ? 'Active' : 'Inactive'}
+        </span>
+      </div>
+
+      <div className="flex gap-2 border-t border-slate-200 pt-3 dark:border-slate-800">
+        <button
+          onClick={() => handleEdit(shift)}
+          style={{ backgroundColor: shift.color || '#3b82f6' }}
+          className="flex-1 rounded-lg px-3 py-1.5 text-xs font-semibold text-white shadow-md transition-all hover:opacity-90"
+        >
+          Edit
+        </button>
+        <button
+          onClick={() => handleDelete(shift._id)}
+          className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 transition-all hover:bg-red-50 dark:border-red-800 dark:bg-slate-900 dark:text-red-300 dark:hover:bg-red-900/20"
+        >
+          Delete
+        </button>
+      </div>
+    </div>
+  );
+
+  const renderShiftsDisplay = (shiftList: Shift[]) => {
+    const list = dedupeShifts(shiftList);
+    if (list.length === 0) return null;
+
+    if (viewMode === 'table') {
+      return (
+        <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white/90 shadow-xl backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900/90">
+          <table className="min-w-[720px] w-full border-collapse text-left text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 bg-slate-50/90 dark:border-slate-700 dark:bg-slate-800/80">
+                <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-200" scope="col">Color</th>
+                <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-200" scope="col">Name</th>
+                <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-200" scope="col">Time</th>
+                <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-200" scope="col">Duration</th>
+                <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-200" scope="col">Payable</th>
+                <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-200" scope="col">Status</th>
+                <th className="px-4 py-3 text-right font-semibold text-slate-700 dark:text-slate-200" scope="col">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.map((shift) => (
+                <tr
+                  key={shift._id}
+                  className="border-b border-slate-100 transition-colors hover:bg-slate-50/80 dark:border-slate-800 dark:hover:bg-slate-800/40"
+                >
+                  <td className="px-4 py-3 align-middle">
+                    <div
+                      className="h-3 w-14 rounded-full border border-slate-200/80 dark:border-slate-600"
+                      style={{ backgroundColor: shift.color || '#3b82f6' }}
+                      title={shift.color || '#3b82f6'}
+                    />
+                  </td>
+                  <td className="px-4 py-3 align-middle font-medium text-slate-900 dark:text-slate-100">
+                    <span className="line-clamp-2">{shift.name}</span>
+                  </td>
+                  <td className="px-4 py-3 align-middle whitespace-nowrap text-slate-600 dark:text-slate-400">
+                    {shift.startTime} – {shift.endTime}
+                  </td>
+                  <td className="px-4 py-3 align-middle whitespace-nowrap text-slate-600 dark:text-slate-400">
+                    {shift.duration} h
+                  </td>
+                  <td className="px-4 py-3 align-middle whitespace-nowrap text-slate-600 dark:text-slate-400">
+                    {shift.payableShifts ?? 1}
+                  </td>
+                  <td className="px-4 py-3 align-middle">
+                    <span
+                      className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${shift.isActive
+                        ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                        : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                        }`}
+                    >
+                      {shift.isActive ? 'Active' : 'Inactive'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 align-middle text-right">
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleEdit(shift)}
+                        style={{ backgroundColor: shift.color || '#3b82f6' }}
+                        className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-opacity hover:opacity-90 touch-manipulation min-h-[36px]"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(shift._id)}
+                        className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 transition-colors hover:bg-red-50 dark:border-red-800 dark:bg-slate-900 dark:text-red-300 dark:hover:bg-red-900/20 touch-manipulation min-h-[36px]"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+
+    return (
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        {list.map((shift) => renderShiftCard(shift))}
+      </div>
+    );
+  };
+
+  const hasClassifiedData =
+    scopedDivisions.length > 0 ||
+    scopedDepartments.length > 0 ||
+    scopedDesignations.length > 0;
+
+  const getClassifiedAssignedShiftIds = () => {
+    const assignedIds = new Set<string>();
+
+    const collectShiftRef = (shiftRef: any) => {
+      const resolved = resolveShiftReference(shiftRef);
+      if (resolved?._id) assignedIds.add(resolved._id);
+    };
+
+    scopedDivisions.forEach((division) => {
+      (division.shifts || []).forEach(collectShiftRef);
+    });
+
+    scopedDepartments.forEach((department) => {
+      (department.shifts || []).forEach(collectShiftRef);
+      (department.divisionDefaults || []).forEach((entry) => {
+        (entry.shifts || []).forEach(collectShiftRef);
+      });
+    });
+
+    scopedDesignations.forEach((designation) => {
+      (designation.shifts || []).forEach(collectShiftRef);
+      (designation.divisionDefaults || []).forEach((entry) => {
+        (entry.shifts || []).forEach(collectShiftRef);
+      });
+      (designation.departmentShifts || []).forEach((entry) => {
+        (entry.shifts || []).forEach(collectShiftRef);
+      });
+    });
+
+    return assignedIds;
+  };
+
   return (
     <div className="relative min-h-screen">
       <div className="relative z-10 mx-auto max-w-[1920px] px-4 py-8 sm:px-6 lg:px-8">
@@ -307,37 +532,67 @@ export default function ShiftsPage() {
             <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">Create and manage work shifts</p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-3">
-            {!loading && shifts.length > 0 && (
-              <div
-                className="inline-flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-700 dark:bg-slate-900"
-                role="group"
-                aria-label="Shifts display mode"
-              >
-                <button
-                  type="button"
-                  onClick={() => setViewMode('grid')}
-                  aria-pressed={viewMode === 'grid'}
-                  className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition-colors touch-manipulation min-h-[40px] sm:min-h-0 ${viewMode === 'grid'
-                    ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
-                    : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'
-                    }`}
+            {!loading && (shifts.length > 0 || hasClassifiedData) && (
+              <>
+                <div
+                  className="inline-flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-700 dark:bg-slate-900"
+                  role="group"
+                  aria-label="Shift classification mode"
                 >
-                  <LayoutGrid className="h-4 w-4 shrink-0" aria-hidden />
-                  Cards
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode('table')}
-                  aria-pressed={viewMode === 'table'}
-                  className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition-colors touch-manipulation min-h-[40px] sm:min-h-0 ${viewMode === 'table'
-                    ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
-                    : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'
-                    }`}
+                  <button
+                    type="button"
+                    onClick={() => setShiftDisplayScope('all')}
+                    aria-pressed={shiftDisplayScope === 'all'}
+                    className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition-colors touch-manipulation min-h-[40px] sm:min-h-0 ${shiftDisplayScope === 'all'
+                      ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
+                      : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'
+                      }`}
+                  >
+                    All Shifts
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShiftDisplayScope('classified')}
+                    aria-pressed={shiftDisplayScope === 'classified'}
+                    className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition-colors touch-manipulation min-h-[40px] sm:min-h-0 ${shiftDisplayScope === 'classified'
+                      ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
+                      : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'
+                      }`}
+                  >
+                    Division Classified
+                  </button>
+                </div>
+                <div
+                  className="inline-flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm dark:border-slate-700 dark:bg-slate-900"
+                  role="group"
+                  aria-label="Shifts display mode"
                 >
-                  <Table2 className="h-4 w-4 shrink-0" aria-hidden />
-                  Table
-                </button>
-              </div>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('grid')}
+                    aria-pressed={viewMode === 'grid'}
+                    className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition-colors touch-manipulation min-h-[40px] sm:min-h-0 ${viewMode === 'grid'
+                      ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
+                      : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'
+                      }`}
+                  >
+                    <LayoutGrid className="h-4 w-4 shrink-0" aria-hidden />
+                    Cards
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('table')}
+                    aria-pressed={viewMode === 'table'}
+                    className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition-colors touch-manipulation min-h-[40px] sm:min-h-0 ${viewMode === 'table'
+                      ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900'
+                      : 'text-slate-600 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800'
+                      }`}
+                  >
+                    <Table2 className="h-4 w-4 shrink-0" aria-hidden />
+                    Table
+                  </button>
+                </div>
+              </>
             )}
             <button
               onClick={() => {
@@ -525,7 +780,7 @@ export default function ShiftsPage() {
           </div>
         )}
 
-        {/* Shifts Grid */}
+        {/* Shifts Display */}
         {loading ? (
           <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white/80 backdrop-blur-sm py-12 shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
             <Spinner />
@@ -541,158 +796,122 @@ export default function ShiftsPage() {
             <p className="text-base font-semibold text-slate-900 dark:text-slate-100">No shifts found</p>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Create your first shift to get started</p>
           </div>
-        ) : viewMode === 'table' ? (
-          <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white/90 shadow-xl backdrop-blur-sm dark:border-slate-700 dark:bg-slate-900/90">
-            <table className="min-w-[720px] w-full border-collapse text-left text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 bg-slate-50/90 dark:border-slate-700 dark:bg-slate-800/80">
-                  <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-200" scope="col">
-                    Color
-                  </th>
-                  <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-200" scope="col">
-                    Name
-                  </th>
-                  <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-200" scope="col">
-                    Time
-                  </th>
-                  <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-200" scope="col">
-                    Duration
-                  </th>
-                  <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-200" scope="col">
-                    Payable
-                  </th>
-                  <th className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-200" scope="col">
-                    Status
-                  </th>
-                  <th className="px-4 py-3 text-right font-semibold text-slate-700 dark:text-slate-200" scope="col">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {shifts.map((shift) => (
-                  <tr
-                    key={shift._id}
-                    className="border-b border-slate-100 transition-colors hover:bg-slate-50/80 dark:border-slate-800 dark:hover:bg-slate-800/40"
-                  >
-                    <td className="px-4 py-3 align-middle">
-                      <div
-                        className="h-3 w-14 rounded-full border border-slate-200/80 dark:border-slate-600"
-                        style={{ backgroundColor: shift.color || '#3b82f6' }}
-                        title={shift.color || '#3b82f6'}
-                      />
-                    </td>
-                    <td className="px-4 py-3 align-middle font-medium text-slate-900 dark:text-slate-100">
-                      <span className="line-clamp-2">{shift.name}</span>
-                    </td>
-                    <td className="px-4 py-3 align-middle whitespace-nowrap text-slate-600 dark:text-slate-400">
-                      {shift.startTime} – {shift.endTime}
-                    </td>
-                    <td className="px-4 py-3 align-middle whitespace-nowrap text-slate-600 dark:text-slate-400">
-                      {shift.duration} h
-                    </td>
-                    <td className="px-4 py-3 align-middle whitespace-nowrap text-slate-600 dark:text-slate-400">
-                      {shift.payableShifts ?? 1}
-                    </td>
-                    <td className="px-4 py-3 align-middle">
-                      <span
-                        className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${shift.isActive
-                          ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                          : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
-                          }`}
-                      >
-                        {shift.isActive ? 'Active' : 'Inactive'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 align-middle text-right">
-                      <div className="flex flex-wrap justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handleEdit(shift)}
-                          style={{ backgroundColor: shift.color || '#3b82f6' }}
-                          className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-opacity hover:opacity-90 touch-manipulation min-h-[36px]"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(shift._id)}
-                          className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 transition-colors hover:bg-red-50 dark:border-red-800 dark:bg-slate-900 dark:text-red-300 dark:hover:bg-red-900/20 touch-manipulation min-h-[36px]"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        ) : shiftDisplayScope === 'all' ? (
+          renderShiftsDisplay(shifts)
+        ) : !hasClassifiedData ? (
+          <div className="rounded-2xl border border-slate-200 bg-white/80 p-8 text-center shadow-xl dark:border-slate-700 dark:bg-slate-900/80">
+            <p className="text-base font-semibold text-slate-900 dark:text-slate-100">No classified structure found</p>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Switch to All Shifts view or configure division/department/designation shift mappings.</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {shifts.map((shift) => (
-              <div
-                key={shift._id}
-                className="group relative overflow-hidden rounded-xl border border-slate-200 bg-white/80 backdrop-blur-sm p-4 shadow-lg transition-all hover:border-blue-300 hover:shadow-xl dark:border-slate-700 dark:bg-slate-900/80"
-              >
-                {/* Gradient accent */}
-                {/* Gradient accent - Dynamic Color */}
-                <div
-                  className="absolute top-0 left-0 h-1 w-full"
-                  style={{ backgroundColor: shift.color || '#3b82f6' }}
-                ></div>
+          <div className="space-y-8">
+            {scopedDivisions.map((division) => {
+              const divisionShifts = (division.shifts || [])
+                .map((shiftRef) => resolveShiftReference(shiftRef))
+                .filter(Boolean) as Shift[];
 
-                <div className="mb-3 flex items-start justify-between">
-                  <div className="flex-1 min-w-0">
-                    <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100 truncate">{shift.name}</h3>
-                    <div className="mt-1.5 space-y-1 text-xs">
-                      <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
-                        <svg className="h-3.5 w-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <span className="truncate">{shift.startTime} - {shift.endTime}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
-                        <svg className="h-3.5 w-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <span>{shift.duration} hours</span>
-                      </div>
-                      <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400">
-                        <svg className="h-3.5 w-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <span className="font-medium">{shift.payableShifts || 1} payable shift{(shift.payableShifts || 1) !== 1 ? 's' : ''}</span>
-                      </div>
+              if (divisionShifts.length === 0) return null;
+
+              return (
+                <div key={division._id} className="space-y-4">
+                  <h2 className="flex items-center gap-2 text-xl font-bold text-slate-800 dark:text-slate-200">
+                    <div className="h-6 w-1 rounded-full bg-orange-500" />
+                    {division.name} <span className="text-sm font-normal text-slate-500">Division Defaults</span>
+                  </h2>
+                  {renderShiftsDisplay(divisionShifts)}
+                </div>
+              );
+            })}
+
+            {scopedDepartments.map((department) => {
+              const directShifts = (department.shifts || [])
+                .map((shiftRef) => resolveShiftReference(shiftRef))
+                .filter(Boolean) as Shift[];
+
+              const divisionDefaultShifts = (department.divisionDefaults || [])
+                .flatMap((defaultEntry) => {
+                  const divisionId = typeof defaultEntry.division === 'string'
+                    ? defaultEntry.division
+                    : defaultEntry.division?._id;
+                  if (!scopedDivisions.some((division) => division._id === divisionId)) return [];
+                  return defaultEntry.shifts || [];
+                })
+                .map((shiftRef) => resolveShiftReference(shiftRef))
+                .filter(Boolean) as Shift[];
+
+              const departmentShifts = [...directShifts, ...divisionDefaultShifts];
+
+              const departmentDesignations = scopedDesignations.filter((designation) =>
+                (designation.department && (
+                  (typeof designation.department === 'string' ? designation.department : designation.department._id) === department._id
+                )) ||
+                (department.designations && department.designations.some((d) => (typeof d === 'string' ? d : d._id) === designation._id))
+              );
+
+              if (departmentShifts.length === 0 && departmentDesignations.length === 0) return null;
+
+              return (
+                <div key={department._id} className="space-y-4">
+                  {departmentShifts.length > 0 && (
+                    <>
+                      <h2 className="flex items-center gap-2 text-xl font-bold text-slate-800 dark:text-slate-200">
+                        <div className="h-6 w-1 rounded-full bg-purple-500" />
+                        {department.name} <span className="text-sm font-normal text-slate-500">Department Specific</span>
+                      </h2>
+                      {renderShiftsDisplay(departmentShifts)}
+                    </>
+                  )}
+
+                  {departmentDesignations.length > 0 && (
+                    <div className="mt-6 space-y-6 border-l-2 border-slate-200 pl-4 dark:border-slate-700">
+                      {departmentDesignations.map((designation) => {
+                        let effectiveShifts: any[] = designation.shifts || [];
+                        if (designation.departmentShifts && designation.departmentShifts.length > 0) {
+                          const departmentOverride = designation.departmentShifts.find((entry) =>
+                            (typeof entry.department === 'string' ? entry.department : entry.department._id) === department._id
+                          );
+                          if (departmentOverride?.shifts?.length) {
+                            effectiveShifts = departmentOverride.shifts;
+                          }
+                        }
+
+                        const resolvedDesignationShifts = effectiveShifts
+                          .map((shiftRef) => resolveShiftReference(shiftRef))
+                          .filter(Boolean) as Shift[];
+
+                        if (resolvedDesignationShifts.length === 0) return null;
+
+                        return (
+                          <div key={designation._id} className="space-y-3">
+                            <h3 className="flex items-center gap-2 text-lg font-semibold text-slate-700 dark:text-slate-300">
+                              <div className="h-2 w-2 rounded-full bg-indigo-400" />
+                              {designation.name} <span className="text-xs font-normal text-slate-400">Designation Shifts</span>
+                            </h3>
+                            {renderShiftsDisplay(resolvedDesignationShifts)}
+                          </div>
+                        );
+                      })}
                     </div>
-                  </div>
-                  <span
-                    className={`ml-2 flex-shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${shift.isActive
-                      ? 'bg-green-100 text-green-700 shadow-sm dark:bg-green-900/30 dark:text-green-400'
-                      : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
-                      }`}
-                  >
-                    {shift.isActive ? 'Active' : 'Inactive'}
-                  </span>
+                  )}
                 </div>
+              );
+            })}
 
-                <div className="flex gap-2 border-t border-slate-200 pt-3 dark:border-slate-800">
-                  <button
-                    onClick={() => handleEdit(shift)}
-                    style={{ backgroundColor: shift.color || '#3b82f6' }}
-                    className="flex-1 rounded-lg px-3 py-1.5 text-xs font-semibold text-white shadow-md transition-all hover:opacity-90"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => handleDelete(shift._id)}
-                    className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 transition-all hover:bg-red-50 dark:border-red-800 dark:bg-slate-900 dark:text-red-300 dark:hover:bg-red-900/20"
-                  >
-                    Delete
-                  </button>
+            {(() => {
+              const assignedShiftIds = getClassifiedAssignedShiftIds();
+              const unassignedShifts = shifts.filter((shift) => !assignedShiftIds.has(shift._id));
+              if (unassignedShifts.length === 0) return null;
+
+              return (
+                <div className="space-y-4 border-t border-slate-200 pt-8 dark:border-slate-800">
+                  <h2 className="flex items-center gap-2 text-xl font-bold text-slate-800 dark:text-slate-200">
+                    <div className="h-6 w-1 rounded-full bg-slate-500" />
+                    Unassigned Shifts <span className="text-sm font-normal text-slate-500">Not mapped to division/department/designation</span>
+                  </h2>
+                  {renderShiftsDisplay(unassignedShifts)}
                 </div>
-              </div>
-            ))}
+              );
+            })()}
           </div>
         )}
       </div>
