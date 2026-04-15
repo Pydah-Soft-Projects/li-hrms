@@ -165,9 +165,7 @@ const permissionSchema = new mongoose.Schema(
     // QR Code for outpass
     qrCode: {
       type: String,
-      unique: true,
-      sparse: true,
-      default: null,
+      default: undefined,
     },
 
     // Outpass URL (public URL accessible via QR)
@@ -299,7 +297,15 @@ permissionSchema.index({ employeeId: 1, date: 1 });
 permissionSchema.index({ employeeNumber: 1, date: 1 });
 permissionSchema.index({ status: 1, date: -1 });
 permissionSchema.index({ date: 1 });
-permissionSchema.index({ qrCode: 1 });
+permissionSchema.index(
+  { qrCode: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      qrCode: { $exists: true, $type: 'string' },
+    },
+  }
+);
 
 // Method to calculate permission hours
 permissionSchema.methods.calculatePermissionHours = function () {
@@ -336,5 +342,45 @@ permissionSchema.pre('save', function () {
   }
 });
 
-module.exports = mongoose.models.Permission || mongoose.model('Permission', permissionSchema);
+const PermissionModel = mongoose.models.Permission || mongoose.model('Permission', permissionSchema);
+
+const ensureQrCodeIndex = async () => {
+  try {
+    if (!PermissionModel.collection) return;
+
+    const indexes = await PermissionModel.collection.indexes();
+    const qrCodeIndex = indexes.find((idx) => idx.name === 'qrCode_1');
+    const isCorrectPartialUnique =
+      !!qrCodeIndex &&
+      qrCodeIndex.unique === true &&
+      !!qrCodeIndex.partialFilterExpression &&
+      !!qrCodeIndex.partialFilterExpression.qrCode;
+
+    if (!isCorrectPartialUnique) {
+      if (qrCodeIndex) {
+        await PermissionModel.collection.dropIndex('qrCode_1');
+      }
+      await PermissionModel.collection.createIndex(
+        { qrCode: 1 },
+        {
+          name: 'qrCode_1',
+          unique: true,
+          partialFilterExpression: {
+            qrCode: { $exists: true, $type: 'string' },
+          },
+        }
+      );
+    }
+  } catch (error) {
+    console.error('[PermissionModel] Failed to ensure qrCode index:', error.message);
+  }
+};
+
+if (mongoose.connection.readyState === 1) {
+  ensureQrCodeIndex();
+} else {
+  mongoose.connection.once('open', ensureQrCodeIndex);
+}
+
+module.exports = PermissionModel;
 

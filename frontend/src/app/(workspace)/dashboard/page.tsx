@@ -18,6 +18,7 @@ import {
   ChevronRight,
   Coffee,
   Bell,
+  BellRing,
   X,
   CheckCheck
 } from 'lucide-react';
@@ -283,10 +284,16 @@ export default function DashboardPage() {
           </div>
           <button
             onClick={() => setNotificationPanelOpen(true)}
-            className="relative h-9 w-9 md:h-10 md:w-10 rounded-full bg-bg-surface/70 border border-border-base text-text-secondary hover:text-text-primary transition-colors flex items-center justify-center"
+            className={`relative h-9 w-9 md:h-10 md:w-10 rounded-full bg-bg-surface/70 border border-border-base text-text-secondary hover:text-text-primary transition-colors flex items-center justify-center ${
+              unreadCount > 0 ? 'animate-bell-wrap-pulse' : ''
+            }`}
             aria-label="Open notifications"
           >
-            <Bell className="w-4 h-4 md:w-5 md:h-5" />
+            {unreadCount > 0 ? (
+              <BellRing className="w-4 h-4 md:w-5 md:h-5 animate-bell-ring" />
+            ) : (
+              <Bell className="w-4 h-4 md:w-5 md:h-5" />
+            )}
             {unreadCount > 0 && (
               <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-black flex items-center justify-center">
                 {unreadCount > 99 ? '99+' : unreadCount}
