@@ -15,6 +15,7 @@ const { detectAndAssignShift } = require('../../shifts/services/shiftDetectionSe
 const { detectExtraHours } = require('./extraHoursService');
 const Settings = require('../../settings/model/Settings');
 const { extractISTComponents, createISTDate } = require('../../shared/utils/dateUtils');
+const { isEmployeeNumberDateLocked } = require('../../shared/services/payrollPeriodLockService');
 
 const MAX_PAIRING_WINDOW_HOURS = 25; // Maximum allowed duration for a shift (prevents multi-day jumps)
 
@@ -43,6 +44,28 @@ const processAndAggregateLogs = async (rawLogs, previousDayLinking = false, skip
   };
 
   try {
+    // Never mutate completed payroll periods: drop logs for locked employee/date pairs.
+    const lockCache = new Map();
+    const eligibleLogs = [];
+    for (const log of rawLogs) {
+      const ts = log?.timestamp ? new Date(log.timestamp) : null;
+      if (!ts || Number.isNaN(ts.getTime())) continue;
+      const date = formatDate(ts);
+      const empNo = String(log.employeeNumber || '').toUpperCase();
+      const cacheKey = `${empNo}::${date}`;
+      let locked = lockCache.get(cacheKey);
+      if (locked === undefined) {
+        locked = await isEmployeeNumberDateLocked(empNo, date);
+        lockCache.set(cacheKey, locked);
+      }
+      if (!locked) eligibleLogs.push(log);
+    }
+    if (eligibleLogs.length !== rawLogs.length) {
+      stats.rawLogsSkipped += rawLogs.length - eligibleLogs.length;
+    }
+    rawLogs = eligibleLogs;
+    if (rawLogs.length === 0) return stats;
+
     // Fetch global general settings (for grace periods, etc.)
     const generalConfig = await Settings.getSettingsByCategory('general');
 

@@ -7,6 +7,7 @@ const ArrearsIntegrationService = require('./arrearsIntegrationService');
 const DeductionIntegrationService = require('./deductionIntegrationService');
 const ArrearsRequest = require('../../arrears/model/ArrearsRequest');
 const DeductionRequest = require('../../manual-deductions/model/DeductionRequest');
+const { autoRejectPendingRequestsForCompletedBatch } = require('../../shared/services/payrollBatchAutoRejectService');
 
 /**
  * PayrollBatch Service
@@ -205,7 +206,8 @@ class PayrollBatchService {
 
             await batch.save();
 
-            // When batch is completed: debit EL used in payroll, then settle arrears and deductions.
+            // When batch is completed: debit EL used in payroll, auto-reject pending requests if configured,
+            // then settle arrears and deductions.
             // Mirror second-salary batch status only after EL/settlement so balances match downstream flows.
             if (newStatus === 'complete') {
                 const elRecords = await PayrollRecord.find({
@@ -223,6 +225,13 @@ class PayrollBatchService {
                     } catch (err) {
                         console.error(`[PayrollBatch] EL used in payroll debit failed for employee ${rec.employeeId}:`, err.message);
                     }
+                }
+
+                try {
+                    const autoRejectSummary = await autoRejectPendingRequestsForCompletedBatch(batch, userId);
+                    batch.autoRejectedRequestsSummary = autoRejectSummary;
+                } catch (err) {
+                    console.error('[PayrollBatch] auto rejection of pending requests failed:', err.message);
                 }
 
                 // Settle arrears and manual deductions for all payrolls in this batch (idempotent: only not-yet-settled)

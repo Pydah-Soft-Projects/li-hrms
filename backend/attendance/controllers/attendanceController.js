@@ -20,6 +20,7 @@ const {
   sumPunchHours,
   upsertEsiOtForAttendanceDay,
 } = require('../../overtime/services/esiLeaveOtService');
+const { assertEmployeeNumberDateEditable } = require('../../shared/services/payrollPeriodLockService');
 
 /**
  * Format date to YYYY-MM-DD
@@ -29,6 +30,29 @@ const formatDate = (date) => {
 };
 
 const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const isPayrollCompletedLockError = (error) =>
+  String(error?.message || '').toLowerCase().includes('payroll batch is completed');
+const isAttendanceImmutableError = (error) =>
+  String(error?.code || '') === 'ATTENDANCE_DAILY_LOCKED' ||
+  String(error?.reason || '') === 'attendance_daily_locked';
+
+function buildAttendanceImmutableError(employeeNumber, date, reason = 'Attendance is locked and cannot be edited') {
+  const error = new Error(`${reason} for ${String(employeeNumber).toUpperCase()} on ${date}`);
+  error.code = 'ATTENDANCE_DAILY_LOCKED';
+  error.reason = 'attendance_daily_locked';
+  error.statusCode = 409;
+  return error;
+}
+
+function assertAttendanceDailyUnlocked(attendanceRecord, employeeNumber, date) {
+  if (attendanceRecord?.locked) {
+    throw buildAttendanceImmutableError(
+      employeeNumber,
+      date,
+      'Attendance is locked for a completed payroll period'
+    );
+  }
+}
 
 /**
  * @desc    Get attendance records for calendar view
@@ -349,6 +373,7 @@ exports.setEsiHalfDayOtHours = async (req, res) => {
   try {
     const { employeeNumber, date } = req.params;
     const { otHours } = req.body || {};
+    await assertEmployeeNumberDateEditable(employeeNumber, date);
 
     const allowedEmployee = await Employee.findOne({
       ...req.scopeFilter,
@@ -410,6 +435,12 @@ exports.setEsiHalfDayOtHours = async (req, res) => {
     });
   } catch (error) {
     console.error('Error setting ESI half-day OT hours:', error);
+    if (isPayrollCompletedLockError(error)) {
+      return res.status(409).json({
+        success: false,
+        message: error.message,
+      });
+    }
     return res.status(500).json({
       success: false,
       message: error.message || 'Failed to set ESI half-day OT hours',
@@ -615,6 +646,7 @@ exports.updateOutTime = async (req, res) => {
   try {
     const { employeeNumber, date } = req.params;
     const { outTime, shiftRecordId } = req.body;
+    await assertEmployeeNumberDateEditable(employeeNumber, date);
 
     const AttendanceSettings = require('../model/AttendanceSettings');
     const attSettings = await AttendanceSettings.getSettings();
@@ -659,6 +691,7 @@ exports.updateOutTime = async (req, res) => {
         message: 'Attendance record not found',
       });
     }
+    assertAttendanceDailyUnlocked(attendanceRecord, employeeNumber, date);
 
     // Ensure we have shifts
     if (!attendanceRecord.shifts || attendanceRecord.shifts.length === 0) {
@@ -732,6 +765,7 @@ exports.updateOutTime = async (req, res) => {
     }
 
     attendanceRecord.isEdited = true;
+    attendanceRecord.locked = true;
     attendanceRecord.editHistory.push({
       action: 'OUT_TIME_UPDATE',
       modifiedBy: req.user._id,
@@ -830,6 +864,14 @@ exports.updateOutTime = async (req, res) => {
 
   } catch (error) {
     console.error('Error updating out time:', error);
+    if (isPayrollCompletedLockError(error) || isAttendanceImmutableError(error)) {
+      return res.status(409).json({
+        success: false,
+        code: error.code,
+        reason: error.reason,
+        message: error.message,
+      });
+    }
     res.status(500).json({
       success: false,
       message: 'Server error',
@@ -846,6 +888,7 @@ exports.assignShift = async (req, res) => {
   try {
     const { employeeNumber, date } = req.params;
     const { shiftId, shiftRecordId } = req.body;
+    await assertEmployeeNumberDateEditable(employeeNumber, date);
 
     // Restrict to HR/Superadmin/Subadmin
     if (!req.user || (req.user.role !== 'hr' && req.user.role !== 'sub_admin' && req.user.role !== 'super_admin' && req.user.role !== 'superadmin' && req.user.role !== 'admin')) {
@@ -878,6 +921,7 @@ exports.assignShift = async (req, res) => {
         message: 'Attendance record not found',
       });
     }
+    assertAttendanceDailyUnlocked(attendanceRecord, employeeNumber, date);
 
     // Verify shift exists
     const shift = await Shift.findById(shiftId);
@@ -1014,6 +1058,7 @@ exports.assignShift = async (req, res) => {
     }
 
     attendanceRecord.isEdited = true;
+    attendanceRecord.locked = true;
     attendanceRecord.editHistory.push({
       action: 'SHIFT_CHANGE',
       modifiedBy: req.user?._id || req.user?.userId,
@@ -1063,6 +1108,14 @@ exports.assignShift = async (req, res) => {
 
   } catch (error) {
     console.error('Error assigning shift:', error);
+    if (isPayrollCompletedLockError(error) || isAttendanceImmutableError(error)) {
+      return res.status(409).json({
+        success: false,
+        code: error.code,
+        reason: error.reason,
+        message: error.message,
+      });
+    }
     res.status(500).json({
       success: false,
       message: 'Error assigning shift',
@@ -1210,6 +1263,7 @@ exports.updateInTime = async (req, res) => {
   try {
     const { employeeNumber, date } = req.params;
     const { inTime, shiftRecordId } = req.body;
+    await assertEmployeeNumberDateEditable(employeeNumber, date);
 
     const AttendanceSettings = require('../model/AttendanceSettings');
     const attSettings = await AttendanceSettings.getSettings();
@@ -1241,6 +1295,7 @@ exports.updateInTime = async (req, res) => {
         message: 'Attendance record not found',
       });
     }
+    assertAttendanceDailyUnlocked(attendanceRecord, employeeNumber, date);
 
     // Ensure we have shifts - if not, we must create a default one or fail?
     if (!attendanceRecord.shifts || attendanceRecord.shifts.length === 0) {
@@ -1283,6 +1338,7 @@ exports.updateInTime = async (req, res) => {
     }
 
     attendanceRecord.isEdited = true;
+    attendanceRecord.locked = true;
     attendanceRecord.editHistory.push({
       action: 'IN_TIME_UPDATE',
       modifiedBy: req.user?._id || req.user?.userId,
@@ -1361,6 +1417,14 @@ exports.updateInTime = async (req, res) => {
 
   } catch (error) {
     console.error('Error updating in-time:', error);
+    if (isPayrollCompletedLockError(error) || isAttendanceImmutableError(error)) {
+      return res.status(409).json({
+        success: false,
+        code: error.code,
+        reason: error.reason,
+        message: error.message,
+      });
+    }
     res.status(500).json({
       success: false,
       message: 'Error updating in-time',

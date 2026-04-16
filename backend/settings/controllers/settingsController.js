@@ -41,6 +41,7 @@ exports.getSetting = async (req, res) => {
         'include_missing_employee_components': true,
         'enable_absent_deduction': false,
         'lop_days_per_absent': 1,
+        'auto_reject_pending_requests_on_batch_complete': false,
         'allow_employee_bulk_process': false,
         'custom_employee_grouping_enabled': false,
         'payroll_cycle_start_day': '1',
@@ -147,6 +148,15 @@ exports.upsertSetting = async (req, res) => {
       }
     }
 
+    if (key === 'auto_reject_pending_requests_on_batch_complete') {
+      if (typeof value !== 'boolean') {
+        return res.status(400).json({
+          success: false,
+          message: 'auto_reject_pending_requests_on_batch_complete must be a boolean',
+        });
+      }
+    }
+
     if (key === 'allow_employee_bulk_process') {
       if (typeof value !== 'boolean') {
         return res.status(400).json({
@@ -164,7 +174,7 @@ exports.upsertSetting = async (req, res) => {
         description: description || `Setting for ${key}`,
         category:
           category ||
-          (['include_missing_employee_components', 'enable_absent_deduction', 'lop_days_per_absent'].includes(key)
+          (['include_missing_employee_components', 'enable_absent_deduction', 'lop_days_per_absent', 'auto_reject_pending_requests_on_batch_complete'].includes(key)
             ? 'payroll'
             : ['allow_employee_bulk_process', 'custom_employee_grouping_enabled'].includes(key)
               ? 'employee'

@@ -13,6 +13,15 @@ jest.mock('../../../employees/model/Employee', () => ({}));
 jest.mock('../../../leaves/services/leaveRegisterService', () => ({
   addELUsedInPayroll: jest.fn().mockResolvedValue({ ledger: true }),
 }));
+jest.mock('../../../shared/services/payrollBatchAutoRejectService', () => ({
+  autoRejectPendingRequestsForCompletedBatch: jest.fn().mockResolvedValue({
+    enabled: false,
+    leaveRejected: 0,
+    odRejected: 0,
+    permissionRejected: 0,
+    otRejected: 0,
+  }),
+}));
 jest.mock('../arrearsIntegrationService', () => ({
   processArrearsSettlements: jest.fn().mockResolvedValue(undefined),
 }));

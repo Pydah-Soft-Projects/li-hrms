@@ -202,7 +202,7 @@ exports.createPermission = async (req, res) => {
     );
 
     if (!result.success) {
-      return res.status(400).json(result);
+      return res.status(result.statusCode || 400).json(result);
     }
 
     const permissionRequest = await Permission.findById(result.data._id)
@@ -243,7 +243,16 @@ exports.createPermission = async (req, res) => {
  */
 exports.getPermissions = async (req, res) => {
   try {
-    const { employeeId, employeeNumber, date, status, startDate, endDate } = req.query;
+    const {
+      employeeId,
+      employeeNumber,
+      date,
+      status,
+      startDate,
+      endDate,
+      page = 1,
+      limit = 25,
+    } = req.query;
 
     const query = { isActive: true };
 
@@ -267,17 +276,28 @@ exports.getPermissions = async (req, res) => {
 
     const combinedQuery = { $and: [query, scopeLimitFilter, workflowFilter] };
 
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.max(1, Math.min(200, parseInt(limit, 10) || 25));
+    const skip = (pageNum - 1) * limitNum;
+    const total = await Permission.countDocuments(combinedQuery);
+
     const permissions = await Permission.find(combinedQuery)
       .populate('employeeId', 'emp_no employee_name department designation')
       .populate('requestedBy', 'name email')
       .populate('approvedBy', 'name email')
       .populate('rejectedBy', 'name email')
-      .sort({ date: -1, createdAt: -1 });
+      .sort({ date: -1, createdAt: -1 })
+      .skip(skip)
+      .limit(limitNum);
 
     res.status(200).json({
       success: true,
       data: permissions,
       count: permissions.length,
+      total,
+      page: pageNum,
+      limit: limitNum,
+      totalPages: Math.max(1, Math.ceil(total / limitNum)),
     });
 
   } catch (error) {
@@ -298,6 +318,7 @@ exports.getPermissions = async (req, res) => {
  */
 exports.getPendingPermissionApprovals = async (req, res) => {
   try {
+    const { page = 1, limit = 25 } = req.query;
     const userRole = req.user.role;
     const baseFilter = {
       isActive: true,
@@ -322,15 +343,26 @@ exports.getPendingPermissionApprovals = async (req, res) => {
       baseFilter.status = { $nin: finalStatuses };
     }
 
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.max(1, Math.min(200, parseInt(limit, 10) || 25));
+    const skip = (pageNum - 1) * limitNum;
+    const total = await Permission.countDocuments(baseFilter);
+
     const permissions = await Permission.find(baseFilter)
       .populate('employeeId', 'emp_no employee_name department designation')
       .populate('requestedBy', 'name email')
-      .sort({ requestedAt: -1 });
+      .sort({ requestedAt: -1 })
+      .skip(skip)
+      .limit(limitNum);
 
     res.status(200).json({
       success: true,
       count: permissions.length,
       data: permissions,
+      total,
+      page: pageNum,
+      limit: limitNum,
+      totalPages: Math.max(1, Math.ceil(total / limitNum)),
     });
   } catch (error) {
     console.error('Error fetching pending permission approvals:', error);
@@ -397,7 +429,7 @@ exports.approvePermission = async (req, res) => {
     );
 
     if (!result.success) {
-      return res.status(400).json(result);
+      return res.status(result.statusCode || 400).json(result);
     }
 
     const permission = await Permission.findById(req.params.id)

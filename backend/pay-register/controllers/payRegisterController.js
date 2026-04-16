@@ -18,6 +18,7 @@ const {
   rebuildContributingDatesFromDailyRecords,
 } = require('../services/contributingDatesService');
 const { recalculatePayRegisterAttendanceDeduction } = require('../services/payRegisterAttendanceDeductionService');
+const { assertEmployeeMonthEditable } = require('../../shared/services/payrollPeriodLockService');
 const XLSX = require('xlsx');
 const mongoose = require('mongoose');
 
@@ -121,6 +122,10 @@ function applySummaryLockFromEdit(payRegister, user) {
   payRegister.summaryLocked = true;
   payRegister.summaryLockedAt = new Date();
   payRegister.summaryLockedBy = user._id;
+}
+
+function isPayrollCompletedLockError(error) {
+  return String(error?.message || '').toLowerCase().includes('payroll batch is completed');
 }
 
 /**
@@ -397,6 +402,7 @@ exports.updatePayRegister = async (req, res) => {
   try {
     const { employeeId, month } = req.params;
     if (!(await ensureEmployeeInScope(req, res, employeeId))) return;
+    await assertEmployeeMonthEditable(employeeId, month, employeeId);
     const { dailyRecords, status, notes, totals: totalsBody } = req.body;
 
     const payRegister = await PayRegisterSummary.findOne({ employeeId, month });
@@ -485,6 +491,7 @@ exports.updateDailyRecord = async (req, res) => {
   try {
     const { employeeId, month, date } = req.params;
     if (!(await ensureEmployeeInScope(req, res, employeeId))) return;
+    await assertEmployeeMonthEditable(employeeId, month, employeeId);
     const updateData = req.body;
 
     // Validate date format
@@ -560,9 +567,10 @@ exports.updateDailyRecord = async (req, res) => {
 // @route   POST /api/pay-register/:employeeId/:month/sync
 // @access  Private (exclude employee)
 exports.syncPayRegister = async (req, res) => {
+  const { employeeId, month } = req.params;
   try {
-    const { employeeId, month } = req.params;
     if (!(await ensureEmployeeInScope(req, res, employeeId))) return;
+    await assertEmployeeMonthEditable(employeeId, month, employeeId);
     const force = req.body && req.body.force === true;
 
     const payRegister = await manualSyncPayRegister(employeeId, month, { force });
@@ -579,6 +587,22 @@ exports.syncPayRegister = async (req, res) => {
     });
   } catch (error) {
     console.error('Error syncing pay register:', error);
+    if (isPayrollCompletedLockError(error)) {
+      return res.status(409).json({
+        success: false,
+        code: error.code || 'PAYROLL_BATCH_COMPLETED',
+        reason: error.reason || 'payroll_batch_completed',
+        data: {
+          employeeId,
+          month,
+          lockType: error.lockType || 'attendance_and_roster',
+          lockSource: error.lockSource || 'payroll_batch',
+          lockStatus: error.lockStatus || 'completed',
+        },
+        error: error.message,
+        message: 'Payroll batch is already completed for this employee and month, so sync was skipped.',
+      });
+    }
     res.status(500).json({
       success: false,
       error: error.message || 'Failed to sync pay register',

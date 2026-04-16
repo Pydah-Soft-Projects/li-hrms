@@ -15,6 +15,7 @@ const { checkJurisdiction } = require('../../shared/middleware/dataScopeMiddlewa
 const Settings = require('../../settings/model/Settings');
 const { getMergedOtConfig } = require('./otConfigResolver');
 const { applyOtHoursPolicy } = require('./otHoursPolicyService');
+const { assertEmployeeDateRequestsEditable } = require('../../shared/services/payrollRequestLockService');
 
 function validateOtApplicationDateWindow(date, mergedPolicy, userRole) {
   if (userRole === 'super_admin') {
@@ -165,6 +166,8 @@ const createOTRequest = async (data, userId, options = {}) => {
       { path: 'division_id', select: 'name' },
       { path: 'department_id', select: 'name' }
     ]);
+
+    await assertEmployeeDateRequestsEditable(employee._id, date, employee.emp_no);
 
     const deptIdEarly = employee.department_id?._id || employee.department_id;
     const divIdEarly = employee.division_id?._id || employee.division_id;
@@ -414,6 +417,9 @@ const createOTRequest = async (data, userId, options = {}) => {
     console.error('Error creating OT request:', error);
     return {
       success: false,
+      code: error?.code,
+      reason: error?.reason,
+      statusCode: error?.statusCode,
       message: error.message || 'Error creating OT request',
     };
   }
@@ -484,6 +490,12 @@ const approveOTRequest = async (otId, userId, userRole) => {
       if (!checkJurisdiction(fullUser, otRequest)) {
         return { success: false, message: 'Not authorized. OT request is outside your assigned data scope.' };
       }
+
+      await assertEmployeeDateRequestsEditable(
+        otRequest.employeeId,
+        otRequest.date,
+        otRequest.employeeNumber
+      );
 
       // 2. Update Current Step
       currentStep.status = 'approved';
@@ -561,6 +573,12 @@ const approveOTRequest = async (otId, userId, userRole) => {
       };
     }
 
+    await assertEmployeeDateRequestsEditable(
+      otRequest.employeeId,
+      otRequest.date,
+      otRequest.employeeNumber
+    );
+
     // Legacy fallback when no workflow chain is present:
     // manager does intermediate approval, others can finalize.
     if (userRole === 'manager') {
@@ -608,6 +626,9 @@ const approveOTRequest = async (otId, userId, userRole) => {
     console.error('Error approving OT request:', error);
     return {
       success: false,
+      code: error?.code,
+      reason: error?.reason,
+      statusCode: error?.statusCode,
       message: error.message || 'Error approving OT request',
     };
   }

@@ -5,6 +5,7 @@
 import { useState, useEffect, useRef, useMemo, type MouseEvent } from 'react';
 
 import { api } from '@/lib/api';
+import Swal from 'sweetalert2';
 
 import {
   formatHighlightContribution,
@@ -212,6 +213,8 @@ interface AttendanceRecord {
   payableShifts?: number;
 
   isEdited?: boolean;
+
+  locked?: boolean;
 
   editHistory?: Array<{
 
@@ -809,6 +812,42 @@ export default function AttendancePage() {
   const [outTimeInput, setOutTimeInput] = useState('');
 
   const [editingOutTime, setEditingOutTime] = useState(false);
+  const isAttendanceDetailLocked = !!(
+    attendanceDetail &&
+    (attendanceDetail.locked || attendanceDetail.isEdited || attendanceDetail.source?.includes('manual'))
+  );
+
+  const isAttendanceLockedResponse = (response: any) =>
+    response &&
+    !response.success &&
+    (
+      response.code === 'ATTENDANCE_DAILY_LOCKED' ||
+      response.reason === 'attendance_daily_locked' ||
+      response.code === 'PAYROLL_BATCH_COMPLETED' ||
+      response.reason === 'payroll_batch_completed'
+    );
+
+  const handleAttendanceLockedPopup = async (message?: string) => {
+    setEditingShift(false);
+    setEditingOutTime(false);
+    setShowOutTimeDialog(false);
+    setShowInTimeDialog(false);
+    setSelectedShiftId('');
+    setSelectedShiftRecordId(null);
+    setSelectedRecordForOutTime(null);
+    setSelectedRecordForInTime(null);
+    setOutTimeInput('');
+    setOutTimeValue('');
+    setInTimeDialogValue('');
+    setError('');
+    await Swal.fire({
+      icon: 'warning',
+      title: 'Attendance Locked',
+      text: message || 'Attendance is locked for a completed payroll period.',
+      confirmButtonText: 'OK',
+    });
+  };
+
 
   const [savingShift, setSavingShift] = useState(false);
 
@@ -1667,7 +1706,10 @@ export default function AttendancePage() {
         }, 2000);
 
       } else {
-
+        if (isAttendanceLockedResponse(response)) {
+          await handleAttendanceLockedPopup(response.message);
+          return;
+        }
         setError(response.message || 'Failed to assign shift');
 
       }
@@ -3049,7 +3091,10 @@ export default function AttendancePage() {
         loadMonthlyAttendance();
 
       } else {
-
+        if (isAttendanceLockedResponse(response)) {
+          await handleAttendanceLockedPopup(response.message);
+          return;
+        }
         setError(response.message || 'Failed to update out time');
 
       }
@@ -3100,6 +3145,10 @@ export default function AttendancePage() {
           if (updated) setAttendanceDetail(updated);
         }
       } else {
+        if (isAttendanceLockedResponse(response)) {
+          await handleAttendanceLockedPopup(response.message);
+          return;
+        }
         setError(response.message || 'Failed to update in time');
       }
     } catch (err: any) {
@@ -3201,7 +3250,10 @@ export default function AttendancePage() {
         loadMonthlyAttendance();
 
       } else {
-
+        if (isAttendanceLockedResponse(response)) {
+          await handleAttendanceLockedPopup(response.message);
+          return;
+        }
         setError(response.message || 'Failed to update out time');
 
       }
@@ -5556,6 +5608,11 @@ export default function AttendancePage() {
                           {selectedEmployee.employee_name} ({selectedEmployee.emp_no})
                         </span>
                       )}
+                      {(attendanceDetail.locked || attendanceDetail.isEdited || attendanceDetail.source?.includes('manual')) && (
+                        <span className="text-[10px] bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300 px-2 py-0.5 rounded-md font-bold shadow-sm border border-violet-200/60 dark:border-violet-800/50">
+                          Manually Locked
+                        </span>
+                      )}
                       {attendanceDetail.leftDate && (
                         <span className="text-[10px] bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 px-2 py-0.5 rounded-md font-bold shadow-sm border border-amber-200/50 dark:border-amber-800/50">
                           Left {new Date(attendanceDetail.leftDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
@@ -5619,7 +5676,7 @@ export default function AttendancePage() {
                               ? attendanceDetail.shiftId.name
                               : '-')}
                         </div>
-                        {attendanceFeatureFlags.allowShiftChange && selectedEmployee && selectedDate && (attendanceDetail.shifts?.length > 0 || attendanceDetail.shiftId) && !editingShift && (
+                        {attendanceFeatureFlags.allowShiftChange && selectedEmployee && selectedDate && (attendanceDetail.shifts?.length > 0 || attendanceDetail.shiftId) && !editingShift && !isAttendanceDetailLocked && (
                           <button
                             type="button"
                             onClick={async () => {
@@ -5705,7 +5762,7 @@ export default function AttendancePage() {
                         {attendanceDetail.expectedHours ? formatHours(attendanceDetail.expectedHours) : '-'}
                       </div>
                     </div>
-                    {selectedEmployee && selectedDate && attendanceDetail.date && (attendanceFeatureFlags.allowInTimeEditing || attendanceFeatureFlags.allowOutTimeEditing) && (
+                    {selectedEmployee && selectedDate && attendanceDetail.date && (attendanceFeatureFlags.allowInTimeEditing || attendanceFeatureFlags.allowOutTimeEditing) && !isAttendanceDetailLocked && (
                       <div className="col-span-full sm:col-span-2 flex items-end gap-3">
                         {attendanceFeatureFlags.allowInTimeEditing && (
                           <button
@@ -5755,6 +5812,11 @@ export default function AttendancePage() {
                             Edit Out Time
                           </button>
                         )}
+                      </div>
+                    )}
+                    {isAttendanceDetailLocked && (
+                      <div className="col-span-full sm:col-span-2 rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-medium text-violet-700 dark:border-violet-800/60 dark:bg-violet-900/20 dark:text-violet-300">
+                        This attendance day is locked, so in-time, out-time, and shift edits are disabled.
                       </div>
                     )}
                     {/* Late In Display - Support Multi-Shift */}

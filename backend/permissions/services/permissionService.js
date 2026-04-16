@@ -11,6 +11,7 @@ const { validatePermissionRequest } = require('../../shared/services/conflictVal
 const { getResolvedPermissionSettings } = require('../../departments/controllers/departmentSettingsController');
 const { checkJurisdiction } = require('../../shared/middleware/dataScopeMiddleware');
 const PermissionDeductionSettings = require('../model/PermissionDeductionSettings');
+const { assertEmployeeDateRequestsEditable } = require('../../shared/services/payrollRequestLockService');
 
 /**
  * Create permission request
@@ -76,6 +77,8 @@ const createPermissionRequest = async (data, userId) => {
       { path: 'division_id', select: 'name' },
       { path: 'department_id', select: 'name' }
     ]);
+
+    await assertEmployeeDateRequestsEditable(employee._id, date, employee.emp_no);
 
     // Get resolved permission settings (department + global fallback)
     let resolvedPermissionSettings = null;
@@ -277,6 +280,9 @@ const createPermissionRequest = async (data, userId) => {
     console.error('Error creating permission request:', error);
     return {
       success: false,
+      code: error?.code,
+      reason: error?.reason,
+      statusCode: error?.statusCode,
       message: error.message || 'Error creating permission request',
     };
   }
@@ -348,6 +354,12 @@ const approvePermissionRequest = async (permissionId, userId, baseUrl = '', user
       if (!checkJurisdiction(fullUser, permissionRequest)) {
         return { success: false, message: 'Not authorized. Permission request is outside your assigned data scope.' };
       }
+
+      await assertEmployeeDateRequestsEditable(
+        permissionRequest.employeeId,
+        permissionRequest.date,
+        permissionRequest.employeeNumber
+      );
 
       // 2. Update Current Step
       currentStep.status = 'approved';
@@ -443,6 +455,12 @@ const approvePermissionRequest = async (permissionId, userId, baseUrl = '', user
 
     const isMidShiftLegacy =
       !permissionRequest.permissionType || permissionRequest.permissionType === 'mid_shift';
+
+    await assertEmployeeDateRequestsEditable(
+      permissionRequest.employeeId,
+      permissionRequest.date,
+      permissionRequest.employeeNumber
+    );
 
     if (isMidShiftLegacy) {
       permissionRequest.generateQRCode();
@@ -547,6 +565,9 @@ const approvePermissionRequest = async (permissionId, userId, baseUrl = '', user
     console.error('Error approving permission request:', error);
     return {
       success: false,
+      code: error?.code,
+      reason: error?.reason,
+      statusCode: error?.statusCode,
       message: error.message || 'Error approving permission request',
     };
   }
