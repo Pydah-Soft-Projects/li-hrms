@@ -161,31 +161,15 @@ export default function SuperAdminDashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] p-4 font-sans dark:bg-[#09090b] sm:p-6 lg:p-8">
-      {/* Header Section */}
-      <header className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center">
-        <div>
-          <p className="text-lg font-bold tracking-tight text-emerald-700 dark:text-emerald-300 sm:text-xl">
-            Real-time workforce intelligence & analytics
-          </p>
-        </div>
+    <div className="min-h-screen bg-[#f6f8fc] p-4 font-sans dark:bg-[#09090b] sm:p-6">
 
-        <div className="flex items-center gap-3">
-          <div className="hidden items-center gap-2 rounded-2xl border border-zinc-200 bg-white px-4 py-2 text-xs font-bold text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400 sm:flex">
-            <Calendar className="h-4 w-4" />
-            {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-          </div>
-        )}
-
-          <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white">Dashboard</h1>
-              <p className="mt-1 text-sm font-normal text-[#7E7E7E] dark:text-zinc-400">
-                Super admin overview — attendance, people, and applications
-              </p>
+              <h1 className="text-3xl font-semibold tracking-tight text-zinc-900 dark:text-white">Dashboard</h1>
+              <p className="text-sm text-zinc-500 dark:text-zinc-400">Real-time workforce intelligence & analytics</p>
             </div>
             <div className="flex items-center gap-2">
-              <div className="flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-[#7E7E7E] dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+              <div className="flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-[#7E7E7E] shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
                 <Calendar className="h-3.5 w-3.5 shrink-0" />
                 <span>
                   {new Date().toLocaleDateString('en-US', {
@@ -198,7 +182,7 @@ export default function SuperAdminDashboard() {
               </div>
               <button
                 onClick={() => setNotificationPanelOpen(true)}
-                className="relative h-9 w-9 rounded-full border border-zinc-200 bg-white text-zinc-600 hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:text-white flex items-center justify-center"
+                className="relative flex h-9 w-9 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-600 shadow-sm hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:text-white"
                 aria-label="Open notifications"
               >
                 <Bell className="h-4 w-4" />
@@ -211,158 +195,131 @@ export default function SuperAdminDashboard() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_340px]">
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_360px]">
             {/* Main column */}
-            <div className="space-y-5">
-              {/* Compact KPIs + Employee tracker */}
-              <div className="overflow-hidden rounded-[16px] border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-                {loading ? (
-                  <div className="flex min-h-[240px] animate-pulse flex-col lg:flex-row">
-                    <div className="grid flex-1 grid-cols-2 gap-px bg-zinc-100 p-px dark:bg-zinc-800">
-                      {[1, 2, 3, 4].map((i) => (
-                        <div key={i} className="bg-white p-3 dark:bg-zinc-900">
-                          <div className="h-8 w-8 rounded-lg bg-zinc-100 dark:bg-zinc-800" />
-                          <div className="mt-2 h-6 w-14 bg-zinc-100 dark:bg-zinc-800" />
-                        </div>
-                      ))}
-                    </div>
-                    <div className="min-h-[200px] flex-1 border-t border-zinc-100 p-4 dark:border-zinc-800 lg:border-l lg:border-t-0">
-                      <div className="h-4 w-32 bg-zinc-100 dark:bg-zinc-800" />
-                      <div className="mt-6 flex h-32 items-end gap-2">
-                        {[1, 2, 3, 4, 5, 6, 7].map((i) => (
-                          <div key={i} className="flex-1 rounded-t bg-zinc-100 dark:bg-zinc-800" style={{ height: `${16 + i * 6}px` }} />
-                        ))}
-                      </div>
-                    </div>
+            <div className="space-y-7">
+              {loading ? (
+                <>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    {[1, 2, 3, 4].map((i) => (
+                      <div key={i} className="h-32 animate-pulse rounded-2xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900" />
+                    ))}
                   </div>
-                ) : (
-                  <div className="flex flex-col lg:flex-row">
-                    <div className="grid flex-1 grid-cols-2 gap-px bg-zinc-100 p-px dark:bg-zinc-800 sm:grid-cols-3">
-                      {[
-                        {
-                          title: 'Total Employees',
-                          value: stats.totalEmployees ?? 0,
-                          iconBg: 'bg-amber-100 dark:bg-amber-950/50',
-                          icon: (
-                            <svg className="h-4 w-4 text-[#FFB800]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                            </svg>
-                          ),
-                        },
-                        {
-                          title: 'Active Employees',
-                          value: stats.activeEmployees ?? 0,
-                          iconBg: 'bg-sky-100 dark:bg-sky-950/50',
-                          icon: (
-                            <svg className="h-4 w-4 text-[#2D5BFF]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-                            </svg>
-                          ),
-                        },
-                        {
-                          title: 'Inactive Employees',
-                          value: inactiveEmployees,
-                          iconBg: 'bg-sky-100 dark:bg-sky-950/50',
-                          icon: (
-                            <svg className="h-4 w-4 text-[#00A3FF]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                            </svg>
-                          ),
-                        },
-                        {
-                          title: 'New Hires (MTD)',
-                          value: stats.newEmployeesThisMonth ?? 0,
-                          iconBg: 'bg-pink-100 dark:bg-pink-950/40',
-                          icon: (
-                            <svg className="h-4 w-4 text-[#FF4D81]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                            </svg>
-                          ),
-                        },
-                        {
-                          title: 'Resigned (MTD)',
-                          value: stats.resignedThisMonth ?? 0,
-                          iconBg: 'bg-rose-100 dark:bg-rose-950/40',
-                          icon: (
-                            <svg className="h-4 w-4 text-[#FF4D81]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-                            </svg>
-                          ),
-                        },
-                        {
-                          title: 'Pending Applications',
-                          value: stats.pendingApplications ?? 0,
-                          iconBg: 'bg-pink-100 dark:bg-pink-950/40',
-                          icon: (
-                            <svg className="h-4 w-4 text-[#FF4D81]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                            </svg>
-                          ),
-                        },
-                      ].map((cell) => (
-                        <div
-                          key={cell.title}
-                          className="flex items-center justify-between gap-2 bg-white px-3 py-2.5 dark:bg-zinc-900 sm:px-3.5"
-                        >
-                          <div className="min-w-0">
-                            <p className="truncate text-[10px] font-medium uppercase tracking-wide text-[#7E7E7E] dark:text-zinc-500">
-                              {cell.title}
-                            </p>
-                            <p className="mt-0.5 text-lg font-bold tabular-nums tracking-tight text-zinc-900 dark:text-white">
-                              {cell.value}
-                            </p>
-                          </div>
-                          <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${cell.iconBg}`}>
-                            {cell.icon}
-                          </div>
+                  <div className="h-80 animate-pulse rounded-2xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900" />
+                  <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+                    <div className="h-72 animate-pulse rounded-2xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900" />
+                    <div className="h-72 animate-pulse rounded-2xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900" />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    {[
+                      {
+                        title: 'Active Employees',
+                        value: stats.activeEmployees ?? 0,
+                        iconBg: 'bg-blue-100 dark:bg-blue-950/50',
+                        icon: (
+                          <svg className="h-4 w-4 text-[#2D5BFF]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                          </svg>
+                        ),
+                        meta: 'Workforce Count',
+                      },
+                      {
+                        title: 'Attendance Health',
+                        value: `${(stats.attendanceRate ?? 0).toFixed(1)}%`,
+                        iconBg: 'bg-emerald-100 dark:bg-emerald-950/50',
+                        icon: (
+                          <svg className="h-4 w-4 text-[#1E8A5A]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                        ),
+                        meta: "Today's Presence",
+                      },
+                      {
+                        title: 'Pending Leaves',
+                        value: stats.pendingLeaves ?? 0,
+                        iconBg: 'bg-amber-100 dark:bg-amber-950/40',
+                        icon: (
+                          <svg className="h-4 w-4 text-[#A16207]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-3-3v6m8-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                        ),
+                        meta: 'Awaiting Approval',
+                      },
+                      {
+                        title: 'Pending ODs',
+                        value: stats.pendingODs ?? 0,
+                        iconBg: 'bg-fuchsia-100 dark:bg-fuchsia-950/40',
+                        icon: (
+                          <svg className="h-4 w-4 text-[#A21CAF]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                        ),
+                        meta: 'On-Duty Requests',
+                      },
+                    ].map((cell) => (
+                      <div
+                        key={cell.title}
+                        className="flex items-start justify-between gap-2 rounded-2xl border border-zinc-200 bg-white px-4 py-3 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-semibold text-zinc-500 dark:text-zinc-500">{cell.title}</p>
+                          <p className="mt-1 text-4xl font-bold tabular-nums tracking-tight text-zinc-900 dark:text-white">{cell.value}</p>
+                          <p className="mt-1 text-[10px] font-medium uppercase tracking-wide text-zinc-400">{cell.meta}</p>
                         </div>
-                      ))}
-                    </div>
-
-                    {/* Attendance Pulse */}
-                    <DashboardCard
-                      title="Attendance Pulse"
-                      subtitle="Organization-wide participation trend"
-                      icon={Timer}
-                    >
-                      <div className="mb-4 flex gap-4">
-                        <select
-                          value={trackerPeriod}
-                          onChange={(e) => setTrackerPeriod(e.target.value as any)}
-                          className="rounded-xl border border-zinc-200 bg-white px-3 py-1.5 text-xs font-bold text-zinc-700 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300"
-                        >
-                          <option value="week">This Week</option>
-                          <option value="month">This Month</option>
-                          <option value="lastMonth">Last Month</option>
-                        </select>
+                        <div className={`mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${cell.iconBg}`}>
+                          {cell.icon}
+                        </div>
                       </div>
-                      <AttendancePulse data={stats.weeklyTracker} />
+                    ))}
+                  </div>
+
+                  <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+                    <div className="mb-4 flex items-center justify-between gap-4">
+                      <div>
+                        <h3 className="text-lg font-semibold text-zinc-900 dark:text-white">Attendance Pulse</h3>
+                        <p className="text-xs text-zinc-500 dark:text-zinc-400">Organization-wide participation trend</p>
+                      </div>
+                      <select
+                        value={trackerPeriod}
+                        onChange={(e) => setTrackerPeriod(e.target.value as any)}
+                        className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 focus:outline-none dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300"
+                      >
+                        <option value="week">This Week</option>
+                        <option value="month">This Month</option>
+                        <option value="lastMonth">Last Month</option>
+                      </select>
+                    </div>
+                    <AttendancePulse data={stats.weeklyTracker} />
+                  </section>
+
+                  <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+                    <DashboardCard title="Leave Spectrum" subtitle="Current month composition" icon={FileBarChart}>
+                      <LeaveSpectrum data={stats.leaveTypeDistribution} />
                     </DashboardCard>
 
-                    {/* Workforce Heatmap */}
-                    <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-                      <DashboardCard title="Leave Spectrum" subtitle="Current month composition" icon={FileBarChart}>
-                        <LeaveSpectrum data={stats.leaveTypeDistribution} />
-                      </DashboardCard>
-
-                      <DashboardCard title="Department Load" subtitle="Workforce distribution" icon={Settings}>
-                        <WorkforceHeatmap data={stats.departmentHeadcount} />
-                      </DashboardCard>
-                    </div>
+                    <DashboardCard title="Department Load" subtitle="Workforce distribution" icon={Settings}>
+                      <WorkforceHeatmap data={stats.departmentHeadcount} />
+                    </DashboardCard>
                   </div>
+                </>
+              )}
+            </div>
 
-        {/* Right Column: Actions & Feed */}
-                <div className="space-y-6 lg:col-span-4">
+            {/* Right Column: Actions & Feed */}
+            <div className="space-y-5">
                   {/* Birthday Widget */}
-                  <section className="rounded-3xl border border-zinc-200 bg-white p-5 shadow-xl dark:border-zinc-800 dark:bg-zinc-950">
-                    <div className="mb-5 flex items-center justify-between">
+                  <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+                    <div className="mb-6 flex items-center justify-between">
                       <div className="flex items-center gap-2.5">
-                        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 dark:bg-emerald-900/30">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 dark:bg-emerald-900/30">
                           <Cake className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                         </div>
                         <div>
-                          <h3 className="text-lg font-black text-zinc-900 dark:text-white leading-tight">Future Birthdays</h3>
-                          <p className="text-[10px] font-semibold text-zinc-400">Upcoming celebrations</p>
+                          <h3 className="text-base font-semibold text-zinc-900 dark:text-white leading-tight">Future Birthdays</h3>
+                          <p className="text-[10px] font-medium text-zinc-400">Upcoming celebrations</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2 py-1 dark:bg-emerald-900/20">
@@ -371,67 +328,30 @@ export default function SuperAdminDashboard() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-3 2xl:grid-cols-2">
+                    <div className="grid grid-cols-2 gap-4">
                       {(stats.upcomingBirthdays || []).slice(0, 4).map((emp: any) => (
-                        <div key={emp.id} className="group relative flex flex-col gap-3 rounded-2xl border border-zinc-100 bg-white p-4 transition-all hover:border-emerald-100 hover:shadow-lg dark:border-zinc-800 dark:bg-zinc-900/40">
-                          <div className="flex items-start justify-between">
-                            <div className="flex min-w-0 flex-1 items-center gap-2.5">
-                              <div className="relative">
-                                <div className="h-10 w-10 rounded-xl bg-emerald-50 p-0.5 dark:bg-zinc-800">
-                                  <img
-                                    src={emp.photo || `https://ui-avatars.com/api/?name=${emp.name}&background=random`}
-                                    className="h-full w-full rounded-xl object-cover"
-                                  />
-                                </div>
+                        <div key={emp.id} className="group relative rounded-xl border border-zinc-100 bg-zinc-50/60 p-3.5 transition-all hover:border-emerald-100 dark:border-zinc-800 dark:bg-zinc-900/40">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <div className="h-8 w-8 rounded-md bg-emerald-50 p-0.5 dark:bg-zinc-800">
+                                <img
+                                  src={emp.photo || `https://ui-avatars.com/api/?name=${emp.name}&background=random`}
+                                  alt={emp.name || 'Employee'}
+                                  className="h-full w-full rounded-md object-cover"
+                                />
                               </div>
-                              <div className="overflow-hidden">
-                                <h4 className="truncate text-xs font-black text-zinc-900 dark:text-white">{emp.name}</h4>
-                                <p className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest">{emp.empNo}</p>
-                              </div>
-                            </div>
-                            <div className="ml-2 shrink-0">
-                              <div className="flex min-h-10 min-w-16 flex-col items-center justify-center rounded-xl bg-emerald-50 px-3 py-1.5 text-center dark:bg-emerald-900/20">
-                                {getBirthdayBadgeLabel(emp) ? (
-                                  <span className="text-[10px] font-black uppercase text-emerald-600 animate-pulse">
-                                    {getBirthdayBadgeLabel(emp)}
-                                  </span>
-                                ) : (
-                                  <>
-                                    <span className="text-[9px] font-black text-emerald-600">
-                                      {new Date(emp.dob).toLocaleDateString('en-US', { day: 'numeric' })}
-                                    </span>
-                                    <span className="text-[7px] font-bold uppercase text-emerald-600/60">
-                                      {new Date(emp.dob).toLocaleDateString('en-US', { month: 'short' })}
-                                    </span>
-                                  </>
-                                )}
+                              <div className="min-w-0">
+                                <h4 className="truncate text-[10px] font-semibold text-zinc-900 dark:text-white">{emp.name}</h4>
+                                <p className="truncate text-[8px] font-medium uppercase tracking-wide text-zinc-400">{emp.empNo}</p>
                               </div>
                             </div>
+                            <span className="rounded-md bg-emerald-50 px-2 py-1 text-[8px] font-bold uppercase text-emerald-600 dark:bg-emerald-900/20">
+                              {getBirthdayBadgeLabel(emp) || new Date(emp.nextBirthday || emp.dob).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                            </span>
                           </div>
-
-                          <div className="grid grid-cols-2 gap-1.5">
-                            <div className="rounded-xl bg-zinc-50/50 p-2 dark:bg-zinc-800/20">
-                              <span className="text-[8px] font-bold uppercase tracking-wider text-zinc-400">Division</span>
-                              <p className="mt-0.5 truncate text-[9px] font-black text-zinc-600 dark:text-zinc-400">
-                                {emp.division?.name || 'N/A'}
-                              </p>
-                            </div>
-                            <div className="rounded-xl bg-zinc-50/50 p-2 dark:bg-zinc-800/20">
-                              <span className="text-[8px] font-bold uppercase tracking-wider text-zinc-400">Department</span>
-                              <p className="mt-0.5 truncate text-[9px] font-black text-zinc-600 dark:text-zinc-400">
-                                {emp.department?.name || 'N/A'}
-                              </p>
-                            </div>
-                            <div className="rounded-xl bg-zinc-50/50 p-2 dark:bg-zinc-800/20">
-                              <span className="text-[8px] font-bold uppercase tracking-wider text-zinc-400">Age</span>
-                              <p className="mt-0.5 text-[10px] font-black text-zinc-600 dark:text-zinc-400">{emp.age}</p>
-                            </div>
-                            <div className="rounded-xl bg-zinc-50/50 p-2 dark:bg-zinc-800/20">
-                              <span className="text-[8px] font-bold uppercase tracking-wider text-zinc-400">Next B-Day</span>
-                              <p className="mt-0.5 text-[9px] font-black text-zinc-600 dark:text-zinc-400">
-                                {new Date(emp.nextBirthday).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}
-                              </p>
-                            </div>
+                          <div className="mt-2 grid grid-cols-2 gap-2 text-[8px] text-zinc-500 dark:text-zinc-400">
+                            <span className="truncate">{emp.department?.name || 'Department'}</span>
+                            <span className="truncate text-right">{new Date(emp.nextBirthday || emp.dob).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
                           </div>
                         </div>
                       ))}
@@ -444,14 +364,18 @@ export default function SuperAdminDashboard() {
                       </div>
                     )}
 
-                    <button className="mt-5 w-full rounded-xl border border-dashed border-zinc-200 py-2.5 text-[9px] font-black uppercase tracking-widest text-zinc-400 transition-all hover:border-zinc-300 hover:text-zinc-600 dark:border-zinc-800">
+                    <button className="mt-6 w-full rounded-xl border border-dashed border-zinc-200 py-2.5 text-[9px] font-black uppercase tracking-widest text-zinc-400 transition-all hover:border-zinc-300 hover:text-zinc-600 dark:border-zinc-800">
                       Explore All Celebrations
                     </button>
                   </section>
 
                   {/* Activity Timeline */}
-                  <DashboardCard title="Recent Activity" icon={Activity}>
-                    <div className="relative space-y-6 before:absolute before:left-[15px] before:top-2 before:h-[calc(100%-16px)] before:w-px before:bg-zinc-200 dark:before:bg-zinc-800">
+                  <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+                    <div className="mb-5 flex items-center gap-2">
+                      <Activity className="h-4 w-4 text-violet-600" />
+                      <h3 className="text-sm font-semibold text-zinc-900 dark:text-white">Recent Activity</h3>
+                    </div>
+                    <div className="relative space-y-8 before:absolute before:left-[15px] before:top-2 before:h-[calc(100%-16px)] before:w-px before:bg-zinc-200 dark:before:bg-zinc-800">
                       {notifications.slice(0, 4).map((n) => (
                         <div key={n._id} className="relative flex gap-4 pl-8">
                           <div className="absolute left-0 top-1 h-8 w-8 rounded-full border-4 border-white bg-emerald-500 shadow-sm dark:border-zinc-900" />
@@ -465,11 +389,11 @@ export default function SuperAdminDashboard() {
                         </div>
                       ))}
                     </div>
-                  </DashboardCard>
+                  </section>
                 </div>
-              </main>
+              </div>
 
-              {/* Notification Panel Overlay */}
+            {/* Notification Panel Overlay */}
               <AnimatePresence>
                 {notificationPanelOpen && (
                   <div className="fixed inset-0 z-[150] flex justify-end">
