@@ -501,6 +501,7 @@ const startWorkers = () => {
 
         try {
             const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
+            const { isEmployeeNumberDateLocked } = require('../../shared/services/payrollPeriodLockService');
 
             let syncedCount = 0;
             let removedCount = 0;
@@ -509,6 +510,10 @@ const startWorkers = () => {
                 if (!entry.date) continue;
 
                 const empNo = String(entry.employeeNumber || '').toUpperCase();
+                const locked = await isEmployeeNumberDateLocked(empNo, entry.date);
+                if (locked) {
+                    continue;
+                }
 
                 if (entry.status === 'WO' || entry.status === 'HOL') {
                     // Create or update AttendanceDaily for this WO/HOL day (only for saved roster entries)

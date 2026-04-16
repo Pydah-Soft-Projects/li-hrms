@@ -12,6 +12,7 @@ const { recalculatePayRegisterAttendanceDeduction } = require('./payRegisterAtte
 const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
 const { syncAttendanceFromMSSQL } = require('../../attendance/services/attendanceSyncService');
 const summaryCalculationService = require('../../attendance/services/summaryCalculationService');
+const { assertEmployeeMonthEditable } = require('../../shared/services/payrollPeriodLockService');
 
 /**
  * Auto Sync Service
@@ -384,6 +385,7 @@ async function syncPayRegisterFromOT(ot) {
 async function manualSyncPayRegister(employeeId, month, options = {}) {
   try {
     const force = options && options.force === true;
+    await assertEmployeeMonthEditable(employeeId, month, employeeId);
 
     let payRegister = await PayRegisterSummary.findOne({
       employeeId,

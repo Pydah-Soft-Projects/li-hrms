@@ -17,6 +17,7 @@ const PayrollSettings = () => {
     const [includeMissing, setIncludeMissing] = useState<boolean>(true);
     const [enableAbsentDeduction, setEnableAbsentDeduction] = useState<boolean>(false);
     const [lopDaysPerAbsent, setLopDaysPerAbsent] = useState<number>(1);
+    const [autoRejectPendingRequestsOnComplete, setAutoRejectPendingRequestsOnComplete] = useState<boolean>(false);
 
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -26,14 +27,15 @@ const PayrollSettings = () => {
     const loadSettings = async () => {
         try {
             setLoading(true);
-            const [resRelease, resHistory, resLimit, resStart, resEnd, resMissing, resAbsent] = await Promise.all([
+            const [resRelease, resHistory, resLimit, resStart, resEnd, resMissing, resAbsent, resAutoReject] = await Promise.all([
                 api.getSetting('payslip_release_required'),
                 api.getSetting('payslip_history_months'),
                 api.getSetting('payslip_download_limit'),
                 api.getSetting('payroll_cycle_start_day'),
                 api.getSetting('payroll_cycle_end_day'),
                 api.getIncludeMissingSetting(),
-                api.getAbsentDeductionSettings()
+                api.getAbsentDeductionSettings(),
+                api.getSetting('auto_reject_pending_requests_on_batch_complete')
             ]);
 
             if (resRelease.success && resRelease.data) setPayslipReleaseRequired(!!resRelease.data.value);
@@ -45,6 +47,9 @@ const PayrollSettings = () => {
             if (resAbsent.enable !== undefined) {
                 setEnableAbsentDeduction(resAbsent.enable);
                 setLopDaysPerAbsent(resAbsent.lopDays);
+            }
+            if (resAutoReject.success && resAutoReject.data) {
+                setAutoRejectPendingRequestsOnComplete(!!resAutoReject.data.value);
             }
         } catch (err) {
             console.error('Failed to load payroll settings', err);
@@ -67,6 +72,11 @@ const PayrollSettings = () => {
                 api.upsertSetting({ key: 'payslip_download_limit', value: payslipDownloadLimit, category: 'payroll' }),
                 api.upsertSetting({ key: 'payroll_cycle_start_day', value: payrollCycleStartDay, category: 'payroll' }),
                 api.upsertSetting({ key: 'payroll_cycle_end_day', value: payrollCycleEndDay, category: 'payroll' }),
+                api.upsertSetting({
+                    key: 'auto_reject_pending_requests_on_batch_complete',
+                    value: autoRejectPendingRequestsOnComplete,
+                    category: 'payroll'
+                }),
                 api.saveIncludeMissingSetting(includeMissing),
                 api.saveAbsentDeductionSettings(enableAbsentDeduction, lopDaysPerAbsent)
             ]);
@@ -204,6 +214,23 @@ const PayrollSettings = () => {
                                         onChange={(e) => setPayrollCycleEndDay(Number(e.target.value))}
                                         className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-medium focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-gray-700 dark:bg-[#0F172A] dark:text-white transition-all"
                                     />
+                                </div>
+                            </div>
+
+                            <div className="pt-8 border-t border-gray-50 dark:border-gray-800/50">
+                                <div className="flex items-center justify-between gap-4">
+                                    <div className="space-y-1">
+                                        <p className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-tight">Auto-Reject In-Period Requests On Batch Complete</p>
+                                        <p className="text-xs text-gray-500">
+                                            When enabled, payroll completion automatically rejects non-final Leave, OD, Permission, and OT requests for the same employees within that payroll period.
+                                        </p>
+                                    </div>
+                                    <button
+                                        onClick={() => setAutoRejectPendingRequestsOnComplete(!autoRejectPendingRequestsOnComplete)}
+                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-300 ${autoRejectPendingRequestsOnComplete ? 'bg-indigo-600 shadow-[0_0_12px_rgba(79,70,229,0.3)]' : 'bg-gray-200 dark:bg-gray-800'}`}
+                                    >
+                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-300 ${autoRejectPendingRequestsOnComplete ? 'translate-x-6' : 'translate-x-1'}`} />
+                                    </button>
                                 </div>
                             </div>
 

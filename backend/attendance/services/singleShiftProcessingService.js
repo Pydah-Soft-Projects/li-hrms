@@ -900,6 +900,14 @@ function buildEmptyUpdate(employeeNumber, date) {
 
 async function upsertDaily(employeeNumber, date, updateData) {
   let dailyRecord = await AttendanceDaily.findOne({ employeeNumber, date });
+  const isManualImmutable =
+    !!dailyRecord &&
+    (dailyRecord.locked === true ||
+      dailyRecord.isEdited === true ||
+      (Array.isArray(dailyRecord.source) && dailyRecord.source.includes('manual')));
+  if (isManualImmutable) {
+    return dailyRecord;
+  }
   if (!dailyRecord) {
     dailyRecord = new AttendanceDaily({ employeeNumber, date, ...updateData });
   } else {

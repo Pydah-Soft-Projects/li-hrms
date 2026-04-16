@@ -9,6 +9,13 @@ const Employee = require('../../employees/model/Employee');
 const RosterMeta = require('../model/RosterMeta');
 const { rosterSyncQueue } = require('../../shared/jobs/queueManager');
 const { autoFillNextCycleFromPrevious } = require('../services/rosterAutoFillService');
+const {
+  assertEmployeeNumberDateEditable,
+  isEmployeeNumberDateLocked,
+} = require('../../shared/services/payrollPeriodLockService');
+
+const isPayrollCompletedLockError = (error) =>
+  String(error?.message || '').toLowerCase().includes('payroll batch is completed');
 
 /**
  * @desc    Create pre-scheduled shift
@@ -18,6 +25,7 @@ const { autoFillNextCycleFromPrevious } = require('../services/rosterAutoFillSer
 exports.createPreScheduledShift = async (req, res) => {
   try {
     const { employeeNumber, shiftId, date, notes } = req.body;
+    await assertEmployeeNumberDateEditable(employeeNumber, date);
 
     if (!employeeNumber || !shiftId || !date) {
       return res.status(400).json({
@@ -91,6 +99,12 @@ exports.createPreScheduledShift = async (req, res) => {
 
   } catch (error) {
     console.error('Error creating pre-scheduled shift:', error);
+    if (isPayrollCompletedLockError(error)) {
+      return res.status(409).json({
+        success: false,
+        message: error.message,
+      });
+    }
     if (error.code === 11000) {
       return res.status(400).json({
         success: false,
@@ -183,6 +197,12 @@ exports.bulkCreatePreScheduledShifts = async (req, res) => {
     for (const schedule of schedules) {
       try {
         const { employeeNumber, shiftId, date, notes } = schedule;
+        const locked = await isEmployeeNumberDateLocked(employeeNumber, date);
+        if (locked) {
+          results.errors.push(`Payroll completed lock: ${employeeNumber} on ${date}`);
+          results.skipped++;
+          continue;
+        }
 
         if (!employeeNumber || !shiftId || !date) {
           results.errors.push(`Missing required fields: ${JSON.stringify(schedule)}`);
@@ -464,15 +484,26 @@ exports.saveRoster = async (req, res) => {
       bulk.push(entry);
     });
 
-    console.log(`[Save Roster] Processed ${entries.length} entries: ${bulk.length} valid, ${skippedCount} skipped`);
+    const lockFilteredBulk = [];
+    for (const entry of bulk) {
+      const locked = await isEmployeeNumberDateLocked(entry.employeeNumber, entry.date);
+      if (locked) {
+        skippedCount++;
+        console.warn(`[Save Roster] Skipping locked payroll date: ${entry.employeeNumber} ${entry.date}`);
+        continue;
+      }
+      lockFilteredBulk.push(entry);
+    }
+
+    console.log(`[Save Roster] Processed ${entries.length} entries: ${lockFilteredBulk.length} valid, ${skippedCount} skipped`);
 
     let savedCount = 0;
     let failedCount = 0;
     let duplicateCount = 0;
 
-    if (bulk.length > 0) {
-      console.log(`[Save Roster] Preparing to save ${bulk.length} entries for month ${month}`);
-      console.log(`[Save Roster] Sample entries:`, JSON.stringify(bulk.slice(0, 3), null, 2));
+    if (lockFilteredBulk.length > 0) {
+      console.log(`[Save Roster] Preparing to save ${lockFilteredBulk.length} entries for month ${month}`);
+      console.log(`[Save Roster] Sample entries:`, JSON.stringify(lockFilteredBulk.slice(0, 3), null, 2));
 
       // Try saving individually to get detailed error messages
       let saved = 0;
@@ -481,8 +512,8 @@ exports.saveRoster = async (req, res) => {
       const errors = [];
 
       const mongoose = require('mongoose');
-      for (let i = 0; i < bulk.length; i++) {
-        const entry = bulk[i];
+      for (let i = 0; i < lockFilteredBulk.length; i++) {
+        const entry = lockFilteredBulk[i];
         try {
           // Replace only this (employeeNumber, date) — do not touch other days or employees
           await PreScheduledShift.deleteOne({
@@ -544,9 +575,9 @@ exports.saveRoster = async (req, res) => {
     );
 
     // Dispatch async roster sync job
-    if (bulk.length > 0) {
+    if (lockFilteredBulk.length > 0) {
       rosterSyncQueue.add('syncRoster', {
-        entries: bulk,
+        entries: lockFilteredBulk,
         userId: req.user._id
       }).catch(err => console.error('Failed to add roster sync job:', err));
     }
@@ -594,12 +625,17 @@ exports.autoFillNextCycle = async (req, res) => {
       })
         .select('employeeNumber date shiftId status')
         .lean();
-      const forSync = allEntries.map((e) => ({
-        employeeNumber: e.employeeNumber,
-        date: e.date,
-        shiftId: e.shiftId,
-        status: e.status || null,
-      }));
+      const forSync = [];
+      for (const e of allEntries) {
+        const locked = await isEmployeeNumberDateLocked(e.employeeNumber, e.date);
+        if (locked) continue;
+        forSync.push({
+          employeeNumber: e.employeeNumber,
+          date: e.date,
+          shiftId: e.shiftId,
+          status: e.status || null,
+        });
+      }
       rosterSyncQueue.add('syncRoster', { entries: forSync, userId: req.user._id }).catch((err) => console.error('Roster sync job add failed:', err));
     }
 
@@ -639,6 +675,7 @@ exports.updatePreScheduledShift = async (req, res) => {
         message: 'Pre-scheduled shift not found',
       });
     }
+    await assertEmployeeNumberDateEditable(preScheduled.employeeNumber, preScheduled.date);
 
     if (shiftId) {
       const shift = await Shift.findById(shiftId);
@@ -670,6 +707,12 @@ exports.updatePreScheduledShift = async (req, res) => {
 
   } catch (error) {
     console.error('Error updating pre-scheduled shift:', error);
+    if (isPayrollCompletedLockError(error)) {
+      return res.status(409).json({
+        success: false,
+        message: error.message,
+      });
+    }
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to update pre-scheduled shift',
@@ -692,6 +735,7 @@ exports.deletePreScheduledShift = async (req, res) => {
         message: 'Pre-scheduled shift not found',
       });
     }
+    await assertEmployeeNumberDateEditable(preScheduled.employeeNumber, preScheduled.date);
 
     await preScheduled.deleteOne();
 
@@ -702,6 +746,12 @@ exports.deletePreScheduledShift = async (req, res) => {
 
   } catch (error) {
     console.error('Error deleting pre-scheduled shift:', error);
+    if (isPayrollCompletedLockError(error)) {
+      return res.status(409).json({
+        success: false,
+        message: error.message,
+      });
+    }
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to delete pre-scheduled shift',

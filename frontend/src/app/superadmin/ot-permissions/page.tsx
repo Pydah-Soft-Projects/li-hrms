@@ -47,6 +47,10 @@ import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { getEmployeeInitials } from '@/lib/utils';
 import EmployeeSelect from '@/components/EmployeeSelect';
+import {
+  buildLeaveODPayPeriodOptions,
+  matchLeaveODPayPeriodSelectValue,
+} from '@/lib/payPeriodRange';
 
 import {
 } from '@/lib/permissions';
@@ -313,6 +317,7 @@ const defaultDateBounds = getPolicyDateBounds({
   allowFutureDated: true,
   maxAdvanceDays: 365,
 });
+const PER_PAGE_OPTIONS = [10, 25, 50, 100];
 
 export default function OTAndPermissionsPage() {
   const router = useRouter();
@@ -321,6 +326,8 @@ export default function OTAndPermissionsPage() {
   const [activeTab, setActiveTab] = useState<'ot' | 'permissions' | 'pending'>('ot');
   const [dataLoading, setDataLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
+  const [payCycleStartDay, setPayCycleStartDay] = useState(1);
+  const [payCycleEndDay, setPayCycleEndDay] = useState<number | null>(null);
   const [otRequests, setOTRequests] = useState<OTRequest[]>([]);
   const [permissions, setPermissions] = useState<PermissionRequest[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -330,6 +337,51 @@ export default function OTAndPermissionsPage() {
   // Filters
   const [otFilters, setOTFilters] = useState({ status: '', employeeNumber: '', startDate: '', endDate: '' });
   const [permissionFilters, setPermissionFilters] = useState({ status: '', employeeNumber: '', startDate: '', endDate: '' });
+  const getDefaultDateRange = (startDay: number = 1) => {
+    const now = new Date();
+    const today = now.getDate();
+    const startDate = new Date(now);
+
+    if (startDay > 1 && today < startDay) {
+      startDate.setMonth(startDate.getMonth() - 1);
+    }
+
+    startDate.setDate(startDay);
+    const format = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+    return { from: format(startDate), to: format(now) };
+  };
+  const [dateRange, setDateRange] = useState(() => getDefaultDateRange(1));
+  const [otPage, setOtPage] = useState(1);
+  const [permissionPage, setPermissionPage] = useState(1);
+  const [pendingOtPage, setPendingOtPage] = useState(1);
+  const [pendingPermissionPage, setPendingPermissionPage] = useState(1);
+  const [otLimit, setOtLimit] = useState(25);
+  const [permissionLimit, setPermissionLimit] = useState(25);
+  const [pendingLimit, setPendingLimit] = useState(25);
+  const [otTotal, setOtTotal] = useState(0);
+  const [permissionTotal, setPermissionTotal] = useState(0);
+  const [pendingOtTotal, setPendingOtTotal] = useState(0);
+  const [pendingPermissionTotal, setPendingPermissionTotal] = useState(0);
+  const payPeriodOptions = useMemo(
+    () =>
+      buildLeaveODPayPeriodOptions({
+        payrollCycleStartDay: payCycleStartDay,
+        payrollCycleEndDay: payCycleEndDay,
+        monthsBack: 18,
+        getDefaultRange: () => getDefaultDateRange(payCycleStartDay),
+        defaultLabel: 'Current period (default)',
+      }),
+    [payCycleStartDay, payCycleEndDay]
+  );
+  const payPeriodSelectValue = useMemo(
+    () =>
+      matchLeaveODPayPeriodSelectValue(dateRange, payPeriodOptions, () =>
+        getDefaultDateRange(payCycleStartDay)
+      ),
+    [dateRange.from, dateRange.to, payPeriodOptions, payCycleStartDay]
+  );
 
   // Dialogs
   const [showOTDialog, setShowOTDialog] = useState(false);
@@ -508,10 +560,34 @@ export default function OTAndPermissionsPage() {
   const [locationData, setLocationData] = useState<any | null>(null);
 
   useEffect(() => {
+    if (activeTab === 'ot') {
+      setOtPage(1);
+    } else if (activeTab === 'permissions') {
+      setPermissionPage(1);
+    } else {
+      setPendingOtPage(1);
+      setPendingPermissionPage(1);
+    }
+  }, [activeTab, otFilters, permissionFilters]);
+
+  useEffect(() => {
     if (currentUser) {
       loadData();
     }
-  }, [activeTab, otFilters, permissionFilters, isEmployee, currentUser]);
+  }, [
+    activeTab,
+    otFilters,
+    permissionFilters,
+    isEmployee,
+    currentUser,
+    otPage,
+    permissionPage,
+    pendingOtPage,
+    pendingPermissionPage,
+    otLimit,
+    permissionLimit,
+    pendingLimit,
+  ]);
 
   useEffect(() => {
     const loadApplyDateBounds = async () => {
@@ -541,6 +617,49 @@ export default function OTAndPermissionsPage() {
     loadApplyDateBounds();
   }, []);
 
+  useEffect(() => {
+    const fetchPayCycleSettings = async () => {
+      try {
+        const [startRes, endRes] = await Promise.all([
+          api.getSetting('payroll_cycle_start_day'),
+          api.getSetting('payroll_cycle_end_day'),
+        ]);
+
+        if (startRes?.data?.value) {
+          const startDay = parseInt(startRes.data.value, 10);
+          if (!Number.isNaN(startDay) && startDay >= 1 && startDay <= 31) {
+            setPayCycleStartDay(startDay);
+            setDateRange(getDefaultDateRange(startDay));
+          }
+        }
+
+        if (endRes?.data?.value) {
+          const endDay = parseInt(endRes.data.value, 10);
+          if (!Number.isNaN(endDay) && endDay >= 1 && endDay <= 31) {
+            setPayCycleEndDay(endDay);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch payroll cycle settings:', error);
+      }
+    };
+
+    fetchPayCycleSettings();
+  }, []);
+
+  useEffect(() => {
+    setOTFilters((prev) => ({
+      ...prev,
+      startDate: dateRange.from,
+      endDate: dateRange.to,
+    }));
+    setPermissionFilters((prev) => ({
+      ...prev,
+      startDate: dateRange.from,
+      endDate: dateRange.to,
+    }));
+  }, [dateRange.from, dateRange.to]);
+
   const canPerformAction = (item: any) => {
     if (!item) return false;
 
@@ -560,7 +679,7 @@ export default function OTAndPermissionsPage() {
 
   const pendingOTs = otRequests.filter(req => !isTerminalOtStatus(req.status) && canPerformAction(req));
   const pendingPermissions = permissions.filter(req => !isTerminalPermissionStatus(req.status) && canPerformAction(req));
-  const totalPending = pendingOTs.length + pendingPermissions.length;
+  const totalPending = pendingOtTotal + pendingPermissionTotal;
 
   const renderWorkflowTimeline = (item?: OTRequest | PermissionRequest | null) => {
     const workflow = item?.workflow;
@@ -688,71 +807,61 @@ export default function OTAndPermissionsPage() {
     }
   }, [showOTDialog, showPermissionDialog, isEmployee, currentUser]);
 
-  const loadData = async () => {
-    setDataLoading(true);
+  const loadReferenceData = async () => {
     try {
-      if (activeTab === 'ot') {
-        const otRes = await api.getOTRequests(otFilters);
-        if (otRes.success) {
-          setOTRequests(otRes.data || []);
-        }
-      } else if (activeTab === 'permissions') {
-        const permRes = await api.getPermissions(permissionFilters);
-        if (permRes.success) {
-          setPermissions(permRes.data || []);
-        }
-      } else if (activeTab === 'pending') {
-        // Load both for pending dashboard
-        const [otRes, permRes] = await Promise.all([
-          api.getOTRequests({ ...otFilters, status: 'pending' }), // Optimize filters if backend supports?
-          // Actually, we probably want ALL pending, ignoring date filters?
-          // Or respect filters? The user might filter pending by date.
-          // Let's use the current filters but maybe force status 'pending' if the user hasn't selected it?
-          // But 'otFilters' has 'status'. If user switches to Pending tab, we might want to ignore the 'status' filter in the state 
-          // and fetch ALL pending?
-          // In Leaves page, 'pending' tab uses 'pendingLeaves' variable which comes from 'leaves' array.
-          // 'leaves' array is loaded with NO status filter (all leaves).
-          // Here, 'otRequests' only loads with 'otFilters'.
-          // If I act like Leaves page, I should load ALL OT and ALL Perms (or at least pending ones).
-          // Let's load ALL Pending for now.
-          api.getPermissions({ ...permissionFilters, status: 'pending' })
-        ]);
-
-        // Wait, if I load specific 'pending' here, I overwrite 'otRequests' with ONLY pending items.
-        // If I switch back to 'OT' tab later, it reloads 'ot' data. This is fine.
-        if (otRes.success) setOTRequests(otRes.data || []);
-        if (permRes.success) setPermissions(permRes.data || []);
-      }
-
-      // Load employees and shifts
       const [employeesRes, shiftsRes] = await Promise.all([
-        !isEmployee ? api.getEmployees({ is_active: true }) : Promise.resolve({ success: true, data: [] }),
+        !isEmployee ? api.getEmployees({ is_active: true, page: 1, limit: 10000 }) : Promise.resolve({ success: true, data: [] }),
         api.getShifts(),
       ]);
 
       if (!isEmployee && employeesRes && employeesRes.success) {
         if (Array.isArray(employeesRes.data)) {
-          const employeesList = employeesRes.data;
-          console.log('Loaded employees:', employeesList.length);
-          setEmployees(employeesList);
+          setEmployees(employeesRes.data);
         } else {
-          console.error('Expected array for employees but got:', typeof employeesRes.data);
           setEmployees([]);
-        }
-      } else if (!isEmployee) {
-        console.error('Failed to load employees. Response:', JSON.stringify(employeesRes));
-        // Only show toast if there's a meaningful message
-        if (employeesRes && (employeesRes as any).message) {
-          showToast((employeesRes as any).message, 'error');
         }
       }
 
       if (shiftsRes.success) {
         setShifts(shiftsRes.data || []);
       }
+    } catch (error) {
+      console.error('Error loading reference data:', error);
+    }
+  };
+
+  const loadData = async () => {
+    setDataLoading(true);
+    try {
+      if (activeTab === 'ot') {
+        const otRes = await api.getOTRequests({ ...otFilters, page: otPage, limit: otLimit });
+        if (otRes.success) {
+          setOTRequests(otRes.data || []);
+          setOtTotal(Number((otRes as any).total || (otRes.data || []).length || 0));
+        }
+      } else if (activeTab === 'permissions') {
+        const permRes = await api.getPermissions({ ...permissionFilters, page: permissionPage, limit: permissionLimit });
+        if (permRes.success) {
+          setPermissions(permRes.data || []);
+          setPermissionTotal(Number((permRes as any).total || (permRes.data || []).length || 0));
+        }
+      } else if (activeTab === 'pending') {
+        const [otRes, permRes] = await Promise.all([
+          api.getOTRequests({ ...otFilters, status: 'pending', page: pendingOtPage, limit: pendingLimit }),
+          api.getPermissions({ ...permissionFilters, status: 'pending', page: pendingPermissionPage, limit: pendingLimit }),
+        ]);
+
+        if (otRes.success) {
+          setOTRequests(otRes.data || []);
+          setPendingOtTotal(Number((otRes as any).total || (otRes.data || []).length || 0));
+        }
+        if (permRes.success) {
+          setPermissions(permRes.data || []);
+          setPendingPermissionTotal(Number((permRes as any).total || (permRes.data || []).length || 0));
+        }
+      }
     } catch (error: any) {
       console.error('Error loading data:', error);
-      // Try to print full error if object
       try {
         if (typeof error === 'object') console.error(JSON.stringify(error));
       } catch (e) { /* ignore */ }
@@ -761,6 +870,12 @@ export default function OTAndPermissionsPage() {
       setInitialLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (currentUser) {
+      loadReferenceData();
+    }
+  }, [currentUser, isEmployee]);
 
   const handleEmployeeSelect = async (employeeId: string, employeeNumber: string, date: string) => {
     // Find employee by _id or emp_no
@@ -1450,28 +1565,47 @@ export default function OTAndPermissionsPage() {
                     </select>
                   </div>
 
-                  {/* Date Range */}
-                  <div className="col-span-2 flex items-center flex-nowrap gap-2 px-0 py-0 bg-transparent border-0 md:px-3 md:py-1.5 md:rounded-xl md:bg-slate-100 md:dark:bg-slate-800 md:border md:border-slate-200 md:dark:border-slate-700">
+                  {/* Pay Period + Date Range */}
+                  <div className="col-span-2 flex flex-col gap-2 md:flex-row md:items-center">
+                    <select
+                      value={payPeriodSelectValue}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v === '__custom__') return;
+                        if (v === '__default__') {
+                          setDateRange(getDefaultDateRange(payCycleStartDay));
+                          return;
+                        }
+                        const opt = payPeriodOptions.find((o) => o.value === v);
+                        if (opt) {
+                          setDateRange({ from: opt.range.from, to: opt.range.to });
+                        }
+                      }}
+                      className="h-10 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300 focus:ring-4 focus:ring-blue-500/10 outline-none min-w-[170px]"
+                    >
+                      {payPeriodOptions.map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                      <option value="__custom__">Custom range</option>
+                    </select>
+                    <div className="flex items-center flex-nowrap gap-2 px-0 py-0 bg-transparent border-0 md:px-3 md:py-1.5 md:rounded-xl md:bg-slate-100 md:dark:bg-slate-800 md:border md:border-slate-200 md:dark:border-slate-700">
                     <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                     <input
                       type="date"
-                      value={activeTab === 'ot' ? otFilters.startDate : permissionFilters.startDate}
-                      onChange={(e) => {
-                        if (activeTab === 'ot') setOTFilters(prev => ({ ...prev, startDate: e.target.value }));
-                        else setPermissionFilters(prev => ({ ...prev, startDate: e.target.value }));
-                      }}
+                      value={dateRange.from}
+                      onChange={(e) => setDateRange((prev) => ({ ...prev, from: e.target.value }))}
                       className="bg-transparent text-xs font-bold text-slate-600 dark:text-slate-300 outline-none cursor-pointer w-full sm:w-auto min-w-[100px]"
                     />
                     <span className="text-slate-300 dark:text-slate-600 font-bold shrink-0">→</span>
                     <input
                       type="date"
-                      value={activeTab === 'ot' ? otFilters.endDate : permissionFilters.endDate}
-                      onChange={(e) => {
-                        if (activeTab === 'ot') setOTFilters(prev => ({ ...prev, endDate: e.target.value }));
-                        else setPermissionFilters(prev => ({ ...prev, endDate: e.target.value }));
-                      }}
+                      value={dateRange.to}
+                      onChange={(e) => setDateRange((prev) => ({ ...prev, to: e.target.value }))}
                       className="bg-transparent text-xs font-bold text-slate-600 dark:text-slate-300 outline-none cursor-pointer w-full sm:w-auto min-w-[100px]"
                     />
+                  </div>
                   </div>
                 </div>
               </div>
@@ -1517,13 +1651,58 @@ export default function OTAndPermissionsPage() {
           {
             activeTab === 'pending' ? (
               <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-900/50">
+                  <span className="text-sm text-slate-600 dark:text-slate-400">
+                    {dataLoading ? 'Loading…' : `${totalPending} total pending`}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-500 dark:text-slate-400">Per page</span>
+                    <select
+                      value={pendingLimit}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        setPendingLimit(val);
+                        setPendingOtPage(1);
+                        setPendingPermissionPage(1);
+                      }}
+                      className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm"
+                    >
+                      {PER_PAGE_OPTIONS.map((n) => (
+                        <option key={n} value={n}>{n}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
                 {/* Pending Overtime */}
                 <div className="relative group">
                   <div className="flex items-center gap-3 mb-4 ml-2">
                     <div className="w-2 h-8 bg-blue-500 rounded-full" />
                     <h3 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Pending Overtime</h3>
-                    <span className="px-3 py-1 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs font-black">{dataLoading ? '...' : pendingOTs.length}</span>
+                    <span className="px-3 py-1 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs font-black">{dataLoading ? '...' : pendingOtTotal}</span>
                   </div>
+                  {pendingOtTotal > 0 && (
+                    <div className="flex items-center justify-end gap-2 mb-3">
+                      <button
+                        type="button"
+                        disabled={pendingOtPage <= 1 || dataLoading}
+                        onClick={() => setPendingOtPage((prev) => Math.max(1, prev - 1))}
+                        className="px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-300 dark:border-slate-600 disabled:opacity-50"
+                      >
+                        Previous
+                      </button>
+                      <span className="text-xs text-slate-500 dark:text-slate-400">
+                        Page {pendingOtPage} of {Math.max(1, Math.ceil(pendingOtTotal / pendingLimit))}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={pendingOtPage >= Math.ceil(pendingOtTotal / pendingLimit) || dataLoading}
+                        onClick={() => setPendingOtPage((prev) => prev + 1)}
+                        className="px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-300 dark:border-slate-600 disabled:opacity-50"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  )}
                   <div className="relative overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm">
                     <div className="overflow-x-auto scrollbar-hide">
                       <table className="w-full text-left border-collapse">
@@ -1568,8 +1747,31 @@ export default function OTAndPermissionsPage() {
                   <div className="flex items-center gap-3 mb-4 ml-2">
                     <div className="w-2 h-8 bg-emerald-500 rounded-full" />
                     <h3 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Pending Permissions</h3>
-                    <span className="px-3 py-1 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-black">{dataLoading ? '...' : pendingPermissions.length}</span>
+                    <span className="px-3 py-1 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-black">{dataLoading ? '...' : pendingPermissionTotal}</span>
                   </div>
+                  {pendingPermissionTotal > 0 && (
+                    <div className="flex items-center justify-end gap-2 mb-3">
+                      <button
+                        type="button"
+                        disabled={pendingPermissionPage <= 1 || dataLoading}
+                        onClick={() => setPendingPermissionPage((prev) => Math.max(1, prev - 1))}
+                        className="px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-300 dark:border-slate-600 disabled:opacity-50"
+                      >
+                        Previous
+                      </button>
+                      <span className="text-xs text-slate-500 dark:text-slate-400">
+                        Page {pendingPermissionPage} of {Math.max(1, Math.ceil(pendingPermissionTotal / pendingLimit))}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={pendingPermissionPage >= Math.ceil(pendingPermissionTotal / pendingLimit) || dataLoading}
+                        onClick={() => setPendingPermissionPage((prev) => prev + 1)}
+                        className="px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-300 dark:border-slate-600 disabled:opacity-50"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  )}
                   <div className="relative overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm">
                     <div className="overflow-x-auto scrollbar-hide">
                       <table className="w-full text-left border-collapse">
@@ -1613,6 +1815,29 @@ export default function OTAndPermissionsPage() {
             ) : (
               activeTab === 'ot' ? (
                 <div className="relative animate-in fade-in slide-in-from-bottom-4 duration-700">
+                  <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 mb-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-900/50">
+                    <span className="text-sm text-slate-600 dark:text-slate-400">
+                      {dataLoading ? 'Loading…' : `${otTotal} total · Page ${otPage} of ${Math.max(1, Math.ceil(otTotal / otLimit))}`}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-500 dark:text-slate-400">Per page</span>
+                      <select
+                        value={otLimit}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          setOtLimit(val);
+                          setOtPage(1);
+                        }}
+                        className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm"
+                      >
+                        {PER_PAGE_OPTIONS.map((n) => (
+                          <option key={n} value={n}>{n}</option>
+                        ))}
+                      </select>
+                      <button type="button" disabled={otPage <= 1 || dataLoading} onClick={() => setOtPage((prev) => Math.max(1, prev - 1))} className="px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-300 dark:border-slate-600 disabled:opacity-50">Previous</button>
+                      <button type="button" disabled={otPage >= Math.ceil(otTotal / otLimit) || dataLoading} onClick={() => setOtPage((prev) => prev + 1)} className="px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-300 dark:border-slate-600 disabled:opacity-50">Next</button>
+                    </div>
+                  </div>
                   <div className="relative overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm">
                     <div className="hidden md:block overflow-x-auto scrollbar-hide">
                       <table className="w-full text-left border-collapse">
@@ -1829,6 +2054,29 @@ export default function OTAndPermissionsPage() {
                 </div>
               ) : (
                 <div className="relative animate-in fade-in slide-in-from-bottom-4 duration-700">
+                  <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 mb-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-900/50">
+                    <span className="text-sm text-slate-600 dark:text-slate-400">
+                      {dataLoading ? 'Loading…' : `${permissionTotal} total · Page ${permissionPage} of ${Math.max(1, Math.ceil(permissionTotal / permissionLimit))}`}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-500 dark:text-slate-400">Per page</span>
+                      <select
+                        value={permissionLimit}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          setPermissionLimit(val);
+                          setPermissionPage(1);
+                        }}
+                        className="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-sm"
+                      >
+                        {PER_PAGE_OPTIONS.map((n) => (
+                          <option key={n} value={n}>{n}</option>
+                        ))}
+                      </select>
+                      <button type="button" disabled={permissionPage <= 1 || dataLoading} onClick={() => setPermissionPage((prev) => Math.max(1, prev - 1))} className="px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-300 dark:border-slate-600 disabled:opacity-50">Previous</button>
+                      <button type="button" disabled={permissionPage >= Math.ceil(permissionTotal / permissionLimit) || dataLoading} onClick={() => setPermissionPage((prev) => prev + 1)} className="px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-300 dark:border-slate-600 disabled:opacity-50">Next</button>
+                    </div>
+                  </div>
                   <div className="relative overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm">
                     <div className="hidden md:block overflow-x-auto scrollbar-hide">
                       <table className="w-full text-left border-collapse">

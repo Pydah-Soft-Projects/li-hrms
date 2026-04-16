@@ -152,7 +152,7 @@ exports.createOT = async (req, res) => {
     );
 
     if (!result.success) {
-      return res.status(400).json(result);
+      return res.status(result.statusCode || 400).json(result);
     }
 
     const otRequest = await OT.findById(result.data._id)
@@ -194,7 +194,16 @@ exports.createOT = async (req, res) => {
  */
 exports.getOTRequests = async (req, res) => {
   try {
-    const { employeeId, employeeNumber, date, status, startDate, endDate } = req.query;
+    const {
+      employeeId,
+      employeeNumber,
+      date,
+      status,
+      startDate,
+      endDate,
+      page = 1,
+      limit = 25,
+    } = req.query;
 
     const query = { isActive: true };
 
@@ -218,18 +227,30 @@ exports.getOTRequests = async (req, res) => {
 
     const combinedQuery = { $and: [query, scopeLimitFilter, workflowFilter] };
 
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.max(1, Math.min(200, parseInt(limit, 10) || 25));
+    const skip = (pageNum - 1) * limitNum;
+
+    const total = await OT.countDocuments(combinedQuery);
+
     const otRequests = await OT.find(combinedQuery)
       .populate('employeeId', 'emp_no employee_name department designation')
       .populate('shiftId', 'name startTime endTime duration')
       .populate('requestedBy', 'name email')
       .populate('approvedBy', 'name email')
       .populate('rejectedBy', 'name email')
-      .sort({ date: -1, createdAt: -1 });
+      .sort({ date: -1, createdAt: -1 })
+      .skip(skip)
+      .limit(limitNum);
 
     res.status(200).json({
       success: true,
       data: otRequests,
       count: otRequests.length,
+      total,
+      page: pageNum,
+      limit: limitNum,
+      totalPages: Math.max(1, Math.ceil(total / limitNum)),
     });
 
   } catch (error) {
@@ -250,6 +271,7 @@ exports.getOTRequests = async (req, res) => {
  */
 exports.getPendingOTApprovals = async (req, res) => {
   try {
+    const { page = 1, limit = 25 } = req.query;
     const userRole = req.user.role;
     const baseFilter = {
       isActive: true,
@@ -274,16 +296,27 @@ exports.getPendingOTApprovals = async (req, res) => {
       baseFilter.status = { $nin: finalStatuses };
     }
 
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.max(1, Math.min(200, parseInt(limit, 10) || 25));
+    const skip = (pageNum - 1) * limitNum;
+    const total = await OT.countDocuments(baseFilter);
+
     const otRequests = await OT.find(baseFilter)
       .populate('employeeId', 'emp_no employee_name department designation')
       .populate('shiftId', 'name startTime endTime duration')
       .populate('requestedBy', 'name email')
-      .sort({ requestedAt: -1 });
+      .sort({ requestedAt: -1 })
+      .skip(skip)
+      .limit(limitNum);
 
     res.status(200).json({
       success: true,
       count: otRequests.length,
       data: otRequests,
+      total,
+      page: pageNum,
+      limit: limitNum,
+      totalPages: Math.max(1, Math.ceil(total / limitNum)),
     });
   } catch (error) {
     console.error('Error fetching pending OT approvals:', error);
@@ -346,7 +379,7 @@ exports.approveOT = async (req, res) => {
     );
 
     if (!result.success) {
-      return res.status(400).json(result);
+      return res.status(result.statusCode || 400).json(result);
     }
 
     const otRequest = await OT.findById(req.params.id)
