@@ -1059,7 +1059,16 @@ const drawSummaryBox = (doc, label, value, x, y, width, height, color) => {
  * Helper to draw a modern table in PDFKit
  */
 const drawPDFTableModern = (doc, headers, data, startX, startY, colWidths, options = {}) => {
-    const { headerFill = '#4f46e5', rowFill = '#f8fafc', fontSize = 8, onPageAdd } = options;
+    const {
+        headerFill = '#4f46e5',
+        rowFill = '#f8fafc',
+        fontSize = 8,
+        onPageAdd,
+        lineBreak = false,
+        minRowHeight = 20,
+        cellPaddingY = 6,
+        cellPaddingX = 5
+    } = options;
     let y = startY;
     const tableWidth = colWidths.reduce((a, b) => a + b, 0);
     // Explicitly use landscape if not specified, or use current page layout
@@ -1108,22 +1117,33 @@ const drawPDFTableModern = (doc, headers, data, startX, startY, colWidths, optio
             doc.font('Helvetica').fontSize(fontSize).fillColor('#33414d');
         }
 
+        let rowHeight = minRowHeight;
+        if (lineBreak) {
+            row.forEach((cell, i) => {
+                const textHeight = doc.heightOfString(String(cell || ''), {
+                    width: Math.max(1, colWidths[i] - (cellPaddingX * 2)),
+                    align: 'left'
+                });
+                rowHeight = Math.max(rowHeight, textHeight + (cellPaddingY * 2));
+            });
+        }
+
         if (rowIndex % 2 === 0) {
-            doc.fillColor(rowFill).rect(startX, y, tableWidth, 20).fill();
+            doc.fillColor(rowFill).rect(startX, y, tableWidth, rowHeight).fill();
         }
 
         doc.fillColor('#33414d');
         let xRow = startX;
         row.forEach((cell, i) => {
-            doc.text(String(cell || ''), xRow + 5, y + 6, {
-                width: colWidths[i] - 10,
+            doc.text(String(cell || ''), xRow + cellPaddingX, y + cellPaddingY, {
+                width: Math.max(1, colWidths[i] - (cellPaddingX * 2)),
                 align: 'left',
-                lineBreak: false,
+                lineBreak,
                 ellipsis: true
             });
             xRow += colWidths[i];
         });
-        y += 20;
+        y += rowHeight;
 
         // Subtle row line
         doc.strokeColor('#e2e8f0').lineWidth(0.5).moveTo(startX, y).lineTo(startX + tableWidth, y).stroke();
@@ -1478,11 +1498,40 @@ exports.exportAttendanceReportPDF = async (req, res) => {
         const sumHeaders = ['NAME', 'E.NO', 'PRES', 'LVE', 'OD', 'WO', 'HOL', 'OT', 'EX', 'PRM', 'L/E', 'DED', 'PAYABLE'];
         const sumWidths = [185, 55, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 60];
         const gridHeaders = ['Employee Name', 'Emp ID', ...daysArray.map(d => dayjs(d).date().toString())];
-        const gridWidthSum = daysArray.length * 19.5;
-        const gridWidths = [150, 55, ...daysArray.map(() => 19.5)];
+        const employeeNameColWidth = 92;
+        const employeeIdColWidth = 32;
+        const availableDayColsWidth = Math.max(300, (pWidth - (2 * m)) - employeeNameColWidth - employeeIdColWidth);
+        const perDayColWidth = Number((availableDayColsWidth / Math.max(1, daysArray.length)).toFixed(2));
+        const gridWidths = [employeeNameColWidth, employeeIdColWidth, ...daysArray.map(() => perDayColWidth)];
 
         const sortedDivisions = Object.keys(grouped).sort();
         let firstPageProcessed = false;
+
+        const formatGridPunchTime = (value) => {
+            if (!value) return '-';
+            const t = dayjs(value).tz('Asia/Kolkata');
+            if (!t.isValid()) return '-';
+            return t.format('HH:mm');
+        };
+
+        const getInOutForRecord = (rec) => {
+            if (!rec) return { in: '-', out: '-' };
+            if (Array.isArray(rec.shifts) && rec.shifts.length > 0) {
+                const sortedShifts = [...rec.shifts]
+                    .filter(s => s)
+                    .sort((a, b) => (Number(a.shiftNumber) || 0) - (Number(b.shiftNumber) || 0));
+                const firstInShift = sortedShifts.find(s => s.inTime);
+                const lastOutShift = [...sortedShifts].reverse().find(s => s.outTime);
+                return {
+                    in: formatGridPunchTime(firstInShift?.inTime),
+                    out: formatGridPunchTime(lastOutShift?.outTime)
+                };
+            }
+            return {
+                in: formatGridPunchTime(rec.inTime),
+                out: formatGridPunchTime(rec.outTime)
+            };
+        };
 
         for (const divName of sortedDivisions) {
             const sortedDepts = Object.keys(grouped[divName]).sort();
@@ -1536,13 +1585,14 @@ exports.exportAttendanceReportPDF = async (req, res) => {
                         } else if (isFutureDate) {
                             gridRow.push('-');
                         } else if (isHOL) {
-                            gridRow.push('HOL');
+                            gridRow.push('HOL\n-\n-');
                         } else if (isWO) {
-                            gridRow.push('WO');
+                            gridRow.push('WO\n-\n-');
                         } else if (isLve) {
-                            gridRow.push('L');
+                            gridRow.push('L\n-\n-');
                         } else if (isOD) {
-                            gridRow.push('OD');
+                            const io = getInOutForRecord(rec);
+                            gridRow.push(`OD\n${io.in}\n${io.out}`);
                         } else if (rec) {
                             // Map local record status (P, PT, HD, etc)
                             let s = 'A';
@@ -1552,9 +1602,10 @@ exports.exportAttendanceReportPDF = async (req, res) => {
                             else if (rec.status === 'ABSENT') s = 'A';
                             else if (rec.status === 'WEEK_OFF') s = 'WO';
                             else if (rec.status === 'HOLIDAY') s = 'HOL';
-                            gridRow.push(s);
+                            const io = getInOutForRecord(rec);
+                            gridRow.push(`${s}\n${io.in}\n${io.out}`);
                         } else {
-                            gridRow.push('A');
+                            gridRow.push('A\n-\n-');
                         }
                     });
 
@@ -1599,8 +1650,11 @@ exports.exportAttendanceReportPDF = async (req, res) => {
 
                 // 2. Dept Grid Section
                 currentY = drawPDFTableModern(doc, gridHeaders, deptGridData, m, currentY, gridWidths, {
-                    fontSize: 6,
-                    rowHeight: 15,
+                    fontSize: 5.2,
+                    lineBreak: true,
+                    minRowHeight: 26,
+                    cellPaddingY: 4,
+                    cellPaddingX: 1,
                     onPageAdd: () => drawMainHeader(`ATTENDANCE GRID (CONT) - ${divName.toUpperCase()}`, `Dept: ${deptName.toUpperCase()}`)
                 });
             }
