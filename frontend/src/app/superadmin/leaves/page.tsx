@@ -1319,7 +1319,8 @@ function LeavesPageContent() {
           uploadedEvidence = {
             url: uploadRes.url,
             key: uploadRes.key,
-            filename: uploadRes.filename
+            filename: uploadRes.filename,
+            exifLocation: (evidenceFile as any).exifLocation
           };
 
           if (locationData) {
