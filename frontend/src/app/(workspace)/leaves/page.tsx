@@ -4691,6 +4691,7 @@ export default function LeavesPage() {
                       onCapture={(loc, photo) => {
                         setEvidenceFile(photo.file);
                         setLocationData(loc);
+                        (photo.file as any).exifLocation = photo.exifLocation;
                       }}
                       onClear={() => {
                         setEvidenceFile(null);
