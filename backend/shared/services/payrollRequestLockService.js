@@ -127,11 +127,24 @@ async function resolveBatchEmployeePeriods(batch) {
 
   for (const record of payrollRecords || []) {
     if (!record?.employeeId) continue;
+    const month = record.month || batch.month;
+    let startDate = record.startDate;
+    let endDate = record.endDate;
+
+    if ((!startDate || !endDate) && month) {
+      const [year, monthNum] = String(month).split('-').map(Number);
+      const range = await getPayrollDateRange(year, monthNum);
+      startDate = startDate || range.startDate;
+      endDate = endDate || range.endDate;
+    }
+
+    if (!startDate || !endDate) continue;
+
     periods.push({
       employeeId: String(record.employeeId),
-      month: record.month || batch.month,
-      startDate: record.startDate,
-      endDate: record.endDate,
+      month,
+      startDate,
+      endDate,
     });
   }
 

@@ -2282,6 +2282,10 @@ export default function AttendancePage() {
       setError('Missing employee or date information');
       return;
     }
+    if (isAttendanceDetailLocked) {
+      setError('Batch locked. No further operation will be performed for this attendance day.');
+      return;
+    }
     if (!attendanceDetail.extraHours || attendanceDetail.extraHours <= 0) {
       setError('No extra hours to convert');
       return;
@@ -5966,7 +5970,7 @@ export default function AttendancePage() {
                             <div className="ml-3 text-right">
                               <button
                                 onClick={handleConvertExtraHoursToOT}
-                                disabled={convertingToOT || singleOtConfirmLoading}
+                                disabled={isAttendanceDetailLocked || convertingToOT || singleOtConfirmLoading}
                                 className="rounded-lg bg-gradient-to-r from-purple-500 to-indigo-500 px-3 py-1.5 text-xs font-semibold text-white shadow-md shadow-purple-500/30 transition-all hover:from-purple-600 hover:to-indigo-600 hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
                               >
                                 {convertingToOT
@@ -5979,6 +5983,11 @@ export default function AttendancePage() {
                                 <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
                                   Slab/base value: {formatHours(Number(otPolicyPreview?.policy?.finalHours || 0))} hrs
                                   {' '}from actual {formatHours(Number(otPolicyPreview?.rawExtraHours || attendanceDetail?.extraHours || 0))} hrs
+                                </div>
+                              )}
+                              {isAttendanceDetailLocked && (
+                                <div className="mt-1 text-[10px] font-medium text-rose-600 dark:text-rose-300">
+                                  Batch locked. No further operation will be performed.
                                 </div>
                               )}
                             </div>

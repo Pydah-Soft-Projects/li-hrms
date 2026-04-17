@@ -9,7 +9,13 @@ jest.mock('../../model/PayrollBatch');
 jest.mock('../../model/PayrollRecord');
 jest.mock('../../model/SecondSalaryBatch');
 jest.mock('../../model/SecondSalaryRecord');
-jest.mock('../../../employees/model/Employee', () => ({}));
+jest.mock('../../../employees/model/Employee', () => ({
+  find: jest.fn(() => ({
+    select: jest.fn().mockReturnValue({
+      lean: jest.fn().mockResolvedValue([]),
+    }),
+  })),
+}));
 jest.mock('../../../leaves/services/leaveRegisterService', () => ({
   addELUsedInPayroll: jest.fn().mockResolvedValue({ ledger: true }),
 }));
@@ -21,6 +27,9 @@ jest.mock('../../../shared/services/payrollBatchAutoRejectService', () => ({
     permissionRejected: 0,
     otRejected: 0,
   }),
+}));
+jest.mock('../../../attendance/model/AttendanceDaily', () => ({
+  updateMany: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
 }));
 jest.mock('../arrearsIntegrationService', () => ({
   processArrearsSettlements: jest.fn().mockResolvedValue(undefined),
@@ -42,6 +51,7 @@ const SecondSalaryService = require('../secondSalaryService');
 const SecondSalaryBatch = require('../../model/SecondSalaryBatch');
 const SecondSalaryRecord = require('../../model/SecondSalaryRecord');
 const leaveRegisterService = require('../../../leaves/services/leaveRegisterService');
+const AttendanceDaily = require('../../../attendance/model/AttendanceDaily');
 const ArrearsRequest = require('../../../arrears/model/ArrearsRequest');
 const DeductionRequest = require('../../../manual-deductions/model/DeductionRequest');
 
@@ -76,7 +86,10 @@ describe('EL used in payroll — regular batch complete simulation', () => {
       {
         _id: new mongoose.Types.ObjectId(),
         employeeId: empId,
+        emp_no: 'E001',
         month: '2026-04',
+        startDate: '2026-03-26',
+        endDate: '2026-04-25',
         arrearsSettlements: [],
         deductionSettlements: [],
       },
@@ -111,6 +124,16 @@ describe('EL used in payroll — regular batch complete simulation', () => {
     );
 
     expect(syncSpy).toHaveBeenCalledWith(batchDoc, 'complete', userId, 'month-end pay');
+    expect(AttendanceDaily.updateMany).toHaveBeenCalledWith(
+      {
+        employeeNumber: 'E001',
+        date: { $gte: '2026-03-26', $lte: '2026-04-25' },
+        locked: { $ne: true },
+      },
+      {
+        $set: { locked: true },
+      }
+    );
 
     const elOrder = leaveRegisterService.addELUsedInPayroll.mock.invocationCallOrder[0];
     const syncOrder = syncSpy.mock.invocationCallOrder[0];
@@ -151,9 +174,11 @@ describe('EL used in payroll — regular batch complete simulation', () => {
     await PayrollBatchService.changeStatus(batchId.toString(), 'complete', userId, '');
 
     expect(leaveRegisterService.addELUsedInPayroll).not.toHaveBeenCalled();
+    expect(AttendanceDaily.updateMany).not.toHaveBeenCalled();
     expect(syncSpy).toHaveBeenCalled();
     syncSpy.mockRestore();
   });
+
 });
 
 describe('EL used in payroll — second salary batch complete simulation', () => {
