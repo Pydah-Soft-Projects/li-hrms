@@ -587,6 +587,14 @@ export default function PayRegisterPage() {
     return typeof e === 'object' && e && '_id' in e ? String((e as { _id: string })._id) : String(e);
   };
 
+  const employeeDisplayName = (pr: PayRegisterSummary) => {
+    const e = pr.employeeId;
+    if (typeof e === 'object' && e && 'employee_name' in e) {
+      return String((e as Employee).employee_name || pr.emp_no || 'Employee');
+    }
+    return pr.emp_no || 'Employee';
+  };
+
   const beginSyncAll = async () => {
     try {
       setLoadingSyncLockedList(true);
@@ -689,31 +697,70 @@ export default function PayRegisterPage() {
       const SYNC_CHUNK = 15;
 
       let synced = 0;
-      const syncedIds = new Set<string>();
+      const processedIds = new Set<string>();
+      const skippedPayrollCompleted: Array<{ employee_name: string; emp_no: string }> = [];
+      const failedSyncs: Array<{ employee_name: string; emp_no: string; reason: string }> = [];
+      const isPayrollBatchCompletedResponse = (res: any) =>
+        !res?.success && (res?.code === 'PAYROLL_BATCH_COMPLETED' || res?.reason === 'payroll_batch_completed');
+      const escapeHtml = (value: string) =>
+        String(value)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+      const trackResult = (
+        res: any,
+        meta: { employeeId: string; employee_name: string; emp_no: string }
+      ) => {
+        processedIds.add(meta.employeeId);
+        if (res?.success) {
+          synced += 1;
+          return;
+        }
+        if (isPayrollBatchCompletedResponse(res)) {
+          skippedPayrollCompleted.push({
+            employee_name: meta.employee_name,
+            emp_no: meta.emp_no,
+          });
+          return;
+        }
+        failedSyncs.push({
+          employee_name: meta.employee_name,
+          emp_no: meta.emp_no,
+          reason: res?.error || res?.message || 'Failed to sync',
+        });
+      };
 
-      const runOne = (pr: PayRegisterSummary) => {
+      const runOne = async (pr: PayRegisterSummary) => {
         const idStr = employeeIdString(pr);
         if (pr.summaryLocked && !overrideLockedIds.has(idStr)) {
-          return Promise.resolve(null);
+          return;
         }
         const force = !!(pr.summaryLocked && overrideLockedIds.has(idStr));
-        synced += 1;
-        syncedIds.add(idStr);
-        return api.syncPayRegister(idStr, monthStr, force ? { force: true } : undefined);
+        const res = await api.syncPayRegister(idStr, monthStr, force ? { force: true } : undefined);
+        trackResult(res, {
+          employeeId: idStr,
+          employee_name: employeeDisplayName(pr),
+          emp_no: pr.emp_no || idStr,
+        });
       };
 
       for (let i = 0; i < syncTargets.length; i += SYNC_CHUNK) {
         const chunk = syncTargets.slice(i, i + SYNC_CHUNK);
-        await Promise.all(chunk.map((pr) => runOne(pr)));
+        await Promise.allSettled(chunk.map((pr) => runOne(pr)));
       }
 
       for (const row of lockedRowsList) {
         const idStr = String(row.employeeId);
         if (!overrideLockedIds.has(idStr)) continue;
-        if (syncedIds.has(idStr)) continue;
-        await api.syncPayRegister(idStr, monthStr, { force: true });
-        syncedIds.add(idStr);
-        synced += 1;
+        if (processedIds.has(idStr)) continue;
+        const res = await api.syncPayRegister(idStr, monthStr, { force: true });
+        trackResult(res, {
+          employeeId: idStr,
+          employee_name: row.employee_name,
+          emp_no: row.emp_no || idStr,
+        });
       }
 
       setPage(1);
@@ -730,15 +777,35 @@ export default function PayRegisterPage() {
             ).length;
 
       const parts = [`${synced} employee(s) synced.`];
+      if (skippedPayrollCompleted.length > 0) {
+        parts.push(
+          `${skippedPayrollCompleted.length} employee(s) were not synced because payroll batch is already completed.`
+        );
+      }
       if (skippedLocked > 0) parts.push(`${skippedLocked} locked summary(ies) left unchanged.`);
+      if (failedSyncs.length > 0) parts.push(`${failedSyncs.length} employee(s) failed to sync.`);
+      const skippedListHtml =
+        skippedPayrollCompleted.length > 0
+          ? `<div class="mt-3 text-left"><div class="font-semibold mb-1">Not synced because payroll batch is completed</div><div class="text-sm">${skippedPayrollCompleted
+              .slice(0, 8)
+              .map((item) => `${escapeHtml(item.employee_name)} (${escapeHtml(item.emp_no)})`)
+              .join('<br>')}${skippedPayrollCompleted.length > 8 ? `<br>and ${skippedPayrollCompleted.length - 8} more...` : ''}</div></div>`
+          : '';
+      const failedListHtml =
+        failedSyncs.length > 0
+          ? `<div class="mt-3 text-left"><div class="font-semibold mb-1">Failed to sync</div><div class="text-sm">${failedSyncs
+              .slice(0, 5)
+              .map(
+                (item) =>
+                  `${escapeHtml(item.employee_name)} (${escapeHtml(item.emp_no)}): ${escapeHtml(item.reason)}`
+              )
+              .join('<br>')}${failedSyncs.length > 5 ? `<br>and ${failedSyncs.length - 5} more...` : ''}</div></div>`
+          : '';
       Swal.fire({
-        icon: 'success',
-        title: 'Synced',
-        text: parts.join(' '),
-        timer: 2800,
-        showConfirmButton: false,
-        toast: true,
-        position: 'top-end'
+        icon: failedSyncs.length > 0 ? 'warning' : 'success',
+        title: failedSyncs.length > 0 || skippedPayrollCompleted.length > 0 ? 'Sync completed with notes' : 'Synced',
+        html: `<div>${escapeHtml(parts.join(' '))}</div>${skippedListHtml}${failedListHtml}`,
+        confirmButtonText: 'OK',
       });
     } catch (err: any) {
       console.error('Error syncing pay registers:', err);

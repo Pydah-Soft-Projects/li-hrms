@@ -348,6 +348,9 @@ export interface ApiResponse<T> {
   message?: string;
   data?: T;
   error?: string;
+  code?: string;
+  reason?: string;
+  statusCode?: number;
   dataSource?: string;
   source?: string;
   jobId?: string;
@@ -465,8 +468,12 @@ export async function apiRequest<T>(
 
       return {
         success: false,
+        statusCode: response.status,
         message: data.message || 'An error occurred',
         error: data.error || data.message || `HTTP ${response.status}`,
+        code: data.code,
+        reason: data.reason,
+        data: data.data,
       };
     }
 
@@ -3247,7 +3254,16 @@ export const api = {
   // ==========================================
 
   // Get OT requests
-  getOTRequests: async (filters?: { employeeId?: string; employeeNumber?: string; date?: string; status?: string; startDate?: string; endDate?: string }) => {
+  getOTRequests: async (filters?: {
+    employeeId?: string;
+    employeeNumber?: string;
+    date?: string;
+    status?: string;
+    startDate?: string;
+    endDate?: string;
+    page?: number;
+    limit?: number;
+  }) => {
     const params = new URLSearchParams();
     if (filters?.employeeId) params.append('employeeId', filters.employeeId);
     if (filters?.employeeNumber) params.append('employeeNumber', filters.employeeNumber);
@@ -3255,6 +3271,8 @@ export const api = {
     if (filters?.status) params.append('status', filters.status);
     if (filters?.startDate) params.append('startDate', filters.startDate);
     if (filters?.endDate) params.append('endDate', filters.endDate);
+    if (filters?.page != null) params.append('page', String(filters.page));
+    if (filters?.limit != null) params.append('limit', String(filters.limit));
     return apiRequest<any>(`/ot?${params.toString()}`);
   },
 
@@ -3304,7 +3322,16 @@ export const api = {
   // ==========================================
 
   // Get permission requests
-  getPermissions: async (filters?: { employeeId?: string; employeeNumber?: string; date?: string; status?: string; startDate?: string; endDate?: string }) => {
+  getPermissions: async (filters?: {
+    employeeId?: string;
+    employeeNumber?: string;
+    date?: string;
+    status?: string;
+    startDate?: string;
+    endDate?: string;
+    page?: number;
+    limit?: number;
+  }) => {
     const params = new URLSearchParams();
     if (filters?.employeeId) params.append('employeeId', filters.employeeId);
     if (filters?.employeeNumber) params.append('employeeNumber', filters.employeeNumber);
@@ -3312,6 +3339,8 @@ export const api = {
     if (filters?.status) params.append('status', filters.status);
     if (filters?.startDate) params.append('startDate', filters.startDate);
     if (filters?.endDate) params.append('endDate', filters.endDate);
+    if (filters?.page != null) params.append('page', String(filters.page));
+    if (filters?.limit != null) params.append('limit', String(filters.limit));
     return apiRequest<any>(`/permissions?${params.toString()}`);
   },
 
