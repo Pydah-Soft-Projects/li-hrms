@@ -26,6 +26,7 @@ const dateCycleService = require('../services/dateCycleService');
 const leaveRegisterYearMonthlyApplyService = require('../services/leaveRegisterYearMonthlyApplyService');
 const leaveRegisterYearService = require('../services/leaveRegisterYearService');
 const { notifyWorkflowEvent } = require('../../notifications/services/notificationService');
+const { assertEmployeeRangeRequestsEditable } = require('../../shared/services/payrollRequestLockService');
 const MONTH_SLOT_EDIT_PERMISSION = 'LEAVE_REGISTER_MONTH_EDIT:write';
 
 const formatLeaveDate = (value) => dayjs(value).format('DD MMM YYYY');
@@ -808,6 +809,13 @@ exports.applyLeave = async (req, res) => {
     // Store warnings to include in success response
     const warnings = [...(validation.warnings || []), ...limitWarnings];
 
+    await assertEmployeeRangeRequestsEditable(
+      employee._id,
+      from,
+      to,
+      employee.emp_no
+    );
+
     // Create leave application
 
     // Initialize Workflow (Dynamic)
@@ -960,6 +968,14 @@ exports.applyLeave = async (req, res) => {
     });
   } catch (error) {
     console.error('Error applying leave:', error);
+    if (error?.code === 'PAYROLL_BATCH_COMPLETED') {
+      return res.status(error.statusCode || 409).json({
+        success: false,
+        code: error.code,
+        reason: error.reason,
+        error: error.message,
+      });
+    }
     res.status(500).json({
       success: false,
       error: error.message || 'Failed to apply for leave',
@@ -1029,6 +1045,14 @@ exports.updateLeave = async (req, res) => {
       const newStatus = req.body.status;
 
       if (oldStatus !== newStatus) {
+        if (String(newStatus).includes('approved')) {
+          await assertEmployeeRangeRequestsEditable(
+            leave.employeeId,
+            leave.fromDate,
+            leave.toDate,
+            leave.emp_no
+          );
+        }
         allowedUpdates.push('status');
 
         // Add status change to timeline
@@ -1229,6 +1253,14 @@ exports.updateLeave = async (req, res) => {
     });
   } catch (error) {
     console.error('Error updating leave:', error);
+    if (error?.code === 'PAYROLL_BATCH_COMPLETED') {
+      return res.status(error.statusCode || 409).json({
+        success: false,
+        code: error.code,
+        reason: error.reason,
+        error: error.message,
+      });
+    }
     res.status(500).json({
       success: false,
       error: error.message || 'Failed to update leave',
@@ -1620,6 +1652,12 @@ exports.processLeaveAction = async (req, res) => {
 
     switch (action) {
       case 'approve':
+        await assertEmployeeRangeRequestsEditable(
+          leave.employeeId,
+          leave.fromDate,
+          leave.toDate,
+          leave.emp_no
+        );
         // 1. Validation Logic (Limits & Conflicts)
         const Employee = require('../../employees/model/Employee');
         const employee = await Employee.findById(leave.employeeId);
@@ -1872,6 +1910,14 @@ exports.processLeaveAction = async (req, res) => {
 
   } catch (error) {
     console.error('Error processing leave action:', error);
+    if (error?.code === 'PAYROLL_BATCH_COMPLETED') {
+      return res.status(error.statusCode || 409).json({
+        success: false,
+        code: error.code,
+        reason: error.reason,
+        error: error.message,
+      });
+    }
     res.status(500).json({
       success: false,
       error: error.message || 'Failed to process leave action',

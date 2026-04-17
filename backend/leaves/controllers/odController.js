@@ -16,6 +16,7 @@ const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
 const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
 const leaveRegisterService = require('../services/leaveRegisterService');
 const { notifyWorkflowEvent } = require('../../notifications/services/notificationService');
+const { assertEmployeeRangeRequestsEditable } = require('../../shared/services/payrollRequestLockService');
 
 const formatODDate = (value) => {
   if (!value) return '';
@@ -881,6 +882,13 @@ exports.applyOD = async (req, res) => {
     // Store warnings to include in success response
     const warnings = validation.warnings || [];
 
+    await assertEmployeeRangeRequestsEditable(
+      employee._id,
+      from,
+      to,
+      employee.emp_no
+    );
+
     // Initialize Workflow (Dynamic)
     const approvalSteps = [];
     const reportingManagers = employee.dynamicFields?.reporting_to || employee.dynamicFields?.reporting_to_ || [];
@@ -1041,6 +1049,14 @@ exports.applyOD = async (req, res) => {
     }).catch((err) => console.error('[Notification] OD_APPLIED failed:', err.message));
   } catch (error) {
     console.error('Error applying OD:', error);
+    if (error?.code === 'PAYROLL_BATCH_COMPLETED') {
+      return res.status(error.statusCode || 409).json({
+        success: false,
+        code: error.code,
+        reason: error.reason,
+        error: error.message,
+      });
+    }
     res.status(500).json({
       success: false,
       error: error.message || 'Failed to apply for OD',
@@ -1099,6 +1115,14 @@ exports.updateOD = async (req, res) => {
       const newStatus = req.body.status;
 
       if (oldStatus !== newStatus) {
+        if (String(newStatus).includes('approved')) {
+          await assertEmployeeRangeRequestsEditable(
+            od.employeeId,
+            od.fromDate,
+            od.toDate,
+            od.emp_no
+          );
+        }
         allowedUpdates.push('status');
 
         // Add status change to timeline
@@ -1335,6 +1359,14 @@ exports.updateOD = async (req, res) => {
     });
   } catch (error) {
     console.error('Error updating OD:', error);
+    if (error?.code === 'PAYROLL_BATCH_COMPLETED') {
+      return res.status(error.statusCode || 409).json({
+        success: false,
+        code: error.code,
+        reason: error.reason,
+        error: error.message,
+      });
+    }
     res.status(500).json({
       success: false,
       error: error.message || 'Failed to update OD',
@@ -1670,6 +1702,12 @@ exports.processODAction = async (req, res) => {
 
     switch (action) {
       case 'approve':
+        await assertEmployeeRangeRequestsEditable(
+          od.employeeId,
+          od.fromDate,
+          od.toDate,
+          od.emp_no
+        );
         // Conflict check for final step or HR
         const isFinishingChain = (activeStepIndex === od.workflow.approvalChain.length - 1);
         const isFinalAuth = (userRole === od.workflow.finalAuthority);
@@ -1975,6 +2013,14 @@ exports.processODAction = async (req, res) => {
     });
   } catch (error) {
     console.error('Error processing OD action:', error);
+    if (error?.code === 'PAYROLL_BATCH_COMPLETED') {
+      return res.status(error.statusCode || 409).json({
+        success: false,
+        code: error.code,
+        reason: error.reason,
+        error: error.message,
+      });
+    }
     res.status(500).json({
       success: false,
       error: error.message || 'Failed to process OD action',

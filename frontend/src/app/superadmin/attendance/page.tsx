@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo, type MouseEvent } from 'react';
 import { api } from '@/lib/api';
+import Swal from 'sweetalert2';
 import {
   formatHighlightContribution,
   highlightBadgeSubtitle,
@@ -119,6 +120,7 @@ interface AttendanceRecord {
     purpose?: string;
   }>;
   isEdited?: boolean;
+  locked?: boolean;
   editHistory?: {
     action: string;
     modifiedBy: string;
@@ -600,6 +602,39 @@ export default function AttendancePage() {
 
   // In Time dialog state
   const [showInTimeDialog, setShowInTimeDialog] = useState(false);
+  const isAttendanceDetailLocked = !!(
+    attendanceDetail &&
+    (attendanceDetail.locked || attendanceDetail.isEdited || attendanceDetail.source?.includes('manual'))
+  );
+  const isAttendanceLockedResponse = (response: any) =>
+    response &&
+    !response.success &&
+    (
+      response.code === 'ATTENDANCE_DAILY_LOCKED' ||
+      response.reason === 'attendance_daily_locked' ||
+      response.code === 'PAYROLL_BATCH_COMPLETED' ||
+      response.reason === 'payroll_batch_completed'
+    );
+  const handleAttendanceLockedPopup = async (message?: string) => {
+    setEditingShift(false);
+    setEditingOutTime(false);
+    setShowOutTimeDialog(false);
+    setShowInTimeDialog(false);
+    setSelectedShiftId('');
+    setSelectedShiftRecordId(null);
+    setSelectedRecordForOutTime(null);
+    setSelectedRecordForInTime(null);
+    setOutTimeInput('');
+    setOutTimeValue('');
+    setInTimeDialogValue('');
+    setError('');
+    await Swal.fire({
+      icon: 'warning',
+      title: 'Attendance Locked',
+      text: message || 'Attendance is locked for a completed payroll period.',
+      confirmButtonText: 'OK',
+    });
+  };
   const [selectedRecordForInTime, setSelectedRecordForInTime] = useState<{ employee: Employee; date: string; shiftRecordId?: string } | null>(null);
   const [inTimeDialogValue, setInTimeDialogValue] = useState('');
   const [updatingInTime, setUpdatingInTime] = useState(false);
@@ -1138,6 +1173,10 @@ export default function AttendancePage() {
           setSuccess('');
         }, 2000);
       } else {
+        if (isAttendanceLockedResponse(response)) {
+          await handleAttendanceLockedPopup(response.message);
+          return;
+        }
         setError(response.message || 'Failed to assign shift');
       }
     } catch (err: any) {
@@ -1191,6 +1230,10 @@ export default function AttendancePage() {
           setSuccess('');
         }, 2000);
       } else {
+        if (isAttendanceLockedResponse(response)) {
+          await handleAttendanceLockedPopup(response.message);
+          return;
+        }
         setError(response.message || 'Failed to update out-time');
       }
     } catch (err: any) {
@@ -1556,6 +1599,10 @@ export default function AttendancePage() {
   const handleConvertExtraHoursToOT = async () => {
     if (!selectedEmployee || !selectedDate || !attendanceDetail) {
       setError('Missing employee or date information');
+      return;
+    }
+    if (isAttendanceDetailLocked) {
+      setError('Batch locked. No further operation will be performed for this attendance day.');
       return;
     }
     if (!attendanceDetail.extraHours || attendanceDetail.extraHours <= 0) {
@@ -2474,6 +2521,10 @@ export default function AttendancePage() {
 
         loadMonthlyAttendance();
       } else {
+        if (isAttendanceLockedResponse(response)) {
+          await handleAttendanceLockedPopup(response.message);
+          return;
+        }
         setError(response.message || 'Failed to update out time');
       }
     } catch (err: any) {
@@ -2518,6 +2569,10 @@ export default function AttendancePage() {
           if (updatedDetail) setAttendanceDetail(updatedDetail);
         }
       } else {
+        if (isAttendanceLockedResponse(response)) {
+          await handleAttendanceLockedPopup(response.message);
+          return;
+        }
         setError(response.message || 'Failed to update in time');
       }
     } catch (err: any) {
@@ -4275,6 +4330,11 @@ export default function AttendancePage() {
                       ({selectedEmployee?.employee_name})
                     </span>
                   )}
+                  {(attendanceDetail.locked || attendanceDetail.isEdited || attendanceDetail.source?.includes('manual')) && (
+                    <span className="ml-2 inline-flex items-center rounded-md bg-violet-100 px-2 py-1 text-xs font-bold text-violet-700 ring-1 ring-inset ring-violet-600/20 shadow-sm dark:bg-violet-900/30 dark:text-violet-300">
+                      Manually Locked
+                    </span>
+                  )}
                   {attendanceDetail.isEdited && (
                     <span className="ml-2 inline-flex items-center rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 ring-1 ring-inset ring-amber-600/20" title="This record has been manually modified">
                       Edited
@@ -4411,7 +4471,7 @@ export default function AttendancePage() {
                       <div className="text-right">
                         <button
                           onClick={handleConvertExtraHoursToOT}
-                          disabled={convertingToOT || singleOtConfirmLoading}
+                          disabled={isAttendanceDetailLocked || convertingToOT || singleOtConfirmLoading}
                           className="rounded-lg bg-gradient-to-r from-purple-500 to-indigo-500 px-4 py-2 text-xs font-bold text-white shadow-md shadow-purple-500/20 transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
                         >
                           {convertingToOT
@@ -4424,6 +4484,11 @@ export default function AttendancePage() {
                           <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
                             Slab/base value: {formatHours(Number(otPolicyPreview?.policy?.finalHours || 0))} hrs
                             {' '}from actual {formatHours(Number(otPolicyPreview?.rawExtraHours || attendanceDetail?.extraHours || 0))} hrs
+                          </div>
+                        )}
+                        {isAttendanceDetailLocked && (
+                          <div className="mt-1 text-[10px] font-medium text-rose-600 dark:text-rose-300">
+                            Batch locked. No further operation will be performed.
                           </div>
                         )}
                       </div>
@@ -4481,7 +4546,7 @@ export default function AttendancePage() {
                               <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Configured Shift</label>
                               <div className="flex items-center gap-3 flex-wrap">
                                 <div className="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate" title={shiftName}>{shiftName}</div>
-                                {attendanceFeatureFlags.allowShiftChange && selectedEmployee && selectedDate && !isEditingThisShift && (
+                                {attendanceFeatureFlags.allowShiftChange && selectedEmployee && selectedDate && !isEditingThisShift && !isAttendanceDetailLocked && (
                                   <button
                                     type="button"
                                     onClick={async () => {
@@ -4567,7 +4632,7 @@ export default function AttendancePage() {
                               </span>
                             </div>
                           </div>
-                          {selectedEmployee && selectedDate && (attendanceFeatureFlags.allowInTimeEditing || attendanceFeatureFlags.allowOutTimeEditing) && (
+                          {selectedEmployee && selectedDate && (attendanceFeatureFlags.allowInTimeEditing || attendanceFeatureFlags.allowOutTimeEditing) && !isAttendanceDetailLocked && (
                             <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap gap-3">
                               {attendanceFeatureFlags.allowInTimeEditing && (
                                 <button
@@ -4615,6 +4680,13 @@ export default function AttendancePage() {
                                   Edit Out Time
                                 </button>
                               )}
+                            </div>
+                          )}
+                          {isAttendanceDetailLocked && (
+                            <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+                              <div className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs font-medium text-violet-700 dark:border-violet-800/60 dark:bg-violet-900/20 dark:text-violet-300">
+                                This attendance day is locked, so in-time, out-time, and shift edits are disabled.
+                              </div>
                             </div>
                           )}
                         </div>

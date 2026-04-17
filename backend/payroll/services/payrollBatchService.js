@@ -7,12 +7,64 @@ const ArrearsIntegrationService = require('./arrearsIntegrationService');
 const DeductionIntegrationService = require('./deductionIntegrationService');
 const ArrearsRequest = require('../../arrears/model/ArrearsRequest');
 const DeductionRequest = require('../../manual-deductions/model/DeductionRequest');
+const { autoRejectPendingRequestsForCompletedBatch } = require('../../shared/services/payrollBatchAutoRejectService');
+const { resolveBatchEmployeePeriods } = require('../../shared/services/payrollRequestLockService');
+const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
 
 /**
  * PayrollBatch Service
  * Handles business logic for payroll batch operations
  */
 class PayrollBatchService {
+    /**
+     * Mark attendance daily rows immutable for completed payroll periods.
+     */
+    static async lockAttendanceForCompletedBatch(lockTargets = []) {
+        if (!Array.isArray(lockTargets) || lockTargets.length === 0) return;
+
+        const missingEmpNoTargets = lockTargets.filter(
+            (target) => (!target?.emp_no || !String(target.emp_no).trim()) && target?.employeeId
+        );
+        let empNoByEmployeeId = new Map();
+        if (missingEmpNoTargets.length > 0) {
+            const employeeIds = [...new Set(missingEmpNoTargets.map((target) => String(target.employeeId)))];
+            const employees = await Employee.find({ _id: { $in: employeeIds } })
+                .select('_id emp_no')
+                .lean();
+            empNoByEmployeeId = new Map(
+                employees.map((employee) => [String(employee._id), String(employee.emp_no || '').trim().toUpperCase()])
+            );
+        }
+
+        for (const target of lockTargets) {
+            const empNo =
+                String(target?.emp_no || '').trim().toUpperCase() ||
+                empNoByEmployeeId.get(String(target?.employeeId || '')) ||
+                '';
+            let startDate = target?.startDate;
+            let endDate = target?.endDate;
+            if (!empNo || !startDate || !endDate) continue;
+
+            try {
+                await AttendanceDaily.updateMany(
+                    {
+                        employeeNumber: empNo,
+                        date: { $gte: startDate, $lte: endDate },
+                        locked: { $ne: true },
+                    },
+                    {
+                        $set: { locked: true },
+                    }
+                );
+            } catch (err) {
+                console.error(
+                    `[PayrollBatch] Failed to lock attendance for ${empNo} (${startDate}..${endDate}):`,
+                    err.message
+                );
+            }
+        }
+    }
+
     /**
      * Create a new payroll batch for a department in a division
      */
@@ -205,7 +257,8 @@ class PayrollBatchService {
 
             await batch.save();
 
-            // When batch is completed: debit EL used in payroll, then settle arrears and deductions.
+            // When batch is completed: debit EL used in payroll, auto-reject pending requests if configured,
+            // then settle arrears and deductions.
             // Mirror second-salary batch status only after EL/settlement so balances match downstream flows.
             if (newStatus === 'complete') {
                 const elRecords = await PayrollRecord.find({
@@ -225,10 +278,38 @@ class PayrollBatchService {
                     }
                 }
 
+                try {
+                    const autoRejectSummary = await autoRejectPendingRequestsForCompletedBatch(batch, userId);
+                    batch.autoRejectedRequestsSummary = autoRejectSummary;
+                } catch (err) {
+                    console.error('[PayrollBatch] auto rejection of pending requests failed:', err.message);
+                }
+
                 // Settle arrears and manual deductions for all payrolls in this batch (idempotent: only not-yet-settled)
-                const payrollRecords = await PayrollRecord.find({
+                let payrollRecords = await PayrollRecord.find({
                     payrollBatchId: batch._id
-                }).select('_id employeeId month arrearsSettlements deductionSettlements').lean();
+                }).select('_id employeeId emp_no month startDate endDate arrearsSettlements deductionSettlements').lean();
+
+                let attendanceLockTargets = payrollRecords.map((pr) => ({
+                    employeeId: pr.employeeId,
+                    emp_no: pr.emp_no,
+                    startDate: pr.startDate,
+                    endDate: pr.endDate,
+                }));
+
+                const hasRangeTargets = attendanceLockTargets.some(
+                    (target) => target.startDate && target.endDate
+                );
+                if (attendanceLockTargets.length === 0 || !hasRangeTargets) {
+                    const resolvedPeriods = await resolveBatchEmployeePeriods(batch);
+                    attendanceLockTargets = resolvedPeriods.map((period) => ({
+                        employeeId: period.employeeId,
+                        startDate: period.startDate,
+                        endDate: period.endDate,
+                    }));
+                }
+
+                await PayrollBatchService.lockAttendanceForCompletedBatch(attendanceLockTargets);
 
                 for (const pr of payrollRecords) {
                     const payrollIdStr = pr._id.toString();
