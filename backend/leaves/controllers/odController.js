@@ -55,11 +55,16 @@ const buildODLocationText = (od) => {
     const names = od.placesVisited.map((p) => p?.name).filter(Boolean).join(', ');
     if (names) locationParts.push(names);
   }
-  if (od?.geoLocation?.address) {
-    locationParts.push(String(od.geoLocation.address).trim());
+  const effectiveGeo =
+    od?.endEvidence?.geoLocation ||
+    od?.startEvidence?.geoLocation ||
+    od?.geoLocation;
+
+  if (effectiveGeo?.address) {
+    locationParts.push(String(effectiveGeo.address).trim());
   }
-  if (od?.geoLocation?.latitude != null && od?.geoLocation?.longitude != null) {
-    locationParts.push(`Lat ${od.geoLocation.latitude}, Lng ${od.geoLocation.longitude}`);
+  if (effectiveGeo?.latitude != null && effectiveGeo?.longitude != null) {
+    locationParts.push(`Lat ${effectiveGeo.latitude}, Lng ${effectiveGeo.longitude}`);
   }
   return locationParts.length ? locationParts.join(' | ') : 'Location not specified';
 };
@@ -67,15 +72,40 @@ const buildODLocationText = (od) => {
 /** Portal user submitted the OD, or system OD (null appliedBy) for this employee. */
 function isOdApplicantOwner(od, user) {
   if (!od || !user) return false;
-  if (od.appliedBy) {
-    return od.appliedBy.toString() === user._id.toString();
+  // If request was applied by hierarchy (manager/HOD/HR/admin), still allow
+  // the employee owner to manage their own OD evidence updates.
+  if (od.appliedBy && user._id && od.appliedBy.toString() === user._id.toString()) {
+    return true;
   }
   const empId = od.employeeId?._id || od.employeeId;
   if (user.employeeRef && empId && empId.toString() === user.employeeRef.toString()) return true;
+  if (empId && user._id && empId.toString() === user._id.toString()) return true;
+  if (empId && user.userId && empId.toString() === user.userId.toString()) return true;
   if (user.employeeId && od.emp_no) {
     const a = String(user.employeeId).trim().toLowerCase();
     const b = String(od.emp_no).trim().toLowerCase();
     if (a && b && a === b) return true;
+  }
+  // Additional fallbacks for deployments that store employee number under different keys
+  const userEmpNoCandidates = [
+    user.emp_no,
+    user.empNo,
+    user.employeeNumber,
+    user.employee_no,
+    user.username,
+    user.email,
+  ]
+    .filter(Boolean)
+    .map((v) => String(v).trim().toLowerCase());
+  const odEmpNoCandidates = [
+    od.emp_no,
+    od.employeeId?.emp_no,
+  ]
+    .filter(Boolean)
+    .map((v) => String(v).trim().toLowerCase());
+
+  if (userEmpNoCandidates.some((val) => odEmpNoCandidates.includes(val))) {
+    return true;
   }
   return false;
 }
@@ -267,6 +297,10 @@ const getWorkflowSettings = async () => {
 
   return settings;
 };
+
+const hasValidPhotoEvidence = (photoEvidence) => !!(photoEvidence && photoEvidence.url);
+const hasValidGeoLocation = (geoLocation) =>
+  !!(geoLocation && geoLocation.latitude != null && geoLocation.longitude != null);
 
 // @desc    Get all ODs (with filters)
 // @route   GET /api/od
@@ -501,6 +535,84 @@ exports.getOD = async (req, res) => {
   }
 };
 
+const MAX_OD_TRAIL_POINTS = 4000;
+const MAX_OD_TRAIL_BATCH = 40;
+
+// @desc    Append GPS trail points for draft OD (continuous tracking)
+// @route   POST /api/leaves/od/:id/location-trail
+// @access  Private (OD employee owner only)
+exports.appendODLocationTrail = async (req, res) => {
+  try {
+    const od = await OD.findById(req.params.id);
+    if (!od) {
+      return res.status(404).json({ success: false, error: 'OD application not found' });
+    }
+    if (od.status !== 'draft') {
+      return res.status(400).json({ success: false, error: 'Location trail can only be updated while OD is in draft' });
+    }
+    if (od.endEvidence?.submittedAt) {
+      return res.status(400).json({ success: false, error: 'OD OUT already submitted; trail is closed' });
+    }
+    if (!isOdApplicantOwner(od, req.user)) {
+      return res.status(403).json({ success: false, error: 'Not authorized to update this OD trail' });
+    }
+
+    let { points, client } = req.body;
+    if (!Array.isArray(points) || points.length === 0) {
+      return res.status(400).json({ success: false, error: 'points[] is required' });
+    }
+    if (points.length > MAX_OD_TRAIL_BATCH) {
+      points = points.slice(0, MAX_OD_TRAIL_BATCH);
+    }
+
+    const source =
+      client === 'web' || client === 'mobile' ? client : points[0]?.source === 'web' || points[0]?.source === 'mobile' ? points[0].source : 'unknown';
+
+    const normalized = [];
+    for (const p of points) {
+      const lat = Number(p.latitude);
+      const lng = Number(p.longitude);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) continue;
+      normalized.push({
+        latitude: lat,
+        longitude: lng,
+        capturedAt: p.capturedAt ? new Date(p.capturedAt) : new Date(),
+        address: p.address ? String(p.address).slice(0, 500) : undefined,
+        accuracy: p.accuracy != null && Number.isFinite(Number(p.accuracy)) ? Number(p.accuracy) : undefined,
+        heading: p.heading != null && Number.isFinite(Number(p.heading)) ? Number(p.heading) : undefined,
+        speed: p.speed != null && Number.isFinite(Number(p.speed)) ? Number(p.speed) : undefined,
+        source: p.source === 'web' || p.source === 'mobile' ? p.source : source,
+      });
+    }
+
+    if (normalized.length === 0) {
+      return res.status(400).json({ success: false, error: 'No valid GPS points in request' });
+    }
+
+    if (!Array.isArray(od.locationTrail)) od.locationTrail = [];
+    od.locationTrail.push(...normalized);
+    if (od.locationTrail.length > MAX_OD_TRAIL_POINTS) {
+      od.locationTrail = od.locationTrail.slice(-MAX_OD_TRAIL_POINTS);
+    }
+    od.markModified('locationTrail');
+    await od.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Trail points saved',
+      appended: normalized.length,
+      trailLength: od.locationTrail.length,
+    });
+  } catch (error) {
+    console.error('Error appending OD location trail:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to save trail',
+    });
+  }
+};
+
 // @desc    Apply for OD
 // @route   POST /api/od
 // @access  Private
@@ -525,15 +637,23 @@ exports.applyOD = async (req, res) => {
       odType_extended, // NEW: Type of OD (full_day, half_day, hours)
       odStartTime, // NEW: OD start time (HH:MM format)
       odEndTime, // NEW: OD end time (HH:MM format)
-      photoEvidence, // ADDED
-      geoLocation, // ADDED
+      photoEvidence, // Start evidence photo (legacy key from frontend)
+      geoLocation, // Start evidence location (legacy key from frontend)
+      startEvidence,
+      endEvidence,
     } = req.body;
 
-    // Photo evidence is mandatory for OD
-    if (!photoEvidence || !photoEvidence.url) {
+    const startEvidencePayload = startEvidence || {
+      photoEvidence: photoEvidence || null,
+      geoLocation: geoLocation || null,
+      submittedAt: new Date(),
+    };
+
+    // OD IN evidence is mandatory for draft creation
+    if (!hasValidPhotoEvidence(startEvidencePayload?.photoEvidence) || !hasValidGeoLocation(startEvidencePayload?.geoLocation)) {
       return res.status(400).json({
         success: false,
-        error: 'Photo evidence is required for OD applications.',
+        error: 'OD IN photo evidence and GPS location are required.',
       });
     }
 
@@ -945,7 +1065,7 @@ exports.applyOD = async (req, res) => {
           actionBy: req.user._id,
           actionByName: req.user.name,
           actionByRole: req.user.role,
-          comments: isAssigned ? 'OD assigned by manager' : 'OD application submitted',
+          comments: 'OD IN evidence submitted. Request saved as draft until OD OUT is submitted.',
           timestamp: new Date(),
         },
       ],
@@ -979,7 +1099,7 @@ exports.applyOD = async (req, res) => {
       designation: employee.designation_id || employee.designation, // Support both field names
       appliedBy: req.user._id,
       appliedAt: new Date(),
-      status: 'pending',
+      status: 'draft',
       remarks,
       isAssigned: isAssigned || (employeeId && employeeId !== req.user.employeeRef?.toString()),
       assignedBy: isAssigned ? req.user._id : null,
@@ -990,10 +1110,24 @@ exports.applyOD = async (req, res) => {
       odEndTime: odEndTime || null,
       durationHours: durationHours,
       workflow: workflowData,
-      photoEvidence: photoEvidence || null, // ADDED
-      geoLocation: geoLocation || null, // ADDED
+      startEvidence: {
+        photoEvidence: startEvidencePayload.photoEvidence,
+        geoLocation: startEvidencePayload.geoLocation,
+        submittedAt: startEvidencePayload.submittedAt || new Date(),
+      },
+      // Backward compatibility fields
+      photoEvidence: startEvidencePayload.photoEvidence || null,
+      geoLocation: startEvidencePayload.geoLocation || null,
+      endEvidence: endEvidence || null,
       isCOEligible: isHolWo, // NEW: Flag for frontend display
     });
+
+    if (od.endEvidence?.submittedAt && od.startEvidence?.submittedAt) {
+      od.evidenceDurationMinutes = Math.max(
+        0,
+        Math.round((new Date(od.endEvidence.submittedAt).getTime() - new Date(od.startEvidence.submittedAt).getTime()) / 60000)
+      );
+    }
 
     await od.save();
 
@@ -1032,21 +1166,10 @@ exports.applyOD = async (req, res) => {
 
     res.status(201).json({
       success: true,
-      message: 'OD application submitted successfully',
+      message: 'OD IN evidence submitted. Request saved as draft.',
       data: od,
       warnings: warnings.length > 0 ? warnings : undefined, // Include warnings if any
     });
-
-    notifyWorkflowEvent({
-      module: 'od',
-      eventType: 'OD_APPLIED',
-      record: od,
-      actor: req.user,
-      title: `OD Submitted: ${od?.employeeId?.employee_name || employee?.employee_name || od.emp_no}`,
-      message: `${od?.employeeId?.employee_name || employee?.employee_name || od.emp_no} submitted OD for ${buildODDurationText(od)} on ${buildODDateRangeText(od)}. Location: ${buildODLocationText(od)}. Purpose: ${od?.purpose || 'N/A'}. Current status: ${od?.status}.`,
-      nextApproverRole: od?.workflow?.nextApprover || od?.workflow?.nextApproverRole || null,
-      priority: 'medium',
-    }).catch((err) => console.error('[Notification] OD_APPLIED failed:', err.message));
   } catch (error) {
     console.error('Error applying OD:', error);
     if (error?.code === 'PAYROLL_BATCH_COMPLETED') {
@@ -1106,7 +1229,7 @@ exports.updateOD = async (req, res) => {
       'odType', 'fromDate', 'toDate', 'purpose', 'placeVisited', 'placesVisited',
       'contactNumber', 'isHalfDay', 'halfDayType', 'expectedOutcome', 'travelDetails', 'remarks',
       'odType_extended', 'odStartTime', 'odEndTime', 'durationHours', // NEW: Hour-based OD fields
-      'photoEvidence', 'geoLocation' // ADDED
+      'photoEvidence', 'geoLocation', 'startEvidence', 'endEvidence' // Evidence fields
     ];
 
     // Super Admin can also change status
@@ -1261,6 +1384,60 @@ exports.updateOD = async (req, res) => {
       }
     }
 
+    let promotedToPendingOnOutSubmission = false;
+    const incomingEndEvidence = req.body.endEvidence || null;
+    const incomingOutPhoto = req.body.endPhotoEvidence || req.body.photoEvidence || null;
+    const incomingOutGeo = req.body.endGeoLocation || req.body.geoLocation || null;
+
+    if (!incomingEndEvidence && (incomingOutPhoto || incomingOutGeo)) {
+      od.endEvidence = {
+        photoEvidence: incomingOutPhoto,
+        geoLocation: incomingOutGeo,
+        submittedAt: new Date(),
+      };
+    }
+
+    if (incomingEndEvidence) {
+      od.endEvidence = {
+        photoEvidence: incomingEndEvidence.photoEvidence || null,
+        geoLocation: incomingEndEvidence.geoLocation || null,
+        submittedAt: incomingEndEvidence.submittedAt ? new Date(incomingEndEvidence.submittedAt) : new Date(),
+      };
+    }
+
+    const hasStartEvidence = hasValidPhotoEvidence(od.startEvidence?.photoEvidence) && hasValidGeoLocation(od.startEvidence?.geoLocation);
+    const hasEndEvidence = hasValidPhotoEvidence(od.endEvidence?.photoEvidence) && hasValidGeoLocation(od.endEvidence?.geoLocation);
+
+    if (hasStartEvidence && hasEndEvidence && od.status === 'draft') {
+      od.status = 'pending';
+      promotedToPendingOnOutSubmission = true;
+      if (od.workflow?.approvalChain?.length) {
+        const firstPending = od.workflow.approvalChain.find(step => step.status === 'pending');
+        const firstRole = firstPending?.role || od.workflow.approvalChain[0]?.role || 'hod';
+        od.workflow.currentStepRole = firstRole;
+        od.workflow.nextApproverRole = firstRole;
+        od.workflow.currentStep = firstRole;
+        od.workflow.nextApprover = firstRole;
+      }
+      if (!od.workflow.history) od.workflow.history = [];
+      od.workflow.history.push({
+        step: 'employee',
+        action: 'submitted',
+        actionBy: req.user._id,
+        actionByName: req.user.name,
+        actionByRole: req.user.role,
+        comments: 'OD OUT evidence submitted. Request moved from draft to pending for approval.',
+        timestamp: new Date(),
+      });
+    }
+
+    if (od.startEvidence?.submittedAt && od.endEvidence?.submittedAt) {
+      od.evidenceDurationMinutes = Math.max(
+        0,
+        Math.round((new Date(od.endEvidence.submittedAt).getTime() - new Date(od.startEvidence.submittedAt).getTime()) / 60000)
+      );
+    }
+
     await od.save();
 
     // When OD is approved (e.g. Super Admin set status via updateOD), update AttendanceDaily for each day in range and recalc monthly summary
@@ -1353,10 +1530,25 @@ exports.updateOD = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: 'OD updated successfully',
+      message: promotedToPendingOnOutSubmission
+        ? 'OD OUT evidence submitted. Request moved to pending.'
+        : 'OD updated successfully',
       data: od,
       changes: changes,
     });
+
+    if (promotedToPendingOnOutSubmission) {
+      notifyWorkflowEvent({
+        module: 'od',
+        eventType: 'OD_APPLIED',
+        record: od,
+        actor: req.user,
+        title: `OD Submitted: ${od?.employeeId?.employee_name || od.emp_no}`,
+        message: `${od?.employeeId?.employee_name || od.emp_no} submitted OD for ${buildODDurationText(od)} on ${buildODDateRangeText(od)}. Location: ${buildODLocationText(od)}. Purpose: ${od?.purpose || 'N/A'}. Current status: ${od?.status}.`,
+        nextApproverRole: od?.workflow?.nextApprover || od?.workflow?.nextApproverRole || null,
+        priority: 'medium',
+      }).catch((err) => console.error('[Notification] OD_APPLIED failed:', err.message));
+    }
   } catch (error) {
     console.error('Error updating OD:', error);
     if (error?.code === 'PAYROLL_BATCH_COMPLETED') {
@@ -1473,11 +1665,11 @@ exports.getPendingApprovals = async (req, res) => {
 
     // 1. Super Admin: View all non-final ODs globally
     if (['super_admin'].includes(userRole)) {
-      filter.status = { $nin: ['approved', 'rejected', 'cancelled'] };
+      filter.status = { $nin: ['draft', 'approved', 'rejected', 'cancelled'] };
     }
     // 2, 3, 4, 5: Scoped Roles (Sub Admin, HOD, HR, Manager)
     else if (['sub_admin', 'hod', 'hr', 'manager'].includes(userRole)) {
-      filter.status = { $nin: ['approved', 'rejected', 'cancelled'] };
+      filter.status = { $nin: ['draft', 'approved', 'rejected', 'cancelled'] };
       
       const employeeIds = await getEmployeeIdsInScope(req.user);
       if (employeeIds.length > 0) {
@@ -1492,7 +1684,7 @@ exports.getPendingApprovals = async (req, res) => {
         { 'workflow.approvalChain': { $elemMatch: { role: userRole, status: 'pending' } } },
         { 'workflow.reportingManagerIds': req.user._id.toString() }
       ];
-      filter.status = { $nin: ['approved', 'rejected', 'cancelled'] };
+      filter.status = { $nin: ['draft', 'approved', 'rejected', 'cancelled'] };
     }
 
     if (odType) filter.odType = odType;

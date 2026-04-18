@@ -411,7 +411,66 @@ const ODSchema = new mongoose.Schema(
       },
     ],
 
-    // Geo Location Data
+    // OD start evidence (mandatory at draft creation)
+    startEvidence: {
+      photoEvidence: {
+        url: { type: String },
+        key: { type: String },
+        exifLocation: {
+          latitude: { type: Number },
+          longitude: { type: Number }
+        }
+      },
+      geoLocation: {
+        latitude: { type: Number },
+        longitude: { type: Number },
+        address: { type: String },
+        capturedAt: { type: Date }
+      },
+      submittedAt: { type: Date },
+    },
+
+    // OD end evidence (mandatory before moving to pending)
+    endEvidence: {
+      photoEvidence: {
+        url: { type: String },
+        key: { type: String },
+        exifLocation: {
+          latitude: { type: Number },
+          longitude: { type: Number }
+        }
+      },
+      geoLocation: {
+        latitude: { type: Number },
+        longitude: { type: Number },
+        address: { type: String },
+        capturedAt: { type: Date }
+      },
+      submittedAt: { type: Date },
+    },
+
+    // Duration between OD in/out evidence submission
+    evidenceDurationMinutes: {
+      type: Number,
+      default: null,
+      min: 0,
+    },
+
+    // Continuous GPS trail while OD is draft (web/mobile); capped server-side
+    locationTrail: [
+      {
+        latitude: { type: Number, required: true },
+        longitude: { type: Number, required: true },
+        capturedAt: { type: Date, default: Date.now },
+        address: { type: String },
+        accuracy: { type: Number },
+        heading: { type: Number },
+        speed: { type: Number },
+        source: { type: String, enum: ['web', 'mobile', 'unknown'], default: 'unknown' },
+      },
+    ],
+
+    // Backward compatibility fields (legacy single evidence payload)
     geoLocation: {
       latitude: { type: Number },
       longitude: { type: Number },
@@ -419,7 +478,6 @@ const ODSchema = new mongoose.Schema(
       capturedAt: { type: Date }
     },
 
-    // Photo Evidence
     photoEvidence: {
       url: { type: String },
       key: { type: String },

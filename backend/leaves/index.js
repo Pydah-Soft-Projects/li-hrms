@@ -82,6 +82,9 @@ router.get('/od', authorize('employee', 'manager', 'hod', 'hr', 'sub_admin', 'su
 // Get single OD
 router.get('/od/:id', odController.getOD);
 
+// Append draft OD GPS trail points (continuous tracking while draft)
+router.post('/od/:id/location-trail', odController.appendODLocationTrail);
+
 // Apply for OD
 router.post('/od', odController.applyOD);
 

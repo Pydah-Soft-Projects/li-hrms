@@ -9,6 +9,13 @@ import {
   buildLeaveODPayPeriodOptions,
   matchLeaveODPayPeriodSelectValue,
 } from '@/lib/payPeriodRange';
+import {
+  OD_WEB_TRAIL_BATCH_FLUSH,
+  OD_WEB_TRAIL_FLUSH_MS,
+  OD_WEB_TRAIL_POLL_MS,
+  OD_WEB_TRAIL_POSITION_OPTIONS,
+  shouldAppendOdWebTrailPoint,
+} from '@/lib/odWebTrailSampling';
 import { MultiSelect } from '@/components/MultiSelect';
 import { auth } from '@/lib/auth';
 import {
@@ -22,7 +29,7 @@ import Swal from 'sweetalert2';
 import LocationPhotoCapture from '@/components/LocationPhotoCapture';
 import EmployeeSelect from '@/components/EmployeeSelect';
 
-const LocationMap = dynamic(() => import('@/components/LocationMap'), { ssr: false });
+const DualLocationMap = dynamic(() => import('@/components/DualLocationMap'), { ssr: false });
 const ODRequestsMap = dynamic(() => import('@/components/ODRequestsMap'), { ssr: false });
 import {
   Calendar,
@@ -358,6 +365,19 @@ interface ODApplication {
   purpose: string;
   placeVisited?: string;
   contactNumber?: string;
+  startEvidence?: {
+    photoEvidence?: { url?: string; key?: string; exifLocation?: { latitude?: number; longitude?: number } };
+    geoLocation?: { latitude?: number; longitude?: number; address?: string; capturedAt?: string };
+    submittedAt?: string;
+  };
+  endEvidence?: {
+    photoEvidence?: { url?: string; key?: string; exifLocation?: { latitude?: number; longitude?: number } };
+    geoLocation?: { latitude?: number; longitude?: number; address?: string; capturedAt?: string };
+    submittedAt?: string;
+  };
+  evidenceDurationMinutes?: number;
+  photoEvidence?: { url?: string; key?: string; exifLocation?: { latitude?: number; longitude?: number } };
+  geoLocation?: { latitude?: number; longitude?: number; address?: string; capturedAt?: string };
   status: string;
   department?: { name: string };
   designation?: { name: string };
@@ -403,6 +423,8 @@ interface ODApplication {
 
 const getStatusColor = (status: string) => {
   switch (status) {
+    case 'draft':
+      return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300';
     case 'approved':
       return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
     case 'pending':
@@ -418,6 +440,77 @@ const getStatusColor = (status: string) => {
     default:
       return 'bg-slate-100 text-slate-700 dark:bg-slate-900/30 dark:text-slate-400';
   }
+};
+
+const getStatusLabel = (status?: string) => {
+  if (!status) return 'Unknown';
+  if (status === 'draft') return 'Waiting for OUT evidence';
+  return status.replaceAll('_', ' ');
+};
+
+/** Mirrors backend `isOdApplicantOwner` for client-side checks (trail + OUT UX). */
+const isOdApplicantOwnerClient = (od: any, user: any) => {
+  if (!od || !user) return false;
+  const uid = String(user._id || user.id || '').trim();
+  if (od.appliedBy && uid && String(od.appliedBy?._id || od.appliedBy) === uid) return true;
+  const empId = od.employeeId?._id || od.employeeId;
+  if (user.employeeRef && empId && String(empId) === String(user.employeeRef)) return true;
+  if (empId && uid && String(empId) === uid) return true;
+  if (empId && user.userId && String(empId) === String(user.userId)) return true;
+  if (user.employeeId && od.emp_no) {
+    const a = String(user.employeeId).trim().toLowerCase();
+    const b = String(od.emp_no).trim().toLowerCase();
+    if (a && b && a === b) return true;
+  }
+  const userEmpNoCandidates = [user.emp_no, user.empNo, user.employeeNumber, user.employee_no, user.username, user.email]
+    .filter(Boolean)
+    .map((v: any) => String(v).trim().toLowerCase());
+  const odEmpNoCandidates = [od.emp_no, od?.employeeId?.emp_no].filter(Boolean).map((v: any) => String(v).trim().toLowerCase());
+  if (userEmpNoCandidates.some((val: string) => odEmpNoCandidates.includes(val))) return true;
+  return false;
+};
+
+const canSubmitOdOutFromDetails = (od: any, user: any) => {
+  if (!od || !user) return false;
+  if (od.status !== 'draft') return false;
+  if (od?.endEvidence?.submittedAt) return false;
+
+  // Privileged roles can always submit OUT evidence for draft OD
+  if (['super_admin', 'sub_admin', 'hr', 'manager', 'hod'].includes(user.role || '')) {
+    return true;
+  }
+
+  const userId = String(user._id || '').trim();
+  const appliedById = String(od?.appliedBy?._id || od?.appliedBy || '').trim();
+  if (userId && appliedById && userId === appliedById) return true;
+
+  const userEmpRef = String(user.employeeRef || '').trim();
+  const odEmpId = String(od?.employeeId?._id || od?.employeeId || '').trim();
+  if (userEmpRef && odEmpId && userEmpRef === odEmpId) return true;
+
+  const userEmpNo = String(user.employeeId || user.emp_no || '').trim().toLowerCase();
+  const odEmpNo = String(od?.emp_no || od?.employeeId?.emp_no || '').trim().toLowerCase();
+  if (userEmpNo && odEmpNo && userEmpNo === odEmpNo) return true;
+
+  return false;
+};
+
+const hasOdInEvidenceSubmitted = (od: any) => {
+  if (!od) return false;
+  const start = od.startEvidence || {};
+  const photoUrl = start?.photoEvidence?.url || od.photoEvidence?.url;
+  const geo = start?.geoLocation || od.geoLocation;
+  const lat = geo != null && typeof geo === 'object' ? Number(geo.latitude) : NaN;
+  const lng = geo != null && typeof geo === 'object' ? Number(geo.longitude) : NaN;
+  return Boolean(photoUrl && Number.isFinite(lat) && Number.isFinite(lng));
+};
+
+/** Continuous GPS trail only after OD IN is saved, for the OD employee (not managers viewing another draft). */
+const canRecordOdLocationTrail = (od: any, user: any) => {
+  if (!od || !user) return false;
+  if (od.status !== 'draft' || od?.endEvidence?.submittedAt) return false;
+  if (!hasOdInEvidenceSubmitted(od)) return false;
+  return isOdApplicantOwnerClient(od, user);
 };
 
 // Helper to format date for HTML date input (YYYY-MM-DD)
@@ -743,10 +836,14 @@ export default function LeavesPage() {
   const [odMapRequests, setODMapRequests] = useState<ODApplication[]>([]);
   const [odMapLoading, setODMapLoading] = useState(false);
 
-  // Evidence State
-  const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
-  const [locationData, setLocationData] = useState<any | null>(null);
-  const [evidencePreview, setEvidencePreview] = useState<string | null>(null);
+  // OD IN Evidence State
+  const [odInEvidenceFile, setOdInEvidenceFile] = useState<File | null>(null);
+  const [odInLocationData, setOdInLocationData] = useState<any | null>(null);
+  // OD OUT Evidence State (draft -> pending)
+  const [showOutEvidenceDialog, setShowOutEvidenceDialog] = useState(false);
+  const [odOutEvidenceFile, setOdOutEvidenceFile] = useState<File | null>(null);
+  const [odOutLocationData, setOdOutLocationData] = useState<any | null>(null);
+  const [submittingOutEvidence, setSubmittingOutEvidence] = useState(false);
 
   // Approved records info for conflict checking
   const [approvedRecordsInfo, setApprovedRecordsInfo] = useState<{
@@ -795,7 +892,7 @@ export default function LeavesPage() {
       }
 
       // Photo Evidence & Location required for OD (typically mandatory in this system)
-      if (!evidenceFile || !locationData) return false;
+      if (!odInEvidenceFile || !odInLocationData) return false;
     }
 
     // 4. CL monthly-limit exhaustion
@@ -1451,39 +1548,42 @@ export default function LeavesPage() {
 
       // 3. Evidence Upload (mandatory for OD)
       if (applyType === 'od') {
-        if (!evidenceFile) {
+        if (!odInEvidenceFile) {
           toast.error('Photo evidence is required for OD applications');
           setLoading(false);
           return;
         }
 
-        if (evidenceFile) {
+        if (odInEvidenceFile) {
           // Check file size (20MB limit)
           const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
-          if (evidenceFile.size > MAX_FILE_SIZE) {
+          if (odInEvidenceFile.size > MAX_FILE_SIZE) {
             toast.error('The selected photo is too large. please upload a photo smaller than 20MB.');
             setLoading(false);
             return;
           }
 
           setLoadingMessage('Uploading photo');
-          const uploadRes = await api.uploadEvidence(evidenceFile);
+          const uploadRes = await api.uploadEvidence(odInEvidenceFile);
           // API returns { success, url, key, filename } at top level (no .data wrapper)
           if (uploadRes.success && uploadRes.url) {
-            payload.photoEvidence = {
-              url: uploadRes.url,
-              key: uploadRes.key,
-              exifLocation: (evidenceFile as any).exifLocation
+            payload.startEvidence = {
+              photoEvidence: {
+                url: uploadRes.url,
+                key: uploadRes.key,
+                exifLocation: (odInEvidenceFile as any).exifLocation
+              },
+              geoLocation: odInLocationData,
+              submittedAt: new Date().toISOString(),
             };
+            // Backward compatibility
+            payload.photoEvidence = payload.startEvidence.photoEvidence;
+            payload.geoLocation = payload.startEvidence.geoLocation;
           } else {
             toast.error('Failed to upload photo evidence');
             setLoading(false);
             return;
           }
-        }
-
-        if (locationData) {
-          payload.geoLocation = locationData;
         }
       }
 
@@ -1549,6 +1649,182 @@ export default function LeavesPage() {
     }
   };
 
+  const handleSubmitODEndEvidence = async () => {
+    if (!selectedItem || detailType !== 'od') return;
+    if (!odOutEvidenceFile || !odOutLocationData) {
+      toast.error('OD OUT photo and GPS location are required');
+      return;
+    }
+
+    try {
+      setSubmittingOutEvidence(true);
+      const MAX_FILE_SIZE = 20 * 1024 * 1024;
+      if (odOutEvidenceFile.size > MAX_FILE_SIZE) {
+        toast.error('The selected photo is too large. please upload a photo smaller than 20MB.');
+        return;
+      }
+
+      const uploadRes = await api.uploadEvidence(odOutEvidenceFile);
+      if (!uploadRes.success || !uploadRes.url) {
+        toast.error('Failed to upload OD OUT photo evidence');
+        return;
+      }
+
+      const g = odOutLocationData as {
+        latitude: number;
+        longitude: number;
+        capturedAt?: Date | string;
+        address?: string;
+        accuracy?: number;
+      };
+      const capturedAtIso =
+        g.capturedAt instanceof Date ? g.capturedAt.toISOString() : g.capturedAt;
+      const endEvidence = {
+        photoEvidence: {
+          url: uploadRes.url,
+          key: uploadRes.key,
+          exifLocation: (odOutEvidenceFile as any).exifLocation,
+        },
+        geoLocation: {
+          latitude: Number(g.latitude),
+          longitude: Number(g.longitude),
+          ...(capturedAtIso ? { capturedAt: capturedAtIso } : {}),
+          ...(g.address ? { address: g.address } : {}),
+          ...(g.accuracy != null ? { accuracy: g.accuracy } : {}),
+        },
+        submittedAt: new Date().toISOString(),
+      };
+
+      const response = await api.updateOD(selectedItem._id, { endEvidence });
+      if (response.success) {
+        Swal.fire({
+          icon: 'success',
+          title: 'Success!',
+          text: 'OD OUT submitted. Request moved to pending.',
+          timer: 2000,
+          showConfirmButton: false,
+        });
+        setShowOutEvidenceDialog(false);
+        setOdOutEvidenceFile(null);
+        setOdOutLocationData(null);
+        setShowDetailDialog(false);
+        setSelectedItem(null);
+        loadData();
+      } else {
+        toast.error(response.error || 'Failed to submit OD OUT evidence');
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to submit OD OUT evidence');
+    } finally {
+      setSubmittingOutEvidence(false);
+    }
+  };
+
+  const odRoutePolyline = useMemo(() => {
+    if (!selectedItem || detailType !== 'od') return [] as { latitude: number; longitude: number }[];
+    const t = (selectedItem as any).locationTrail;
+    if (!Array.isArray(t) || !t.length) return [];
+    return [...t]
+      .sort((a: any, b: any) => new Date(a.capturedAt).getTime() - new Date(b.capturedAt).getTime())
+      .filter((p: any) => p?.latitude != null && p?.longitude != null)
+      .map((p: any) => ({ latitude: Number(p.latitude), longitude: Number(p.longitude) }))
+      .filter((p) => Number.isFinite(p.latitude) && Number.isFinite(p.longitude));
+  }, [selectedItem, detailType]);
+
+  /** Single stable dep for the OD trail geolocation effect (avoids variable-length dependency arrays + HMR issues). */
+  const odLocationTrailWatchKey = useMemo(() => {
+    if (typeof window === 'undefined') return 'ssr';
+    const si = selectedItem as any;
+    const cu = currentUser as any;
+    if (!showDetailDialog || detailType !== 'od' || !si?._id || showOutEvidenceDialog) return 'off';
+    if (!canRecordOdLocationTrail(si, cu)) return 'off';
+    return [
+      'on',
+      String(si._id),
+      String(si.status ?? ''),
+      si?.endEvidence?.submittedAt ? '1' : '0',
+      hasOdInEvidenceSubmitted(si) ? '1' : '0',
+      String(cu?._id ?? ''),
+      String((cu as any)?.id ?? ''),
+      String(cu?.employeeRef ?? ''),
+      String(cu?.emp_no ?? ''),
+      String(cu?.employeeId ?? ''),
+      String(cu?.role ?? ''),
+    ].join('|');
+  }, [showDetailDialog, detailType, selectedItem, currentUser, showOutEvidenceDialog]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !navigator?.geolocation) return undefined;
+    if (!odLocationTrailWatchKey.startsWith('on|')) return undefined;
+    const od = selectedItem as any;
+    if (!canRecordOdLocationTrail(od, currentUser)) return undefined;
+
+    const odId = String(selectedItem._id);
+    const buffer: Array<{
+      latitude: number;
+      longitude: number;
+      capturedAt: string;
+      accuracy?: number;
+      heading?: number;
+      speed?: number;
+    }> = [];
+    let lastLat: number | null = null;
+    let lastLng: number | null = null;
+    let lastSend = 0;
+
+    const flush = async () => {
+      if (buffer.length === 0) return;
+      const chunk = buffer.splice(0, buffer.length);
+      try {
+        const res = await api.appendODLocationTrail(odId, { points: chunk, client: 'web' });
+        if (res?.success) {
+          setSelectedItem((prev: any) => {
+            if (!prev || String(prev._id) !== odId) return prev;
+            const merged = [...(Array.isArray(prev.locationTrail) ? prev.locationTrail : []), ...chunk];
+            return { ...prev, locationTrail: merged };
+          });
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+
+    const onReading = (pos: GeolocationPosition) => {
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      const now = Date.now();
+      if (!shouldAppendOdWebTrailPoint(lastLat, lastLng, lastSend, lat, lng, now)) return;
+      lastLat = lat;
+      lastLng = lng;
+      lastSend = now;
+      const acc = pos.coords.accuracy;
+      const h = pos.coords.heading;
+      const sp = pos.coords.speed;
+      buffer.push({
+        latitude: lat,
+        longitude: lng,
+        capturedAt: new Date().toISOString(),
+        accuracy: acc != null && Number.isFinite(acc) && acc <= 1e6 ? acc : undefined,
+        heading: h != null && Number.isFinite(h) ? h : undefined,
+        speed: sp != null && Number.isFinite(sp) ? sp : undefined,
+      });
+      if (buffer.length >= OD_WEB_TRAIL_BATCH_FLUSH) void flush();
+    };
+
+    const flushInterval = window.setInterval(() => void flush(), OD_WEB_TRAIL_FLUSH_MS);
+    const watchId = navigator.geolocation.watchPosition(onReading, () => {}, OD_WEB_TRAIL_POSITION_OPTIONS);
+    const pollInterval = window.setInterval(() => {
+      navigator.geolocation.getCurrentPosition(onReading, () => {}, OD_WEB_TRAIL_POSITION_OPTIONS);
+    }, OD_WEB_TRAIL_POLL_MS);
+
+    return () => {
+      window.clearInterval(flushInterval);
+      window.clearInterval(pollInterval);
+      navigator.geolocation.clearWatch(watchId);
+      void flush();
+    };
+  }, [odLocationTrailWatchKey]);
+
   const resetForm = () => {
     setFormData({
       leaveType: '',
@@ -1568,9 +1844,10 @@ export default function LeavesPage() {
     setSelectedEmployee(null);
     setEmployeeSearch('');
     setShowEmployeeDropdown(false);
-    setEvidenceFile(null);
-    setEvidencePreview(null);
-    setLocationData(null);
+    setOdInEvidenceFile(null);
+    setOdInLocationData(null);
+    setOdOutEvidenceFile(null);
+    setOdOutLocationData(null);
     setLoadingMessage('');
     setError(null);
   };
@@ -3364,7 +3641,7 @@ export default function LeavesPage() {
                           <td className="px-6 py-3.5 text-center">
                             <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize border ${getStatusColor(od.status) === 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' ? 'border-green-200' : 'border-transparent'
                               } ${getStatusColor(od.status)}`}>
-                              {od.status?.replace('_', ' ')}
+                              {getStatusLabel(od.status)}
                             </span>
                           </td>
                           <td className="px-6 py-3.5 text-right">
@@ -3454,7 +3731,7 @@ export default function LeavesPage() {
                         </div>
                         <div className="flex items-center gap-2">
                           <span className={`inline-flex px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border ${getStatusColor(od.status)} border-transparent`}>
-                            {od.status?.replace('_', ' ')}
+                            {getStatusLabel(od.status)}
                           </span>
                           {(isSuperAdmin || currentUser?.role === 'sub_admin' || currentUser?.role === 'employee') && (
                             <button
@@ -4689,13 +4966,13 @@ export default function LeavesPage() {
                       required
                       label="Photo Evidence"
                       onCapture={(loc, photo) => {
-                        setEvidenceFile(photo.file);
-                        setLocationData(loc);
+                        setOdInEvidenceFile(photo.file);
+                        setOdInLocationData(loc);
                         (photo.file as any).exifLocation = photo.exifLocation;
                       }}
                       onClear={() => {
-                        setEvidenceFile(null);
-                        setLocationData(null);
+                        setOdInEvidenceFile(null);
+                        setOdInLocationData(null);
                       }}
                     />
                   </div>
@@ -4840,7 +5117,7 @@ export default function LeavesPage() {
 
                     <div className="flex flex-row sm:flex-col items-center sm:items-end gap-2 w-full sm:w-auto justify-between sm:justify-start">
                       <span className={`px-4 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-widest border ${getStatusColor(selectedItem!.status)}`}>
-                        {selectedItem!.status?.replace('_', ' ')}
+                        {getStatusLabel(selectedItem!.status)}
                       </span>
                       <div className="flex items-center gap-1.5 text-slate-400 font-bold text-[10px] uppercase tracking-wider">
                         <Clock3 className="w-3.5 h-3.5" />
@@ -4948,88 +5225,149 @@ export default function LeavesPage() {
                     )}
                   </div>
 
-                  {detailType === 'od' && ((selectedItem as any).photoEvidence || (selectedItem as any).geoLocation) && (
+                  {detailType === 'od' && (
                     <div className="rounded-xl bg-slate-50 dark:bg-slate-900/50 p-4 sm:p-5 border border-slate-200 dark:border-slate-700">
                       <p className="text-xs uppercase font-bold text-slate-400 mb-3 tracking-wider">Evidence & Location</p>
-                      <div className="flex flex-col sm:grid sm:grid-cols-2 gap-6">
-                        {(selectedItem as any).photoEvidence && (
-                          <div className="flex items-start gap-4 p-4 rounded-xl bg-white dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 shadow-sm">
-                            <a
-                              href={(selectedItem as any).photoEvidence.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="relative group block shrink-0"
+                      {canSubmitOdOutFromDetails(selectedItem as any, currentUser) && (
+                          <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-purple-200 dark:border-purple-900/40 bg-purple-50 dark:bg-purple-900/20 px-3 py-2">
+                            <p className="text-xs font-semibold text-purple-700 dark:text-purple-300">OD OUT evidence is pending for this draft request.</p>
+                            <button
+                              type="button"
+                              onClick={() => setShowOutEvidenceDialog(true)}
+                              className="px-3 py-1.5 text-xs font-bold text-white bg-purple-600 rounded-lg hover:bg-purple-700"
                             >
-                              <img
-                                src={(selectedItem as any).photoEvidence.url}
-                                alt="Evidence"
-                                className="w-24 h-24 rounded-lg object-cover border border-slate-200 dark:border-slate-600 shadow-sm transition-transform group-hover:scale-105"
-                              />
-                              <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/20 transition-colors rounded-lg">
-                                <svg className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                              </div>
-                            </a>
-                            <div className="pt-1">
-                              <p className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-tight">Photo Evidence</p>
-                              <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 uppercase font-black">Captured via App</p>
-                            </div>
+                              Submit OD OUT
+                            </button>
                           </div>
                         )}
-                        <div className="space-y-4">
-                          {(selectedItem as any).geoLocation && (
-                            <div className="p-4 rounded-xl bg-white dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 shadow-sm">
-                              <div className="flex items-center gap-2 mb-3">
-                                <svg className="w-4 h-4 text-red-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-                                <span className="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest">Live Location</span>
-                              </div>
-                              <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
-                                <div>
-                                  <span className="text-[10px] uppercase font-bold text-slate-400">Lat:</span>
-                                  <span className="ml-1 font-mono text-slate-700 dark:text-slate-300">{(selectedItem as any).geoLocation.latitude?.toFixed(6)}</span>
-                                </div>
-                                <div>
-                                  <span className="text-[10px] uppercase font-bold text-slate-400">Lon:</span>
-                                  <span className="ml-1 font-mono text-slate-700 dark:text-slate-300">{(selectedItem as any).geoLocation.longitude?.toFixed(6)}</span>
-                                </div>
-                                {(selectedItem as any).geoLocation.address && (
-                                  <div className="col-span-2 pt-3 border-t border-slate-100 dark:border-slate-700 mt-2">
-                                    <span className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Full Address</span>
-                                    <p className="text-slate-700 dark:text-slate-300 leading-tight text-[11px] font-medium">{(selectedItem as any).geoLocation.address}</p>
-                                  </div>
-                                )}
-                                <div className="col-span-2 mt-2 pt-2">
-                                  <a
-                                    href={`https://www.google.com/maps?q=${(selectedItem as any).geoLocation.latitude},${(selectedItem as any).geoLocation.longitude}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-2 font-black text-[10px] uppercase tracking-wider"
-                                  >
-                                    <div className="p-1 rounded bg-blue-50 dark:bg-blue-900/30">
-                                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                                    </div>
-                                    View on Maps
-                                  </a>
-                                </div>
-                              </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-4">
+                        {(() => {
+                          const minutes = (selectedItem as any).evidenceDurationMinutes;
+                          if (minutes == null) return null;
+                          const hrs = Math.floor(minutes / 60);
+                          const mins = minutes % 60;
+                          return (
+                            <div className="sm:col-span-2 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-800 px-3 py-2 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                              Total duration between OD IN and OUT: {hrs}h {mins}m
                             </div>
-                          )}
+                          );
+                        })()}
+                        {(() => {
+                          const startEvidence = (selectedItem as any).startEvidence || {
+                            photoEvidence: (selectedItem as any).photoEvidence,
+                            geoLocation: (selectedItem as any).geoLocation,
+                            submittedAt: (selectedItem as any).createdAt || (selectedItem as any).appliedAt,
+                          };
+                          const endEvidence = (selectedItem as any).endEvidence || null;
 
-                          {/* Leaflet map view */}
-                          {(() => {
-                            const geo = (selectedItem as any).geoLocation;
-                            const exif = (selectedItem as any).photoEvidence?.exifLocation;
-                            const lat = geo?.latitude ?? exif?.latitude;
-                            const lng = geo?.longitude ?? exif?.longitude;
-                            const address = geo?.address ?? null;
-                            if (lat == null || lng == null) return null;
-                            return (
-                              <div className="p-1 pb-0 rounded-xl bg-white dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden">
-                                <span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest p-3 pb-2">Map Preview</span>
-                                <LocationMap latitude={lat} longitude={lng} address={address} height="150px" className="rounded-b-lg" />
+                          const evidenceCards = [
+                            { title: 'OD IN', data: startEvidence },
+                            { title: 'OD OUT', data: endEvidence },
+                          ];
+
+                          return evidenceCards.map((entry) => (
+                            <div key={entry.title} className="space-y-3 p-3 rounded-xl bg-white dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 shadow-sm">
+                              <div className="flex items-center justify-between">
+                                <p className="text-[11px] font-black text-slate-700 dark:text-slate-200 uppercase tracking-wider">{entry.title}</p>
+                                <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                                  {entry.data?.submittedAt ? new Date(entry.data.submittedAt).toLocaleString() : 'Not submitted'}
+                                </p>
                               </div>
-                            );
-                          })()}
-                        </div>
+                              {entry.data?.photoEvidence?.url ? (
+                                <a
+                                  href={entry.data.photoEvidence.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="block"
+                                >
+                                  <img
+                                    src={entry.data.photoEvidence.url}
+                                    alt={`${entry.title} evidence`}
+                                    className="w-full h-36 rounded-lg object-cover border border-slate-200 dark:border-slate-600"
+                                  />
+                                </a>
+                              ) : (
+                                <p className="text-xs text-slate-500 dark:text-slate-400">Photo not submitted</p>
+                              )}
+                              {entry.data?.geoLocation ? (
+                                <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-700">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <svg className="w-4 h-4 text-red-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                    <span className="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-widest">Live Location</span>
+                                  </div>
+                                  <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                                    <div>
+                                      <span className="text-[10px] uppercase font-bold text-slate-400">Lat:</span>
+                                      <span className="ml-1 font-mono text-slate-700 dark:text-slate-300">{entry.data.geoLocation.latitude?.toFixed(6)}</span>
+                                    </div>
+                                    <div>
+                                      <span className="text-[10px] uppercase font-bold text-slate-400">Lon:</span>
+                                      <span className="ml-1 font-mono text-slate-700 dark:text-slate-300">{entry.data.geoLocation.longitude?.toFixed(6)}</span>
+                                    </div>
+                                    {entry.data.geoLocation.address && (
+                                      <div className="col-span-2 pt-2 border-t border-slate-100 dark:border-slate-700 mt-1">
+                                        <span className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Full Address</span>
+                                        <p className="text-slate-700 dark:text-slate-300 leading-tight text-[11px]">{entry.data.geoLocation.address}</p>
+                                      </div>
+                                    )}
+                                    <div className="col-span-2 mt-1">
+                                      <a
+                                        href={`https://www.google.com/maps?q=${entry.data.geoLocation.latitude},${entry.data.geoLocation.longitude}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1 font-semibold text-xs"
+                                      >
+                                        View on Maps
+                                      </a>
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : (
+                                <p className="text-xs text-slate-500 dark:text-slate-400">Location not submitted</p>
+                              )}
+                            </div>
+                          ));
+                        })()}
+                      </div>
+                      <div className="space-y-4">
+                        {(() => {
+                          const inGeo = (selectedItem as any).startEvidence?.geoLocation || (selectedItem as any).geoLocation;
+                          const outGeo = (selectedItem as any).endEvidence?.geoLocation || null;
+                          const markers = [];
+                          if (inGeo?.latitude != null && inGeo?.longitude != null) {
+                            markers.push({
+                              latitude: inGeo.latitude,
+                              longitude: inGeo.longitude,
+                              label: 'IN',
+                              address: inGeo.address || null,
+                            });
+                          }
+                          if (outGeo?.latitude != null && outGeo?.longitude != null) {
+                            markers.push({
+                              latitude: outGeo.latitude,
+                              longitude: outGeo.longitude,
+                              label: 'OUT',
+                              address: outGeo.address || null,
+                            });
+                          }
+                          if (!markers.length && odRoutePolyline.length < 2) return null;
+                          return (
+                            <div className="p-1 pb-0 rounded-xl bg-white dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden">
+                              <span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest p-3 pb-2">Map Preview (IN/OUT)</span>
+                              <DualLocationMap
+                                markers={markers as any}
+                                routePolyline={odRoutePolyline.length >= 2 ? odRoutePolyline : undefined}
+                                height="170px"
+                                className="rounded-b-lg"
+                              />
+                              {canRecordOdLocationTrail(selectedItem as any, currentUser) && (
+                                <p className="px-3 pb-2 text-[10px] text-slate-500 dark:text-slate-400">
+                                  Route is recorded while this draft is open (employee device only).
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                   )}
@@ -5472,6 +5810,51 @@ export default function LeavesPage() {
         }
       </div >
 
+
+      {
+        showOutEvidenceDialog && selectedItem && detailType === 'od' && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => !submittingOutEvidence && setShowOutEvidenceDialog(false)} />
+            <div className="relative z-50 w-full max-w-lg rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl p-6 sm:p-8">
+              <h3 className="text-xl font-black text-slate-900 dark:text-white">Submit OD OUT Evidence</h3>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 mb-5">
+                This will move your OD from Draft to Pending.
+              </p>
+              <LocationPhotoCapture
+                required
+                label="OD OUT Photo Evidence"
+                onCapture={(loc, photo) => {
+                  setOdOutEvidenceFile(photo.file);
+                  setOdOutLocationData(loc);
+                  (photo.file as any).exifLocation = photo.exifLocation;
+                }}
+                onClear={() => {
+                  setOdOutEvidenceFile(null);
+                  setOdOutLocationData(null);
+                }}
+              />
+              <div className="flex gap-3 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setShowOutEvidenceDialog(false)}
+                  disabled={submittingOutEvidence}
+                  className="flex-1 py-2.5 text-sm font-bold text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSubmitODEndEvidence}
+                  disabled={submittingOutEvidence || !odOutEvidenceFile || !odOutLocationData}
+                  className="flex-1 py-2.5 text-sm font-bold text-white bg-purple-600 rounded-xl hover:bg-purple-700 disabled:opacity-50"
+                >
+                  {submittingOutEvidence ? 'Submitting...' : 'Submit OUT'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      }
 
       {
         showEditDialog && selectedItem && (
