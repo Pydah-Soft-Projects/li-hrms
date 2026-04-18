@@ -25,6 +25,12 @@ import {
   OD_WEB_TRAIL_POSITION_OPTIONS,
   shouldAppendOdWebTrailPoint,
 } from '@/lib/odWebTrailSampling';
+import {
+  joinOdTrailRoom,
+  leaveOdTrailRoom,
+  publishOdTrailPoints,
+  subscribeOdTrailUpdates,
+} from '@/lib/odTrailSocket';
 
 const DualLocationMap = dynamic(() => import('@/components/DualLocationMap'), { ssr: false });
 const ODRequestsMap = dynamic(() => import('@/components/ODRequestsMap'), { ssr: false });
@@ -841,6 +847,7 @@ function LeavesPageContent() {
     capturedAt: Date;
   } | null>(null);
   const [submittingOutEvidence, setSubmittingOutEvidence] = useState(false);
+  const [odTrailPublishMode, setOdTrailPublishMode] = useState<'idle' | 'socket' | 'http' | 'error'>('idle');
 
   // Filter Dropdown States
   const [searchTerm, setSearchTerm] = useState('');
@@ -1643,15 +1650,42 @@ function LeavesPageContent() {
   };
 
   const odRoutePolyline = useMemo(() => {
-    if (!selectedItem || detailType !== 'od') return [] as { latitude: number; longitude: number }[];
+    if (!selectedItem || detailType !== 'od') return [] as { latitude: number; longitude: number; capturedAt?: string }[];
     const t = (selectedItem as any).locationTrail;
     if (!Array.isArray(t) || !t.length) return [];
     return [...t]
       .sort((a: any, b: any) => new Date(a.capturedAt).getTime() - new Date(b.capturedAt).getTime())
       .filter((p: any) => p?.latitude != null && p?.longitude != null)
-      .map((p: any) => ({ latitude: Number(p.latitude), longitude: Number(p.longitude) }))
+      .map((p: any) => ({
+        latitude: Number(p.latitude),
+        longitude: Number(p.longitude),
+        capturedAt: p?.capturedAt ? new Date(p.capturedAt).toISOString() : undefined,
+      }))
       .filter((p) => Number.isFinite(p.latitude) && Number.isFinite(p.longitude));
   }, [selectedItem, detailType]);
+
+  useEffect(() => {
+    if (!showDetailDialog || detailType !== 'od' || !selectedItem?._id) return undefined;
+    const odId = String(selectedItem._id);
+    void joinOdTrailRoom(odId);
+    const offSocket = subscribeOdTrailUpdates(odId, (points) => {
+      setSelectedItem((prev: any) => {
+        if (!prev || String(prev._id) !== odId) return prev;
+        const merged = [...(Array.isArray(prev.locationTrail) ? prev.locationTrail : []), ...points];
+        return { ...prev, locationTrail: merged };
+      });
+    });
+    return () => {
+      offSocket();
+      leaveOdTrailRoom(odId);
+    };
+  }, [showDetailDialog, detailType, selectedItem?._id]);
+
+  useEffect(() => {
+    if (detailType !== 'od' || !showDetailDialog) {
+      setOdTrailPublishMode('idle');
+    }
+  }, [detailType, showDetailDialog, selectedItem?._id]);
 
   const odLocationTrailWatchKey = useMemo(() => {
     if (typeof window === 'undefined') return 'ssr';
@@ -1679,9 +1713,9 @@ function LeavesPageContent() {
     if (!odLocationTrailWatchKey.startsWith('on|')) return undefined;
     const au = auth.getUser() as any;
     const od = selectedItem as any;
-    if (!canRecordOdLocationTrail(od, au)) return undefined;
+    if (!canRecordOdLocationTrail(od, au) || !od?._id) return undefined;
 
-    const odId = String(selectedItem._id);
+    const odId = String(od._id);
     const buffer: Array<{
       latitude: number;
       longitude: number;
@@ -1698,15 +1732,15 @@ function LeavesPageContent() {
       if (buffer.length === 0) return;
       const chunk = buffer.splice(0, buffer.length);
       try {
-        const res = await api.appendODLocationTrail(odId, { points: chunk, client: 'web' });
-        if (res?.success) {
-          setSelectedItem((prev: any) => {
-            if (!prev || String(prev._id) !== odId) return prev;
-            const merged = [...(Array.isArray(prev.locationTrail) ? prev.locationTrail : []), ...chunk];
-            return { ...prev, locationTrail: merged };
-          });
+        const pushedBySocket = await publishOdTrailPoints(odId, chunk, 'web');
+        if (!pushedBySocket) {
+          await api.appendODLocationTrail(odId, { points: chunk, client: 'web' });
+          setOdTrailPublishMode('http');
+        } else {
+          setOdTrailPublishMode('socket');
         }
       } catch {
+        setOdTrailPublishMode('error');
         /* ignore */
       }
     };
@@ -4360,9 +4394,30 @@ function LeavesPageContent() {
                             height="190px"
                           />
                           {canRecordOdLocationTrail(selectedItem as any, au) && (
-                            <p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">
-                              Route is recorded while this draft is open (employee device only).
-                            </p>
+                            <div className="mt-1 flex items-center justify-between gap-2">
+                              <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                                Route is recorded while this draft is open (employee device only).
+                              </p>
+                              <span
+                                className={`inline-flex items-center rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${
+                                  odTrailPublishMode === 'socket'
+                                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                                    : odTrailPublishMode === 'http'
+                                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+                                    : odTrailPublishMode === 'error'
+                                    ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300'
+                                    : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+                                }`}
+                              >
+                                {odTrailPublishMode === 'socket'
+                                  ? 'Live Socket'
+                                  : odTrailPublishMode === 'http'
+                                  ? 'HTTP Fallback'
+                                  : odTrailPublishMode === 'error'
+                                  ? 'Send Error'
+                                  : 'Awaiting'}
+                              </span>
+                            </div>
                           )}
                         </div>
                       );

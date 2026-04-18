@@ -14,6 +14,7 @@ interface MarkerPoint {
 interface RoutePolylinePoint {
   latitude: number;
   longitude: number;
+  capturedAt?: string;
 }
 
 interface DualLocationMapInnerProps {
@@ -38,6 +39,37 @@ const redIcon = L.icon({
   iconAnchor: [12, 41],
 });
 
+const ARROW_ICON = (rotationDeg: number) =>
+  L.divIcon({
+    className: '',
+    html: `<div style="transform: rotate(${rotationDeg}deg); width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-bottom: 10px solid #4f46e5; filter: drop-shadow(0 1px 2px rgba(15,23,42,.35));"></div>`,
+    iconSize: [12, 10],
+    iconAnchor: [6, 5],
+  });
+
+const haversineM = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+  const R = 6371000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+};
+
+const bearingDeg = (from: L.LatLngTuple, to: L.LatLngTuple) => {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const toDeg = (r: number) => (r * 180) / Math.PI;
+  const lat1 = toRad(from[0]);
+  const lat2 = toRad(to[0]);
+  const dLon = toRad(to[1] - from[1]);
+  const y = Math.sin(dLon) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+  const brng = (toDeg(Math.atan2(y, x)) + 360) % 360;
+  return brng;
+};
+
 export default function DualLocationMapInner({ markers, routePolyline, height }: DualLocationMapInnerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -52,11 +84,48 @@ export default function DualLocationMapInner({ markers, routePolyline, height }:
     }).addTo(map);
 
     const bounds: L.LatLngTuple[] = [];
+    const outMarker = (markers || []).find((m) => String(m.label || '').toUpperCase() === 'OUT');
+    const outPoint: L.LatLngTuple | null =
+      outMarker && Number.isFinite(outMarker.latitude) && Number.isFinite(outMarker.longitude)
+        ? [outMarker.latitude, outMarker.longitude]
+        : null;
 
-    if (routePolyline && routePolyline.length >= 2) {
-      const latlngs = routePolyline.map((p) => [p.latitude, p.longitude] as L.LatLngTuple);
-      L.polyline(latlngs, { color: '#6366f1', weight: 4, opacity: 0.82 }).addTo(map);
+    let routeForRender = routePolyline || [];
+    if (outPoint && routeForRender.length >= 2) {
+      const last = routeForRender[routeForRender.length - 1];
+      const gapToOut = haversineM(last.latitude, last.longitude, outPoint[0], outPoint[1]);
+      // If trail already reaches very near OD OUT, avoid visually merging/connecting with OUT marker.
+      if (gapToOut <= 50) {
+        routeForRender = routeForRender.slice(0, -1);
+      }
+    }
+
+    if (routeForRender.length >= 2) {
+      const latlngs = routeForRender.map((p) => [p.latitude, p.longitude] as L.LatLngTuple);
+      const routeLine = L.polyline(latlngs, { color: '#6366f1', weight: 4, opacity: 0.82 }).addTo(map);
+      routeLine.bindTooltip('Route direction: IN → OUT', { sticky: true, direction: 'top' });
       latlngs.forEach((pt) => bounds.push(pt));
+
+      // Add directional arrowheads along the path for clearer movement direction.
+      const arrowCount = Math.min(10, Math.max(2, Math.floor(latlngs.length / 3)));
+      const step = Math.max(1, Math.floor((latlngs.length - 1) / arrowCount));
+      for (let i = step; i < latlngs.length; i += step) {
+        const prev = latlngs[Math.max(0, i - 1)];
+        const curr = latlngs[i];
+        const angle = bearingDeg(prev, curr);
+        const arrowMarker = L.marker(curr, {
+          icon: ARROW_ICON(angle + 90),
+          interactive: false,
+          keyboard: false,
+        }).addTo(map);
+        const at = routeForRender[i]?.capturedAt;
+        if (at) {
+          arrowMarker.bindTooltip(`Direction • ${new Date(at).toLocaleTimeString()}`, {
+            direction: 'top',
+            opacity: 0.9,
+          });
+        }
+      }
     }
 
     (markers || []).forEach((m, idx) => {

@@ -4,6 +4,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useAuth } from './AuthContext';
 import { toast } from 'react-toastify';
+import { auth } from '@/lib/auth';
 
 interface SocketContextType {
     socket: Socket | null;
@@ -32,9 +33,11 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         }
 
         const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:5000';
+        const token = auth.getToken();
         const newSocket = io(socketUrl, {
             withCredentials: true,
             transports: ['websocket', 'polling'],
+            auth: token ? { token: `Bearer ${token}` } : undefined,
         });
 
         newSocket.on('connect', () => {
