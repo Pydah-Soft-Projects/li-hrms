@@ -17,6 +17,8 @@ const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
 const leaveRegisterService = require('../services/leaveRegisterService');
 const { notifyWorkflowEvent } = require('../../notifications/services/notificationService');
 const { assertEmployeeRangeRequestsEditable } = require('../../shared/services/payrollRequestLockService');
+const { appendOdTrailPoints } = require('../services/odTrailService');
+const { emitOdTrailUpdate } = require('../../shared/services/socketService');
 
 const formatODDate = (value) => {
   if (!value) return '';
@@ -535,74 +537,32 @@ exports.getOD = async (req, res) => {
   }
 };
 
-const MAX_OD_TRAIL_POINTS = 4000;
-const MAX_OD_TRAIL_BATCH = 40;
-
 // @desc    Append GPS trail points for draft OD (continuous tracking)
 // @route   POST /api/leaves/od/:id/location-trail
 // @access  Private (OD employee owner only)
 exports.appendODLocationTrail = async (req, res) => {
   try {
-    const od = await OD.findById(req.params.id);
-    if (!od) {
-      return res.status(404).json({ success: false, error: 'OD application not found' });
+    const { points, client } = req.body || {};
+    const result = await appendOdTrailPoints({
+      odId: req.params.id,
+      user: req.user,
+      points,
+      client,
+    });
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ success: false, error: result.error || 'Failed to save trail' });
     }
-    if (od.status !== 'draft') {
-      return res.status(400).json({ success: false, error: 'Location trail can only be updated while OD is in draft' });
-    }
-    if (od.endEvidence?.submittedAt) {
-      return res.status(400).json({ success: false, error: 'OD OUT already submitted; trail is closed' });
-    }
-    if (!isOdApplicantOwner(od, req.user)) {
-      return res.status(403).json({ success: false, error: 'Not authorized to update this OD trail' });
-    }
-
-    let { points, client } = req.body;
-    if (!Array.isArray(points) || points.length === 0) {
-      return res.status(400).json({ success: false, error: 'points[] is required' });
-    }
-    if (points.length > MAX_OD_TRAIL_BATCH) {
-      points = points.slice(0, MAX_OD_TRAIL_BATCH);
-    }
-
-    const source =
-      client === 'web' || client === 'mobile' ? client : points[0]?.source === 'web' || points[0]?.source === 'mobile' ? points[0].source : 'unknown';
-
-    const normalized = [];
-    for (const p of points) {
-      const lat = Number(p.latitude);
-      const lng = Number(p.longitude);
-      if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
-      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) continue;
-      normalized.push({
-        latitude: lat,
-        longitude: lng,
-        capturedAt: p.capturedAt ? new Date(p.capturedAt) : new Date(),
-        address: p.address ? String(p.address).slice(0, 500) : undefined,
-        accuracy: p.accuracy != null && Number.isFinite(Number(p.accuracy)) ? Number(p.accuracy) : undefined,
-        heading: p.heading != null && Number.isFinite(Number(p.heading)) ? Number(p.heading) : undefined,
-        speed: p.speed != null && Number.isFinite(Number(p.speed)) ? Number(p.speed) : undefined,
-        source: p.source === 'web' || p.source === 'mobile' ? p.source : source,
-      });
-    }
-
-    if (normalized.length === 0) {
-      return res.status(400).json({ success: false, error: 'No valid GPS points in request' });
-    }
-
-    if (!Array.isArray(od.locationTrail)) od.locationTrail = [];
-    od.locationTrail.push(...normalized);
-    if (od.locationTrail.length > MAX_OD_TRAIL_POINTS) {
-      od.locationTrail = od.locationTrail.slice(-MAX_OD_TRAIL_POINTS);
-    }
-    od.markModified('locationTrail');
-    await od.save();
+    emitOdTrailUpdate({
+      odId: req.params.id,
+      points: result.normalized,
+      trailLength: result.od.locationTrail.length,
+    });
 
     res.status(200).json({
       success: true,
       message: 'Trail points saved',
-      appended: normalized.length,
-      trailLength: od.locationTrail.length,
+      appended: result.normalized.length,
+      trailLength: result.od.locationTrail.length,
     });
   } catch (error) {
     console.error('Error appending OD location trail:', error);

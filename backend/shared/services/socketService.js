@@ -1,6 +1,43 @@
 const { Server } = require('socket.io');
+const { authenticateSocket } = require('./socketAuthService');
+const { appendOdTrailPoints, canViewOdTrail } = require('../../leaves/services/odTrailService');
+const OD = require('../../leaves/model/OD');
 
 let io;
+const SOCKET_DEBUG = String(process.env.SOCKET_DEBUG || '').toLowerCase() === 'true'
+    || String(process.env.OD_TRAIL_SOCKET_DEBUG || '').toLowerCase() === 'true';
+
+const debugLog = (message, data) => {
+    if (!SOCKET_DEBUG) return;
+    if (data !== undefined) {
+        console.log(`[SocketDebug] ${message}`, data);
+    } else {
+        console.log(`[SocketDebug] ${message}`);
+    }
+};
+
+const summarizePoints = (points) => {
+    const list = Array.isArray(points) ? points : [];
+    const first = list[0];
+    const last = list[list.length - 1];
+    const mini = (p) =>
+        p
+            ? {
+                latitude: p.latitude,
+                longitude: p.longitude,
+                capturedAt: p.capturedAt,
+                accuracy: p.accuracy,
+                heading: p.heading,
+                speed: p.speed,
+                source: p.source,
+            }
+            : null;
+    return {
+        count: list.length,
+        first: mini(first),
+        last: mini(last),
+    };
+};
 
 /**
  * Initialize Socket.io
@@ -18,6 +55,28 @@ const initSocket = (server, allowedOrigins) => {
 
     console.log('🔌 Socket.io initialized');
 
+    io.use(async (socket, next) => {
+        try {
+            const tokenFromAuth = socket.handshake?.auth?.token;
+            const authHeader = socket.handshake?.headers?.authorization;
+            const user = await authenticateSocket(tokenFromAuth || authHeader);
+            if (!user) return next(new Error('Unauthorized'));
+            socket.user = user;
+            debugLog('socket authenticated', {
+                socketId: socket.id,
+                userId: String(user?._id || ''),
+                role: user?.role,
+            });
+            return next();
+        } catch (error) {
+            debugLog('socket auth failed', {
+                socketId: socket.id,
+                message: error?.message || 'Unauthorized',
+            });
+            return next(new Error('Unauthorized'));
+        }
+    });
+
     io.on('connection', (socket) => {
         console.log(`🔌 New client connected: ${socket.id}`);
 
@@ -26,12 +85,141 @@ const initSocket = (server, allowedOrigins) => {
             socket.join(userId);
         });
 
+        socket.on('od_trail:join', async (payload = {}, ack) => {
+            try {
+                const odId = String(payload.odId || '').trim();
+                if (!odId) {
+                    debugLog('od_trail:join rejected (missing odId)', { socketId: socket.id });
+                    ack?.({ success: false, error: 'odId is required' });
+                    return;
+                }
+                const od = await OD.findById(odId).select('_id employeeId emp_no appliedBy status endEvidence').lean();
+                if (!od) {
+                    debugLog('od_trail:join rejected (OD not found)', { socketId: socket.id, odId });
+                    ack?.({ success: false, error: 'OD not found' });
+                    return;
+                }
+                if (!canViewOdTrail(od, socket.user)) {
+                    debugLog('od_trail:join rejected (not authorized)', {
+                        socketId: socket.id,
+                        odId,
+                        userId: String(socket.user?._id || ''),
+                    });
+                    ack?.({ success: false, error: 'Not authorized to view this OD trail' });
+                    return;
+                }
+                const room = `od_trail:${odId}`;
+                socket.join(room);
+                debugLog('od_trail:join accepted', {
+                    socketId: socket.id,
+                    odId,
+                    room,
+                    userId: String(socket.user?._id || ''),
+                });
+                ack?.({ success: true, room });
+            } catch (error) {
+                debugLog('od_trail:join error', {
+                    socketId: socket.id,
+                    message: error?.message || 'Join failed',
+                });
+                ack?.({ success: false, error: error.message || 'Join failed' });
+            }
+        });
+
+        socket.on('od_trail:leave', (payload = {}, ack) => {
+            const odId = String(payload.odId || '').trim();
+            if (!odId) {
+                debugLog('od_trail:leave rejected (missing odId)', { socketId: socket.id });
+                ack?.({ success: false, error: 'odId is required' });
+                return;
+            }
+            socket.leave(`od_trail:${odId}`);
+            debugLog('od_trail:leave', { socketId: socket.id, odId });
+            ack?.({ success: true });
+        });
+
+        socket.on('od_trail:publish', async (payload = {}, ack) => {
+            try {
+                const odId = String(payload.odId || '').trim();
+                const points = Array.isArray(payload.points) ? payload.points : [];
+                const client = payload.client;
+                debugLog('od_trail:publish received', {
+                    socketId: socket.id,
+                    odId,
+                    client,
+                    userId: String(socket.user?._id || ''),
+                    payload: summarizePoints(points),
+                });
+                const result = await appendOdTrailPoints({
+                    odId,
+                    user: socket.user,
+                    points,
+                    client,
+                });
+                if (!result.ok) {
+                    debugLog('od_trail:publish rejected', {
+                        socketId: socket.id,
+                        odId,
+                        error: result.error || 'Publish failed',
+                    });
+                    ack?.({ success: false, error: result.error || 'Publish failed' });
+                    return;
+                }
+                emitOdTrailUpdate({
+                    odId,
+                    points: result.normalized,
+                    trailLength: result.od.locationTrail.length,
+                });
+                debugLog('od_trail:publish stored', {
+                    socketId: socket.id,
+                    odId,
+                    appended: result.normalized.length,
+                    trailLength: result.od.locationTrail.length,
+                    normalized: summarizePoints(result.normalized),
+                });
+                ack?.({
+                    success: true,
+                    appended: result.normalized.length,
+                    trailLength: result.od.locationTrail.length,
+                });
+            } catch (error) {
+                debugLog('od_trail:publish error', {
+                    socketId: socket.id,
+                    message: error?.message || 'Publish failed',
+                });
+                ack?.({ success: false, error: error.message || 'Publish failed' });
+            }
+        });
+
         socket.on('disconnect', () => {
             console.log(`🔌 Client disconnected: ${socket.id}`);
         });
     });
 
     return io;
+};
+
+const emitOdTrailUpdate = ({ odId, points, trailLength }) => {
+    if (!io || !odId || !Array.isArray(points) || points.length === 0) return;
+    debugLog('od_trail:update broadcast', {
+        odId: String(odId),
+        trailLength: Number.isFinite(Number(trailLength)) ? Number(trailLength) : undefined,
+        payload: summarizePoints(points),
+    });
+    io.to(`od_trail:${String(odId)}`).emit('od_trail:update', {
+        odId: String(odId),
+        points: points.map((p) => ({
+            latitude: p.latitude,
+            longitude: p.longitude,
+            capturedAt: p.capturedAt ? new Date(p.capturedAt).toISOString() : new Date().toISOString(),
+            address: p.address,
+            accuracy: p.accuracy,
+            heading: p.heading,
+            speed: p.speed,
+            source: p.source,
+        })),
+        trailLength: Number.isFinite(Number(trailLength)) ? Number(trailLength) : undefined,
+    });
 };
 
 /**
@@ -67,6 +255,7 @@ const broadcastNotification = (data) => {
 module.exports = {
     initSocket,
     getIO,
+    emitOdTrailUpdate,
     sendNotification,
     broadcastNotification
 };
