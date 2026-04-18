@@ -13,7 +13,7 @@ const PORT = process.env.PORT || 5000;
 
 // Middleware
 const logger = require('./middleware/logger');
-app.use(logger); // Log all requests
+app.use(logger); // Log all requestsbn
 
 const allowedOrigins = [
   "*",

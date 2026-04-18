@@ -2574,6 +2574,29 @@ export const api = {
       body: JSON.stringify(data),
     });
   },
+
+  /** Append GPS trail points while OD is draft (continuous tracking). */
+  appendODLocationTrail: async (
+    id: string,
+    body: {
+      points: Array<{
+        latitude: number;
+        longitude: number;
+        capturedAt?: string;
+        address?: string;
+        accuracy?: number;
+        heading?: number;
+        speed?: number;
+        source?: 'web' | 'mobile';
+      }>;
+      client?: 'web' | 'mobile';
+    }
+  ) => {
+    return apiRequest<any>(`/leaves/od/${id}/location-trail`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  },
   
   // Check if date is holiday for an employee (OD specific)
   checkODHoliday: async (employeeId?: string, empNo?: string, date?: string) => {

@@ -115,7 +115,11 @@ export default function LocationPhotoCapture({
                     else if (err.code === 3) msg = 'Location request timed out.';
                     reject(new Error(msg));
                 },
-                { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+                {
+                    enableHighAccuracy: true,
+                    timeout: 30000,
+                    maximumAge: 60000,
+                }
             );
         });
     };
@@ -174,31 +178,7 @@ export default function LocationPhotoCapture({
         setLoadingStep('Initializing...');
 
         try {
-            // 1. Get Device Location (Parallel with processing if possible, but sequential is safer for error handling)
-            setLoadingStep('Acquiring Device Location...');
-            let locData: LocationData;
-            try {
-                locData = await getDeviceLocation();
-                setDeviceLocation(locData);
-
-                // Fetch Address
-                setLoadingStep('Resolving Address...');
-                const addr = await reverseGeocode(locData.latitude, locData.longitude);
-                locData.address = addr;
-                setAddress(addr);
-            } catch (locErr: any) {
-                console.warn('Could not get device location:', locErr);
-                if (locErr.message.includes('permission denied')) {
-                    setPermissionDeniedAtFetch(true);
-                    setShowPermissionPrompt(true);
-                } else if (locErr.message.includes('unavailable')) {
-                    setLocationUnavailableAtFetch(true);
-                    setShowPermissionPrompt(true);
-                }
-                throw new Error(`Location required: ${locErr.message}`);
-            }
-
-            // 2. Parse EXIF from Photo
+            // 1. Parse EXIF first (needed if device GPS fails but the photo has embedded coordinates)
             setLoadingStep('Analyzing Photo Metadata...');
             let extractedExifLoc: { latitude: number; longitude: number } | undefined = undefined;
             try {
@@ -215,6 +195,43 @@ export default function LocationPhotoCapture({
             } catch (exifErr) {
                 console.warn('Failed to extract EXIF:', exifErr);
                 setExifLocation(null);
+            }
+
+            // 2. Device GPS (trail watch / other tabs can hold the sensor — EXIF is fallback)
+            setLoadingStep('Acquiring Device Location...');
+            let locData: LocationData;
+            try {
+                locData = await getDeviceLocation();
+                setDeviceLocation(locData);
+
+                setLoadingStep('Resolving Address...');
+                const addr = await reverseGeocode(locData.latitude, locData.longitude);
+                locData.address = addr;
+                setAddress(addr);
+            } catch (locErr: any) {
+                console.warn('Could not get device location:', locErr);
+                if (extractedExifLoc) {
+                    locData = {
+                        latitude: extractedExifLoc.latitude,
+                        longitude: extractedExifLoc.longitude,
+                        capturedAt: new Date(),
+                        source: 'exif',
+                    };
+                    setDeviceLocation(locData);
+                    setLoadingStep('Resolving Address...');
+                    const addr = await reverseGeocode(locData.latitude, locData.longitude);
+                    locData.address = addr;
+                    setAddress(addr);
+                } else {
+                    if (locErr.message.includes('permission denied')) {
+                        setPermissionDeniedAtFetch(true);
+                        setShowPermissionPrompt(true);
+                    } else if (locErr.message.includes('unavailable')) {
+                        setLocationUnavailableAtFetch(true);
+                        setShowPermissionPrompt(true);
+                    }
+                    throw new Error(`Location required: ${locErr.message}`);
+                }
             }
 
             // 3. Verify Location Coherence
@@ -527,7 +544,11 @@ export default function LocationPhotoCapture({
                                             <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                                 <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
                                             </svg>
-                                            <span className="font-medium">Device Location Only</span>
+                                            <span className="font-medium">
+                                                {deviceLocation?.source === 'exif'
+                                                    ? 'Photo embedded GPS (device GPS unavailable)'
+                                                    : 'Device Location Only'}
+                                            </span>
                                         </div>
                                     )}
 
@@ -557,7 +578,9 @@ export default function LocationPhotoCapture({
                     {/* Grid Info */}
                     <div className="bg-slate-50 dark:bg-slate-900/50 px-4 py-2 border-t border-slate-100 dark:border-slate-800 grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-0 sm:divide-x divide-slate-200 dark:divide-slate-700">
                         <div className="sm:pr-4">
-                            <span className="block text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-0.5">Device Lat/Lon</span>
+                            <span className="block text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-0.5">
+                                {deviceLocation?.source === 'exif' ? 'Recorded Lat/Lon' : 'Device Lat/Lon'}
+                            </span>
                             <span className="block text-xs font-mono text-slate-700 dark:text-slate-300">
                                 {deviceLocation?.latitude.toFixed(6)}, {deviceLocation?.longitude.toFixed(6)}
                             </span>
