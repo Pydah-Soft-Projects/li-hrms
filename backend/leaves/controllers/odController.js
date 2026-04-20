@@ -1400,6 +1400,14 @@ exports.updateOD = async (req, res) => {
 
     await od.save();
 
+    // Trigger final road-snapping when OD OUT is submitted (draft → pending)
+    if (promotedToPendingOnOutSubmission && Array.isArray(od.locationTrail) && od.locationTrail.length >= 2) {
+      const { snapOdTrailAsync } = require('../services/odTrailService');
+      snapOdTrailAsync(od._id.toString()).catch((err) => {
+        console.warn('[OD-FLOW] Final trail snap failed:', err.message || err);
+      });
+    }
+
     // When OD is approved (e.g. Super Admin set status via updateOD), update AttendanceDaily for each day in range and recalc monthly summary
     if (od.status === 'approved') {
       try {

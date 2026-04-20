@@ -86,3 +86,26 @@ export function subscribeOdTrailUpdates(
   };
 }
 
+/**
+ * Subscribe to road-snapped polyline updates for an OD.
+ * Fires when the backend finishes the OSRM pipeline on accumulated trail points.
+ */
+export function subscribeOdTrailSnappedUpdates(
+  odId: string,
+  onSnapped: (data: { encodedPolyline: string | null; snappedPoints: { latitude: number; longitude: number }[] }) => void
+): () => void {
+  const s = getSocket();
+  if (!s || !odId) return () => {};
+  const handler = (payload: { odId?: string; encodedPolyline?: string | null; snappedPoints?: { latitude: number; longitude: number }[] }) => {
+    if (!payload || String(payload.odId || '') !== String(odId)) return;
+    onSnapped({
+      encodedPolyline: payload.encodedPolyline ?? null,
+      snappedPoints: Array.isArray(payload.snappedPoints) ? payload.snappedPoints : [],
+    });
+  };
+  s.on('od_trail:snapped_update', handler);
+  return () => {
+    s.off('od_trail:snapped_update', handler);
+  };
+}
+

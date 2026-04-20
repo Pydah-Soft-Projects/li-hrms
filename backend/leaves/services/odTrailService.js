@@ -1,4 +1,5 @@
 const OD = require('../model/OD');
+const { processTrailPipeline, SNAP_THRESHOLD } = require('./roadSnappingService');
 
 const MAX_OD_TRAIL_POINTS = 4000;
 const MAX_OD_TRAIL_BATCH = 40;
@@ -72,11 +73,80 @@ async function appendOdTrailPoints({ odId, user, points, client }) {
   od.markModified('locationTrail');
   await od.save();
 
+  // Trigger async road snapping if enough new points have accumulated
+  const lastIdx = typeof od.lastSnappedIndex === 'number' ? od.lastSnappedIndex : -1;
+  const unsnappedCount = od.locationTrail.length - 1 - lastIdx;
+  if (unsnappedCount >= SNAP_THRESHOLD) {
+    // Fire-and-forget: don't block the response/socket ack
+    snapOdTrailAsync(od._id.toString()).catch((err) => {
+      console.warn('[OdTrail] Async snap failed:', err.message || err);
+    });
+  }
+
   return { ok: true, od, normalized };
+}
+
+/**
+ * Run the road-snapping pipeline on an OD's full locationTrail.
+ * Called asynchronously after enough new points accumulate, and also
+ * on OD OUT submission for the final clean path.
+ *
+ * @param {string} odId
+ * @returns {Promise<{ encodedPolyline: string|null, snappedCount: number } | null>}
+ */
+async function snapOdTrailAsync(odId) {
+  const od = await OD.findById(odId);
+  if (!od) return null;
+  const trail = od.locationTrail;
+  if (!Array.isArray(trail) || trail.length < 2) return null;
+
+  // Extract the coordinate subset for snapping
+  const rawCoords = trail.map((p) => ({
+    latitude: Number(p.latitude),
+    longitude: Number(p.longitude),
+    accuracy: p.accuracy != null ? Number(p.accuracy) : undefined,
+  })).filter((p) => Number.isFinite(p.latitude) && Number.isFinite(p.longitude));
+
+  if (rawCoords.length < 2) return null;
+
+  try {
+    const result = await processTrailPipeline(rawCoords);
+
+    od.snappedTrail = result.snappedPoints;
+    od.encodedPolyline = result.encodedPolyline;
+    od.lastSnappedIndex = trail.length - 1;
+    od.markModified('snappedTrail');
+    od.markModified('encodedPolyline');
+    await od.save();
+
+    console.log(
+      `[OdTrail] Snapped OD ${odId}: ${result.meta.rawCount} raw → ${result.meta.snappedCount} snapped → ${result.meta.compressedCount} compressed (${result.meta.encodedLength} chars)`
+    );
+
+    // Broadcast the snapped update via socket (if socketService is available)
+    try {
+      const { emitOdTrailSnappedUpdate } = require('../../shared/services/socketService');
+      emitOdTrailSnappedUpdate({
+        odId: String(odId),
+        encodedPolyline: result.encodedPolyline,
+        snappedPoints: result.snappedPoints,
+      });
+    } catch {
+      // socketService may not be initialized yet during startup
+    }
+
+    return {
+      encodedPolyline: result.encodedPolyline,
+      snappedCount: result.snappedPoints.length,
+    };
+  } catch (err) {
+    console.warn('[OdTrail] snapOdTrailAsync error:', err.message || err);
+    return null;
+  }
 }
 
 module.exports = {
   appendOdTrailPoints,
   canViewOdTrail,
+  snapOdTrailAsync,
 };
-

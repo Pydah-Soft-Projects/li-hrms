@@ -223,6 +223,27 @@ const emitOdTrailUpdate = ({ odId, points, trailLength }) => {
 };
 
 /**
+ * Broadcast road-snapped polyline update to all viewers of an OD trail room.
+ * Called asynchronously from odTrailService after the OSRM pipeline completes.
+ * @param {{ odId: string, encodedPolyline: string, snappedPoints?: {latitude:number,longitude:number}[] }} payload
+ */
+const emitOdTrailSnappedUpdate = ({ odId, encodedPolyline, snappedPoints }) => {
+    if (!io || !odId) return;
+    debugLog('od_trail:snapped_update broadcast', {
+        odId: String(odId),
+        encodedLength: encodedPolyline?.length || 0,
+        snappedCount: snappedPoints?.length || 0,
+    });
+    io.to(`od_trail:${String(odId)}`).emit('od_trail:snapped_update', {
+        odId: String(odId),
+        encodedPolyline: encodedPolyline || null,
+        snappedPoints: Array.isArray(snappedPoints)
+            ? snappedPoints.map((p) => ({ latitude: p.latitude, longitude: p.longitude }))
+            : [],
+    });
+};
+
+/**
  * Get the IO instance
  * @returns {Object} Socket.io server instance
  */
@@ -256,6 +277,7 @@ module.exports = {
     initSocket,
     getIO,
     emitOdTrailUpdate,
+    emitOdTrailSnappedUpdate,
     sendNotification,
     broadcastNotification
 };

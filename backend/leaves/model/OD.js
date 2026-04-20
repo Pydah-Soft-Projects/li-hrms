@@ -470,6 +470,26 @@ const ODSchema = new mongoose.Schema(
       },
     ],
 
+    // Road-snapped + compressed trail (processed from raw locationTrail via OSRM)
+    snappedTrail: [
+      {
+        latitude: { type: Number, required: true },
+        longitude: { type: Number, required: true },
+      },
+    ],
+
+    // Google-encoded polyline string (compact representation of snappedTrail)
+    encodedPolyline: {
+      type: String,
+      default: null,
+    },
+
+    // Index of the last raw trail point that was included in the latest snap
+    lastSnappedIndex: {
+      type: Number,
+      default: -1,
+    },
+
     // Backward compatibility fields (legacy single evidence payload)
     geoLocation: {
       latitude: { type: Number },

@@ -20,14 +20,17 @@ interface DualLocationMapProps {
   markers: MarkerPoint[];
   /** Optional draft OD route (IN→OUT movement), shown as a polyline */
   routePolyline?: RoutePolylinePoint[];
+  /** Google-encoded polyline from road snapping (preferred over raw routePolyline) */
+  encodedPolyline?: string | null;
   className?: string;
   height?: string;
 }
 
-export default function DualLocationMap({ markers, routePolyline, className = '', height = '180px' }: DualLocationMapProps) {
+export default function DualLocationMap({ markers, routePolyline, encodedPolyline, className = '', height = '180px' }: DualLocationMapProps) {
   const [MapComponent, setMapComponent] = useState<React.ComponentType<{
     markers: MarkerPoint[];
     routePolyline?: RoutePolylinePoint[];
+    encodedPolyline?: string | null;
     height: string;
   }> | null>(null);
   const [isFullscreenOpen, setIsFullscreenOpen] = useState(false);
@@ -68,7 +71,7 @@ export default function DualLocationMap({ markers, routePolyline, className = ''
   return (
     <>
       <div className={`relative ${className}`}>
-        <MapComponent markers={markers} routePolyline={routePolyline} height={height} />
+        <MapComponent markers={markers} routePolyline={routePolyline} encodedPolyline={encodedPolyline} height={height} />
         <button
           type="button"
           onClick={() => setIsFullscreenOpen(true)}
@@ -95,7 +98,7 @@ export default function DualLocationMap({ markers, routePolyline, className = ''
                   <X className="h-4 w-4" />
                 </button>
               </div>
-              <MapComponent markers={markers} routePolyline={routePolyline} height="100%" />
+              <MapComponent markers={markers} routePolyline={routePolyline} encodedPolyline={encodedPolyline} height="100%" />
             </div>
           </div>
         </div>
@@ -103,4 +106,3 @@ export default function DualLocationMap({ markers, routePolyline, className = ''
     </>
   );
 }
-

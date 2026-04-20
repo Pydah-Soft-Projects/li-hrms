@@ -20,6 +20,8 @@ interface RoutePolylinePoint {
 interface DualLocationMapInnerProps {
   markers: MarkerPoint[];
   routePolyline?: RoutePolylinePoint[];
+  /** Google-encoded polyline string from road snapping (preferred over raw routePolyline) */
+  encodedPolyline?: string | null;
   height: string;
 }
 
@@ -47,6 +49,14 @@ const ARROW_ICON = (rotationDeg: number) =>
     iconAnchor: [6, 5],
   });
 
+const SNAPPED_ARROW_ICON = (rotationDeg: number) =>
+  L.divIcon({
+    className: '',
+    html: `<div style="transform: rotate(${rotationDeg}deg); width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-bottom: 10px solid #059669; filter: drop-shadow(0 1px 2px rgba(15,23,42,.35));"></div>`,
+    iconSize: [12, 10],
+    iconAnchor: [6, 5],
+  });
+
 const haversineM = (lat1: number, lon1: number, lat2: number, lon2: number) => {
   const R = 6371000;
   const toRad = (d: number) => (d * Math.PI) / 180;
@@ -70,13 +80,51 @@ const bearingDeg = (from: L.LatLngTuple, to: L.LatLngTuple) => {
   return brng;
 };
 
-export default function DualLocationMapInner({ markers, routePolyline, height }: DualLocationMapInnerProps) {
+/**
+ * Decode a Google-format encoded polyline string to {latitude, longitude}[].
+ */
+function decodePolyline(encoded: string): { latitude: number; longitude: number }[] {
+  if (!encoded) return [];
+  const points: { latitude: number; longitude: number }[] = [];
+  let lat = 0;
+  let lng = 0;
+  let index = 0;
+
+  while (index < encoded.length) {
+    // Decode latitude
+    let result = 0;
+    let shift = 0;
+    let temp: number;
+    do {
+      temp = encoded.charCodeAt(index++) - 63;
+      result |= (temp & 0x1f) << shift;
+      shift += 5;
+    } while (temp >= 0x20);
+    lat += result & 1 ? ~(result >> 1) : result >> 1;
+
+    // Decode longitude
+    result = 0;
+    shift = 0;
+    do {
+      temp = encoded.charCodeAt(index++) - 63;
+      result |= (temp & 0x1f) << shift;
+      shift += 5;
+    } while (temp >= 0x20);
+    lng += result & 1 ? ~(result >> 1) : result >> 1;
+
+    points.push({ latitude: lat / 1e5, longitude: lng / 1e5 });
+  }
+
+  return points;
+}
+
+export default function DualLocationMapInner({ markers, routePolyline, encodedPolyline, height }: DualLocationMapInnerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    if (!markers?.length && (!routePolyline || routePolyline.length < 2)) return;
+    if (!markers?.length && (!routePolyline || routePolyline.length < 2) && !encodedPolyline) return;
 
     const map = L.map(el, { zoom: 15, scrollWheelZoom: false });
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -90,11 +138,45 @@ export default function DualLocationMapInner({ markers, routePolyline, height }:
         ? [outMarker.latitude, outMarker.longitude]
         : null;
 
+    // Decode snapped polyline if available
+    const snappedPoints = encodedPolyline ? decodePolyline(encodedPolyline) : null;
+    const hasSnapped = snappedPoints && snappedPoints.length >= 2;
+
+    // --- Render SNAPPED route (green, solid — road-aligned) ---
+    if (hasSnapped) {
+      const snappedLatLngs = snappedPoints.map(
+        (p) => [p.latitude, p.longitude] as L.LatLngTuple
+      );
+      const snappedLine = L.polyline(snappedLatLngs, {
+        color: '#059669',
+        weight: 5,
+        opacity: 0.9,
+        lineCap: 'round',
+        lineJoin: 'round',
+      }).addTo(map);
+      snappedLine.bindTooltip('Road-aligned route (IN → OUT)', { sticky: true, direction: 'top' });
+      snappedLatLngs.forEach((pt) => bounds.push(pt));
+
+      // Directional arrows on snapped route
+      const arrowCount = Math.min(10, Math.max(2, Math.floor(snappedLatLngs.length / 4)));
+      const step = Math.max(1, Math.floor((snappedLatLngs.length - 1) / arrowCount));
+      for (let i = step; i < snappedLatLngs.length; i += step) {
+        const prev = snappedLatLngs[Math.max(0, i - 1)];
+        const curr = snappedLatLngs[i];
+        const angle = bearingDeg(prev, curr);
+        L.marker(curr, {
+          icon: SNAPPED_ARROW_ICON(angle + 90),
+          interactive: false,
+          keyboard: false,
+        }).addTo(map);
+      }
+    }
+
+    // --- Render RAW route (indigo, dashed — original GPS trail) ---
     let routeForRender = routePolyline || [];
     if (outPoint && routeForRender.length >= 2) {
       const last = routeForRender[routeForRender.length - 1];
       const gapToOut = haversineM(last.latitude, last.longitude, outPoint[0], outPoint[1]);
-      // If trail already reaches very near OD OUT, avoid visually merging/connecting with OUT marker.
       if (gapToOut <= 50) {
         routeForRender = routeForRender.slice(0, -1);
       }
@@ -102,28 +184,40 @@ export default function DualLocationMapInner({ markers, routePolyline, height }:
 
     if (routeForRender.length >= 2) {
       const latlngs = routeForRender.map((p) => [p.latitude, p.longitude] as L.LatLngTuple);
-      const routeLine = L.polyline(latlngs, { color: '#6366f1', weight: 4, opacity: 0.82 }).addTo(map);
-      routeLine.bindTooltip('Route direction: IN → OUT', { sticky: true, direction: 'top' });
-      latlngs.forEach((pt) => bounds.push(pt));
+      const routeLine = L.polyline(latlngs, {
+        color: hasSnapped ? '#94a3b8' : '#6366f1',
+        weight: hasSnapped ? 2 : 4,
+        opacity: hasSnapped ? 0.45 : 0.82,
+        dashArray: hasSnapped ? '6, 8' : undefined,
+      }).addTo(map);
+      routeLine.bindTooltip(
+        hasSnapped ? 'Raw GPS trail (reference)' : 'Route direction: IN → OUT',
+        { sticky: true, direction: 'top' }
+      );
+      if (!hasSnapped) {
+        latlngs.forEach((pt) => bounds.push(pt));
+      }
 
-      // Add directional arrowheads along the path for clearer movement direction.
-      const arrowCount = Math.min(10, Math.max(2, Math.floor(latlngs.length / 3)));
-      const step = Math.max(1, Math.floor((latlngs.length - 1) / arrowCount));
-      for (let i = step; i < latlngs.length; i += step) {
-        const prev = latlngs[Math.max(0, i - 1)];
-        const curr = latlngs[i];
-        const angle = bearingDeg(prev, curr);
-        const arrowMarker = L.marker(curr, {
-          icon: ARROW_ICON(angle + 90),
-          interactive: false,
-          keyboard: false,
-        }).addTo(map);
-        const at = routeForRender[i]?.capturedAt;
-        if (at) {
-          arrowMarker.bindTooltip(`Direction • ${new Date(at).toLocaleTimeString()}`, {
-            direction: 'top',
-            opacity: 0.9,
-          });
+      // Directional arrowheads (only when no snapped route, to avoid clutter)
+      if (!hasSnapped) {
+        const arrowCount = Math.min(10, Math.max(2, Math.floor(latlngs.length / 3)));
+        const step = Math.max(1, Math.floor((latlngs.length - 1) / arrowCount));
+        for (let i = step; i < latlngs.length; i += step) {
+          const prev = latlngs[Math.max(0, i - 1)];
+          const curr = latlngs[i];
+          const angle = bearingDeg(prev, curr);
+          const arrowMarker = L.marker(curr, {
+            icon: ARROW_ICON(angle + 90),
+            interactive: false,
+            keyboard: false,
+          }).addTo(map);
+          const at = routeForRender[i]?.capturedAt;
+          if (at) {
+            arrowMarker.bindTooltip(`Direction • ${new Date(at).toLocaleTimeString()}`, {
+              direction: 'top',
+              opacity: 0.9,
+            });
+          }
         }
       }
     }
@@ -144,7 +238,7 @@ export default function DualLocationMapInner({ markers, routePolyline, height }:
     return () => {
       map.remove();
     };
-  }, [markers, routePolyline]);
+  }, [markers, routePolyline, encodedPolyline]);
 
   return (
     <div
@@ -154,4 +248,3 @@ export default function DualLocationMapInner({ markers, routePolyline, height }:
     />
   );
 }
-

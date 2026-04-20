@@ -30,6 +30,7 @@ import {
   leaveOdTrailRoom,
   publishOdTrailPoints,
   subscribeOdTrailUpdates,
+  subscribeOdTrailSnappedUpdates,
 } from '@/lib/odTrailSocket';
 
 const DualLocationMap = dynamic(() => import('@/components/DualLocationMap'), { ssr: false });
@@ -1664,6 +1665,18 @@ function LeavesPageContent() {
       .filter((p) => Number.isFinite(p.latitude) && Number.isFinite(p.longitude));
   }, [selectedItem, detailType]);
 
+  // Road-snapped encoded polyline (from backend OSRM pipeline)
+  const [odEncodedPolyline, setOdEncodedPolyline] = useState<string | null>(null);
+
+  // Sync initial encodedPolyline from selectedItem when detail dialog opens
+  useEffect(() => {
+    if (showDetailDialog && detailType === 'od' && selectedItem) {
+      setOdEncodedPolyline((selectedItem as any).encodedPolyline || null);
+    } else {
+      setOdEncodedPolyline(null);
+    }
+  }, [showDetailDialog, detailType, selectedItem?._id]);
+
   useEffect(() => {
     if (!showDetailDialog || detailType !== 'od' || !selectedItem?._id) return undefined;
     const odId = String(selectedItem._id);
@@ -1675,8 +1688,15 @@ function LeavesPageContent() {
         return { ...prev, locationTrail: merged };
       });
     });
+    // Subscribe to road-snapped polyline updates (fires after OSRM pipeline)
+    const offSnapped = subscribeOdTrailSnappedUpdates(odId, (data) => {
+      if (data.encodedPolyline) {
+        setOdEncodedPolyline(data.encodedPolyline);
+      }
+    });
     return () => {
       offSocket();
+      offSnapped();
       leaveOdTrailRoom(odId);
     };
   }, [showDetailDialog, detailType, selectedItem?._id]);
@@ -4391,6 +4411,7 @@ function LeavesPageContent() {
                           <DualLocationMap
                             markers={markers as any}
                             routePolyline={odRoutePolyline.length >= 2 ? odRoutePolyline : undefined}
+                            encodedPolyline={odEncodedPolyline}
                             height="190px"
                           />
                           {canRecordOdLocationTrail(selectedItem as any, au) && (

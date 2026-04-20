@@ -237,31 +237,33 @@ exports.getDashboardStats = async (req, res) => {
         status: { $in: ['PRESENT', 'HALF_DAY', 'PARTIAL'] }
       });
 
-      const leaveBalance = myApprovedLeaves - myPendingLeaves;
-
+      let leaveBalance = 0;
       let compensatoryOffBalance = null;
       let yearlyClCreditDaysPosted = null;
       let yearlyCclCreditDaysPosted = null;
       let financialYearRegister = null;
 
       if (empMongoId) {
+        const empSnap = await Employee.findById(empMongoId).select('compensatoryOffs casualLeaves').lean();
         const fy = await dateCycleService.getFinancialYearForDate(today);
         financialYearRegister = fy.name;
+        
         const yDoc = await LeaveRegisterYear.findOne({
           employeeId: empMongoId,
           financialYear: fy.name,
         })
           .select(
-            'compensatoryOffBalance yearlyClCreditDaysPosted yearlyCclCreditDaysPosted financialYear'
+            'yearlyClCreditDaysPosted yearlyCclCreditDaysPosted financialYear'
           )
           .lean();
+          
+        leaveBalance = Number(empSnap?.casualLeaves) || 0;
+        compensatoryOffBalance = Number(empSnap?.compensatoryOffs) || 0;
+
         if (yDoc) {
-          compensatoryOffBalance = Number(yDoc.compensatoryOffBalance) || 0;
           yearlyClCreditDaysPosted = Number(yDoc.yearlyClCreditDaysPosted) || 0;
           yearlyCclCreditDaysPosted = Number(yDoc.yearlyCclCreditDaysPosted) || 0;
         } else {
-          const empSnap = await Employee.findById(empMongoId).select('compensatoryOffs').lean();
-          compensatoryOffBalance = Number(empSnap?.compensatoryOffs) || 0;
           yearlyClCreditDaysPosted = 0;
           yearlyCclCreditDaysPosted = 0;
         }
