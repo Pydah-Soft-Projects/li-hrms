@@ -335,6 +335,8 @@ export default function ResignationsPage() {
   const [applyType, setApplyType] = useState<'resignation' | 'termination'>('resignation');
   const [applyLoading, setApplyLoading] = useState(false);
   const [applyModalLoading, setApplyModalLoading] = useState(false);
+  const [applyPendingAssets, setApplyPendingAssets] = useState<any[]>([]);
+  const [applyPendingAssetsLoading, setApplyPendingAssetsLoading] = useState(false);
 
   const [filters, setFilters] = useState({
     search: '',
@@ -361,6 +363,45 @@ export default function ResignationsPage() {
       emp.name.toLowerCase().includes(q) || emp.emp_no.toLowerCase().includes(q)
     );
   }, [applyEmployees, applyEmployeeSearch]);
+
+  useEffect(() => {
+    if (!showApplyModal || !applySelectedEmpNo) {
+      setApplyPendingAssets([]);
+      return;
+    }
+    let cancelled = false;
+    const loadPendingAssets = async () => {
+      setApplyPendingAssetsLoading(true);
+      try {
+        if (applySelfOnly) {
+          const myAssetsRes = await api.getMyAssetAssignments();
+          if (cancelled) return;
+          const pending = Array.isArray(myAssetsRes?.data)
+            ? myAssetsRes.data.filter((item: any) => item?.status === 'assigned')
+            : [];
+          setApplyPendingAssets(pending);
+          return;
+        }
+        const employeeRes = await api.getEmployee(applySelectedEmpNo);
+        const employeeId = employeeRes?.success ? employeeRes?.data?._id : null;
+        if (!employeeId) {
+          if (!cancelled) setApplyPendingAssets([]);
+          return;
+        }
+        const assetsRes = await api.getAssetAssignments({ employeeId, status: 'assigned' });
+        if (cancelled) return;
+        setApplyPendingAssets(Array.isArray(assetsRes?.data) ? assetsRes.data : []);
+      } catch (_) {
+        if (!cancelled) setApplyPendingAssets([]);
+      } finally {
+        if (!cancelled) setApplyPendingAssetsLoading(false);
+      }
+    };
+    void loadPendingAssets();
+    return () => {
+      cancelled = true;
+    };
+  }, [showApplyModal, applySelectedEmpNo, applySelfOnly]);
 
   useEffect(() => {
     const user = auth.getUser();
@@ -420,6 +461,7 @@ export default function ResignationsPage() {
     }
     setApplyRemarks('');
     setApplyEmployeeSearch('');
+    setApplyPendingAssets([]);
     
     if (type === 'termination') {
       setApplyLastWorkingDate(toLocalDateString(new Date()));
@@ -504,7 +546,6 @@ export default function ResignationsPage() {
           });
           setApplyEmployeeMeta(meta);
           setApplyEmployees(options);
-          if (options.length > 0 && !applySelectedEmpNo) setApplySelectedEmpNo(options[0].emp_no);
         }
       } catch (_) {
         if (!cancelled) {
@@ -522,6 +563,14 @@ export default function ResignationsPage() {
   const handleSubmitResignation = async () => {
     if (!applySelectedEmpNo || !applyLastWorkingDate) {
       toast.error(applySelfOnly ? 'Last working date is required.' : 'Please select an employee and ensure last working date is set.');
+      return;
+    }
+    if (applyPendingAssets.length > 0) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Pending asset return required',
+        text: 'This employee still has assigned assets. Please return all assets before submitting resignation.',
+      });
       return;
     }
     setApplyLoading(true);
@@ -1405,6 +1454,37 @@ export default function ResignationsPage() {
                       </p>
                     )}
                 </div>
+                {applySelectedEmpNo && (
+                  <div className={`rounded-xl border p-3 ${
+                    applyPendingAssets.length > 0
+                      ? 'border-amber-200 bg-amber-50/70 dark:border-amber-900/40 dark:bg-amber-950/20'
+                      : 'border-emerald-200 bg-emerald-50/70 dark:border-emerald-900/40 dark:bg-emerald-950/20'
+                  }`}>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Asset return status
+                    </p>
+                    {applyPendingAssetsLoading ? (
+                      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Checking pending assets...</p>
+                    ) : applyPendingAssets.length > 0 ? (
+                      <>
+                        <p className="mt-2 text-xs font-semibold text-amber-700 dark:text-amber-300">
+                          {applyPendingAssets.length} asset{applyPendingAssets.length > 1 ? 's are' : ' is'} still assigned. Return required before resignation.
+                        </p>
+                        <div className="mt-2 max-h-24 space-y-1 overflow-y-auto rounded-lg border border-amber-200/60 bg-white/70 px-2 py-2 text-xs dark:border-amber-900/40 dark:bg-slate-900/50">
+                          {applyPendingAssets.map((item: any) => (
+                            <p key={item._id} className="text-slate-700 dark:text-slate-200">
+                              - {item?.asset?.name || 'Asset'} ({item?.asset?.visibilityScope === 'division' ? 'Division scoped' : 'Universal'})
+                            </p>
+                          ))}
+                        </div>
+                      </>
+                    ) : (
+                      <p className="mt-2 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                        No pending assets. Resignation can be submitted.
+                      </p>
+                    )}
+                  </div>
+                )}
                 {applyType === 'termination' && (
                   <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-900/10 border border-rose-100 dark:border-rose-900/30">
                     <p className="text-[11px] text-rose-600 dark:text-rose-400 leading-relaxed font-medium">

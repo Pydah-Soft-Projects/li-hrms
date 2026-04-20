@@ -32,7 +32,7 @@ jobs:
 
             cd backend && npm install --production
             cd ../biometric && npm install --production
-            cd ../frontend && npm install
+            cd ../frontend && npm install && npm run build
 
             cd ..
             pm2 reload ecosystem.config.js

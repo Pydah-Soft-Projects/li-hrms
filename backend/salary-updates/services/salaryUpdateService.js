@@ -43,6 +43,170 @@ const STATIC_HEADER_TO_FIELD = {
     [normalizeHeader('employee_group')]: 'employee_group_id',
 };
 
+const normalizeSelectionList = (input) => {
+    const values = [];
+    (Array.isArray(input) ? input : [input]).forEach(item => {
+        const s = String(item || '').trim();
+        if (!s) return;
+        if (s.includes(',')) {
+            s.split(',').forEach(part => {
+                const t = String(part || '').trim();
+                if (t) values.push(t);
+            });
+        } else {
+            values.push(s);
+        }
+    });
+    return [...new Set(values)];
+};
+
+const getSelectedAllowanceDeductionMasters = async (selectedComponentIds = []) => {
+    const ids = normalizeSelectionList(selectedComponentIds).filter(id => mongoose.Types.ObjectId.isValid(id));
+    if (ids.length === 0) return [];
+
+    return AllowanceDeductionMaster.find({
+        _id: { $in: ids },
+        isActive: true,
+    })
+        .select('name category globalRule departmentRules')
+        .sort({ category: 1, name: 1 })
+        .lean();
+};
+
+const resolveAllowanceDeductionRule = (master, divisionId, departmentId) => {
+    if (!master) return null;
+
+    const divIdStr = divisionId ? String(divisionId) : null;
+    const deptIdStr = departmentId ? String(departmentId) : null;
+
+    if (divIdStr && deptIdStr && Array.isArray(master.departmentRules)) {
+        const divDeptRule = master.departmentRules.find(rule =>
+            rule.divisionId && String(rule.divisionId) === divIdStr &&
+            rule.departmentId && String(rule.departmentId) === deptIdStr
+        );
+        if (divDeptRule) return divDeptRule;
+    }
+
+    if (deptIdStr && Array.isArray(master.departmentRules)) {
+        const deptRule = master.departmentRules.find(rule =>
+            !rule.divisionId &&
+            rule.departmentId && String(rule.departmentId) === deptIdStr
+        );
+        if (deptRule) return deptRule;
+    }
+
+    return master.globalRule || null;
+};
+
+const appendSelectedAllowanceDeductionColumns = (row, emp, masters) => {
+    if (!Array.isArray(masters) || masters.length === 0) return;
+
+    const allowMap = new Map();
+    (Array.isArray(emp.employeeAllowances) ? emp.employeeAllowances : []).forEach(item => {
+        if (item?.masterId) allowMap.set(String(item.masterId), item);
+    });
+    const deductMap = new Map();
+    (Array.isArray(emp.employeeDeductions) ? emp.employeeDeductions : []).forEach(item => {
+        if (item?.masterId) deductMap.set(String(item.masterId), item);
+    });
+
+    masters.forEach(master => {
+        const key = `${master.name} (${master.category})`;
+        const masterId = String(master._id);
+        let activeRule = master.category === 'deduction' ? deductMap.get(masterId) : allowMap.get(masterId);
+
+        if (!activeRule) {
+            activeRule = resolveAllowanceDeductionRule(master, emp.division_id, emp.department_id);
+        }
+
+        let value = '';
+        if (activeRule) {
+            if (activeRule.type === 'percentage') {
+                value = activeRule.percentage;
+            } else if (activeRule.type === 'fixed') {
+                value = activeRule.amount;
+            }
+
+            if (value === null || value === undefined || value === '') {
+                if (activeRule.amount !== null && activeRule.amount !== undefined) {
+                    value = activeRule.amount;
+                } else if (activeRule.percentage !== null && activeRule.percentage !== undefined) {
+                    value = activeRule.percentage;
+                }
+            }
+
+            if (value === null || value === undefined) value = '';
+        }
+
+        if (master.category === 'deduction' && value !== '' && value !== null && value !== undefined) {
+            const n = Number(value);
+            value = Number.isFinite(n) ? -Math.abs(n) : value;
+        }
+
+        row[key] = value;
+    });
+};
+
+const applyAllowanceDeductionUpdatesFromRow = (row, employee, masterByHeader) => {
+    const nextAllowances = Array.isArray(employee.employeeAllowances) ? [...employee.employeeAllowances] : [];
+    const nextDeductions = Array.isArray(employee.employeeDeductions) ? [...employee.employeeDeductions] : [];
+    let touched = false;
+
+    const upsertOverride = (arr, masterId, overrideObj) => {
+        const idx = arr.findIndex(item => String(item.masterId) === String(masterId));
+        if (idx >= 0) arr[idx] = { ...(arr[idx].toObject?.() || arr[idx]), ...overrideObj };
+        else arr.push(overrideObj);
+    };
+
+    const removeOverride = (arr, masterId) => arr.filter(item => String(item.masterId) !== String(masterId));
+
+    Object.keys(row).forEach(header => {
+        const master = masterByHeader.get(header);
+        if (!master) return;
+
+        touched = true;
+        const masterId = String(master._id);
+        const cell = row[header];
+        const isBlank = cell === undefined || cell === null || cell === '';
+        const targetArr = master.category === 'deduction' ? nextDeductions : nextAllowances;
+
+        if (isBlank) {
+            const filtered = removeOverride(targetArr, masterId);
+            targetArr.length = 0;
+            targetArr.push(...filtered);
+            return;
+        }
+
+        const n = Number(cell);
+        if (!Number.isFinite(n)) return;
+
+        const valueAbs = Math.abs(n);
+        const rule = master.globalRule || {};
+        const overrideObj = {
+            masterId,
+            name: master.name,
+            category: master.category,
+            type: rule.type,
+            amount: rule.type === 'fixed' ? valueAbs : null,
+            percentage: rule.type === 'percentage' ? valueAbs : null,
+            percentageBase: rule.type === 'percentage' ? (rule.percentageBase || null) : null,
+            minAmount: rule.minAmount ?? null,
+            maxAmount: rule.maxAmount ?? null,
+            basedOnPresentDays: rule.type === 'fixed' ? (rule.basedOnPresentDays || false) : false,
+            isOverride: true,
+        };
+
+        upsertOverride(targetArr, masterId, overrideObj);
+    });
+
+    if (touched) {
+        employee.employeeAllowances = nextAllowances;
+        employee.employeeDeductions = nextDeductions;
+    }
+
+    return touched;
+};
+
 /**
  * Normalizes a value from Excel to a YYYY-MM-DD string if it's a date.
  */
@@ -207,21 +371,13 @@ const generateSalaryUpdateTemplateData = async () => {
 /**
  * Dynamic Employee Update - Template Generator
  */
-const generateEmployeeUpdateTemplateData = async (selectedFieldIds) => {
+const generateEmployeeUpdateTemplateData = async (selectedFieldIds, selectedComponentIds = [], employeeFilters = {}) => {
     try {
-        // Ensure we always have a flat array of single field ids (no comma-separated strings)
-        const fieldIds = [];
-        (Array.isArray(selectedFieldIds) ? selectedFieldIds : [selectedFieldIds]).forEach(item => {
-            const s = String(item).trim();
-            if (!s) return;
-            if (s.includes(',')) {
-                s.split(',').forEach(f => { const t = f.trim(); if (t) fieldIds.push(t); });
-            } else {
-                fieldIds.push(s);
-            }
-        });
-        const ids = [...new Set(fieldIds)];
-        if (ids.length === 0) throw new Error('No field ids provided');
+        const ids = normalizeSelectionList(selectedFieldIds);
+        const selectedMasters = await getSelectedAllowanceDeductionMasters(selectedComponentIds);
+        if (ids.length === 0 && selectedMasters.length === 0) {
+            throw new Error('No field ids provided');
+        }
 
         const FormSettings = require('../../employee-applications/model/EmployeeApplicationFormSettings');
         const settings = await FormSettings.getActiveSettings();
@@ -239,7 +395,13 @@ const generateEmployeeUpdateTemplateData = async (selectedFieldIds) => {
             });
         }
 
-        const employees = await Employee.find({ is_active: true }).sort({ emp_no: 1 }).lean();
+        const employeeQuery = { is_active: true };
+        if (employeeFilters?.division_id) employeeQuery.division_id = employeeFilters.division_id;
+        if (employeeFilters?.department_id) employeeQuery.department_id = employeeFilters.department_id;
+        if (employeeFilters?.designation_id) employeeQuery.designation_id = employeeFilters.designation_id;
+        if (employeeFilters?.employee_group_id) employeeQuery.employee_group_id = employeeFilters.employee_group_id;
+
+        const employees = await Employee.find(employeeQuery).sort({ emp_no: 1 }).lean();
 
         // Fetch ref collections to show names instead of ObjectIds in template
         const [divisions, departments, designations, employeeGroups] = await Promise.all([
@@ -261,6 +423,9 @@ const generateEmployeeUpdateTemplateData = async (selectedFieldIds) => {
         ids.forEach(id => {
             // proposedSalary is shown and stored as Gross Salary
             headers.push(id === 'proposedSalary' ? 'Gross Salary' : (fieldMap[id] || id));
+        });
+        selectedMasters.forEach(master => {
+            headers.push(`${master.name} (${master.category})`);
         });
 
         const data = employees.map(emp => {
@@ -297,6 +462,8 @@ const generateEmployeeUpdateTemplateData = async (selectedFieldIds) => {
                 if (val && Object.prototype.toString.call(val) === '[object Date]') val = val.toISOString ? val.toISOString().slice(0, 10) : String(val);
                 row[label] = val;
             });
+
+            appendSelectedAllowanceDeductionColumns(row, emp, selectedMasters);
             return row;
         });
 
@@ -377,6 +544,14 @@ const processEmployeeUpdateUpload = async (fileBuffer) => {
         }
 
         const lookups = await buildRefLookups();
+        const allowanceDeductionMasters = await AllowanceDeductionMaster.find({ isActive: true })
+            .select('name category globalRule')
+            .sort({ category: 1, name: 1 })
+            .lean();
+        const masterByHeader = new Map();
+        allowanceDeductionMasters.forEach(master => {
+            masterByHeader.set(`${master.name} (${master.category})`, master);
+        });
 
         const workbook = xlsx.read(fileBuffer, { type: 'buffer', cellDates: true });
         const data = xlsx.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
@@ -400,6 +575,7 @@ const processEmployeeUpdateUpload = async (fileBuffer) => {
                     empNo = row[header];
                     return;
                 }
+                    if (masterByHeader.has(header)) return;
                 const fieldId = labelToIdMap[normalizedHeader] || STATIC_HEADER_TO_FIELD[normalizedHeader];
                 if (!fieldId || fieldId === 'emp_no') return;
 
@@ -434,17 +610,19 @@ const processEmployeeUpdateUpload = async (fileBuffer) => {
                 continue;
             }
 
-            if (Object.keys(updateData).length === 0) {
-                failedCount++;
-                errors.push({ empNo: normalizedEmpNo, error: 'No updateable fields found in row' });
-                continue;
-            }
-
             try {
                 const doc = await Employee.findOne({ emp_no: normalizedEmpNo });
                 if (!doc) {
                     failedCount++;
                     errors.push({ empNo: normalizedEmpNo, error: 'Employee not found' });
+                    continue;
+                }
+
+                const hasAllowanceDeductionUpdates = applyAllowanceDeductionUpdatesFromRow(row, doc, masterByHeader);
+
+                if (Object.keys(updateData).length === 0 && !hasAllowanceDeductionUpdates) {
+                    failedCount++;
+                    errors.push({ empNo: normalizedEmpNo, error: 'No updateable fields found in row' });
                     continue;
                 }
 

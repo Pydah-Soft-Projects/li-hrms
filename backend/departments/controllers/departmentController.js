@@ -190,6 +190,8 @@ exports.getDepartmentEmployees = async (req, res) => {
     const employees = await Employee.find({ department_id: req.params.id })
       .select('-password')
       .populate('department_id', 'name')
+      .populate('division_id', 'name code')
+      .populate('designation_id', 'name code')
       .sort({ employee_name: 1 });
 
     res.status(200).json({

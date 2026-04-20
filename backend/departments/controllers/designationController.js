@@ -594,6 +594,43 @@ exports.assignShifts = async (req, res) => {
   }
 };
 
+// @desc    Get employees mapped to a designation
+// @route   GET /api/departments/designations/:id/employees
+// @access  Private
+exports.getDesignationEmployees = async (req, res) => {
+  try {
+    const Employee = require('../../employees/model/Employee');
+
+    const designation = await Designation.findById(req.params.id).select('name');
+    if (!designation) {
+      return res.status(404).json({
+        success: false,
+        message: 'Designation not found',
+      });
+    }
+
+    const employees = await Employee.find({ designation_id: designation._id })
+      .select('emp_no employee_name department_id division_id is_active left_date')
+      .populate('department_id', 'name code')
+      .populate('division_id', 'name code')
+      .sort({ employee_name: 1 })
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      count: employees.length,
+      data: employees,
+    });
+  } catch (error) {
+    console.error('Error fetching designation employees:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error fetching designation employees',
+      error: error.message,
+    });
+  }
+};
+
 // @desc    Delete designation
 // @route   DELETE /api/departments/designations/:id
 // @access  Private (Super Admin, Sub Admin)
@@ -609,15 +646,16 @@ exports.deleteDesignation = async (req, res) => {
       });
     }
 
-    // Check if designation is assigned to any employees
-    const employeeCount = await Employee.countDocuments({
+    // Block deletion only when active employees still use this designation
+    const activeEmployeeCount = await Employee.countDocuments({
       designation_id: designation._id,
+      is_active: true,
     });
 
-    if (employeeCount > 0) {
+    if (activeEmployeeCount > 0) {
       return res.status(400).json({
         success: false,
-        message: `Cannot delete designation. It is assigned to ${employeeCount} employee(s). Please reassign employees first.`,
+        message: `Cannot delete designation. It is assigned to ${activeEmployeeCount} active employee(s). Please reassign employees first.`,
       });
     }
 

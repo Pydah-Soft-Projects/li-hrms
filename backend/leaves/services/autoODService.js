@@ -3,6 +3,7 @@ const OD = require('../model/OD');
 const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
 const Employee = require('../../employees/model/Employee');
 const LeaveSettings = require('../model/LeaveSettings');
+const Settings = require('../../settings/model/Settings');
 
 /**
  * Scan AttendanceDaily for holiday/week-off punches and create OD requests
@@ -10,6 +11,12 @@ const LeaveSettings = require('../model/LeaveSettings');
  */
 const processAutoODForDate = async (dateStr) => {
     try {
+        const autoODSetting = await Settings.findOne({ key: 'auto_od_creation_enabled' }).lean();
+        if (autoODSetting?.value !== true) {
+            console.log('[AutoOD] Skipping date scan because auto_od_creation_enabled is OFF.');
+            return;
+        }
+
         const query = {
             date: dateStr,
             status: { $in: ['HOLIDAY', 'WEEK_OFF'] },
@@ -37,6 +44,11 @@ const processAutoODForDate = async (dateStr) => {
  */
 const processAutoODForEmployee = async (employeeNumber, dateStr, record) => {
     try {
+        const autoODSetting = await Settings.findOne({ key: 'auto_od_creation_enabled' }).lean();
+        if (autoODSetting?.value !== true) {
+            return;
+        }
+
         if (!record || !['HOLIDAY', 'WEEK_OFF'].includes(record.status) || record.totalWorkingHours <= 0) {
             return;
         }

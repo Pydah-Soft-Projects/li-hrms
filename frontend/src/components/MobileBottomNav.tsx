@@ -72,6 +72,7 @@ const moduleIcons: Record<string, any> = {
   RESIGNATION: LogOut,
   PROMOTIONS_TRANSFERS: TrendingUp,
   EMPLOYEE_BIRTHDAYS: Cake,
+  ASSETS_MANAGEMENT: HandCoins,
 };
 
 const shortModuleLabels: Record<string, string> = {
@@ -107,6 +108,7 @@ const shortModuleLabels: Record<string, string> = {
   RESIGNATION: 'Resign',
   PROMOTIONS_TRANSFERS: 'Promo',
   EMPLOYEE_BIRTHDAYS: 'Bday',
+  ASSETS_MANAGEMENT: 'Assets',
 };
 
 export default function MobileBottomNav() {
@@ -206,6 +208,7 @@ export default function MobileBottomNav() {
       (code === 'LEAVE_OD' && (pathname === '/leaves' || pathname === '/od')) ||
       (code === 'CCL' && pathname === '/ccl') ||
       (code === 'PROMOTIONS_TRANSFERS' && pathname === '/promotions-transfers') ||
+      (code === 'ASSETS_MANAGEMENT' && pathname === '/assets-management') ||
       (code === 'EMPLOYEE_BIRTHDAYS' && pathname === '/employee-birthdays');
   };
 

@@ -27,6 +27,7 @@ type PayrollMonthOption = {
   payrollYear: number;
   payrollMonth: number;
   label: string;
+  isOngoing?: boolean;
   periodStart?: string;
   periodEnd?: string;
   paidDays?: number;
@@ -681,6 +682,9 @@ export default function PromotionsTransfersPage() {
   }, [payrollMonths, paidDaysByMonth]);
 
   const currentPayrollCycleLabel = useMemo(() => {
+    const explicitOngoing = payrollMonths.find((p) => p.isOngoing)?.label;
+    if (explicitOngoing) return explicitOngoing;
+
     const now = new Date();
     const hit = payrollMonths.find((p) => {
       if (!p.periodStart || !p.periodEnd) return false;
@@ -690,6 +694,16 @@ export default function PromotionsTransfersPage() {
     });
     return hit?.label || '';
   }, [payrollMonths]);
+
+  useEffect(() => {
+    if (!modalOpen) return;
+    if (formType === 'transfer') return;
+    if (selectedMonthLabel) return;
+    const ongoing = payrollMonths.find((p) => p.isOngoing)?.label;
+    if (ongoing) {
+      setSelectedMonthLabel(ongoing);
+    }
+  }, [modalOpen, formType, payrollMonths, selectedMonthLabel]);
 
   // Arrears-style proration: effective month → current payroll cycle
   useEffect(() => {
@@ -1722,7 +1736,7 @@ export default function PromotionsTransfersPage() {
                       <option value="">Select…</option>
                       {payrollMonthsWithPaidDays.map((p) => (
                         <option key={p.label} value={p.label}>
-                          {p.label}
+                          {p.isOngoing ? `${p.label} (ONGOING)` : p.label}
                           {p.paidDays != null && p.totalDaysInMonth != null
                             ? ` — ${p.paidDays}/${p.totalDaysInMonth} paid days`
                             : ''}
@@ -1730,7 +1744,8 @@ export default function PromotionsTransfersPage() {
                       ))}
                     </select>
                     <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                      Shows the last 5 completed payroll months and the next 5 upcoming months (per your payroll cycle).
+                      Shows 5 previous and 5 future payroll cycles around the current ongoing payroll month.
+                      {currentPayrollCycleLabel ? ` Ongoing cycle: ${currentPayrollCycleLabel}.` : ''}
                       {paidDaysLoading ? ' Loading paid days…' : ''}
                     </p>
                   </div>

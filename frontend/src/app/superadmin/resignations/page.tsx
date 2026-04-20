@@ -313,6 +313,8 @@ export default function SuperAdminResignationsPage() {
   const [applyType, setApplyType] = useState<'resignation' | 'termination'>('resignation');
   const [applyLoading, setApplyLoading] = useState(false);
   const [applyModalLoading, setApplyModalLoading] = useState(false);
+  const [applyPendingAssets, setApplyPendingAssets] = useState<any[]>([]);
+  const [applyPendingAssetsLoading, setApplyPendingAssetsLoading] = useState(false);
   const [resignationSettings, setResignationSettings] = useState<any>(null);
 
   const [filters, setFilters] = useState({
@@ -338,6 +340,36 @@ export default function SuperAdminResignationsPage() {
       emp.name.toLowerCase().includes(q) || emp.emp_no.toLowerCase().includes(q)
     );
   }, [applyEmployees, applyEmployeeSearch]);
+
+  useEffect(() => {
+    if (!showApplyModal || !applySelectedEmpNo) {
+      setApplyPendingAssets([]);
+      return;
+    }
+    let cancelled = false;
+    const loadPendingAssets = async () => {
+      setApplyPendingAssetsLoading(true);
+      try {
+        const employeeRes = await api.getEmployee(applySelectedEmpNo);
+        const employeeId = employeeRes?.success ? employeeRes?.data?._id : null;
+        if (!employeeId) {
+          if (!cancelled) setApplyPendingAssets([]);
+          return;
+        }
+        const assetsRes = await api.getAssetAssignments({ employeeId, status: 'assigned' });
+        if (cancelled) return;
+        setApplyPendingAssets(Array.isArray(assetsRes?.data) ? assetsRes.data : []);
+      } catch (_) {
+        if (!cancelled) setApplyPendingAssets([]);
+      } finally {
+        if (!cancelled) setApplyPendingAssetsLoading(false);
+      }
+    };
+    void loadPendingAssets();
+    return () => {
+      cancelled = true;
+    };
+  }, [showApplyModal, applySelectedEmpNo]);
 
   useEffect(() => {
     const user = auth.getUser();
@@ -395,6 +427,7 @@ export default function SuperAdminResignationsPage() {
     setApplySelectedEmpNo('');
     setApplyEmployeeSearch('');
     setApplyRemarks('');
+    setApplyPendingAssets([]);
     setApplyType(type);
     if (type === 'termination') {
       setApplyLastWorkingDate(toLocalDateString(new Date()));
@@ -458,7 +491,6 @@ export default function SuperAdminResignationsPage() {
         setApplyEmployeeMeta(meta);
         setApplyEmployees(options);
       setApplyEmployeeSearch('');
-        if (options.length > 0 && !applySelectedEmpNo) setApplySelectedEmpNo(options[0].emp_no);
       } catch (_) {
         if (!cancelled) {
           setApplyEmployees([]);
@@ -475,6 +507,14 @@ export default function SuperAdminResignationsPage() {
   const handleSubmitResignation = async () => {
     if (!applySelectedEmpNo || !applyLastWorkingDate) {
       toast.error('Please select an employee and ensure last working date is set.');
+      return;
+    }
+    if (applyPendingAssets.length > 0) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Pending asset return required',
+        text: 'This employee still has assigned assets. Please return all assets before submitting resignation.',
+      });
       return;
     }
     setApplyLoading(true);
@@ -1217,6 +1257,37 @@ export default function SuperAdminResignationsPage() {
                       </p>
                     )}
                 </div>
+                {applySelectedEmpNo && (
+                  <div className={`rounded-xl border p-3 ${
+                    applyPendingAssets.length > 0
+                      ? 'border-amber-200 bg-amber-50/70 dark:border-amber-900/40 dark:bg-amber-950/20'
+                      : 'border-emerald-200 bg-emerald-50/70 dark:border-emerald-900/40 dark:bg-emerald-950/20'
+                  }`}>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Asset return status
+                    </p>
+                    {applyPendingAssetsLoading ? (
+                      <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Checking pending assets...</p>
+                    ) : applyPendingAssets.length > 0 ? (
+                      <>
+                        <p className="mt-2 text-xs font-semibold text-amber-700 dark:text-amber-300">
+                          {applyPendingAssets.length} asset{applyPendingAssets.length > 1 ? 's are' : ' is'} still assigned. Return required before resignation.
+                        </p>
+                        <div className="mt-2 max-h-24 space-y-1 overflow-y-auto rounded-lg border border-amber-200/60 bg-white/70 px-2 py-2 text-xs dark:border-amber-900/40 dark:bg-slate-900/50">
+                          {applyPendingAssets.map((item: any) => (
+                            <p key={item._id} className="text-slate-700 dark:text-slate-200">
+                              - {item?.asset?.name || 'Asset'} ({item?.asset?.visibilityScope === 'division' ? 'Division scoped' : 'Universal'})
+                            </p>
+                          ))}
+                        </div>
+                      </>
+                    ) : (
+                      <p className="mt-2 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                        No pending assets. Resignation can be submitted.
+                      </p>
+                    )}
+                  </div>
+                )}
                 <div className="flex gap-3 pt-2">
                   <button type="button" onClick={() => !applyLoading && setShowApplyModal(false)} className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 font-bold text-sm hover:bg-slate-50 dark:hover:bg-slate-800">
                     Cancel

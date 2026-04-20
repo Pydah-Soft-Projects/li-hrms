@@ -506,6 +506,126 @@ export default function DepartmentsPage() {
     }
   };
 
+  const handleDeleteDesignation = async (designation: Designation) => {
+    try {
+      const employeesResponse = await api.getDesignationEmployees(designation._id);
+      const employees: any[] = Array.isArray(employeesResponse?.data)
+        ? employeesResponse.data
+        : [];
+
+      const activeEmployees = employees.filter((emp) => emp?.is_active);
+      const hasOnlyInactiveEmployees = employees.length > 0 && activeEmployees.length === 0;
+
+      if (employees.length > 0) {
+        const employeesToShow = activeEmployees.length > 0 ? activeEmployees : employees;
+        const preview = employeesToShow.slice(0, 12);
+        const escaped = (value: string) =>
+          value
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+
+        const rows = preview
+          .map((emp) => {
+            const empNo = escaped(emp.emp_no || '-');
+            const name = escaped(emp.employee_name || 'Unknown');
+            const dept = escaped(emp.department_id?.name || '-');
+            const division = escaped(emp.division_id?.name || '-');
+            const status = emp.is_active ? 'Active' : 'Inactive';
+            const statusBg = emp.is_active ? '#dcfce7' : '#f1f5f9';
+            const statusText = emp.is_active ? '#166534' : '#475569';
+            return `
+              <tr>
+                <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; font-weight:700; color:#0f172a; white-space:nowrap;">${empNo}</td>
+                <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; color:#0f172a; min-width:180px;">${name}</td>
+                <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; color:#334155; min-width:220px;">${division}</td>
+                <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; color:#334155; min-width:170px;">${dept}</td>
+                <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; text-align:left; white-space:nowrap;">
+                  <span style="display:inline-block; padding:2px 8px; border-radius:9999px; font-size:11px; font-weight:700; background:${statusBg}; color:${statusText};">${status}</span>
+                </td>
+              </tr>
+            `;
+          })
+          .join('');
+
+        const moreCount = employeesToShow.length - preview.length;
+        const listDialogResult = await Swal.fire({
+          icon: hasOnlyInactiveEmployees ? 'info' : 'warning',
+          title: hasOnlyInactiveEmployees ? 'Inactive Employees Found' : 'Cannot Delete Designation',
+          html: `
+            <div style="text-align:left;">
+              <p style="margin-bottom:8px; color:#334155;">
+                ${hasOnlyInactiveEmployees
+                  ? `This designation is assigned to <strong>${employees.length}</strong> employee(s), and all are inactive.`
+                  : `This designation is currently assigned to <strong>${activeEmployees.length}</strong> active employee(s).`}
+              </p>
+              <p style="margin-bottom:10px; color:#64748b;">
+                ${hasOnlyInactiveEmployees
+                  ? 'You can proceed with deletion.'
+                  : 'Please reassign active employees before deleting.'}
+              </p>
+              <div style="border:1px solid #e2e8f0; border-radius:12px; overflow:auto; max-height:280px;">
+                <table style="width:100%; border-collapse:collapse; font-size:12px; table-layout:auto;">
+                  <thead style="background:#f8fafc; position:sticky; top:0; z-index:1;">
+                    <tr>
+                      <th style="text-align:left; padding:10px 12px; border-bottom:1px solid #e2e8f0; color:#334155; font-size:11px; font-weight:700; white-space:nowrap;">Emp No</th>
+                      <th style="text-align:left; padding:10px 12px; border-bottom:1px solid #e2e8f0; color:#334155; font-size:11px; font-weight:700;">Name</th>
+                      <th style="text-align:left; padding:10px 12px; border-bottom:1px solid #e2e8f0; color:#334155; font-size:11px; font-weight:700;">Division</th>
+                      <th style="text-align:left; padding:10px 12px; border-bottom:1px solid #e2e8f0; color:#334155; font-size:11px; font-weight:700;">Department</th>
+                      <th style="text-align:left; padding:10px 12px; border-bottom:1px solid #e2e8f0; color:#334155; font-size:11px; font-weight:700; white-space:nowrap;">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>${rows}</tbody>
+                </table>
+              </div>
+              ${moreCount > 0 ? `<p style="margin-top:10px;color:#64748b;">...and ${moreCount} more employee(s).</p>` : ''}
+            </div>
+          `,
+          width: 860,
+          showCancelButton: hasOnlyInactiveEmployees,
+          confirmButtonText: hasOnlyInactiveEmployees ? 'Delete Designation' : 'Okay',
+          cancelButtonText: 'Cancel',
+          confirmButtonColor: hasOnlyInactiveEmployees ? '#dc2626' : undefined,
+        });
+
+        if (!hasOnlyInactiveEmployees || !listDialogResult.isConfirmed) {
+          return;
+        }
+      }
+
+      if (!hasOnlyInactiveEmployees) {
+        const confirmResult = await Swal.fire({
+          title: 'Delete Designation?',
+          text: `Are you sure you want to delete "${designation.name}"?`,
+          icon: 'warning',
+          showCancelButton: true,
+          confirmButtonText: 'Yes, Delete',
+          cancelButtonText: 'Cancel',
+          confirmButtonColor: '#dc2626',
+        });
+
+        if (!confirmResult.isConfirmed) return;
+      }
+
+      const deleteResponse = await api.deleteDesignation(designation._id);
+      if (deleteResponse.success) {
+        await loadDesignations(showDesignationDialog || 'global');
+        if (showDesignationDialog !== 'global') {
+          await loadDepartments();
+        }
+        await Swal.fire('Deleted!', 'Designation deleted successfully.', 'success');
+      } else {
+        await Swal.fire('Error', deleteResponse.message || 'Failed to delete designation', 'error');
+      }
+    } catch (err: any) {
+      const message = err?.message || 'An error occurred while deleting designation';
+      console.error('Error deleting designation:', err);
+      await Swal.fire('Error', message, 'error');
+    }
+  };
+
   const handleCardClick = async (dept: Department) => {
     // If no division is selected, do nothing special
     if (!selectedDivisionId || selectedDivisionId === 'all') return;
@@ -563,17 +683,118 @@ export default function DepartmentsPage() {
   };
 
   const handleDeleteDepartment = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this department?')) return;
+    const department = departments.find((d) => d._id === id);
+    const departmentName = department?.name || 'this department';
 
     try {
+      const employeesResponse = await api.getDepartmentEmployees(id);
+      const employees: any[] = Array.isArray(employeesResponse?.data) ? employeesResponse.data : [];
+      const activeEmployees = employees.filter((emp) => emp?.is_active);
+      const hasOnlyInactiveEmployees = employees.length > 0 && activeEmployees.length === 0;
+
+      if (employees.length > 0) {
+        const employeesToShow = activeEmployees.length > 0 ? activeEmployees : employees;
+        const preview = employeesToShow.slice(0, 12);
+        const escaped = (value: string) =>
+          value
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+
+        const rows = preview
+          .map((emp) => {
+            const empNo = escaped(emp.emp_no || '-');
+            const name = escaped(emp.employee_name || 'Unknown');
+            const division = escaped(emp.division_id?.name || '-');
+            const designation = escaped(emp.designation_id?.name || '-');
+            const status = emp.is_active ? 'Active' : 'Inactive';
+            const statusBg = emp.is_active ? '#dcfce7' : '#f1f5f9';
+            const statusText = emp.is_active ? '#166534' : '#475569';
+            return `
+              <tr>
+                <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; font-weight:700; color:#0f172a; white-space:nowrap;">${empNo}</td>
+                <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; color:#0f172a; min-width:180px;">${name}</td>
+                <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; color:#334155; min-width:220px;">${division}</td>
+                <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; color:#334155; min-width:170px;">${designation}</td>
+                <td style="padding:10px 12px; border-bottom:1px solid #e2e8f0; white-space:nowrap;">
+                  <span style="display:inline-block; padding:2px 8px; border-radius:9999px; font-size:11px; font-weight:700; background:${statusBg}; color:${statusText};">${status}</span>
+                </td>
+              </tr>
+            `;
+          })
+          .join('');
+
+        const moreCount = employeesToShow.length - preview.length;
+        const listDialogResult = await Swal.fire({
+          icon: hasOnlyInactiveEmployees ? 'info' : 'warning',
+          title: hasOnlyInactiveEmployees ? 'Inactive Employees Found' : 'Cannot Delete Department',
+          html: `
+            <div style="text-align:left;">
+              <p style="margin-bottom:8px; color:#334155;">
+                ${hasOnlyInactiveEmployees
+                  ? `"${escaped(departmentName)}" is assigned to <strong>${employees.length}</strong> employee(s), and all are inactive.`
+                  : `"${escaped(departmentName)}" is currently assigned to <strong>${activeEmployees.length}</strong> active employee(s).`}
+              </p>
+              <p style="margin-bottom:10px; color:#64748b;">
+                ${hasOnlyInactiveEmployees
+                  ? 'You can proceed with deletion.'
+                  : 'Please reassign active employees before deleting.'}
+              </p>
+              <div style="border:1px solid #e2e8f0; border-radius:12px; overflow:auto; max-height:280px;">
+                <table style="width:100%; border-collapse:collapse; font-size:12px; table-layout:auto;">
+                  <thead style="background:#f8fafc; position:sticky; top:0; z-index:1;">
+                    <tr>
+                      <th style="text-align:left; padding:10px 12px; border-bottom:1px solid #e2e8f0; color:#334155; font-size:11px; font-weight:700; white-space:nowrap;">Emp No</th>
+                      <th style="text-align:left; padding:10px 12px; border-bottom:1px solid #e2e8f0; color:#334155; font-size:11px; font-weight:700;">Name</th>
+                      <th style="text-align:left; padding:10px 12px; border-bottom:1px solid #e2e8f0; color:#334155; font-size:11px; font-weight:700;">Division</th>
+                      <th style="text-align:left; padding:10px 12px; border-bottom:1px solid #e2e8f0; color:#334155; font-size:11px; font-weight:700;">Designation</th>
+                      <th style="text-align:left; padding:10px 12px; border-bottom:1px solid #e2e8f0; color:#334155; font-size:11px; font-weight:700; white-space:nowrap;">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>${rows}</tbody>
+                </table>
+              </div>
+              ${moreCount > 0 ? `<p style="margin-top:10px;color:#64748b;">...and ${moreCount} more employee(s).</p>` : ''}
+            </div>
+          `,
+          width: 860,
+          showCancelButton: hasOnlyInactiveEmployees,
+          confirmButtonText: hasOnlyInactiveEmployees ? 'Delete Department' : 'Okay',
+          cancelButtonText: 'Cancel',
+          confirmButtonColor: hasOnlyInactiveEmployees ? '#dc2626' : undefined,
+        });
+
+        if (!hasOnlyInactiveEmployees || !listDialogResult.isConfirmed) {
+          return;
+        }
+      }
+
+      if (!hasOnlyInactiveEmployees) {
+        const confirmResult = await Swal.fire({
+          title: 'Delete Department?',
+          text: `Are you sure you want to delete "${departmentName}"?`,
+          icon: 'warning',
+          showCancelButton: true,
+          confirmButtonText: 'Yes, Delete',
+          cancelButtonText: 'Cancel',
+          confirmButtonColor: '#dc2626',
+        });
+
+        if (!confirmResult.isConfirmed) return;
+      }
+
       const response = await api.deleteDepartment(id);
       if (response.success) {
-        loadDepartments();
+        await loadDepartments();
+        await Swal.fire('Deleted!', 'Department deleted successfully.', 'success');
       } else {
-        alert(response.message || 'Failed to delete department');
+        await Swal.fire('Error', response.message || 'Failed to delete department', 'error');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error deleting department:', err);
+      await Swal.fire('Error', err?.message || 'Error deleting department', 'error');
     }
   };
 
@@ -1765,15 +1986,24 @@ export default function DepartmentsPage() {
                                   )}
                                 </div>
                               </div>
-                              <button
-                                onClick={() => handleOpenDesignationShiftDialog(designation)}
-                                className="flex-shrink-0 rounded-lg border border-purple-200 bg-gradient-to-r from-purple-50 to-indigo-50 p-2 text-purple-700 transition-all hover:from-purple-100 hover:to-indigo-100 hover:shadow-sm dark:border-purple-800 dark:from-purple-900/20 dark:to-indigo-900/20 dark:text-purple-300"
-                                title="Manage Shifts"
-                              >
-                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                              </button>
+                              <div className="flex shrink-0 items-center gap-2">
+                                <button
+                                  onClick={() => handleDeleteDesignation(designation)}
+                                  className="rounded-lg border border-rose-200 bg-rose-50 p-2 text-rose-700 transition-all hover:bg-rose-100 hover:shadow-sm dark:border-rose-800 dark:bg-rose-900/20 dark:text-rose-300"
+                                  title="Delete Designation"
+                                >
+                                  <TrashIcon />
+                                </button>
+                                <button
+                                  onClick={() => handleOpenDesignationShiftDialog(designation)}
+                                  className="rounded-lg border border-purple-200 bg-gradient-to-r from-purple-50 to-indigo-50 p-2 text-purple-700 transition-all hover:from-purple-100 hover:to-indigo-100 hover:shadow-sm dark:border-purple-800 dark:from-purple-900/20 dark:to-indigo-900/20 dark:text-purple-300"
+                                  title="Manage Shifts"
+                                >
+                                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                  </svg>
+                                </button>
+                              </div>
                             </div>
                           </div>
                         ))}
