@@ -13,7 +13,6 @@ import EmployeeUpdateModal from '@/components/EmployeeUpdateModal';
 import CertificatePreviewModal from '@/components/employee/CertificatePreviewModal';
 import HistoryViewCompleteModal from '@/components/employee/HistoryViewCompleteModal';
 import ResignationModal from '@/components/employee/ResignationModal';
-import BulkAllowancesDeductionsModal from '@/components/employee/BulkAllowancesDeductionsModal';
 import UpdateRequestReviewModal from '@/components/employee/UpdateRequestReviewModal';
 import BankUpdateDialog from '@/components/employee/BankUpdateDialog';
 import Spinner from '@/components/Spinner';
@@ -509,7 +508,6 @@ export default function EmployeesPage() {
   const [selectedApplicationIds, setSelectedApplicationIds] = useState<string[]>([]);
   const [updatingStatusIds, setUpdatingStatusIds] = useState<Set<string>>(new Set());
   const [showEmployeeUpdateModal, setShowEmployeeUpdateModal] = useState(false);
-  const [showBulkAllowancesDeductions, setShowBulkAllowancesDeductions] = useState(false);
   const [showBankUpdateDialog, setShowBankUpdateDialog] = useState(false);
   const [submittingBankUpdate, setSubmittingBankUpdate] = useState(false);
   const [showExportDialog, setShowExportDialog] = useState(false);
@@ -3424,17 +3422,6 @@ export default function EmployeesPage() {
                 </button>
               )}
 
-              {(activeTab === 'employees' || activeTab === 'applications') && allowEmployeeBulkProcess && (
-                <button
-                  onClick={() => setShowBulkAllowancesDeductions(true)}
-                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-2"
-                >
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                  </svg>
-                  Bulk A&D Update
-                </button>
-              )}
               {(activeTab === 'employees' || activeTab === 'applications') && allowEmployeeBulkProcess && (
                 <button
                   onClick={() => setShowBulkUpload(true)}
@@ -7628,17 +7615,12 @@ export default function EmployeesPage() {
               setShowEmployeeUpdateModal(false);
               loadEmployees(currentPage);
             }}
-          />
-        )}
-
-        {allowEmployeeBulkProcess && showBulkAllowancesDeductions && (
-          <BulkAllowancesDeductionsModal
-            onClose={() => setShowBulkAllowancesDeductions(false)}
-            onSuccess={(msg) => setSuccess(msg)}
-            onError={(msg) => setError(msg)}
-            setLoading={setLoading}
-            loadEmployees={loadEmployees}
-            currentPage={currentPage}
+            filters={{
+              division_id: selectedDivisionFilter || undefined,
+              department_id: selectedDepartmentFilter || undefined,
+              designation_id: selectedDesignationFilter || undefined,
+              employee_group_id: selectedEmployeeGroupFilter || undefined,
+            }}
           />
         )}
 

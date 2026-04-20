@@ -31,6 +31,9 @@ router.put('/designations/:id', authorize('manager', 'super_admin', 'sub_admin',
 // Assign shifts to designation (Super Admin, Sub Admin, HR)
 router.put('/designations/:id/shifts', authorize('manager', 'super_admin', 'sub_admin', 'hr'), designationController.assignShifts);
 
+// Get employees mapped to a designation
+router.get('/designations/:id/employees', designationController.getDesignationEmployees);
+
 // Delete designation (Super Admin, Sub Admin)
 router.delete('/designations/:id', authorize('super_admin', 'sub_admin'), designationController.deleteDesignation);
 

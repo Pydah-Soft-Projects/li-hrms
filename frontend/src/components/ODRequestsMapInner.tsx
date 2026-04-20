@@ -81,16 +81,15 @@ export default function ODRequestsMapInner({ requests, height, getStatusColor, s
       attribution: '&copy; OpenStreetMap contributors',
       maxZoom: 19,
     });
-    const satelliteLayer = L.tileLayer(
-      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-      {
-        attribution: 'Tiles &copy; Esri',
-        maxZoom: 19,
-      }
-    );
+    const googleHybridLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+      subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+      maxZoom: 20,
+      attribution: 'Map data &copy; Google',
+    });
 
-    normalLayer.addTo(map);
-    L.control.layers({ 'Normal Map': normalLayer, Satellite: satelliteLayer }).addTo(map);
+    // Default to Google Hybrid so satellite view includes place names.
+    googleHybridLayer.addTo(map);
+    L.control.layers({ 'Satellite (Google Hybrid)': googleHybridLayer, Street: normalLayer }).addTo(map);
 
     const bounds = L.latLngBounds([]);
     const groups = new Map<string, L.LayerGroup>();

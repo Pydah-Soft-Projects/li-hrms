@@ -59,6 +59,7 @@ const navItems: NavItem[] = [
   { href: '/superadmin/dashboard', label: 'Dashboard', icon: LayoutDashboard, category: 'Main', moduleCode: 'DASHBOARD' },
   { href: '/superadmin/security/gate', label: 'Security Gate', icon: ShieldCheck, category: 'Main', moduleCode: 'SECURITY' },
   { href: '/superadmin/employees', label: 'Employees', icon: Users, category: 'Employee Management', moduleCode: 'EMPLOYEES' },
+  { href: '/superadmin/assets-management', label: 'Assets Management', icon: CreditCard, category: 'Employee Management', moduleCode: 'ASSETS_MANAGEMENT' },
   { href: '/superadmin/employee-birthdays', label: 'Employee Birthdays', icon: Cake, category: 'Employee Management', moduleCode: 'EMPLOYEE_BIRTHDAYS' },
   { href: '/superadmin/resignations', label: 'Resignations', icon: LogOut, category: 'Employee Management', moduleCode: 'RESIGNATION' },
   { href: '/promotions-transfers', label: 'Promotions & Transfers', icon: TrendingUp, category: 'Employee Management', moduleCode: 'PROMOTIONS_TRANSFERS' },

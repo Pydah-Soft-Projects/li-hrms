@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const userController = require('./controllers/userController');
+const roleController = require('./controllers/roleController');
 const { protect, authorize } = require('../authentication/middleware/authMiddleware');
 const { applyMetadataScopeFilter } = require('../shared/middleware/dataScopeMiddleware');
 
@@ -23,6 +24,52 @@ router.get(
 
 // Update own profile (any authenticated user)
 router.put('/profile', userController.updateProfile);
+
+// ==========================================
+// DYNAMIC ROLE ROUTES
+// ==========================================
+
+// Get all dynamic roles
+router.get(
+  '/roles',
+  authorize('manager', 'super_admin', 'sub_admin', 'hr'),
+  roleController.getAllRoles
+);
+
+// Get single role
+router.get(
+  '/roles/:id',
+  authorize('manager', 'super_admin', 'sub_admin', 'hr'),
+  roleController.getRoleById
+);
+
+// Create new role
+router.post(
+  '/roles',
+  authorize('super_admin', 'sub_admin'),
+  roleController.createRole
+);
+
+// Update role
+router.put(
+  '/roles/:id',
+  authorize('super_admin', 'sub_admin'),
+  roleController.updateRole
+);
+
+// Delete role
+router.delete(
+  '/roles/:id',
+  authorize('super_admin'),
+  roleController.deleteRole
+);
+
+// Get users assigned to role
+router.get(
+  '/roles/:id/users',
+  authorize('super_admin', 'sub_admin'),
+  roleController.getRoleAssignedUsers
+);
 
 // ==========================================
 // USER CREATION ROUTES

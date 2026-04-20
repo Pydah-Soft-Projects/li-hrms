@@ -191,6 +191,10 @@ app.use('/api/second-salary', secondSalaryRoutes);
 const salaryUpdateRoutes = require('./salary-updates/index.js');
 app.use('/api/salary-updates', salaryUpdateRoutes);
 
+// Asset management routes
+const assetRoutes = require('./assets/index.js');
+app.use('/api/assets', assetRoutes);
+
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({
