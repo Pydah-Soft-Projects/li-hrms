@@ -1,3 +1,7 @@
+# Frontend is built in CI only. The server receives the pre-built `.next` (+ `public`) tarball
+# when the build job succeeds. If the build fails, deploy still runs for backend/biometric;
+# the running frontend is left unchanged (previous build keeps serving).
+
 name: Deploy LI-HRMS Services
 on:
   push:
@@ -5,13 +9,46 @@ on:
       - main
 
 jobs:
-  deploy:
+  build-frontend:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # NEXT_PUBLIC_* are baked in at build time. Add these as GitHub repo secrets
+      # (or Variables) so CI matches production. Local .env is gitignored and is not on the runner.
+      - name: Install and build frontend
+        working-directory: frontend
+        env:
+          NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
+          NEXT_PUBLIC_CRM_URL: ${{ secrets.NEXT_PUBLIC_CRM_URL }}
+        run: |
+          npm ci
+          npm run build
+
+      - name: Pack build for deployment
+        run: tar czf frontend-build.tar.gz -C frontend .next public
+
+      - name: Upload frontend bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-build
+          path: frontend-build.tar.gz
+          retention-days: 2
+
+  deploy:
+    needs: [build-frontend]
+    # Run even when the frontend build failed, so backend/biometric still deploy.
+    if: ${{ always() && (needs.build-frontend.result == 'success' || needs.build-frontend.result == 'failure') }}
+    runs-on: ubuntu-latest
+    steps:
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
@@ -19,22 +56,40 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H ${{ secrets.LIGHTSAIL_HOST }} >> ~/.ssh/known_hosts
 
+      - name: Download frontend bundle
+        if: ${{ needs.build-frontend.result == 'success' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-build
+
+      - name: Copy frontend bundle to server
+        if: ${{ needs.build-frontend.result == 'success' }}
+        run: |
+          scp -o StrictHostKeyChecking=yes frontend-build.tar.gz ${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }}:/tmp/frontend-build.tar.gz
+
       # =========================
       # DEPLOY TO EC2 - SERVER 1
       # =========================
       - name: Deploy to EC2 - Server 1
         run: |
-          ssh ${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }} << 'EOF'
-            set -e
+          ssh ${{ secrets.LIGHTSAIL_USER }}@${{ secrets.LIGHTSAIL_HOST }} FRONTEND_OK="${{ needs.build-frontend.result == 'success' && '1' || '0' }}" bash -s << 'EOF'
+            set -euo pipefail
             cd /home/ec2-user/li-hrms
             git reset --hard
             git pull origin main
 
             cd backend && npm install --production
             cd ../biometric && npm install --production
-            cd ../frontend && npm install && npm run build
 
-            cd ..
+            if [ "${FRONTEND_OK:-0}" = "1" ] && [ -f /tmp/frontend-build.tar.gz ]; then
+              cd ../frontend
+              rm -rf .next
+              tar xzf /tmp/frontend-build.tar.gz
+              npm ci --omit=dev
+              rm -f /tmp/frontend-build.tar.gz
+            fi
+
+            cd /home/ec2-user/li-hrms
             pm2 reload ecosystem.config.js
             pm2 save
           EOF
@@ -44,17 +99,22 @@ jobs:
       # =========================
       # - name: Deploy to EC2 - Server 2
       #   run: |
-      #     ssh ${{ secrets.LIGHTSAIL_USER_2 }}@${{ secrets.LIGHTSAIL_HOST_2 }} << 'EOF'
-      #       set -e
+      #     scp -o StrictHostKeyChecking=yes frontend-build.tar.gz ${{ secrets.LIGHTSAIL_USER_2 }}@${{ secrets.LIGHTSAIL_HOST_2 }}:/tmp/frontend-build.tar.gz
+      #     ssh ${{ secrets.LIGHTSAIL_USER_2 }}@${{ secrets.LIGHTSAIL_HOST_2 }} FRONTEND_OK="${{ needs.build-frontend.result == 'success' && '1' || '0' }}" bash -s << 'EOF'
+      #       set -euo pipefail
       #       cd /home/ec2-user/li-hrms
       #       git reset --hard
       #       git pull origin main
-
       #       cd backend && npm install --production
       #       cd ../biometric && npm install --production
-      #       cd ../frontend && npm install
-
-      #       cd ..
+      #       if [ "${FRONTEND_OK:-0}" = "1" ] && [ -f /tmp/frontend-build.tar.gz ]; then
+      #         cd ../frontend
+      #         rm -rf .next
+      #         tar xzf /tmp/frontend-build.tar.gz
+      #         npm ci --omit=dev
+      #         rm -f /tmp/frontend-build.tar.gz
+      #       fi
+      #       cd /home/ec2-user/li-hrms
       #       pm2 reload ecosystem.config.js
       #       pm2 save
       #     EOF
