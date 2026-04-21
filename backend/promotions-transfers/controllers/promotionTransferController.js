@@ -9,6 +9,7 @@ const Designation = require('../../departments/model/Designation');
 const dateCycleService = require('../../leaves/services/dateCycleService');
 const PayrollBatch = require('../../payroll/model/PayrollBatch');
 const { createDirectArrearForApprovedPromotion } = require('../services/promotionArrearService');
+const { notifyPromotionTransferCompleted } = require('../services/promotionTransferNotificationService');
 
 const {
   buildWorkflowVisibilityFilter,
@@ -941,6 +942,17 @@ exports.approveOrReject = async (req, res) => {
       doc.workflow.currentStepRole = null;
       doc.workflow.nextApproverRole = null;
       await doc.save();
+
+      try {
+        const n = await notifyPromotionTransferCompleted(doc, req.user);
+        if (n && !n.skipped) {
+          console.log(
+            `[PromotionTransfer] Notifications: detail=${n.detailCount}, summary=${n.summaryCount} (orgMove=${n.hasOrgMove})`
+          );
+        }
+      } catch (e) {
+        console.error('[PromotionTransfer] notifyPromotionTransferCompleted:', e?.message || e, e?.stack);
+      }
 
       try {
         await EmployeeHistory.create({

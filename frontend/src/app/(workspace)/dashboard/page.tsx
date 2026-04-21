@@ -23,6 +23,7 @@ import {
   CheckCheck
 } from 'lucide-react';
 import { useSocket } from '@/contexts/SocketContext';
+import { useDashboardPushBell } from '@/hooks/useDashboardPushBell';
 
 interface DashboardStats {
   totalEmployees?: number;
@@ -89,6 +90,7 @@ export default function DashboardPage() {
   const [notificationPanelOpen, setNotificationPanelOpen] = useState(false);
   const [notificationLoading, setNotificationLoading] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const { pushSubscribed } = useDashboardPushBell(!!user);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -284,8 +286,21 @@ export default function DashboardPage() {
           </div>
           <button
             onClick={() => setNotificationPanelOpen(true)}
-            className={`relative h-9 w-9 md:h-10 md:w-10 rounded-full bg-bg-surface/70 border border-border-base text-text-secondary hover:text-text-primary transition-colors flex items-center justify-center ${
+            title={
+              pushSubscribed === true
+                ? 'Push notifications active on this device'
+                : pushSubscribed === false
+                  ? 'Push not registered — allow notifications in the prompt or browser settings'
+                  : 'Notifications'
+            }
+            className={`relative h-9 w-9 md:h-10 md:w-10 rounded-full border transition-colors flex items-center justify-center ${
               unreadCount > 0 ? 'animate-bell-wrap-pulse' : ''
+            } ${
+              pushSubscribed === true
+                ? 'border-emerald-500/70 bg-emerald-500/10 text-emerald-700 hover:text-emerald-800 dark:border-emerald-500/50 dark:bg-emerald-950/45 dark:text-emerald-300 dark:hover:text-emerald-200'
+                : pushSubscribed === false
+                  ? 'border-amber-400/80 bg-amber-500/10 text-amber-800 hover:text-amber-900 dark:border-amber-500/45 dark:bg-amber-950/40 dark:text-amber-200 dark:hover:text-amber-100'
+                  : 'border-border-base bg-bg-surface/70 text-text-secondary hover:text-text-primary'
             }`}
             aria-label="Open notifications"
           >

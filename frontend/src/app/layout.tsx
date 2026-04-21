@@ -7,6 +7,8 @@ import { SocketProvider } from "@/contexts/SocketContext";
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import InstallPrompt from "@/components/InstallPrompt";
+import PushNotificationRegistrar from "@/components/PushNotificationRegistrar";
+import PushNotificationPrompt from "@/components/PushNotificationPrompt";
 
 
 const plusJakartaSans = Plus_Jakarta_Sans({
@@ -54,6 +56,8 @@ export default function RootLayout({
         suppressHydrationWarning
       >
         <AuthProvider>
+          <PushNotificationRegistrar />
+          <PushNotificationPrompt />
           <WorkspaceProvider>
             <SocketProvider>
               {children}

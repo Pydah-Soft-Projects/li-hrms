@@ -34,63 +34,13 @@ const {
 } = require('../../shared/utils/customEmployeeGrouping');
 const User = require('../../users/model/User');
 const { createNotifications } = require('../../notifications/services/notificationService');
-
-const uniqueIds = (ids = []) => [...new Set(ids.map((id) => String(id)).filter(Boolean))];
-const isObjectIdLike = (v) => /^[a-f0-9]{24}$/i.test(String(v || ''));
-
-const resolveSuperAdminUserIds = async () => {
-  const users = await User.find({
-    isActive: true,
-    $or: [{ role: 'super_admin' }, { roles: 'super_admin' }],
-  }).select('_id').lean();
-  return users.map((u) => String(u._id));
-};
-
-const isUserInEmployeeScope = (user, divisionId, departmentId) => {
-  if (!user) return false;
-  if (user.role === 'super_admin' || (Array.isArray(user.roles) && user.roles.includes('super_admin'))) return true;
-  if (user.dataScope === 'all') return true;
-
-  const empDiv = String(divisionId || '');
-  const empDept = String(departmentId || '');
-  const userEmpDiv = String(user.employeeRef?.division_id || '');
-  const userEmpDept = String(user.employeeRef?.department_id || '');
-
-  if ((user.dataScope === 'division' || user.dataScope === 'divisions') && empDiv && userEmpDiv && empDiv === userEmpDiv) {
-    return true;
-  }
-  if ((user.dataScope === 'department' || user.dataScope === 'departments') && empDept && userEmpDept && empDept === userEmpDept) {
-    return true;
-  }
-
-  const mappings = Array.isArray(user.divisionMapping) ? user.divisionMapping : [];
-  for (const mapping of mappings) {
-    const mappedDiv = String(mapping?.division?._id || mapping?.division || '');
-    if (!mappedDiv || mappedDiv !== empDiv) continue;
-    const mappedDepartments = Array.isArray(mapping?.departments) ? mapping.departments : [];
-    if (mappedDepartments.length === 0) return true;
-    if (mappedDepartments.some((d) => String(d?._id || d) === empDept)) return true;
-  }
-
-  return false;
-};
-
-const resolveScopedUserIdsForEmployee = async ({ divisionId, departmentId, roles = [] }) => {
-  const roleFilter = Array.isArray(roles) && roles.length > 0
-    ? { $or: [{ role: { $in: roles } }, { roles: { $in: roles } }] }
-    : {};
-  const users = await User.find({
-    isActive: true,
-    ...roleFilter,
-  })
-    .select('_id role roles dataScope divisionMapping employeeRef')
-    .populate('employeeRef', 'division_id department_id')
-    .lean();
-
-  return users
-    .filter((u) => isUserInEmployeeScope(u, divisionId, departmentId))
-    .map((u) => String(u._id));
-};
+const {
+  uniqueIds,
+  isObjectIdLike,
+  resolveSuperAdminUserIds,
+  resolveScopedUserIdsForEmployee,
+  resolveEmployeePortalUserIds,
+} = require('../../shared/utils/scopedNotificationRecipients');
 
 const resolveReportingManagerUserIds = async (employeeRecord) => {
   const managers = employeeRecord?.dynamicFields?.reporting_to || employeeRecord?.dynamicFields?.reporting_to_ || [];
@@ -102,20 +52,6 @@ const resolveReportingManagerUserIds = async (employeeRecord) => {
       { _id: { $in: ids.filter(isObjectIdLike) } },
       { employeeRef: { $in: ids.filter(isObjectIdLike) } },
       { employeeId: { $in: ids } },
-    ],
-  }).select('_id').lean();
-  return uniqueIds(users.map((u) => u._id));
-};
-
-const resolveEmployeePortalUserIds = async (employeeRecord) => {
-  const employeeId = employeeRecord?._id || null;
-  const empNo = employeeRecord?.emp_no || null;
-  if (!employeeId && !empNo) return [];
-  const users = await User.find({
-    isActive: true,
-    $or: [
-      ...(employeeId ? [{ employeeRef: employeeId }] : []),
-      ...(empNo ? [{ employeeId: empNo }] : []),
     ],
   }).select('_id').lean();
   return uniqueIds(users.map((u) => u._id));
@@ -247,26 +183,36 @@ const notifyEmployeeApplicationEvent = async ({
   createdBy = null,
   priority = 'medium',
 }) => {
-  const recipients = uniqueIds(recipientUserIds);
-  if (!recipients.length) return;
-  await createNotifications({
-    recipientUserIds: recipients,
-    module: 'employee_application',
-    eventType,
-    title,
-    message,
-    priority,
-    entityType: 'employee_application',
-    entityId: record?._id || null,
-    actionUrl: '/employees/applications',
-    meta: {
-      status: record?.status || null,
-      employeeName: record?.employee_name || null,
-      empNo: record?.emp_no || null,
-    },
-    createdBy,
-    dedupeKey: `employee_application:${eventType}:${record?._id || ''}:${record?.status || ''}`,
-  });
+  const recipients = uniqueIds(recipientUserIds).filter((id) => isObjectIdLike(id));
+  if (!recipients.length) {
+    console.warn(
+      `[notifyEmployeeApplicationEvent] ${eventType}: no valid recipient user ids (had ${uniqueIds(recipientUserIds).length} raw); skip`
+    );
+    return;
+  }
+  try {
+    const created = await createNotifications({
+      recipientUserIds: recipients,
+      module: 'employee_application',
+      eventType,
+      title,
+      message,
+      priority,
+      entityType: 'employee_application',
+      entityId: record?._id || null,
+      actionUrl: '/employees/applications',
+      meta: {
+        status: record?.status || null,
+        employeeName: record?.employee_name || null,
+        empNo: record?.emp_no || null,
+      },
+      createdBy,
+      dedupeKey: `employee_application:${eventType}:${record?._id || ''}:${record?.status || ''}`,
+    });
+    console.log(`[notifyEmployeeApplicationEvent] ${eventType}: inserted ${created?.length || 0} notification(s)`);
+  } catch (err) {
+    console.error(`[notifyEmployeeApplicationEvent] ${eventType} failed:`, err?.message || err, err?.stack);
+  }
 };
 
 /**
@@ -921,7 +867,7 @@ const verifySingleApplicationInternal = async (applicationId, approver) => {
 
     const superAdminIds = await resolveSuperAdminUserIds();
     const reportingManagerIds = await resolveReportingManagerUserIds(createdEmployee);
-    const [hodIds, managerIds] = await Promise.all([
+    const [hodIds, managerIds, hrSubScopedIds] = await Promise.all([
       reportingManagerIds.length
         ? Promise.resolve([])
         : resolveScopedUserIdsForEmployee({
@@ -934,14 +880,22 @@ const verifySingleApplicationInternal = async (applicationId, approver) => {
         departmentId: createdEmployee?.department_id,
         roles: ['manager'],
       }),
+      resolveScopedUserIdsForEmployee({
+        divisionId: createdEmployee?.division_id,
+        departmentId: createdEmployee?.department_id,
+        roles: ['hr', 'sub_admin'],
+      }),
     ]);
 
+    const approverIdStr = String(approverId);
+    const scopedVerifyRecipients = uniqueIds([
+      ...managerIds,
+      ...(reportingManagerIds.length ? reportingManagerIds : hodIds),
+      ...hrSubScopedIds,
+    ]).filter((id) => id !== approverIdStr);
+
     notifyEmployeeApplicationEvent({
-      recipientUserIds: uniqueIds([
-        ...superAdminIds,
-        ...managerIds,
-        ...(reportingManagerIds.length ? reportingManagerIds : hodIds),
-      ]).filter((id) => id !== String(approverId)),
+      recipientUserIds: uniqueIds([...superAdminIds, ...scopedVerifyRecipients]),
       eventType: 'EMPLOYEE_APPLICATION_VERIFIED',
       title: `Employee Functional: ${createdEmployee.employee_name || createdEmployee.emp_no}`,
       message: `${createdEmployee.employee_name || createdEmployee.emp_no} (${createdEmployee.emp_no}) is now verified and functional. Verified by ${approver.name || 'system'} (${approver.role || 'system'}).`,
@@ -1085,20 +1039,45 @@ const approveSalaryInternal = async (applicationId, salaryData, approver) => {
     comments: comments
   }).catch(err => console.error('History log failed:', err.message));
 
-  const employeeForNotify = employee || await Employee.findOne({ emp_no: application.emp_no }).select('_id emp_no employee_name');
-  const [superAdminIds, employeeUserIds] = await Promise.all([
+  const employeeForNotify =
+    employee ||
+    (await Employee.findOne({ emp_no: application.emp_no }).select('_id emp_no employee_name division_id department_id'));
+  const divId =
+    employeeForNotify?.division_id?._id || employeeForNotify?.division_id || application.division_id;
+  const deptId =
+    employeeForNotify?.department_id?._id || employeeForNotify?.department_id || application.department_id;
+
+  const portalLookup = {
+    _id: employeeForNotify?._id,
+    emp_no: employeeForNotify?.emp_no || application.emp_no,
+  };
+
+  const [superAdminIds, employeeUserIds, scopedSalaryIds] = await Promise.all([
     resolveSuperAdminUserIds(),
-    resolveEmployeePortalUserIds(employeeForNotify),
+    resolveEmployeePortalUserIds(portalLookup),
+    resolveScopedUserIdsForEmployee({
+      divisionId: divId,
+      departmentId: deptId,
+      roles: ['hr', 'hod', 'manager', 'sub_admin'],
+    }),
   ]);
-  notifyEmployeeApplicationEvent({
-    recipientUserIds: uniqueIds([...superAdminIds, ...employeeUserIds]).filter((id) => id !== String(approverId)),
-    eventType: 'EMPLOYEE_SALARY_VERIFIED',
-    title: `Salary Verified: ${application.employee_name || application.emp_no}`,
-    message: `Salary verified for ${application.employee_name || application.emp_no} (${application.emp_no}). Final approved salary: ₹${finalSalary}. Status: ${application.status}.`,
-    record: application,
-    createdBy: approverId,
-    priority: 'high',
-  }).catch((err) => console.error('[Notification] EMPLOYEE_SALARY_VERIFIED failed:', err.message));
+
+  const approverIdStr = String(approverId);
+  const scopedRecipients = scopedSalaryIds.filter((id) => id !== approverIdStr);
+
+  try {
+    await notifyEmployeeApplicationEvent({
+      recipientUserIds: uniqueIds([...superAdminIds, ...employeeUserIds, ...scopedRecipients]),
+      eventType: 'EMPLOYEE_SALARY_FINALIZED',
+      title: `Salary finalized: ${application.employee_name || application.emp_no}`,
+      message: `Salary has been finalized for ${application.employee_name || application.emp_no} (${application.emp_no}). Approved gross salary: ₹${finalSalary}.`,
+      record: application,
+      createdBy: approverId,
+      priority: 'high',
+    });
+  } catch (err) {
+    console.error('[approveSalaryInternal] EMPLOYEE_SALARY_FINALIZED notification error:', err?.message || err);
+  }
 
   return application;
 };
@@ -1157,7 +1136,10 @@ exports.verifyApplication = async (req, res) => {
  */
 exports.approveSalary = async (req, res) => {
   try {
-    if (req.user.role !== 'super_admin') {
+    const canFinalizeSalary =
+      req.user.role === 'super_admin' ||
+      (Array.isArray(req.user.roles) && req.user.roles.includes('super_admin'));
+    if (!canFinalizeSalary) {
       return res.status(403).json({ success: false, message: 'Not authorized' });
     }
 
