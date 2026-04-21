@@ -282,12 +282,12 @@ export default function ArrearsPage() {
     rejected: arrears.filter(ar => ar.status === 'rejected').length
   };
 
-  const getEmployeeName = (emp: any) => {
+  function getEmployeeName(emp: any) {
     if (emp.employee_name) return emp.employee_name;
     if (emp.first_name && emp.last_name) return `${emp.first_name} ${emp.last_name}`;
     if (emp.first_name) return emp.first_name;
     return emp.emp_no;
-  };
+  }
 
   function getEmployeeMasterRecord(employee: any) {
     const employeeId = String(employee?._id || '');

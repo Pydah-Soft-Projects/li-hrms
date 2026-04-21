@@ -4,6 +4,7 @@
  */
 
 const mongoose = require('mongoose');
+const Settings = require('../../settings/model/Settings');
 const { extractISTComponents } = require('../../shared/utils/dateUtils');
 
 const attendanceDailySchema = new mongoose.Schema(
@@ -754,8 +755,10 @@ attendanceDailySchema.pre('save', async function () {
   }
 
   // Final Wisdom: Auto-OD trigger for Holiday/Week-off work
-  // Trigger only if status is HOLIDAY/WEEK_OFF and at least 2 hours worked
-  if ((this.status === 'HOLIDAY' || this.status === 'WEEK_OFF') && (this.totalWorkingHours >= 2)) {
+  // Trigger only if global setting is enabled, status is HOLIDAY/WEEK_OFF and at least 2 hours worked.
+  const autoODSetting = await Settings.findOne({ key: 'auto_od_creation_enabled' }).lean();
+  const isAutoODCreationEnabled = autoODSetting?.value === true;
+  if (isAutoODCreationEnabled && (this.status === 'HOLIDAY' || this.status === 'WEEK_OFF') && (this.totalWorkingHours >= 2)) {
     const hasWorkedShift = this.shifts && this.shifts.some(s => ['PRESENT', 'HALF_DAY'].includes(s.status));
     if (hasWorkedShift) {
       const doc = this; // Capture document

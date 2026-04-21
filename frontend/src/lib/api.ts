@@ -467,13 +467,14 @@ export async function apiRequest<T>(
       }
 
       return {
+        ...(typeof data === 'object' && data !== null ? data : {}),
         success: false,
         statusCode: response.status,
-        message: data.message || 'An error occurred',
-        error: data.error || data.message || `HTTP ${response.status}`,
-        code: data.code,
-        reason: data.reason,
-        data: data.data,
+        message: (typeof data === 'object' && data !== null && data.message) || 'An error occurred',
+        error: (typeof data === 'object' && data !== null && (data.error || data.message)) || `HTTP ${response.status}`,
+        code: typeof data === 'object' && data !== null ? (data as any).code : undefined,
+        reason: typeof data === 'object' && data !== null ? (data as any).reason : undefined,
+        data: typeof data === 'object' && data !== null ? (data as any).data : undefined,
       };
     }
 
@@ -650,6 +651,17 @@ export interface User {
   featureControl?: string[];
   phone_number?: string | null;
   lastLogin?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface Role {
+  _id: string;
+  name: string;
+  description?: string;
+  activeModules: string[];
+  isSystemRole: boolean;
+  isActive: boolean;
+  createdBy?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -1188,8 +1200,44 @@ export const api = {
     });
   },
 
-  toggleUserStatus: async (id: string) => {
-    return apiRequest<any>(`/users/${id}/toggle-status`, { method: 'PUT' });
+  toggleUserStatus: async (id: string): Promise<ApiResponse<User>> => {
+    return apiRequest<User>(`/users/${id}/toggle-status`, { method: 'PUT' });
+  },
+
+  // ==========================================
+  // ROLE MANAGEMENT API
+  // ==========================================
+
+  async getRoles(): Promise<ApiResponse<Role[]>> {
+    return apiRequest<Role[]>('/users/roles');
+  },
+
+  async getRole(id: string): Promise<ApiResponse<Role>> {
+    return apiRequest<Role>(`/users/roles/${id}`);
+  },
+
+  async createRole(data: Partial<Role>): Promise<ApiResponse<Role>> {
+    return apiRequest<Role>('/users/roles', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async updateRole(id: string, data: Partial<Role>): Promise<ApiResponse<Role>> {
+    return apiRequest<Role>(`/users/roles/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteRole(id: string): Promise<ApiResponse<void>> {
+    return apiRequest<void>(`/users/roles/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  async getRoleAssignedUsers(id: string): Promise<ApiResponse<User[]>> {
+    return apiRequest<User[]>(`/users/roles/${id}/users`);
   },
 
   deleteUser: async (id: string) => {
@@ -1482,7 +1530,11 @@ export const api = {
   },
 
   deleteDesignation: async (id: string) => {
-    return apiRequest<void>(`/departments/designations/${id}`, { method: 'DELETE' });
+    return apiRequest<any>(`/departments/designations/${id}`, { method: 'DELETE' });
+  },
+
+  getDesignationEmployees: async (id: string) => {
+    return apiRequest<any[]>(`/departments/designations/${id}/employees`, { method: 'GET' });
   },
 
   assignShiftsToDesignation: async (id: string, shiftIds: (string | { shiftId: string; gender: string })[], departmentId?: string) => {
@@ -4178,6 +4230,68 @@ export const api = {
     });
   },
 
+  // Asset management
+  getAssetMetadata: async () => {
+    return apiRequest<any>('/assets/metadata', { method: 'GET' });
+  },
+
+  getAssets: async (filters?: { status?: string; visibilityScope?: string; isActive?: boolean; search?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.status) params.append('status', filters.status);
+    if (filters?.visibilityScope) params.append('visibilityScope', filters.visibilityScope);
+    if (filters?.isActive !== undefined) params.append('isActive', String(filters.isActive));
+    if (filters?.search) params.append('search', filters.search);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return apiRequest<any>(`/assets${query}`, { method: 'GET' });
+  },
+
+  createAsset: async (data: any) => {
+    return apiRequest<any>('/assets', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  updateAssetRecord: async (id: string, data: any) => {
+    return apiRequest<any>(`/assets/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  deleteAssetRecord: async (id: string) => {
+    return apiRequest<any>(`/assets/${id}`, {
+      method: 'DELETE',
+    });
+  },
+
+  assignAsset: async (assetId: string, data: any) => {
+    return apiRequest<any>(`/assets/${assetId}/assign`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  getAssetAssignments: async (filters?: { status?: string; employeeId?: string; assetId?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.status) params.append('status', filters.status);
+    if (filters?.employeeId) params.append('employeeId', filters.employeeId);
+    if (filters?.assetId) params.append('assetId', filters.assetId);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    return apiRequest<any>(`/assets/assignments${query}`, { method: 'GET' });
+  },
+
+  getMyAssetAssignments: async () => {
+    return apiRequest<any>('/assets/my', { method: 'GET' });
+  },
+
+  returnAssetAssignment: async (assignmentId: string, data: any) => {
+    return apiRequest<any>(`/assets/assignments/${assignmentId}/return`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
   // Transition arrears to next approval level (SuperAdmin)
   transitionArrears: async (id: string, nextStatus: string, data?: { startMonth?: string; endMonth?: string; monthlyAmount?: number; totalAmount?: number; reason?: string; comments?: string }) => {
     return apiRequest<any>(`/arrears/${id}/transition`, {
@@ -4354,11 +4468,27 @@ export const api = {
   },
 
   // Bulk Employee Update (backend: /api/salary-updates/bulk-update/*)
-  downloadEmployeeUpdateTemplate: async (fields?: string[]) => {
+  downloadEmployeeUpdateTemplate: async (
+    fields?: string[],
+    components?: string[],
+    filters?: { division_id?: string; department_id?: string; designation_id?: string; employee_group_id?: string }
+  ) => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     let url = `${API_BASE_URL}/salary-updates/bulk-update/template`;
+    const params = new URLSearchParams();
     if (fields && fields.length > 0) {
-      url += `?fields=${encodeURIComponent(fields.join(','))}`;
+      params.set('fields', fields.join(','));
+    }
+    if (components && components.length > 0) {
+      params.set('components', components.join(','));
+    }
+    if (filters?.division_id) params.set('division_id', filters.division_id);
+    if (filters?.department_id) params.set('department_id', filters.department_id);
+    if (filters?.designation_id) params.set('designation_id', filters.designation_id);
+    if (filters?.employee_group_id) params.set('employee_group_id', filters.employee_group_id);
+    const query = params.toString();
+    if (query) {
+      url += `?${query}`;
     }
     const response = await fetch(url, {
       method: 'GET',

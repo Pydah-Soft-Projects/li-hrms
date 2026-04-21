@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { api, Department, Division, User, Employee, DataScope } from '@/lib/api';
+import { api, Department, Division, User, Employee, DataScope, Role } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { MODULE_CATEGORIES } from '@/config/moduleCategories';
 import Spinner from '@/components/Spinner';
@@ -98,13 +98,8 @@ const ROLES = [
 ];
 const MONTH_SLOT_EDIT_PERMISSION = 'LEAVE_REGISTER_MONTH_EDIT:write';
 
-const getRoleColor = (role: string) => {
-  return ROLES.find((r) => r.value === role)?.color || 'bg-slate-100 text-slate-700';
-};
+// Helpers moved inside component to access dynamic roles
 
-const getRoleLabel = (role: string) => {
-  return ROLES.find((r) => r.value === role)?.label || role;
-};
 
 const hasMonthSlotEditPermission = (featureControl?: string[]) =>
   !!featureControl?.includes(MONTH_SLOT_EDIT_PERMISSION) || !!featureControl?.includes('LEAVE_REGISTER_MONTH_EDIT');
@@ -119,6 +114,33 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [customRoles, setCustomRoles] = useState<Role[]>([]);
+  const [systemRoleNames, setSystemRoleNames] = useState<Record<string, string>>({
+    employee: 'Employee',
+    manager: 'Manager',
+    hod: 'Head of Department',
+    hr: 'Human Resources',
+    super_admin: 'Super Admin',
+    sub_admin: 'Sub Admin'
+  });
+
+  const DYNAMIC_ROLES = ROLES.map(r => ({
+    ...r,
+    label: systemRoleNames[r.value] || r.label
+  }));
+
+  const getRoleColor = useCallback((role: string) => {
+    const sysRole = ROLES.find((r) => r.value === role);
+    if (sysRole) return sysRole.color;
+    return 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400';
+  }, []);
+
+  const getRoleLabel = useCallback((role: string) => {
+    const sysRole = DYNAMIC_ROLES.find((r) => r.value === role);
+    if (sysRole) return sysRole.label;
+    const custom = customRoles.find(r => r._id === role);
+    return custom ? custom.name : role;
+  }, [DYNAMIC_ROLES, customRoles]);
 
   // Filters
   const [search, setSearch] = useState('');
@@ -204,6 +226,25 @@ export default function UsersPage() {
       if (deptRes.success) setDepartments(deptRes.data || []);
       if (divRes.success) setDivisions(divRes.data || []);
       if (statsRes.success) setStats(statsRes.data);
+
+      const [rolesRes, resSettEmp, resSettHOD, resSettHR, resSettMgr] = await Promise.all([
+        api.getRoles(),
+        api.getSetting('feature_control_employee'),
+        api.getSetting('feature_control_hod'),
+        api.getSetting('feature_control_hr'),
+        api.getSetting('feature_control_manager'),
+      ]);
+
+      if (rolesRes.success) setCustomRoles(rolesRes.data || []);
+
+      // Update system role names from settings
+      const newNames = { ...systemRoleNames };
+      const val = (r: any) => r?.data?.value;
+      if (resSettEmp?.success && val(resSettEmp)?.name) newNames.employee = val(resSettEmp).name;
+      if (resSettHOD?.success && val(resSettHOD)?.name) newNames.hod = val(resSettHOD).name;
+      if (resSettHR?.success && val(resSettHR)?.name) newNames.hr = val(resSettHR).name;
+      if (resSettMgr?.success && val(resSettMgr)?.name) newNames.manager = val(resSettMgr).name;
+      setSystemRoleNames(newNames);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load data');
     } finally {
@@ -226,6 +267,14 @@ export default function UsersPage() {
     loadData();
   }, [loadData]);
 
+  useEffect(() => {
+    if (showCreateDialog || showEditDialog || showFromEmployeeDialog) {
+      api.getRoles().then(res => {
+        if (res.success) setCustomRoles(res.data || []);
+      });
+    }
+  }, [showCreateDialog, showEditDialog, showFromEmployeeDialog]);
+
   // Clear messages
   useEffect(() => {
     if (error || success) {
@@ -246,6 +295,17 @@ export default function UsersPage() {
       if (!formData.role || formData.role === previousRoleRef.current) return;
 
       previousRoleRef.current = formData.role;
+
+      // Check for custom role
+      const customRole = customRoles.find(r => r._id === formData.role);
+      if (customRole) {
+        setFormData(prev => ({
+          ...prev,
+          featureControl: customRole.activeModules || [],
+          dataScope: 'department'
+        }));
+        return;
+      }
 
       try {
         const settingKey = `feature_control_${formData.role === 'hod' ? 'hod' : formData.role === 'hr' ? 'hr' : 'employee'}`;
@@ -1544,11 +1604,15 @@ export default function UsersPage() {
                               <select
                                 value={formData.role}
                                 onChange={(e) => {
-                                  const role = e.target.value;
+                                  const roleId = e.target.value;
+                                  const customRole = customRoles.find(r => r._id === roleId);
+                                  const newPermissions = customRole ? (customRole.activeModules || []) : formData.featureControl;
+
                                   setFormData({
                                     ...formData,
-                                    role,
-                                    dataScope: ['hr', 'sub_admin', 'super_admin'].includes(role) ? 'all' : (role === 'hod' ? 'division' : 'department'),
+                                    role: roleId,
+                                    featureControl: newPermissions,
+                                    dataScope: ['hr', 'sub_admin', 'super_admin'].includes(roleId) ? 'all' : (roleId === 'hod' ? 'division' : 'department'),
                                     department: '',
                                     departments: [],
                                     divisionMapping: []
@@ -1560,6 +1624,9 @@ export default function UsersPage() {
                                   <option key={role.value} value={role.value}>
                                     {role.label}
                                   </option>
+                                ))}
+                                {customRoles.map(role => (
+                                  <option key={role._id} value={role._id}>{role.name}</option>
                                 ))}
                               </select>
                             </div>
@@ -1713,9 +1780,9 @@ export default function UsersPage() {
                               type="button"
                               onClick={() => {
                                 const allModules = MODULE_CATEGORIES.flatMap(cat => cat.modules.map(m => m.code));
+                                const readPermissions = allModules.map(code => `${code}:read`);
                                 const writePermissions = allModules.map(code => `${code}:write`);
-                                const existingRead = (formData.featureControl || []).filter(fc => fc.endsWith(':read'));
-                                setFormData({ ...formData, featureControl: [...existingRead, ...writePermissions] });
+                                setFormData({ ...formData, featureControl: [...readPermissions, ...writePermissions] });
                               }}
                               className="px-3 py-1.5 text-xs font-medium rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:hover:bg-emerald-500/20 transition-colors"
                             >
@@ -1740,18 +1807,32 @@ export default function UsersPage() {
                                   const toggleRead = () => {
                                     const currentFeatures = formData.featureControl || [];
                                     const readPerm = `${module.code}:read`;
-                                    const newFeatures = hasRead
-                                      ? currentFeatures.filter(f => f !== readPerm)
-                                      : [...currentFeatures, readPerm];
+                                    const writePerm = `${module.code}:write`;
+                                    let newFeatures;
+
+                                    if (hasRead) {
+                                      // Remove read AND write
+                                      newFeatures = currentFeatures.filter(f => f !== readPerm && f !== writePerm);
+                                    } else {
+                                      // Add read
+                                      newFeatures = [...currentFeatures, readPerm];
+                                    }
                                     setFormData({ ...formData, featureControl: newFeatures });
                                   };
 
                                   const toggleWrite = () => {
                                     const currentFeatures = formData.featureControl || [];
                                     const writePerm = `${module.code}:write`;
-                                    const newFeatures = hasWrite
-                                      ? currentFeatures.filter(f => f !== writePerm)
-                                      : [...currentFeatures, writePerm];
+                                    const readPerm = `${module.code}:read`;
+                                    let newFeatures;
+
+                                    if (hasWrite) {
+                                      // Remove write
+                                      newFeatures = currentFeatures.filter(f => f !== writePerm);
+                                    } else {
+                                      // Add write AND ensure read is present
+                                      newFeatures = Array.from(new Set([...currentFeatures, writePerm, readPerm]));
+                                    }
                                     setFormData({ ...formData, featureControl: newFeatures });
                                   };
 
@@ -2057,19 +2138,26 @@ export default function UsersPage() {
                             <select
                               value={employeeFormData.role}
                               onChange={(e) => {
-                                const role = e.target.value;
+                                const roleId = e.target.value;
+                                const customRole = customRoles.find(r => r._id === roleId);
+                                const newPermissions = customRole ? (customRole.activeModules || []) : employeeFormData.featureControl;
+
                                 setEmployeeFormData({
                                   ...employeeFormData,
-                                  role,
-                                  dataScope: ['hr', 'sub_admin', 'super_admin'].includes(role) ? 'all' : (role === 'hod' ? 'division' : 'department'),
+                                  role: roleId,
+                                  featureControl: newPermissions,
+                                  dataScope: ['hr', 'sub_admin', 'super_admin'].includes(roleId) ? 'all' : (roleId === 'hod' ? 'division' : 'department'),
                                   departments: [],
                                   divisionMapping: []
                                 });
                               }}
                               className="w-full appearance-none rounded-xl border border-slate-200 bg-white px-4 py-3 pl-11 text-sm font-medium text-slate-900 transition-all focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                             >
-                              {ROLES.filter((r) => r.value !== 'employee' && (r.value !== 'super_admin' || currentUser?.role === 'super_admin')).map((role) => (
+                              {DYNAMIC_ROLES.filter((r) => r.value !== 'employee' && (r.value !== 'super_admin' || currentUser?.role === 'super_admin')).map((role) => (
                                 <option key={role.value} value={role.value}>{role.label}</option>
+                              ))}
+                              {customRoles.map(role => (
+                                <option key={role._id} value={role._id}>{role.name}</option>
                               ))}
                             </select>
                           </div>
@@ -2187,18 +2275,18 @@ export default function UsersPage() {
                           >
                             Read All
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const allModules = MODULE_CATEGORIES.flatMap(cat => cat.modules.map(m => m.code));
-                              const writePermissions = allModules.map(code => `${code}:write`);
-                              const existingRead = (employeeFormData.featureControl || []).filter(fc => fc.endsWith(':read'));
-                              setEmployeeFormData({ ...employeeFormData, featureControl: [...existingRead, ...writePermissions] });
-                            }}
-                            className="px-3 py-1.5 text-xs font-medium rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:hover:bg-emerald-500/20 transition-colors"
-                          >
-                            Write All
-                          </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const allModules = MODULE_CATEGORIES.flatMap(cat => cat.modules.map(m => m.code));
+                                const readPermissions = allModules.map(code => `${code}:read`);
+                                const writePermissions = allModules.map(code => `${code}:write`);
+                                setEmployeeFormData({ ...employeeFormData, featureControl: [...readPermissions, ...writePermissions] });
+                              }}
+                              className="px-3 py-1.5 text-xs font-medium rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:hover:bg-emerald-500/20 transition-colors"
+                            >
+                              Write All
+                            </button>
                         </div>
                       </div>
 
@@ -2218,18 +2306,32 @@ export default function UsersPage() {
                                 const toggleRead = () => {
                                   const currentFeatures = employeeFormData.featureControl || [];
                                   const readPerm = `${module.code}:read`;
-                                  const newFeatures = hasRead
-                                    ? currentFeatures.filter(f => f !== readPerm)
-                                    : [...currentFeatures, readPerm];
+                                  const writePerm = `${module.code}:write`;
+                                  let newFeatures;
+
+                                  if (hasRead) {
+                                    // Remove read AND write
+                                    newFeatures = currentFeatures.filter(f => f !== readPerm && f !== writePerm);
+                                  } else {
+                                    // Add read
+                                    newFeatures = [...currentFeatures, readPerm];
+                                  }
                                   setEmployeeFormData({ ...employeeFormData, featureControl: newFeatures });
                                 };
 
                                 const toggleWrite = () => {
                                   const currentFeatures = employeeFormData.featureControl || [];
                                   const writePerm = `${module.code}:write`;
-                                  const newFeatures = hasWrite
-                                    ? currentFeatures.filter(f => f !== writePerm)
-                                    : [...currentFeatures, writePerm];
+                                  const readPerm = `${module.code}:read`;
+                                  let newFeatures;
+
+                                  if (hasWrite) {
+                                    // Remove write
+                                    newFeatures = currentFeatures.filter(f => f !== writePerm);
+                                  } else {
+                                    // Add write AND ensure read is present
+                                    newFeatures = Array.from(new Set([...currentFeatures, writePerm, readPerm]));
+                                  }
                                   setEmployeeFormData({ ...employeeFormData, featureControl: newFeatures });
                                 };
 
@@ -2456,11 +2558,15 @@ export default function UsersPage() {
                               <select
                                 value={formData.role}
                                 onChange={(e) => {
-                                  const role = e.target.value;
+                                  const roleId = e.target.value;
+                                  const customRole = customRoles.find(r => r._id === roleId);
+                                  const newPermissions = customRole ? (customRole.activeModules || []) : formData.featureControl;
+
                                   setFormData({
                                     ...formData,
-                                    role,
-                                    dataScope: ['hr', 'sub_admin', 'super_admin'].includes(role) ? 'all' : (role === 'hod' ? 'division' : 'department'),
+                                    role: roleId,
+                                    featureControl: newPermissions,
+                                    dataScope: ['hr', 'sub_admin', 'super_admin'].includes(roleId) ? 'all' : (roleId === 'hod' ? 'division' : 'department'),
                                     divisionMapping: []
                                   });
                                 }}
@@ -2471,6 +2577,9 @@ export default function UsersPage() {
                                   <option key={role.value} value={role.value}>
                                     {role.label}
                                   </option>
+                                ))}
+                                {customRoles.map(role => (
+                                  <option key={role._id} value={role._id}>{role.name}</option>
                                 ))}
                                 {selectedUser.role === 'super_admin' && currentUser?.role !== 'super_admin' && (
                                   <option value="super_admin">Super Admin</option>
@@ -2585,9 +2694,9 @@ export default function UsersPage() {
                               type="button"
                               onClick={() => {
                                 const allModules = MODULE_CATEGORIES.flatMap(cat => cat.modules.map(m => m.code));
+                                const readPermissions = allModules.map(code => `${code}:read`);
                                 const writePermissions = allModules.map(code => `${code}:write`);
-                                const existingRead = (formData.featureControl || []).filter(fc => fc.endsWith(':read'));
-                                setFormData({ ...formData, featureControl: [...existingRead, ...writePermissions] });
+                                setFormData({ ...formData, featureControl: [...readPermissions, ...writePermissions] });
                               }}
                               className="px-3 py-1.5 text-xs font-medium rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:hover:bg-emerald-500/20 transition-colors"
                             >
@@ -2612,18 +2721,32 @@ export default function UsersPage() {
                                   const toggleRead = () => {
                                     const currentFeatures = formData.featureControl || [];
                                     const readPerm = `${module.code}:read`;
-                                    const newFeatures = hasRead
-                                      ? currentFeatures.filter(f => f !== readPerm)
-                                      : [...currentFeatures, readPerm];
+                                    const writePerm = `${module.code}:write`;
+                                    let newFeatures;
+
+                                    if (hasRead) {
+                                      // Remove read AND write
+                                      newFeatures = currentFeatures.filter(f => f !== readPerm && f !== writePerm);
+                                    } else {
+                                      // Add read
+                                      newFeatures = [...currentFeatures, readPerm];
+                                    }
                                     setFormData({ ...formData, featureControl: newFeatures });
                                   };
 
                                   const toggleWrite = () => {
                                     const currentFeatures = formData.featureControl || [];
                                     const writePerm = `${module.code}:write`;
-                                    const newFeatures = hasWrite
-                                      ? currentFeatures.filter(f => f !== writePerm)
-                                      : [...currentFeatures, writePerm];
+                                    const readPerm = `${module.code}:read`;
+                                    let newFeatures;
+
+                                    if (hasWrite) {
+                                      // Remove write
+                                      newFeatures = currentFeatures.filter(f => f !== writePerm);
+                                    } else {
+                                      // Add write AND ensure read is present
+                                      newFeatures = Array.from(new Set([...currentFeatures, writePerm, readPerm]));
+                                    }
                                     setFormData({ ...formData, featureControl: newFeatures });
                                   };
 

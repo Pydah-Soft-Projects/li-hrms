@@ -12,23 +12,26 @@ const GeneralSettings = () => {
   const [earlyOutGrace, setEarlyOutGrace] = useState<number>(15);
   const [allowEmployeeBulkProcess, setAllowEmployeeBulkProcess] = useState<boolean>(false);
   const [customEmployeeGroupingEnabled, setCustomEmployeeGroupingEnabled] = useState<boolean>(false);
+  const [autoODCreationEnabled, setAutoODCreationEnabled] = useState<boolean>(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const loadSettings = async () => {
     try {
       setLoading(true);
-      const [resLate, resEarly, resBulk, resGrouping] = await Promise.all([
+      const [resLate, resEarly, resBulk, resGrouping, resAutoOD] = await Promise.all([
         api.getSetting('late_in_grace_time'),
         api.getSetting('early_out_grace_time'),
         api.getSetting('allow_employee_bulk_process'),
         api.getSetting('custom_employee_grouping_enabled'),
+        api.getSetting('auto_od_creation_enabled'),
       ]);
 
       if (resLate.success && resLate.data) setLateInGrace(Number(resLate.data.value));
       if (resEarly.success && resEarly.data) setEarlyOutGrace(Number(resEarly.data.value));
       if (resBulk.success && resBulk.data) setAllowEmployeeBulkProcess(!!resBulk.data.value);
       if (resGrouping.success && resGrouping.data) setCustomEmployeeGroupingEnabled(!!resGrouping.data.value);
+      if (resAutoOD.success && resAutoOD.data) setAutoODCreationEnabled(!!resAutoOD.data.value);
     } catch (err) {
       console.error('Failed to load general settings', err);
       toast.error('Failed to load settings');
@@ -44,7 +47,7 @@ const GeneralSettings = () => {
   const handleSave = async () => {
     try {
       setSaving(true);
-      const [resLate, resEarly, resBulk, resGrouping] = await Promise.all([
+      const [resLate, resEarly, resBulk, resGrouping, resAutoOD] = await Promise.all([
         api.upsertSetting({
           key: 'late_in_grace_time',
           value: lateInGrace,
@@ -68,10 +71,16 @@ const GeneralSettings = () => {
           value: customEmployeeGroupingEnabled,
           category: 'employee',
           description: 'Enable custom employee groups (CRUD, applications, bulk upload, filters)'
+        }),
+        api.upsertSetting({
+          key: 'auto_od_creation_enabled',
+          value: autoODCreationEnabled,
+          category: 'general',
+          description: 'Enable automatic OD creation for eligible holiday/week-off biometric punches'
         })
       ]);
 
-      if (resLate.success && resEarly.success && resBulk.success && resGrouping.success) {
+      if (resLate.success && resEarly.success && resBulk.success && resGrouping.success && resAutoOD.success) {
         toast.success('General settings saved successfully');
       } else {
         toast.error('Failed to save general settings');
@@ -190,6 +199,34 @@ const GeneralSettings = () => {
                   className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${customEmployeeGroupingEnabled ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-gray-700'}`}
                 >
                   <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition ${customEmployeeGroupingEnabled ? 'translate-x-5' : 'translate-x-1'}`} />
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden p-4 sm:p-6 lg:p-8">
+            <div className="px-8 py-6 border-b border-gray-100 dark:border-gray-800">
+              <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Automatic OD Creation</h3>
+            </div>
+            <div className="p-8">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <label htmlFor="autoODCreationEnabled" className="block text-sm font-medium text-gray-900 dark:text-white">
+                    Enable automatic OD creation
+                  </label>
+                  <p className="text-[10px] text-gray-400 mt-1">
+                    When ON, the system auto-creates or updates OD requests for eligible holiday/week-off biometric punches. When OFF, auto-OD workflow is disabled.
+                  </p>
+                </div>
+                <button
+                  id="autoODCreationEnabled"
+                  type="button"
+                  role="switch"
+                  aria-checked={autoODCreationEnabled}
+                  onClick={() => setAutoODCreationEnabled((v) => !v)}
+                  className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${autoODCreationEnabled ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-gray-700'}`}
+                >
+                  <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition ${autoODCreationEnabled ? 'translate-x-5' : 'translate-x-1'}`} />
                 </button>
               </div>
             </div>

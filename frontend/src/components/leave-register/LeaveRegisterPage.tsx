@@ -315,6 +315,9 @@ type ListRow = {
     designation?: string;
     department?: string;
     division?: string;
+    group?: string;
+    employeeGroup?: string;
+    employee_group?: { name: string };
     status?: string;
   };
   summary: {
@@ -1423,41 +1426,56 @@ export default function LeaveRegisterPage({
                 <tr
                   className={
                     isSuperadmin
-                      ? 'bg-slate-100/95 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700'
-                      : 'bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700'
+                      ? 'bg-slate-100/95 dark:bg-slate-800 border-b border-slate-300 dark:border-slate-700'
+                      : 'bg-slate-50 dark:bg-slate-800/80 border-b border-slate-300 dark:border-slate-700'
                   }
                 >
                   <th className={`w-9 ${isSuperadmin ? 'py-2 px-1.5' : 'py-3 px-2'}`} aria-label="Expand" />
                   <th
-                    className={`text-left font-medium text-slate-600 dark:text-slate-300 ${isSuperadmin ? 'py-2 px-3' : 'py-3 px-4'}`}
+                    className={`text-left font-bold text-slate-800 dark:text-slate-200 ${isSuperadmin ? 'py-2 px-2' : 'py-3 px-3'}`}
                   >
                     Employee
                   </th>
                   <th
-                    className={`text-left font-medium text-slate-600 dark:text-slate-300 hidden md:table-cell ${isSuperadmin ? 'py-2 px-3' : 'py-3 px-4'}`}
+                    className={`text-left font-bold text-slate-800 dark:text-slate-200 hidden md:table-cell border-l border-slate-300 dark:border-slate-700 w-[180px] ${isSuperadmin ? 'py-2 px-2' : 'py-3 px-3'}`}
                   >
-                    Org
+                    Division
                   </th>
                   <th
-                    className={`text-right font-medium text-slate-600 dark:text-slate-300 ${isSuperadmin ? 'py-2 px-2' : 'py-3 px-3'}`}
+                    className={`text-left font-bold text-slate-800 dark:text-slate-200 hidden md:table-cell border-l border-slate-300 dark:border-slate-700 w-[150px] ${isSuperadmin ? 'py-2 px-2' : 'py-3 px-3'}`}
+                  >
+                    Department
+                  </th>
+                  <th
+                    className={`text-left font-bold text-slate-800 dark:text-slate-200 hidden lg:table-cell border-l border-slate-300 dark:border-slate-700 w-[150px] ${isSuperadmin ? 'py-2 px-2' : 'py-3 px-3'}`}
+                  >
+                    Designation
+                  </th>
+                  <th
+                    className={`text-left font-bold text-slate-800 dark:text-slate-200 hidden xl:table-cell border-l border-slate-300 dark:border-slate-700 w-[120px] ${isSuperadmin ? 'py-2 px-2' : 'py-3 px-3'}`}
+                  >
+                    Group
+                  </th>
+                  <th
+                    className={`text-right font-bold text-slate-800 dark:text-slate-200 border-l border-slate-300 dark:border-slate-700 ${isSuperadmin ? 'py-2 px-1.5' : 'py-3 px-2'}`}
                     title="CL balance (FY register when financial year is set). Second line: FY scheduled pool (sum of policy monthly CL credits for your experience tier, e.g. 12 or 15 days/year)."
                   >
                     CL
                   </th>
                   <th
-                    className={`text-right font-medium text-slate-600 dark:text-slate-300 ${isSuperadmin ? 'py-2 px-2' : 'py-3 px-3'}`}
+                    className={`text-right font-bold text-slate-800 dark:text-slate-200 border-l border-slate-300 dark:border-slate-700 ${isSuperadmin ? 'py-2 px-1.5' : 'py-3 px-2'}`}
                     title="Earned leave balance"
                   >
                     EL
                   </th>
                   <th
-                    className={`text-right font-medium text-slate-600 dark:text-slate-300 ${isSuperadmin ? 'py-2 px-2' : 'py-3 px-3'}`}
+                    className={`text-right font-bold text-slate-800 dark:text-slate-200 border-l border-slate-300 dark:border-slate-700 ${isSuperadmin ? 'py-2 px-1.5' : 'py-3 px-2'}`}
                     title="Compensatory / CCL balance"
                   >
                     CCL
                   </th>
                   <th
-                    className={`text-right font-medium text-slate-600 dark:text-slate-300 hidden sm:table-cell ${isSuperadmin ? 'py-2 px-2' : 'py-3 px-3'}`}
+                    className={`text-right font-bold text-slate-800 dark:text-slate-200 hidden sm:table-cell border-l border-slate-300 dark:border-slate-700 ${isSuperadmin ? 'py-2 px-1.5' : 'py-3 px-2'}`}
                     title="CL + EL + CCL using the same balances shown in those columns (not a separate payroll-period-only sum)."
                   >
                     Total
@@ -1472,14 +1490,14 @@ export default function LeaveRegisterPage({
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={8} className="py-12 text-center text-slate-500">
+                    <td colSpan={11} className="py-12 text-center text-slate-500">
                       <Loader2 className="h-7 w-7 animate-spin mx-auto text-indigo-500" />
                       <p className="mt-2 text-xs">Loading register…</p>
                     </td>
                   </tr>
                 ) : rows.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="py-12 text-center text-slate-500 dark:text-slate-400 text-xs">
+                    <td colSpan={11} className="py-12 text-center text-slate-500 dark:text-slate-400 text-xs">
                       No employees match your filters.
                     </td>
                   </tr>
@@ -1506,8 +1524,8 @@ export default function LeaveRegisterPage({
                         }}
                         className={
                           isSuperadmin
-                            ? 'border-b border-slate-100 dark:border-slate-800/90 hover:bg-blue-50/40 dark:hover:bg-slate-800/50 cursor-pointer transition-colors'
-                            : 'border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50/80 dark:hover:bg-slate-800/40 cursor-pointer'
+                            ? 'border-b border-slate-300 dark:border-slate-800/90 hover:bg-blue-50/40 dark:hover:bg-slate-800/50 cursor-pointer transition-colors'
+                            : 'border-b border-slate-300 dark:border-slate-800 hover:bg-slate-50/80 dark:hover:bg-slate-800/40 cursor-pointer'
                         }
                       >
                         <td
@@ -1536,7 +1554,6 @@ export default function LeaveRegisterPage({
                               </p>
                               <p className="text-[11px] text-slate-500 leading-snug">
                                 {row.employee?.empNo || '—'}
-                                {row.employee?.designation ? ` · ${row.employee.designation}` : ''}
                               </p>
                               {row.yearSnapshot?.financialYear ? (
                                 <p className="text-[10px] text-slate-400 mt-0.5 leading-snug">
@@ -1551,18 +1568,34 @@ export default function LeaveRegisterPage({
                           </div>
                         </td>
                         <td
-                          className={`hidden md:table-cell text-slate-600 dark:text-slate-400 ${isSuperadmin ? 'py-2 px-3 text-[11px]' : 'py-3 px-4 text-xs'}`}
+                          className={`hidden md:table-cell text-slate-900 dark:text-slate-100 border-l border-slate-300 dark:border-slate-700 w-[180px] ${isSuperadmin ? 'py-2 px-2 text-[12px]' : 'py-3 px-3 text-sm'}`}
                         >
-                          <div>{row.employee?.department || '—'}</div>
-                          <div className="text-slate-400">{row.employee?.division || ''}</div>
+                          <div className="truncate" title={row.employee?.division}>{row.employee?.division || '—'}</div>
                         </td>
                         <td
-                          className={`text-right font-mono tabular-nums ${isSuperadmin ? 'py-2 px-2' : 'py-3 px-3'}`}
+                          className={`hidden md:table-cell text-slate-900 dark:text-slate-100 border-l border-slate-300 dark:border-slate-700 w-[150px] ${isSuperadmin ? 'py-2 px-2 text-[12px]' : 'py-3 px-3 text-sm'}`}
+                        >
+                          <div className="truncate" title={row.employee?.department}>{row.employee?.department || '—'}</div>
+                        </td>
+                        <td
+                          className={`hidden lg:table-cell text-slate-900 dark:text-slate-100 border-l border-slate-300 dark:border-slate-700 w-[150px] ${isSuperadmin ? 'py-2 px-2 text-[12px]' : 'py-3 px-3 text-sm'}`}
+                        >
+                          <div className="truncate" title={row.employee?.designation}>{row.employee?.designation || '—'}</div>
+                        </td>
+                        <td
+                          className={`hidden xl:table-cell text-slate-900 dark:text-slate-100 border-l border-slate-300 dark:border-slate-700 w-[120px] ${isSuperadmin ? 'py-2 px-2 text-[12px]' : 'py-3 px-3 text-sm'}`}
+                        >
+                          <div className="truncate" title={row.employee?.group || row.employee?.employeeGroup || row.employee?.employee_group?.name}>
+                            {row.employee?.group || row.employee?.employeeGroup || row.employee?.employee_group?.name || '—'}
+                          </div>
+                        </td>
+                        <td
+                          className={`text-right font-mono tabular-nums border-l border-slate-300 dark:border-slate-700 ${isSuperadmin ? 'py-2 px-1.5' : 'py-3 px-2'}`}
                         >
                           <div>{formatNum(bal.cl)}</div>
                           {bal.clPoolDays != null ? (
                             <div
-                              className="text-[10px] font-normal text-slate-400 dark:text-slate-500 mt-0.5 leading-tight"
+                              className="text-[10px] font-normal text-slate-500 dark:text-slate-400 mt-0.5 leading-tight"
                               title="FY scheduled CL pool: total days credited across the year from policy (experience tier monthly schedule)."
                             >
                               pool {formatNum(bal.clPoolDays)}
@@ -1570,22 +1603,22 @@ export default function LeaveRegisterPage({
                           ) : null}
                         </td>
                         <td
-                          className={`text-right font-mono tabular-nums ${isSuperadmin ? 'py-2 px-2' : 'py-3 px-3'}`}
+                          className={`text-right font-mono tabular-nums border-l border-slate-300 dark:border-slate-700 ${isSuperadmin ? 'py-2 px-1.5' : 'py-3 px-2'}`}
                         >
                           {formatNum(bal.el)}
                         </td>
                         <td
-                          className={`text-right font-mono tabular-nums ${isSuperadmin ? 'py-2 px-2' : 'py-3 px-3'}`}
+                          className={`text-right font-mono tabular-nums border-l border-slate-300 dark:border-slate-700 ${isSuperadmin ? 'py-2 px-1.5' : 'py-3 px-2'}`}
                         >
                           {formatNum(bal.ccl)}
                         </td>
                         <td
-                          className={`text-right font-mono tabular-nums hidden sm:table-cell font-medium text-slate-800 dark:text-slate-200 ${isSuperadmin ? 'py-2 px-2' : 'py-3 px-3'}`}
+                          className={`text-right font-mono tabular-nums hidden sm:table-cell font-bold text-slate-900 dark:text-slate-100 border-l border-slate-300 dark:border-slate-700 ${isSuperadmin ? 'py-2 px-1.5' : 'py-3 px-2'}`}
                         >
                           {formatNum(bal.total)}
                         </td>
                         <td
-                          className={`text-right text-slate-500 hidden lg:table-cell ${isSuperadmin ? 'py-2 px-2' : 'py-3 px-3'}`}
+                          className={`text-right text-slate-900 dark:text-slate-100 border-l border-slate-300 dark:border-slate-700 hidden lg:table-cell ${isSuperadmin ? 'py-2 px-1.5' : 'py-3 px-2'}`}
                         >
                           {row.transactionCount ?? 0}
                         </td>
@@ -1597,7 +1630,7 @@ export default function LeaveRegisterPage({
                           key={`${idStr}-expand`}
                           className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-900/50"
                         >
-                          <td colSpan={8} className={isSuperadmin ? 'px-3 py-3' : 'px-4 py-4'}>
+                          <td colSpan={11} className={isSuperadmin ? 'px-3 py-3' : 'px-4 py-4'}>
                             {rowDetailLoading[idStr] && !detailCacheRef.current.has(idStr) ? (
                               <div className="flex items-center gap-2 text-xs text-slate-500">
                                 <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-500" />
@@ -1650,91 +1683,87 @@ export default function LeaveRegisterPage({
                                     each type’s Lk column. Pending and approved days count only toward that leave type’s cap.
                                   </p>
                                 )}
-                                <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/60">
+                                <div className="overflow-x-auto rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800/60">
                                   <table
-                                    className={`w-full min-w-[900px] border-collapse ${isSuperadmin ? 'text-[10px]' : 'text-[11px]'}`}
+                                    className={`w-full min-w-[1000px] border-collapse border border-slate-300 dark:border-slate-600 ${isSuperadmin ? 'text-[11px]' : 'text-[13px]'}`}
                                   >
                                     <thead>
-                                      <tr className="bg-slate-100/90 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300">
+                                      <tr className="bg-slate-100/90 dark:bg-slate-800/80 border-b border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300">
                                         <th
                                           rowSpan={2}
-                                          className="text-left font-semibold px-2 py-2 align-bottom whitespace-nowrap"
+                                          className="text-left font-semibold px-2 py-2 align-bottom whitespace-nowrap w-[260px] border border-slate-300 dark:border-slate-600"
                                         >
                                           Month
                                         </th>
-                                        <th colSpan={5} className="text-center font-semibold px-1 py-1 border-l border-slate-200 dark:border-slate-600">
+                                        <th colSpan={5} className="text-center font-bold px-1 py-1.5 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-slate-100 text-[13px]">
                                           CL
                                         </th>
-                                        <th colSpan={5} className="text-center font-semibold px-1 py-1 border-l border-slate-200 dark:border-slate-600">
+                                        <th colSpan={5} className="text-center font-bold px-1 py-1.5 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-slate-100 text-[13px]">
                                           CCL
                                         </th>
-                                        <th colSpan={5} className="text-center font-semibold px-1 py-1 border-l border-slate-200 dark:border-slate-600">
+                                        <th colSpan={5} className="text-center font-bold px-1 py-1.5 border border-slate-300 dark:border-slate-600 text-slate-800 dark:text-slate-100 text-[13px]">
                                           EL
                                         </th>
                                       </tr>
-                                      <tr className="bg-slate-50 dark:bg-slate-900/50 text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-600">
-                                        <th className="text-right font-medium px-1 py-1 border-l border-slate-200 dark:border-slate-600">
+                                      <tr className="bg-slate-50 dark:bg-slate-900/50 text-slate-700 dark:text-slate-200 border-b border-slate-300 dark:border-slate-600">
+                                        <th className="text-center font-bold px-1 py-1 border border-slate-300 dark:border-slate-600 text-[13px]">
                                           Cr
                                         </th>
-                                        <th className="text-right font-medium px-1 py-1">Used</th>
+                                        <th className="text-center font-bold px-1 py-1 border border-slate-300 dark:border-slate-600 text-[13px]">Used</th>
                                         <th
-                                          className="text-right font-medium px-1 py-1"
+                                          className="text-center font-bold px-1 py-1 border border-slate-300 dark:border-slate-600 text-[13px]"
                                           title="This month: credits minus used (approved debits) for CL in this payroll period."
                                         >
                                           Bal
                                         </th>
                                         <th
-                                          className="text-right font-medium px-1 py-1"
+                                          className="text-center font-bold px-1 py-1 border border-slate-300 dark:border-slate-600 text-[13px]"
                                           title="Locked (pending). Subtext: per-type apply limit when configured in policy."
                                         >
                                           Lk
                                         </th>
                                         <th
-                                          className="text-right font-medium px-1 py-1 border-l border-slate-200 dark:border-slate-600"
+                                          className="text-center font-bold px-1 py-1 border border-slate-300 dark:border-slate-600 text-[13px]"
                                           title="Closed periods: implied unused CL (scheduled − used − policy lock) that would roll under global policy"
                                         >
                                           Xfer
                                         </th>
-                                        <th className="text-right font-medium px-1 py-1 border-l border-slate-200 dark:border-slate-600">
-                                          Cr
-                                        </th>
-                                        <th className="text-right font-medium px-1 py-1">Used</th>
+                                        <th className="text-center font-bold px-1 py-1 border border-slate-300 dark:border-slate-600 text-[13px]">Cr</th>
+                                        <th className="text-center font-bold px-1 py-1 border border-slate-300 dark:border-slate-600 text-[13px]">Used</th>
                                         <th
-                                          className="text-right font-medium px-1 py-1"
+                                          className="text-center font-bold px-1 py-1 border border-slate-300 dark:border-slate-600 text-[13px]"
                                           title="This month: credits minus used (approved debits) for CCL in this payroll period."
                                         >
                                           Bal
                                         </th>
                                         <th
-                                          className="text-right font-medium px-1 py-1"
+                                          className="text-center font-bold px-1 py-1 border border-slate-300 dark:border-slate-600 text-[13px]"
                                           title="Locked (pending). Subtext: per-type apply limit when configured."
                                         >
                                           Lk
                                         </th>
                                         <th
-                                          className="text-right font-medium px-1 py-1 border-l border-slate-200 dark:border-slate-600"
+                                          className="text-center font-bold px-1 py-1 border border-slate-300 dark:border-slate-600 text-[13px]"
                                           title="Closed periods: implied unused CCL that would roll under global policy"
                                         >
                                           Xfer
                                         </th>
-                                        <th className="text-right font-medium px-1 py-1 border-l border-slate-200 dark:border-slate-600">
-                                          Cr
-                                        </th>
-                                        <th className="text-right font-medium px-1 py-1">Used</th>
+                                        <th className="text-center font-bold px-1 py-1 border border-slate-300 dark:border-slate-600 text-[13px]">Cr</th>
+                                        <th className="text-center font-bold px-1 py-1 border border-slate-300 dark:border-slate-600 text-[13px]">Used</th>
                                         <th
-                                          className="text-right font-medium px-1 py-1"
+                                          className="text-center font-bold px-1 py-1 border border-slate-300 dark:border-slate-600 text-[13px]"
                                           title="This month: credits minus used (approved debits) for EL in this payroll period."
                                         >
                                           Bal
                                         </th>
                                         <th
-                                          className="text-right font-medium px-1 py-1"
+                                          className="text-center font-bold px-1 py-1 border border-slate-300 dark:border-slate-600 text-[13px]"
                                           title="Locked (pending). Subtext: per-type apply limit when configured."
                                         >
                                           Lk
                                         </th>
                                         <th
-                                          className="text-right font-medium px-1 py-1 border-l border-slate-200 dark:border-slate-600"
+                                          className="text-center font-bold px-1 py-1 border border-slate-300 dark:border-slate-600 text-[13px]"
                                           title="Closed periods: implied unused EL that would roll under global policy"
                                         >
                                           Xfer
@@ -1766,108 +1795,119 @@ export default function LeaveRegisterPage({
                                           }}
                                           className="border-b border-slate-100 dark:border-slate-700/80 hover:bg-indigo-50/60 dark:hover:bg-slate-700/40 cursor-pointer font-mono tabular-nums"
                                         >
-                                          <td className="text-left px-2 py-1.5 align-top">
-                                            <div className="font-semibold text-slate-900 dark:text-slate-100">
-                                              {m.label || `${m.month}/${m.year}`}
-                                            </div>
+                                          <td className="text-left px-2 py-2 align-top border border-slate-300 dark:border-slate-600">
+                                            <div className="flex items-center gap-3 whitespace-nowrap">
+                                              <div className="font-bold text-slate-900 dark:text-slate-100 text-[14px]">
+                                                {m.label && !m.label.includes('/') ? m.label : new Date(m.year, m.month - 1).toLocaleString('default', { month: 'long', year: 'numeric' })}
+                                              </div>
 
-                                            {canEditMonths && m.monthEditPolicy?.allowEditMonth ? (
-                                              <button
-                                                type="button"
-                                                onClick={(e) => {
-                                                  e.stopPropagation();
-                                                  const fyResolved =
-                                                    financialYear.trim() ||
-                                                    String(row.yearSnapshot?.financialYear || '').trim();
-                                                  if (!fyResolved) {
-                                                    toast.info(
-                                                      'Enter Financial year in filters (e.g. 2025-2026), or open row when FY snapshot loads.'
+                                              {canEditMonths && m.monthEditPolicy?.allowEditMonth ? (
+                                                <button
+                                                  type="button"
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    const fyResolved =
+                                                      financialYear.trim() ||
+                                                      String(row.yearSnapshot?.financialYear || '').trim();
+                                                    if (!fyResolved) {
+                                                      toast.info(
+                                                        'Enter Financial year in filters (e.g. 2025-2026), or open row when FY snapshot loads.'
+                                                      );
+                                                      return;
+                                                    }
+                                                    const mSlot = enrichRegisterMonthLiteCredits(
+                                                      m as RegisterMonthLite,
+                                                      m as any
                                                     );
-                                                    return;
-                                                  }
-                                                  const mSlot = enrichRegisterMonthLiteCredits(
-                                                    m as RegisterMonthLite,
-                                                    m as any
-                                                  );
-                                                  setSlotEditModal({
-                                                    open: true,
-                                                    employeeId: idStr,
-                                                    employeeName:
-                                                      row.employee?.name || row.employee?.empNo || 'Employee',
-                                                    financialYearForApi: fyResolved,
-                                                    payrollCycleMonth: m.month,
-                                                    payrollCycleYear: m.year,
-                                                    label: m.label || `${m.month}/${m.year}`,
-                                                    payrollMonthIndex:
-                                                      Number(m.payrollMonthIndex) || (idx + 1),
-                                                    monthEditPolicy: m.monthEditPolicy || null,
-                                                    clCredits: poolInputStringCreditsFirst(mSlot, 'cl'),
-                                                    compensatoryOffs: poolInputStringCreditsFirst(
-                                                      mSlot,
-                                                      'ccl'
-                                                    ),
-                                                    elCredits: poolInputStringCreditsFirst(mSlot, 'el'),
-                                                    lockedCredits:
-                                                      m.lockedCredits != null ? String(m.lockedCredits) : '',
-                                                    validateWithRecords: true,
-                                                    carryUnusedToNextMonth: false,
-                                                    clUsed: '',
-                                                    compensatoryOffsUsed: '',
-                                                    elUsed: '',
-                                                    reason: '',
-                                                    saving: false,
-                                                  });
-                                                }}
-                                                className="mt-1 text-left text-[10px] font-semibold text-blue-600 dark:text-blue-400 hover:underline"
-                                              >
-                                                Edit month credits…
-                                              </button>
-                                            ) : canEditMonths ? (
-                                              <p className="mt-1 text-[10px] text-slate-400 dark:text-slate-500">
-                                                Slot edit off for this period (policy).
-                                              </p>
-                                            ) : null}
+                                                    setSlotEditModal({
+                                                      open: true,
+                                                      employeeId: idStr,
+                                                      employeeName:
+                                                        row.employee?.name || row.employee?.empNo || 'Employee',
+                                                      financialYearForApi: fyResolved,
+                                                      payrollCycleMonth: m.month,
+                                                      payrollCycleYear: m.year,
+                                                      label: m.label || new Date(m.year, m.month - 1).toLocaleString('default', { month: 'long', year: 'numeric' }),
+                                                      payrollMonthIndex:
+                                                        Number(m.payrollMonthIndex) || (idx + 1),
+                                                      monthEditPolicy: m.monthEditPolicy || null,
+                                                      clCredits: poolInputStringCreditsFirst(mSlot, 'cl'),
+                                                      compensatoryOffs: poolInputStringCreditsFirst(
+                                                        mSlot,
+                                                        'ccl'
+                                                      ),
+                                                      elCredits: poolInputStringCreditsFirst(
+                                                        mSlot,
+                                                        'el'
+                                                      ),
+                                                      lockedCredits:
+                                                        m.lockedCredits != null ? String(m.lockedCredits) : '',
+                                                      validateWithRecords: true,
+                                                      carryUnusedToNextMonth: false,
+                                                      clUsed: '',
+                                                      compensatoryOffsUsed: '',
+                                                      elUsed: '',
+                                                      reason: '',
+                                                      saving: false,
+                                                    });
+                                                  }}
+                                                  className="text-left text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+                                                >
+                                                  Edit month credits…
+                                                </button>
+                                              ) : canEditMonths ? (
+                                                <p className="text-[10px] text-slate-400 dark:text-slate-500">
+                                                  Slot edit off for this period (policy).
+                                                </p>
+                                              ) : null}
+                                            </div>
                                           </td>
-                                          <td className="text-right px-1 py-1.5 border-l border-slate-200 dark:border-slate-600">
+                                          <td className="text-center px-1 py-1.5 text-slate-900 dark:text-slate-100 border border-slate-300 dark:border-slate-600 align-top text-[13px]">
                                             {formatNullableNum(m.cl?.credited)}
                                           </td>
-                                          <td className="text-right px-1 py-1.5">{formatNullableNum(m.cl?.used)}</td>
-                                          <td className="text-right px-1 py-1.5 text-slate-800 dark:text-slate-100 font-semibold">
+                                          <td className="text-center px-1 py-1.5 text-slate-900 dark:text-slate-100 border border-slate-300 dark:border-slate-600 align-top text-[13px]">
+                                            {formatNullableNum(m.cl?.used)}
+                                          </td>
+                                          <td className="text-center px-1 py-1.5 text-slate-900 dark:text-slate-100 font-bold border border-slate-300 dark:border-slate-600 align-top text-[13px]">
                                             {formatMonthNetBalance(m.cl?.credited, m.cl?.used)}
                                           </td>
-                                          <td className="text-right px-1 py-1.5 align-top">
+                                          <td className="text-center px-1 py-1.5 text-slate-900 dark:text-slate-100 border border-slate-300 dark:border-slate-600 align-top text-[13px]">
                                             <div>{formatNullableNum(m.cl?.locked)}</div>
                                             <TypeApplyCapHint bucket={m.cl} />
                                           </td>
-                                          <td className="text-right px-1 py-1.5 border-l border-slate-200 dark:border-slate-600">
+                                          <td className="text-center px-1 py-1.5 text-slate-700 dark:text-slate-400 border border-slate-300 dark:border-slate-600 align-top text-[13px]">
                                             {formatNullableNum(m.cl?.transfer)}
                                           </td>
-                                          <td className="text-right px-1 py-1.5 border-l border-slate-200 dark:border-slate-600">
+                                          <td className="text-center px-1 py-1.5 text-slate-900 dark:text-slate-100 border border-slate-300 dark:border-slate-600 align-top text-[13px]">
                                             {formatNullableNum(m.ccl?.credited)}
                                           </td>
-                                          <td className="text-right px-1 py-1.5">{formatNullableNum(m.ccl?.used)}</td>
-                                          <td className="text-right px-1 py-1.5 text-slate-800 dark:text-slate-100 font-semibold">
+                                          <td className="text-center px-1 py-1.5 text-slate-900 dark:text-slate-100 border border-slate-300 dark:border-slate-600 align-top text-[13px]">
+                                            {formatNullableNum(m.ccl?.used)}
+                                          </td>
+                                          <td className="text-center px-1 py-1.5 text-slate-900 dark:text-slate-100 font-bold border border-slate-300 dark:border-slate-600 align-top text-[13px]">
                                             {formatMonthNetBalance(m.ccl?.credited, m.ccl?.used)}
                                           </td>
-                                          <td className="text-right px-1 py-1.5 align-top">
+                                          <td className="text-center px-1 py-1.5 text-slate-900 dark:text-slate-100 border border-slate-300 dark:border-slate-600 align-top text-[13px]">
                                             <div>{formatNullableNum(m.ccl?.locked)}</div>
                                             <TypeApplyCapHint bucket={m.ccl} />
                                           </td>
-                                          <td className="text-right px-1 py-1.5 border-l border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-400">
+                                          <td className="text-center px-1 py-1.5 text-slate-700 dark:text-slate-400 border border-slate-300 dark:border-slate-600 align-top text-[13px]">
                                             {formatNullableNum(m.ccl?.transfer)}
                                           </td>
-                                          <td className="text-right px-1 py-1.5 border-l border-slate-200 dark:border-slate-600">
+                                          <td className="text-center px-1 py-1.5 text-slate-900 dark:text-slate-100 border border-slate-300 dark:border-slate-600 align-top text-[13px]">
                                             {formatNullableNum(m.el?.credited)}
                                           </td>
-                                          <td className="text-right px-1 py-1.5">{formatNullableNum(m.el?.used)}</td>
-                                          <td className="text-right px-1 py-1.5 text-slate-800 dark:text-slate-100 font-semibold">
+                                          <td className="text-center px-1 py-1.5 text-slate-900 dark:text-slate-100 border border-slate-300 dark:border-slate-600 align-top text-[13px]">
+                                            {formatNullableNum(m.el?.used)}
+                                          </td>
+                                          <td className="text-center px-1 py-1.5 text-slate-900 dark:text-slate-100 font-bold border border-slate-300 dark:border-slate-600 align-top text-[13px]">
                                             {formatMonthNetBalance(m.el?.credited, m.el?.used)}
                                           </td>
-                                          <td className="text-right px-1 py-1.5 align-top">
+                                          <td className="text-center px-1 py-1.5 text-slate-900 dark:text-slate-100 border border-slate-300 dark:border-slate-600 align-top text-[13px]">
                                             <div>{formatNullableNum(m.el?.locked)}</div>
                                             <TypeApplyCapHint bucket={m.el} />
                                           </td>
-                                          <td className="text-right px-1 py-1.5 border-l border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-400">
+                                          <td className="text-center px-1 py-1.5 text-slate-700 dark:text-slate-400 border border-slate-300 dark:border-slate-600 align-top text-[13px]">
                                             {formatNullableNum(m.el?.transfer)}
                                           </td>
                                         </tr>
