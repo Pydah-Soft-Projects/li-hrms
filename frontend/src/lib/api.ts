@@ -384,6 +384,10 @@ export interface ApiResponse<T> {
   isHolidayOrWeekOff?: boolean;
   unreadCount?: number;
   updated?: number;
+  /** Flat JSON from some endpoints (e.g. push helpers), not only nested under `data`. */
+  subscribed?: boolean;
+  configured?: boolean;
+  publicKey?: string | null;
 }
 
 export interface InAppNotification {
