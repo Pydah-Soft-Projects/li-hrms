@@ -55,7 +55,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 const loadedUser = localStorage.getItem('user');
                 const parsedUser = loadedUser ? JSON.parse(loadedUser) : null;
                 const isSSO = parsedUser?.loginMethod === 'sso';
-                const crmUrl = process.env.NEXT_PUBLIC_CRM_URL;
+                const crmUrl = process.env.NEXT_PUBLIC_CRM_URL || 'https://crm.pydah.edu.in';
 
                 if (isSSO && crmUrl) {
                     window.location.href = crmUrl;
