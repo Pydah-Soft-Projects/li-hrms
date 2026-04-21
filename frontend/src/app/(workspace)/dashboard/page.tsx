@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { api, type InAppNotification } from '@/lib/api';
+import { api, type InAppNotification, type WorkspaceDashboardStats } from '@/lib/api';
 import TodayBirthdayTicker from '@/components/employee-birthdays/TodayBirthdayTicker';
 import Link from 'next/link';
 import {
@@ -16,7 +16,6 @@ import {
   Star,
   LayoutDashboard,
   ChevronRight,
-  Coffee,
   Bell,
   BellRing,
   X,
@@ -25,26 +24,7 @@ import {
 import { useSocket } from '@/contexts/SocketContext';
 import { useDashboardPushBell } from '@/hooks/useDashboardPushBell';
 
-interface DashboardStats {
-  totalEmployees?: number;
-  pendingLeaves?: number;
-  approvedLeaves?: number;
-  rejectedLeaves?: number;
-  todayPresent?: number;
-  todayAbsent?: number;
-  upcomingHolidays?: number;
-  myPendingLeaves?: number;
-  myApprovedLeaves?: number;
-  teamPendingApprovals?: number;
-  efficiencyScore?: number;
-  departmentFeed?: any[];
-  leaveBalance?: number;
-  /** Leave register FY: running CCL balance from ledger */
-  compensatoryOffBalance?: number | null;
-  yearlyClCreditDaysPosted?: number | null;
-  yearlyCclCreditDaysPosted?: number | null;
-  financialYearRegister?: string | null;
-}
+type DashboardStats = WorkspaceDashboardStats;
 
 interface DashboardCardProps {
   title: string;
@@ -52,10 +32,11 @@ interface DashboardCardProps {
   description: string;
   change?: string;
   statusBadge?: React.ReactNode;
+  footer?: React.ReactNode;
   icon?: React.ReactElement<{ className?: string }>;
 }
 
-const DashboardCard = ({ title, value, description, change, statusBadge, icon }: DashboardCardProps) => (
+const DashboardCard = ({ title, value, description, change, statusBadge, footer, icon }: DashboardCardProps) => (
   <div className="rounded-xl border border-border-base bg-bg-surface/70 backdrop-blur p-3 md:p-6 hover:bg-bg-surface/80 transition-all duration-300 shadow-sm group">
     <div className="flex justify-between items-start mb-3 md:mb-4 gap-2">
       <div className="flex flex-col gap-0.5 md:gap-1 min-w-0">
@@ -68,9 +49,10 @@ const DashboardCard = ({ title, value, description, change, statusBadge, icon }:
     </div>
 
     <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-1.5 md:gap-2 mt-auto">
-      <div className="flex flex-col">
+      <div className="flex flex-col min-w-0 w-full">
         <p className="text-[9px] md:text-xs text-text-secondary font-medium truncate">{description}</p>
         {change && <span className="text-[8px] md:text-[10px] text-text-secondary font-normal">{change}</span>}
+        {footer && <div className="mt-2 pt-2 border-t border-border-base w-full">{footer}</div>}
       </div>
       {statusBadge}
     </div>
@@ -671,52 +653,142 @@ function HODDashboard({ stats }: { stats: DashboardStats }) {
 
 // Employee Dashboard Component
 function EmployeeDashboard({ stats }: { stats: DashboardStats }) {
-  const cco =
-    stats.compensatoryOffBalance != null && Number.isFinite(Number(stats.compensatoryOffBalance))
-      ? Number(stats.compensatoryOffBalance)
-      : null;
   const fyLabel = stats.financialYearRegister || '';
   const clPosted = stats.yearlyClCreditDaysPosted ?? null;
   const cclPosted = stats.yearlyCclCreditDaysPosted ?? null;
-  const ccoDescription =
-    fyLabel && clPosted != null && cclPosted != null
-      ? `FY ${fyLabel}: ${clPosted} CL day(s) credited · ${cclPosted} CCL day(s) credited (ledger audit)`
-      : 'Balance from leave register (year row); credits this FY shown when register exists';
+  const paidTotal = stats.totalPaidLeaveDaysAvailable ?? stats.leaveBalance ?? 0;
+  const rows = stats.leaveBalancesByType || [];
+  const paidRows = rows.filter((r) => r.paid);
+  const unpaidRows = rows.filter((r) => !r.paid);
+  const pendingTotal = stats.myPendingRequestsTotal ?? (Number(stats.myPendingLeaves || 0) + Number(stats.myPendingODs || 0));
+  const pendingLeave = stats.myPendingLeaves ?? 0;
+  const pendingOd = stats.myPendingODs ?? 0;
+  const nextHolName = stats.nextHolidayName || (stats.upcomingHolidaysList && stats.upcomingHolidaysList[0]?.name) || '—';
+  const nextHolDate =
+    stats.nextHolidayDate || (stats.upcomingHolidaysList && stats.upcomingHolidaysList[0]?.date) || null;
+  const holCount = stats.upcomingHolidays ?? 0;
+  const roster = stats.rosterNextDays || [];
+
+  const formatShortDate = (iso: string) => {
+    const d = new Date(`${iso}T12:00:00`);
+    if (Number.isNaN(d.getTime())) return iso;
+    return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+  };
+
+  const leaveTypeFooter = (
+    <div className="space-y-1.5 text-[9px] md:text-[10px] text-text-secondary leading-snug">
+      {paidRows.length > 0 && (
+        <p>
+          <span className="font-bold text-emerald-700 dark:text-emerald-400">Paid</span>{' '}
+          {paidRows.map((r) => `${r.code} ${r.balanceDays}`).join(' · ')}
+        </p>
+      )}
+      {unpaidRows.length > 0 && (
+        <p>
+          <span className="font-bold text-amber-700 dark:text-amber-400">Unpaid / LOP</span>{' '}
+          {unpaidRows.map((r) => `${r.code} ${r.balanceDays}`).join(' · ')}
+        </p>
+      )}
+      {fyLabel && clPosted != null && cclPosted != null && (
+        <p className="text-text-secondary/80 pt-0.5">
+          FY {fyLabel}: {clPosted} CL credited · {cclPosted} CCL credited (register)
+        </p>
+      )}
+    </div>
+  );
+
+  const pendingFooter = (
+    <div className="flex flex-col gap-0.5 text-[10px] md:text-xs font-semibold text-text-secondary">
+      <span>
+        Leave <span className="text-text-primary">{pendingLeave}</span>
+      </span>
+      <span>
+        OD <span className="text-text-primary">{pendingOd}</span>
+      </span>
+    </div>
+  );
+
+  const holidayFooter =
+    stats.upcomingHolidaysList && stats.upcomingHolidaysList.length > 0 ? (
+      <ul className="space-y-0.5 text-[9px] md:text-[10px] text-text-secondary max-h-24 overflow-y-auto">
+        {stats.upcomingHolidaysList.slice(0, 6).map((h) => (
+          <li key={`${h.date}-${h.name}`} className="flex justify-between gap-2">
+            <span className="truncate font-medium text-text-primary/90">{h.name}</span>
+            <span className="shrink-0 tabular-nums">{formatShortDate(h.date)}</span>
+          </li>
+        ))}
+      </ul>
+    ) : null;
 
   return (
     <div className="space-y-8">
-      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 md:gap-6">
+      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
         <DashboardCard
-          title="Leave Balance"
-          value={stats.leaveBalance || 0}
-          description="Available days"
+          title="Paid leave (register)"
+          value={paidTotal}
+          description="Sum of paid-type balances from your leave register"
+          footer={rows.length > 0 ? leaveTypeFooter : undefined}
           icon={<Calendar className="w-full h-full" />}
         />
         <DashboardCard
-          title="Compensatory off (CCL)"
-          value={cco != null ? cco : '—'}
-          description={ccoDescription}
-          icon={<Coffee className="w-full h-full" />}
-        />
-        <DashboardCard
-          title="Active Requests"
-          value={stats.myPendingLeaves || 0}
-          description="Awaiting approval"
+          title="In progress"
+          value={pendingTotal}
+          description="Leave & OD applications awaiting approval"
+          footer={pendingFooter}
           icon={<Clock className="w-full h-full" />}
         />
         <DashboardCard
-          title="Monthly Presence"
+          title="Monthly presence"
           value={stats.todayPresent || 0}
-          description="Total present days"
+          description="Present / partial days this month"
           icon={<CheckCircle2 className="w-full h-full" />}
         />
         <DashboardCard
-          title="Next Holiday"
-          value={stats.upcomingHolidays || 0}
-          description="Upcoming events"
+          title="Holidays ahead"
+          value={nextHolName}
+          description={
+            nextHolDate
+              ? `Next: ${formatShortDate(nextHolDate)} · ${holCount} day(s) in next 120d (calendar + attendance)`
+              : 'Calendar for your division / group, plus attendance-marked holidays'
+          }
+          footer={holidayFooter}
           icon={<Star className="w-full h-full" />}
         />
       </div>
+
+      {roster.length > 0 && (
+        <div className="rounded-xl border border-border-base bg-bg-surface/70 backdrop-blur p-4 md:p-6 shadow-sm">
+          <div className="flex items-center gap-2 mb-3 md:mb-4">
+            <Building2 className="w-4 h-4 md:w-5 md:h-5 text-indigo-500 shrink-0" />
+            <h2 className="text-sm md:text-base font-black text-text-primary uppercase tracking-wide">Shift roster (14 days)</h2>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-7 gap-2 md:gap-3">
+            {roster.map((d) => (
+              <div
+                key={d.date}
+                className="rounded-lg border border-border-base bg-bg-base/80 px-2 py-2 md:px-3 md:py-2.5 text-[10px] md:text-xs"
+              >
+                <p className="font-bold text-text-primary tabular-nums">{formatShortDate(d.date)}</p>
+                {d.rosterStatus === 'HOL' && (
+                  <p className="text-amber-700 dark:text-amber-400 font-semibold mt-0.5">Holiday</p>
+                )}
+                {d.rosterStatus === 'WO' && (
+                  <p className="text-slate-500 font-semibold mt-0.5">Week off</p>
+                )}
+                {!d.rosterStatus && d.shiftName && (
+                  <p className="text-text-secondary font-medium mt-0.5 truncate" title={d.shiftName}>
+                    {d.shiftName}
+                  </p>
+                )}
+                {!d.rosterStatus && !d.shiftName && <p className="text-text-secondary/70 mt-0.5">—</p>}
+                {d.shiftTime && !['HOL', 'WO'].includes(String(d.rosterStatus || '')) && (
+                  <p className="text-[9px] text-text-secondary/90 tabular-nums mt-0.5">{d.shiftTime}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
         <div className="md:col-span-2 lg:col-span-3 p-4 md:p-8 rounded-2xl md:rounded-3xl bg-bg-surface/50 border border-border-base backdrop-blur-md shadow-sm h-fit">
