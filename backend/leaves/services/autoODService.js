@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 const OD = require('../model/OD');
 const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
 const Employee = require('../../employees/model/Employee');
-const LeaveSettings = require('../model/LeaveSettings');
+const { resolveLeaveTypeWorkflowSettings } = require('../../departments/services/divisionWorkflowResolver');
 const Settings = require('../../settings/model/Settings');
 
 /**
@@ -138,8 +138,11 @@ const processAutoODForEmployee = async (employeeNumber, dateStr, record) => {
         }
 
 
-        // 3. Get OD workflow settings
-        const workflowSettings = await LeaveSettings.getActiveSettings('od');
+        // 3. Get OD workflow settings (division override → global)
+        const workflowSettings = await resolveLeaveTypeWorkflowSettings(
+            'od',
+            employee.division_id?._id || employee.division_id
+        );
 
         // 4. Fetch employee with full details for workflow and snapshotting
         const employee = await Employee.findOne({ emp_no: record.employeeNumber })

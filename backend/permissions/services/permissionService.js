@@ -10,7 +10,7 @@ const { calculateMonthlySummary } = require('../../attendance/services/summaryCa
 const { validatePermissionRequest } = require('../../shared/services/conflictValidationService');
 const { getResolvedPermissionSettings } = require('../../departments/controllers/departmentSettingsController');
 const { checkJurisdiction } = require('../../shared/middleware/dataScopeMiddleware');
-const PermissionDeductionSettings = require('../model/PermissionDeductionSettings');
+const { resolvePermissionWorkflowSettings } = require('../../departments/services/divisionWorkflowResolver');
 const { assertEmployeeDateRequestsEditable } = require('../../shared/services/payrollRequestLockService');
 
 /**
@@ -194,8 +194,8 @@ const createPermissionRequest = async (data, userId) => {
       permissionHours = 0;
     }
 
-    // Get Workflow Settings
-    const workflowSettings = await PermissionDeductionSettings.getActiveSettings();
+    // Workflow: division override → global (deduction limits still use department + global elsewhere)
+    const workflowSettings = await resolvePermissionWorkflowSettings(employee.division_id?._id || employee.division_id);
 
     // Initialize workflow chain from settings order (not hardcoded to HOD).
     const configuredSteps = Array.isArray(workflowSettings?.workflow?.steps)

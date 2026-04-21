@@ -5,6 +5,7 @@ const Employee = require('../../employees/model/Employee');
 const User = require('../../users/model/User');
 const { isHRMSConnected, getEmployeeByIdMSSQL } = require('../../employees/config/sqlHelper');
 const { getResolvedLoanSettings } = require('../../departments/controllers/departmentSettingsController');
+const { resolveLoanWorkflowSettings } = require('../../departments/services/divisionWorkflowResolver');
 const { getEmployeeIdsInScope } = require('../../shared/middleware/dataScopeMiddleware');
 const { notifyWorkflowEvent } = require('../../notifications/services/notificationService');
 const Division = require('../../departments/model/Division');
@@ -130,33 +131,6 @@ const findEmployeeByIdOrEmpNo = async (identifier) => {
  * Loan Controller
  * Handles CRUD operations and approval workflow
  */
-
-// Helper function to get workflow settings
-const getWorkflowSettings = async (type) => {
-  let settings = await LoanSettings.getActiveSettings(type);
-
-  // Return default workflow if no settings found
-  if (!settings) {
-    return {
-      workflow: {
-        isEnabled: true,
-        steps: [
-          { stepOrder: 1, stepName: 'HOD Approval', approverRole: 'hod', availableActions: ['approve', 'reject', 'forward'], approvedStatus: 'hod_approved', rejectedStatus: 'hod_rejected', nextStepOnApprove: 2, isActive: true },
-          { stepOrder: 2, stepName: 'HR Approval', approverRole: 'hr', availableActions: ['approve', 'reject'], approvedStatus: 'approved', rejectedStatus: 'hr_rejected', nextStepOnApprove: null, isActive: true },
-        ],
-        finalAuthority: { role: 'hr', anyHRCanApprove: true },
-      },
-      settings: {
-        maxAmount: null,
-        minAmount: 1000,
-        maxDuration: 60,
-        minDuration: 1,
-      },
-    };
-  }
-
-  return settings;
-};
 
 // Helper to calculate EMI for loans with simple interest
 const calculateEMI = (principal, interestRate, duration) => {
@@ -761,8 +735,8 @@ exports.applyLoan = async (req, res) => {
       }
     }
 
-    // Get workflow settings
-    const workflowSettings = await getWorkflowSettings(requestType);
+    // Workflow: division override → global (limits still merged from department below)
+    const workflowSettings = await resolveLoanWorkflowSettings(requestType, employee.division_id?._id || employee.division_id);
 
     // Get resolved settings (department + global fallback)
     let settings = workflowSettings.settings || {};
@@ -1372,8 +1346,8 @@ exports.processLoanAction = async (req, res) => {
     const isSuperAdmin = ['super_admin', 'sub_admin'].includes(userRole);
     const isHR = userRole === 'hr';
 
-    // Fetch active settings for the loan type
-    const settings = await LoanSettings.findOne({ type: loan.requestType, isActive: true });
+    // Active workflow for this loan (division override → global)
+    const settings = await resolveLoanWorkflowSettings(loan.requestType, loan.division_id?._id || loan.division_id);
     const allowBypass = settings?.workflow?.allowHigherAuthorityToApproveLowerLevels || false;
 
     // Validate user can perform this action
