@@ -22,6 +22,7 @@ const {
   getEmployeeIdsInScope,
   checkJurisdiction
 } = require('../../shared/middleware/dataScopeMiddleware');
+const { resolveLeaveTypeWorkflowSettings } = require('../../departments/services/divisionWorkflowResolver');
 
 const getEmployeeSettings = async () => {
   try {
@@ -70,22 +71,7 @@ const findEmployeeByIdOrEmpNo = async (identifier) => {
   return await findEmployeeByEmpNo(identifier);
 };
 
-const getWorkflowSettings = async () => {
-  let settings = await LeaveSettings.getActiveSettings('ccl');
-  if (!settings) {
-    return {
-      workflow: {
-        isEnabled: true,
-        steps: [
-          { stepOrder: 1, stepName: 'HOD Approval', approverRole: 'hod', availableActions: ['approve', 'reject'], approvedStatus: 'hod_approved', rejectedStatus: 'hod_rejected', nextStepOnApprove: 2, isActive: true },
-          { stepOrder: 2, stepName: 'HR Approval', approverRole: 'hr', availableActions: ['approve', 'reject'], approvedStatus: 'approved', rejectedStatus: 'hr_rejected', nextStepOnApprove: null, isActive: true },
-        ],
-        finalAuthority: { role: 'hr', anyHRCanApprove: true },
-      },
-    };
-  }
-  return settings;
-};
+const getWorkflowSettings = async (divisionId) => resolveLeaveTypeWorkflowSettings('ccl', divisionId);
 
 /**
  * Check if date is holiday or weekly off for employee (PreScheduledShift)
@@ -502,8 +488,8 @@ exports.applyCCL = async (req, res) => {
     // Get attendance data
     const attData = await getAttendanceForDate(employee.emp_no, dateStr);
 
-    // Build workflow
-    const workflowSettings = await getWorkflowSettings();
+    // Build workflow (division override → global)
+    const workflowSettings = await getWorkflowSettings(employee.division_id?._id || employee.division_id);
     const approvalSteps = [];
     const reportingManagers = employee.dynamicFields?.reporting_to || employee.dynamicFields?.reporting_to_ || [];
     const hasReportingManager = Array.isArray(reportingManagers) && reportingManagers.length > 0;
@@ -706,7 +692,7 @@ exports.processCCLAction = async (req, res) => {
 
     // 4. Setting: Allow higher authority to approve lower levels (same as Leave/OD)
     if (!canProcess && ccl.workflow?.approvalChain?.length > 0) {
-      const workflowSettings = await getWorkflowSettings();
+      const workflowSettings = await getWorkflowSettings(ccl.division_id?._id || ccl.division_id);
       const allowHigher = workflowSettings?.workflow?.allowHigherAuthorityToApproveLowerLevels === true;
       if (allowHigher) {
         const chain = ccl.workflow.approvalChain.slice().sort((a, b) => (a.stepOrder ?? 999) - (b.stepOrder ?? 999));

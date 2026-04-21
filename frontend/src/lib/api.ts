@@ -691,6 +691,25 @@ export interface Division {
   isActive?: boolean;
 }
 
+/** Per-division approval workflow overrides (inherit global when key omitted). */
+export type DivisionWorkflowModuleKey =
+  | 'leave'
+  | 'od'
+  | 'ccl'
+  | 'loan'
+  | 'salary_advance'
+  | 'permission'
+  | 'ot';
+
+export interface DivisionWorkflowSettings {
+  _id?: string;
+  division: string | Division;
+  workflows: Partial<Record<DivisionWorkflowModuleKey, Record<string, unknown> | null | undefined>>;
+  createdBy?: { name?: string; email?: string };
+  updatedBy?: { name?: string; email?: string };
+  updatedAt?: string;
+}
+
 export type DataScope = 'own' | 'department' | 'departments' | 'division' | 'divisions' | 'all';
 
 export interface User {
@@ -1362,6 +1381,20 @@ export const api = {
 
   deleteDivision: async (id: string) => {
     return apiRequest<void>(`/divisions/${id}`, { method: 'DELETE' });
+  },
+
+  getDivisionWorkflowSettings: async (divisionId: string) => {
+    return apiRequest<DivisionWorkflowSettings>(`/divisions/${divisionId}/workflow-settings`, { method: 'GET' });
+  },
+
+  updateDivisionWorkflowSettings: async (
+    divisionId: string,
+    data: { workflows: Partial<Record<DivisionWorkflowModuleKey, Record<string, unknown> | null>> }
+  ) => {
+    return apiRequest<DivisionWorkflowSettings>(`/divisions/${divisionId}/workflow-settings`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
   },
 
   getEmployeeGroups: async (isActive?: boolean) => {

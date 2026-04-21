@@ -17,6 +17,7 @@ const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
 const leaveRegisterService = require('../services/leaveRegisterService');
 const { notifyWorkflowEvent } = require('../../notifications/services/notificationService');
 const { assertEmployeeRangeRequestsEditable } = require('../../shared/services/payrollRequestLockService');
+const { resolveLeaveTypeWorkflowSettings } = require('../../departments/services/divisionWorkflowResolver');
 const { appendOdTrailPoints } = require('../services/odTrailService');
 const { emitOdTrailUpdate } = require('../../shared/services/socketService');
 
@@ -272,33 +273,6 @@ exports.checkHoliday = async (req, res) => {
  * OD (On Duty) Controller
  * Handles CRUD operations and approval workflow
  */
-
-// Helper function to get workflow settings
-const getWorkflowSettings = async () => {
-  let settings = await LeaveSettings.getActiveSettings('od');
-
-  // Return default workflow if no settings found
-  if (!settings) {
-    return {
-      settings: {
-        allowBackdated: false,
-        maxBackdatedDays: 0,
-        allowFutureDated: true,
-        maxAdvanceDays: 365,
-      },
-      workflow: {
-        isEnabled: true,
-        steps: [
-          { stepOrder: 1, stepName: 'HOD Approval', approverRole: 'hod', availableActions: ['approve', 'reject'], approvedStatus: 'hod_approved', rejectedStatus: 'hod_rejected', nextStepOnApprove: 2, isActive: true },
-          { stepOrder: 2, stepName: 'HR Approval', approverRole: 'hr', availableActions: ['approve', 'reject'], approvedStatus: 'approved', rejectedStatus: 'hr_rejected', nextStepOnApprove: null, isActive: true },
-        ],
-        finalAuthority: { role: 'hr', anyHRCanApprove: true },
-      },
-    };
-  }
-
-  return settings;
-};
 
 const hasValidPhotoEvidence = (photoEvidence) => !!(photoEvidence && photoEvidence.url);
 const hasValidGeoLocation = (geoLocation) =>
@@ -617,9 +591,14 @@ exports.applyOD = async (req, res) => {
       });
     }
 
-    // Get settings
-    const workflowSettings = await getWorkflowSettings();
-    const settings = workflowSettings.settings || {};
+    // Date policy: global OD settings only (division overrides apply to workflow, not calendar rules)
+    const odGlobal = await LeaveSettings.getActiveSettings('od');
+    const settings = odGlobal?.settings || {
+      allowBackdated: false,
+      maxBackdatedDays: 0,
+      allowFutureDated: true,
+      maxAdvanceDays: 365,
+    };
 
     // Validate Date
     const today = new Date();
@@ -886,6 +865,8 @@ exports.applyOD = async (req, res) => {
       { path: 'department_id', select: 'name' },
       { path: 'designation_id', select: 'name' },
     ]);
+
+    const workflowSettings = await resolveLeaveTypeWorkflowSettings('od', employee.division_id?._id || employee.division_id);
 
     // Calculate number of days
     const from = new Date(fromDate);
@@ -1776,7 +1757,7 @@ exports.processODAction = async (req, res) => {
 
     // --- Intermediate Rejection Override Check ---
     if (od.status.endsWith('_rejected') && od.status !== 'rejected') {
-      const workflowSettings = await getWorkflowSettings();
+      const workflowSettings = await resolveLeaveTypeWorkflowSettings('od', od.division_id?._id || od.division_id);
       const allowHigher = workflowSettings?.workflow?.allowHigherAuthorityToApproveLowerLevels === true;
       if (!allowHigher) {
         return res.status(403).json({
@@ -1819,7 +1800,7 @@ exports.processODAction = async (req, res) => {
 
     // 3. Setting: Allow higher authority to approve lower levels
     if (!canProcess && od.workflow && od.workflow.approvalChain && od.workflow.approvalChain.length > 0) {
-      const workflowSettings = await getWorkflowSettings();
+      const workflowSettings = await resolveLeaveTypeWorkflowSettings('od', od.division_id?._id || od.division_id);
       const allowHigher = workflowSettings?.workflow?.allowHigherAuthorityToApproveLowerLevels === true;
       if (allowHigher) {
         const chain = od.workflow.approvalChain.slice().sort((a, b) => (a.stepOrder ?? 999) - (b.stepOrder ?? 999));
