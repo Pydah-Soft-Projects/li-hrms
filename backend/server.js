@@ -6,6 +6,10 @@ const cors = require('cors');
 const { initSocket } = require('./shared/services/socketService');
 const { initializeAllDatabases } = require('./config/init');
 const { checkConnection: checkS3Connection } = require('./shared/services/s3UploadService');
+const {
+  isWebPushConfigured,
+  ensureVapid,
+} = require('./shared/services/pushNotificationService');
 
 const app = express();
 module.exports = app;
@@ -295,6 +299,28 @@ const startServer = async () => {
       console.log(`📍 Server URL: http://localhost:${PORT}`);
       console.log(`📋 API Root: http://localhost:${PORT}/`);
       console.log(`💚 Health Check: http://localhost:${PORT}/health`);
+
+      if (isWebPushConfigured()) {
+        try {
+          const vapidOk = ensureVapid();
+          const pub = process.env.VAPID_PUBLIC_KEY || '';
+          const preview = pub.length > 16 ? `${pub.slice(0, 10)}…${pub.slice(-6)}` : '(short key)';
+          const subject = process.env.VAPID_SUBJECT || 'mailto:hrms@localhost (default)';
+          const fe = process.env.FRONTEND_URL || process.env.APP_BASE_URL || 'http://localhost:3000 (default)';
+          if (vapidOk) {
+            console.log(`🔔 Web Push (VAPID): READY — key ${preview} | subject: ${subject}`);
+            console.log(`   Push click-through base URL: ${fe}`);
+          } else {
+            console.warn('⚠️  Web Push (VAPID): keys present but VAPID init failed — check VAPID_SUBJECT / key format');
+          }
+        } catch (vapidErr) {
+          console.warn('⚠️  Web Push (VAPID): startup check failed:', vapidErr.message);
+        }
+      } else {
+        console.log(
+          '🔕 Web Push (VAPID): OFF — set VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY in .env to enable OS/browser push (optional: VAPID_SUBJECT, FRONTEND_URL)'
+        );
+      }
       console.log(`\n📦 Available Endpoints:`);
       console.log(`   - Authentication: /api/auth`);
       console.log(`   - Users: /api/users`);

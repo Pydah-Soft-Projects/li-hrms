@@ -125,6 +125,19 @@ const userSchema = new mongoose.Schema(
       trim: true,
       default: null,
     },
+    /** Web Push subscriptions (browser / PWA); max enforced in controller */
+    pushSubscriptions: [
+      {
+        endpoint: { type: String, required: true, trim: true },
+        expirationTime: { type: Number, default: null },
+        keys: {
+          p256dh: { type: String, required: true },
+          auth: { type: String, required: true },
+        },
+        userAgent: { type: String, default: null, trim: true },
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
   },
   {
     timestamps: true,

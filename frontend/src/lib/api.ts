@@ -5122,4 +5122,30 @@ export const api = {
   markAllNotificationsRead: async () => {
     return apiRequest<any>('/notifications/read-all', { method: 'PATCH' });
   },
+
+  getPushVapidPublic: async (): Promise<ApiResponse<{ configured: boolean; publicKey: string | null }>> => {
+    return apiRequest<{ configured: boolean; publicKey: string | null }>('/notifications/push/vapid-public', {
+      method: 'GET',
+    });
+  },
+
+  getPushSubscriptionStatus: async (): Promise<ApiResponse<{ subscribed: boolean; count?: number }>> => {
+    return apiRequest<{ subscribed: boolean; count?: number }>('/notifications/push/status', {
+      method: 'GET',
+    });
+  },
+
+  subscribePush: async (subscription: Record<string, unknown>) => {
+    return apiRequest('/notifications/push/subscribe', {
+      method: 'POST',
+      body: JSON.stringify(subscription),
+    });
+  },
+
+  unsubscribePush: async (endpoint: string) => {
+    return apiRequest('/notifications/push/unsubscribe', {
+      method: 'POST',
+      body: JSON.stringify({ endpoint }),
+    });
+  },
 };

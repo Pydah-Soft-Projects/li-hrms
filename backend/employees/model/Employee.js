@@ -323,6 +323,19 @@ const employeeSchema = new mongoose.Schema(
     deductEarlyOut: { type: Boolean, default: true },
     deductPermission: { type: Boolean, default: true },
     deductAbsent: { type: Boolean, default: true },
+    /** Web Push (employee portal / PWA); same shape as User.pushSubscriptions */
+    pushSubscriptions: [
+      {
+        endpoint: { type: String, required: true, trim: true },
+        expirationTime: { type: Number, default: null },
+        keys: {
+          p256dh: { type: String, required: true },
+          auth: { type: String, required: true },
+        },
+        userAgent: { type: String, default: null, trim: true },
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
   },
   {
     timestamps: {

@@ -1,4 +1,93 @@
 const Notification = require('../model/Notification');
+const User = require('../../users/model/User');
+const Employee = require('../../employees/model/Employee');
+
+const MAX_PUSH_SUBSCRIPTIONS = 12;
+
+exports.getVapidPublicKey = async (req, res) => {
+  try {
+    const publicKey = process.env.VAPID_PUBLIC_KEY || null;
+    const configured = Boolean(publicKey && process.env.VAPID_PRIVATE_KEY);
+    res.status(200).json({
+      success: true,
+      configured,
+      publicKey: configured ? publicKey : null,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to read push config', error: error.message });
+  }
+};
+
+exports.subscribePush = async (req, res) => {
+  try {
+    const sub = req.body;
+    if (!sub?.endpoint || !sub.keys?.p256dh || !sub.keys?.auth) {
+      return res.status(400).json({ success: false, message: 'Invalid push subscription payload' });
+    }
+
+    const entry = {
+      endpoint: String(sub.endpoint),
+      expirationTime: sub.expirationTime != null ? Number(sub.expirationTime) : null,
+      keys: {
+        p256dh: String(sub.keys.p256dh),
+        auth: String(sub.keys.auth),
+      },
+      userAgent: (req.headers['user-agent'] || '').slice(0, 512) || null,
+      createdAt: new Date(),
+    };
+
+    const isEmployeePortal = req.user.type === 'employee';
+    const Model = isEmployeePortal ? Employee : User;
+    const notFoundMsg = isEmployeePortal ? 'Employee not found' : 'User not found';
+
+    const account = await Model.findById(req.user._id).select('pushSubscriptions');
+    if (!account) {
+      return res.status(404).json({ success: false, message: notFoundMsg });
+    }
+
+    const existing = Array.isArray(account.pushSubscriptions) ? account.pushSubscriptions : [];
+    const filtered = existing.filter((s) => s.endpoint !== entry.endpoint);
+    filtered.push(entry);
+    const trimmed = filtered.slice(-MAX_PUSH_SUBSCRIPTIONS);
+    account.pushSubscriptions = trimmed;
+    await account.save();
+
+    res.status(200).json({ success: true, message: 'Push subscription saved', count: trimmed.length });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to save push subscription', error: error.message });
+  }
+};
+
+exports.unsubscribePush = async (req, res) => {
+  try {
+    const endpoint = req.body?.endpoint;
+    if (!endpoint || typeof endpoint !== 'string') {
+      return res.status(400).json({ success: false, message: 'endpoint is required' });
+    }
+    const Model = req.user.type === 'employee' ? Employee : User;
+    await Model.updateOne({ _id: req.user._id }, { $pull: { pushSubscriptions: { endpoint: String(endpoint) } } });
+    res.status(200).json({ success: true, message: 'Push subscription removed' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to remove push subscription', error: error.message });
+  }
+};
+
+/** Whether the current User or Employee has at least one saved Web Push subscription (for dashboard bell). */
+exports.getPushSubscriptionStatus = async (req, res) => {
+  try {
+    const isEmployeePortal = req.user.type === 'employee';
+    const Model = isEmployeePortal ? Employee : User;
+    const doc = await Model.findById(req.user._id).select('pushSubscriptions').lean();
+    const count = Array.isArray(doc?.pushSubscriptions) ? doc.pushSubscriptions.length : 0;
+    res.status(200).json({ success: true, subscribed: count > 0, count });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to read push subscription status',
+      error: error.message,
+    });
+  }
+};
 
 exports.getNotifications = async (req, res) => {
   try {

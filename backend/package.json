@@ -15,7 +15,8 @@
     "test:single-shift-partial": "node scripts/test_single_shift_out_only_partial.js",
     "sync:atlas-biometric": "node scripts/sync_atlas_biometric_to_attendance.js",
     "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage"
+    "test:coverage": "jest --coverage",
+    "test:notifications": "jest promotions-transfers/services/__tests__/promotionTransferNotificationService.simulation.test.js notifications/services/__tests__/createNotifications.recipients.simulation.test.js --forceExit"
   },
   "keywords": [],
   "author": "",
@@ -47,6 +48,7 @@
     "react-hot-toast": "^2.6.0",
     "socket.io": "^4.8.3",
     "uuid": "^13.0.0",
+    "web-push": "^3.6.7",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

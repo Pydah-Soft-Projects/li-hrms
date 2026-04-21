@@ -20,6 +20,7 @@ import {
   Settings
 } from 'lucide-react';
 import { useSocket } from '@/contexts/SocketContext';
+import { useDashboardPushBell } from '@/hooks/useDashboardPushBell';
 import {
   AttendancePulse,
   LeaveSpectrum,
@@ -94,6 +95,7 @@ export default function SuperAdminDashboard() {
   const [notificationPanelOpen, setNotificationPanelOpen] = useState(false);
   const [notificationLoading, setNotificationLoading] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const { pushSubscribed } = useDashboardPushBell(true);
 
   const loadDashboardData = useCallback(async () => {
     try {
@@ -215,8 +217,21 @@ export default function SuperAdminDashboard() {
               </div>
               <button
                 onClick={() => setNotificationPanelOpen(true)}
-                className={`relative flex h-9 w-9 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-600 shadow-sm hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:text-white ${
+                title={
+                  pushSubscribed === true
+                    ? 'Push notifications active on this device'
+                    : pushSubscribed === false
+                      ? 'Push not registered — allow notifications in the prompt or browser settings'
+                      : 'Notifications'
+                }
+                className={`relative flex h-9 w-9 items-center justify-center rounded-full border shadow-sm transition-colors ${
                   unreadCount > 0 ? 'animate-bell-wrap-pulse' : ''
+                } ${
+                  pushSubscribed === true
+                    ? 'border-emerald-500/70 bg-emerald-50 text-emerald-700 hover:text-emerald-800 dark:border-emerald-500/50 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:text-emerald-200'
+                    : pushSubscribed === false
+                      ? 'border-amber-400/80 bg-amber-50 text-amber-800 hover:text-amber-900 dark:border-amber-500/45 dark:bg-amber-950/35 dark:text-amber-200 dark:hover:text-amber-100'
+                      : 'border-zinc-200 bg-white text-zinc-600 hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:text-white'
                 }`}
                 aria-label="Open notifications"
               >

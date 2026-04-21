@@ -2,6 +2,7 @@ const Notification = require('../model/Notification');
 const User = require('../../users/model/User');
 const Employee = require('../../employees/model/Employee');
 const { sendNotification, getIO } = require('../../shared/services/socketService');
+const { sendWebPushToRecipientIds, resolveOpenUrl } = require('../../shared/services/pushNotificationService');
 
 const uniqueIds = (ids = []) => [...new Set(ids.map((id) => String(id)).filter(Boolean))];
 const isObjectIdLike = (v) => /^[a-f0-9]{24}$/i.test(String(v || ''));
@@ -179,7 +180,14 @@ async function createNotifications({
   createdBy = null,
   dedupeKey = null,
 }) {
-  const ids = uniqueIds(recipientUserIds);
+  const raw = uniqueIds(recipientUserIds);
+  const ids = raw.filter((id) => isObjectIdLike(id));
+  if (raw.length && !ids.length) {
+    console.warn(
+      `[createNotifications] ${eventType}: all ${raw.length} recipient id(s) were invalid after filter; raw sample:`,
+      raw.slice(0, 5)
+    );
+  }
   if (!ids.length) return [];
 
   const docs = ids.map((recipientUserId) => ({
@@ -198,6 +206,13 @@ async function createNotifications({
   }));
 
   const created = await Notification.insertMany(docs, { ordered: false });
+
+  sendWebPushToRecipientIds(ids, {
+    title,
+    body: message,
+    url: resolveOpenUrl(actionUrl || '/'),
+    tag: `${module}:${eventType}`,
+  }).catch((e) => console.warn('[createNotifications] Web push batch failed:', e.message));
 
   // Realtime emit + toast for online users.
   for (const n of created) {

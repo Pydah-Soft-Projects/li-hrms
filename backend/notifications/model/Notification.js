@@ -17,7 +17,7 @@ const notificationSchema = new mongoose.Schema(
     module: {
       type: String,
       required: true,
-      enum: ['leave', 'od', 'loan', 'salary_advance', 'ot_permission', 'system'],
+      enum: ['leave', 'od', 'loan', 'salary_advance', 'ot_permission', 'system', 'employee_application', 'promotion_transfer'],
       index: true,
     },
     eventType: {
