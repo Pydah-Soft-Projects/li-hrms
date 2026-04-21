@@ -119,7 +119,8 @@ export default function PushNotificationPrompt() {
     }
 
     let cancelled = false;
-    let showTimer: ReturnType<typeof setTimeout> | undefined;
+    /** Accommodate DOM (number) vs @types/node (NodeJS.Timeout) for `setTimeout` return type. */
+    let showTimer: number | NodeJS.Timeout | undefined;
 
     const run = async () => {
       setPhase('checking');
