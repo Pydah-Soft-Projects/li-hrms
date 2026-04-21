@@ -404,6 +404,62 @@ export interface NotificationUnreadCountResponse {
   unreadCount: number;
 }
 
+/** Row in GET /dashboard/stats `leaveBalancesByType` (employee register view). */
+export interface WorkspaceDashboardLeaveBalanceRow {
+  code: string;
+  name: string;
+  balanceDays: number;
+  paid: boolean;
+  leaveNature: string;
+}
+
+/** Pre-scheduled shift / roster row from GET /dashboard/stats. */
+export interface WorkspaceDashboardRosterDay {
+  date: string;
+  shiftName: string | null;
+  shiftTime?: string | null;
+  rosterStatus: string | null;
+  notes?: string | null;
+}
+
+/** Upcoming holiday slot merged from calendar + attendance. */
+export interface WorkspaceDashboardHolidayRow {
+  date: string;
+  name: string;
+  type?: string | null;
+}
+
+/**
+ * GET /dashboard/stats payload (`data`). Fields depend on role; all optional for a single shared type.
+ */
+export interface WorkspaceDashboardStats {
+  totalEmployees?: number;
+  pendingLeaves?: number;
+  approvedLeaves?: number;
+  rejectedLeaves?: number;
+  todayPresent?: number;
+  todayAbsent?: number;
+  upcomingHolidays?: number;
+  upcomingHolidaysList?: WorkspaceDashboardHolidayRow[];
+  nextHolidayName?: string | null;
+  nextHolidayDate?: string | null;
+  teamPendingApprovals?: number;
+  efficiencyScore?: number;
+  departmentFeed?: unknown[];
+  myPendingLeaves?: number;
+  myPendingODs?: number;
+  myPendingRequestsTotal?: number;
+  myApprovedLeaves?: number;
+  leaveBalance?: number;
+  totalPaidLeaveDaysAvailable?: number;
+  leaveBalancesByType?: WorkspaceDashboardLeaveBalanceRow[];
+  rosterNextDays?: WorkspaceDashboardRosterDay[];
+  compensatoryOffBalance?: number | null;
+  yearlyClCreditDaysPosted?: number | null;
+  yearlyCclCreditDaysPosted?: number | null;
+  financialYearRegister?: string | null;
+}
+
 export interface LoginResponse {
   token: string;
   user: {
@@ -1140,7 +1196,7 @@ export const api = {
   },
 
   getDashboardStats: async () => {
-    return apiRequest<any>('/dashboard/stats', { method: 'GET' });
+    return apiRequest<WorkspaceDashboardStats>('/dashboard/stats', { method: 'GET' });
   },
 
   getDashboardAnalytics: async (trackerPeriod?: 'week' | 'month' | 'lastMonth') => {

@@ -8,7 +8,12 @@ const EmployeeApplication = require('../../employee-applications/model/EmployeeA
 const OD = require('../../leaves/model/OD');
 const Permission = require('../../permissions/model/Permission');
 const LeaveRegisterYear = require('../../leaves/model/LeaveRegisterYear');
+const LeaveSettings = require('../../leaves/model/LeaveSettings');
+const Holiday = require('../../holidays/model/Holiday');
+const HolidayGroup = require('../../holidays/model/HolidayGroup');
+const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
 const dateCycleService = require('../../leaves/services/dateCycleService');
+const leaveRegisterYearLedgerService = require('../../leaves/services/leaveRegisterYearLedgerService');
 const { getEmployeeIdsInScope } = require('../../shared/middleware/dataScopeMiddleware');
 const { extractISTComponents, createISTDate, getTodayISTDateString } = require('../../shared/utils/dateUtils');
 
@@ -44,6 +49,121 @@ function toDateStr(date) {
   const m = String(date.getMonth() + 1).padStart(2, '0');
   const d = String(date.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
+}
+
+function toUtcDateString(d) {
+  const x = new Date(d);
+  const y = x.getUTCFullYear();
+  const m = String(x.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(x.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+const IN_FLIGHT_LEAVE_STATUSES = [
+  'pending',
+  'reporting_manager_approved',
+  'hod_approved',
+  'manager_approved',
+  'hr_approved',
+  'principal_approved',
+];
+
+const IN_FLIGHT_OD_STATUSES = [
+  'pending',
+  'reporting_manager_approved',
+  'hod_approved',
+  'manager_approved',
+  'hr_approved',
+];
+
+function ledgerLeaveTypeForConfiguredCode(code) {
+  const u = String(code || '').trim().toUpperCase();
+  if (['CO', 'CCL'].includes(u)) return 'CCL';
+  return u;
+}
+
+function isConfiguredLeavePaid(leaveNature, isPaid) {
+  const n = String(leaveNature || '').toLowerCase();
+  if (n === 'paid') return true;
+  if (n === 'lop' || n === 'without_pay') return false;
+  return isPaid !== false;
+}
+
+async function resolveApplicableHolidayGroupIdsForEmployee(employee) {
+  if (!employee) return [];
+  const divId = employee.division_id ? String(employee.division_id) : '';
+  const deptId = employee.department_id ? String(employee.department_id) : '';
+  const empGroupId = employee.employee_group_id ? String(employee.employee_group_id) : '';
+  if (!divId) return [];
+
+  const allGroups = await HolidayGroup.find({ isActive: true }).lean();
+  const applicableGroups = allGroups.filter((g) => {
+    const maps = g.divisionMapping || [];
+    return maps.some((m) => {
+      const divMatch = m.division?.toString() === divId;
+      if (!divMatch) return false;
+
+      const deptMatch =
+        !m.departments || m.departments.length === 0
+          ? true
+          : (deptId && m.departments.some((d) => d?.toString() === deptId));
+      if (!deptMatch) return false;
+
+      const grpMatch =
+        !m.employeeGroups || m.employeeGroups.length === 0
+          ? true
+          : (empGroupId && m.employeeGroups.some((eg) => eg?.toString() === empGroupId));
+      return grpMatch;
+    });
+  });
+  return applicableGroups.map((g) => g._id);
+}
+
+async function fetchMergedHolidaysForEmployee(employee, istYear) {
+  const groupIds = await resolveApplicableHolidayGroupIdsForEmployee(employee);
+  const dateQuery = {
+    $or: [
+      { date: { $gte: new Date(`${istYear}-01-01`), $lte: new Date(`${istYear}-12-31`) } },
+      { endDate: { $gte: new Date(`${istYear}-01-01`), $lte: new Date(`${istYear}-12-31`) } },
+    ],
+  };
+
+  const masterHolidays = await Holiday.find({
+    ...dateQuery,
+    isMaster: true,
+    $or: [{ applicableTo: 'ALL' }, { applicableTo: 'SPECIFIC_GROUPS', targetGroupIds: { $in: groupIds } }],
+  }).lean();
+
+  const groupHolidays = await Holiday.find({
+    ...dateQuery,
+    scope: 'GROUP',
+    groupId: { $in: groupIds },
+  }).lean();
+
+  const masterMap = new Map(masterHolidays.map((h) => [h._id.toString(), h]));
+  const finalHolidays = [];
+  for (const gh of groupHolidays) {
+    if (gh.overridesMasterId) {
+      masterMap.delete(gh.overridesMasterId.toString());
+    }
+    finalHolidays.push(gh);
+  }
+  finalHolidays.push(...masterMap.values());
+  finalHolidays.sort((a, b) => new Date(a.date) - new Date(b.date));
+  return finalHolidays;
+}
+
+function expandHolidayRangeToDays(h) {
+  const startStr = toUtcDateString(h.date);
+  const endStr = h.endDate ? toUtcDateString(h.endDate) : startStr;
+  const dates = [];
+  let current = new Date(`${startStr}T12:00:00Z`);
+  const stop = new Date(`${endStr}T12:00:00Z`);
+  while (current <= stop) {
+    dates.push(toUtcDateString(current));
+    current.setUTCDate(current.getUTCDate() + 1);
+  }
+  return dates.map((dateStr) => ({ dateStr, name: h.name, type: h.type }));
 }
 
 // @desc    Get dashboard statistics
@@ -227,9 +347,15 @@ exports.getDashboardStats = async (req, res) => {
       }
 
       const myPendingLeaves = await Leave.countDocuments({
-        status: 'pending',
+        status: { $in: IN_FLIGHT_LEAVE_STATUSES },
         $or: leaveOr,
       });
+      const myPendingODs = await OD.countDocuments({
+        status: { $in: IN_FLIGHT_OD_STATUSES },
+        $or: leaveOr,
+      });
+      const myPendingRequestsTotal = myPendingLeaves + myPendingODs;
+
       const myApprovedLeaves = await Leave.countDocuments({
         status: 'approved',
         $or: leaveOr,
@@ -241,14 +367,26 @@ exports.getDashboardStats = async (req, res) => {
         status: { $in: ['PRESENT', 'HALF_DAY', 'PARTIAL'] }
       });
 
-      const leaveBalance = myApprovedLeaves - myPendingLeaves;
-
       let compensatoryOffBalance = null;
       let yearlyClCreditDaysPosted = null;
       let yearlyCclCreditDaysPosted = null;
       let financialYearRegister = null;
 
+      let leaveBalancesByType = [];
+      let totalPaidLeaveDaysAvailable = 0;
+      let upcomingHolidaysList = [];
+      let upcomingHolidaysCount = 0;
+      let nextHolidayName = null;
+      let nextHolidayDate = null;
+      let rosterNextDays = [];
+
       if (empMongoId) {
+        const empDoc = await Employee.findById(empMongoId)
+          .select(
+            'division_id department_id employee_group_id sickLeaves maternityLeaves onDutyLeaves compensatoryOffs'
+          )
+          .lean();
+
         const fy = await dateCycleService.getFinancialYearForDate(today);
         financialYearRegister = fy.name;
         const yDoc = await LeaveRegisterYear.findOne({
@@ -264,19 +402,132 @@ exports.getDashboardStats = async (req, res) => {
           yearlyClCreditDaysPosted = Number(yDoc.yearlyClCreditDaysPosted) || 0;
           yearlyCclCreditDaysPosted = Number(yDoc.yearlyCclCreditDaysPosted) || 0;
         } else {
-          const empSnap = await Employee.findById(empMongoId).select('compensatoryOffs').lean();
-          compensatoryOffBalance = Number(empSnap?.compensatoryOffs) || 0;
+          compensatoryOffBalance = Number(empDoc?.compensatoryOffs) || 0;
           yearlyClCreditDaysPosted = 0;
           yearlyCclCreditDaysPosted = 0;
         }
+
+        const todayIst = getTodayISTDateString();
+        const istYear = Number(todayIst.slice(0, 4));
+        const rosterEnd = addCalendarDaysIST(todayIst, 13);
+        const holidayWindowEnd = addCalendarDaysIST(todayIst, 120);
+
+        // Only LeaveSettings `type: 'leave'` — no OD / CCL settings rows (OD belongs to OD settings elsewhere).
+        const leaveSettingsDoc = await LeaveSettings.getActiveSettings('leave');
+
+        const seenLedgerTypes = new Set();
+        const orderedTypes = [...(leaveSettingsDoc?.types || [])].filter((t) => t && t.isActive !== false);
+
+        for (const t of orderedTypes) {
+          const code = String(t.code || '').trim().toUpperCase();
+          if (!code) continue;
+          const ledgerType = ledgerLeaveTypeForConfiguredCode(code);
+          if (ledgerType === 'OD') continue;
+          if (seenLedgerTypes.has(ledgerType)) continue;
+          seenLedgerTypes.add(ledgerType);
+
+          let bal = await leaveRegisterYearLedgerService.getCurrentBalance(empMongoId, ledgerType, new Date());
+          if (bal === 0 && ledgerType === 'SL') {
+            bal = Number(empDoc?.sickLeaves) || 0;
+          } else if (bal === 0 && ledgerType === 'ML') {
+            bal = Number(empDoc?.maternityLeaves) || 0;
+          }
+
+          const paid = isConfiguredLeavePaid(t.leaveNature, t.isPaid);
+          const nature = String(t.leaveNature || (paid ? 'paid' : 'lop')).toLowerCase();
+          const balanceDays = Math.round((Number(bal) || 0) * 100) / 100;
+          leaveBalancesByType.push({
+            code,
+            name: t.name || code,
+            balanceDays,
+            paid,
+            leaveNature: nature,
+          });
+          if (paid) {
+            totalPaidLeaveDaysAvailable += Number(bal) || 0;
+          }
+        }
+
+        totalPaidLeaveDaysAvailable = Math.round(totalPaidLeaveDaysAvailable * 100) / 100;
+
+        try {
+          const hol = await fetchMergedHolidaysForEmployee(empDoc, istYear);
+          const byDate = new Map();
+          for (const h of hol) {
+            for (const slot of expandHolidayRangeToDays(h)) {
+              if (slot.dateStr >= todayIst && slot.dateStr <= holidayWindowEnd && !byDate.has(slot.dateStr)) {
+                byDate.set(slot.dateStr, {
+                  date: slot.dateStr,
+                  name: slot.name,
+                  type: slot.type || null,
+                });
+              }
+            }
+          }
+          const attHol = await AttendanceDaily.find({
+            employeeNumber: empNoUpper,
+            date: { $gte: todayIst, $lte: holidayWindowEnd },
+            status: 'HOLIDAY',
+          })
+            .select('date')
+            .lean();
+          for (const row of attHol) {
+            const ds = row.date;
+            if (ds && !byDate.has(ds)) {
+              byDate.set(ds, { date: ds, name: 'Holiday (attendance)', type: 'ATTENDANCE' });
+            }
+          }
+          const merged = [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+          const fromToday = merged.filter((h) => h.date >= todayIst);
+          upcomingHolidaysCount = fromToday.length;
+          upcomingHolidaysList = fromToday.slice(0, 8);
+          if (fromToday.length > 0) {
+            nextHolidayName = fromToday[0].name;
+            nextHolidayDate = fromToday[0].date;
+          }
+        } catch (holErr) {
+          console.error('[Dashboard] holiday context failed:', holErr.message);
+        }
+
+        try {
+          const roster = await PreScheduledShift.find({
+            employeeNumber: empNoUpper,
+            date: { $gte: todayIst, $lte: rosterEnd },
+          })
+            .populate('shiftId', 'name startTime endTime')
+            .sort({ date: 1 })
+            .lean();
+          rosterNextDays = roster.map((r) => ({
+            date: r.date,
+            shiftName: r.shiftId?.name || null,
+            shiftTime:
+              r.shiftId && r.shiftId.startTime && r.shiftId.endTime
+                ? `${r.shiftId.startTime}–${r.shiftId.endTime}`
+                : null,
+            rosterStatus: r.status || null,
+            notes: r.notes || null,
+          }));
+        } catch (rsErr) {
+          console.error('[Dashboard] roster context failed:', rsErr.message);
+        }
       }
+
+      const leaveBalance = totalPaidLeaveDaysAvailable;
 
       stats = {
         myPendingLeaves,
+        myPendingODs,
+        myPendingRequestsTotal,
         myApprovedLeaves,
         todayPresent: myAttendance,
-        upcomingHolidays: 2,
         leaveBalance,
+        totalPaidLeaveDaysAvailable,
+        leaveBalancesByType,
+        upcomingHolidays: upcomingHolidaysCount,
+        upcomingHolidaysList,
+        nextHolidayName,
+        nextHolidayDate,
+        rosterNextDays,
         compensatoryOffBalance,
         yearlyClCreditDaysPosted,
         yearlyCclCreditDaysPosted,
