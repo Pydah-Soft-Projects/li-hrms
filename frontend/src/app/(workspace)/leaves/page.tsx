@@ -37,6 +37,7 @@ import EmployeeSelect from '@/components/EmployeeSelect';
 
 const DualLocationMap = dynamic(() => import('@/components/DualLocationMap'), { ssr: false });
 const ODRequestsMap = dynamic(() => import('@/components/ODRequestsMap'), { ssr: false });
+const LocationMap = dynamic(() => import('@/components/LocationMap'), { ssr: false });
 import {
   Calendar,
   Briefcase,
@@ -5104,21 +5105,43 @@ export default function LeavesPage() {
                         <h2 className="text-base sm:text-lg font-black uppercase tracking-wider">
                           {detailType === 'leave' ? 'Leave Details' : 'OD Details'}
                         </h2>
-                        <p className="text-white/70 text-[10px] font-bold uppercase tracking-widest">Workspace Management</p>
+                        {detailType === 'od' && (
+                          <div className="mt-1.5">
+                            <p className="text-sm sm:text-base font-black leading-tight">
+                              {selectedItem!.employeeId?.employee_name || selectedItem!.emp_no}
+                            </p>
+                            <p className="text-[10px] uppercase tracking-wider text-white/80 font-bold">
+                              {formatEmpNoWithDesignation(selectedItem)}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     </div>
-                    <button
-                      onClick={() => setShowDetailDialog(false)}
-                      className="h-8 w-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {detailType === 'od' && (
+                        <div className="hidden sm:flex flex-col items-end">
+                          <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border ${getStatusColor(selectedItem!.status)}`}>
+                            {selectedItem!.status?.replace('_', ' ') || 'Unknown'}
+                          </span>
+                          <span className="mt-1 text-[10px] uppercase tracking-wider text-white/80 font-bold">
+                            Applied {formatDate((selectedItem! as any).createdAt || selectedItem!.appliedAt)}
+                          </span>
+                        </div>
+                      )}
+                      <button
+                        onClick={() => setShowDetailDialog(false)}
+                        className="h-8 w-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 </div>
 
                 {/* Content */}
                 <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 space-y-6 sm:space-y-8">
                   {/* Top Section: Employee & Status */}
+                  {detailType === 'leave' && (
                   <div className="flex flex-col sm:flex-row sm:justify-between items-start gap-6">
                     <div className="flex items-center gap-4">
                       <div className={`w-16 h-16 rounded-2xl flex items-center justify-center text-white font-black text-2xl shadow-xl ${detailType === 'leave'
@@ -5159,6 +5182,7 @@ export default function LeavesPage() {
                       </div>
                     </div>
                   </div>
+                  )}
 
                   {/* CO Eligibility Indicator */}
                   {detailType === 'od' && (selectedItem as any).isCOEligible && (
@@ -5178,6 +5202,7 @@ export default function LeavesPage() {
                   )}
 
                   {/* Stats Grid - Cleaner Look */}
+                  {detailType === 'leave' && (
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-slate-50 dark:bg-slate-700/30 p-4 sm:p-6 rounded-xl">
                     <div className="space-y-1">
                       <p className="text-[10px] sm:text-xs uppercase font-bold text-slate-400 tracking-wider">Type</p>
@@ -5200,6 +5225,7 @@ export default function LeavesPage() {
                       <p className="text-[13px] sm:text-sm font-bold text-slate-900 dark:text-white">{formatDate(selectedItem!.toDate)}</p>
                     </div>
                   </div>
+                  )}
 
                   {/* Punch Transparency / Time Details (Visible if populated) */}
                   {detailType === 'od' && (selectedItem as ODApplication).odStartTime && (
@@ -5238,20 +5264,121 @@ export default function LeavesPage() {
                   )}
 
                   <div className="space-y-6">
-                    <div className="bg-slate-50 dark:bg-slate-900/50 p-4 sm:p-6 rounded-xl">
-                      <p className="text-[10px] sm:text-xs uppercase font-bold text-slate-400 mb-2 tracking-wider">Purpose / Reason</p>
-                      <p className="text-[13px] sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
-                        {selectedItem!.purpose || 'No purpose specified'}
-                      </p>
-                    </div>
+                    {detailType === 'od' ? (
+                      <div className="rounded-2xl bg-gradient-to-br from-fuchsia-50 via-violet-50 to-indigo-50 dark:from-slate-900 dark:via-slate-900 dark:to-slate-800 p-4 sm:p-6 border border-fuchsia-100 dark:border-slate-700 shadow-sm space-y-5">
+                        <p className="text-xs uppercase font-bold text-fuchsia-500 dark:text-fuchsia-300 tracking-wider">OD Details</p>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                          <div>
+                            <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">From</p>
+                            <p className="text-sm font-bold text-slate-900 dark:text-white mt-1">{formatDate(selectedItem!.fromDate)}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">To</p>
+                            <p className="text-sm font-bold text-slate-900 dark:text-white mt-1">{formatDate(selectedItem!.toDate)}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Duration</p>
+                            <p className="text-sm font-bold text-slate-900 dark:text-white mt-1">{selectedItem!.numberOfDays}d</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Type</p>
+                            <p className="text-sm font-bold text-slate-900 dark:text-white mt-1">{(((selectedItem! as ODApplication).odType) || '-').replace('_', ' ')}</p>
+                          </div>
+                        </div>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <div className="rounded-xl bg-amber-50/80 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800/50 p-3.5 shadow-sm">
+                            <p className="text-[10px] uppercase font-black text-amber-600 dark:text-amber-300 tracking-wider">Purpose</p>
+                            <p className="mt-1.5 text-[13px] sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+                              {selectedItem!.purpose || 'No purpose specified'}
+                            </p>
+                          </div>
+                          <div className="rounded-xl bg-cyan-50/80 dark:bg-cyan-900/20 border border-cyan-100 dark:border-cyan-800/50 p-3.5 shadow-sm">
+                            <p className="text-[10px] uppercase font-black text-cyan-700 dark:text-cyan-300 tracking-wider">Location</p>
+                            <p className="mt-1.5 text-[13px] sm:text-sm font-medium text-slate-800 dark:text-slate-200 break-words">
+                              {(selectedItem as ODApplication).placeVisited || (selectedItem as any).geoLocation?.address || 'No location available'}
+                            </p>
+                          </div>
+                        </div>
 
-                    {detailType === 'od' && (selectedItem! as ODApplication).placeVisited && (
-                      <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 text-[13px] sm:text-sm text-slate-700 dark:text-slate-300 px-2 mt-2">
-                        <span className="font-bold text-[10px] sm:text-xs uppercase text-slate-400 tracking-wider sm:min-w-20">Location:</span>
-                        <span className="font-medium break-words">{(selectedItem! as ODApplication).placeVisited}</span>
+                        {selectedItem!.contactNumber && (
+                          <div className="text-[13px] sm:text-sm text-slate-700 dark:text-slate-300">
+                            <span className="font-bold text-[10px] sm:text-xs uppercase text-slate-400 tracking-wider mr-2">Contact:</span>
+                            <span className="font-medium text-slate-900 dark:text-white break-all">{selectedItem!.contactNumber}</span>
+                          </div>
+                        )}
+
+                        {((selectedItem as any).photoEvidence || (selectedItem as any).geoLocation) && (() => {
+                          const geo = (selectedItem as any).geoLocation;
+                          const exif = (selectedItem as any).photoEvidence?.exifLocation;
+                          const lat = geo?.latitude ?? exif?.latitude;
+                          const lng = geo?.longitude ?? exif?.longitude;
+                          const address = geo?.address ?? null;
+                          return (
+                            <div className="grid gap-4 md:grid-cols-2">
+                              {(selectedItem as any).photoEvidence && (
+                                <a
+                                  href={(selectedItem as any).photoEvidence.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="relative group block rounded-xl overflow-hidden border border-orange-200 dark:border-orange-800/50 bg-gradient-to-br from-orange-50 to-amber-50 dark:from-slate-800/60 dark:to-slate-800/40 shadow-sm"
+                                >
+                                  <img
+                                    src={(selectedItem as any).photoEvidence.url}
+                                    alt="Evidence"
+                                    className="w-full h-80 object-cover"
+                                  />
+                                  <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/20 transition-colors">
+                                    <svg className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                                  </div>
+                                </a>
+                              )}
+                              <div className="rounded-xl border border-sky-200 dark:border-sky-800/50 bg-gradient-to-br from-sky-50 to-cyan-50 dark:from-slate-800/60 dark:to-slate-800/40 p-3.5 flex flex-col shadow-sm">
+                                <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                                  <div>
+                                    <span className="text-[10px] uppercase font-bold text-slate-400">Lat:</span>
+                                    <span className="ml-1 font-mono text-slate-700 dark:text-slate-300">{lat != null ? Number(lat).toFixed(6) : '-'}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-[10px] uppercase font-bold text-slate-400">Lon:</span>
+                                    <span className="ml-1 font-mono text-slate-700 dark:text-slate-300">{lng != null ? Number(lng).toFixed(6) : '-'}</span>
+                                  </div>
+                                </div>
+                                {address && (
+                                  <p className="mt-3 text-[11px] font-medium text-slate-700 dark:text-slate-300 leading-tight">{address}</p>
+                                )}
+                                {lat != null && lng != null && (
+                                  <>
+                                    <div className="mt-3 overflow-hidden rounded-lg border border-slate-100 dark:border-slate-700">
+                                      <LocationMap latitude={lat} longitude={lng} address={address} height="248px" className="rounded-lg" />
+                                    </div>
+                                    <a
+                                      href={`https://www.google.com/maps?q=${lat},${lng}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="mt-2 text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-2 font-black text-[10px] uppercase tracking-wider"
+                                    >
+                                      <div className="p-1 rounded bg-blue-50 dark:bg-blue-900/30">
+                                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                                      </div>
+                                      Open in Google Maps
+                                    </a>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    ) : (
+                      <div className="bg-slate-50 dark:bg-slate-900/50 p-4 sm:p-6 rounded-xl">
+                        <p className="text-[10px] sm:text-xs uppercase font-bold text-slate-400 mb-2 tracking-wider">Purpose / Reason</p>
+                        <p className="text-[13px] sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+                          {selectedItem!.purpose || 'No purpose specified'}
+                        </p>
                       </div>
                     )}
-                    {selectedItem!.contactNumber && (
+
+                    {detailType === 'leave' && selectedItem!.contactNumber && (
                       <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 text-[13px] sm:text-sm text-slate-700 dark:text-slate-300 px-2 mt-2">
                         <span className="font-bold text-[10px] sm:text-xs uppercase text-slate-400 tracking-wider sm:min-w-20">Contact:</span>
                         <span className="font-medium text-slate-900 dark:text-white break-all">{selectedItem!.contactNumber}</span>
@@ -5426,7 +5553,6 @@ export default function LeavesPage() {
                       </div>
                     </div>
                   )}
-
                   {/* Approval Steps - Timeline / Progress */}
                   {((selectedItem as any).workflow?.approvalChain?.length > 0) && (
                     <div className="bg-slate-50 dark:bg-slate-900/50 p-4 sm:p-6 rounded-xl overflow-hidden scrollbar-hide">

@@ -81,6 +81,7 @@ const moduleIcons: Record<string, any> = {
     RESIGNATION: LogOut,
     PROMOTIONS_TRANSFERS: TrendingUp,
     EMPLOYEE_BIRTHDAYS: Cake,
+    ASSETS_MANAGEMENT: HandCoins,
 };
 
 export default function WorkspaceSidebar() {
@@ -225,6 +226,7 @@ export default function WorkspaceSidebar() {
                                                 (module.code === 'CCL' && pathname === '/ccl') ||
                                                 (module.code === 'RESIGNATION' && pathname === '/resignations') ||
                                                 (module.code === 'PROMOTIONS_TRANSFERS' && pathname === '/promotions-transfers') ||
+                                                (module.code === 'ASSETS_MANAGEMENT' && pathname === '/assets-management') ||
                                                 (module.code === 'EMPLOYEE_BIRTHDAYS' && pathname === '/employee-birthdays') ||
                                                 (module.code === 'EMPLOYEE_GROUPS' && pathname === '/employee-groups');
 

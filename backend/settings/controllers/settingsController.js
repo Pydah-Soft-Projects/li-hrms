@@ -44,6 +44,7 @@ exports.getSetting = async (req, res) => {
         'auto_reject_pending_requests_on_batch_complete': false,
         'allow_employee_bulk_process': false,
         'custom_employee_grouping_enabled': false,
+        'auto_od_creation_enabled': false,
         'payroll_cycle_start_day': '1',
         'payroll_cycle_end_day': '31',
         'qualification_statuses': ['Partial', 'Not Certified', 'Certified'],
@@ -165,6 +166,22 @@ exports.upsertSetting = async (req, res) => {
         });
       }
     }
+    if (key === 'custom_employee_grouping_enabled') {
+      if (typeof value !== 'boolean') {
+        return res.status(400).json({
+          success: false,
+          message: 'custom_employee_grouping_enabled must be a boolean',
+        });
+      }
+    }
+    if (key === 'auto_od_creation_enabled') {
+      if (typeof value !== 'boolean') {
+        return res.status(400).json({
+          success: false,
+          message: 'auto_od_creation_enabled must be a boolean',
+        });
+      }
+    }
 
     const setting = await Settings.findOneAndUpdate(
       { key },
@@ -178,6 +195,8 @@ exports.upsertSetting = async (req, res) => {
             ? 'payroll'
             : ['allow_employee_bulk_process', 'custom_employee_grouping_enabled'].includes(key)
               ? 'employee'
+              : ['auto_od_creation_enabled'].includes(key)
+                ? 'general'
               : 'general'),
       },
       {

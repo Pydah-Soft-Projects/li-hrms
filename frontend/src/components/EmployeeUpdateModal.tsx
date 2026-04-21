@@ -7,9 +7,21 @@ import { api } from '@/lib/api';
 interface EmployeeUpdateModalProps {
     onClose: () => void;
     onSuccess: () => void;
+    filters?: {
+        division_id?: string;
+        department_id?: string;
+        designation_id?: string;
+        employee_group_id?: string;
+    };
 }
 
-export default function EmployeeUpdateModal({ onClose, onSuccess }: EmployeeUpdateModalProps) {
+interface AllowanceDeductionOption {
+    _id: string;
+    name: string;
+    category: 'allowance' | 'deduction';
+}
+
+export default function EmployeeUpdateModal({ onClose, onSuccess, filters }: EmployeeUpdateModalProps) {
     const [step, setStep] = useState<'select' | 'upload'>('select');
     const [file, setFile] = useState<File | null>(null);
     const [uploading, setUploading] = useState(false);
@@ -19,12 +31,16 @@ export default function EmployeeUpdateModal({ onClose, onSuccess }: EmployeeUpda
 
     const [formSettings, setFormSettings] = useState<any>(null);
     const [selectedFields, setSelectedFields] = useState<string[]>([]);
+    const [componentOptions, setComponentOptions] = useState<AllowanceDeductionOption[]>([]);
+    const [selectedComponents, setSelectedComponents] = useState<string[]>([]);
     const [loadingSettings, setLoadingSettings] = useState(true);
+    const [loadingComponents, setLoadingComponents] = useState(true);
     const [customEmployeeGroupingEnabled, setCustomEmployeeGroupingEnabled] = useState(false);
 
     useEffect(() => {
         loadFormSettings();
         loadGroupingSetting();
+        loadComponents();
     }, []);
 
     const loadFormSettings = async () => {
@@ -50,6 +66,20 @@ export default function EmployeeUpdateModal({ onClose, onSuccess }: EmployeeUpda
         }
     };
 
+    const loadComponents = async () => {
+        try {
+            const res = await api.getAllAllowancesDeductions(undefined, true);
+            if (res.success) {
+                setComponentOptions(Array.isArray(res.data) ? res.data : []);
+            }
+        } catch (err) {
+            console.error('Failed to load allowances and deductions', err);
+            setError('Failed to load allowance and deduction options');
+        } finally {
+            setLoadingComponents(false);
+        }
+    };
+
     const toggleField = (fieldId: string) => {
         setSelectedFields(prev =>
             prev.includes(fieldId)
@@ -58,13 +88,21 @@ export default function EmployeeUpdateModal({ onClose, onSuccess }: EmployeeUpda
         );
     };
 
+    const toggleComponent = (componentId: string) => {
+        setSelectedComponents(prev =>
+            prev.includes(componentId)
+                ? prev.filter(id => id !== componentId)
+                : [...prev, componentId]
+        );
+    };
+
     const handleDownloadTemplate = async () => {
-        if (selectedFields.length === 0) {
-            setError('Please select at least one field to update');
+        if (selectedFields.length === 0 && selectedComponents.length === 0) {
+            setError('Please select at least one field, allowance, or deduction to update');
             return;
         }
         try {
-            await api.downloadEmployeeUpdateTemplate(selectedFields);
+            await api.downloadEmployeeUpdateTemplate(selectedFields, selectedComponents, filters);
             setStep('upload');
             setError('');
         } catch (err: any) {
@@ -160,11 +198,11 @@ export default function EmployeeUpdateModal({ onClose, onSuccess }: EmployeeUpda
                             <div className="rounded-xl bg-indigo-50 p-4 border border-indigo-100 dark:bg-indigo-900/20 dark:border-indigo-800">
                                 <h3 className="text-sm font-bold text-indigo-800 dark:text-indigo-300 mb-2">Step 1: Choose Update Scope</h3>
                                 <p className="text-xs text-indigo-700 dark:text-indigo-400">
-                                    Select the fields you want to update for all active employees (e.g. Employee Name, Division, Designation, Second Salary, Gross Salary). Then download the template, fill it with data, and upload it in the next step.
+                                    Select the employee fields and the allowance or deduction items you want in one template. The same upload will keep the existing bulk field updates working while also updating the selected A&D columns.
                                 </p>
                             </div>
 
-                            {loadingSettings ? (
+                            {(loadingSettings || loadingComponents) ? (
                                 <div className="flex justify-center p-8">
                                     <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent"></div>
                                 </div>
@@ -217,6 +255,48 @@ export default function EmployeeUpdateModal({ onClose, onSuccess }: EmployeeUpda
                                             </div>
                                         </div>
                                     )}
+                                    <div className="space-y-4">
+                                        <h4 className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Allowances & Deductions</h4>
+                                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                                            Selected items will be added as checklist-based columns in the same bulk upload template.
+                                        </p>
+                                        {(['allowance', 'deduction'] as const).map((category) => {
+                                            const items = componentOptions.filter((item) => item.category === category);
+                                            return (
+                                                <div key={category} className="space-y-2">
+                                                    <h5 className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                                                        {category === 'allowance' ? 'Allowances' : 'Deductions'}
+                                                    </h5>
+                                                    {items.length === 0 ? (
+                                                        <div className="rounded-xl border border-dashed border-slate-200 px-4 py-3 text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                                                            No active {category}s found.
+                                                        </div>
+                                                    ) : (
+                                                        <div className="grid grid-cols-2 gap-2">
+                                                            {items.map((item) => (
+                                                                <button
+                                                                    key={item._id}
+                                                                    onClick={() => toggleComponent(item._id)}
+                                                                    className={`flex items-center gap-3 rounded-xl border p-3 text-left transition-all ${selectedComponents.includes(item._id)
+                                                                        ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30'
+                                                                        : 'border-slate-200 hover:border-indigo-300 dark:border-slate-700 dark:hover:border-indigo-500/50'
+                                                                        }`}
+                                                                >
+                                                                    <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 transition-all ${selectedComponents.includes(item._id)
+                                                                        ? 'border-indigo-600 bg-indigo-600 text-white'
+                                                                        : 'border-slate-300 dark:border-slate-600'
+                                                                        }`}>
+                                                                        {selectedComponents.includes(item._id) && <Check className="h-3 w-3" />}
+                                                                    </div>
+                                                                    <span className="text-xs font-semibold">{item.name}</span>
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
                                 </div>
                             )}
                         </div>
@@ -228,6 +308,7 @@ export default function EmployeeUpdateModal({ onClose, onSuccess }: EmployeeUpda
                                     <li>Ensure <strong>Employee ID</strong> is correct.</li>
                                     <li>Do not change the header names in the template.</li>
                                     <li>Only data for the selected columns will be updated.</li>
+                                    <li>Leave an allowance or deduction cell blank to remove that employee-level override.</li>
                                 </ul>
                             </div>
 
@@ -295,7 +376,7 @@ export default function EmployeeUpdateModal({ onClose, onSuccess }: EmployeeUpda
                     {step === 'select' ? (
                         <button
                             onClick={handleDownloadTemplate}
-                            disabled={selectedFields.length === 0}
+                            disabled={selectedFields.length === 0 && selectedComponents.length === 0}
                             className="flex-[2] flex items-center justify-center gap-2 rounded-2xl bg-indigo-600 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-500/20 transition-all hover:bg-indigo-700 disabled:opacity-50"
                         >
                             <Download className="h-4 w-4" />

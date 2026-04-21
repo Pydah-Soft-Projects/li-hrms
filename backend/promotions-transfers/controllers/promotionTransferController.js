@@ -7,6 +7,7 @@ const Division = require('../../departments/model/Division');
 const Department = require('../../departments/model/Department');
 const Designation = require('../../departments/model/Designation');
 const dateCycleService = require('../../leaves/services/dateCycleService');
+const PayrollBatch = require('../../payroll/model/PayrollBatch');
 const { createDirectArrearForApprovedPromotion } = require('../services/promotionArrearService');
 
 const {
@@ -133,49 +134,51 @@ exports.getPayrollMonths = async (req, res) => {
       futureCount = Math.min(84, Math.max(0, Number.isFinite(futureCount) ? futureCount : 24));
     }
 
-    const map = new Map();
-    const pushCycle = (c) => {
-      const key = `${c.year}-${c.month}`;
-      if (map.has(key)) return false;
-      map.set(key, {
-        payrollYear: c.year,
-        payrollMonth: c.month,
-        periodStart: c.startDate,
-        periodEnd: c.endDate,
-        label: `${c.year}-${String(c.month).padStart(2, '0')}`,
-      });
-      return true;
+    const toLabel = (year, month) => `${year}-${String(month).padStart(2, '0')}`;
+    const addMonths = (year, month, offset) => {
+      const d = new Date(Date.UTC(year, month - 1 + offset, 1));
+      return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1 };
+    };
+    const hasBatch = async (year, month) => {
+      const exists = await PayrollBatch.exists({ year, monthNumber: month });
+      return Boolean(exists);
     };
 
-    const anchor = await dateCycleService.getPayrollCycleForDate(new Date());
-    pushCycle(anchor);
+    const currentCycle = await dateCycleService.getPayrollCycleForDate(new Date());
+    let anchorYear = currentCycle.year;
+    let anchorMonth = currentCycle.month;
 
-    // Older cycles: walk backward from day before anchor period starts
-    let d = new Date(new Date(anchor.startDate).getTime() - 86400000);
-    let guard = 0;
-    while (map.size < pastCount && guard < pastCount * 6) {
-      guard += 1;
-      const c = await dateCycleService.getPayrollCycleForDate(d);
-      pushCycle(c);
-      const startMs = new Date(c.startDate).getTime();
-      d = new Date(startMs - 86400000);
+    const currentHasBatch = await hasBatch(currentCycle.year, currentCycle.month);
+    if (!currentHasBatch) {
+      // If current month batch is not available, use the latest previous missing month as "ongoing".
+      const maxLookback = Math.max(24, pastCount + 12);
+      for (let i = 1; i <= maxLookback; i += 1) {
+        const probe = addMonths(currentCycle.year, currentCycle.month, -i);
+        // eslint-disable-next-line no-await-in-loop
+        const exists = await hasBatch(probe.year, probe.month);
+        if (!exists) {
+          anchorYear = probe.year;
+          anchorMonth = probe.month;
+          break;
+        }
+      }
     }
 
-    // Future cycles: day after anchor period ends
-    d = new Date(new Date(anchor.endDate).getTime() + 86400000);
-    guard = 0;
-    let collectedFuture = 0;
-    while (collectedFuture < futureCount && guard < futureCount * 6) {
-      guard += 1;
-      const c = await dateCycleService.getPayrollCycleForDate(d);
-      if (pushCycle(c)) collectedFuture += 1;
-      const endMs = new Date(c.endDate).getTime();
-      d = new Date(endMs + 86400000);
+    const cycles = [];
+    for (let i = -pastCount; i <= futureCount; i += 1) {
+      const target = addMonths(anchorYear, anchorMonth, i);
+      // eslint-disable-next-line no-await-in-loop
+      const cycle = await dateCycleService.getPayrollCycleForMonth(target.year, target.month);
+      const label = toLabel(cycle.year, cycle.month);
+      cycles.push({
+        payrollYear: cycle.year,
+        payrollMonth: cycle.month,
+        periodStart: cycle.startDate,
+        periodEnd: cycle.endDate,
+        label,
+        isOngoing: label === toLabel(anchorYear, anchorMonth),
+      });
     }
-
-    const cycles = Array.from(map.values()).sort(
-      (a, b) => a.payrollYear - b.payrollYear || a.payrollMonth - b.payrollMonth
-    );
 
     res.status(200).json({ success: true, data: cycles });
   } catch (error) {

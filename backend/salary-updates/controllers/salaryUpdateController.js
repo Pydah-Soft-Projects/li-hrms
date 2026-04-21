@@ -59,8 +59,11 @@ const bulkUpdateEmployee = async (req, res) => {
 // Download dynamic template
 const downloadEmployeeUpdateTemplate = async (req, res) => {
     try {
-        let { fields } = req.query;
-        if (fields === undefined || fields === null || fields === '') {
+        let { fields, components, division_id, department_id, designation_id, employee_group_id } = req.query;
+        if (
+            (fields === undefined || fields === null || fields === '') &&
+            (components === undefined || components === null || components === '')
+        ) {
             return res.status(400).json({ success: false, message: 'No fields selected' });
         }
 
@@ -77,12 +80,31 @@ const downloadEmployeeUpdateTemplate = async (req, res) => {
             }
         }
         fields = [...new Set(normalized)];
-        if (fields.length === 0) {
+
+        const rawComponents = Array.isArray(components) ? components : [components];
+        const normalizedComponents = [];
+        for (const item of rawComponents) {
+            const s = String(item || '').trim();
+            if (!s) continue;
+            if (s.includes(',')) {
+                s.split(',').forEach(c => { const t = c.trim(); if (t) normalizedComponents.push(t); });
+            } else {
+                normalizedComponents.push(s);
+            }
+        }
+        components = [...new Set(normalizedComponents)];
+
+        if (fields.length === 0 && components.length === 0) {
             return res.status(400).json({ success: false, message: 'No valid fields provided' });
         }
 
         const { generateEmployeeUpdateTemplateData } = require('../services/salaryUpdateService');
-        const { data, headers } = await generateEmployeeUpdateTemplateData(fields);
+        const { data, headers } = await generateEmployeeUpdateTemplateData(fields, components, {
+            division_id,
+            department_id,
+            designation_id,
+            employee_group_id,
+        });
 
         const wb = xlsx.utils.book_new();
         const ws = xlsx.utils.json_to_sheet(data, { header: headers });

@@ -1,12 +1,29 @@
 const User = require('../../users/model/User');
 const Employee = require('../../employees/model/Employee');
 const RoleAssignment = require('../../workspaces/model/RoleAssignment');
+const Role = require('../../users/model/Role');
 const { generateToken } = require('../../users/controllers/userController');
 const passwordNotificationService = require('../../shared/services/passwordNotificationService');
 
 // @desc    Login user
 // @route   POST /api/auth/login
 // @access  Public
+/** Resolve effective permissions from custom roles and user overrides */
+const resolveFeatureControl = (user) => {
+  if (!user) return [];
+  let effectivePermissions = [...(user.featureControl || [])];
+
+  if (user.customRoles && Array.isArray(user.customRoles)) {
+    user.customRoles.forEach((role) => {
+      if (role.isActive && Array.isArray(role.activeModules)) {
+        effectivePermissions = [...new Set([...effectivePermissions, ...role.activeModules])];
+      }
+    });
+  }
+
+  return effectivePermissions;
+};
+
 exports.login = async (req, res) => {
   try {
     const { identifier: bodyIdentifier, email, password } = req.body;
@@ -35,7 +52,7 @@ exports.login = async (req, res) => {
         { name: identifier },
         { employeeId: identifier.toUpperCase() }
       ],
-    }).select('+password');
+    }).select('+password').populate('customRoles');
 
     if (user) {
       userType = 'user';
@@ -135,7 +152,7 @@ exports.login = async (req, res) => {
           department: userType === 'employee' ? user.department_id : undefined,
           emp_no: userType === 'employee' ? user.emp_no : user.employeeId,
           type: userType,
-          featureControl: userType === 'user' ? user.featureControl : undefined,
+          featureControl: userType === 'user' ? resolveFeatureControl(user) : undefined,
           dataScope: userType === 'user' ? user.dataScope : 'own',
           divisionMapping: userType === 'user' ? user.divisionMapping : undefined,
           phone_number: userType === 'employee' ? user.phone_number : (user.employeeRef ? (await Employee.findById(user.employeeRef)).phone_number : null),
@@ -157,7 +174,8 @@ exports.login = async (req, res) => {
 exports.getMe = async (req, res) => {
   try {
     let user = await User.findById(req.user.userId)
-      .select('-password');
+      .select('-password')
+      .populate('customRoles');
 
     let userType = 'user';
 
@@ -203,7 +221,7 @@ exports.getMe = async (req, res) => {
           department: userType === 'employee' ? user.department_id : undefined,
           emp_no: userType === 'employee' ? user.emp_no : user.employeeId,
           type: userType,
-          featureControl: userType === 'user' ? user.featureControl : undefined,
+          featureControl: userType === 'user' ? resolveFeatureControl(user) : undefined,
           isActive: user.isActive,
           dataScope: userType === 'user' ? user.dataScope : 'own',
           divisionMapping: userType === 'user' ? user.divisionMapping : undefined,
@@ -314,7 +332,7 @@ exports.ssoLogin = async (req, res) => {
 
     // Resolve to our User or Employee: try by _id, then email, then employeeId/emp_no
     if (mongoose.Types.ObjectId.isValid(userId) && String(new mongoose.Types.ObjectId(userId)) === String(userId)) {
-      user = await User.findById(userId).select('+password');
+      user = await User.findById(userId).select('+password').populate('customRoles');
       if (user) userType = 'user';
       if (!user) {
         user = await Employee.findById(userId).select('+password');
@@ -324,7 +342,7 @@ exports.ssoLogin = async (req, res) => {
 
     if (!user && (externalEmail || userId.includes('@'))) {
       const email = (externalEmail || userId).toLowerCase();
-      user = await User.findOne({ email }).select('+password');
+      user = await User.findOne({ email }).select('+password').populate('customRoles');
       if (user) userType = 'user';
       if (!user) {
         user = await Employee.findOne({ email }).select('+password');
@@ -338,7 +356,7 @@ exports.ssoLogin = async (req, res) => {
           { employeeId: userId.toUpperCase() },
           { name: userId },
         ],
-      }).select('+password');
+      }).select('+password').populate('customRoles');
       if (user) userType = 'user';
     }
 
@@ -435,7 +453,7 @@ exports.ssoLogin = async (req, res) => {
           department: userType === 'employee' ? user.department_id : undefined,
           emp_no: userType === 'employee' ? user.emp_no : user.employeeId,
           type: userType,
-          featureControl: userType === 'user' ? user.featureControl : undefined,
+          featureControl: userType === 'user' ? resolveFeatureControl(user) : undefined,
           dataScope: userType === 'user' ? user.dataScope : 'own',
           divisionMapping: userType === 'user' ? user.divisionMapping : undefined,
           loginMethod: 'sso',

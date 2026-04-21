@@ -38,6 +38,7 @@ exports.registerUser = async (req, res) => {
       dataScope,
       divisionMapping,
       phone_number,
+      customRoles,
     } = req.body;
     const { department, division } = req.body;
 
@@ -116,6 +117,7 @@ exports.registerUser = async (req, res) => {
       dataScope: dataScope || undefined,
       divisionMapping: finalDivisionMapping,
       phone_number: phone_number || null,
+      customRoles: customRoles || [],
     };
 
     // Only add employeeId and employeeRef if they have values (sparse index)
@@ -214,6 +216,7 @@ exports.createUserFromEmployee = async (req, res) => {
       dataScope,
       divisionMapping,
       phone_number,
+      customRoles,
     } = req.body;
     const { departments, department, division } = req.body;
 
@@ -345,6 +348,7 @@ exports.createUserFromEmployee = async (req, res) => {
       divisionMapping: finalDivisionMapping,
       createdBy: req.user?._id,
       phone_number: phone_number || employee.phone_number || null,
+      customRoles: customRoles || [],
     });
 
     // Employee history: user created / promoted (from employee to role)
@@ -550,6 +554,7 @@ exports.updateUser = async (req, res) => {
       dataScope,
       divisionMapping,
       phone_number,
+      customRoles,
     } = req.body;
     const { department, division } = req.body;
 
@@ -612,6 +617,7 @@ exports.updateUser = async (req, res) => {
     } else if (division && department) {
       user.divisionMapping = [{ division, departments: [department] }];
     }
+    if (customRoles !== undefined) user.customRoles = customRoles;
 
     await user.save();
 

@@ -31,6 +31,10 @@ function normalizeEmpNos(employees) {
   )];
 }
 
+function isFutureDateStr(referenceDateStr, candidateDateStr) {
+  return candidateDateStr > referenceDateStr;
+}
+
 /**
  * Format a Date object to YYYY-MM-DD string (IST-safe)
  * AttendanceDaily stores date as String in YYYY-MM-DD format.
@@ -303,9 +307,12 @@ exports.getSuperAdminAnalytics = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Not authorized' });
     }
 
-    const todayStr = getTodayISTDateString();
+    const requestedDateRaw = typeof req.query.date === 'string' ? req.query.date.trim() : '';
+    const isValidDateOverride = /^\d{4}-\d{2}-\d{2}$/.test(requestedDateRaw);
+    const todayStr = isValidDateOverride ? requestedDateRaw : getTodayISTDateString();
     const yesterdayStr = addCalendarDaysIST(todayStr, -1);
-    const currentCycle = await dateCycleService.getPayrollCycleForDate(new Date());
+    const analyticsAnchorDate = createISTDate(todayStr, '12:00');
+    const currentCycle = await dateCycleService.getPayrollCycleForDate(analyticsAnchorDate);
     const prevMonthDate = new Date(currentCycle.startDate);
     prevMonthDate.setDate(prevMonthDate.getDate() - 15); // middle of prev cycle
     const previousCycle = await dateCycleService.getPayrollCycleForDate(prevMonthDate);
@@ -503,9 +510,10 @@ exports.getSuperAdminAnalytics = async (req, res) => {
       Employee.find({
         ...Employee.getCurrentlyActiveFilter(),
         dob: { $ne: null }
-      }).select('employee_name emp_no dob profilePhoto department_id division_id')
+      }).select('employee_name emp_no dob profilePhoto department_id division_id designation_id')
         .populate('department_id', 'name')
         .populate('division_id', 'name')
+        .populate('designation_id', 'name')
         .lean(),
     ]);
 
@@ -545,7 +553,8 @@ exports.getSuperAdminAnalytics = async (req, res) => {
         daysUntil: diffDays,
         photo: emp.profilePhoto,
         department: emp.department_id,
-        division: emp.division_id
+        division: emp.division_id,
+        designation: emp.designation_id
       };
     })
     .filter(b => b.daysUntil <= 30)
@@ -593,24 +602,38 @@ exports.getSuperAdminAnalytics = async (req, res) => {
       return out;
     };
 
+    const activeEmployeesForPulse = await Employee.find(Employee.getCurrentlyActiveFilter())
+      .select('emp_no')
+      .lean();
+    const activeEmpNos = normalizeEmpNos(activeEmployeesForPulse);
+
+    const presentStatusFilter = { $in: ['PRESENT', 'HALF_DAY', 'PARTIAL', 'OD'] };
+    const employeeScopeFilter = activeEmpNos.length > 0
+      ? { employeeNumber: { $in: activeEmpNos } }
+      : { _id: null };
+
     const fetchDayTrackerBuckets = async (ds) => {
+      if (isFutureDateStr(todayStr, ds)) {
+        return { present: 0, leave: 0, od: 0 };
+      }
       const dayStart = createISTDate(ds, '00:00');
       const dayEnd = createISTDate(ds, '23:59');
       const [present, leave, od] = await Promise.all([
         AttendanceDaily.countDocuments({ 
           date: ds, 
-          $or: [
-            { status: { $in: ['PRESENT', 'HALF_DAY', 'PARTIAL'] } },
-            { inTime: { $ne: null } },
-            { "shifts.inTime": { $ne: null } }
-          ]
+          ...employeeScopeFilter,
+          status: presentStatusFilter,
         }),
         Leave.countDocuments({
           status: 'approved',
           fromDate: { $lte: dayEnd },
           toDate: { $gte: dayStart },
         }),
-        OD.countDocuments({ status: 'approved', fromDate: { $lte: dayEnd }, toDate: { $gte: dayStart } }).catch(() => 0),
+        OD.countDocuments({
+          status: 'approved',
+          fromDate: { $lte: dayEnd },
+          toDate: { $gte: dayStart }
+        }).catch(() => 0),
       ]);
       return { present, leave, od };
     };

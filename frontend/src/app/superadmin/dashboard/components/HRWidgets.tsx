@@ -22,6 +22,15 @@ const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'
 
 // Component 1: Attendance Trends (Area Chart)
 export const AttendancePulse = ({ data }: { data: any[] }) => {
+  const tooltipLabelFormatter = (label: React.ReactNode, payload: readonly any[]) => {
+    if (typeof label !== 'string') return label;
+    const point = payload?.[0]?.payload;
+    if (!point?.date) return label;
+    const parsed = new Date(`${point.date}T00:00:00`);
+    if (Number.isNaN(parsed.getTime())) return `${label} (${point.date})`;
+    return `${label} • ${parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+  };
+
   return (
     <div className="h-[300px] w-full">
       <ResponsiveContainer width="100%" height="100%">
@@ -49,6 +58,7 @@ export const AttendancePulse = ({ data }: { data: any[] }) => {
             tick={{ fontSize: 10, fill: '#6b7280' }}
           />
           <Tooltip 
+            labelFormatter={tooltipLabelFormatter}
             contentStyle={{ 
               borderRadius: '12px', 
               border: 'none', 
