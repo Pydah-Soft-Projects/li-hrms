@@ -1,5 +1,5 @@
 const OD = require('../model/OD');
-const { processTrailPipeline, SNAP_THRESHOLD } = require('./roadSnappingService');
+const { processTrailPipelineBoth, SNAP_THRESHOLD } = require('./roadSnappingService');
 
 const MAX_OD_TRAIL_POINTS = 4000;
 const MAX_OD_TRAIL_BATCH = 40;
@@ -110,17 +110,30 @@ async function snapOdTrailAsync(odId) {
   if (rawCoords.length < 2) return null;
 
   try {
-    const result = await processTrailPipeline(rawCoords);
+    const result = await processTrailPipelineBoth(rawCoords);
 
-    od.snappedTrail = result.snappedPoints;
-    od.encodedPolyline = result.encodedPolyline;
+    // Keep legacy fields mapped to OSRM so existing clients continue to work
+    od.snappedTrail = result.osrm.snappedPoints;
+    od.encodedPolyline = result.osrm.encodedPolyline;
+    od.snappedTrailOSRM = result.osrm.snappedPoints;
+    od.snappedTrailMapbox = result.mapbox.snappedPoints;
+    od.encodedPolylineOSRM = result.osrm.encodedPolyline;
+    od.encodedPolylineMapbox = result.mapbox.encodedPolyline;
+    od.snappedAtOSRM = new Date();
+    od.snappedAtMapbox = new Date();
     od.lastSnappedIndex = trail.length - 1;
     od.markModified('snappedTrail');
     od.markModified('encodedPolyline');
+    od.markModified('snappedTrailOSRM');
+    od.markModified('snappedTrailMapbox');
+    od.markModified('encodedPolylineOSRM');
+    od.markModified('encodedPolylineMapbox');
+    od.markModified('snappedAtOSRM');
+    od.markModified('snappedAtMapbox');
     await od.save();
 
     console.log(
-      `[OdTrail] Snapped OD ${odId}: ${result.meta.rawCount} raw → ${result.meta.snappedCount} snapped → ${result.meta.compressedCount} compressed (${result.meta.encodedLength} chars)`
+      `[OdTrail] Snapped OD ${odId}: OSRM ${result.osrm.meta.rawCount}→${result.osrm.meta.snappedCount}→${result.osrm.meta.compressedCount} (${result.osrm.meta.encodedLength} chars), Mapbox ${result.mapbox.meta.rawCount}→${result.mapbox.meta.snappedCount}→${result.mapbox.meta.compressedCount} (${result.mapbox.meta.encodedLength} chars)`
     );
 
     // Broadcast the snapped update via socket (if socketService is available)
@@ -128,16 +141,28 @@ async function snapOdTrailAsync(odId) {
       const { emitOdTrailSnappedUpdate } = require('../../shared/services/socketService');
       emitOdTrailSnappedUpdate({
         odId: String(odId),
-        encodedPolyline: result.encodedPolyline,
-        snappedPoints: result.snappedPoints,
+        encodedPolyline: result.osrm.encodedPolyline,
+        snappedPoints: result.osrm.snappedPoints,
+        providers: {
+          osrm: {
+            encodedPolyline: result.osrm.encodedPolyline,
+            snappedPoints: result.osrm.snappedPoints,
+            snappedAt: od.snappedAtOSRM,
+          },
+          mapbox: {
+            encodedPolyline: result.mapbox.encodedPolyline,
+            snappedPoints: result.mapbox.snappedPoints,
+            snappedAt: od.snappedAtMapbox,
+          },
+        },
       });
     } catch {
       // socketService may not be initialized yet during startup
     }
 
     return {
-      encodedPolyline: result.encodedPolyline,
-      snappedCount: result.snappedPoints.length,
+      encodedPolyline: result.osrm.encodedPolyline,
+      snappedCount: result.osrm.snappedPoints.length,
     };
   } catch (err) {
     console.warn('[OdTrail] snapOdTrailAsync error:', err.message || err);

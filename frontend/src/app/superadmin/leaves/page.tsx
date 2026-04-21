@@ -1665,15 +1665,24 @@ function LeavesPageContent() {
       .filter((p) => Number.isFinite(p.latitude) && Number.isFinite(p.longitude));
   }, [selectedItem, detailType]);
 
-  // Road-snapped encoded polyline (from backend OSRM pipeline)
-  const [odEncodedPolyline, setOdEncodedPolyline] = useState<string | null>(null);
+  // Provider-based road-snapped polylines
+  const [odEncodedPolylineOSRM, setOdEncodedPolylineOSRM] = useState<string | null>(null);
+  const [odEncodedPolylineMapbox, setOdEncodedPolylineMapbox] = useState<string | null>(null);
+  const [odSnappedAtOSRM, setOdSnappedAtOSRM] = useState<string | null>(null);
+  const [odSnappedAtMapbox, setOdSnappedAtMapbox] = useState<string | null>(null);
 
   // Sync initial encodedPolyline from selectedItem when detail dialog opens
   useEffect(() => {
     if (showDetailDialog && detailType === 'od' && selectedItem) {
-      setOdEncodedPolyline((selectedItem as any).encodedPolyline || null);
+      setOdEncodedPolylineOSRM((selectedItem as any).encodedPolylineOSRM || (selectedItem as any).encodedPolyline || null);
+      setOdEncodedPolylineMapbox((selectedItem as any).encodedPolylineMapbox || null);
+      setOdSnappedAtOSRM((selectedItem as any).snappedAtOSRM ? new Date((selectedItem as any).snappedAtOSRM).toISOString() : null);
+      setOdSnappedAtMapbox((selectedItem as any).snappedAtMapbox ? new Date((selectedItem as any).snappedAtMapbox).toISOString() : null);
     } else {
-      setOdEncodedPolyline(null);
+      setOdEncodedPolylineOSRM(null);
+      setOdEncodedPolylineMapbox(null);
+      setOdSnappedAtOSRM(null);
+      setOdSnappedAtMapbox(null);
     }
   }, [showDetailDialog, detailType, selectedItem?._id]);
 
@@ -1688,11 +1697,12 @@ function LeavesPageContent() {
         return { ...prev, locationTrail: merged };
       });
     });
-    // Subscribe to road-snapped polyline updates (fires after OSRM pipeline)
+    // Subscribe to provider-specific road-snapped updates
     const offSnapped = subscribeOdTrailSnappedUpdates(odId, (data) => {
-      if (data.encodedPolyline) {
-        setOdEncodedPolyline(data.encodedPolyline);
-      }
+      setOdEncodedPolylineOSRM(data.providers?.osrm?.encodedPolyline || data.encodedPolyline || null);
+      setOdEncodedPolylineMapbox(data.providers?.mapbox?.encodedPolyline || null);
+      setOdSnappedAtOSRM(data.providers?.osrm?.snappedAt || null);
+      setOdSnappedAtMapbox(data.providers?.mapbox?.snappedAt || null);
     });
     return () => {
       offSocket();
@@ -4186,7 +4196,7 @@ function LeavesPageContent() {
               )}
 
               {/* Stats Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-slate-50 dark:bg-slate-700/30 p-4 sm:p-6 rounded-xl">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 bg-slate-50 dark:bg-slate-700/30 p-4 sm:p-6 rounded-xl">
                 <div className="space-y-1">
                   <p className="text-xs uppercase font-bold text-slate-400 tracking-wider">Type</p>
                   <p className="text-sm font-bold text-slate-900 dark:text-white truncate" title={detailType === 'leave' ? (selectedItem as LeaveApplication).leaveType : (selectedItem as ODApplication).odType}>
@@ -4227,6 +4237,12 @@ function LeavesPageContent() {
                 <div className="space-y-1">
                   <p className="text-xs uppercase font-bold text-slate-400 tracking-wider">To</p>
                   <p className="text-sm font-bold text-slate-900 dark:text-white">{formatDate(selectedItem.toDate)}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs uppercase font-bold text-slate-400 tracking-wider">Request Date</p>
+                  <p className="text-sm font-bold text-slate-900 dark:text-white">
+                    {formatDate((selectedItem as any).createdAt || selectedItem.appliedAt)}
+                  </p>
                 </div>
               </div>
 
@@ -4411,7 +4427,11 @@ function LeavesPageContent() {
                           <DualLocationMap
                             markers={markers as any}
                             routePolyline={odRoutePolyline.length >= 2 ? odRoutePolyline : undefined}
-                            encodedPolyline={odEncodedPolyline}
+                            encodedPolyline={odEncodedPolylineOSRM}
+                            encodedPolylineOSRM={odEncodedPolylineOSRM}
+                            encodedPolylineMapbox={odEncodedPolylineMapbox}
+                            snappedAtOSRM={odSnappedAtOSRM}
+                            snappedAtMapbox={odSnappedAtMapbox}
                             height="190px"
                           />
                           {canRecordOdLocationTrail(selectedItem as any, au) && (

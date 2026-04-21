@@ -225,9 +225,9 @@ const emitOdTrailUpdate = ({ odId, points, trailLength }) => {
 /**
  * Broadcast road-snapped polyline update to all viewers of an OD trail room.
  * Called asynchronously from odTrailService after the OSRM pipeline completes.
- * @param {{ odId: string, encodedPolyline: string, snappedPoints?: {latitude:number,longitude:number}[] }} payload
+ * @param {{ odId: string, encodedPolyline: string, snappedPoints?: {latitude:number,longitude:number}[], providers?: { osrm?: { encodedPolyline?: string|null, snappedPoints?: {latitude:number,longitude:number}[] }, mapbox?: { encodedPolyline?: string|null, snappedPoints?: {latitude:number,longitude:number}[] } } }} payload
  */
-const emitOdTrailSnappedUpdate = ({ odId, encodedPolyline, snappedPoints }) => {
+const emitOdTrailSnappedUpdate = ({ odId, encodedPolyline, snappedPoints, providers }) => {
     if (!io || !odId) return;
     debugLog('od_trail:snapped_update broadcast', {
         odId: String(odId),
@@ -240,6 +240,22 @@ const emitOdTrailSnappedUpdate = ({ odId, encodedPolyline, snappedPoints }) => {
         snappedPoints: Array.isArray(snappedPoints)
             ? snappedPoints.map((p) => ({ latitude: p.latitude, longitude: p.longitude }))
             : [],
+        providers: {
+            osrm: {
+                encodedPolyline: providers?.osrm?.encodedPolyline || null,
+                snappedPoints: Array.isArray(providers?.osrm?.snappedPoints)
+                    ? providers.osrm.snappedPoints.map((p) => ({ latitude: p.latitude, longitude: p.longitude }))
+                    : [],
+                snappedAt: providers?.osrm?.snappedAt || null,
+            },
+            mapbox: {
+                encodedPolyline: providers?.mapbox?.encodedPolyline || null,
+                snappedPoints: Array.isArray(providers?.mapbox?.snappedPoints)
+                    ? providers.mapbox.snappedPoints.map((p) => ({ latitude: p.latitude, longitude: p.longitude }))
+                    : [],
+                snappedAt: providers?.mapbox?.snappedAt || null,
+            },
+        },
     });
 };
 

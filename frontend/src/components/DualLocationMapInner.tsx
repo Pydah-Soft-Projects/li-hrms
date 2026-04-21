@@ -22,6 +22,7 @@ interface DualLocationMapInnerProps {
   routePolyline?: RoutePolylinePoint[];
   /** Google-encoded polyline string from road snapping (preferred over raw routePolyline) */
   encodedPolyline?: string | null;
+  trailSource?: 'osrm' | 'mapbox' | 'raw';
   height: string;
 }
 
@@ -118,7 +119,7 @@ function decodePolyline(encoded: string): { latitude: number; longitude: number 
   return points;
 }
 
-export default function DualLocationMapInner({ markers, routePolyline, encodedPolyline, height }: DualLocationMapInnerProps) {
+export default function DualLocationMapInner({ markers, routePolyline, encodedPolyline, trailSource = 'osrm', height }: DualLocationMapInnerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -142,19 +143,23 @@ export default function DualLocationMapInner({ markers, routePolyline, encodedPo
     const snappedPoints = encodedPolyline ? decodePolyline(encodedPolyline) : null;
     const hasSnapped = snappedPoints && snappedPoints.length >= 2;
 
-    // --- Render SNAPPED route (green, solid — road-aligned) ---
+    // --- Render SNAPPED route (provider-specific, solid — road-aligned) ---
     if (hasSnapped) {
+      const snappedColor = trailSource === 'mapbox' ? '#0891b2' : '#059669';
       const snappedLatLngs = snappedPoints.map(
         (p) => [p.latitude, p.longitude] as L.LatLngTuple
       );
       const snappedLine = L.polyline(snappedLatLngs, {
-        color: '#059669',
+        color: snappedColor,
         weight: 5,
         opacity: 0.9,
         lineCap: 'round',
         lineJoin: 'round',
       }).addTo(map);
-      snappedLine.bindTooltip('Road-aligned route (IN → OUT)', { sticky: true, direction: 'top' });
+      snappedLine.bindTooltip(
+        `${trailSource === 'mapbox' ? 'Mapbox' : 'OSRM'} road-aligned route (IN → OUT)`,
+        { sticky: true, direction: 'top' }
+      );
       snappedLatLngs.forEach((pt) => bounds.push(pt));
 
       // Directional arrows on snapped route
@@ -238,7 +243,7 @@ export default function DualLocationMapInner({ markers, routePolyline, encodedPo
     return () => {
       map.remove();
     };
-  }, [markers, routePolyline, encodedPolyline]);
+  }, [markers, routePolyline, encodedPolyline, trailSource]);
 
   return (
     <div

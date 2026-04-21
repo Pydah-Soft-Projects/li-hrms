@@ -21,6 +21,7 @@ import {
   leaveOdTrailRoom,
   publishOdTrailPoints,
   subscribeOdTrailUpdates,
+  subscribeOdTrailSnappedUpdates,
 } from '@/lib/odTrailSocket';
 import { MultiSelect } from '@/components/MultiSelect';
 import { auth } from '@/lib/auth';
@@ -1742,6 +1743,25 @@ export default function LeavesPage() {
       .filter((p) => Number.isFinite(p.latitude) && Number.isFinite(p.longitude));
   }, [selectedItem, detailType]);
 
+  const [odEncodedPolylineOSRM, setOdEncodedPolylineOSRM] = useState<string | null>(null);
+  const [odEncodedPolylineMapbox, setOdEncodedPolylineMapbox] = useState<string | null>(null);
+  const [odSnappedAtOSRM, setOdSnappedAtOSRM] = useState<string | null>(null);
+  const [odSnappedAtMapbox, setOdSnappedAtMapbox] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (showDetailDialog && detailType === 'od' && selectedItem) {
+      setOdEncodedPolylineOSRM((selectedItem as any).encodedPolylineOSRM || (selectedItem as any).encodedPolyline || null);
+      setOdEncodedPolylineMapbox((selectedItem as any).encodedPolylineMapbox || null);
+      setOdSnappedAtOSRM((selectedItem as any).snappedAtOSRM ? new Date((selectedItem as any).snappedAtOSRM).toISOString() : null);
+      setOdSnappedAtMapbox((selectedItem as any).snappedAtMapbox ? new Date((selectedItem as any).snappedAtMapbox).toISOString() : null);
+    } else {
+      setOdEncodedPolylineOSRM(null);
+      setOdEncodedPolylineMapbox(null);
+      setOdSnappedAtOSRM(null);
+      setOdSnappedAtMapbox(null);
+    }
+  }, [showDetailDialog, detailType, selectedItem?._id]);
+
   useEffect(() => {
     if (!showDetailDialog || detailType !== 'od' || !selectedItem?._id) return undefined;
     const odId = String(selectedItem._id);
@@ -1753,8 +1773,15 @@ export default function LeavesPage() {
         return { ...prev, locationTrail: merged };
       });
     });
+    const offSnapped = subscribeOdTrailSnappedUpdates(odId, (data) => {
+      setOdEncodedPolylineOSRM(data.providers?.osrm?.encodedPolyline || data.encodedPolyline || null);
+      setOdEncodedPolylineMapbox(data.providers?.mapbox?.encodedPolyline || null);
+      setOdSnappedAtOSRM(data.providers?.osrm?.snappedAt || null);
+      setOdSnappedAtMapbox(data.providers?.mapbox?.snappedAt || null);
+    });
     return () => {
       offSocket();
+      offSnapped();
       leaveOdTrailRoom(odId);
     };
   }, [showDetailDialog, detailType, selectedItem?._id]);
@@ -5391,6 +5418,11 @@ export default function LeavesPage() {
                               <DualLocationMap
                                 markers={markers as any}
                                 routePolyline={odRoutePolyline.length >= 2 ? odRoutePolyline : undefined}
+                                encodedPolyline={odEncodedPolylineOSRM}
+                                encodedPolylineOSRM={odEncodedPolylineOSRM}
+                                encodedPolylineMapbox={odEncodedPolylineMapbox}
+                                snappedAtOSRM={odSnappedAtOSRM}
+                                snappedAtMapbox={odSnappedAtMapbox}
                                 height="170px"
                                 className="rounded-b-lg"
                               />

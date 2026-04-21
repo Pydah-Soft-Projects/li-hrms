@@ -10,6 +10,9 @@
 
 const OSRM_BASE = process.env.OSRM_URL || 'https://router.project-osrm.org';
 const OSRM_PROFILE = process.env.OSRM_PROFILE || 'driving';
+const MAPBOX_BASE = process.env.MAPBOX_MATCHING_URL || 'https://api.mapbox.com/matching/v5/mapbox';
+const MAPBOX_PROFILE = process.env.MAPBOX_PROFILE || 'driving';
+const MAPBOX_TOKEN = process.env.MAPBOX_ACCESS_TOKEN || '';
 
 // Max coordinates OSRM accepts in a single match request
 const OSRM_MAX_COORDS = 100;
@@ -19,6 +22,7 @@ const SNAP_THRESHOLD = 5;
 
 // Timeout for OSRM HTTP calls (ms)
 const OSRM_TIMEOUT_MS = 8000;
+const MAPBOX_TIMEOUT_MS = 8000;
 
 /* ------------------------------------------------------------------ */
 /*  1. OSRM Map Matching                                              */
@@ -90,6 +94,57 @@ async function snapToRoadsOSRM(points) {
       console.warn('[RoadSnap] OSRM request timed out');
     } else {
       console.warn('[RoadSnap] OSRM error:', err.message || err);
+    }
+    return points;
+  }
+}
+
+/**
+ * Snap an array of {latitude, longitude} points using Mapbox Map Matching.
+ * Returns original points when token is missing or API fails.
+ *
+ * @param {{ latitude: number, longitude: number }[]} points
+ * @returns {Promise<{ latitude: number, longitude: number }[]>}
+ */
+async function snapToRoadsMapbox(points) {
+  if (!points || points.length < 2) return points;
+  if (!MAPBOX_TOKEN) return points;
+
+  const coords = points
+    .slice(0, OSRM_MAX_COORDS)
+    .map((p) => `${p.longitude},${p.latitude}`)
+    .join(';');
+
+  const url =
+    `${MAPBOX_BASE}/${MAPBOX_PROFILE}/${coords}` +
+    `?geometries=geojson&overview=full&access_token=${encodeURIComponent(MAPBOX_TOKEN)}`;
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), MAPBOX_TIMEOUT_MS);
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
+
+    if (!response.ok) {
+      console.warn(`[RoadSnap] Mapbox returned ${response.status}`);
+      return points;
+    }
+
+    const data = await response.json();
+    const matching = data?.matchings?.[0];
+    const coordsOut = matching?.geometry?.coordinates;
+    if (!Array.isArray(coordsOut) || coordsOut.length < 2) return points;
+
+    const snapped = coordsOut
+      .map(([lng, lat]) => ({ latitude: lat, longitude: lng }))
+      .filter((p) => Number.isFinite(p.latitude) && Number.isFinite(p.longitude));
+
+    return snapped.length >= 2 ? snapped : points;
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      console.warn('[RoadSnap] Mapbox request timed out');
+    } else {
+      console.warn('[RoadSnap] Mapbox error:', err.message || err);
     }
     return points;
   }
@@ -311,12 +366,67 @@ async function processTrailPipeline(rawPoints) {
   };
 }
 
+/**
+ * Run provider pipelines in parallel and return both OSRM + Mapbox outputs.
+ *
+ * @param {{ latitude: number, longitude: number, accuracy?: number }[]} rawPoints
+ * @returns {Promise<{
+ *   osrm: { snappedPoints: { latitude: number, longitude: number }[], encodedPolyline: string, meta: any },
+ *   mapbox: { snappedPoints: { latitude: number, longitude: number }[], encodedPolyline: string, meta: any }
+ * }>}
+ */
+async function processTrailPipelineBoth(rawPoints) {
+  const base = !rawPoints || rawPoints.length < 2
+    ? {
+        snappedPoints: rawPoints || [],
+        encodedPolyline: encodePolyline(rawPoints || []),
+        meta: {
+          rawCount: rawPoints?.length || 0,
+          snappedCount: rawPoints?.length || 0,
+          compressedCount: rawPoints?.length || 0,
+          encodedLength: 0,
+        },
+      }
+    : null;
+
+  if (base) return { osrm: base, mapbox: base };
+
+  const [osrmRaw, mapboxRaw] = await Promise.all([
+    snapToRoadsOSRM(rawPoints),
+    snapToRoadsMapbox(rawPoints),
+  ]);
+
+  const finalize = (snapped, provider) => {
+    const smoothed = smoothPathKalman(snapped);
+    const compressed = compressDouglasPeucker(smoothed);
+    const encoded = encodePolyline(compressed);
+    return {
+      snappedPoints: compressed,
+      encodedPolyline: encoded,
+      meta: {
+        provider,
+        rawCount: rawPoints.length,
+        snappedCount: snapped.length,
+        compressedCount: compressed.length,
+        encodedLength: encoded.length,
+      },
+    };
+  };
+
+  return {
+    osrm: finalize(osrmRaw, 'osrm'),
+    mapbox: finalize(mapboxRaw, 'mapbox'),
+  };
+}
+
 module.exports = {
   snapToRoadsOSRM,
+  snapToRoadsMapbox,
   smoothPathKalman,
   compressDouglasPeucker,
   encodePolyline,
   decodePolyline,
   processTrailPipeline,
+  processTrailPipelineBoth,
   SNAP_THRESHOLD,
 };

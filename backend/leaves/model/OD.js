@@ -484,6 +484,36 @@ const ODSchema = new mongoose.Schema(
       default: null,
     },
 
+    // Provider-specific snapped results for selector-based map rendering
+    snappedTrailOSRM: [
+      {
+        latitude: { type: Number, required: true },
+        longitude: { type: Number, required: true },
+      },
+    ],
+    snappedTrailMapbox: [
+      {
+        latitude: { type: Number, required: true },
+        longitude: { type: Number, required: true },
+      },
+    ],
+    encodedPolylineOSRM: {
+      type: String,
+      default: null,
+    },
+    encodedPolylineMapbox: {
+      type: String,
+      default: null,
+    },
+    snappedAtOSRM: {
+      type: Date,
+      default: null,
+    },
+    snappedAtMapbox: {
+      type: Date,
+      default: null,
+    },
+
     // Index of the last raw trail point that was included in the latest snap
     lastSnappedIndex: {
       type: Number,

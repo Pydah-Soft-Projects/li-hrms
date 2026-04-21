@@ -92,15 +92,42 @@ export function subscribeOdTrailUpdates(
  */
 export function subscribeOdTrailSnappedUpdates(
   odId: string,
-  onSnapped: (data: { encodedPolyline: string | null; snappedPoints: { latitude: number; longitude: number }[] }) => void
+  onSnapped: (data: {
+    encodedPolyline: string | null;
+    snappedPoints: { latitude: number; longitude: number }[];
+    providers: {
+      osrm: { encodedPolyline: string | null; snappedPoints: { latitude: number; longitude: number }[]; snappedAt: string | null };
+      mapbox: { encodedPolyline: string | null; snappedPoints: { latitude: number; longitude: number }[]; snappedAt: string | null };
+    };
+  }) => void
 ): () => void {
   const s = getSocket();
   if (!s || !odId) return () => {};
-  const handler = (payload: { odId?: string; encodedPolyline?: string | null; snappedPoints?: { latitude: number; longitude: number }[] }) => {
+  const handler = (payload: {
+    odId?: string;
+    encodedPolyline?: string | null;
+    snappedPoints?: { latitude: number; longitude: number }[];
+    providers?: {
+      osrm?: { encodedPolyline?: string | null; snappedPoints?: { latitude: number; longitude: number }[]; snappedAt?: string | null };
+      mapbox?: { encodedPolyline?: string | null; snappedPoints?: { latitude: number; longitude: number }[]; snappedAt?: string | null };
+    };
+  }) => {
     if (!payload || String(payload.odId || '') !== String(odId)) return;
     onSnapped({
       encodedPolyline: payload.encodedPolyline ?? null,
       snappedPoints: Array.isArray(payload.snappedPoints) ? payload.snappedPoints : [],
+      providers: {
+        osrm: {
+          encodedPolyline: payload.providers?.osrm?.encodedPolyline ?? null,
+          snappedPoints: Array.isArray(payload.providers?.osrm?.snappedPoints) ? payload.providers.osrm.snappedPoints : [],
+          snappedAt: payload.providers?.osrm?.snappedAt ?? null,
+        },
+        mapbox: {
+          encodedPolyline: payload.providers?.mapbox?.encodedPolyline ?? null,
+          snappedPoints: Array.isArray(payload.providers?.mapbox?.snappedPoints) ? payload.providers.mapbox.snappedPoints : [],
+          snappedAt: payload.providers?.mapbox?.snappedAt ?? null,
+        },
+      },
     });
   };
   s.on('od_trail:snapped_update', handler);
