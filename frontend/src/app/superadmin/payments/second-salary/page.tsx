@@ -1,7 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { api, Division, Department, Designation } from '@/lib/api';
+import { useSecondSalaryFeatureEnabled } from '@/hooks/useSecondSalaryFeatureEnabled';
 import {
     Banknote,
     Calendar,
@@ -22,6 +24,7 @@ import Swal from 'sweetalert2';
 import { format } from 'date-fns';
 
 export default function SecondSalaryPaymentsPage() {
+    const router = useRouter();
     const [batches, setBatches] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isCalculating, setIsCalculating] = useState(false);
@@ -44,6 +47,13 @@ export default function SecondSalaryPaymentsPage() {
     const [comparisonData, setComparisonData] = useState<any[]>([]);
     const [isComparing, setIsComparing] = useState(false);
     const [exportingExcel, setExportingExcel] = useState(false);
+
+    const { secondSalaryEnabled, secondSalarySettingReady } = useSecondSalaryFeatureEnabled();
+
+    useEffect(() => {
+        if (!secondSalarySettingReady || secondSalaryEnabled) return;
+        router.replace('/superadmin/payments');
+    }, [secondSalarySettingReady, secondSalaryEnabled, router]);
 
     useEffect(() => {
         fetchInitialData();
@@ -347,6 +357,14 @@ export default function SecondSalaryPaymentsPage() {
             maximumFractionDigits: 0
         }).format(amount);
     };
+
+    if (!secondSalarySettingReady || !secondSalaryEnabled) {
+        return (
+            <div className="flex min-h-[40vh] items-center justify-center p-8">
+                <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
+            </div>
+        );
+    }
 
     const getStatusBadge = (status: string) => {
         switch (status) {

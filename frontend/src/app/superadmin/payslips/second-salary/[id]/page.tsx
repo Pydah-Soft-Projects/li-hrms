@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { api } from '@/lib/api';
+import { useSecondSalaryFeatureEnabled } from '@/hooks/useSecondSalaryFeatureEnabled';
+import { Loader2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -86,11 +88,17 @@ export default function SecondSalaryPayslipDetail() {
     const router = useRouter();
     const params = useParams();
     const recordId = params?.id as string;
-
     const [loading, setLoading] = useState(true);
     const [record, setRecord] = useState<SecondSalaryRecord | null>(null);
     const [generatingPDF, setGeneratingPDF] = useState(false);
     const [error, setError] = useState<string | null>(null);
+
+    const { secondSalaryEnabled, secondSalarySettingReady } = useSecondSalaryFeatureEnabled();
+
+    useEffect(() => {
+        if (!secondSalarySettingReady || secondSalaryEnabled) return;
+        router.replace('/superadmin/payslips');
+    }, [secondSalarySettingReady, secondSalaryEnabled, router]);
 
     useEffect(() => {
         if (recordId) {
@@ -346,6 +354,14 @@ export default function SecondSalaryPayslipDetail() {
             setGeneratingPDF(false);
         }
     };
+
+    if (!secondSalarySettingReady || !secondSalaryEnabled) {
+        return (
+            <div className="flex min-h-[40vh] items-center justify-center p-8">
+                <Loader2 className="h-8 w-8 animate-spin text-emerald-500" />
+            </div>
+        );
+    }
 
     if (loading) {
         return (

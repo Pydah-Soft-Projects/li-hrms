@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { api, Department, Division, Designation } from '@/lib/api';
+import { useSecondSalaryFeatureEnabled } from '@/hooks/useSecondSalaryFeatureEnabled';
 import { toast } from 'react-toastify';
 import { format } from 'date-fns';
 import {
@@ -59,6 +60,7 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
   const [showSearch, setShowSearch] = useState(false);
   const [dataSource, setDataSource] = useState<'existing' | 'calculated' | null>(null);
   const [paysheetKind, setPaysheetKind] = useState<'regular' | 'second_salary'>('regular');
+  const { secondSalaryEnabled } = useSecondSalaryFeatureEnabled();
   const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(100);
   const [exportingBundle, setExportingBundle] = useState(false);
@@ -89,6 +91,12 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
     if (selectedEmployeeGroup) n++;
     return n;
   }, [selectedDivision, selectedDepartment, selectedDesignation, employmentStatus, debouncedSearch, selectedEmployeeGroup]);
+
+  useEffect(() => {
+    if (!secondSalaryEnabled && paysheetKind === 'second_salary') {
+      setPaysheetKind('regular');
+    }
+  }, [secondSalaryEnabled, paysheetKind]);
 
   useEffect(() => {
     setPage(1);
@@ -213,7 +221,7 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
         status: employmentStatus || undefined,
         search: debouncedSearch || undefined,
         source: 'existing',
-        secondSalary: paysheetKind === 'second_salary',
+        secondSalary: secondSalaryEnabled && paysheetKind === 'second_salary',
       });
       if (res?.success && res?.data) {
         setHeaders(res.data.headers || []);
@@ -243,6 +251,7 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
     paysheetKind,
     employmentStatus,
     selectedEmployeeGroup,
+    secondSalaryEnabled,
   ]);
 
   useEffect(() => {
@@ -509,30 +518,32 @@ export default function PaysheetPageContent({ layout = 'workspace' }: { layout?:
               <option value="active">Active only</option>
               <option value="inactive">Inactive only</option>
             </select>
-            <div className="flex h-8 items-center rounded-lg border border-slate-200/80 dark:border-slate-600/80 bg-violet-50/80 dark:bg-violet-950/30 p-0.5">
-              <button
-                type="button"
-                onClick={() => setPaysheetKind('regular')}
-                className={`h-7 px-2.5 rounded-md text-[11px] font-bold transition-colors ${
-                  paysheetKind === 'regular'
-                    ? 'bg-white text-violet-800 shadow-sm dark:bg-slate-900 dark:text-violet-200'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                }`}
-              >
-                Regular
-              </button>
-              <button
-                type="button"
-                onClick={() => setPaysheetKind('second_salary')}
-                className={`h-7 px-2 rounded-md text-[11px] font-bold transition-colors ${
-                  paysheetKind === 'second_salary'
-                    ? 'bg-white text-violet-800 shadow-sm dark:bg-slate-900 dark:text-violet-200'
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-                }`}
-              >
-                2nd salary
-              </button>
-            </div>
+            {secondSalaryEnabled ? (
+              <div className="flex h-8 items-center rounded-lg border border-slate-200/80 dark:border-slate-600/80 bg-violet-50/80 dark:bg-violet-950/30 p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setPaysheetKind('regular')}
+                  className={`h-7 px-2.5 rounded-md text-[11px] font-bold transition-colors ${
+                    paysheetKind === 'regular'
+                      ? 'bg-white text-violet-800 shadow-sm dark:bg-slate-900 dark:text-violet-200'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                  }`}
+                >
+                  Regular
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPaysheetKind('second_salary')}
+                  className={`h-7 px-2 rounded-md text-[11px] font-bold transition-colors ${
+                    paysheetKind === 'second_salary'
+                      ? 'bg-white text-violet-800 shadow-sm dark:bg-slate-900 dark:text-violet-200'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                  }`}
+                >
+                  2nd salary
+                </button>
+              </div>
+            ) : null}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">

@@ -167,7 +167,7 @@ export default function PayRegisterPage() {
   const [exportingExcel, setExportingExcel] = useState(false);
   const [calculatingJobId, setCalculatingJobId] = useState<string | null>(null);
   const [calculationProgress, setCalculationProgress] = useState<any>(null);
-  const [payrollStrategy, setPayrollStrategy] = useState<'new' | 'legacy' | 'dynamic'>('dynamic');
+  const payrollStrategy = 'dynamic' as const;
 
   const [attendanceDeductionInfo, setAttendanceDeductionInfo] = useState<{
     employeeName: string;
@@ -1314,7 +1314,7 @@ export default function PayRegisterPage() {
       }
 
       const employeeId = typeof employee === 'object' ? employee._id : employee;
-      const params = payrollStrategy === 'legacy' ? '?strategy=legacy' : payrollStrategy === 'dynamic' ? '?strategy=dynamic' : '?strategy=new';
+      const params = '?strategy=dynamic';
       setCalculatingId(employeeId);
       Swal.fire({
         icon: 'info',
@@ -1847,16 +1847,12 @@ export default function PayRegisterPage() {
                 </select>
               )}
 
-              {/* Payroll Engine selector (Previously Payroll Strategy) */}
-              <select
-                value={payrollStrategy}
-                onChange={(e) => setPayrollStrategy(e.target.value as any)}
-                className="h-8 pl-2 pr-6 text-[11px] font-semibold bg-blue-50 dark:bg-blue-900/20 border-0 rounded-lg focus:ring-2 focus:ring-blue-500/20 text-blue-700 dark:text-blue-400 shadow-sm"
+              <span
+                className="h-8 px-2.5 inline-flex items-center shrink-0 text-[11px] font-semibold bg-blue-50 dark:bg-blue-900/20 rounded-lg text-blue-700 dark:text-blue-400 shadow-sm"
+                title="Payroll uses the dynamic engine"
               >
-                <option value="dynamic">Engine: Dynamic</option>
-                <option value="new">Engine: New</option>
-                <option value="legacy">Engine: Legacy</option>
-              </select>
+                Engine: Dynamic
+              </span>
 
               {/* Server-side search — runs only when you press Enter */}
               <div className="relative flex-1 min-w-[140px] max-w-[220px]">

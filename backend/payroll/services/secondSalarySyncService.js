@@ -1,5 +1,6 @@
 const { payrollQueue } = require('../../shared/jobs/queueManager');
 const Employee = require('../../employees/model/Employee');
+const { isSecondSalaryGloballyEnabled } = require('../../settings/secondSalaryFeatureGate');
 
 /**
  * Service to synchronize Second Salary by triggering background recalculations.
@@ -14,6 +15,7 @@ class SecondSalarySyncService {
     async syncEmployee(employeeId, month, userId) {
         try {
             if (!employeeId || !month) return;
+            if (!(await isSecondSalaryGloballyEnabled())) return;
 
             const employee = await Employee.findById(employeeId).select('division_id department_id employee_name');
             if (!employee) return;
@@ -43,6 +45,7 @@ class SecondSalarySyncService {
     async syncMultipleEmployees(employeeIds, month, userId) {
         try {
             if (!employeeIds || !employeeIds.length || !month) return;
+            if (!(await isSecondSalaryGloballyEnabled())) return;
 
             // Group by division/department if needed, but for simplicity of sync, we can just queue them
             // The worker handles a list of employeeIds efficiently.

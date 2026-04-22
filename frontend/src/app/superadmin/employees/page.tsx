@@ -19,6 +19,7 @@ import Spinner from '@/components/Spinner';
 import EmployeeExportDialog from '@/components/employee/EmployeeExportDialog';
 import { getEmployeeGroupedDynamicFieldValue } from '@/lib/employeeDynamicFieldValue';
 import { getPayPeriodRangeForCalendarMonth } from '@/lib/payPeriodRange';
+import { useSecondSalaryFeatureEnabled } from '@/hooks/useSecondSalaryFeatureEnabled';
 
 import {
   EMPLOYEE_TEMPLATE_HEADERS,
@@ -421,6 +422,7 @@ const renderCustomFieldsForSystemGroup = (groupId: string, hardcodedFieldIds: st
 
 
 export default function EmployeesPage() {
+  const { secondSalaryEnabled } = useSecondSalaryFeatureEnabled();
   const [activeTab, setActiveTab] = useState<'employees' | 'applications' | 'requests'>('employees');
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [applications, setApplications] = useState<EmployeeApplication[]>([]);
@@ -1443,6 +1445,7 @@ export default function EmployeesPage() {
           field.id === 'department' ||
           field.id === 'designation' ||
           headers.includes(field.id)) return;
+        if (field.id === 'second_salary' && !secondSalaryEnabled) return;
 
         headers.push(field.id);
 
@@ -1498,7 +1501,7 @@ export default function EmployeesPage() {
     if (formSettings) {
       generateDynamicTemplate(formSettings, { includeEmployeeGroup: customEmployeeGroupingEnabled });
     }
-  }, [formSettings, customEmployeeGroupingEnabled]);
+  }, [formSettings, customEmployeeGroupingEnabled, secondSalaryEnabled]);
 
   const toggleSelectApplication = (id: string) => {
     setSelectedApplicationIds(prev =>
@@ -2231,6 +2234,10 @@ export default function EmployeesPage() {
         });
       }
 
+      if (!secondSalaryEnabled) {
+        delete (appData as any).second_salary;
+        delete (appData as any).secondSalary;
+      }
       setApplicationFormData(appData);
       setShowApplicationDialog(true);
       return;
@@ -2444,6 +2451,12 @@ export default function EmployeesPage() {
       experience: employee.experience ?? dynamicFieldsData.experience ?? '',
       profilePhoto: (employee as any).profilePhoto ?? dynamicFieldsData.profilePhoto ?? '',
     };
+    if (!secondSalaryEnabled) {
+      delete newFormData.second_salary;
+      if (newFormData.dynamicFields && typeof newFormData.dynamicFields === 'object') {
+        delete (newFormData.dynamicFields as any).second_salary;
+      }
+    }
 
     setFormData(newFormData);
     setShowDialog(true);
@@ -2852,6 +2865,10 @@ export default function EmployeesPage() {
         ctcSalary: applicationSalarySummary.ctcSalary,
         calculatedSalary: applicationSalarySummary.netSalary,
       };
+      if (!secondSalaryEnabled) {
+        delete (submitData as any).second_salary;
+        delete (submitData as any).secondSalary;
+      }
 
       const enumFields = ['gender', 'marital_status', 'blood_group'];
       enumFields.forEach(field => {
@@ -2993,7 +3010,7 @@ export default function EmployeesPage() {
     try {
       const response = await api.approveEmployeeSalary(selectedApplication._id, {
         approvedSalary: approvalData.approvedSalary,
-        second_salary: (approvalData as any).second_salary || undefined,
+        ...(secondSalaryEnabled ? { second_salary: (approvalData as any).second_salary || undefined } : {}),
         doj: approvalData.doj || undefined,
         comments: approvalData.comments,
         qualifications: (approvalData as any).qualifications,
@@ -3086,7 +3103,7 @@ export default function EmployeesPage() {
 
     setApprovalData({
       approvedSalary: application.approvedSalary || application.proposedSalary,
-      second_salary: application.second_salary || undefined,
+      ...(secondSalaryEnabled ? { second_salary: application.second_salary || undefined } : {}),
       doj: dojValue,
       comments: '',
       qualifications: application.qualifications ? structuredClone(application.qualifications) : [],
@@ -4574,6 +4591,7 @@ export default function EmployeesPage() {
                     excludeFields={[
                       ...(applicationFormAutoGenerateEmpNo ? ['emp_no'] : []),
                       ...(customEmployeeGroupingEnabled ? ['employee_group_id'] : []),
+                      ...(!secondSalaryEnabled ? ['second_salary'] : []),
                     ]}
                   />
 
@@ -5064,7 +5082,7 @@ export default function EmployeesPage() {
                         </p>
                       </div>
 
-                      {selectedApplication.second_salary !== undefined && (
+                      {secondSalaryEnabled && selectedApplication.second_salary !== undefined && (
                         <div>
                           <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Second Salary</p>
                           <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">
@@ -5094,24 +5112,26 @@ export default function EmployeesPage() {
                         )}
                       </div>
 
-                      <div>
-                        <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
-                          Second Salary / Additional (Optional)
-                        </label>
-                        <input
-                          type="number"
-                          value={(approvalData as any).second_salary || ''}
-                          onChange={(e) => setApprovalData({ ...approvalData, second_salary: Number(e.target.value) } as any)}
-                          onWheel={(e) => e.currentTarget.blur()}
-                          min="0"
-                          step="0.01"
-                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold transition-all focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 no-spinner"
-                          placeholder="Enter second salary if any"
-                        />
-                        <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                          Additional salary component (e.g. fixed allowance not in components)
-                        </p>
-                      </div>
+                      {secondSalaryEnabled ? (
+                        <div>
+                          <label className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                            Second Salary / Additional (Optional)
+                          </label>
+                          <input
+                            type="number"
+                            value={(approvalData as any).second_salary || ''}
+                            onChange={(e) => setApprovalData({ ...approvalData, second_salary: Number(e.target.value) } as any)}
+                            onWheel={(e) => e.currentTarget.blur()}
+                            min="0"
+                            step="0.01"
+                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold transition-all focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 no-spinner"
+                            placeholder="Enter second salary if any"
+                          />
+                          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                            Additional salary component (e.g. fixed allowance not in components)
+                          </p>
+                        </div>
+                      ) : null}
 
                       {/* Date of Joining */}
                       <div>
@@ -5512,7 +5532,10 @@ export default function EmployeesPage() {
                     departments={departments}
                     designations={designations as any}
                     onSettingsLoaded={setFormSettings}
-                    excludeFields={!editingEmployee && addFormAutoGenerateEmpNo ? ['emp_no'] : []}
+                    excludeFields={[
+                      ...(!editingEmployee && addFormAutoGenerateEmpNo ? ['emp_no'] : []),
+                      ...(!secondSalaryEnabled ? ['second_salary'] : []),
+                    ]}
                     isEditingExistingEmployee={!!editingEmployee}
                   />
 
@@ -5960,7 +5983,11 @@ export default function EmployeesPage() {
                     }
 
                     // Handle dynamic fields based on form settings
-                    const coreFields = ['emp_no', 'employee_name', 'proposedSalary', 'gross_salary', 'second_salary', 'division_id', 'department_id', 'designation_id', 'employee_group_id', 'division_name', 'department_name', 'designation_name', 'group_name', 'doj', 'dob', 'gender', 'marital_status', 'blood_group', 'qualifications', 'experience', 'address', 'location', 'aadhar_number', 'phone_number', 'alt_phone_number', 'email', 'pf_number', 'esi_number', 'bank_account_no', 'bank_name', 'bank_place', 'ifsc_code', 'salary_mode'];
+                    const coreFields = [
+                      'emp_no', 'employee_name', 'proposedSalary', 'gross_salary',
+                      ...(secondSalaryEnabled ? ['second_salary'] : []),
+                      'division_id', 'department_id', 'designation_id', 'employee_group_id', 'division_name', 'department_name', 'designation_name', 'group_name', 'doj', 'dob', 'gender', 'marital_status', 'blood_group', 'qualifications', 'experience', 'address', 'location', 'aadhar_number', 'phone_number', 'alt_phone_number', 'email', 'pf_number', 'esi_number', 'bank_account_no', 'bank_name', 'bank_place', 'ifsc_code', 'salary_mode',
+                    ];
 
                     if (formSettings?.groups) {
                       const dynamicFields: any = {};
@@ -6648,15 +6675,23 @@ export default function EmployeesPage() {
                       <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 dark:border-slate-700 dark:bg-slate-900/50">
                         <h3 className="mb-4 text-lg font-semibold text-slate-900 dark:text-slate-100">{getGroupLabel('salaries', formSettings, 'Salary and Leave Details')}</h3>
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                            {renderCustomFieldsForSystemGroup('salaries', ['gross_salary', 'proposedSalary', 'second_salary', 'paid_leaves', 'casual_leaves', 'allottedLeaves', 'ctcSalary', 'calculatedSalary'], viewingEmployee, formSettings)}
+                            {renderCustomFieldsForSystemGroup(
+                              'salaries',
+                              // Always list second_salary here so it is not rendered again from form-defined "custom" fields when the feature is off.
+                              ['gross_salary', 'proposedSalary', 'second_salary', 'paid_leaves', 'casual_leaves', 'allottedLeaves', 'ctcSalary', 'calculatedSalary'],
+                              viewingEmployee,
+                              formSettings
+                            )}
                           <div>
                             <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('gross_salary', formSettings) || 'Gross Salary'}</label>
                             <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.gross_salary ? `₹${viewingEmployee.gross_salary.toLocaleString()}` : '-'}</p>
                           </div>
-                          <div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('second_salary', formSettings) || 'Second Salary'}</label>
-                            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.second_salary ? `₹${viewingEmployee.second_salary.toLocaleString()}` : '-'}</p>
-                          </div>
+                          {secondSalaryEnabled ? (
+                            <div>
+                              <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('second_salary', formSettings) || 'Second Salary'}</label>
+                              <p className="mt-1 text-sm font-medium text-slate-900 dark:text-slate-100">{viewingEmployee.second_salary ? `₹${viewingEmployee.second_salary.toLocaleString()}` : '-'}</p>
+                            </div>
+                          ) : null}
                           <div>
                             <label className="text-xs font-medium text-slate-500 dark:text-slate-400">{getFieldLabel('paid_leaves', formSettings) || 'Monthly Paid Leaves'}</label>
                             {pendingAppForViewing ? (
@@ -6759,19 +6794,21 @@ export default function EmployeesPage() {
                                   <p className="mt-1.5 text-[10px] text-slate-500">Proposed by HR: ₹{selectedApplication.proposedSalary.toLocaleString()}</p>
                                 </div>
 
-                                <div>
-                                  <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                                    Second Salary / Fixed Allowance
-                                  </label>
-                                  <input
-                                    type="number"
-                                    value={(approvalData as any).second_salary || ''}
-                                    onChange={(e) => setApprovalData({ ...approvalData, second_salary: Number(e.target.value) } as any)}
-                                    onWheel={(e) => e.currentTarget.blur()}
-                                    placeholder="Enter additional amount"
-                                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold transition-all focus:border-indigo-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 no-spinner"
-                                  />
-                                </div>
+                                {secondSalaryEnabled ? (
+                                  <div>
+                                    <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                                      Second Salary / Fixed Allowance
+                                    </label>
+                                    <input
+                                      type="number"
+                                      value={(approvalData as any).second_salary || ''}
+                                      onChange={(e) => setApprovalData({ ...approvalData, second_salary: Number(e.target.value) } as any)}
+                                      onWheel={(e) => e.currentTarget.blur()}
+                                      placeholder="Enter additional amount"
+                                      className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold transition-all focus:border-indigo-400 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 no-spinner"
+                                    />
+                                  </div>
+                                ) : null}
 
                                 <div>
                                   <label className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">

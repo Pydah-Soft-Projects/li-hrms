@@ -12,7 +12,6 @@ const {
 } = require('../../shared/middleware/dataScopeMiddleware');
 const Department = require('../../departments/model/Department');
 const EmployeeHistory = require('../../employees/model/EmployeeHistory');
-const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
 const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
 const leaveRegisterService = require('../services/leaveRegisterService');
 const { notifyWorkflowEvent } = require('../../notifications/services/notificationService');
@@ -20,6 +19,7 @@ const { assertEmployeeRangeRequestsEditable } = require('../../shared/services/p
 const { resolveLeaveTypeWorkflowSettings } = require('../../departments/services/divisionWorkflowResolver');
 const { appendOdTrailPoints } = require('../services/odTrailService');
 const { emitOdTrailUpdate } = require('../../shared/services/socketService');
+const { isHolidayOrWeekOff, getHolidayWeekOffOdApplyContext } = require('../services/odHolidayApplyContextService');
 
 const formatODDate = (value) => {
   if (!value) return '';
@@ -207,20 +207,7 @@ const findEmployeeByIdOrEmpNo = async (identifier) => {
   return await findEmployeeByEmpNo(identifier);
 };
 
-/**
- * Check if date is holiday or weekly off for employee (PreScheduledShift)
- */
-const isHolidayOrWeekOff = async (employeeNumber, dateStr) => {
-  const empNo = String(employeeNumber).trim().toUpperCase();
-  const ps = await PreScheduledShift.findOne({
-    employeeNumber: empNo,
-    date: dateStr,
-    status: { $in: ['WO', 'HOL'] },
-  });
-  return !!ps;
-};
-
-// @desc    Validate if date is holiday/week-off for an employee
+// @desc    Validate if date is holiday/week-off for an employee; optional punch-based half/full for apply UI
 // @route   GET /api/leaves/od/check-holiday
 // @access  Private
 exports.checkHoliday = async (req, res) => {
@@ -250,15 +237,20 @@ exports.checkHoliday = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Employee not found' });
     }
 
-    const isHolWo = await isHolidayOrWeekOff(employee.emp_no, dateStr);
+    const ctx = await getHolidayWeekOffOdApplyContext(employee.emp_no, dateStr);
+    const isHolWo = ctx.isHolidayOrWeekOff;
 
     res.status(200).json({
       success: true,
       isHolidayOrWeekOff: isHolWo,
-      message: isHolWo 
+      message: isHolWo
         ? 'Selected day is holiday so this OD contributes to your compensatory off not on the working day.'
         : 'Regular working day',
       date: dateStr,
+      hasPunches: ctx.hasPunches,
+      suggestedOdTypeExtended: ctx.suggestedOdTypeExtended,
+      totalWorkingHours: ctx.totalWorkingHours,
+      punchContextDetail: ctx.punchContextDetail,
     });
   } catch (error) {
     console.error('Error in checkHoliday:', error);
