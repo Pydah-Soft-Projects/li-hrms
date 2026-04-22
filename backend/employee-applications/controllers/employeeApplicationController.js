@@ -23,7 +23,7 @@ const { resolveQualificationLabels } = require('../services/fieldMappingService'
 const { applicationQueue } = require('../../shared/jobs/queueManager');
 const Settings = require('../../settings/model/Settings');
 const { getNextEmpNo, getNextEmpNos } = require('../../employees/services/empNoService');
-const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
+const { getLeavePolicyResolved } = require('../../settings/services/leavePolicyTypeConfigService');
 const { syncEmployeeCLFromPolicy } = require('../../leaves/services/annualCLResetService');
 const { normalizeEmployeeSalariesPayload } = require('../../employees/utils/employeeSalariesNormalize');
 const {
@@ -822,7 +822,7 @@ const verifySingleApplicationInternal = async (applicationId, approver) => {
     results.mongodb = true;
 
     // Ensure leave register is created using the same pay-period monthly grid sync logic.
-    const leaveSettings = await LeavePolicySettings.getSettings();
+    const leaveSettings = await getLeavePolicyResolved();
     console.log(
       `[VerifyApplication] Starting leave register initialization for emp=${createdEmployee.emp_no} doj=${new Date(finalDOJ).toISOString()}`
     );

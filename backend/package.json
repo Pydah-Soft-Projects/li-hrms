@@ -16,7 +16,9 @@
     "sync:atlas-biometric": "node scripts/sync_atlas_biometric_to_attendance.js",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "test:notifications": "jest promotions-transfers/services/__tests__/promotionTransferNotificationService.simulation.test.js notifications/services/__tests__/createNotifications.recipients.simulation.test.js --forceExit"
+    "test:notifications": "jest promotions-transfers/services/__tests__/promotionTransferNotificationService.simulation.test.js notifications/services/__tests__/createNotifications.recipients.simulation.test.js --forceExit",
+    "test:leave-sim": "node ./node_modules/jest/bin/jest.js leaves/services/__tests__/leaveRegisterYear.annualMultiType.simulation.test.js leaves/services/__tests__/monthlyApplicationCap.lockedApproved.simulation.test.js leaves/services/__tests__/annualCLResetService.policyMath.simulation.test.js leaves/services/__tests__/leaveRegisterAddLeaveDebit.simulation.test.js leaves/controllers/__tests__/payrollLockFlow.simulation.test.js leaves/services/__tests__/annualCLResetService.memory.integration.test.js --no-coverage --runInBand --forceExit",
+    "test:leave-memory": "node ./node_modules/jest/bin/jest.js leaves/services/__tests__/annualCLResetService.memory.integration.test.js --no-coverage --runInBand --forceExit"
   },
   "keywords": [],
   "author": "",
@@ -53,6 +55,7 @@
   },
   "devDependencies": {
     "jest": "^29.7.0",
+    "mongodb-memory-server": "^10.4.3",
     "nodemon": "^3.1.11",
     "supertest": "^7.1.4"
   }

@@ -5,7 +5,7 @@
  */
 
 const cron = require('node-cron');
-const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
+const { getLeavePolicyResolved } = require('../../settings/services/leavePolicyTypeConfigService');
 const { performAnnualCLReset, getNextResetDate } = require('../services/annualCLResetService');
 const { getTodayISTDateString, extractISTComponents } = require('../../shared/utils/dateUtils');
 
@@ -21,7 +21,7 @@ function startAnnualCLResetCron() {
         CRON_DAILY_IST,
         async () => {
             try {
-                const settings = await LeavePolicySettings.getSettings();
+                const settings = await getLeavePolicyResolved();
                 if (!settings?.annualCLReset?.enabled) return;
 
                 // All dates in IST – intact on UTC or any server

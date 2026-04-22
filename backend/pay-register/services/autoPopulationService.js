@@ -5,7 +5,7 @@ const OD = require('../../leaves/model/OD');
 const OT = require('../../overtime/model/OT');
 const PreScheduledShift = require('../../shifts/model/PreScheduledShift');
 const LeaveSettings = require('../../leaves/model/LeaveSettings');
-const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
+const { getLeavePolicyResolved } = require('../../settings/services/leavePolicyTypeConfigService');
 const Shift = require('../../shifts/model/Shift');
 const MonthlyAttendanceSummary = require('../../attendance/model/MonthlyAttendanceSummary');
 const summaryCalculationService = require('../../attendance/services/summaryCalculationService');
@@ -24,7 +24,7 @@ const Employee = require('../../employees/model/Employee');
 async function getLeaveNature(leaveType) {
   try {
     if (leaveType && String(leaveType).toUpperCase() === 'EL') {
-      const policy = await LeavePolicySettings.getSettings();
+      const policy = await getLeavePolicyResolved();
       if (policy.earnedLeave && policy.earnedLeave.useAsPaidInPayroll === true) {
         return 'lop';
       }

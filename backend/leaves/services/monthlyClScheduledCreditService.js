@@ -5,7 +5,7 @@
  */
 
 const LeaveRegisterYear = require('../model/LeaveRegisterYear');
-const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
+const { getLeavePolicyResolved } = require('../../settings/services/leavePolicyTypeConfigService');
 const Employee = require('../../employees/model/Employee');
 const dateCycleService = require('./dateCycleService');
 const leaveRegisterService = require('./leaveRegisterService');
@@ -34,7 +34,7 @@ function alreadyForfeited(slot) {
  */
 async function forfeitUnusedScheduledClIfNeeded(payrollCycleMonth, payrollCycleYear) {
   const results = { processed: 0, forfeitsPosted: 0, skipped: 0, errors: [] };
-  const settings = await LeavePolicySettings.getSettings();
+  const settings = await getLeavePolicyResolved();
   if (settings?.carryForward?.casualLeave?.carryMonthlyClCreditToNextPayrollMonth !== false) {
     return results;
   }

@@ -1,6 +1,6 @@
 const Employee = require('../../employees/model/Employee');
 const DepartmentSettings = require('../../departments/model/DepartmentSettings');
-const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
+const { getLeavePolicyResolved } = require('../../settings/services/leavePolicyTypeConfigService');
 const leaveRegisterService = require('./leaveRegisterService');
 const leaveRegisterYearLedgerService = require('./leaveRegisterYearLedgerService');
 const earnedLeaveService = require('./earnedLeaveService');
@@ -18,7 +18,7 @@ class AccrualEngine {
      */
     async postMonthlyAccruals(monthNum, year) {
         try {
-            const globalSettings = await LeavePolicySettings.getSettings();
+            const globalSettings = await getLeavePolicyResolved();
 
             const results = {
                 processed: 0,

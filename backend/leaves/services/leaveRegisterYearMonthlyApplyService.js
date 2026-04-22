@@ -6,7 +6,7 @@
 
 const LeaveRegisterYear = require('../model/LeaveRegisterYear');
 const Leave = require('../model/Leave');
-const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
+const { getLeavePolicyResolved, toResolvedPolicyPlain } = require('../../settings/services/leavePolicyTypeConfigService');
 const dateCycleService = require('./dateCycleService');
 const {
   CAP_COUNT_STATUSES,
@@ -31,7 +31,7 @@ function findSlotIndex(months, pcMonth, pcYear) {
  */
 async function syncStoredMonthApplyFieldsForEmployeeDate(employeeId, fromDate) {
   if (!employeeId || !fromDate) return { ok: false, reason: 'bad_args' };
-  const policy = await LeavePolicySettings.getSettings().catch(() => ({}));
+  const policy = await getLeavePolicyResolved().catch(() => toResolvedPolicyPlain({}));
   const periodInfo = await dateCycleService.getPeriodInfo(fromDate);
   const { startDate: start, endDate: end } = periodInfo.payrollCycle;
   const pc = periodInfo.payrollCycle;
@@ -130,7 +130,7 @@ async function getApplyPeriodContextForEmployee(employeeId, fromDate, options = 
     await syncStoredMonthApplyFieldsForEmployeeDate(employeeId, fromDate);
   }
 
-  const policy = await LeavePolicySettings.getSettings().catch(() => ({}));
+  const policy = await getLeavePolicyResolved().catch(() => toResolvedPolicyPlain({}));
   const periodInfo = await dateCycleService.getPeriodInfo(fromDate);
   const start = periodInfo.payrollCycle.startDate;
   const end = periodInfo.payrollCycle.endDate;

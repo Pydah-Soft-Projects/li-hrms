@@ -14,7 +14,7 @@ const {
     getMaxAnnualCarryForwardCl,
 } = require('../services/annualCLResetService');
 const { createISTDate, getTodayISTDateString, extractISTComponents } = require('../../shared/utils/dateUtils');
-const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
+const { getLeavePolicyResolved } = require('../../settings/services/leavePolicyTypeConfigService');
 const Employee = require('../../employees/model/Employee');
 const leaveRegisterService = require('../services/leaveRegisterService');
 const leaveRegisterYearService = require('../services/leaveRegisterYearService');
@@ -52,7 +52,7 @@ exports.performAnnualReset = async (req, res) => {
         const { targetYear, confirmReset } = req.body;
         
         // Get current settings to show what will be reset
-        const settings = await LeavePolicySettings.getSettings();
+        const settings = await getLeavePolicyResolved();
         
         if (!settings.annualCLReset.enabled) {
             return res.status(400).json({
@@ -104,7 +104,7 @@ exports.previewInitialCLSync = async (req, res) => {
         const { search = '', departmentId, divisionId, page = 1, limit = 200 } = req.query;
         const pageNum = Math.max(1, parseInt(page, 10) || 1);
         const limitNum = Math.min(1000, Math.max(1, parseInt(limit, 10) || 200));
-        const settings = await LeavePolicySettings.getSettings();
+        const settings = await getLeavePolicyResolved();
 
         const query = { is_active: true };
         if (departmentId) query.department_id = departmentId;
@@ -211,14 +211,14 @@ exports.previewInitialCLSync = async (req, res) => {
 };
 
 /**
- * @desc    Apply initial CL/EL/CCL balances from reviewed preview rows, or all active employees (CL from policy only).
+ * @desc    Initial policy sync: CL from tier/grid + (same as annual) types in annualResetByLeaveType; optional reviewed CL per row.
  * @route   POST /api/leaves/initial-cl-sync/apply
- * @body    { confirm, scope?: 'listed' | 'all', employees?: [...], reason? }
+ * @body    { confirm, scope?: 'listed' | 'all', employees?: [{ employeeId, targetCL? }], reason? }
  * @access  Private (HR, Admin only)
  */
 exports.applyInitialCLSync = async (req, res) => {
     try {
-        const { confirm } = req.body || {};
+        const { confirm, scope, employees, reason: _reason } = req.body || {};
         if (!confirm) {
             return res.status(400).json({
                 success: false,
@@ -226,7 +226,7 @@ exports.applyInitialCLSync = async (req, res) => {
             });
         }
 
-        const settings = await LeavePolicySettings.getSettings();
+        const settings = await getLeavePolicyResolved();
         const effectiveDate = createISTDate(getTodayISTDateString());
         const orgFirstLeavePeriodIndex = await getOrgFirstLeavePeriodIndexForFY(effectiveDate);
 
@@ -240,8 +240,30 @@ exports.applyInitialCLSync = async (req, res) => {
             orgFirstLeavePeriodIndex,
         };
 
-        const employeesAll = await Employee.find({ is_active: true })
-            .select('_id emp_no employee_name department_id division_id doj is_active compensatoryOffs')
+        const isListed =
+            String(scope) === 'listed' && Array.isArray(employees) && employees.length > 0;
+        const targetClById = new Map();
+        if (isListed) {
+            for (const row of employees) {
+                if (!row?.employeeId) continue;
+                const id = String(row.employeeId);
+                if (row.targetCL != null && row.targetCL !== '' && Number.isFinite(Number(row.targetCL))) {
+                    targetClById.set(id, Math.max(0, Number(row.targetCL)));
+                }
+            }
+        }
+
+        const selectPop =
+            '_id emp_no employee_name department_id division_id doj is_active compensatoryOffs';
+        const employeesToRun = isListed
+            ? await Employee.find({
+                _id: { $in: employees.map((e) => e.employeeId) },
+            })
+            .select(selectPop)
+            .populate('department_id', 'name')
+            .populate('division_id', 'name')
+        : await Employee.find({ is_active: true })
+            .select(selectPop)
             .populate('department_id', 'name')
             .populate('division_id', 'name');
 
@@ -250,14 +272,17 @@ exports.applyInitialCLSync = async (req, res) => {
             successCount: 0,
             errors: [],
             details: [],
-            scope: 'all',
+            scope: isListed ? 'listed' : 'all',
         };
 
-        for (const emp of employeesAll) {
+        for (const emp of employeesToRun) {
             try {
-                const syncResult = await syncEmployeeCLFromPolicy(emp, settings, effectiveDate, clSyncOptions);
+                const tcl = targetClById.get(String(emp._id));
+                const opts = { ...clSyncOptions };
+                if (tcl != null) opts.targetCL = tcl;
+                const syncResult = await syncEmployeeCLFromPolicy(emp, settings, effectiveDate, opts);
                 if (!syncResult.success) {
-                    throw new Error(syncResult.error || 'CL sync failed');
+                    throw new Error(syncResult.error || 'Initial policy sync failed');
                 }
                 results.successCount++;
                 results.details.push({
@@ -274,9 +299,10 @@ exports.applyInitialCLSync = async (req, res) => {
             }
         }
 
+        const scopeLabel = isListed ? 'listed employees' : 'all active employees';
         return res.status(200).json({
             success: true,
-            message: `Initial sync (all active): ${results.successCount}/${results.processed} employees processed${
+            message: `Initial policy sync (${scopeLabel}): ${results.successCount}/${results.processed} employees processed${
                 orgFirstLeavePeriodIndex >= 0
                     ? `; org-gated pool carry from FY period index ${orgFirstLeavePeriodIndex} (0=first)`
                     : '; no org leave in FY — monthly pool carry skipped'
@@ -380,7 +406,7 @@ exports.getResetStatus = async (req, res) => {
  */
 exports.getNextResetDate = async (req, res) => {
     try {
-        const settings = await LeavePolicySettings.getSettings();
+        const settings = await getLeavePolicyResolved();
         
         if (!settings.annualCLReset.enabled) {
             return res.status(200).json({
@@ -455,7 +481,7 @@ exports.previewReset = async (req, res) => {
     try {
         const { sampleSize = 10 } = req.body; // Preview for sample employees
         
-        const settings = await LeavePolicySettings.getSettings();
+        const settings = await getLeavePolicyResolved();
         
         if (!settings.annualCLReset.enabled) {
             return res.status(400).json({

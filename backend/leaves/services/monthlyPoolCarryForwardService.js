@@ -6,7 +6,7 @@
  */
 
 const LeaveRegisterYear = require('../model/LeaveRegisterYear');
-const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
+const { getLeavePolicyResolved, toResolvedPolicyPlain } = require('../../settings/services/leavePolicyTypeConfigService');
 const Employee = require('../../employees/model/Employee');
 const dateCycleService = require('./dateCycleService');
 const leaveRegisterService = require('./leaveRegisterService');
@@ -119,7 +119,7 @@ async function processPayrollCycleCarryForward(closingPayrollMonth, closingPayro
     errors: [],
   };
 
-  const policy = await LeavePolicySettings.getSettings().catch(() => ({}));
+  const policy = await getLeavePolicyResolved().catch(() => toResolvedPolicyPlain({}));
   const elInPool = elCountsTowardMonthlyPool(policy);
 
   const pm = Number(closingPayrollMonth);

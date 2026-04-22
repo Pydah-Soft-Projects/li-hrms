@@ -53,6 +53,10 @@ const monthSlotSchema = new mongoose.Schema(
     clCredits: { type: Number, default: 0 },
     elCredits: { type: Number, default: 0 },
     compensatoryOffs: { type: Number, default: 0 },
+    /**
+     * Uppercase leave type code → scheduled days in pool for that type (e.g. PL, SL). CL/EL/CCL are mirrored from legacy fields.
+     */
+    scheduledCreditsByType: { type: mongoose.Schema.Types.Mixed, default: {} },
     /** Optional policy/admin lock; in-flight application holds are computed from Leave rows (see register view). */
     lockedCredits: { type: Number, default: 0 },
     /** min(scheduled CL+CCL[+EL per policy], monthly cap); refreshed on sync / slot build. */
@@ -96,8 +100,7 @@ const yearTransactionSchema = new mongoose.Schema(
     },
     leaveType: {
       type: String,
-      enum: ['CL', 'EL', 'CCL'],
-      default: 'CL'
+      default: 'CL',
     },
     days: { type: Number, default: 0 },
     reason: { type: String, default: '' },

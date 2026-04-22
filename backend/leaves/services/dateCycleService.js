@@ -1,5 +1,5 @@
 const Settings = require('../../settings/model/Settings');
-const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
+const { getLeavePolicyResolved, toResolvedPolicyPlain } = require('../../settings/services/leavePolicyTypeConfigService');
 const { extractISTComponents, createISTDate } = require('../../shared/utils/dateUtils');
 
 /**
@@ -29,17 +29,16 @@ class DateCycleService {
      */
     async getLeavePolicySettings() {
         try {
-            return await LeavePolicySettings.getSettings();
+            return await getLeavePolicyResolved();
         } catch (error) {
             console.error('Error getting leave policy settings:', error);
-            // Default to calendar year
-            return {
+            return toResolvedPolicyPlain({
                 financialYear: {
                     startMonth: 1,
                     startDay: 1,
                     useCalendarYear: true
                 }
-            };
+            });
         }
     }
 

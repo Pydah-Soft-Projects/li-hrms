@@ -10,9 +10,9 @@ async function getResolvedLeaveSettings(departmentId, divisionId = null) {
   try {
     const deptSettings = await DepartmentSettings.getByDeptAndDiv(departmentId, divisionId);
 
-    const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
+    const { getLeavePolicyResolved } = require('../../settings/services/leavePolicyTypeConfigService');
     const { resolveEffectiveEarnedLeave } = require('../../leaves/services/earnedLeavePolicyResolver');
-    const globalPolicy = await LeavePolicySettings.getSettings();
+    const globalPolicy = await getLeavePolicyResolved();
     const effectiveEarnedLeave = resolveEffectiveEarnedLeave(
       globalPolicy?.earnedLeave,
       deptSettings?.leaves

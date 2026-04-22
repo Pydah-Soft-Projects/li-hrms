@@ -46,10 +46,10 @@ const leavePolicySettingsSchema = new mongoose.Schema({
             max: 62,
             description: '[Legacy] Combined max — ignored'
         },
+        /** Per leave-type code (uppercase). Mixed so new types from Leave Settings do not need schema changes. */
         maxDaysByType: {
-            CL: { type: Number, default: 0, min: 0, max: 62 },
-            CCL: { type: Number, default: 0, min: 0, max: 62 },
-            EL: { type: Number, default: 0, min: 0, max: 62 },
+            type: mongoose.Schema.Types.Mixed,
+            default: () => ({ CL: 0, CCL: 0, EL: 0 }),
         },
         includeEL: {
             type: Boolean,
@@ -461,6 +461,20 @@ const leavePolicySettingsSchema = new mongoose.Schema({
             max: 31,
             description: 'Day when CL reset occurs; ignored if usePayrollCycleForReset is true'
         }
+    },
+    /**
+     * Per leave type (codes from Leave Settings). Merged on read into carryForward for CL/EL/CCL.
+     */
+    carryForwardByLeaveType: {
+        type: mongoose.Schema.Types.Mixed,
+        default: {}
+    },
+    /**
+     * Per leave type: annual entitlement grids and carry rules. CL is synced to annualCLReset.
+     */
+    annualResetByLeaveType: {
+        type: mongoose.Schema.Types.Mixed,
+        default: {}
     }
 }, {
     timestamps: true,

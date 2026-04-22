@@ -8,12 +8,263 @@ const Employee = require('../../employees/model/Employee');
 const Leave = require('../model/Leave');
 const LeaveSplit = require('../model/LeaveSplit');
 const OD = require('../model/OD');
-const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
+const { getLeavePolicyResolved } = require('../../settings/services/leavePolicyTypeConfigService');
 const leaveRegisterService = require('./leaveRegisterService');
 const dateCycleService = require('./dateCycleService');
 const leaveRegisterYearService = require('./leaveRegisterYearService');
 const leaveRegisterYearLedgerService = require('./leaveRegisterYearLedgerService');
+
+function getMaxCarryForAnnualBlock(block) {
+  const explicit = block?.maxCarryForwardCl;
+  if (explicit != null && Number.isFinite(Number(explicit)) && Number(explicit) >= 0) {
+    return Math.min(365, Number(explicit));
+  }
+  return 12;
+}
+
+/**
+ * Same resolution as CL tiers but reads from an annualResetByLeaveType / annual block: resetToBalance + casualLeaveByExperience.
+ */
+function getMatchingTierForAnnualBlock(block, doj, resetDate) {
+  const defaultA = block?.resetToBalance != null && Number.isFinite(Number(block.resetToBalance)) ? Number(block.resetToBalance) : 12;
+  const tiers = block?.casualLeaveByExperience;
+  if (!Array.isArray(tiers) || tiers.length === 0) {
+    return { tier: null, defaultA };
+  }
+  const years = yearsOfExperience(doj, resetDate);
+  const sorted = [...tiers].sort((a, b) => (a.minYears || 0) - (b.minYears || 0));
+  for (const t of sorted) {
+    const min = t.minYears ?? 0;
+    const max = t.maxYears ?? 999;
+    if (years >= min && years < max) {
+      return { tier: t, defaultA };
+    }
+  }
+  return { tier: null, defaultA };
+}
+
+/**
+ * @returns {{ perTypeResetAudit: Record<string, { exp: number; carry: number }>, extraYearly: object[], otherTypes: string[] }}
+ */
+async function runAnnualByLeaveTypeOnPayload(employee, settings, monthsPayload, anchorDate, opts = {}) {
+  const isInitial = opts.isInitial === true;
+  const byAnnual = settings.annualResetByLeaveType || {};
+  const perTypeResetAudit = {};
+  const extraYearly = [];
+  const otherTypes = [];
+  const expY = (u) =>
+    isInitial
+      ? `Initial policy sync: ${u} above carry-forward limit`
+      : `Annual Reset: ${u} above carry-forward limit`;
+  const carryY = (u) =>
+    isInitial
+      ? `${u} carry (initial sync) folded into first payroll month (${monthsPayload[0]?.label || 'period 1'})`
+      : `${u} carry forward folded into first payroll month (${monthsPayload[0]?.label || 'period 1'})`;
+  for (const [rawCode, blk] of Object.entries(byAnnual)) {
+    const u = String(rawCode || '').toUpperCase();
+    if (u === 'CL' || !blk || blk.enabled === false) continue;
+    const isEl = u === 'EL';
+    const isCcl = u === 'CCL';
+    if (isEl || isCcl) {
+      const current = await leaveRegisterService.getCurrentBalance(employee._id, u, anchorDate);
+      let carry = 0;
+      if (blk.addCarryForward !== false) {
+        carry = Math.min(current, getMaxCarryForAnnualBlock(blk));
+      }
+      const exp = Math.max(0, current - carry);
+      const { tier, defaultA } = getMatchingTierForAnnualBlock(blk, employee.doj, anchorDate);
+      const grid = leaveRegisterYearService.normalizeTierMonthlyCredits(tier || { casualLeave: defaultA }, defaultA);
+      const field = isEl ? 'el' : 'ccl';
+      leaveRegisterYearService.applyProRataGridToExistingMonthSlots(
+        monthsPayload,
+        grid,
+        employee.doj,
+        field,
+        null,
+        {}
+      );
+      if (carry > 0 && monthsPayload.length) {
+        if (isEl) {
+          monthsPayload[0].elCredits = (Number(monthsPayload[0].elCredits) || 0) + carry;
+        } else {
+          monthsPayload[0].compensatoryOffs =
+            (Number(monthsPayload[0].compensatoryOffs) || 0) + carry;
+        }
+        syncSlotLegacyToScheduledMap(monthsPayload[0]);
+      }
+      perTypeResetAudit[u] = { exp, carry };
+      if (exp > 0) {
+        extraYearly.push({
+          at: anchorDate,
+          transactionKind: 'EXPIRY',
+          leaveType: u,
+          days: exp,
+          reason: expY(u),
+        });
+      }
+      if (carry > 0) {
+        extraYearly.push({
+          at: anchorDate,
+          transactionKind: 'CARRY_FORWARD',
+          leaveType: u,
+          days: carry,
+          reason: carryY(u),
+          payrollMonthIndex: 1,
+          payPeriodStart: monthsPayload[0]?.payPeriodStart,
+          payPeriodEnd: monthsPayload[0]?.payPeriodEnd,
+          meta: { foldedIntoMonthIndex: 1 },
+        });
+      }
+      otherTypes.push(u);
+    } else {
+      const currentOth = await leaveRegisterService.getCurrentBalance(employee._id, u, anchorDate);
+      let carryO = 0;
+      if (blk.addCarryForward !== false) {
+        carryO = Math.min(currentOth, getMaxCarryForAnnualBlock(blk));
+      }
+      const expO = Math.max(0, currentOth - carryO);
+      const { tier: t2, defaultA: d2 } = getMatchingTierForAnnualBlock(blk, employee.doj, anchorDate);
+      const grid2 = leaveRegisterYearService.normalizeTierMonthlyCredits(t2 || { casualLeave: d2 }, d2);
+      leaveRegisterYearService.applyProRataGridToExistingMonthSlots(
+        monthsPayload,
+        grid2,
+        employee.doj,
+        'map',
+        u,
+        {}
+      );
+      if (carryO > 0 && monthsPayload[0]) {
+        if (!monthsPayload[0].scheduledCreditsByType || typeof monthsPayload[0].scheduledCreditsByType !== 'object') {
+          monthsPayload[0].scheduledCreditsByType = {};
+        }
+        monthsPayload[0].scheduledCreditsByType[u] =
+          (Number(monthsPayload[0].scheduledCreditsByType[u]) || 0) + carryO;
+        syncSlotLegacyToScheduledMap(monthsPayload[0]);
+      }
+      perTypeResetAudit[u] = { exp: expO, carry: carryO };
+      if (expO > 0) {
+        extraYearly.push({
+          at: anchorDate,
+          transactionKind: 'EXPIRY',
+          leaveType: u,
+          days: expO,
+          reason: expY(u),
+        });
+      }
+      if (carryO > 0) {
+        const carryOther = isInitial
+          ? `${u} carry (initial sync) folded into first payroll month`
+          : `${u} carry forward folded into first payroll month`;
+        extraYearly.push({
+          at: anchorDate,
+          transactionKind: 'CARRY_FORWARD',
+          leaveType: u,
+          days: carryO,
+          reason: carryOther,
+          payrollMonthIndex: 1,
+          payPeriodStart: monthsPayload[0]?.payPeriodStart,
+          payPeriodEnd: monthsPayload[0]?.payPeriodEnd,
+          meta: { foldedIntoMonthIndex: 1 },
+        });
+      }
+      otherTypes.push(u);
+    }
+  }
+  return { perTypeResetAudit, extraYearly, otherTypes };
+}
+
+function appendPerTypeOnlyPoolCloseToResetSlot(resetSlot, perTypeResetAudit, resetMs, { isInitial }) {
+  if (!resetSlot || !perTypeResetAudit) return;
+  if (!resetSlot.transactions) resetSlot.transactions = [];
+  const expSlot = (u) =>
+    isInitial
+      ? `Initial policy sync: ${u} – expired above carry`
+      : `Annual reset: ${u} above carry-forward cap`;
+  const zeroSlot = (u) =>
+    isInitial
+      ? `Initial policy sync: close prior ${u} pool; monthly scheduled credits follow`
+      : `Annual reset: close prior ${u} pool; monthly scheduled credits follow`;
+  let tOff = 2;
+  for (const [u, aud] of Object.entries(perTypeResetAudit)) {
+    if (!aud) continue;
+    const expA = Math.max(0, Number(aud.exp) || 0);
+    if (expA > 0) {
+      const atE = new Date(resetMs + tOff);
+      tOff += 1;
+      resetSlot.transactions.push({
+        at: atE,
+        leaveType: u,
+        transactionType: 'EXPIRY',
+        days: expA,
+        openingBalance: 0,
+        closingBalance: 0,
+        startDate: atE,
+        endDate: atE,
+        reason: expSlot(u),
+        status: 'APPROVED',
+        autoGenerated: true,
+        autoGeneratedType: 'ANNUAL_RESET_EXPIRY',
+      });
+    }
+    const atZ2 = new Date(resetMs + tOff);
+    tOff += 1;
+    resetSlot.transactions.push({
+      at: atZ2,
+      leaveType: u,
+      transactionType: 'ADJUSTMENT',
+      days: 0,
+      openingBalance: 0,
+      closingBalance: 0,
+      startDate: atZ2,
+      endDate: atZ2,
+      reason: zeroSlot(u),
+      status: 'APPROVED',
+      autoGenerated: true,
+      autoGeneratedType: 'ANNUAL_RESET_ZERO_POOL',
+    });
+  }
+}
+
+function appendNonClScheduledCreditsFromRecalcTypeSet(monthsPayload, recalcTypeSet, perTypeResetAudit) {
+  for (const u2 of recalcTypeSet) {
+    const ltU = String(u2).toUpperCase();
+    if (ltU === 'CL') continue;
+    if (ltU === 'EL') {
+      leaveRegisterYearService.appendMonthlyScheduledCreditByGetter(
+        monthsPayload,
+        'EL',
+        (m) => m.elCredits,
+        'MONTHLY_EL_SCHEDULE',
+        'EL',
+        {}
+      );
+    } else if (ltU === 'CCL') {
+      leaveRegisterYearService.appendMonthlyScheduledCreditByGetter(
+        monthsPayload,
+        'CCL',
+        (m) => m.compensatoryOffs,
+        'MONTHLY_CCL_SCHEDULE',
+        'CCL',
+        {}
+      );
+    } else if (perTypeResetAudit[ltU]) {
+      leaveRegisterYearService.appendMonthlyScheduledCreditByGetter(
+        monthsPayload,
+        ltU,
+        (m) =>
+          m.scheduledCreditsByType && typeof m.scheduledCreditsByType === 'object'
+            ? Number(m.scheduledCreditsByType[ltU]) || 0
+            : 0,
+        `MONTHLY_TYPE_${ltU}_SCHEDULE`,
+        ltU,
+        {}
+      );
+    }
+  }
+}
+
 const { PENDING_PIPELINE_STATUSES, CAP_COUNT_STATUSES } = require('./monthlyApplicationCapService');
+const { syncSlotLegacyToScheduledMap } = require('../utils/leaveRegisterScheduledCredits');
 const { createISTDate, getTodayISTDateString, extractISTComponents } = require('../../shared/utils/dateUtils');
 
 /**
@@ -82,7 +333,7 @@ async function performAnnualCLReset(targetYear = null) {
     try {
         console.log('[AnnualCLReset] Starting Annual CL Rollover process...');
 
-        const settings = await LeavePolicySettings.getSettings();
+        const settings = await getLeavePolicyResolved();
 
         if (!settings.annualCLReset.enabled) {
             return {
@@ -199,6 +450,15 @@ async function resetEmployeeCL(employee, settings, resetDate) {
             transactions: [],
         }));
 
+        const { perTypeResetAudit, extraYearly, otherTypes } = await runAnnualByLeaveTypeOnPayload(
+            employee,
+            settings,
+            monthsPayload,
+            resetDate,
+            { isInitial: false }
+        );
+        const recalcTypeSet = new Set(['CL', ...otherTypes]);
+
         const resetSlot =
             monthsPayload.find(
                 (m) =>
@@ -241,9 +501,15 @@ async function resetEmployeeCL(employee, settings, resetDate) {
                 autoGenerated: true,
                 autoGeneratedType: 'ANNUAL_RESET_ZERO_POOL',
             });
+            appendPerTypeOnlyPoolCloseToResetSlot(resetSlot, perTypeResetAudit, resetMs, { isInitial: false });
         }
 
         leaveRegisterYearService.appendMonthlyClScheduledCreditTransactions(monthsPayload, {});
+        appendNonClScheduledCreditsFromRecalcTypeSet(monthsPayload, recalcTypeSet, perTypeResetAudit);
+
+        for (const m of monthsPayload) {
+            syncSlotLegacyToScheduledMap(m);
+        }
 
         // Year-level audit (not the movement ledger — that is months[].transactions only)
         const yearlyTransactions = [];
@@ -283,6 +549,9 @@ async function resetEmployeeCL(employee, settings, resetDate) {
                 expiredAmount,
             },
         });
+        for (const row of extraYearly) {
+            yearlyTransactions.push(row);
+        }
 
         const ccoBal = typeof employee.compensatoryOffs === 'number' ? employee.compensatoryOffs : 0;
         await leaveRegisterYearService.upsertLeaveRegisterYear({
@@ -298,7 +567,11 @@ async function resetEmployeeCL(employee, settings, resetDate) {
             source: 'ANNUAL_RESET',
         });
 
-        await leaveRegisterYearLedgerService.recalculateRegisterBalances(employee._id, 'CL', null);
+        for (const lt of recalcTypeSet) {
+            const code = String(lt).toUpperCase();
+            if (!code) continue;
+            await leaveRegisterYearLedgerService.recalculateRegisterBalances(employee._id, code, null);
+        }
 
         return {
             success: true,
@@ -365,7 +638,7 @@ async function getCLResetStatus(employeeIds = null) {
             .populate('division_id', 'name')
             .lean();
 
-        const settings = await LeavePolicySettings.getSettings();
+        const settings = await getLeavePolicyResolved();
 
         const nextDate = await getNextResetDate(settings);
         const results = employees.map(emp => ({
@@ -436,7 +709,7 @@ async function performInitialCLSync() {
     try {
         console.log('[InitialCLSync] Starting initial CL balance sync from policy...');
 
-        const settings = await LeavePolicySettings.getSettings();
+        const settings = await getLeavePolicyResolved();
         const effectiveDate = createISTDate(getTodayISTDateString()); // IST midnight today
 
         const employees = await Employee.find({ is_active: true })
@@ -1154,7 +1427,34 @@ async function syncEmployeeCLFromPolicy(employee, settings, effectiveDate, optio
             },
         });
 
+        const { perTypeResetAudit, extraYearly: typeExtraYearly, otherTypes } = await runAnnualByLeaveTypeOnPayload(
+            employee,
+            settings,
+            monthsPayload,
+            effectiveDate,
+            { isInitial: true }
+        );
+        for (const row of typeExtraYearly || []) {
+            yearlyTransactions.push(row);
+        }
+        const recalcTypeSet = new Set(['CL', ...otherTypes]);
+        const effMs = new Date(effectiveDate).getTime();
+        const anchorSlotForTypes =
+            monthsPayload.find(
+                (m) =>
+                    effectiveDate >= new Date(m.payPeriodStart) &&
+                    effectiveDate <= new Date(m.payPeriodEnd)
+            ) || monthsPayload[0];
+        if (Object.keys(perTypeResetAudit || {}).length && anchorSlotForTypes) {
+            if (!anchorSlotForTypes.transactions) anchorSlotForTypes.transactions = [];
+            appendPerTypeOnlyPoolCloseToResetSlot(anchorSlotForTypes, perTypeResetAudit, effMs, { isInitial: true });
+        }
+
         leaveRegisterYearService.appendMonthlyClScheduledCreditTransactions(monthsPayload, {});
+        appendNonClScheduledCreditsFromRecalcTypeSet(monthsPayload, recalcTypeSet, perTypeResetAudit);
+        for (const m of monthsPayload) {
+            syncSlotLegacyToScheduledMap(m);
+        }
         let approvedUsageDebitCount = 0;
         if (includeApprovedClUsageDebits) {
             const clUsed = await appendApprovedUsageDebitsForType({ employeeId: employee._id, monthsPayload, leaveType: 'CL' });
@@ -1240,7 +1540,11 @@ async function syncEmployeeCLFromPolicy(employee, settings, effectiveDate, optio
                 source: 'INITIAL_POLICY_SYNC',
             });
 
-            await leaveRegisterYearLedgerService.recalculateRegisterBalances(employee._id, 'CL', null);
+            for (const lt of recalcTypeSet) {
+                const code = String(lt).toUpperCase();
+                if (!code) continue;
+                await leaveRegisterYearLedgerService.recalculateRegisterBalances(employee._id, code, null);
+            }
         }
         console.log(
             `[LeaveSync] ${dryRunSkipPersist ? 'DRY RUN (no persist) ' : ''}Completed emp=${empNo} pool=${newBalance} defaultPool=${defaultPoolBalance} pastCleared=${pastClearedCreditsTotal} zeroedPeriods=${zeroedPastPeriods} syncPeriod=${syncSlot?.label || 'n/a'} approvedUsageDebits=${approvedUsageDebitCount} cclCreditsFromOD=${cclCreditsFromOD} lockedSlots=${lockedSlotsUpdated} carryTransfers=${carryTransfersCreated}`
@@ -1395,6 +1699,8 @@ async function getInitialSyncEntitlement(settings, doj, effectiveDate) {
 
 module.exports = {
     performAnnualCLReset,
+    /** Exposed for integration / memory-DB tests; full annual run also goes through this. */
+    resetEmployeeCL,
     performInitialCLSync,
     syncEmployeeCLFromPolicy,
     buildInitialSyncMonthsPayload,

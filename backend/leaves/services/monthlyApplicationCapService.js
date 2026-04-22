@@ -6,7 +6,7 @@
 
 const Leave = require('../model/Leave');
 const LeaveSplit = require('../model/LeaveSplit');
-const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
+const { getLeavePolicyResolved } = require('../../settings/services/leavePolicyTypeConfigService');
 const LeaveRegisterYear = require('../model/LeaveRegisterYear');
 const dateCycleService = require('./dateCycleService');
 const { extractISTComponents } = require('../../shared/utils/dateUtils');
@@ -264,7 +264,7 @@ async function getRegisterClApplicationCap(employeeId, fromDate, policy) {
  */
 async function assertWithinMonthlyApplicationCap(employeeId, fromDate, leaveType, numberOfDays, options = {}) {
   const excludeLeaveId = options.excludeLeaveId;
-  const policy = await LeavePolicySettings.getSettings();
+  const policy = await getLeavePolicyResolved();
   const requestedType = String(leaveType || '').toUpperCase();
   const typeCap = getConfiguredMonthlyTypeCap(policy, requestedType);
   const perTypeCapActive = Number.isFinite(typeCap) && typeCap > 0;
@@ -397,7 +397,8 @@ async function addLeaveCapToMonthlyBuckets(leave, policy, monthPayrollWindows, p
       );
       const perTypeDays = Math.max(0, Number(s.numberOfDays) || 0);
       const lt = String(s.leaveType || '').toUpperCase();
-      if (capDays <= 0 && !(lt === 'EL' && perTypeDays > 0)) continue;
+      const perTypeOnly = isPerTypeMonthlyCapActive(policy, lt) && perTypeDays > 0;
+      if (capDays <= 0 && !(lt === 'EL' && perTypeDays > 0) && !perTypeOnly) continue;
       const splitMs = new Date(s.date).getTime();
       for (const w of monthPayrollWindows) {
         const startMs = w.start.getTime();
@@ -412,7 +413,8 @@ async function addLeaveCapToMonthlyBuckets(leave, policy, monthPayrollWindows, p
     const capDays = countedDaysForLeave(leave, policy);
     const perTypeDays = Math.max(0, Number(leave.numberOfDays) || 0);
     const lt = String(leave.leaveType || '').toUpperCase();
-    if (capDays <= 0 && !(lt === 'EL' && perTypeDays > 0)) return;
+    const perTypeOnly = isPerTypeMonthlyCapActive(policy, lt) && perTypeDays > 0;
+    if (capDays <= 0 && !(lt === 'EL' && perTypeDays > 0) && !perTypeOnly) return;
     const leaveFromMs = new Date(leave.fromDate).getTime();
     for (const w of monthPayrollWindows) {
       const startMs = w.start.getTime();
@@ -444,6 +446,14 @@ async function addLeaveCapToMonthlyBuckets(leave, policy, monthPayrollWindows, p
       if (u === 'CL') b.lockedClAppDays = (Number(b.lockedClAppDays) || 0) + dType;
       else if (u === 'CCL') b.lockedCclAppDays = (Number(b.lockedCclAppDays) || 0) + dType;
       else if (u === 'EL') b.lockedElAppDays = (Number(b.lockedElAppDays) || 0) + dType;
+    }
+    const ut = String(c.leaveType || '').toUpperCase();
+    if (!b.approvedAppDaysByType) b.approvedAppDaysByType = Object.create(null);
+    if (!b.lockedAppDaysByType) b.lockedAppDaysByType = Object.create(null);
+    if (isApproved) {
+      b.approvedAppDaysByType[ut] = (Number(b.approvedAppDaysByType[ut]) || 0) + dType;
+    } else {
+      b.lockedAppDaysByType[ut] = (Number(b.lockedAppDaysByType[ut]) || 0) + dType;
     }
   }
 }

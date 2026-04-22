@@ -4,6 +4,11 @@
  */
 
 const LeavePolicySettings = require('../model/LeavePolicySettings');
+const {
+    getActiveLeaveTypeList,
+    enrichLeavePolicyForGet,
+    prepareLeavePolicyUpdate,
+} = require('../services/leavePolicyTypeConfigService');
 
 /**
  * @desc    Get current leave policy settings
@@ -13,10 +18,13 @@ const LeavePolicySettings = require('../model/LeavePolicySettings');
 exports.getSettings = async (req, res) => {
     try {
         const settings = await LeavePolicySettings.getSettings();
-        
+        const leaveTypes = await getActiveLeaveTypeList();
+        const plain = settings.toObject ? settings.toObject() : { ...settings };
+        const data = enrichLeavePolicyForGet(plain, leaveTypes);
+
         res.status(200).json({
             success: true,
-            data: settings
+            data
         });
     } catch (error) {
         console.error('Error fetching leave policy settings:', error);
@@ -35,11 +43,15 @@ exports.getSettings = async (req, res) => {
  */
 exports.updateSettings = async (req, res) => {
     try {
-        const settings = await LeavePolicySettings.updateSettings(req.body);
+        const prepared = prepareLeavePolicyUpdate({ ...req.body });
+        const settings = await LeavePolicySettings.updateSettings(prepared);
+        const leaveTypes = await getActiveLeaveTypeList();
+        const plain = settings.toObject ? settings.toObject() : { ...settings };
+        const data = enrichLeavePolicyForGet(plain, leaveTypes);
         res.status(200).json({
             success: true,
             message: 'Leave policy settings updated successfully',
-            data: settings
+            data
         });
     } catch (error) {
         console.error('Error updating leave policy settings:', error);

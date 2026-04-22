@@ -3128,6 +3128,7 @@ exports.getEmployeeLeaveRegisterDetail = async (req, res) => {
         /** FY month grid: scheduled credits from LeaveRegisterYear + ledger balances + transactions per payroll month */
         months: ledger?.months || [],
         leaveRegisterYear: ledger?.leaveRegisterYear || null,
+        registerLeaveTypeColumns: ledger?.registerLeaveTypeColumns || [],
         context: {
           financialYear: filters.financialYear || null,
           month: monthNum,
@@ -3183,6 +3184,7 @@ exports.patchLeaveRegisterYearMonthSlot = async (req, res) => {
       compensatoryOffs,
       elCredits,
       lockedCredits,
+      scheduledCreditsByType,
       usedCl,
       usedCcl,
       usedEl,
@@ -3196,7 +3198,7 @@ exports.patchLeaveRegisterYearMonthSlot = async (req, res) => {
       financialYear,
       payrollCycleMonth,
       payrollCycleYear,
-      patch: { clCredits, compensatoryOffs, elCredits, lockedCredits },
+      patch: { clCredits, compensatoryOffs, elCredits, lockedCredits, scheduledCreditsByType },
       usedCl,
       usedCcl,
       usedEl,

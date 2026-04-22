@@ -6,7 +6,7 @@
 const Employee = require('../../employees/model/Employee');
 const MonthlyAttendanceSummary = require('../../attendance/model/MonthlyAttendanceSummary');
 const { calculateMonthlySummary } = require('../../attendance/services/summaryCalculationService');
-const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
+const { getLeavePolicyResolved } = require('../../settings/services/leavePolicyTypeConfigService');
 const DepartmentSettings = require('../../departments/model/DepartmentSettings');
 const { resolveEffectiveEarnedLeave } = require('./earnedLeavePolicyResolver');
 const { accumulateAttendanceRangeEl } = require('./earnedLeaveRangeAccumulation');
@@ -29,7 +29,7 @@ async function calculateEarnedLeave(employeeId, month, year, cycleStart = null, 
     try {
         // Get employee and settings
         const employee = await Employee.findById(employeeId);
-        const settings = await LeavePolicySettings.getSettings();
+        const settings = await getLeavePolicyResolved();
 
         if (!employee) {
             throw new Error('Employee not found');
@@ -297,7 +297,7 @@ function calculateFixedEL(settings, deptSettings = null) {
  */
 async function updateEarnedLeaveForAllEmployees(month = null, year = null) {
     try {
-        const settings = await LeavePolicySettings.getSettings();
+        const settings = await getLeavePolicyResolved();
 
         if (!settings.autoUpdate.enabled) {
             console.log('Auto EL update is disabled');
@@ -408,7 +408,7 @@ async function updateEarnedLeaveForAllEmployees(month = null, year = null) {
 async function getELBalance(employeeId, asOfDate = null) {
     try {
         const employee = await Employee.findById(employeeId);
-        const settings = await LeavePolicySettings.getSettings();
+        const settings = await getLeavePolicyResolved();
 
         if (!employee) {
             throw new Error('Employee not found');

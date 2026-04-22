@@ -5,7 +5,7 @@
 const mongoose = require('mongoose');
 const LeaveRegisterYear = require('../model/LeaveRegisterYear');
 const Employee = require('../../employees/model/Employee');
-const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
+const { getLeavePolicyResolved } = require('../../settings/services/leavePolicyTypeConfigService');
 const dateCycleService = require('./dateCycleService');
 const leaveRegisterYearService = require('./leaveRegisterYearService');
 const leaveRegisterYearMonthlyApplyService = require('./leaveRegisterYearMonthlyApplyService');
@@ -138,7 +138,7 @@ async function ensureYearDocument(transactionData, periodInfo) {
   if (!employee) throw new Error('Employee not found');
 
   const { getMatchingExperienceTier } = require('./annualCLResetService');
-  const settings = await LeavePolicySettings.getSettings();
+  const settings = await getLeavePolicyResolved();
   const defaultCL = settings.annualCLReset?.resetToBalance ?? 12;
   const { tier, defaultCL: dc } = getMatchingExperienceTier(settings, employee.doj, transactionData.startDate);
   const monthlyGrid = leaveRegisterYearService.normalizeTierMonthlyCredits(

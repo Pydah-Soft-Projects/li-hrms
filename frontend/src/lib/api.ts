@@ -5029,7 +5029,7 @@ export const api = {
       return apiRequest<any>(`/leaves/initial-cl-sync/preview${qs}`, { method: 'POST' });
     }
   },
-  /** Apply initial sync: scope "listed" = payload employees only; "all" = every active employee (CL from policy; EL/CCL only on listed). */
+  /** Apply initial sync: scope "listed" = payload employees; "all" = all active. CL from policy + any types enabled under annualResetByLeaveType (same as annual job). */
   applyInitialCLSync: async (payload: {
     confirm: boolean;
     scope?: 'listed' | 'all';

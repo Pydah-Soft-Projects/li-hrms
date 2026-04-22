@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import { auth } from '@/lib/auth';
 import { toast } from 'react-toastify';
@@ -44,6 +44,21 @@ type MonthContributionAudit = {
   source?: string;
 };
 
+type RegisterMonthByLeaveTypeEntry = {
+  code?: string;
+  name?: string;
+  credited?: number | null;
+  used?: number | null;
+  locked?: number | null;
+  transfer?: number | null;
+  typeApplyCap?: number | null;
+  typeApplyConsumed?: number | null;
+  typeApplyRemaining?: number | null;
+  monthNetBalance?: number | null;
+  closingBalance?: number | null;
+  transactionCount?: number;
+};
+
 type RegisterMonthLite = {
   payrollMonthIndex?: number;
   label?: string;
@@ -75,6 +90,10 @@ type RegisterMonthLite = {
   cl?: MonthLeaveBucket;
   ccl?: MonthLeaveBucket;
   el?: MonthLeaveBucket;
+  /** Policy scheduled days per leave type code (from LeaveRegisterYear.scheduledCreditsByType / API creditsByType). */
+  scheduledCreditsByType?: Record<string, number> | null;
+  /** One entry per active policy type: same measures as cl/ccl/el; extras from slot + transactions + cap buckets. */
+  byLeaveType?: Record<string, RegisterMonthByLeaveTypeEntry> | null;
 };
 
 type MonthSlotEditPolicy = {
@@ -179,11 +198,22 @@ function normalizeRegisterMonthForBulk(
   const month = Number(m?.month);
   const year = Number(m?.year);
   if (Number.isFinite(month) && Number.isFinite(year)) {
-    return enrichRegisterMonthLiteCredits(m as RegisterMonthLite, m);
+    const withTypes = {
+      ...(m as RegisterMonthLite),
+      scheduledCreditsByType:
+        (m as { scheduledCreditsByType?: Record<string, number> | null })?.scheduledCreditsByType ??
+        ((m as { scheduled?: { creditsByType?: Record<string, number> } })?.scheduled?.creditsByType || null),
+      byLeaveType: (m as { byLeaveType?: RegisterMonthLite['byLeaveType'] })?.byLeaveType ?? (m as RegisterMonthLite).byLeaveType,
+    } as RegisterMonthLite;
+    return enrichRegisterMonthLiteCredits(withTypes, m);
   }
   const pcm = Number(m?.payrollCycleMonth);
   const pcy = Number(m?.payrollCycleYear);
   const sch = m?.scheduled && typeof m.scheduled === 'object' ? m.scheduled : {};
+  const creditsByTypeFromApi =
+    sch && typeof (sch as { creditsByType?: unknown }).creditsByType === 'object' && (sch as { creditsByType: Record<string, number> }).creditsByType
+      ? { ...(sch as { creditsByType: Record<string, number> }).creditsByType }
+      : (m as { scheduledCreditsByType?: Record<string, number> | null })?.scheduledCreditsByType || null;
   const pmi = Number(m?.payrollMonthIndex) || idx + 1;
   const pco = sch.poolCarryForwardOut || {};
   const policy = resolveMonthSlotEditPolicy(monthSlotEditPolicyConfig, pmi);
@@ -233,6 +263,8 @@ function normalizeRegisterMonthForBulk(
         used: Number.isFinite(elUsed) ? elUsed : undefined,
         transfer: xferEl,
       },
+      scheduledCreditsByType: creditsByTypeFromApi,
+      byLeaveType: (m as { byLeaveType?: RegisterMonthLite['byLeaveType'] })?.byLeaveType ?? null,
     },
     m
   );
@@ -341,6 +373,8 @@ type ListRow = {
   transactionCount: number;
   firstPeriod: { month: number; year: number } | null;
   lastPeriod: { month: number; year: number } | null;
+  /** Active leave types from leave settings (drives extra register columns). */
+  registerLeaveTypeColumns?: { code: string; name: string }[];
 };
 
 function formatNum(n: unknown): string {
@@ -360,6 +394,34 @@ function formatMonthNetBalance(credited: unknown, used: unknown): string {
   const c = credited != null && Number.isFinite(Number(credited)) ? Number(credited) : 0;
   const u = used != null && Number.isFinite(Number(used)) ? Number(used) : 0;
   return formatNum(c - u);
+}
+
+/** Resolve API `byLeaveType[code]` or fall back to cl/ccl/el / scheduled-only. */
+function monthBucketForLeaveTypeCode(mm: RegisterMonthLite, code: string): MonthLeaveBucket {
+  const u = String(code).toUpperCase();
+  const b = mm.byLeaveType && typeof mm.byLeaveType === 'object' ? mm.byLeaveType[u] : null;
+  if (b && typeof b === 'object') {
+    return {
+      credited: b.credited ?? undefined,
+      used: b.used ?? undefined,
+      locked: b.locked ?? null,
+      transfer: b.transfer ?? null,
+      typeApplyCap: b.typeApplyCap,
+      typeApplyConsumed: b.typeApplyConsumed,
+      typeApplyRemaining: b.typeApplyRemaining,
+    };
+  }
+  if (u === 'CL' && mm.cl) return { ...mm.cl };
+  if (u === 'CCL' && mm.ccl) return { ...mm.ccl };
+  if (u === 'EL' && mm.el) return { ...mm.el };
+  const sc = mm.scheduledCreditsByType;
+  const cred = sc && typeof sc === 'object' ? (sc as Record<string, number>)[u] ?? (sc as Record<string, number>)[code] : null;
+  return {
+    credited: cred != null && Number.isFinite(Number(cred)) ? Number(cred) : undefined,
+    used: 0,
+    locked: 0,
+    transfer: 0,
+  };
 }
 
 function TypeApplyCapHint({ bucket }: { bucket?: MonthLeaveBucket | null }) {
@@ -1507,9 +1569,19 @@ export default function LeaveRegisterPage({
                     const idStr = id ? String(id) : '';
                     const expanded = idStr ? expandedIds.includes(idStr) : false;
                     const bal = rowDisplayBalances(row);
-                    const months = row.registerMonths?.length
-                      ? row.registerMonths
-                      : [];
+                    const detail = idStr ? (detailCacheRef.current.get(idStr) as { registerLeaveTypeColumns?: ListRow['registerLeaveTypeColumns']; registerMonths?: any[]; months?: any[] } | undefined) : null;
+                    const registerLeaveTypeColumns = detail?.registerLeaveTypeColumns ?? row.registerLeaveTypeColumns;
+                    const rawMonthsForView =
+                      detail && Array.isArray(detail.registerMonths) && detail.registerMonths.length > 0
+                        ? detail.registerMonths
+                        : Array.isArray(detail?.months) && (detail as { months: any[] }).months.length > 0
+                          ? (detail as { months: any[] }).months
+                          : row.registerMonths?.length
+                            ? row.registerMonths
+                            : [];
+                    const months = rawMonthsForView.map((m, idx) =>
+                      normalizeRegisterMonthForBulk(m, monthSlotEditPolicyConfig, idx)
+                    );
                     const mainRow = (
                       <tr
                         key={idStr || row.employee?.empNo}
@@ -1914,6 +1986,114 @@ export default function LeaveRegisterPage({
                                       ))}
                                     </tbody>
                                   </table>
+                                  {registerLeaveTypeColumns && registerLeaveTypeColumns.length > 0 && (
+                                    <div className="mt-3 space-y-1">
+                                      <p className="text-[10px] font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
+                                        By leave type (Cr · Used · Bal · Lk · Xfer)
+                                      </p>
+                                      <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-600">
+                                        <table
+                                          className="w-full border-collapse text-[11px]"
+                                          style={{ minWidth: Math.max(480, 88 + registerLeaveTypeColumns.length * 5 * 56) }}
+                                        >
+                                          <thead>
+                                            <tr className="bg-slate-50 dark:bg-slate-900/50 text-slate-600 dark:text-slate-300">
+                                              <th
+                                                rowSpan={2}
+                                                className="text-left font-semibold px-2 py-1.5 align-bottom border border-slate-200 dark:border-slate-600 whitespace-nowrap"
+                                              >
+                                                Month
+                                              </th>
+                                              {registerLeaveTypeColumns.map((lt) => (
+                                                <th
+                                                  key={String(lt.code)}
+                                                  colSpan={5}
+                                                  className="text-center font-bold px-1 py-1 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-100"
+                                                  title={lt.name}
+                                                >
+                                                  {lt.code}
+                                                </th>
+                                              ))}
+                                            </tr>
+                                            <tr className="bg-slate-50 dark:bg-slate-900/50 text-slate-700 dark:text-slate-200">
+                                              {registerLeaveTypeColumns.map((lt) => (
+                                                <Fragment key={`${String(lt.code)}-sub`}>
+                                                  <th className="text-center font-bold px-0.5 py-0.5 border border-slate-200 dark:border-slate-600">
+                                                    Cr
+                                                  </th>
+                                                  <th className="text-center font-bold px-0.5 py-0.5 border border-slate-200 dark:border-slate-600">
+                                                    Used
+                                                  </th>
+                                                  <th
+                                                    className="text-center font-bold px-0.5 py-0.5 border border-slate-200 dark:border-slate-600"
+                                                    title="This month: scheduled credits minus used (ledger debits)."
+                                                  >
+                                                    Bal
+                                                  </th>
+                                                  <th
+                                                    className="text-center font-bold px-0.5 py-0.5 border border-slate-200 dark:border-slate-600"
+                                                    title="In-flight (non-final) days toward that type’s apply limit; final reject/cancel does not count."
+                                                  >
+                                                    Lk
+                                                  </th>
+                                                  <th
+                                                    className="text-center font-bold px-0.5 py-0.5 border border-slate-200 dark:border-slate-600"
+                                                    title="Period-end pool transfer (when rules apply—mainly CL / CCL / EL)."
+                                                  >
+                                                    Xfer
+                                                  </th>
+                                                </Fragment>
+                                              ))}
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {months.map((mm, mIdx) => (
+                                              <tr
+                                                key={`sched-by-type-${mIdx}-${mm.year}-${mm.month}`}
+                                                className="border-b border-slate-100 dark:border-slate-800/80"
+                                              >
+                                                <td className="px-2 py-1 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-600 whitespace-nowrap">
+                                                  {mm.label && !String(mm.label).includes('/')
+                                                    ? mm.label
+                                                    : new Date(mm.year, mm.month - 1).toLocaleString('default', { month: 'long', year: 'numeric' })}
+                                                </td>
+                                                {registerLeaveTypeColumns.map((lt) => {
+                                                  const b = monthBucketForLeaveTypeCode(mm, String(lt.code));
+                                                  return (
+                                                    <Fragment key={`${String(lt.code)}-cells-${mIdx}`}>
+                                                      <td className="text-center font-mono tabular-nums px-0.5 py-0.5 text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-600">
+                                                        {formatNullableNum(b.credited)}
+                                                      </td>
+                                                      <td className="text-center font-mono tabular-nums px-0.5 py-0.5 text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-600">
+                                                        {formatNullableNum(b.used)}
+                                                      </td>
+                                                      <td className="text-center font-mono font-semibold tabular-nums px-0.5 py-0.5 text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-600">
+                                                        {formatMonthNetBalance(b.credited, b.used)}
+                                                      </td>
+                                                      <td className="text-center font-mono tabular-nums px-0.5 py-0.5 text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-600">
+                                                        <div>{formatNullableNum(b.locked)}</div>
+                                                        <TypeApplyCapHint bucket={b} />
+                                                      </td>
+                                                      <td className="text-center font-mono tabular-nums px-0.5 py-0.5 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-600">
+                                                        {formatNullableNum(b.transfer)}
+                                                      </td>
+                                                    </Fragment>
+                                                  );
+                                                })}
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                      <p className="text-[9px] text-slate-500 dark:text-slate-500 leading-snug">
+                                        Mirrors the main CL / CCL / EL grid.{' '}
+                                        <strong>Used</strong> and running balances follow register transactions;{' '}
+                                        <strong>Lk</strong> uses the same in-flight / approved rules as the monthly cap (rejected and cancelled
+                                        applications drop out of the count). Per-type <strong>Bal</strong> is this month’s credits minus used. Click
+                                        a month in the table above to open all transactions.
+                                      </p>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             )}

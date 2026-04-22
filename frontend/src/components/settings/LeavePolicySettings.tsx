@@ -17,6 +17,19 @@ import {
     Table2,
 } from 'lucide-react';
 
+function setDeepPath<T extends Record<string, unknown>>(obj: T, path: string, value: unknown): T {
+    const out = JSON.parse(JSON.stringify(obj)) as T;
+    const keys = path.split('.');
+    let cur: any = out;
+    for (let i = 0; i < keys.length - 1; i++) {
+        const k = keys[i];
+        if (cur[k] == null || typeof cur[k] !== 'object') cur[k] = {};
+        cur = cur[k];
+    }
+    cur[keys[keys.length - 1]] = value;
+    return out;
+}
+
 interface LeavePolicySettings {
     financialYear: {
         startMonth: number;
@@ -92,11 +105,8 @@ interface LeavePolicySettings {
     monthlyLeaveApplicationCap: {
         enabled: boolean;
         maxDays: number;
-        maxDaysByType: {
-            CL: number;
-            CCL: number;
-            EL: number;
-        };
+        /** Key = leave type code (uppercase). Any type from Leave Settings; 0 = no per-type cap. */
+        maxDaysByType: Record<string, number>;
         includeEL: boolean;
     };
     leaveRegisterMonthSlotEdit: {
@@ -113,6 +123,12 @@ interface LeavePolicySettings {
         };
         byPayrollMonthIndex?: Record<string, Partial<LeavePolicySettings['leaveRegisterMonthSlotEdit']['defaults']>>;
     };
+    /** From Leave Settings (active types); used for per-type policy UI */
+    leaveTypes?: { code: string; name: string }[];
+    /** Per–leave-type carry rules (codes uppercase). CL/EL/CCL also sync to legacy carryForward on save. */
+    carryForwardByLeaveType?: Record<string, any>;
+    /** Per–leave-type annual entitlement (12-mo grid). CL slice is synced to annualCLReset. */
+    annualResetByLeaveType?: Record<string, any>;
 }
 
 interface InitialSyncMonthBreakdownRow {
@@ -313,7 +329,7 @@ const LeavePolicySettings = () => {
                 CL: 0,
                 CCL: 0,
                 EL: 0,
-            },
+            } as Record<string, number>,
             includeEL: false
         },
         leaveRegisterMonthSlotEdit: {
@@ -329,7 +345,10 @@ const LeavePolicySettings = () => {
                 allowCarryUnusedToNextMonth: true,
             },
             byPayrollMonthIndex: {},
-        }
+        },
+        leaveTypes: [],
+        carryForwardByLeaveType: {},
+        annualResetByLeaveType: {}
     });
 
     const loadSettings = async () => {
@@ -374,22 +393,47 @@ const LeavePolicySettings = () => {
                         )
                     },
                     autoUpdate: { ...defaults.autoUpdate, ...data.autoUpdate },
-                    monthlyLeaveApplicationCap: {
-                        ...defaults.monthlyLeaveApplicationCap,
-                        ...(data.monthlyLeaveApplicationCap || {}),
-                        maxDaysByType: {
-                            ...defaults.monthlyLeaveApplicationCap.maxDaysByType,
-                            ...(data.monthlyLeaveApplicationCap?.maxDaysByType || {}),
-                            CL: Math.max(0, Number(data.monthlyLeaveApplicationCap?.maxDaysByType?.CL) || 0),
-                            CCL: Math.max(0, Number(data.monthlyLeaveApplicationCap?.maxDaysByType?.CCL) || 0),
-                            EL: Math.max(0, Number(data.monthlyLeaveApplicationCap?.maxDaysByType?.EL) || 0),
-                        },
-                        maxDays:
-                            data.monthlyLeaveApplicationCap != null &&
-                            data.monthlyLeaveApplicationCap.maxDays != null
-                                ? Math.max(0, Number(data.monthlyLeaveApplicationCap.maxDays) || 0)
-                                : defaults.monthlyLeaveApplicationCap.maxDays
-                    },
+                    monthlyLeaveApplicationCap: (() => {
+                        const cap = {
+                            ...defaults.monthlyLeaveApplicationCap,
+                            ...(data.monthlyLeaveApplicationCap || {}),
+                        };
+                        const fromApi = data.monthlyLeaveApplicationCap?.maxDaysByType;
+                        const raw =
+                            typeof fromApi === 'object' && fromApi !== null && !Array.isArray(fromApi)
+                                ? (fromApi as Record<string, unknown>)
+                                : {};
+                        const merged: Record<string, number> = {};
+                        const defM = defaults.monthlyLeaveApplicationCap.maxDaysByType as Record<string, number>;
+                        for (const k of Object.keys({ ...defM, ...raw })) {
+                            const c = String(k).toUpperCase();
+                            if (!c) continue;
+                            const v = raw[k] ?? raw[c] ?? defM[c];
+                            merged[c] = Math.max(0, Math.min(62, Number(v) || 0));
+                        }
+                        const lt =
+                            Array.isArray(data.leaveTypes) && data.leaveTypes.length > 0
+                                ? data.leaveTypes
+                                : [
+                                      { code: 'CL', name: '' },
+                                      { code: 'CCL', name: '' },
+                                      { code: 'EL', name: '' },
+                                  ];
+                        for (const t of lt) {
+                            const c = String(t?.code || '').toUpperCase();
+                            if (!c) continue;
+                            if (merged[c] == null) merged[c] = 0;
+                        }
+                        return {
+                            ...cap,
+                            maxDaysByType: merged,
+                            maxDays:
+                                data.monthlyLeaveApplicationCap != null &&
+                                data.monthlyLeaveApplicationCap.maxDays != null
+                                    ? Math.max(0, Number(data.monthlyLeaveApplicationCap.maxDays) || 0)
+                                    : defaults.monthlyLeaveApplicationCap.maxDays,
+                        };
+                    })(),
                     leaveRegisterMonthSlotEdit: {
                         defaults: {
                             ...defaults.leaveRegisterMonthSlotEdit.defaults,
@@ -400,7 +444,16 @@ const LeavePolicySettings = () => {
                             typeof data.leaveRegisterMonthSlotEdit.byPayrollMonthIndex === 'object'
                                 ? data.leaveRegisterMonthSlotEdit.byPayrollMonthIndex
                                 : {},
-                    }
+                    },
+                    leaveTypes: Array.isArray(data.leaveTypes) ? data.leaveTypes : [],
+                    carryForwardByLeaveType:
+                        data.carryForwardByLeaveType && typeof data.carryForwardByLeaveType === 'object'
+                            ? { ...data.carryForwardByLeaveType }
+                            : { ...defaults.carryForwardByLeaveType },
+                    annualResetByLeaveType:
+                        data.annualResetByLeaveType && typeof data.annualResetByLeaveType === 'object'
+                            ? { ...data.annualResetByLeaveType }
+                            : { ...defaults.annualResetByLeaveType }
                 });
             } else {
                 setSettings(getDefaultSettings());
@@ -414,12 +467,25 @@ const LeavePolicySettings = () => {
         }
     };
 
+    const setPolicyPath = (path: string, value: unknown) => {
+        if (!settings) return;
+        setSettings((prev) => (prev ? (setDeepPath(prev as any, path, value) as typeof prev) : prev));
+    };
+
     const saveSettings = async () => {
         if (!settings) return;
         
         setSaving(true);
         try {
-            await api.updateLeavePolicySettings(settings);
+            const payload = {
+                ...settings,
+                carryForwardByLeaveType: { ...(settings.carryForwardByLeaveType || {}) },
+                annualResetByLeaveType: {
+                    ...(settings.annualResetByLeaveType || {}),
+                    CL: { ...settings.annualCLReset, ...(settings.annualResetByLeaveType?.CL || {}) },
+                },
+            };
+            await api.updateLeavePolicySettings(payload);
             toast.success('Leave policy settings saved successfully!');
         } catch (error: any) {
             console.error('Error saving settings:', error);
@@ -528,7 +594,7 @@ const LeavePolicySettings = () => {
         }
         const { isConfirmed } = await alertConfirm(
             'Apply initial sync to the filtered list only?',
-            `CL will use the policy month grid (pro-rata by join) plus carry rules, and your target EL/CCL for ${rows.length} employee(s). Employees not in this list are unchanged.`,
+            `Policy-based CL and any "Store annual reset" types (EL, CCL, custom codes) will be applied for ${rows.length} employee(s). You can override the proposed CL per row; other types follow policy. Staff not in this list are unchanged.`,
             'Apply filtered'
         );
         if (!isConfirmed) return;
@@ -562,7 +628,7 @@ const LeavePolicySettings = () => {
     const applyInitialSyncToAllActive = async () => {
         const { isConfirmed } = await alertConfirm(
             'Apply initial sync to all active employees?',
-            'The server will run policy-based CL (monthly grid, join pro-rata, carry) for every active employee and rebuild their leave register year for the current FY. EL and CCL balances are not changed. This ignores the table filter.',
+            'The server will rebuild the leave register for the current FY: CL from the policy grid (join pro-rata, carry as configured), and any other leave types you enabled under "Store annual reset" (e.g. EL, CCL, or custom types)—same treatment as the annual job. CCL also continues to be credited from approved OD where applicable. This applies to all active staff and ignores the table filter.',
             'Apply to all'
         );
         if (!isConfirmed) return;
@@ -926,8 +992,9 @@ const LeavePolicySettings = () => {
                             <div>
                                 <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Monthly application cap</h3>
                                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                                    Maximum days of each leave type (CL / CCL / EL) that can be <strong>applied</strong> in one payroll
-                                    period (pending + approved). <strong>0</strong> means no per-type limit for that type.
+                                    Maximum days of each <strong>configured leave type</strong> (from Leave Settings) that can be{' '}
+                                    <strong>applied</strong> in one payroll period (pending + approved). <strong>0</strong> means no
+                                    per-type limit for that type.
                                 </p>
                             </div>
                         </div>
@@ -936,28 +1003,45 @@ const LeavePolicySettings = () => {
                                 <p className="text-xs font-semibold text-gray-700 dark:text-gray-200 uppercase tracking-wide">
                                     Per leave type (payroll period)
                                 </p>
-                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                    {(['CL', 'CCL', 'EL'] as const).map((lt) => (
-                                        <div key={lt} className="space-y-1.5">
-                                            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">
-                                                {lt} max apply days (0 = no per-type limit)
-                                            </label>
-                                            <input
-                                                type="number"
-                                                min={0}
-                                                max={62}
-                                                value={settings.monthlyLeaveApplicationCap?.maxDaysByType?.[lt] ?? 0}
-                                                onChange={(e) =>
-                                                    updateSettings(
-                                                        `monthlyLeaveApplicationCap.maxDaysByType.${lt}`,
-                                                        '',
-                                                        Math.max(0, parseInt(e.target.value, 10) || 0)
-                                                    )
-                                                }
-                                                className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
-                                            />
-                                        </div>
-                                    ))}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                    {(settings.leaveTypes && settings.leaveTypes.length > 0
+                                        ? settings.leaveTypes
+                                        : [
+                                              { code: 'CL', name: 'Casual Leave' },
+                                              { code: 'CCL', name: 'Compensatory Off' },
+                                              { code: 'EL', name: 'Earned Leave' },
+                                          ]
+                                    ).map((row) => {
+                                        const code = String(row.code || '').toUpperCase();
+                                        if (!code) return null;
+                                        return (
+                                            <div key={code} className="space-y-1.5">
+                                                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">
+                                                    <span className="font-mono text-gray-800 dark:text-gray-200">{code}</span>
+                                                    {row.name ? (
+                                                        <span className="text-gray-500 font-normal"> — {row.name}</span>
+                                                    ) : null}
+                                                    <span className="block text-[10px] text-gray-500 font-normal mt-0.5">
+                                                        max apply days (0 = no per-type limit)
+                                                    </span>
+                                                </label>
+                                                <input
+                                                    type="number"
+                                                    min={0}
+                                                    max={62}
+                                                    value={settings.monthlyLeaveApplicationCap?.maxDaysByType?.[code] ?? 0}
+                                                    onChange={(e) =>
+                                                        updateSettings(
+                                                            `monthlyLeaveApplicationCap.maxDaysByType.${code}`,
+                                                            '',
+                                                            Math.max(0, Math.min(62, parseInt(e.target.value, 10) || 0))
+                                                        )
+                                                    }
+                                                    className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                                                />
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             </div>
                             <div className="flex items-center justify-between gap-4 p-3 rounded-xl border border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30">
@@ -1223,123 +1307,253 @@ const LeavePolicySettings = () => {
 
                 {/* ——— Right column: Carry Forward ——— */}
                 <div className="space-y-8 min-w-0">
-                    {/* 3. Carry Forward */}
+                    {/* 3. Carry Forward (per type from Leave Settings) */}
                     <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
                         <div className="px-6 sm:px-8 py-6 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
                             <div className="h-10 w-10 flex items-center justify-center rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800/50">
                                 <RefreshCw className="h-5 w-5" />
                             </div>
                             <div>
-                                <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Carry Forward</h3>
-                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">CL monthly pool; EL & CCL carry and expiry.</p>
+                                <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Carry forward</h3>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                                    One block per active leave type from <strong>Leave settings</strong>. CL / EL / CCL are applied in the live register; other types are stored for when those flows exist.
+                                </p>
                             </div>
                         </div>
                         <div className="p-6 sm:p-8">
                         <div className="grid grid-cols-1 gap-6">
-                            <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-100 dark:border-gray-700 p-4 space-y-3">
-                                <h4 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Casual Leave (CL)</h4>
+                        {(settings.leaveTypes && settings.leaveTypes.length > 0
+                            ? settings.leaveTypes
+                            : [
+                                { code: 'CL', name: 'Casual leave' },
+                                { code: 'EL', name: 'Earned leave' },
+                                { code: 'CCL', name: 'Compensatory off' }
+                            ]
+                        ).map((lt) => {
+                            const code = String(lt.code || '').toUpperCase();
+                            const cf = settings.carryForwardByLeaveType?.[code] || {};
+                            const clRoll = cf.carryMonthlyClCreditToNextPayrollMonth !== false;
+                            return (
+                            <div key={code} className="bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-100 dark:border-gray-700 p-4 space-y-3">
+                                <h4 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">{lt.name} ({code})</h4>
+                                {code === 'CL' && (
+                                    <>
                                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                                    Year-end CL carry and max cap are configured under <strong>Annual CL Reset</strong> (add carry forward + max carry days). This section only controls unused <em>monthly</em> scheduled CL between payroll periods.
+                                    Year-end CL cap is under <strong>Annual leave reset (CL)</strong> below. This only controls unused <em>monthly</em> scheduled CL between payroll periods.
                                 </p>
                                 <div className="pt-1 space-y-2">
                                     <p className="text-xs text-gray-500 dark:text-gray-400">
-                                        <span className="font-medium text-gray-700 dark:text-gray-300">Monthly scheduled CL (policy grid):</span>{' '}
-                                        On each payroll cycle end, compare this month’s scheduled CL to CL used in that month. Unused scheduled days can stay in the balance or be removed.
+                                        <span className="font-medium text-gray-700 dark:text-gray-300">Monthly scheduled CL (policy grid):</span> On each payroll cycle end, unused scheduled CL can stay in the pool or be forfeit.
                                     </p>
                                     <div className="flex items-center justify-between gap-4 p-3 rounded-xl border border-gray-100 dark:border-gray-700 bg-white/60 dark:bg-gray-900/30">
                                         <div>
                                             <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Carry unused monthly CL into later periods</span>
-                                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">On = keep unused scheduled CL in the pool. Off = forfeit unused scheduled CL at each payroll month-end (EXPIRY in leave register).</p>
+                                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">On = keep in pool. Off = forfeit at month-end (EXPIRY in register).</p>
                                         </div>
                                         <button
                                             type="button"
                                             role="switch"
-                                            aria-checked={settings.carryForward.casualLeave.carryMonthlyClCreditToNextPayrollMonth !== false}
+                                            aria-checked={clRoll}
                                             onClick={() =>
-                                                updateSettings(
-                                                    'carryForward.casualLeave.carryMonthlyClCreditToNextPayrollMonth',
-                                                    '',
-                                                    !(settings.carryForward.casualLeave.carryMonthlyClCreditToNextPayrollMonth !== false)
+                                                setPolicyPath(
+                                                    `carryForwardByLeaveType.${code}.carryMonthlyClCreditToNextPayrollMonth`,
+                                                    !clRoll
                                                 )
                                             }
-                                            className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900 ${settings.carryForward.casualLeave.carryMonthlyClCreditToNextPayrollMonth !== false ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-gray-700'}`}
+                                            className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900 ${clRoll ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-gray-700'}`}
                                         >
-                                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${settings.carryForward.casualLeave.carryMonthlyClCreditToNextPayrollMonth !== false ? 'translate-x-6' : 'translate-x-1'}`} />
+                                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${clRoll ? 'translate-x-6' : 'translate-x-1'}`} />
                                         </button>
                                     </div>
                                 </div>
-                            </div>
-                            <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-100 dark:border-gray-700 p-4 space-y-3">
-                                <h4 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Earned Leave (EL)</h4>
-                                <label className="flex items-center gap-2 cursor-pointer">
-                                    <input type="checkbox" checked={settings.carryForward.earnedLeave.enabled}
-                                        onChange={(e) => updateSettings('carryForward.earnedLeave.enabled', '', e.target.checked)}
-                                        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-                                    <span className="text-sm text-gray-700 dark:text-gray-300">Enable carry forward</span>
-                                </label>
-                                {settings.carryForward.earnedLeave.enabled && (
-                                    <div className="grid grid-cols-2 gap-3 pt-1">
-                                        <div className="space-y-1.5">
-                                            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Max months</label>
-                                            <input type="number" min="1" max="12" value={settings.carryForward.earnedLeave.maxMonths}
-                                                onChange={(e) => updateSettings('carryForward.earnedLeave.maxMonths', '', parseInt(e.target.value))}
-                                                className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all" />
-                                        </div>
-                                        <div className="space-y-1.5">
-                                            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Expiry months</label>
-                                            <input type="number" min="1" max="12" value={settings.carryForward.earnedLeave.expiryMonths}
-                                                onChange={(e) => updateSettings('carryForward.earnedLeave.expiryMonths', '', parseInt(e.target.value))}
-                                                className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all" />
-                                        </div>
-                                    </div>
+                                    </>
                                 )}
-                            </div>
-                            <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-100 dark:border-gray-700 p-4 space-y-3">
-                                <h4 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Compensatory Off (CCL)</h4>
+                                {code === 'EL' && (
+                                    <>
                                 <label className="flex items-center gap-2 cursor-pointer">
-                                    <input type="checkbox" checked={settings.carryForward.compensatoryOff.enabled}
-                                        onChange={(e) => updateSettings('carryForward.compensatoryOff.enabled', '', e.target.checked)}
+                                    <input
+                                        type="checkbox"
+                                        checked={cf.enabled !== false}
+                                        onChange={(e) => setPolicyPath(`carryForwardByLeaveType.${code}.enabled`, e.target.checked)}
                                         className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
                                     <span className="text-sm text-gray-700 dark:text-gray-300">Enable carry forward</span>
                                 </label>
-                                {settings.carryForward.compensatoryOff.enabled && (
-                                    <>
-                                        <div className="grid grid-cols-2 gap-3 pt-1">
+                                {cf.enabled !== false && (
+                                    <div className="space-y-3">
+                                        <div className="grid grid-cols-2 gap-3">
                                             <div className="space-y-1.5">
                                                 <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Max months</label>
-                                                <input type="number" min="1" max="12" value={settings.carryForward.compensatoryOff.maxMonths}
-                                                    onChange={(e) => updateSettings('carryForward.compensatoryOff.maxMonths', '', parseInt(e.target.value))}
-                                                    className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all" />
+                                                <input
+                                                    type="number"
+                                                    min={0}
+                                                    max={60}
+                                                    value={Number(cf.maxMonths) || 0}
+                                                    onChange={(e) => setPolicyPath(`carryForwardByLeaveType.${code}.maxMonths`, Math.max(0, parseInt(e.target.value, 10) || 0))}
+                                                    className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                                                />
                                             </div>
                                             <div className="space-y-1.5">
                                                 <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Expiry months</label>
-                                                <input type="number" min="1" max="12" value={settings.carryForward.compensatoryOff.expiryMonths}
-                                                    onChange={(e) => updateSettings('carryForward.compensatoryOff.expiryMonths', '', parseInt(e.target.value))}
-                                                    className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all" />
+                                                <input
+                                                    type="number"
+                                                    min={0}
+                                                    max={120}
+                                                    value={Number(cf.expiryMonths) || 0}
+                                                    onChange={(e) => setPolicyPath(`carryForwardByLeaveType.${code}.expiryMonths`, Math.max(0, parseInt(e.target.value, 10) || 0))}
+                                                    className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm font-medium text-gray-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                                                />
                                             </div>
                                         </div>
+                                        <div className="flex items-center justify-between gap-4 p-3 rounded-xl border border-gray-100 dark:border-gray-700 bg-white/60 dark:bg-gray-900/30">
+                                            <div>
+                                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Carry unused monthly apply-pool EL</span>
+                                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">When EL is in the apply pool, roll unused to next month vs expire (policy).</p>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                role="switch"
+                                                aria-checked={cf.carryMonthlyPoolToNextPayrollMonth !== false}
+                                                onClick={() =>
+                                                    setPolicyPath(
+                                                        `carryForwardByLeaveType.${code}.carryMonthlyPoolToNextPayrollMonth`,
+                                                        !(cf.carryMonthlyPoolToNextPayrollMonth !== false)
+                                                    )
+                                                }
+                                                className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900 ${cf.carryMonthlyPoolToNextPayrollMonth !== false ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-gray-700'}`}
+                                            >
+                                                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${cf.carryMonthlyPoolToNextPayrollMonth !== false ? 'translate-x-6' : 'translate-x-1'}`} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                                    </>
+                                )}
+                                {code === 'CCL' && (
+                                    <>
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={cf.enabled !== false}
+                                        onChange={(e) => setPolicyPath(`carryForwardByLeaveType.${code}.enabled`, e.target.checked)}
+                                        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                                    <span className="text-sm text-gray-700 dark:text-gray-300">Enable carry forward</span>
+                                </label>
+                                {cf.enabled !== false && (
+                                    <div className="space-y-3">
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div className="space-y-1.5">
+                                                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Max months</label>
+                                                <input
+                                                    type="number"
+                                                    min={0}
+                                                    max={24}
+                                                    value={Number(cf.maxMonths) || 0}
+                                                    onChange={(e) => setPolicyPath(`carryForwardByLeaveType.${code}.maxMonths`, Math.max(0, parseInt(e.target.value, 10) || 0))}
+                                                    className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm"
+                                                />
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Expiry months</label>
+                                                <input
+                                                    type="number"
+                                                    min={0}
+                                                    max={24}
+                                                    value={Number(cf.expiryMonths) || 0}
+                                                    onChange={(e) => setPolicyPath(`carryForwardByLeaveType.${code}.expiryMonths`, Math.max(0, parseInt(e.target.value, 10) || 0))}
+                                                    className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm"
+                                                />
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center justify-between gap-4 p-3 rounded-xl border border-gray-100 dark:border-gray-700 bg-white/60 dark:bg-gray-900/30">
+                                            <div>
+                                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Carry unused CCL apply pool to next month</span>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                role="switch"
+                                                aria-checked={cf.carryMonthlyPoolToNextPayrollMonth !== false}
+                                                onClick={() =>
+                                                    setPolicyPath(
+                                                        `carryForwardByLeaveType.${code}.carryMonthlyPoolToNextPayrollMonth`,
+                                                        !(cf.carryMonthlyPoolToNextPayrollMonth !== false)
+                                                    )
+                                                }
+                                                className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full ${cf.carryMonthlyPoolToNextPayrollMonth !== false ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-gray-700'}`}
+                                            >
+                                                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${cf.carryMonthlyPoolToNextPayrollMonth !== false ? 'translate-x-6' : 'translate-x-1'}`} />
+                                            </button>
+                                        </div>
                                         <label className="flex items-center gap-2 cursor-pointer pt-1">
-                                            <input type="checkbox" checked={settings.carryForward.compensatoryOff.carryForwardToNextYear}
-                                                onChange={(e) => updateSettings('carryForward.compensatoryOff.carryForwardToNextYear', '', e.target.checked)}
+                                            <input
+                                                type="checkbox"
+                                                checked={!!cf.carryForwardToNextYear}
+                                                onChange={(e) => setPolicyPath(`carryForwardByLeaveType.${code}.carryForwardToNextYear`, e.target.checked)}
                                                 className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
                                             <span className="text-sm text-gray-700 dark:text-gray-300">Carry to next year</span>
                                         </label>
+                                    </div>
+                                )}
+                                    </>
+                                )}
+                                {code !== 'CL' && code !== 'EL' && code !== 'CCL' && (
+                                    <>
+                                <p className="text-xs text-gray-500 dark:text-gray-400">Config for this type is kept with policy. Register automation may not use it yet.</p>
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={cf.enabled !== false}
+                                        onChange={(e) => setPolicyPath(`carryForwardByLeaveType.${code}.enabled`, e.target.checked)}
+                                        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                                    <span className="text-sm text-gray-700 dark:text-gray-300">Enable carry forward (policy)</span>
+                                </label>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="space-y-1.5">
+                                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Max months</label>
+                                        <input
+                                            type="number"
+                                            min={0}
+                                            value={Number(cf.maxMonths) || 0}
+                                            onChange={(e) => setPolicyPath(`carryForwardByLeaveType.${code}.maxMonths`, Math.max(0, parseInt(e.target.value, 10) || 0))}
+                                            className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm"
+                                        />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label className="block text-xs font-medium text-gray-600 dark:text-gray-400">Expiry months</label>
+                                        <input
+                                            type="number"
+                                            min={0}
+                                            value={Number(cf.expiryMonths) || 0}
+                                            onChange={(e) => setPolicyPath(`carryForwardByLeaveType.${code}.expiryMonths`, Math.max(0, parseInt(e.target.value, 10) || 0))}
+                                            className="w-full px-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-[#0F172A] text-sm"
+                                        />
+                                    </div>
+                                </div>
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={!!cf.carryForwardToNextYear}
+                                        onChange={(e) => setPolicyPath(`carryForwardByLeaveType.${code}.carryForwardToNextYear`, e.target.checked)}
+                                        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                                    <span className="text-sm text-gray-700 dark:text-gray-300">Carry to next year</span>
+                                </label>
                                     </>
                                 )}
                             </div>
+                        );
+                        })}
                         </div>
                         </div>
                     </section>
 
-                    {/* 4. Annual CL Reset */}
+                    {/* 4. Annual leave reset (CL — live register; other types stored in policy) */}
                     <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
                         <div className="px-6 sm:px-8 py-6 border-b border-gray-100 dark:border-gray-800 flex items-center gap-3">
                             <div className="h-10 w-10 flex items-center justify-center rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800/50">
                                 <AlertTriangle className="h-5 w-5" />
                             </div>
                             <div>
-                                <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Annual CL Reset</h3>
-                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Reset CL at configured date (pay cycle / year). Default entitlement or experience-based tiers; optional carry forward.</p>
+                                <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Annual leave reset</h3>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">CL block runs the actual leave-year job and register. Other types: save entitlements and 12-mo grids for future use.</p>
                             </div>
                         </div>
                         <div className="p-6 sm:p-8 space-y-6">
@@ -1503,6 +1717,155 @@ const LeavePolicySettings = () => {
                                 </div>
                             </div>
                         )}
+
+                        <div className="space-y-6 px-6 sm:px-8 pb-2">
+                            <h4 className="text-sm font-bold text-gray-800 dark:text-gray-200 border-t border-gray-200 dark:border-gray-800 pt-6">Other leave types (annual reset + register)</h4>
+                            <p className="text-xs text-gray-500 dark:text-gray-400 -mt-4">
+                                Use the same entitlement, carry-forward, and 12 payroll-month grids as CL. When <strong>Store annual reset</strong> is on
+                                for a type, the <strong>annual reset job</strong> (same schedule as CL) applies that type: current balance, carry cap, expiry
+                                of excess, then the new year grid plus one scheduled credit per month. EL and CCL use the legacy register columns; other
+                                codes use <span className="font-mono">scheduledCreditsByType</span>.
+                            </p>
+                            {(settings.leaveTypes || []).filter((t) => String(t?.code || '').toUpperCase() !== 'CL').map((lt) => {
+                                const ocode = String(lt.code).toUpperCase();
+                                const raw = settings.annualResetByLeaveType?.[ocode] || {};
+                                const ar = {
+                                    enabled: false,
+                                    resetToBalance: 0,
+                                    addCarryForward: true,
+                                    maxCarryForwardCl: 0,
+                                    casualLeaveByExperience: [] as {
+                                        minYears: number;
+                                        maxYears: number;
+                                        casualLeave: number;
+                                        monthlyClCredits?: number[];
+                                        description?: string;
+                                    }[],
+                                    ...raw
+                                };
+                                const tiers = normalizeExperienceTiers(ar.casualLeaveByExperience || []);
+                                return (
+                                <div key={ocode} className="rounded-2xl border border-dashed border-indigo-200/80 dark:border-indigo-800/50 bg-indigo-50/30 dark:bg-indigo-950/20 p-4 sm:p-5 space-y-4">
+                                    <h5 className="text-sm font-bold text-gray-900 dark:text-white">{lt.name} <span className="text-indigo-600 dark:text-indigo-400">({ocode})</span></h5>
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={!!ar.enabled}
+                                            onChange={(e) => setPolicyPath(`annualResetByLeaveType.${ocode}.enabled`, e.target.checked)}
+                                            className="rounded border-gray-300 text-indigo-600" />
+                                        <span className="text-sm text-gray-700 dark:text-gray-300">Store annual reset / entitlement in policy</span>
+                                    </label>
+                                    {ar.enabled && (
+                                    <div className="space-y-3">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            <div className="space-y-1.5">
+                                                <label className="block text-xs text-gray-600 dark:text-gray-400">Default annual days</label>
+                                                <input
+                                                    type="number"
+                                                    min={0}
+                                                    value={Number(ar.resetToBalance) || 0}
+                                                    onChange={(e) => setPolicyPath(`annualResetByLeaveType.${ocode}.resetToBalance`, Math.max(0, parseInt(e.target.value, 10) || 0))}
+                                                    className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-[#0F172A] text-sm" />
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                <label className="block text-xs text-gray-600 dark:text-gray-400">Max carry days (year boundary)</label>
+                                                <input
+                                                    type="number"
+                                                    min={0}
+                                                    value={Number(ar.maxCarryForwardCl) || 0}
+                                                    onChange={(e) => setPolicyPath(`annualResetByLeaveType.${ocode}.maxCarryForwardCl`, Math.max(0, parseInt(e.target.value, 10) || 0))}
+                                                    className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-[#0F172A] text-sm" />
+                                            </div>
+                                        </div>
+                                        <div className="flex flex-wrap gap-4">
+                                            <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={ar.addCarryForward !== false}
+                                                    onChange={(e) => setPolicyPath(`annualResetByLeaveType.${ocode}.addCarryForward`, e.target.checked)}
+                                                    className="rounded border-gray-300 text-indigo-600" />
+                                                Add carry forward
+                                            </label>
+                                        </div>
+                                        <div>
+                                            <p className="text-xs font-bold text-gray-600 dark:text-gray-400 mb-1">Experience tiers (optional)</p>
+                                            {tiers.map((tier, idx) => {
+                                                const grid = Array.isArray(tier.monthlyClCredits) && tier.monthlyClCredits.length === 12
+                                                    ? tier.monthlyClCredits
+                                                    : defaultMonthlyClGrid(Number(tier.casualLeave) || 0);
+                                                const gridSum = sumMonthlyClCredits({ monthlyClCredits: grid });
+                                                const annual = Number(tier.casualLeave) || 0;
+                                                return (
+                                                <div key={idx} className="mb-3 rounded-xl border border-gray-200 dark:border-gray-700 p-3 space-y-2 bg-white/80 dark:bg-[#0F172A]/50">
+                                                    <div className="flex flex-wrap gap-2 items-center text-sm">
+                                                        <input type="number" className="w-20 px-2 py-1.5 border rounded" value={tier.minYears ?? 0} onChange={(e) => {
+                                                            const a = [...tiers];
+                                                            a[idx] = { ...a[idx], minYears: parseInt(e.target.value, 10) || 0 };
+                                                            setPolicyPath(`annualResetByLeaveType.${ocode}.casualLeaveByExperience`, a);
+                                                        }} />
+                                                        <span>–</span>
+                                                        <input type="number" className="w-20 px-2 py-1.5 border rounded" value={tier.maxYears ?? 999} onChange={(e) => {
+                                                            const a = [...tiers];
+                                                            const v = parseInt(e.target.value, 10);
+                                                            a[idx] = { ...a[idx], maxYears: Number.isNaN(v) ? 999 : v };
+                                                            setPolicyPath(`annualResetByLeaveType.${ocode}.casualLeaveByExperience`, a);
+                                                        }} />
+                                                        <span className="text-xs text-gray-500">days / yr</span>
+                                                        <input type="number" className="w-16 px-2 py-1.5 border rounded" value={annual} onChange={(e) => {
+                                                            const a = [...tiers];
+                                                            const cl = Math.max(0, parseInt(e.target.value, 10) || 0);
+                                                            a[idx] = { ...a[idx], casualLeave: cl, monthlyClCredits: defaultMonthlyClGrid(cl) };
+                                                            setPolicyPath(`annualResetByLeaveType.${ocode}.casualLeaveByExperience`, a);
+                                                        }} />
+                                                        <button type="button" className="text-xs text-indigo-600" onClick={() => {
+                                                            const a = [...tiers];
+                                                            a[idx] = { ...a[idx], monthlyClCredits: defaultMonthlyClGrid(Number(a[idx].casualLeave) || 0) };
+                                                            setPolicyPath(`annualResetByLeaveType.${ocode}.casualLeaveByExperience`, a);
+                                                        }}>Even 12</button>
+                                                        <button type="button" className="text-xs text-red-500" onClick={() => {
+                                                            setPolicyPath(`annualResetByLeaveType.${ocode}.casualLeaveByExperience`, tiers.filter((_, i) => i !== idx));
+                                                        }}>Remove</button>
+                                                    </div>
+                                                    <div className="grid grid-cols-6 sm:grid-cols-12 gap-1">
+                                                        {grid.map((cell, mi) => (
+                                                            <div key={mi} className="text-center">
+                                                                <div className="text-[8px] text-gray-500">{mi + 1}</div>
+                                                                <input
+                                                                    type="number"
+                                                                    className="w-full px-0.5 py-0.5 text-xs border rounded"
+                                                                    value={cell}
+                                                                    onChange={(e) => {
+                                                                        const a = [...tiers];
+                                                                        const next = [...(a[idx].monthlyClCredits || defaultMonthlyClGrid(annual))];
+                                                                        next[mi] = Math.max(0, parseFloat(e.target.value) || 0);
+                                                                        a[idx] = { ...a[idx], monthlyClCredits: next };
+                                                                        setPolicyPath(`annualResetByLeaveType.${ocode}.casualLeaveByExperience`, a);
+                                                                    }}
+                                                                />
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                    <p className="text-[10px] text-gray-500">Sum: {gridSum.toFixed(2)} {Math.abs(gridSum - annual) > 0.02 ? `(≠ ${annual} annual)` : ''}</p>
+                                                </div>
+                                                );
+                                            })}
+                                            <button
+                                                type="button"
+                                                className="text-xs text-indigo-600"
+                                                onClick={() => {
+                                                    const clv = 12;
+                                                    setPolicyPath(`annualResetByLeaveType.${ocode}.casualLeaveByExperience`, [
+                                                        ...tiers,
+                                                        { minYears: 0, maxYears: 2, casualLeave: clv, monthlyClCredits: defaultMonthlyClGrid(clv), description: '' }
+                                                    ]);
+                                                }}>+ Add tier</button>
+                                        </div>
+                                    </div>
+                                    )}
+                                </div>
+                                );
+                            })}
+                        </div>
 
                         {/* Initial CL sync (manual) – not annual reset */}
                         <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-800">

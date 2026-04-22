@@ -3,7 +3,7 @@
  * (including legacy leaves.elEarningType). Used by EL accrual and payroll EL-as-paid logic.
  */
 
-const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
+const { getLeavePolicyResolved } = require('../../settings/services/leavePolicyTypeConfigService');
 const DepartmentSettings = require('../../departments/model/DepartmentSettings');
 
 function pick(override, fallback) {
@@ -64,7 +64,7 @@ function resolveEffectiveEarnedLeave(globalEarnedLeave = {}, leavesDeptSettings 
  */
 async function resolveEffectiveEarnedLeaveForDepartment(departmentId, divisionId = null) {
   const [policy, deptSettings] = await Promise.all([
-    LeavePolicySettings.getSettings(),
+    getLeavePolicyResolved(),
     DepartmentSettings.getByDeptAndDiv(departmentId, divisionId),
   ]);
   return resolveEffectiveEarnedLeave(policy?.earnedLeave, deptSettings?.leaves);

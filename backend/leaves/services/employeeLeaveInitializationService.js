@@ -4,7 +4,7 @@
  */
 
 const Employee = require('../../employees/model/Employee');
-const LeavePolicySettings = require('../../settings/model/LeavePolicySettings');
+const { getLeavePolicyResolved } = require('../../settings/services/leavePolicyTypeConfigService');
 const dateCycleService = require('./dateCycleService');
 const leaveRegisterYearService = require('./leaveRegisterYearService');
 const leaveRegisterYearLedgerService = require('./leaveRegisterYearLedgerService');
@@ -84,7 +84,7 @@ async function initializeEmployeeCL(employeeId) {
         }
 
         // Get leave policy settings
-        const settings = await LeavePolicySettings.getSettings();
+        const settings = await getLeavePolicyResolved();
 
         if (!settings.annualCLReset.enabled) {
             console.log(`[EmployeeLeaveInit] Annual CL reset disabled, skipping prorated CL initialization`);
