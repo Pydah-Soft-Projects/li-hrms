@@ -393,6 +393,19 @@ export interface ApiResponse<T> {
   subscribed?: boolean;
   configured?: boolean;
   publicKey?: string | null;
+  /** GET /promotions-transfers/payroll-months (spread on success alongside `data` array) */
+  promotionPayroll?: {
+    ongoingLabel: string;
+    incompleteOngoingLabel?: string;
+    arrearProrationEndLabel: string;
+    currentCycleLabel: string;
+    containingKey: string;
+    containingRangeDisplay: string;
+    containingRangeStart: string;
+    containingRangeEnd: string;
+    settingsStartDay: number;
+    settingsEndDay: number;
+  };
 }
 
 export interface InAppNotification {
@@ -716,7 +729,8 @@ export type DivisionWorkflowModuleKey =
   | 'loan'
   | 'salary_advance'
   | 'permission'
-  | 'ot';
+  | 'ot'
+  | 'promotions_transfers';
 
 export interface DivisionWorkflowSettings {
   _id?: string;
@@ -2919,7 +2933,7 @@ export const api = {
       params.append('count', String(opts.count));
     }
     const qs = params.toString() ? `?${params.toString()}` : '';
-    return apiRequest<any>(`/promotions-transfers/payroll-months${qs}`, { method: 'GET' });
+    return apiRequest<any[]>(`/promotions-transfers/payroll-months${qs}`, { method: 'GET' });
   },
   createPromotionTransferRequest: async (data: Record<string, unknown>) => {
     return apiRequest<any>('/promotions-transfers', {

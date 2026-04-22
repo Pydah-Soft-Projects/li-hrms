@@ -2,6 +2,7 @@ const DivisionWorkflowSettings = require('../model/DivisionWorkflowSettings');
 const LeaveSettings = require('../../leaves/model/LeaveSettings');
 const LoanSettings = require('../../loans/model/LoanSettings');
 const PermissionDeductionSettings = require('../../permissions/model/PermissionDeductionSettings');
+const PromotionTransferSettings = require('../../promotions-transfers/model/PromotionTransferSettings');
 
 function toPlain(doc) {
   if (!doc) return null;
@@ -25,7 +26,7 @@ function normalizeDivisionId(divisionId) {
 /**
  * @param {object|null} globalWorkflow
  * @param {import('mongoose').Types.ObjectId|string|null} divisionId
- * @param {'leave'|'od'|'ccl'|'loan'|'salary_advance'|'permission'|'ot'} key
+ * @param {'leave'|'od'|'ccl'|'loan'|'salary_advance'|'permission'|'ot'|'promotions_transfers'} key
  */
 async function applyDivisionWorkflowOverride(globalWorkflow, divisionId, key) {
   const divId = normalizeDivisionId(divisionId);
@@ -143,10 +144,42 @@ async function resolvePermissionWorkflowSettings(divisionId) {
   return plain;
 }
 
+const DEFAULT_PROMOTION_TRANSFER_WORKFLOW = {
+  isEnabled: true,
+  steps: [],
+  finalAuthority: { role: 'hr', anyHRCanApprove: true },
+  allowHigherAuthorityToApproveLowerLevels: false,
+};
+
+/**
+ * Global promotion & transfer workflow merged with optional division override
+ * (`workflows.promotions_transfers` on DivisionWorkflowSettings).
+ *
+ * @param {import('mongoose').Types.ObjectId|string|null|undefined} divisionId
+ * @returns {Promise<{ workflow: Record<string, any> }>}
+ */
+async function resolvePromotionTransferWorkflowSettings(divisionId) {
+  const settings = await PromotionTransferSettings.getActiveSettings();
+  if (!settings) {
+    const workflow = await applyDivisionWorkflowOverride(
+      { ...DEFAULT_PROMOTION_TRANSFER_WORKFLOW },
+      divisionId,
+      'promotions_transfers'
+    );
+    return { workflow };
+  }
+  const plain = toPlain(settings);
+  const globalWf =
+    plain.workflow && typeof plain.workflow === 'object' ? plain.workflow : { ...DEFAULT_PROMOTION_TRANSFER_WORKFLOW };
+  const workflow = await applyDivisionWorkflowOverride(globalWf, divisionId, 'promotions_transfers');
+  return { workflow };
+}
+
 module.exports = {
   mergeWorkflowObjects,
   applyDivisionWorkflowOverride,
   resolveLeaveTypeWorkflowSettings,
   resolveLoanWorkflowSettings,
   resolvePermissionWorkflowSettings,
+  resolvePromotionTransferWorkflowSettings,
 };

@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { apiRequest, DivisionWorkflowModuleKey, DivisionWorkflowSettings } from '@/lib/api';
+import { api, apiRequest, DivisionWorkflowModuleKey, DivisionWorkflowSettings } from '@/lib/api';
 import WorkflowManager, { WorkflowData } from '@/components/settings/shared/WorkflowManager';
 import Spinner from '@/components/Spinner';
 import { GitBranch, ArrowLeft } from 'lucide-react';
@@ -16,6 +16,11 @@ const MODULES: { key: DivisionWorkflowModuleKey; label: string; description: str
   { key: 'salary_advance', label: 'Salary advance', description: 'Salary advance applications' },
   { key: 'permission', label: 'Permission', description: 'Mid-shift / edge permissions' },
   { key: 'ot', label: 'Overtime (OT)', description: 'OT approval chain' },
+  {
+    key: 'promotions_transfers',
+    label: 'Promotions & transfers',
+    description: 'Salary promotions, demotions, increments, and internal transfers',
+  },
 ];
 
 function toWorkflowData(raw: Record<string, unknown> | null | undefined): WorkflowData {
@@ -88,16 +93,22 @@ export default function DivisionWorkflowsPage() {
   const [tab, setTab] = useState<DivisionWorkflowModuleKey>('leave');
   const [rawByModule, setRawByModule] = useState<Partial<Record<DivisionWorkflowModuleKey, Record<string, unknown> | null>>>({});
   const [draft, setDraft] = useState<WorkflowData>(() => toWorkflowData(undefined));
+  /** Global HR promotion/transfer workflow — used as the inheritance baseline on this page. */
+  const [globalPromoTransferWorkflow, setGlobalPromoTransferWorkflow] = useState<Record<string, unknown> | null>(null);
 
   const load = useCallback(async () => {
     if (!id) return;
     setLoading(true);
     setError(null);
-    const res = await apiRequest<DivisionWorkflowSettings>(`/divisions/${id}/workflow-settings`, {
-      method: 'GET',
-    });
+    const [res, ptRes] = await Promise.all([
+      apiRequest<DivisionWorkflowSettings>(`/divisions/${id}/workflow-settings`, {
+        method: 'GET',
+      }),
+      api.getPromotionTransferSettings().catch(() => ({ success: false as const })),
+    ]);
     if (!res.success || !res.data) {
       setError(res.message || res.error || 'Failed to load');
+      setGlobalPromoTransferWorkflow(null);
       setLoading(false);
       return;
     }
@@ -105,6 +116,12 @@ export default function DivisionWorkflowsPage() {
     setDivisionName(typeof div === 'object' && div !== null && 'name' in div ? String((div as { name?: string }).name || '') : '');
     const wfs = res.data.workflows || {};
     setRawByModule(wfs as typeof rawByModule);
+    if (ptRes && typeof ptRes === 'object' && 'success' in ptRes && ptRes.success && ptRes.data && typeof ptRes.data === 'object') {
+      const wf = (ptRes.data as { workflow?: Record<string, unknown> }).workflow;
+      setGlobalPromoTransferWorkflow(wf && typeof wf === 'object' ? wf : null);
+    } else {
+      setGlobalPromoTransferWorkflow(null);
+    }
     setLoading(false);
   }, [id]);
 
@@ -114,8 +131,12 @@ export default function DivisionWorkflowsPage() {
 
   useEffect(() => {
     const raw = rawByModule[tab];
+    if (tab === 'promotions_transfers' && raw == null && globalPromoTransferWorkflow) {
+      setDraft(toWorkflowData(globalPromoTransferWorkflow));
+      return;
+    }
     setDraft(toWorkflowData(raw === null ? undefined : raw || undefined));
-  }, [tab, rawByModule]);
+  }, [tab, rawByModule, globalPromoTransferWorkflow]);
 
   const persist = async (workflows: Partial<Record<DivisionWorkflowModuleKey, Record<string, unknown> | null>>) => {
     setSaving(true);
@@ -221,7 +242,16 @@ export default function DivisionWorkflowsPage() {
             </p>
           </div>
 
-          <WorkflowManager workflow={draft} onChange={setDraft} title="Approval chain" description="Matches global workflow shape; saved only for this division." />
+          <WorkflowManager
+            workflow={draft}
+            onChange={setDraft}
+            title="Approval chain"
+            description={
+              tab === 'promotions_transfers'
+                ? 'Same fields as global Promotions & transfers settings. When you have no division override, the draft shows the current global workflow; save to store a custom chain for this division only.'
+                : 'Matches global workflow shape; saved only for this division.'
+            }
+          />
 
           <div className="mt-8 flex flex-wrap gap-3">
             <button
