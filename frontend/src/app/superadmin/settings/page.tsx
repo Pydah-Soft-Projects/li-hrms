@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useSearchParams, usePathname, useRouter } from 'next/navigation';
 import {
   Settings,
   Users,
@@ -21,7 +22,8 @@ import {
   Globe,
   Menu,
   X,
-  LogOut
+  LogOut,
+  Award
 } from 'lucide-react';
 
 import ShiftSettings from '@/components/settings/ShiftSettings';
@@ -38,6 +40,7 @@ import FeatureControlSettings from '@/components/settings/FeatureControlSettings
 import GeneralSettings from '@/components/settings/GeneralSettings';
 import AttendanceDeductionsSettings from '@/components/settings/AttendanceDeductionsSettings';
 import ResignationSettings from '@/components/settings/ResignationSettings';
+import PromotionTransferSettings from '@/components/settings/PromotionTransferSettings';
 
 type TabType =
   | 'general'
@@ -47,6 +50,7 @@ type TabType =
   | 'od'
   | 'ccl'
   | 'resignation'
+  | 'promotions_transfers'
   | 'shift'
   | 'attendance'
   | 'attendance_deductions'
@@ -58,10 +62,52 @@ type TabType =
   | 'communications'
   | 'feature_control';
 
+const VALID_TABS: TabType[] = [
+  'general',
+  'employee',
+  'leave',
+  'leave_policy',
+  'od',
+  'ccl',
+  'resignation',
+  'promotions_transfers',
+  'shift',
+  'attendance',
+  'attendance_deductions',
+  'payroll',
+  'loan',
+  'salary_advance',
+  'ot',
+  'permissions',
+  'communications',
+  'feature_control',
+];
+
 const SettingsPage = () => {
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabType>('general');
   const [searchQuery, setSearchQuery] = useState('');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  useEffect(() => {
+    const raw = searchParams.get('tab');
+    const t = raw === 'promotions-transfers' ? 'promotions_transfers' : raw;
+    if (t && VALID_TABS.includes(t as TabType)) {
+      setActiveTab(t as TabType);
+    }
+  }, [searchParams]);
+
+  const selectTab = (id: TabType) => {
+    setActiveTab(id);
+    setIsMobileMenuOpen(false);
+    if (id === 'general') {
+      router.replace(pathname, { scroll: false });
+    } else {
+      router.replace(`${pathname}?tab=${id}`, { scroll: false });
+    }
+  };
 
   const menuItems = [
     { id: 'general', label: 'General Settings', icon: Globe, color: 'text-blue-500', group: 'Application' },
@@ -74,6 +120,7 @@ const SettingsPage = () => {
     { id: 'od', label: 'On-Duty (OD)', icon: Briefcase, color: 'text-teal-500', group: 'Human Resources' },
     { id: 'ccl', label: 'Comp. Casual Leave (CCL)', icon: Zap, color: 'text-amber-500', group: 'Human Resources' },
     { id: 'resignation', label: 'Resignation Policy', icon: LogOut, color: 'text-orange-500', group: 'Human Resources' },
+    { id: 'promotions_transfers', label: 'Promotions & Transfers', icon: Award, color: 'text-violet-500', group: 'Human Resources' },
 
     { id: 'shift', label: 'Shift Schedules', icon: Clock, color: 'text-amber-500', group: 'Operations' },
     { id: 'attendance', label: 'Attendance Sync', icon: Zap, color: 'text-yellow-500', group: 'Operations' },
@@ -106,6 +153,7 @@ const SettingsPage = () => {
       case 'od': return <LeaveSettings type="od" />;
       case 'ccl': return <LeaveSettings type="ccl" />;
       case 'resignation': return <ResignationSettings />;
+      case 'promotions_transfers': return <PromotionTransferSettings />;
       case 'shift': return <ShiftSettings />;
       case 'attendance': return <AttendanceSettings />;
       case 'attendance_deductions': return <AttendanceDeductionsSettings />;
@@ -178,8 +226,7 @@ const SettingsPage = () => {
                 <button
                   key={item.id}
                   onClick={() => {
-                    setActiveTab(item.id);
-                    setIsMobileMenuOpen(false); // Close menu on mobile after selection
+                    selectTab(item.id);
                   }}
                   className={`group flex w-full items-center justify-between rounded-xl px-3 sm:px-4 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold transition-all ${activeTab === item.id
                     ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-400'

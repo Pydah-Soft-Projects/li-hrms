@@ -24,6 +24,8 @@ const divisionWorkflowSettingsSchema = new mongoose.Schema(
       salary_advance: { type: mongoose.Schema.Types.Mixed, default: undefined },
       permission: { type: mongoose.Schema.Types.Mixed, default: undefined },
       ot: { type: mongoose.Schema.Types.Mixed, default: undefined },
+      /** Same shape as `PromotionTransferSettings.workflow` (global HR settings). */
+      promotions_transfers: { type: mongoose.Schema.Types.Mixed, default: undefined },
     },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,

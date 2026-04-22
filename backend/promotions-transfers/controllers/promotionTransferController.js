@@ -1,13 +1,12 @@
 const mongoose = require('mongoose');
 const PromotionTransferRequest = require('../model/PromotionTransferRequest');
-const PromotionTransferSettings = require('../model/PromotionTransferSettings');
 const Employee = require('../../employees/model/Employee');
 const EmployeeHistory = require('../../employees/model/EmployeeHistory');
 const Division = require('../../departments/model/Division');
 const Department = require('../../departments/model/Department');
 const Designation = require('../../departments/model/Designation');
-const dateCycleService = require('../../leaves/services/dateCycleService');
-const PayrollBatch = require('../../payroll/model/PayrollBatch');
+const { createISTDate, getPayrollDateRange, formatPayrollPeriodRangeEnIn } = require('../../shared/utils/dateUtils');
+const { getPromotionPayrollContext, toLabel: ptToLabel, addMonths: ptAddMonths } = require('../services/promotionPayrollCycleContextService');
 const { createDirectArrearForApprovedPromotion } = require('../services/promotionArrearService');
 const { notifyPromotionTransferCompleted } = require('../services/promotionTransferNotificationService');
 
@@ -16,63 +15,18 @@ const {
   getEmployeeIdsInScope,
   checkJurisdiction,
 } = require('../../shared/middleware/dataScopeMiddleware');
+const { resolvePromotionTransferWorkflowSettings } = require('../../departments/services/divisionWorkflowResolver');
+const { buildApprovalChain, chainStepLabel } = require('../utils/promotionWorkflowUtils');
 
-function buildApprovalChain(employee, settings) {
-  const workflowEnabled = settings?.workflow?.isEnabled !== false;
-  const reportingManagers = employee.dynamicFields?.reporting_to || employee.dynamicFields?.reporting_to_ || [];
-  const hasReportingManager = Array.isArray(reportingManagers) && reportingManagers.length > 0;
-
-  const approvalSteps = [];
-  if (hasReportingManager) {
-    approvalSteps.push({
-      stepOrder: 1,
-      role: 'reporting_manager',
-      label: 'Reporting Manager Approval',
-      status: 'pending',
-      isCurrent: true,
-    });
-  } else {
-    approvalSteps.push({
-      stepOrder: 1,
-      role: 'hod',
-      label: 'HOD Approval',
-      status: 'pending',
-      isCurrent: true,
-    });
+/** Normalize stored chain rows so API always returns a clear approver-type label (HOD, manager, etc.). */
+function hydrateApprovalChainLabels(doc) {
+  const chain = doc?.workflow?.approvalChain;
+  if (!Array.isArray(chain) || chain.length === 0) return;
+  for (const step of chain) {
+    const role = step?.role;
+    if (!role) continue;
+    step.label = chainStepLabel(String(role), step.label);
   }
-  if (workflowEnabled && settings?.workflow?.steps?.length) {
-    settings.workflow.steps.forEach((step) => {
-      const role = (step.approverRole || '').toLowerCase();
-      if (role !== 'hod' && role !== 'reporting_manager') {
-        approvalSteps.push({
-          stepOrder: approvalSteps.length + 1,
-          role: step.approverRole,
-          label: step.stepName || `${(step.approverRole || '').toUpperCase()} Approval`,
-          status: 'pending',
-          isCurrent: false,
-        });
-      }
-    });
-  }
-  if (approvalSteps.length === 0) {
-    approvalSteps.push({
-      stepOrder: 1,
-      role: 'hr',
-      label: 'HR Approval',
-      status: 'pending',
-      isCurrent: true,
-    });
-  }
-
-  const firstRole = approvalSteps[0]?.role || 'hr';
-  const finalAuthority = settings?.workflow?.finalAuthority?.role || 'hr';
-
-  return {
-    approvalSteps,
-    firstRole,
-    finalAuthority,
-    reportingManagerIds: hasReportingManager ? reportingManagers.map((m) => (m._id || m).toString()) : [],
-  };
 }
 
 async function resolveTargetEmployee(req) {
@@ -135,53 +89,59 @@ exports.getPayrollMonths = async (req, res) => {
       futureCount = Math.min(84, Math.max(0, Number.isFinite(futureCount) ? futureCount : 24));
     }
 
-    const toLabel = (year, month) => `${year}-${String(month).padStart(2, '0')}`;
-    const addMonths = (year, month, offset) => {
-      const d = new Date(Date.UTC(year, month - 1 + offset, 1));
-      return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1 };
-    };
-    const hasBatch = async (year, month) => {
-      const exists = await PayrollBatch.exists({ year, monthNumber: month });
-      return Boolean(exists);
-    };
+    const toLabel = (year, month) => ptToLabel(year, month);
+    const addMonths = (year, month, offset) => ptAddMonths(year, month, offset);
 
-    const currentCycle = await dateCycleService.getPayrollCycleForDate(new Date());
-    let anchorYear = currentCycle.year;
-    let anchorMonth = currentCycle.month;
+    const ctx = await getPromotionPayrollContext();
+    /** Centre the list on the pay run that *contains today* (settings-based range), not the oldest incomplete batch. */
+    const anchorYear = ctx.currentCycle.year;
+    const anchorMonth = ctx.currentCycle.month;
+    const containingKey = ctx.containingKey;
 
-    const currentHasBatch = await hasBatch(currentCycle.year, currentCycle.month);
-    if (!currentHasBatch) {
-      // If current month batch is not available, use the latest previous missing month as "ongoing".
-      const maxLookback = Math.max(24, pastCount + 12);
-      for (let i = 1; i <= maxLookback; i += 1) {
-        const probe = addMonths(currentCycle.year, currentCycle.month, -i);
-        // eslint-disable-next-line no-await-in-loop
-        const exists = await hasBatch(probe.year, probe.month);
-        if (!exists) {
-          anchorYear = probe.year;
-          anchorMonth = probe.month;
-          break;
-        }
-      }
-    }
+    // eslint-disable-next-line no-await-in-loop
+    const containingPr = await getPayrollDateRange(ctx.currentCycle.year, ctx.currentCycle.month);
+    const containingRangeDisplay = formatPayrollPeriodRangeEnIn(
+      containingPr.startDate,
+      containingPr.endDate
+    );
 
     const cycles = [];
     for (let i = -pastCount; i <= futureCount; i += 1) {
       const target = addMonths(anchorYear, anchorMonth, i);
       // eslint-disable-next-line no-await-in-loop
-      const cycle = await dateCycleService.getPayrollCycleForMonth(target.year, target.month);
-      const label = toLabel(cycle.year, cycle.month);
+      const pr = await getPayrollDateRange(target.year, target.month);
+      const label = toLabel(target.year, target.month);
+      const periodRangeDisplay = formatPayrollPeriodRangeEnIn(pr.startDate, pr.endDate);
       cycles.push({
-        payrollYear: cycle.year,
-        payrollMonth: cycle.month,
-        periodStart: cycle.startDate,
-        periodEnd: cycle.endDate,
+        payrollYear: target.year,
+        payrollMonth: target.month,
+        periodStart: createISTDate(pr.startDate),
+        periodEnd: createISTDate(pr.endDate, '23:59'),
         label,
-        isOngoing: label === toLabel(anchorYear, anchorMonth),
+        periodRangeDisplay,
+        rangeStartDate: pr.startDate,
+        rangeEndDate: pr.endDate,
+        isOngoing: label === containingKey,
       });
     }
 
-    res.status(200).json({ success: true, data: cycles });
+    res.status(200).json({
+      success: true,
+      data: cycles,
+      promotionPayroll: {
+        /** Oldest payroll month with a non-complete batch (backlog); may differ from containingKey. */
+        ongoingLabel: ctx.ongoingLabel,
+        incompleteOngoingLabel: ctx.ongoingLabel,
+        arrearProrationEndLabel: ctx.arrearProrationEndLabel,
+        currentCycleLabel: toLabel(ctx.currentCycle.year, ctx.currentCycle.month),
+        containingKey,
+        containingRangeDisplay,
+        containingRangeStart: containingPr.startDate,
+        containingRangeEnd: containingPr.endDate,
+        settingsStartDay: containingPr.startDay,
+        settingsEndDay: containingPr.endDay,
+      },
+    });
   } catch (error) {
     console.error('getPayrollMonths:', error);
     res.status(500).json({ success: false, error: error.message || 'Failed to list payroll months' });
@@ -204,12 +164,12 @@ exports.createRequest = async (req, res) => {
     }
     const { employee } = resolved;
 
-    let settings = await PromotionTransferSettings.getActiveSettings();
-    if (!settings) {
-      settings = { workflow: { isEnabled: true, steps: [], finalAuthority: { role: 'hr' } } };
-    }
-
-    const { approvalSteps, firstRole, finalAuthority, reportingManagerIds } = buildApprovalChain(employee, settings);
+    const divisionId = employee.division_id?._id || employee.division_id || null;
+    const workflowSettings = await resolvePromotionTransferWorkflowSettings(divisionId);
+    const { approvalSteps, firstRole, finalAuthority, reportingManagerIds } = buildApprovalChain(
+      employee,
+      workflowSettings
+    );
 
     const docPayload = {
       requestType,
@@ -449,6 +409,7 @@ exports.createRequest = async (req, res) => {
       .populate('toDesignationId', 'name')
       .lean();
 
+    hydrateApprovalChainLabels(populated);
     res.status(201).json({
       success: true,
       message: 'Request submitted for approval',
@@ -502,6 +463,7 @@ exports.getPendingApprovals = async (req, res) => {
       .sort({ createdAt: -1 })
       .lean();
 
+    list.forEach((row) => hydrateApprovalChainLabels(row));
     res.status(200).json({ success: true, data: list });
   } catch (error) {
     console.error('getPendingApprovals:', error);
@@ -559,6 +521,7 @@ exports.getRequests = async (req, res) => {
       .sort({ createdAt: -1 })
       .lean();
 
+    list.forEach((row) => hydrateApprovalChainLabels(row));
     res.status(200).json({ success: true, data: list });
   } catch (error) {
     console.error('getRequests:', error);
@@ -604,6 +567,7 @@ exports.getRequestById = async (req, res) => {
       }
     }
 
+    hydrateApprovalChainLabels(doc);
     res.status(200).json({ success: true, data: doc });
   } catch (error) {
     console.error('getRequestById:', error);
@@ -783,15 +747,16 @@ exports.approveOrReject = async (req, res) => {
     if (!doc) {
       return res.status(404).json({ success: false, message: 'Request not found' });
     }
+    hydrateApprovalChainLabels(doc);
     if (doc.status !== 'pending') {
       return res.status(400).json({ success: false, message: 'Request is no longer pending' });
     }
 
-    let settings = await PromotionTransferSettings.getActiveSettings();
-    if (!settings) {
-      settings = { workflow: { allowHigherAuthorityToApproveLowerLevels: false } };
-    }
-    const allowHigher = settings?.workflow?.allowHigherAuthorityToApproveLowerLevels === true;
+    const emp = doc.employeeId;
+    const divisionId =
+      emp && typeof emp === 'object' ? emp.division_id?._id || emp.division_id || null : null;
+    const workflowEffective = await resolvePromotionTransferWorkflowSettings(divisionId);
+    const allowHigher = workflowEffective?.workflow?.allowHigherAuthorityToApproveLowerLevels === true;
 
     const chain = doc.workflow?.approvalChain || [];
     const activeIndex = chain.findIndex((s) => s.status === 'pending');

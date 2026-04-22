@@ -1,4 +1,5 @@
 const PromotionTransferSettings = require('../model/PromotionTransferSettings');
+const { sanitizePromotionWorkflowConfigSteps, toPlainWorkflow } = require('../utils/promotionWorkflowUtils');
 
 const defaultWorkflow = () => ({
   isEnabled: true,
@@ -19,12 +20,24 @@ exports.getSettings = async (req, res) => {
       };
     } else {
       const plain = settings.toObject ? settings.toObject() : { ...settings };
+      const wf = plain.workflow || defaultWorkflow();
+      const steps = wf.isEnabled === false ? [] : sanitizePromotionWorkflowConfigSteps(wf.steps || []);
       data = {
-        workflow: plain.workflow || defaultWorkflow(),
+        workflow: {
+          ...wf,
+          steps,
+          finalAuthority: wf.finalAuthority || { role: 'hr', anyHRCanApprove: true },
+        },
         isActive: plain.isActive !== false,
       };
       if (!data.workflow.finalAuthority) {
         data.workflow.finalAuthority = { role: 'hr', anyHRCanApprove: true };
+      }
+      if (steps.length) {
+        data.workflow.finalAuthority = {
+          ...data.workflow.finalAuthority,
+          role: steps[steps.length - 1].approverRole,
+        };
       }
     }
     res.status(200).json({ success: true, data });
@@ -47,8 +60,26 @@ exports.saveSettings = async (req, res) => {
     if (workflow) {
       settings.workflow = settings.workflow || {};
       if (workflow.isEnabled !== undefined) settings.workflow.isEnabled = !!workflow.isEnabled;
-      if (workflow.steps) settings.workflow.steps = workflow.steps;
-      if (workflow.finalAuthority) settings.workflow.finalAuthority = workflow.finalAuthority;
+      const plainWf = toPlainWorkflow(settings);
+      if (settings.workflow.isEnabled === false) {
+        settings.workflow.steps = [];
+        settings.workflow.finalAuthority = {
+          ...(plainWf.finalAuthority || defaultWorkflow().finalAuthority),
+          role: 'hr',
+        };
+      } else if (Array.isArray(workflow.steps)) {
+        const steps = sanitizePromotionWorkflowConfigSteps(workflow.steps);
+        settings.workflow.steps = steps;
+        settings.workflow.finalAuthority = {
+          ...(workflow.finalAuthority || plainWf.finalAuthority || defaultWorkflow().finalAuthority),
+        };
+        if (steps.length) {
+          settings.workflow.finalAuthority = {
+            ...settings.workflow.finalAuthority,
+            role: steps[steps.length - 1].approverRole,
+          };
+        }
+      }
       if (workflow.allowHigherAuthorityToApproveLowerLevels !== undefined) {
         settings.workflow.allowHigherAuthorityToApproveLowerLevels =
           !!workflow.allowHigherAuthorityToApproveLowerLevels;

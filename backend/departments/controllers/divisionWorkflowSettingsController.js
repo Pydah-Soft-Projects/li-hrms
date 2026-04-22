@@ -51,7 +51,7 @@ exports.updateDivisionWorkflowSettings = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Request body must include a workflows object' });
     }
 
-    const allowed = ['leave', 'od', 'ccl', 'loan', 'salary_advance', 'permission', 'ot'];
+    const allowed = ['leave', 'od', 'ccl', 'loan', 'salary_advance', 'permission', 'ot', 'promotions_transfers'];
     const $set = { updatedBy: req.user?._id };
     const $unset = {};
 
