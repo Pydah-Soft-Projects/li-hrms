@@ -861,7 +861,13 @@ export default function LeavesPage() {
   } | null>(null);
   const [checkingApprovedRecords, setCheckingApprovedRecords] = useState(false);
 
-  const [holidayInfo, setHolidayInfo] = useState<{ isHolidayOrWeekOff: boolean, message: string } | null>(null);
+  const [holidayInfo, setHolidayInfo] = useState<{
+    isHolidayOrWeekOff: boolean;
+    message: string;
+    hasPunches?: boolean;
+    suggestedOdTypeExtended?: 'half_day' | 'full_day' | null;
+    totalWorkingHours?: number | null;
+  } | null>(null);
   const [checkingHoliday, setCheckingHoliday] = useState(false);
 
   const [breakdownModal, setBreakdownModal] = useState<{
@@ -1976,8 +1982,37 @@ export default function LeavesPage() {
         if (response.success) {
           setHolidayInfo({
             isHolidayOrWeekOff: response.isHolidayOrWeekOff || false,
-            message: response.message || 'Holiday/Week-off detected'
+            message: response.message || 'Holiday/Week-off detected',
+            hasPunches: response.hasPunches,
+            suggestedOdTypeExtended: response.suggestedOdTypeExtended,
+            totalWorkingHours: response.totalWorkingHours,
           });
+          const d = formData.fromDate;
+          if (
+            response.isHolidayOrWeekOff &&
+            response.hasPunches &&
+            (response.suggestedOdTypeExtended === 'half_day' || response.suggestedOdTypeExtended === 'full_day')
+          ) {
+            setFormData((prev) => {
+              if (applyType !== 'od' || prev.fromDate !== d) return prev;
+              if (response.suggestedOdTypeExtended === 'half_day') {
+                return {
+                  ...prev,
+                  odType_extended: 'half_day',
+                  isHalfDay: true,
+                  halfDayType: (prev.halfDayType as any) || 'first_half',
+                  toDate: prev.fromDate,
+                };
+              }
+              return {
+                ...prev,
+                odType_extended: 'full_day',
+                isHalfDay: false,
+                halfDayType: null,
+                toDate: prev.fromDate,
+              };
+            });
+          }
         } else {
           setHolidayInfo(null);
         }
@@ -4871,6 +4906,17 @@ export default function LeavesPage() {
                         <p className="text-xs text-indigo-700/80 dark:text-indigo-300/80 leading-relaxed font-medium mt-1">
                           {holidayInfo.message}. Selected day is holiday so this OD contributes to your compensatory off not on the working day.
                         </p>
+                        {holidayInfo.hasPunches && holidayInfo.suggestedOdTypeExtended && (
+                          <p className="text-xs text-emerald-800/90 dark:text-emerald-300/90 font-semibold mt-2">
+                            Biometric / attendance: ~{holidayInfo.totalWorkingHours != null ? `${Number(holidayInfo.totalWorkingHours).toFixed(1)}h worked` : 'punches found'}.
+                            Suggested: {holidayInfo.suggestedOdTypeExtended === 'full_day' ? 'Full day' : 'Half day'} (you can change type below).
+                          </p>
+                        )}
+                        {holidayInfo.isHolidayOrWeekOff && holidayInfo.hasPunches === false && (
+                          <p className="text-xs text-slate-600 dark:text-slate-400 font-medium mt-2">
+                            No qualifying punches for this day yet — choose full day, half day, or hours as usual.
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>

@@ -1,3 +1,8 @@
+/**
+ * Auto-OD: scan AttendanceDaily and create/update OD rows for holiday/week-off work.
+ * Entry from AttendanceDaily pre-save is PAUSED (see attendance/model/AttendanceDaily.js);
+ * this module is kept for re-enabling the hook or batch scans — do not delete.
+ */
 const mongoose = require('mongoose');
 const OD = require('../model/OD');
 const AttendanceDaily = require('../../attendance/model/AttendanceDaily');

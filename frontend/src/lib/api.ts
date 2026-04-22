@@ -382,6 +382,11 @@ export interface ApiResponse<T> {
   generatedPassword?: string;
   summaries?: any[];
   isHolidayOrWeekOff?: boolean;
+  /** GET /leaves/od/check-holiday (flat) when spread on success */
+  hasPunches?: boolean;
+  suggestedOdTypeExtended?: 'half_day' | 'full_day' | null;
+  totalWorkingHours?: number | null;
+  punchContextDetail?: string | null;
   unreadCount?: number;
   updated?: number;
   /** Flat JSON from some endpoints (e.g. push helpers), not only nested under `data`. */
@@ -402,6 +407,18 @@ export interface InAppNotification {
 
 export interface NotificationUnreadCountResponse {
   unreadCount: number;
+}
+
+/** GET /leaves/od/check-holiday (flat body on success) */
+export interface ODHolidayCheckResponse {
+  success: boolean;
+  isHolidayOrWeekOff: boolean;
+  message?: string;
+  date?: string;
+  hasPunches?: boolean;
+  suggestedOdTypeExtended?: 'half_day' | 'full_day' | null;
+  totalWorkingHours?: number | null;
+  punchContextDetail?: string | null;
 }
 
 /** Row in GET /dashboard/stats `leaveBalancesByType` (employee register view). */
@@ -2743,13 +2760,13 @@ export const api = {
     });
   },
   
-  // Check if date is holiday for an employee (OD specific)
+  // Check if date is holiday for an employee (OD specific); may include punch-based half/full for HOL/WO
   checkODHoliday: async (employeeId?: string, empNo?: string, date?: string) => {
     const q = new URLSearchParams();
     if (employeeId) q.append('employeeId', employeeId);
     if (empNo) q.append('empNo', empNo);
     if (date) q.append('date', date);
-    return apiRequest<any>(`/leaves/od/check-holiday?${q.toString()}`, { method: 'GET' });
+    return apiRequest<ODHolidayCheckResponse>(`/leaves/od/check-holiday?${q.toString()}`, { method: 'GET' });
   },
 
   // Cancel OD

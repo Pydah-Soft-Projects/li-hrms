@@ -3,6 +3,7 @@ const router = express.Router();
 const multer = require('multer');
 const { protect, authorize } = require('../authentication/middleware/authMiddleware'); // Corrected path
 const { bulkUpdateSecondSalary, downloadTemplate, bulkUpdateEmployee, downloadEmployeeUpdateTemplate } = require('./controllers/salaryUpdateController');
+const requireSecondSalaryEnabled = require('../settings/middleware/requireSecondSalaryEnabled');
 
 // Configure multer for memory storage
 const upload = multer({
@@ -34,6 +35,7 @@ router.post(
     '/second-salary/upload',
     protect,
     authorize('super_admin'),
+    requireSecondSalaryEnabled,
     upload.single('file'),
     bulkUpdateSecondSalary
 );
@@ -43,6 +45,7 @@ router.get(
     '/second-salary/template',
     protect,
     authorize('super_admin'),
+    requireSecondSalaryEnabled,
     downloadTemplate
 );
 

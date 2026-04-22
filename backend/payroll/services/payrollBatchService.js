@@ -186,6 +186,9 @@ class PayrollBatchService {
      */
     static async syncSecondSalaryBatchStatusForRegularBatch(regularBatch, newStatus, userId, reason = '') {
         try {
+            const { isSecondSalaryGloballyEnabled } = require('../../settings/secondSalaryFeatureGate');
+            if (!(await isSecondSalaryGloballyEnabled())) return;
+
             const SecondSalaryBatch = require('../model/SecondSalaryBatch');
             const secondSalaryService = require('./secondSalaryService');
             const dept = regularBatch.department;

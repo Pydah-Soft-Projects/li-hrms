@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
+import { useSecondSalaryFeatureEnabled } from '@/hooks/useSecondSalaryFeatureEnabled';
 import {
     ArrowLeft,
     Banknote,
@@ -26,6 +27,13 @@ export default function SecondSalaryBatchDetailPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+
+    const { secondSalaryEnabled, secondSalarySettingReady } = useSecondSalaryFeatureEnabled();
+
+    useEffect(() => {
+        if (!secondSalarySettingReady || secondSalaryEnabled) return;
+        router.replace('/superadmin/payments');
+    }, [secondSalarySettingReady, secondSalaryEnabled, router]);
 
     useEffect(() => {
         fetchBatchDetails();
@@ -69,6 +77,14 @@ export default function SecondSalaryBatchDetailPage() {
             maximumFractionDigits: 0
         }).format(amount);
     };
+
+    if (!secondSalarySettingReady || !secondSalaryEnabled) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-[400px]">
+                <Loader2 className="w-10 h-10 text-indigo-500 animate-spin" />
+            </div>
+        );
+    }
 
     if (isLoading) {
         return (

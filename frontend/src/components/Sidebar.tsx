@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useSidebar } from '@/contexts/SidebarContext';
 import { auth } from '@/lib/auth';
+import { api } from '@/lib/api';
 import { useState, useEffect } from 'react';
 import { isModuleEnabled } from '@/config/moduleCategories';
 import { User } from '@/lib/auth';
@@ -53,6 +54,8 @@ export type NavItem = {
   icon: IconComponent;
   category: string;
   moduleCode: string;
+  /** When set, item is hidden if the corresponding global setting is off */
+  feature?: 'second_salary';
 };
 
 const navItems: NavItem[] = [
@@ -81,13 +84,13 @@ const navItems: NavItem[] = [
   { href: '/superadmin/live-attendance', label: 'Live Attendance', icon: Clock, category: 'Administration', moduleCode: 'LIVE_ATTENDANCE' },
   { href: '/superadmin/reports', label: 'Reports', icon: BarChart3, category: 'Administration', moduleCode: 'REPORTS' },
   { href: '/superadmin/payments', label: 'Payments', icon: CreditCard, category: 'Finance & Payroll', moduleCode: 'PAYMENTS' },
-  { href: '/superadmin/payments/second-salary', label: '2nd Salary Payments', icon: Banknote, category: 'Finance & Payroll', moduleCode: 'PAYMENTS' },
+  { href: '/superadmin/payments/second-salary', label: '2nd Salary Payments', icon: Banknote, category: 'Finance & Payroll', moduleCode: 'PAYMENTS', feature: 'second_salary' as const },
   { href: '/superadmin/pay-register', label: 'Pay Register', icon: Table2, category: 'Finance & Payroll', moduleCode: 'PAY_REGISTER' },
   { href: '/superadmin/payroll-config', label: 'Payroll Configuration', icon: Settings, category: 'Finance & Payroll', moduleCode: 'PAYROLL_CONFIG' },
   { href: '/superadmin/statutory-deductions', label: 'Statutory Deductions', icon: Shield, category: 'Finance & Payroll', moduleCode: 'STATUTORY_DEDUCTIONS' },
   { href: '/superadmin/payslips', label: 'Payslips', icon: Receipt, category: 'Finance & Payroll', moduleCode: 'PAYSLIPS' },
   { href: '/superadmin/paysheet', label: 'Paysheet', icon: Table2, category: 'Finance & Payroll', moduleCode: 'PAYSLIPS' },
-  { href: '/superadmin/payslips/second-salary', label: '2nd Salary Payslips', icon: Receipt, category: 'Finance & Payroll', moduleCode: 'PAYSLIPS' },
+  { href: '/superadmin/payslips/second-salary', label: '2nd Salary Payslips', icon: Receipt, category: 'Finance & Payroll', moduleCode: 'PAYSLIPS', feature: 'second_salary' as const },
   { href: '/superadmin/arrears', label: 'Arrears', icon: Banknote, category: 'Finance & Payroll', moduleCode: 'ARREARS' },
   { href: '/superadmin/manual-deductions', label: 'Manual Deductions', icon: Banknote, category: 'Finance & Payroll', moduleCode: 'MANUAL_DEDUCTIONS' },
   { href: '/superadmin/allowances-deductions', label: 'Allowances & Deductions', icon: Wallet, category: 'Finance & Payroll', moduleCode: 'ALLOWANCES_DEDUCTIONS' },
@@ -101,6 +104,7 @@ export default function Sidebar() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [secondSalaryNavEnabled, setSecondSalaryNavEnabled] = useState(true);
 
   const [mounted, setMounted] = useState(false);
 
@@ -112,12 +116,34 @@ export default function Sidebar() {
     }
   }, []);
 
+  useEffect(() => {
+    if (user?.role !== 'super_admin' && user?.role !== 'sub_admin') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.getSetting('enable_second_salary');
+        if (cancelled) return;
+        setSecondSalaryNavEnabled(res?.success && res?.data ? res.data.value !== false : true);
+      } catch {
+        if (!cancelled) setSecondSalaryNavEnabled(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.role]);
+
   if (!mounted) return null;
 
   // Filter items based on user permissions
   const filteredNavItems = (user?.role === 'super_admin' || user?.role === 'sub_admin')
     ? navItems
     : navItems.filter(item => isModuleEnabled(item.moduleCode, user?.featureControl || null));
+
+  const sidebarNavItems =
+    (user?.role === 'super_admin' || user?.role === 'sub_admin') && !secondSalaryNavEnabled
+      ? filteredNavItems.filter((item) => item.feature !== 'second_salary')
+      : filteredNavItems;
 
   const handleLogout = async () => {
     if (!(await auth.logoutWithConfirmation())) return;
@@ -203,8 +229,8 @@ export default function Sidebar() {
 
           {/* Navigation */}
           <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-6 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 dark:[&::-webkit-scrollbar-thumb]:bg-slate-600">
-            {Array.from(new Set(filteredNavItems.map(i => i.category))).map(category => {
-              const categoryItems = filteredNavItems.filter(i => i.category === category);
+            {Array.from(new Set(sidebarNavItems.map(i => i.category))).map(category => {
+              const categoryItems = sidebarNavItems.filter(i => i.category === category);
 
               if (categoryItems.length === 0) return null;
 

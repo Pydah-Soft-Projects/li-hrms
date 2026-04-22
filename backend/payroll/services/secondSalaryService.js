@@ -5,6 +5,7 @@ const Department = require('../../departments/model/Department');
 const mongoose = require('mongoose');
 const { calculateSecondSalary } = require('./secondSalaryCalculationService');
 const SecondSalaryBatchService = require('./secondSalaryBatchService');
+const { isSecondSalaryGloballyEnabled } = require('../../settings/secondSalaryFeatureGate');
 /**
  * Service to handle 2nd Salary operations
  */
@@ -15,6 +16,9 @@ class SecondSalaryService {
      */
     async runSecondSalaryPayroll({ departmentId, divisionId, month, userId, scopeFilter = {} }) {
         try {
+            if (!(await isSecondSalaryGloballyEnabled())) {
+                throw new Error('Second salary is disabled in Payroll settings.');
+            }
             const { payrollQueue } = require('../../shared/jobs/queueManager');
 
             // 1. Fetch Department and Division (if provided)
