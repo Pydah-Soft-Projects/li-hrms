@@ -24,12 +24,26 @@ describe('odHolidayApplyContextService.getPunchBasedOdSuggestionForRecord', () =
     expect(r.punchContextDetail).toBe('insufficient_punches');
   });
 
-  it('returns no punches when no worked segment', () => {
+  it('returns no punches when only absent segments', () => {
     const r = getPunchBasedOdSuggestionForRecord({
       totalWorkingHours: 4,
       shifts: [{ status: 'ABSENT' }],
     });
     expect(r.hasPunches).toBe(false);
+    expect(r.punchContextDetail).toBe('absent_segments_only');
+  });
+
+  it('suggests half_day when one segment is worked and another is absent', () => {
+    const r = getPunchBasedOdSuggestionForRecord({
+      totalWorkingHours: 5,
+      shifts: [
+        { status: 'PRESENT', inTime: new Date('2026-01-15T09:00:00+05:30') },
+        { status: 'ABSENT' },
+      ],
+    });
+    expect(r.hasPunches).toBe(true);
+    expect(r.suggestedOdTypeExtended).toBe('half_day');
+    expect(r.punchContextDetail).toBe('mixed_work_with_absent_segment');
   });
 
   it('suggests half_day when any shift is HALF_DAY', () => {

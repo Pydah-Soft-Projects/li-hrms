@@ -1561,27 +1561,21 @@ async function recalculateOnODApproval(od) {
 
     const fromStr = extractISTComponents(od.fromDate).dateStr;
     const toStr = extractISTComponents(od.toDate).dateStr;
+    const istDaysInRange = getAllDatesInRange(fromStr, toStr);
 
     // Touch AttendanceDaily for hour-based OD (create/ensure daily) and for half-day OD (re-save existing dailies so pre-save runs and applies half-vs-punches logic).
     if (od.odType_extended === 'hours') {
       console.log('[OD-FLOW] recalculateOnODApproval: touching dailies (hour-based)');
-      let d = new Date(fromStr);
-      const toDate = new Date(toStr);
-      while (d <= toDate) {
-        const dateStr = extractISTComponents(d).dateStr;
+      for (const dateStr of istDaysInRange) {
         let daily = await AttendanceDaily.findOne({ employeeNumber: empNo, date: dateStr });
         if (!daily) {
           daily = new AttendanceDaily({ employeeNumber: empNo, date: dateStr, shifts: [] });
         }
         await daily.save();
-        d.setDate(d.getDate() + 1);
       }
     } else if (od.odType_extended === 'half_day' || od.isHalfDay) {
       console.log('[OD-FLOW] recalculateOnODApproval: re-saving dailies for half-day OD (so half-vs-punches is applied)');
-      let d = new Date(fromStr);
-      const toDate = new Date(toStr);
-      while (d <= toDate) {
-        const dateStr = extractISTComponents(d).dateStr;
+      for (const dateStr of istDaysInRange) {
         const daily = await AttendanceDaily.findOne({ employeeNumber: empNo, date: dateStr });
         if (daily) {
           await daily.save();
@@ -1589,7 +1583,6 @@ async function recalculateOnODApproval(od) {
           const newDaily = new AttendanceDaily({ employeeNumber: empNo, date: dateStr, shifts: [] });
           await newDaily.save();
         }
-        d.setDate(d.getDate() + 1);
       }
     }
     // Full-day OD: no daily create/update; contribution is added in monthly summary OD-only logic.
