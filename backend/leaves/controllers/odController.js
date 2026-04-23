@@ -20,6 +20,39 @@ const { resolveLeaveTypeWorkflowSettings } = require('../../departments/services
 const { appendOdTrailPoints } = require('../services/odTrailService');
 const { emitOdTrailUpdate } = require('../../shared/services/socketService');
 const { isHolidayOrWeekOff, getHolidayWeekOffOdApplyContext } = require('../services/odHolidayApplyContextService');
+const { extractISTComponents, createISTDate } = require('../../shared/utils/dateUtils');
+
+/** IST YYYY-MM-DD list inclusive — matches AttendanceDaily.date & PreScheduledShift.date. */
+function listIstYmdInclusive(fromDate, toDate) {
+  const startStr = extractISTComponents(fromDate).dateStr;
+  const endStr = extractISTComponents(toDate).dateStr;
+  const out = [];
+  let cur = createISTDate(startStr);
+  const endMs = createISTDate(endStr).getTime();
+  while (cur.getTime() <= endMs) {
+    out.push(extractISTComponents(cur).dateStr);
+    cur = new Date(cur.getTime() + 86400000);
+  }
+  return out;
+}
+
+/** Holiday / week-off for CO: roster row, or attendance status, or OD flagged CO-eligible on that calendar day (apply-time). */
+async function dayQualifiesForHolidayWeekOffCo(od, attendanceDateYmd) {
+  if (await isHolidayOrWeekOff(od.emp_no, attendanceDateYmd)) return true;
+  const raw = String(od.emp_no || '').trim();
+  const variants = [...new Set([raw.toUpperCase(), raw].filter(Boolean))];
+  const att = await AttendanceDaily.findOne({
+    date: attendanceDateYmd,
+    employeeNumber: variants.length ? { $in: variants } : raw.toUpperCase(),
+  })
+    .select('status')
+    .lean();
+  const st = String(att?.status || '').toUpperCase();
+  if (st === 'HOLIDAY' || st === 'WEEK_OFF') return true;
+  const fromStr = extractISTComponents(od.fromDate).dateStr;
+  if (od.isCOEligible === true && attendanceDateYmd === fromStr) return true;
+  return false;
+}
 
 const formatODDate = (value) => {
   if (!value) return '';
@@ -1005,7 +1038,7 @@ exports.applyOD = async (req, res) => {
     };
 
     // NEW: Check if this OD is on a holiday/week-off for CO eligibility
-    const fromDateStr = from.toISOString().split('T')[0];
+    const fromDateStr = extractISTComponents(from).dateStr;
     const isHolWo = await isHolidayOrWeekOff(employee.emp_no, fromDateStr);
 
     // Create OD application
@@ -1378,21 +1411,9 @@ exports.updateOD = async (req, res) => {
       try {
         console.log('[OD-FLOW] updateOD: OD is approved', { odId: od._id?.toString(), emp_no: od.emp_no, odType_extended: od.odType_extended });
         const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
-        const formatDate = (date) => {
-          const d = new Date(date);
-          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-        };
-        const dateFrom = formatDate(od.fromDate);
-        const dateTo = formatDate(od.toDate);
         const empNoUpper = (od.emp_no != null ? String(od.emp_no).trim() : '').toUpperCase();
         if (empNoUpper) {
-          const datesToUpdate = [];
-          let d = new Date(dateFrom + 'T12:00:00');
-          const end = new Date(dateTo + 'T12:00:00');
-          while (d <= end) {
-            datesToUpdate.push(formatDate(d));
-            d.setDate(d.getDate() + 1);
-          }
+          const datesToUpdate = listIstYmdInclusive(od.fromDate, od.toDate);
           const empNoVariants = [...new Set([empNoUpper, String(od.emp_no)].filter(Boolean))];
           // Only touch AttendanceDaily for hour-based OD. Half-day / full-day contribute only at monthly summary.
           for (const attendanceDate of datesToUpdate) {
@@ -1986,28 +2007,13 @@ exports.processODAction = async (req, res) => {
     if (action === 'approve' && od.status === 'approved') {
       try {
         console.log('[OD-FLOW] processODAction: OD fully approved', { odId: od._id?.toString(), emp_no: od.emp_no, odType_extended: od.odType_extended, fromDate: od.fromDate, toDate: od.toDate });
-        const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
-        const formatDate = (date) => {
-          const d = new Date(date);
-          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-        };
-        const dateFrom = formatDate(od.fromDate);
-        const dateTo = formatDate(od.toDate);
         const empNoRaw = od.emp_no != null ? String(od.emp_no).trim() : '';
         const empNoUpper = empNoRaw.toUpperCase();
         if (!empNoUpper) {
-          console.log('[OD-FLOW] processODAction: skip (no emp_no)');
-          return;
-        }
-
-        const datesToUpdate = [];
-        let d = new Date(dateFrom + 'T12:00:00');
-        const end = new Date(dateTo + 'T12:00:00');
-        while (d <= end) {
-          datesToUpdate.push(formatDate(d));
-          d.setDate(d.getDate() + 1);
-        }
-        console.log('[OD-FLOW] processODAction: datesToUpdate', datesToUpdate, 'hourBased=', od.odType_extended === 'hours');
+          console.warn('[OD-FLOW] processODAction: no emp_no — skip attendance / CO register updates');
+        } else {
+        const datesToUpdate = listIstYmdInclusive(od.fromDate, od.toDate);
+        console.log('[OD-FLOW] processODAction: datesToUpdate (IST)', datesToUpdate, 'hourBased=', od.odType_extended === 'hours');
 
         // Only touch AttendanceDaily for hour-based OD. Half-day and full-day OD contribute only at monthly summary (no daily create/update).
         for (const attendanceDate of datesToUpdate) {
@@ -2054,40 +2060,46 @@ exports.processODAction = async (req, res) => {
           // Half-day / full-day: do not create or update daily; recalc below will add 0.5/1 to monthly summary for OD-only days
         }
 
-        // NEW: Compensatory Off Credit for Holidays/Week-offs
+        // Compensatory Off credit: roster HOL/WO, AttendanceDaily HOLIDAY/WEEK_OFF, or OD.isCOEligible (apply-time) on that IST day
         try {
-          console.log('[OD-FLOW] processODAction: checking for holiday/week-off CO credit');
+          console.log('[OD-FLOW] processODAction: checking for holiday/week-off CO credit', { isCOEligible: od.isCOEligible });
           const emp = await Employee.findById(od.employeeId)
             .populate('department_id', 'name')
             .populate('designation_id', 'name');
-            
+
+          const halfDayOd = !!(od.isHalfDay || od.odType_extended === 'half_day');
+
           for (const attendanceDate of datesToUpdate) {
-            const isHolWo = await isHolidayOrWeekOff(od.emp_no, attendanceDate);
-            if (isHolWo) {
-              const increment = od.isHalfDay ? 0.5 : 1;
-              console.log(`[OD-FLOW] processODAction: crediting ${increment} CO for ${od.emp_no} on holiday/week-off ${attendanceDate}`);
-              
-              if (emp) {
-                await leaveRegisterService.addTransaction({
-                  employeeId: od.employeeId,
-                  empNo: od.emp_no,
-                  employeeName: emp.employee_name || 'N/A',
-                  designation: (emp.designation_id && emp.designation_id.name) || 'N/A',
-                  department: (emp.department_id && emp.department_id.name) || 'N/A',
-                  divisionId: emp.division_id,
-                  departmentId: emp.department_id,
-                  dateOfJoining: emp.doj || new Date(),
-                  employmentStatus: emp.is_active ? 'active' : 'inactive',
-                  leaveType: 'CCL',
-                  transactionType: 'CREDIT',
-                  startDate: new Date(attendanceDate + 'T00:00:00Z'),
-                  endDate: new Date(attendanceDate + 'T00:00:00Z'),
-                  days: increment,
-                  reason: `Compensatory Off credited for OD on holiday/week-off (${attendanceDate})`,
-                  status: 'APPROVED',
-                  autoGenerated: true,
-                });
-              }
+            const qualifies = await dayQualifiesForHolidayWeekOffCo(od, attendanceDate);
+            if (!qualifies) {
+              console.log(`[OD-FLOW] processODAction: skip CO for ${od.emp_no} ${attendanceDate} (not HOL/WO by roster, attendance, or CO flag)`);
+              continue;
+            }
+            const increment = halfDayOd ? 0.5 : 1;
+            console.log(`[OD-FLOW] processODAction: crediting ${increment} CCL for ${od.emp_no} on ${attendanceDate}`);
+
+            if (emp) {
+              await leaveRegisterService.addTransaction({
+                employeeId: od.employeeId,
+                empNo: od.emp_no,
+                employeeName: emp.employee_name || 'N/A',
+                designation: (emp.designation_id && emp.designation_id.name) || 'N/A',
+                department: (emp.department_id && emp.department_id.name) || 'N/A',
+                divisionId: emp.division_id,
+                departmentId: emp.department_id,
+                dateOfJoining: emp.doj || new Date(),
+                employmentStatus: emp.is_active ? 'active' : 'inactive',
+                leaveType: 'CCL',
+                transactionType: 'CREDIT',
+                startDate: createISTDate(attendanceDate),
+                endDate: createISTDate(attendanceDate),
+                days: increment,
+                reason: `Compensatory Off for approved OD on holiday/week-off (${attendanceDate})`,
+                status: 'APPROVED',
+                autoGenerated: true,
+                autoGeneratedType: 'OD_HOLIDAY_WO_CO_CREDIT',
+                applicationId: od._id,
+              });
             }
           }
         } catch (coErr) {
@@ -2105,6 +2117,7 @@ exports.processODAction = async (req, res) => {
           console.log('[OD-FLOW] processODAction: recalc done for all dates');
         } catch (recalcErr) {
           console.error('Error recalculating monthly summary after OD approval:', recalcErr);
+        }
         }
       } catch (error) {
         console.error('Error updating AttendanceDaily on OD approval:', error);
@@ -2281,20 +2294,11 @@ exports.revokeODApproval = async (req, res) => {
     try {
       const { recalculateOnAttendanceUpdate } = require('../../attendance/services/summaryCalculationService');
       const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
-      const formatDate = (date) => {
-        const d = new Date(date);
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      };
-
-      const dateFrom = formatDate(od.fromDate);
-      const dateTo = formatDate(od.toDate);
       const empNoUpper = od.emp_no ? String(od.emp_no).toUpperCase() : '';
 
       if (empNoUpper) {
-        let d = new Date(dateFrom + 'T12:00:00');
-        const end = new Date(dateTo + 'T12:00:00');
-        while (d <= end) {
-          const attendanceDate = formatDate(d);
+        const datesToUpdate = listIstYmdInclusive(od.fromDate, od.toDate);
+        for (const attendanceDate of datesToUpdate) {
           await recalculateOnAttendanceUpdate(empNoUpper, attendanceDate);
           const att = await AttendanceDaily.findOne({
             employeeNumber: empNoUpper,
@@ -2307,7 +2311,6 @@ exports.revokeODApproval = async (req, res) => {
               console.error('[OD revoke] AttendanceDaily refresh failed:', attendanceDate, dailyErr.message);
             }
           }
-          d.setDate(d.getDate() + 1);
         }
       }
     } catch (recalcErr) {

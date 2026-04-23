@@ -8,7 +8,17 @@ const OD = require('../../leaves/model/OD');
 const OT = require('../../overtime/model/OT');
 const Permission = require('../../permissions/model/Permission');
 const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
-const { extractISTComponents } = require('../utils/dateUtils');
+const { extractISTComponents, createISTDate } = require('../utils/dateUtils');
+
+/** IST calendar-day bounds for range queries / overlap (server TZ independent). */
+function getIstDayRangeBounds(fromInput, toInput) {
+  const fromStr = extractISTComponents(fromInput).dateStr;
+  const toStr = extractISTComponents(toInput).dateStr;
+  return {
+    start: createISTDate(fromStr, '00:00'),
+    end: createISTDate(toStr, '23:59'),
+  };
+}
 
 /**
  * Check if a date falls within a date range
@@ -298,11 +308,7 @@ const validateLeaveRequest = async (employeeId, employeeNumber, fromDate, toDate
   const errors = [];
   const warnings = [];
 
-  // Normalize dates for robust comparison
-  const start = new Date(fromDate);
-  start.setUTCHours(0, 0, 0, 0);
-  const end = new Date(toDate);
-  end.setUTCHours(23, 59, 59, 999);
+  const { start, end } = getIstDayRangeBounds(fromDate, toDate);
 
   // Resolve status list: for creation, block both pending AND approved records
   const statusFilter = ['pending', 'reporting_manager_approved', 'hod_approved', 'manager_approved', 'hr_approved', 'principal_approved', 'approved'];
@@ -324,10 +330,7 @@ const validateLeaveRequest = async (employeeId, employeeNumber, fromDate, toDate
 
   // Check each OD for conflicts
   for (const od of ods) {
-    const odStart = new Date(od.fromDate);
-    odStart.setUTCHours(0, 0, 0, 0);
-    const odEnd = new Date(od.toDate);
-    odEnd.setUTCHours(23, 59, 59, 999);
+    const { start: odStart, end: odEnd } = getIstDayRangeBounds(od.fromDate, od.toDate);
 
     // Check if date ranges overlap (already filtered by query, but verifying with normalized times)
     if (start <= odEnd && end >= odStart) {
@@ -390,10 +393,7 @@ const validateLeaveRequest = async (employeeId, employeeNumber, fromDate, toDate
     // Skip if it's the current application being updated
     if (excludeId && String(leave._id) === String(excludeId)) continue;
 
-    const leaveStart = new Date(leave.fromDate);
-    leaveStart.setUTCHours(0, 0, 0, 0);
-    const leaveEnd = new Date(leave.toDate);
-    leaveEnd.setUTCHours(23, 59, 59, 999);
+    const { start: leaveStart, end: leaveEnd } = getIstDayRangeBounds(leave.fromDate, leave.toDate);
 
     // Check if date ranges overlap
     if (start <= leaveEnd && end >= leaveStart) {
@@ -437,11 +437,7 @@ const validateODRequest = async (employeeId, employeeNumber, fromDate, toDate, i
   const errors = [];
   const warnings = [];
 
-  // Normalize dates for robust comparison
-  const start = new Date(fromDate);
-  start.setUTCHours(0, 0, 0, 0);
-  const end = new Date(toDate);
-  end.setUTCHours(23, 59, 59, 999);
+  const { start, end } = getIstDayRangeBounds(fromDate, toDate);
 
   // Resolve status list: for creation, block both pending AND approved records
   const statusFilter = ['pending', 'reporting_manager_approved', 'hod_approved', 'manager_approved', 'hr_approved', 'principal_approved', 'approved'];
@@ -463,10 +459,7 @@ const validateODRequest = async (employeeId, employeeNumber, fromDate, toDate, i
 
   // Check each Leave for conflicts
   for (const leave of leaves) {
-    const leaveStart = new Date(leave.fromDate);
-    leaveStart.setUTCHours(0, 0, 0, 0);
-    const leaveEnd = new Date(leave.toDate);
-    leaveEnd.setUTCHours(23, 59, 59, 999);
+    const { start: leaveStart, end: leaveEnd } = getIstDayRangeBounds(leave.fromDate, leave.toDate);
 
     // Check if date ranges overlap
     if (start <= leaveEnd && end >= leaveStart) {
@@ -529,10 +522,7 @@ const validateODRequest = async (employeeId, employeeNumber, fromDate, toDate, i
     // Skip if it's the current application being updated
     if (excludeId && String(od._id) === String(excludeId)) continue;
 
-    const odStart = new Date(od.fromDate);
-    odStart.setUTCHours(0, 0, 0, 0);
-    const odEnd = new Date(od.toDate);
-    odEnd.setUTCHours(23, 59, 59, 999);
+    const { start: odStart, end: odEnd } = getIstDayRangeBounds(od.fromDate, od.toDate);
 
     // Check if date ranges overlap
     if (start <= odEnd && end >= odStart) {
