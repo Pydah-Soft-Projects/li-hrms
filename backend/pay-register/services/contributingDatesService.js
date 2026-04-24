@@ -5,6 +5,8 @@ const { isEarlyOutCountableSecondHalf } = require('./totalsCalculationService');
 const KEYS = [
   'present',
   'leaves',
+  'paidLeaves',
+  'lopLeaves',
   'ods',
   'partial',
   'weeklyOffs',
@@ -87,6 +89,19 @@ function rebuildContributingDatesFromDailyRecords(dailyRecords) {
     });
   };
 
+  const mergeBucket = (bucket, date, inc, label) => {
+    const add = Math.round(inc * 100) / 100;
+    if (add <= 0 || !date) return;
+    const arr = out[bucket];
+    const ex = arr.find((e) => e.date === date);
+    if (!ex) {
+      arr.push({ date, value: add, label: label || '' });
+    } else {
+      ex.value = Math.round((Number(ex.value) + add) * 100) / 100;
+      if (label) ex.label = label;
+    }
+  };
+
   for (const record of dailyRecords) {
     const date = record.date;
     if (!date || isBlankDayRecord(record)) continue;
@@ -130,24 +145,56 @@ function rebuildContributingDatesFromDailyRecords(dailyRecords) {
     })();
 
     let leaveVal = 0;
+    let paidLeaveVal = 0;
+    let lopLeaveVal = 0;
     let odVal = 0;
     let presentVal = 0;
     let absentVal = 0;
 
+    const isLopNature = (nRaw, ltRaw) => {
+      const n = String(nRaw || '').toLowerCase();
+      const lt = String(ltRaw || '').toLowerCase();
+      return (
+        n === 'lop' ||
+        n === 'without_pay' ||
+        lt.includes('lop') ||
+        lt.includes('loss of pay') ||
+        lt.includes('sandwich')
+      );
+    };
+
     if (!split) {
       const s = record.status || h1 || h2;
-      if (s === 'leave') leaveVal = 1;
-      else if (s === 'od') odVal = 1;
+      if (s === 'leave') {
+        leaveVal = 1;
+        const n = record.leaveNature || record.firstHalf?.leaveNature;
+        const lt = record.leaveType || record.firstHalf?.leaveType;
+        if (isLopNature(n, lt)) lopLeaveVal = 1;
+        else paidLeaveVal = 1;
+      } else if (s === 'od') odVal = 1;
       else if (s === 'present') presentVal = 1;
       else if (s === 'partial') {
         presentVal = 0.5;
         leaveVal = 0.5;
+        const n = record.leaveNature || record.firstHalf?.leaveNature || record.secondHalf?.leaveNature;
+        const lt = record.leaveType || record.firstHalf?.leaveType || record.secondHalf?.leaveType;
+        if (isLopNature(n, lt)) lopLeaveVal = 0.5;
+        else paidLeaveVal = 0.5;
       } else if (s === 'absent') absentVal = 1;
     } else {
-      for (const st of [h1, h2]) {
+      const halves = [
+        { st: h1, half: record.firstHalf },
+        { st: h2, half: record.secondHalf },
+      ];
+      for (const { st, half } of halves) {
         if (!st) continue;
-        if (st === 'leave') leaveVal += 0.5;
-        else if (st === 'od') odVal += 0.5;
+        if (st === 'leave') {
+          leaveVal += 0.5;
+          const n = half?.leaveNature;
+          const lt = half?.leaveType;
+          if (isLopNature(n, lt)) lopLeaveVal += 0.5;
+          else paidLeaveVal += 0.5;
+        } else if (st === 'od') odVal += 0.5;
         else if (st === 'present') presentVal += 0.5;
         else if (st === 'absent') absentVal += 0.5;
       }
@@ -160,6 +207,12 @@ function rebuildContributingDatesFromDailyRecords(dailyRecords) {
         record.secondHalf?.leaveNature ||
         'paid';
       oncePerDate('leaves', date, Math.min(1, leaveVal), `Leave (${nature})`);
+    }
+    if (paidLeaveVal > 0) {
+      mergeBucket('paidLeaves', date, Math.min(1, paidLeaveVal), 'Paid');
+    }
+    if (lopLeaveVal > 0) {
+      mergeBucket('lopLeaves', date, Math.min(1, lopLeaveVal), 'LOP');
     }
     if (odVal > 0) oncePerDate('ods', date, Math.min(1, odVal), 'OD');
     if (presentVal > 0) oncePerDate('present', date, Math.min(1, presentVal), 'P');

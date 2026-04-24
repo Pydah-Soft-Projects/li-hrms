@@ -5,6 +5,8 @@
 export type PayRegisterContribKey =
   | 'present'
   | 'leaves'
+  | 'paidLeaves'
+  | 'lopLeaves'
   | 'ods'
   | 'partial'
   | 'weeklyOffs'
@@ -30,14 +32,17 @@ export type PayRegisterContribDailyRecord = {
   isLate?: boolean;
   isEarlyOut?: boolean;
   leaveNature?: string | null;
+  leaveType?: string | null;
   firstHalf?: {
     status?: HalfStatus;
     leaveNature?: string | null;
+    leaveType?: string | null;
     otHours?: number;
   };
   secondHalf?: {
     status?: HalfStatus;
     leaveNature?: string | null;
+    leaveType?: string | null;
     otHours?: number;
   };
 };
@@ -84,6 +89,8 @@ export function rebuildContributingDatesFromDailyRecords(
   const KEYS_ALL: PayRegisterContribKey[] = [
     'present',
     'leaves',
+    'paidLeaves',
+    'lopLeaves',
     'ods',
     'partial',
     'weeklyOffs',
@@ -110,6 +117,31 @@ export function rebuildContributingDatesFromDailyRecords(
       value: Math.round(value * 100) / 100,
       label: label || '',
     });
+  };
+
+  const mergeBucket = (bucket: PayRegisterContribKey, date: string, inc: number, label: string) => {
+    const add = Math.round(inc * 100) / 100;
+    if (add <= 0 || !date) return;
+    const arr = out[bucket];
+    const ex = arr.find((e) => e.date === date);
+    if (!ex) {
+      arr.push({ date, value: add, label: label || '' });
+    } else {
+      ex.value = Math.round((Number(ex.value) + add) * 100) / 100;
+      if (label) ex.label = label;
+    }
+  };
+
+  const isLopNature = (nRaw: string | null | undefined, ltRaw: string | null | undefined) => {
+    const n = String(nRaw || '').toLowerCase();
+    const lt = String(ltRaw || '').toLowerCase();
+    return (
+      n === 'lop' ||
+      n === 'without_pay' ||
+      lt.includes('lop') ||
+      lt.includes('loss of pay') ||
+      lt.includes('sandwich')
+    );
   };
 
   for (const record of dailyRecords) {
@@ -155,24 +187,44 @@ export function rebuildContributingDatesFromDailyRecords(
     })();
 
     let leaveVal = 0;
+    let paidLeaveVal = 0;
+    let lopLeaveVal = 0;
     let odVal = 0;
     let presentVal = 0;
     let absentVal = 0;
 
     if (!split) {
       const s = record.status || h1 || h2;
-      if (s === 'leave') leaveVal = 1;
-      else if (s === 'od') odVal = 1;
+      if (s === 'leave') {
+        leaveVal = 1;
+        const n = record.leaveNature || record.firstHalf?.leaveNature;
+        const lt = record.leaveType || record.firstHalf?.leaveType;
+        if (isLopNature(n, lt)) lopLeaveVal = 1;
+        else paidLeaveVal = 1;
+      } else if (s === 'od') odVal = 1;
       else if (s === 'present') presentVal = 1;
       else if (s === 'partial') {
         presentVal = 0.5;
         leaveVal = 0.5;
+        const n = record.leaveNature || record.firstHalf?.leaveNature || record.secondHalf?.leaveNature;
+        const lt = record.leaveType || record.firstHalf?.leaveType || record.secondHalf?.leaveType;
+        if (isLopNature(n, lt)) lopLeaveVal = 0.5;
+        else paidLeaveVal = 0.5;
       } else if (s === 'absent') absentVal = 1;
     } else {
-      for (const st of [h1, h2]) {
+      const halves = [
+        { st: h1, half: record.firstHalf },
+        { st: h2, half: record.secondHalf },
+      ];
+      for (const { st, half } of halves) {
         if (!st) continue;
-        if (st === 'leave') leaveVal += 0.5;
-        else if (st === 'od') odVal += 0.5;
+        if (st === 'leave') {
+          leaveVal += 0.5;
+          const n = half?.leaveNature;
+          const lt = half?.leaveType;
+          if (isLopNature(n, lt)) lopLeaveVal += 0.5;
+          else paidLeaveVal += 0.5;
+        } else if (st === 'od') odVal += 0.5;
         else if (st === 'present') presentVal += 0.5;
         else if (st === 'absent') absentVal += 0.5;
       }
@@ -185,6 +237,12 @@ export function rebuildContributingDatesFromDailyRecords(
         record.secondHalf?.leaveNature ||
         'paid';
       oncePerDate('leaves', date, Math.min(1, leaveVal), `Leave (${nature})`);
+    }
+    if (paidLeaveVal > 0) {
+      mergeBucket('paidLeaves', date, Math.min(1, paidLeaveVal), 'Paid');
+    }
+    if (lopLeaveVal > 0) {
+      mergeBucket('lopLeaves', date, Math.min(1, lopLeaveVal), 'LOP');
     }
     if (odVal > 0) oncePerDate('ods', date, Math.min(1, odVal), 'OD');
     if (presentVal > 0) oncePerDate('present', date, Math.min(1, presentVal), 'P');
@@ -297,6 +355,8 @@ export function payRegisterBadgeCategory(keys: readonly PayRegisterContribKey[])
   if (keys.some((k) => k === 'lateIn' || k === 'earlyOut')) return 'lateIn';
   if (keys.includes('payableShifts')) return 'payableShifts';
   if (keys.includes('partial')) return 'partial';
+  if (keys.includes('lopLeaves')) return 'lopLeaves';
+  if (keys.includes('paidLeaves')) return 'paidLeaves';
   const k0 = keys[0];
   if (k0 === 'ods') return 'ods';
   if (k0 === 'weeklyOffs') return 'weeklyOffs';
@@ -321,6 +381,22 @@ export function payRegisterContribAccent(keys: readonly PayRegisterContribKey[])
         'ring-2 ring-rose-400/80 ring-inset z-[2] shadow-[0_0_18px_rgba(244,63,94,0.28)] dark:ring-rose-400/55 rounded-md !bg-rose-50/95 dark:!bg-rose-950/45',
       badgeBg: 'bg-rose-600/95',
       summaryRing: 'ring-2 ring-rose-500 ring-inset shadow-inner dark:ring-rose-400',
+    };
+  }
+  if (keys.length === 1 && keys[0] === 'lopLeaves') {
+    return {
+      cellHighlight:
+        'ring-2 ring-rose-400/70 ring-inset z-[2] shadow-[0_0_20px_rgba(244,63,94,0.2)] dark:ring-rose-400/50 rounded-md !bg-rose-50/90 dark:!bg-rose-900/55',
+      badgeBg: 'bg-rose-600/95',
+      summaryRing: 'ring-2 ring-rose-500 ring-inset shadow-inner dark:ring-rose-400',
+    };
+  }
+  if (keys.length === 1 && keys[0] === 'paidLeaves') {
+    return {
+      cellHighlight:
+        'ring-2 ring-yellow-400/70 ring-inset z-[2] shadow-[0_0_20px_rgba(234,179,8,0.22)] dark:ring-yellow-400/45 rounded-md !bg-yellow-50/90 dark:!bg-yellow-900/40',
+      badgeBg: 'bg-yellow-600/95',
+      summaryRing: 'ring-2 ring-yellow-500 ring-inset shadow-inner dark:ring-yellow-400',
     };
   }
   return {

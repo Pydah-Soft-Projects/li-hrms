@@ -20,6 +20,7 @@ const { resolveLeaveTypeWorkflowSettings } = require('../../departments/services
 const { appendOdTrailPoints } = require('../services/odTrailService');
 const { emitOdTrailUpdate } = require('../../shared/services/socketService');
 const { isHolidayOrWeekOff, getHolidayWeekOffOdApplyContext } = require('../services/odHolidayApplyContextService');
+const { extractISTComponents, getAllDatesInRange } = require('../../shared/utils/dateUtils');
 
 const formatODDate = (value) => {
   if (!value) return '';
@@ -218,7 +219,10 @@ exports.checkHoliday = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Date is required' });
     }
 
-    const dateStr = new Date(date).toISOString().split('T')[0];
+    const s = String(date).trim();
+    const dateStr = /^\d{4}-\d{2}-\d{2}/.test(s)
+      ? s.substring(0, 10)
+      : extractISTComponents(new Date(date)).dateStr;
 
     let employee = null;
     if (employeeId) {
@@ -1005,7 +1009,7 @@ exports.applyOD = async (req, res) => {
     };
 
     // NEW: Check if this OD is on a holiday/week-off for CO eligibility
-    const fromDateStr = from.toISOString().split('T')[0];
+    const fromDateStr = extractISTComponents(from).dateStr;
     const isHolWo = await isHolidayOrWeekOff(employee.emp_no, fromDateStr);
 
     // Create OD application
@@ -1378,21 +1382,11 @@ exports.updateOD = async (req, res) => {
       try {
         console.log('[OD-FLOW] updateOD: OD is approved', { odId: od._id?.toString(), emp_no: od.emp_no, odType_extended: od.odType_extended });
         const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
-        const formatDate = (date) => {
-          const d = new Date(date);
-          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-        };
-        const dateFrom = formatDate(od.fromDate);
-        const dateTo = formatDate(od.toDate);
+        const dateFrom = extractISTComponents(od.fromDate).dateStr;
+        const dateTo = extractISTComponents(od.toDate).dateStr;
+        const datesToUpdate = getAllDatesInRange(dateFrom, dateTo);
         const empNoUpper = (od.emp_no != null ? String(od.emp_no).trim() : '').toUpperCase();
         if (empNoUpper) {
-          const datesToUpdate = [];
-          let d = new Date(dateFrom + 'T12:00:00');
-          const end = new Date(dateTo + 'T12:00:00');
-          while (d <= end) {
-            datesToUpdate.push(formatDate(d));
-            d.setDate(d.getDate() + 1);
-          }
           const empNoVariants = [...new Set([empNoUpper, String(od.emp_no)].filter(Boolean))];
           // Only touch AttendanceDaily for hour-based OD. Half-day / full-day contribute only at monthly summary.
           for (const attendanceDate of datesToUpdate) {
@@ -1987,12 +1981,9 @@ exports.processODAction = async (req, res) => {
       try {
         console.log('[OD-FLOW] processODAction: OD fully approved', { odId: od._id?.toString(), emp_no: od.emp_no, odType_extended: od.odType_extended, fromDate: od.fromDate, toDate: od.toDate });
         const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
-        const formatDate = (date) => {
-          const d = new Date(date);
-          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-        };
-        const dateFrom = formatDate(od.fromDate);
-        const dateTo = formatDate(od.toDate);
+        const dateFrom = extractISTComponents(od.fromDate).dateStr;
+        const dateTo = extractISTComponents(od.toDate).dateStr;
+        const datesToUpdate = getAllDatesInRange(dateFrom, dateTo);
         const empNoRaw = od.emp_no != null ? String(od.emp_no).trim() : '';
         const empNoUpper = empNoRaw.toUpperCase();
         if (!empNoUpper) {
@@ -2000,13 +1991,6 @@ exports.processODAction = async (req, res) => {
           return;
         }
 
-        const datesToUpdate = [];
-        let d = new Date(dateFrom + 'T12:00:00');
-        const end = new Date(dateTo + 'T12:00:00');
-        while (d <= end) {
-          datesToUpdate.push(formatDate(d));
-          d.setDate(d.getDate() + 1);
-        }
         console.log('[OD-FLOW] processODAction: datesToUpdate', datesToUpdate, 'hourBased=', od.odType_extended === 'hours');
 
         // Only touch AttendanceDaily for hour-based OD. Half-day and full-day OD contribute only at monthly summary (no daily create/update).
@@ -2281,20 +2265,12 @@ exports.revokeODApproval = async (req, res) => {
     try {
       const { recalculateOnAttendanceUpdate } = require('../../attendance/services/summaryCalculationService');
       const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
-      const formatDate = (date) => {
-        const d = new Date(date);
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      };
-
-      const dateFrom = formatDate(od.fromDate);
-      const dateTo = formatDate(od.toDate);
+      const dateFrom = extractISTComponents(od.fromDate).dateStr;
+      const dateTo = extractISTComponents(od.toDate).dateStr;
       const empNoUpper = od.emp_no ? String(od.emp_no).toUpperCase() : '';
 
       if (empNoUpper) {
-        let d = new Date(dateFrom + 'T12:00:00');
-        const end = new Date(dateTo + 'T12:00:00');
-        while (d <= end) {
-          const attendanceDate = formatDate(d);
+        for (const attendanceDate of getAllDatesInRange(dateFrom, dateTo)) {
           await recalculateOnAttendanceUpdate(empNoUpper, attendanceDate);
           const att = await AttendanceDaily.findOne({
             employeeNumber: empNoUpper,
@@ -2307,7 +2283,6 @@ exports.revokeODApproval = async (req, res) => {
               console.error('[OD revoke] AttendanceDaily refresh failed:', attendanceDate, dailyErr.message);
             }
           }
-          d.setDate(d.getDate() + 1);
         }
       }
     } catch (recalcErr) {

@@ -9,7 +9,7 @@ const {
   applyContributingDatesFromDailyGrid,
 } = require('./contributingDatesService');
 const { recalculatePayRegisterAttendanceDeduction } = require('./payRegisterAttendanceDeductionService');
-const { getPayrollDateRange } = require('../../shared/utils/dateUtils');
+const { getPayrollDateRange, extractISTComponents, getAllDatesInRange } = require('../../shared/utils/dateUtils');
 const { syncAttendanceFromMSSQL } = require('../../attendance/services/attendanceSyncService');
 const summaryCalculationService = require('../../attendance/services/summaryCalculationService');
 const { assertEmployeeMonthEditable } = require('../../shared/services/payrollPeriodLockService');
@@ -49,8 +49,8 @@ async function syncPayRegisterFromLeave(leave) {
       return;
     }
 
-    const fromDate = new Date(leave.fromDate);
-    const toDate = new Date(leave.toDate);
+    const fromStr = extractISTComponents(leave.fromDate).dateStr;
+    const toStr = extractISTComponents(leave.toDate).dateStr;
     const monthSet = new Set();
 
     // Get all calendar months this leave spans, plus overlap potential (current and next)
@@ -58,10 +58,10 @@ async function syncPayRegisterFromLeave(leave) {
     // Any date D belongs to payroll month M if D falls in [M.startDate, M.endDate]
     // Since startDay is usually between 1 and 31, a date D can only belong to 
     // payroll month of (current calendar month) or (next calendar month).
-    let currentDate = new Date(fromDate);
-    while (currentDate <= toDate) {
-      const calYear = currentDate.getFullYear();
-      const calMonthZero = currentDate.getMonth(); // 0-indexed
+    // Use IST calendar days (not server local / UTC) so dates match AttendanceDaily + pay register.
+    for (const dayStr of getAllDatesInRange(fromStr, toStr)) {
+      const [calYear, calMonth1] = dayStr.split('-').map(Number);
+      const calMonthZero = calMonth1 - 1;
 
       // Add previous calendar month
       const prevMonth = new Date(calYear, calMonthZero - 1, 1);
@@ -73,8 +73,6 @@ async function syncPayRegisterFromLeave(leave) {
       // Add next calendar month
       const nextMonth = new Date(calYear, calMonthZero + 1, 1);
       monthSet.add(`${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}`);
-
-      currentDate.setDate(currentDate.getDate() + 1);
     }
 
     // Update pay register for each affected month
@@ -98,14 +96,11 @@ async function syncPayRegisterFromLeave(leave) {
 
       // Check if any dates in this leave fall within this payroll month and were manually edited
       let hasManualEdits = false;
-      let currentDateCheck = new Date(fromDate);
-      while (currentDateCheck <= toDate) {
-        const dateStr = currentDateCheck.toISOString().split('T')[0];
+      for (const dateStr of getAllDatesInRange(fromStr, toStr)) {
         if (dateStr >= startDate && dateStr <= endDate && checkIfManuallyEdited(payRegister, dateStr)) {
           hasManualEdits = true;
           break;
         }
-        currentDateCheck.setDate(currentDateCheck.getDate() + 1);
       }
 
       // If manually edited, skip auto-sync
@@ -172,15 +167,14 @@ async function syncPayRegisterFromOD(od) {
       return;
     }
 
-    const fromDate = new Date(od.fromDate);
-    const toDate = new Date(od.toDate);
+    const fromStrOd = extractISTComponents(od.fromDate).dateStr;
+    const toStrOd = extractISTComponents(od.toDate).dateStr;
     const monthSet = new Set();
 
     // Get all calendar months this OD spans, plus overlap potential (current and next)
-    let currentDate = new Date(fromDate);
-    while (currentDate <= toDate) {
-      const calYear = currentDate.getFullYear();
-      const calMonthZero = currentDate.getMonth();
+    for (const dayStr of getAllDatesInRange(fromStrOd, toStrOd)) {
+      const [calYear, calMonth1] = dayStr.split('-').map(Number);
+      const calMonthZero = calMonth1 - 1;
 
       // Add previous calendar month
       const prevMonth = new Date(calYear, calMonthZero - 1, 1);
@@ -192,8 +186,6 @@ async function syncPayRegisterFromOD(od) {
       // Add next calendar month
       const nextMonth = new Date(calYear, calMonthZero + 1, 1);
       monthSet.add(`${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}`);
-
-      currentDate.setDate(currentDate.getDate() + 1);
     }
 
     // Update pay register for each affected month
@@ -218,14 +210,11 @@ async function syncPayRegisterFromOD(od) {
 
       // Check if any dates were manually edited within this payroll month
       let hasManualEdits = false;
-      let currentDateCheck = new Date(fromDate);
-      while (currentDateCheck <= toDate) {
-        const dateStr = currentDateCheck.toISOString().split('T')[0];
+      for (const dateStr of getAllDatesInRange(fromStrOd, toStrOd)) {
         if (dateStr >= startDate && dateStr <= endDate && checkIfManuallyEdited(payRegister, dateStr)) {
           hasManualEdits = true;
           break;
         }
-        currentDateCheck.setDate(currentDateCheck.getDate() + 1);
       }
 
       if (hasManualEdits) {
@@ -285,10 +274,10 @@ async function syncPayRegisterFromOT(ot) {
       return;
     }
 
-    const dateStr = ot.date;
-    const dateObj = new Date(dateStr);
-    const calYear = dateObj.getFullYear();
-    const calMonthZero = dateObj.getMonth();
+    const raw = String(ot.date).trim();
+    const dateStr = /^\d{4}-\d{2}-\d{2}/.test(raw) ? raw.substring(0, 10) : extractISTComponents(ot.date).dateStr;
+    const [calYear, calMonth1] = dateStr.split('-').map(Number);
+    const calMonthZero = calMonth1 - 1;
 
     const monthSet = new Set();
     // Add current month and prev/next to cover dynamic cycle spanning

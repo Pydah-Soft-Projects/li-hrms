@@ -547,9 +547,9 @@ const approvePermissionRequest = async (permissionId, userId, baseUrl = '', user
 
         await attendanceRecord.save();
 
-        const dateObj = new Date(permissionRequest.date);
-        const year = dateObj.getFullYear();
-        const monthNumber = dateObj.getMonth() + 1;
+        const [year, monthNumber] = String(permissionRequest.date)
+          .split('-')
+          .map(Number);
         await calculateMonthlySummary(permissionRequest.employeeId, permissionRequest.employeeNumber, year, monthNumber);
       }
     }
