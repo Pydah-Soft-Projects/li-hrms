@@ -12,6 +12,8 @@
     "test:health": "jest tests/api/health.test.js",
     "test:attendance": "node tests/attendance-dual-mode-comprehensive.test.js",
     "test:punch-pipeline": "node attendance/test/simulateDedupeAndRedundancyScenarios.js && node attendance/test/redundancyFilterTest.js",
+    "test:post-verify-backfill": "jest attendance/services/__tests__/postVerifyBiometricBackfillService.test.js --no-coverage",
+    "test:post-verify-backfill:live": "node scripts/liveTestPostVerifyBiometricBackfill.js",
     "test:single-shift-partial": "node scripts/test_single_shift_out_only_partial.js",
     "sync:atlas-biometric": "node scripts/sync_atlas_biometric_to_attendance.js",
     "test:watch": "jest --watch",
