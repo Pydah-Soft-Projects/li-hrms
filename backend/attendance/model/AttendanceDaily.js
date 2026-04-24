@@ -755,26 +755,27 @@ attendanceDailySchema.pre('save', async function () {
   }
 
   /**
-   * PAUSED: Auto-OD creation when employees work on holiday / week-off (in-campus punches).
-   * Re-enable by uncommenting; keep `leaves/services/autoODService` + `auto_od_creation_enabled` setting.
-   * Manual OD on HOL/WO + punch-based half/full uses `odHolidayApplyContextService` + GET /leaves/od/check-holiday.
+   * Auto-OD: when employees work on holiday / week-off (in-campus punches), queue pending OD if enabled.
+   * Gated by Settings `auto_od_creation_enabled`. Manual HOL/WO flow: `odHolidayApplyContextService` + GET /leaves/od/check-holiday.
    */
-  // const autoODSetting = await Settings.findOne({ key: 'auto_od_creation_enabled' }).lean();
-  // const isAutoODCreationEnabled = autoODSetting?.value === true;
-  // if (isAutoODCreationEnabled && (this.status === 'HOLIDAY' || this.status === 'WEEK_OFF') && (this.totalWorkingHours >= 2)) {
-  //   const hasWorkedShift = this.shifts && this.shifts.some(s => ['PRESENT', 'HALF_DAY'].includes(s.status));
-  //   if (hasWorkedShift) {
-  //     const doc = this;
-  //     setImmediate(async () => {
-  //       try {
-  //         const { processAutoODForEmployee } = require('../../leaves/services/autoODService');
-  //         await processAutoODForEmployee(doc.employeeNumber, doc.date, doc);
-  //       } catch (autoOdError) {
-  //         console.error(`[AttendanceDaily Hook] Auto-OD error for ${doc.employeeNumber} on ${doc.date}:`, autoOdError);
-  //       }
-  //     });
-  //   }
-  // }
+  const autoODSetting = await Settings.findOne({ key: 'auto_od_creation_enabled' }).lean();
+  const isAutoODCreationEnabled = autoODSetting?.value === true;
+  if (isAutoODCreationEnabled && (this.status === 'HOLIDAY' || this.status === 'WEEK_OFF')) {
+    const { getAutoOdEligibilityFromRecord } = require('../../leaves/utils/holwoOdPunchResolver');
+    const docPlain = typeof this.toObject === 'function' ? this.toObject({ flattenMaps: true }) : this;
+    const odEl = getAutoOdEligibilityFromRecord(docPlain);
+    if (odEl.eligible) {
+      const doc = this;
+      setImmediate(async () => {
+        try {
+          const { processAutoODForEmployee } = require('../../leaves/services/autoODService');
+          await processAutoODForEmployee(doc.employeeNumber, doc.date, doc);
+        } catch (autoOdError) {
+          console.error(`[AttendanceDaily Hook] Auto-OD error for ${doc.employeeNumber} on ${doc.date}:`, autoOdError);
+        }
+      });
+    }
+  }
 });
 
 // Post-save hook: always run monthly summary recalculation when daily is saved (including when OD approval updates status/payable).

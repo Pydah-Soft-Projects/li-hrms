@@ -172,12 +172,11 @@ async function getPayrollDateRange(year, monthNumber) {
  */
 function getAllDatesInRange(startDate, endDate) {
     const result = [];
-    let d = createISTDate(startDate);
-    const e = createISTDate(endDate);
-    while (d <= e) {
-        const { dateStr } = extractISTComponents(d);
-        result.push(dateStr);
-        d.setDate(d.getDate() + 1);
+    let cur = createISTDate(startDate, '00:00');
+    const endMs = createISTDate(endDate, '00:00').getTime();
+    while (cur.getTime() <= endMs) {
+        result.push(extractISTComponents(cur).dateStr);
+        cur = new Date(cur.getTime() + 86400000);
     }
     return result;
 }
