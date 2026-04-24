@@ -1148,10 +1148,17 @@ class LeaveRegisterService {
                   }
                 : null;
 
-            /** Sum of policy-scheduled CL credits for all payroll slots in this FY (experience tier monthly grid → matches annual CL e.g. 12 or 15). */
+            /** Sum of policy-only CL credits per slot (full slot clCredits minus poolCarryForwardIn from prior period / FY carry). */
             let fyPolicyScheduledClDays = null;
             if (yd && Array.isArray(yd.months) && yd.months.length > 0) {
-                const sumCl = yd.months.reduce((s, m) => s + (Number(m.clCredits) || 0), 0);
+                const sumCl = yd.months.reduce((s, slot) => {
+                    const pin = slot.poolCarryForwardIn || {};
+                    const policy = Math.max(
+                        0,
+                        round2((Number(slot.clCredits) || 0) - round2(Number(pin.cl) || 0))
+                    );
+                    return s + policy;
+                }, 0);
                 fyPolicyScheduledClDays = Number.isFinite(sumCl) ? sumCl : null;
             }
             entry.fyPolicyScheduledClDays = fyPolicyScheduledClDays;
@@ -1230,6 +1237,7 @@ class LeaveRegisterService {
                             compensatoryOffs: slot.compensatoryOffs,
                             lockedCredits: slot.lockedCredits,
                             poolCarryForwardOut: slot.poolCarryForwardOut,
+                            poolCarryForwardIn: slot.poolCarryForwardIn || null,
                         },
                         ledger: sub
                             ? ledgerSlice(sub)
@@ -1301,7 +1309,17 @@ class LeaveRegisterService {
 
             let scheduledClYtd = 0;
             entry.registerMonths = monthsOut.map((m) => {
-                scheduledClYtd += Number(m.scheduled?.clCredits) || 0;
+                const pin = (m.scheduled && m.scheduled.poolCarryForwardIn) || {};
+                const clTransferIn = m.scheduled != null ? round2(Number(pin.cl) || 0) : null;
+                const cclTransferIn = m.scheduled != null ? round2(Number(pin.ccl) || 0) : null;
+                const elTransferIn = m.scheduled != null ? round2(Number(pin.el) || 0) : null;
+                const fullClCr = round2(Number(m.scheduled?.clCredits) || 0);
+                const fullCco = round2(Number(m.scheduled?.compensatoryOffs) || 0);
+                const fullElCr = round2(Number(m.scheduled?.elCredits) || 0);
+                const policyScheduledCl = m.scheduled ? Math.max(0, round2(fullClCr - clTransferIn)) : null;
+                const policyScheduledCco = m.scheduled ? Math.max(0, round2(fullCco - cclTransferIn)) : null;
+                const policyScheduledEl = m.scheduled ? Math.max(0, round2(fullElCr - elTransferIn)) : null;
+                scheduledClYtd += Number(policyScheduledCl) || 0;
                 const sub = matchSub(subs, m.payrollCycleMonth, m.payrollCycleYear);
                 const clL = m.ledger?.casualLeave || {};
                 const elL = m.ledger?.earnedLeave || {};
@@ -1386,10 +1404,14 @@ class LeaveRegisterService {
                     year: m.payrollCycleYear,
                     payPeriodStart: m.payPeriodStart,
                     payPeriodEnd: m.payPeriodEnd,
+                    /** Total CL pool for the slot (policy + carry-in); use policyScheduledCl for “scheduled credits” only. */
                     scheduledCl: m.scheduled?.clCredits ?? null,
+                    policyScheduledCl,
                     scheduledClYtd,
                     scheduledEl: m.scheduled?.elCredits ?? null,
+                    policyScheduledEl,
                     scheduledCco: m.scheduled?.compensatoryOffs ?? null,
+                    policyScheduledCco,
                     /** Policy slot field (reserved / admin); UI "Lk" uses pending application locks per leave type below. */
                     lockedCredits: m.scheduled?.lockedCredits ?? null,
                     clBalance: m.ledger?.casualLeave?.balance ?? null,
@@ -1407,7 +1429,10 @@ class LeaveRegisterService {
                         credited: clCreditedNet,
                         used: Number(clL.usedThisMonth) || 0,
                         locked: sub != null ? clLockedDisplay : policyLock,
-                        transfer: xferOut.cl,
+                        /** Credits rolled into this payroll month from the prior slot / FY (not policy “Cr”). */
+                        transferIn: clTransferIn,
+                        /** Unused pool implied to roll to the next month after this period ends (display / audit). */
+                        transferOut: xferOut.cl,
                         typeApplyCap: clTypeOn ? clTypeCap : null,
                         typeApplyConsumed: clTypeOn ? clNativeApp : null,
                         typeApplyRemaining: clTypeOn ? Math.max(0, clTypeCap - clNativeApp) : null,
@@ -1418,7 +1443,8 @@ class LeaveRegisterService {
                         credited: Math.max(0, (Number(cclL.earned) || 0) - (Number(cclL.reversalCreditThisMonth) || 0)),
                         used: Number(cclL.used) || 0,
                         locked: sub != null ? Number(sub.pendingLockedCCL) || 0 : null,
-                        transfer: xferOut.ccl,
+                        transferIn: cclTransferIn,
+                        transferOut: xferOut.ccl,
                         typeApplyCap: cclTypeOn ? cclTypeCap : null,
                         typeApplyConsumed: cclTypeOn ? cclNativeApp : null,
                         typeApplyRemaining: cclTypeOn ? Math.max(0, cclTypeCap - cclNativeApp) : null,
@@ -1427,7 +1453,8 @@ class LeaveRegisterService {
                         credited: Math.max(0, (Number(elL.accruedThisMonth) || 0) - (Number(elL.reversalCreditThisMonth) || 0)),
                         used: Number(elL.usedThisMonth) || 0,
                         locked: sub != null ? Number(sub.pendingLockedEL) || 0 : null,
-                        transfer: xferOut.el,
+                        transferIn: elTransferIn,
+                        transferOut: xferOut.el,
                         typeApplyCap: elTypeOn ? elTypeCap : null,
                         typeApplyConsumed: elTypeOn ? elNativeApp : null,
                         typeApplyRemaining: elTypeOn ? Math.max(0, elTypeCap - elNativeApp) : null,

@@ -19,6 +19,42 @@ function cellNum(v) {
   return Math.round(n * 100) / 100;
 }
 
+/** Policy-only credited days (matches on-screen register “Cr”). */
+function policyCredited(rm, kind) {
+  if (!rm) return '';
+  if (kind === 'cl') {
+    if (rm.policyScheduledCl != null && Number.isFinite(Number(rm.policyScheduledCl))) {
+      return cellNum(rm.policyScheduledCl);
+    }
+    const ti = Number(rm.cl?.transferIn) || 0;
+    if (rm.scheduledCl != null && Number.isFinite(Number(rm.scheduledCl))) {
+      return cellNum(Math.max(0, Number(rm.scheduledCl) - ti));
+    }
+    return cellNum(rm.scheduledCl);
+  }
+  if (kind === 'ccl') {
+    if (rm.policyScheduledCco != null && Number.isFinite(Number(rm.policyScheduledCco))) {
+      return cellNum(rm.policyScheduledCco);
+    }
+    const ti = Number(rm.ccl?.transferIn) || 0;
+    if (rm.scheduledCco != null && Number.isFinite(Number(rm.scheduledCco))) {
+      return cellNum(Math.max(0, Number(rm.scheduledCco) - ti));
+    }
+    return cellNum(rm.scheduledCco);
+  }
+  if (kind === 'el') {
+    if (rm.policyScheduledEl != null && Number.isFinite(Number(rm.policyScheduledEl))) {
+      return cellNum(rm.policyScheduledEl);
+    }
+    const ti = Number(rm.el?.transferIn) || 0;
+    if (rm.scheduledEl != null && Number.isFinite(Number(rm.scheduledEl))) {
+      return cellNum(Math.max(0, Number(rm.scheduledEl) - ti));
+    }
+    return cellNum(rm.scheduledEl);
+  }
+  return '';
+}
+
 const SHEET_NAMES = {
   CL: 'Casual leave',
   CCL: 'Compensatory leave',
@@ -55,7 +91,7 @@ function buildLeaveRegisterXlsxBuffer({
     ...filterSummaryParts.map((line) => [line]),
     [''],
     [
-      'The next sheets are one tab per leave type (only types you selected). Each row is an employee. For every payroll month there are three columns: credited (scheduled days), taken (days used), balance (closing balance). All figures are days.',
+      'The next sheets are one tab per leave type (only types you selected). Each row is an employee. For every payroll month there are three columns: credited (policy-scheduled days only; carry-in from a prior period is excluded), taken (days used), balance (closing balance). All figures are days.',
     ],
   ];
   const wsAbout = XLSX.utils.aoa_to_sheet(aboutRows);
@@ -104,17 +140,17 @@ function buildLeaveRegisterXlsxBuffer({
 
   appendTypeSheet('CL', includeCL, (rm) => {
     if (!rm) return ['', '', ''];
-    return [cellNum(rm.scheduledCl), cellNum(rm.cl?.used), cellNum(rm.clBalance)];
+    return [policyCredited(rm, 'cl'), cellNum(rm.cl?.used), cellNum(rm.clBalance)];
   });
 
   appendTypeSheet('CCL', includeCCL, (rm) => {
     if (!rm) return ['', '', ''];
-    return [cellNum(rm.scheduledCco), cellNum(rm.ccl?.used), cellNum(rm.cclBalance)];
+    return [policyCredited(rm, 'ccl'), cellNum(rm.ccl?.used), cellNum(rm.cclBalance)];
   });
 
   appendTypeSheet('EL', includeEL, (rm) => {
     if (!rm) return ['', '', ''];
-    return [cellNum(rm.scheduledEl), cellNum(rm.el?.used), cellNum(rm.elBalance)];
+    return [policyCredited(rm, 'el'), cellNum(rm.el?.used), cellNum(rm.elBalance)];
   });
 
   return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
