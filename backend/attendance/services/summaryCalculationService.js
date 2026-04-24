@@ -924,8 +924,18 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         !day.isWO &&
         !day.isHOL;
 
+      // PARTIAL + approved full-day leave (e.g. CL 1 day) + incomplete punch: treat as leave-only for
+      // payroll/pay register — do not add partial payable or policy LOP; leaveContrib is already 1.0.
+      // Half-day / OD cases keep using the existing partial + policy path.
+      const usePartialPolicy =
+        isPartialDay &&
+        !day.isWO &&
+        !day.isHOL &&
+        !hasFullDayEsiLeave &&
+        leaveContrib < 0.999;
+
       let mergedForPayable = mergedDailyCredit;
-      if (isPartialDay && partialDaysContributeToPayableShifts) {
+      if (usePartialPolicy && partialDaysContributeToPayableShifts) {
         mergedForPayable = Math.max(mergedForPayable, 0.5);
       }
 
@@ -943,6 +953,9 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
 
       if (hasFullDayEsiLeave) {
         dayPayable = 0;
+      } else if (isPartialDay && leaveContrib >= 0.999) {
+        // Full-day leave wins over PARTIAL thumb / shift payables
+        dayPayable = 0;
       }
 
       dayPayable = Math.min(dayPayable, 1.0);
@@ -950,13 +963,13 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       // plus *approved* leave (any nature) for full/half. Without leaveContrib we double-count:
       // e.g. 0.5 partial thumb + 0.5 approved half-day leave must not add 0.5 policy LOP.
       const partialLopPortion =
-        isPartialDay
+        usePartialPolicy
           ? Math.round(
               Math.max(0, 1 - Math.min(1, mergedDailyCredit + dayPayable + leaveContrib)) * 100
             ) / 100
           : 0;
 
-      if (isPartialDay) {
+      if (usePartialPolicy) {
         if (partialLopPortion > 0) {
           totalLeaveDays += partialLopPortion;
           totalLopLeaveDays += partialLopPortion;
@@ -1038,7 +1051,7 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
           // credits working portion (e.g. 0.5). Absent must not treat the full day as missing — add that
           // payable fraction so e.g. 0.5 pay + partial → 0.5 absent, not 1.0 absent.
           let effectiveCovered = dayCovered;
-          if (isPartialDay) {
+          if (usePartialPolicy) {
             const payPortion = Math.min(1, Math.max(0, Number(dayPayable) || 0));
             const lopPortion = Math.min(1, Math.max(0, Number(partialLopPortion) || 0));
             // Partial days are represented as worked/payable part + LOP leave part,
@@ -1060,7 +1073,7 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         attSecond,
         odFirst,
         odSecond,
-        isPartialDay,
+        isPartialDay: usePartialPolicy,
         dayPayable,
       });
       daySnapshot = enforceSingleShiftPartialLopSnapshot(
@@ -1071,7 +1084,7 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       );
       payRegisterDaySnapshots.push(daySnapshot);
       const latestSnapshot = payRegisterDaySnapshots[payRegisterDaySnapshots.length - 1];
-      if (isPartialDay && latestSnapshot) {
+      if (usePartialPolicy && latestSnapshot) {
         const firstStatus = latestSnapshot.firstHalf?.status || null;
         const secondStatus = latestSnapshot.secondHalf?.status || null;
         const firstLeaveNature = latestSnapshot.firstHalf?.leaveNature || null;
