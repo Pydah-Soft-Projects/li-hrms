@@ -1373,7 +1373,7 @@ exports.exportAttendanceReportPDF = async (req, res) => {
 
         // 2. Fetch Biometric Logs (Gracefully handle missing URI)
         let pairedData = {};
-        if (process.env.MONGODB_BIOMETRIC_URI) {
+        if (biometricReportService.resolveBiometricMongoUri()) {
             try {
                 const fetchStart = dayjs.tz(startDate, 'Asia/Kolkata').startOf('day').toDate();
                 const fetchEnd = dayjs.tz(endDate, 'Asia/Kolkata').endOf('day').add(36, 'hour').toDate();
