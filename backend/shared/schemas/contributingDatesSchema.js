@@ -7,6 +7,10 @@ const contributingDateEntry = [{ date: String, value: Number, label: String }];
 const contributingDatesShape = {
   present: contributingDateEntry,
   leaves: contributingDateEntry,
+  /** Days that count only toward paid leave totals (for UI highlight). */
+  paidLeaves: contributingDateEntry,
+  /** Days that count only toward LOP totals — includes policy partial + sandwich LOP. */
+  lopLeaves: contributingDateEntry,
   ods: contributingDateEntry,
   partial: contributingDateEntry,
   weeklyOffs: contributingDateEntry,

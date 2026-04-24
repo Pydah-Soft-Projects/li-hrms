@@ -56,7 +56,7 @@ export function highlightBadgeSubtitle(
   if (category === 'permissions' && L === 'Perm') return null;
   if (category === 'otHours' && /^OT\s*\(/i.test(L)) return null;
   if (category === 'extraHours' && /^Ex\s*\(/i.test(L)) return null;
-  if (category === 'leaves') {
+  if (category === 'leaves' || category === 'paidLeaves' || category === 'lopLeaves') {
     const stripped = L.replace(/\s*\([^)]*\)\s*$/, '').trim();
     return stripped || null;
   }
