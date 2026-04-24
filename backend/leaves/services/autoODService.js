@@ -1,14 +1,13 @@
 /**
  * Auto-OD: scan AttendanceDaily and create/update OD rows for holiday/week-off work.
- * Entry from AttendanceDaily pre-save is PAUSED (see attendance/model/AttendanceDaily.js);
- * this module is kept for re-enabling the hook or batch scans — do not delete.
+ * Invoked from AttendanceDaily pre-save when `auto_od_creation_enabled` is ON; `processAutoODForDate` for batch scans.
  */
-const mongoose = require('mongoose');
 const OD = require('../model/OD');
 const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
 const Employee = require('../../employees/model/Employee');
 const { resolveLeaveTypeWorkflowSettings } = require('../../departments/services/divisionWorkflowResolver');
 const Settings = require('../../settings/model/Settings');
+const { getAutoOdEligibilityFromRecord } = require('../utils/holwoOdPunchResolver');
 
 /**
  * Scan AttendanceDaily for holiday/week-off punches and create OD requests
@@ -58,7 +57,14 @@ const processAutoODForEmployee = async (employeeNumber, dateStr, record) => {
             return;
         }
 
-        // 2. Extract punch details FIRST (needed regardless of create/update path)
+        const recordPlain = typeof record.toObject === 'function' ? record.toObject({ flattenMaps: true }) : record;
+        const el = getAutoOdEligibilityFromRecord(recordPlain);
+        if (!el.eligible) {
+            console.log(`[AutoOD] Skip ${record.employeeNumber} on ${dateStr}: ${el.reason || 'not_eligible'}`);
+            return;
+        }
+
+        // 2. Extract punch details FIRST (needed for updates and create when eligible)
         let punchDetails = '';
         let startT = null;
         let endT = null;
@@ -102,7 +108,7 @@ const processAutoODForEmployee = async (employeeNumber, dateStr, record) => {
         });
 
         if (existingActiveOD) {
-            // UPDATE the existing OD with fresh punch details
+            // UPDATE the existing OD with fresh punch details + half/full from shift segments
             const prevStartT = existingActiveOD.odStartTime;
             const prevEndT   = existingActiveOD.odEndTime;
             const prevHours  = existingActiveOD.durationHours;
@@ -110,8 +116,12 @@ const processAutoODForEmployee = async (employeeNumber, dateStr, record) => {
             existingActiveOD.odStartTime   = startT   || existingActiveOD.odStartTime;
             existingActiveOD.odEndTime     = endT     || existingActiveOD.odEndTime;
             existingActiveOD.durationHours = record.totalWorkingHours || existingActiveOD.durationHours;
+            existingActiveOD.odType_extended = el.odType_extended;
+            existingActiveOD.isHalfDay = el.isHalfDay;
+            existingActiveOD.halfDayType = el.halfDayType;
+            existingActiveOD.numberOfDays = el.isHalfDay ? 0.5 : 1;
 
-            const updateNote = `Biometric punches updated by system.${punchDetails}`;
+            const updateNote = `Biometric punches updated by system (${el.odType_extended || 'n/a'}).${punchDetails}`;
             existingActiveOD.workflow.history.push({
                 step: 'system',
                 action: 'status_changed',
@@ -142,14 +152,7 @@ const processAutoODForEmployee = async (employeeNumber, dateStr, record) => {
             previousRejectionNote = ` | Note: A previous OD (${rejectedOD.status}) on this date was found (${rejectedAt}). New OD auto-generated.`;
         }
 
-
-        // 3. Get OD workflow settings (division override → global)
-        const workflowSettings = await resolveLeaveTypeWorkflowSettings(
-            'od',
-            employee.division_id?._id || employee.division_id
-        );
-
-        // 4. Fetch employee with full details for workflow and snapshotting
+        // 3. Fetch employee (required before workflow and for new OD)
         const employee = await Employee.findOne({ emp_no: record.employeeNumber })
             .populate('division_id', 'name')
             .populate('department_id', 'name');
@@ -158,6 +161,12 @@ const processAutoODForEmployee = async (employeeNumber, dateStr, record) => {
             console.log(`[AutoOD] Employee ${record.employeeNumber} not found in MongoDB. Skipping.`);
             return;
         }
+
+        // 4. Get OD workflow settings (division override → global)
+        const workflowSettings = await resolveLeaveTypeWorkflowSettings(
+            'od',
+            employee.division_id?._id || employee.division_id
+        );
 
         // 5. Initialize workflow — exactly mirrors odController.js
         const approvalSteps = [];
@@ -214,7 +223,7 @@ const processAutoODForEmployee = async (employeeNumber, dateStr, record) => {
                     actionBy: null, // System generated
                     actionByName: 'System (Auto-OD)',
                     actionByRole: 'system',
-                    comments: `Auto-generated OD for work on holiday/week-off.${punchDetails}`,
+                    comments: `Auto-generated ${el.isHalfDay ? 'half-day' : 'full-day'} OD for work on holiday/week-off (${el.punchContextDetail || 'eligible'}).${punchDetails}`,
                     timestamp: new Date(),
                 },
             ],
@@ -225,19 +234,20 @@ const processAutoODForEmployee = async (employeeNumber, dateStr, record) => {
             employeeId: employee._id,
             emp_no: employee.emp_no,
             odType: 'OFFICIAL',
-            odType_extended: 'full_day',
+            odType_extended: el.odType_extended,
             fromDate: new Date(record.date + 'T00:00:00+05:30'),
             toDate: new Date(record.date + 'T00:00:00+05:30'),
-            numberOfDays: 1,
-            isHalfDay: false,
+            numberOfDays: el.isHalfDay ? 0.5 : 1,
+            isHalfDay: el.isHalfDay,
+            halfDayType: el.halfDayType,
             odStartTime: startT,
             odEndTime: endT,
             durationHours: record.totalWorkingHours,
-            isCOEligible: true, // Always true for auto-OD since it triggers on holidays
+            isCOEligible: true, // HOL / WEEK_OFF context
             purpose: 'Work on Holiday/Week-off',
             placeVisited: 'Organization Campus (Auto)',
             contactNumber: employee.phone_number || 'N/A',
-            remarks: `Auto-generated by system based on biometric punches detected on a holiday/week-off.${punchDetails}`,
+            remarks: `Auto-generated by system (${el.odType_extended || 'n/a'}) from shift segments on a holiday/week-off.${punchDetails}${previousRejectionNote || ''}`,
             status: 'pending',
             isActive: true,
             appliedBy: null,
