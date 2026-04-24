@@ -297,6 +297,10 @@ interface MonthlyAttendanceData {
 
     totalLeaves: number;
 
+    totalPaidLeaves?: number;
+
+    totalLopLeaves?: number;
+
     totalODs: number;
 
     /** Sum of payable contributions on PARTIAL-status days (same basis as Payable). */
@@ -4197,21 +4201,35 @@ export default function AttendancePage() {
                   isHighlighted && highlightInfo && activeHighlight
                     ? highlightBadgeSubtitle(activeHighlight.category, highlightInfo.label)
                     : null;
+                const cardHighlightClass =
+                  isHighlighted && activeHighlight?.category === 'lopLeaves'
+                    ? 'ring-2 ring-rose-400/70 ring-inset z-10 !bg-rose-50/90 dark:!bg-rose-900/55'
+                    : isHighlighted && activeHighlight?.category === 'paidLeaves'
+                      ? 'ring-2 ring-yellow-400/70 ring-inset z-10 !bg-yellow-50/90 dark:!bg-yellow-900/40'
+                      : isHighlighted
+                        ? 'ring-2 ring-blue-400/60 ring-inset z-10 !bg-blue-50/90 dark:!bg-blue-900/60'
+                        : '';
+                const cardBadgeBg =
+                  activeHighlight?.category === 'lopLeaves'
+                    ? 'bg-rose-600/90'
+                    : activeHighlight?.category === 'paidLeaves'
+                      ? 'bg-yellow-600/90'
+                      : 'bg-blue-600/90';
                 return (
                   <div
                     key={dateStr}
                     onClick={() => (hasData || isHighlighted) && handleDateClick(item.employee, dateStr)}
-                    className={`relative rounded-xl sm:rounded-2xl lg:rounded-3xl border p-1 sm:p-3 xl:p-4 aspect-square flex flex-col items-center justify-center transition-all duration-300 ${hasData || isHighlighted ? 'cursor-pointer hover:shadow-lg hover:shadow-green-500/10 hover:-translate-y-1 hover:ring-2 hover:ring-green-500/20' : 'opacity-80'} ${getCellBackgroundColor(record)} ${getStatusColor(record)} shadow-sm ${isHighlighted ? 'ring-2 ring-blue-400/60 ring-inset z-10 !bg-blue-50/90 dark:!bg-blue-900/60' : ''}`}
+                    className={`relative rounded-xl sm:rounded-2xl lg:rounded-3xl border p-1 sm:p-3 xl:p-4 aspect-square flex flex-col items-center justify-center transition-all duration-300 ${hasData || isHighlighted ? 'cursor-pointer hover:shadow-lg hover:shadow-green-500/10 hover:-translate-y-1 hover:ring-2 hover:ring-green-500/20' : 'opacity-80'} ${getCellBackgroundColor(record)} ${getStatusColor(record)} shadow-sm ${cardHighlightClass}`}
                   >
                     {isHighlighted && highlightInfo && (
                       <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none p-0.5">
-                        <div className="bg-blue-600/90 text-white px-1 py-0.5 rounded-md shadow-md border border-white/30 flex flex-col items-center justify-center gap-0 leading-none max-w-[90%]">
+                        <div className={`${cardBadgeBg} text-white px-1 py-0.5 rounded-md shadow-md border border-white/30 flex flex-col items-center justify-center gap-0 leading-none max-w-[90%]`}>
                           <span className="text-[9px] sm:text-[10px] font-black tabular-nums tracking-tight">
                             {formatHighlightContribution(highlightInfo.value)}
                           </span>
                           {highlightSub ? (
                             <span
-                              className={`text-[5px] sm:text-[6px] opacity-90 truncate text-center leading-tight ${activeHighlight?.category === 'leaves' ? 'font-semibold normal-case' : 'font-bold uppercase'
+                              className={`text-[5px] sm:text-[6px] opacity-90 truncate text-center leading-tight ${activeHighlight?.category === 'leaves' || activeHighlight?.category === 'paidLeaves' || activeHighlight?.category === 'lopLeaves' ? 'font-semibold normal-case' : 'font-bold uppercase'
                                 }`}
                               title={highlightSub}
                             >
@@ -4593,7 +4611,12 @@ export default function AttendancePage() {
                                 (r as any)?.leaveInfo?.leaveType?.toLowerCase().includes('lop') ||
                                 (r as any)?.leaveInfo?.leaveType?.toLowerCase().includes('loss of pay');
                             }).length;
-                            const paidLeaves = totalLeaves - lopCount;
+                            const summaryPaidLeaves = Number(item.summary?.totalPaidLeaves);
+                            const summaryLopLeaves = Number(item.summary?.totalLopLeaves);
+                            const paidLeaveCol = Number.isFinite(summaryPaidLeaves)
+                              ? summaryPaidLeaves
+                              : Math.max(0, totalLeaves - lopCount);
+                            const lopLeaveCol = Number.isFinite(summaryLopLeaves) ? summaryLopLeaves : lopCount;
 
                             const totalODs = item.summary?.totalODs ?? Object.values(item.dailyAttendance).filter(r => r?.status === 'OD' || r?.hasOD).length;
 
@@ -4670,12 +4693,21 @@ export default function AttendancePage() {
                                       ? highlightBadgeSubtitle(activeHighlight.category, highlightInfo.label)
                                       : null;
 
+                                  const dayCellHighlightClass =
+                                    isHighlighted && activeHighlight?.category === 'lopLeaves'
+                                      ? 'ring-2 ring-rose-400/70 ring-inset z-10 !bg-rose-50/90 dark:!bg-rose-900/55 shadow-[0_0_20px_rgba(244,63,94,0.18)] scale-[1.02] rounded-md'
+                                      : isHighlighted && activeHighlight?.category === 'paidLeaves'
+                                        ? 'ring-2 ring-yellow-400/70 ring-inset z-10 !bg-yellow-50/90 dark:!bg-yellow-900/40 shadow-[0_0_20px_rgba(234,179,8,0.2)] scale-[1.02] rounded-md'
+                                        : isHighlighted
+                                          ? 'ring-2 ring-blue-400/60 ring-inset z-10 !bg-blue-50/90 dark:!bg-blue-900/60 shadow-[0_0_20px_rgba(59,130,246,0.2)] scale-[1.02] rounded-md'
+                                          : '';
+
                                   return (
                                     <td
                                       key={dateStr}
                                       onClick={() => (hasData || isHighlighted) && handleDateClick(item.employee, dateStr)}
                                       className={`border-r border-slate-200 px-1 py-1.5 text-center dark:border-slate-700 relative ${hasData || isHighlighted ? 'cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800' : ''
-                                        } ${getStatusColor(record)} ${getCellBackgroundColor(record)} ${isHighlighted ? 'ring-2 ring-blue-400/60 ring-inset z-10 !bg-blue-50/90 dark:!bg-blue-900/60 shadow-[0_0_20px_rgba(59,130,246,0.2)] scale-[1.02] rounded-md' : ''}`}
+                                        } ${getStatusColor(record)} ${getCellBackgroundColor(record)} ${dayCellHighlightClass}`}
                                     >
                                       {isHighlighted && highlightInfo && (
                                         <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none px-0.5">
@@ -4685,7 +4717,7 @@ export default function AttendancePage() {
                                             </span>
                                             {highlightSub ? (
                                               <span
-                                                className={`text-[6px] opacity-90 truncate max-w-[40px] text-center leading-tight ${activeHighlight?.category === 'leaves'
+                                                className={`text-[6px] opacity-90 truncate max-w-[40px] text-center leading-tight ${activeHighlight?.category === 'leaves' || activeHighlight?.category === 'paidLeaves' || activeHighlight?.category === 'lopLeaves'
                                                     ? 'font-semibold normal-case'
                                                     : 'font-bold uppercase'
                                                   }`}
@@ -4995,8 +5027,20 @@ export default function AttendancePage() {
                                     >
                                       {monthAbsent}
                                     </td>
-                                    <td className="border-r border-slate-200 bg-yellow-50 px-2 py-2 text-center text-[11px] font-bold text-yellow-700">{paidLeaves}</td>
-                                    <td className="border-r border-slate-200 bg-rose-50 px-2 py-2 text-center text-[11px] font-bold text-rose-700">{lopCount}</td>
+                                    <td
+                                      title="Click: highlight paid-leave contribution days only • Alt+click: leave list"
+                                      onClick={(e) => onSummaryMetricClick(e, item.employee._id, 'paidLeaves', 'leaves', item)}
+                                      className={`border-r border-slate-200 bg-yellow-50 px-2 py-2 text-center text-[11px] font-bold text-yellow-700 cursor-pointer hover:bg-yellow-100 dark:hover:bg-yellow-900/30 ${activeHighlight?.employeeId === item.employee._id && activeHighlight?.category === 'paidLeaves' ? 'ring-2 ring-yellow-500 ring-inset shadow-inner' : ''}`}
+                                    >
+                                      {Number(paidLeaveCol || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                                    </td>
+                                    <td
+                                      title="Click: highlight LOP contribution days only • Alt+click: leave list"
+                                      onClick={(e) => onSummaryMetricClick(e, item.employee._id, 'lopLeaves', 'leaves', item)}
+                                      className={`border-r border-slate-200 bg-rose-50 px-2 py-2 text-center text-[11px] font-bold text-rose-700 cursor-pointer hover:bg-rose-100 dark:hover:bg-rose-900/30 ${activeHighlight?.employeeId === item.employee._id && activeHighlight?.category === 'lopLeaves' ? 'ring-2 ring-rose-500 ring-inset shadow-inner' : ''}`}
+                                    >
+                                      {Number(lopLeaveCol || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                                    </td>
                                   </>
                                 )}
                                 {tableType === 'od' && (

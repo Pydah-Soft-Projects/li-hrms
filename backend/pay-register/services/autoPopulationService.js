@@ -123,6 +123,7 @@ async function fetchLeaveData(employeeId, startDate, endDate, payrollMonth) {
             halfDayType: leave.halfDayType,
             leaveType: leave.leaveType,
             originalLeaveType: leave.originalLeaveType || leave.leaveType,
+            leaveNature: leave.leaveNature,
           };
         }
 
@@ -277,6 +278,14 @@ async function fetchShiftData(emp_no, startDate, endDate) {
   return shiftMap;
 }
 
+/** Map leave policy / document values to pay-register half-day schema: 'paid' | 'lop'. */
+function payRegisterLeaveNatureEnum(raw) {
+  if (raw == null || raw === '') return 'paid';
+  const s = String(raw).toLowerCase();
+  if (s === 'lop' || s === 'without_pay' || s === 'loss_of_pay') return 'lop';
+  return 'paid';
+}
+
 /**
  * Resolve conflicts and determine status for a date
  */
@@ -286,25 +295,35 @@ async function resolveConflicts(dateData) {
   const isWeekOff = shift?.status === 'WO';
 
   const defaultStatus = isHoliday ? 'holiday' : (isWeekOff ? 'week_off' : 'absent');
-  let firstHalf = { status: defaultStatus, leaveType: null, isOD: false };
-  let secondHalf = { status: defaultStatus, leaveType: null, isOD: false };
+  let firstHalf = { status: defaultStatus, leaveType: null, leaveNature: null, isOD: false };
+  let secondHalf = { status: defaultStatus, leaveType: null, leaveNature: null, isOD: false };
 
   if (leave) {
-    const leaveNature = leave.leaveNature || await getLeaveNature(leave.leaveType);
+    const typeCode = (leave.leaveType || leave.originalLeaveType || '').trim() || null;
+    let natureSource = leave.leaveNature;
+    if (natureSource == null || natureSource === '') {
+      natureSource = typeCode ? await getLeaveNature(typeCode) : 'paid';
+    }
+    const leaveNatureEnum = payRegisterLeaveNatureEnum(natureSource);
+    const displayLeaveType = typeCode ? String(typeCode).toUpperCase() : 'Unspecified';
+
+    const markLeaveFirst = () => {
+      firstHalf.status = 'leave';
+      firstHalf.leaveType = displayLeaveType;
+      firstHalf.leaveNature = leaveNatureEnum;
+    };
+    const markLeaveSecond = () => {
+      secondHalf.status = 'leave';
+      secondHalf.leaveType = displayLeaveType;
+      secondHalf.leaveNature = leaveNatureEnum;
+    };
 
     if (leave.isHalfDay) {
-      if (leave.halfDayType === 'first_half') {
-        firstHalf.status = 'leave';
-        firstHalf.leaveType = leaveNature;
-      } else if (leave.halfDayType === 'second_half') {
-        secondHalf.status = 'leave';
-        secondHalf.leaveType = leaveNature;
-      }
+      if (leave.halfDayType === 'first_half') markLeaveFirst();
+      else if (leave.halfDayType === 'second_half') markLeaveSecond();
     } else {
-      firstHalf.status = 'leave';
-      firstHalf.leaveType = leaveNature;
-      secondHalf.status = 'leave';
-      secondHalf.leaveType = leaveNature;
+      markLeaveFirst();
+      markLeaveSecond();
     }
   }
 
@@ -528,16 +547,20 @@ async function alignPayRegisterDailyRecordsWithMonthlySummary(dailyRecords, summ
       ...dr.firstHalf,
       status: firstHalf.status,
       leaveType: firstHalf.leaveType,
+      leaveNature: firstHalf.leaveNature ?? null,
       isOD: firstHalf.isOD,
     };
     dr.secondHalf = {
       ...dr.secondHalf,
       status: secondHalf.status,
       leaveType: secondHalf.leaveType,
+      leaveNature: secondHalf.leaveNature ?? null,
       isOD: secondHalf.isOD,
     };
     dr.status = status;
     dr.leaveType = leaveType;
+    dr.leaveNature =
+      !isSplit && status === 'leave' ? firstHalf.leaveNature ?? secondHalf.leaveNature ?? null : null;
     dr.isOD = isOD;
     dr.isSplit = isSplit;
     dr.shiftId = shift?.shiftId || dr.shiftId || null;

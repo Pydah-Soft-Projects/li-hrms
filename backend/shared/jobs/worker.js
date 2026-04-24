@@ -46,6 +46,11 @@ const startWorkers = () => {
 
                 console.log(`[Worker] Batch ${batchId} recalculation complete`);
             } else if (action === 'second_salary_batch') {
+                const { isSecondSalaryGloballyEnabled } = require('../../settings/secondSalaryFeatureGate');
+                if (!(await isSecondSalaryGloballyEnabled())) {
+                    console.log('[Worker] Skipping second_salary_batch: disabled in Payroll settings');
+                    return { skipped: true, reason: 'second_salary_disabled' };
+                }
                 const { calculateSecondSalary } = require('../../payroll/services/secondSalaryCalculationService');
                 const SecondSalaryBatchService = require('../../payroll/services/secondSalaryBatchService');
                 const Employee = require('../../employees/model/Employee');
@@ -231,11 +236,13 @@ const startWorkers = () => {
                 }
                 console.log(`[Worker] Bulk regular payroll calculation complete`);
 
+                const { isSecondSalaryGloballyEnabled } = require('../../settings/secondSalaryFeatureGate');
+                const secondSalaryGloballyOn = await isSecondSalaryGloballyEnabled();
                 const { calculateSecondSalaryForPayRegister } = require('../../payroll/services/secondSalaryCalculationService');
                 const SecondSalaryBatchService = require('../../payroll/services/secondSalaryBatchService');
                 const secondBatchIds = new Set();
 
-                for (let j = 0; j < secondSalaryEmployees.length; j++) {
+                for (let j = 0; secondSalaryGloballyOn && j < secondSalaryEmployees.length; j++) {
                     const employee = secondSalaryEmployees[j];
                     try {
                         const { arrearsSettlements, deductionSettlements } = settlementsForEmployee(

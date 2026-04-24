@@ -187,6 +187,10 @@ async function resetEmployeeCL(employee, settings, resetDate) {
         // Carry forward is added to first payroll month of the leave year (alongside tier/pro-rata credit)
         if (carryForwardAllowed > 0 && months.length > 0) {
             months[0].clCredits = (Number(months[0].clCredits) || 0) + carryForwardAllowed;
+            months[0].poolCarryForwardIn = {
+                ...(months[0].poolCarryForwardIn || {}),
+                cl: round2((Number(months[0].poolCarryForwardIn?.cl) || 0) + carryForwardAllowed),
+            };
         }
         const scheduledClTotal = leaveRegisterYearService.sumScheduledCl(months);
         const newBalance = scheduledClTotal;
@@ -567,6 +571,11 @@ async function buildInitialSyncMonthsPayload(employee, settings, effectiveDate) 
     if (carryForwardAllowed > 0) {
         const base = Math.round((Number(monthsPayload[firstOpenIndex].clCredits) || 0) * 2) / 2;
         monthsPayload[firstOpenIndex].clCredits = Math.round((base + carryForwardAllowed) * 2) / 2;
+        const openSlot = monthsPayload[firstOpenIndex];
+        openSlot.poolCarryForwardIn = {
+            ...(openSlot.poolCarryForwardIn || {}),
+            cl: round2((Number(openSlot.poolCarryForwardIn?.cl) || 0) + carryForwardAllowed),
+        };
         if (monthlyBreakdown[firstOpenIndex]) {
             monthlyBreakdown[firstOpenIndex].carryAddedHere = carryForwardAllowed;
             monthlyBreakdown[firstOpenIndex].clCreditsApplied = monthsPayload[firstOpenIndex].clCredits;

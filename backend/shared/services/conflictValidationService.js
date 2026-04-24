@@ -8,7 +8,35 @@ const OD = require('../../leaves/model/OD');
 const OT = require('../../overtime/model/OT');
 const Permission = require('../../permissions/model/Permission');
 const AttendanceDaily = require('../../attendance/model/AttendanceDaily');
-const { extractISTComponents } = require('../utils/dateUtils');
+const { extractISTComponents, createISTDate } = require('../utils/dateUtils');
+
+/**
+ * Inclusive calendar overlap in Asia/Kolkata (string compare on YYYY-MM-DD).
+ */
+const istYmdRangeOverlaps = (aFrom, aTo, bFrom, bTo) => {
+  const a0 = extractISTComponents(aFrom).dateStr;
+  const a1 = extractISTComponents(aTo).dateStr;
+  const b0 = extractISTComponents(bFrom).dateStr;
+  const b1 = extractISTComponents(bTo).dateStr;
+  return a0 <= b1 && a1 >= b0;
+};
+
+/** For Mongo: instant bounds covering full IST start day → full IST end day (inclusive). */
+const getIstQueryBounds = (fromDate, toDate) => {
+  const fromStr = extractISTComponents(fromDate).dateStr;
+  const toStr = extractISTComponents(toDate).dateStr;
+  return {
+    start: createISTDate(fromStr),
+    end: new Date(`${toStr}T23:59:59.999+05:30`),
+  };
+};
+
+/** User-facing error text: always the IST calendar day (avoids toLocaleDateString on UTC). */
+const formatIstErrorDate = (date) => {
+  if (!date) return '';
+  const d = new Date(date);
+  return new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' }).format(d);
+};
 
 /**
  * Check if a date falls within a date range
@@ -94,7 +122,7 @@ const checkLeaveConflict = async (employeeId, employeeNumber, date, approvedOnly
         return {
           hasLeave: true,
           leave: leave,
-          message: `Employee has a ${leave.status} leave from ${leave.fromDate.toLocaleDateString()} to ${leave.toDate.toLocaleDateString()}`,
+          message: `Employee has a ${leave.status} leave from ${formatIstErrorDate(leave.fromDate)} to ${formatIstErrorDate(leave.toDate)}`,
         };
       }
     }
@@ -141,7 +169,7 @@ const checkODConflict = async (employeeId, employeeNumber, date, approvedOnly = 
         return {
           hasOD: true,
           od: od,
-          message: `Employee has a ${od.status} OD from ${od.fromDate.toLocaleDateString()} to ${od.toDate.toLocaleDateString()}`,
+          message: `Employee has a ${od.status} OD from ${formatIstErrorDate(od.fromDate)} to ${formatIstErrorDate(od.toDate)}`,
         };
       }
     }
@@ -298,11 +326,8 @@ const validateLeaveRequest = async (employeeId, employeeNumber, fromDate, toDate
   const errors = [];
   const warnings = [];
 
-  // Normalize dates for robust comparison
-  const start = new Date(fromDate);
-  start.setUTCHours(0, 0, 0, 0);
-  const end = new Date(toDate);
-  end.setUTCHours(23, 59, 59, 999);
+  // IST instants for Mongo pre-filter; calendar overlap is verified in IST
+  const { start, end } = getIstQueryBounds(fromDate, toDate);
 
   // Resolve status list: for creation, block both pending AND approved records
   const statusFilter = ['pending', 'reporting_manager_approved', 'hod_approved', 'manager_approved', 'hr_approved', 'principal_approved', 'approved'];
@@ -324,49 +349,30 @@ const validateLeaveRequest = async (employeeId, employeeNumber, fromDate, toDate
 
   // Check each OD for conflicts
   for (const od of ods) {
-    const odStart = new Date(od.fromDate);
-    odStart.setUTCHours(0, 0, 0, 0);
-    const odEnd = new Date(od.toDate);
-    odEnd.setUTCHours(23, 59, 59, 999);
-
-    // Check if date ranges overlap (already filtered by query, but verifying with normalized times)
-    if (start <= odEnd && end >= odStart) {
-      // If leave is single day and half day, check day-by-day
-      if (isSameDay(fromDate, toDate) && isHalfDay) {
-        // Single day half-day leave - check if OD is on same day
-        if (isSameDay(fromDate, od.fromDate) && isSameDay(fromDate, od.toDate)) {
-          // Same day - check half-day conflict
-          if (checkHalfDayConflict(isHalfDay, halfDayType, od.isHalfDay, od.halfDayType)) {
-            conflictingODs.push(od);
-            const statusText = od.status === 'approved' ? 'approved' : 'pending';
-            errors.push(`Employee has a ${statusText} OD on ${od.fromDate.toLocaleDateString()} that conflicts with this leave (${isHalfDay ? (halfDayType === 'first_half' ? 'First Half' : 'Second Half') : 'Full Day'} vs ${od.isHalfDay ? (od.halfDayType === 'first_half' ? 'First Half' : 'Second Half') : 'Full Day'})`);
-          }
-          // If different halves, no conflict - continue to next OD
-        } else {
-          // OD spans multiple days or different day - conflict
+    if (!istYmdRangeOverlaps(fromDate, toDate, od.fromDate, od.toDate)) continue;
+    if (isSameDay(fromDate, toDate) && isHalfDay) {
+      if (isSameDay(fromDate, od.fromDate) && isSameDay(fromDate, od.toDate)) {
+        if (checkHalfDayConflict(isHalfDay, halfDayType, od.isHalfDay, od.halfDayType)) {
           conflictingODs.push(od);
           const statusText = od.status === 'approved' ? 'approved' : 'pending';
-          errors.push(`Employee has a ${statusText} OD from ${od.fromDate.toLocaleDateString()} to ${od.toDate.toLocaleDateString()} that conflicts with this leave period`);
+          errors.push(`Employee has a ${statusText} OD on ${formatIstErrorDate(od.fromDate)} that conflicts with this leave (${isHalfDay ? (halfDayType === 'first_half' ? 'First Half' : 'Second Half') : 'Full Day'} vs ${od.isHalfDay ? (od.halfDayType === 'first_half' ? 'First Half' : 'Second Half') : 'Full Day'})`);
         }
       } else {
-        // Multi-day leave or full-day leave - check each day in overlapping range
-        const startDate = fromDate > od.fromDate ? fromDate : od.fromDate;
-        const endDate = toDate < od.toDate ? toDate : od.toDate;
-
-        // If leave is single day full day, check if OD is on same day
-        if (isSameDay(fromDate, toDate) && !isHalfDay) {
-          // Full day leave - conflicts with any OD on same day
-          if (isSameDay(fromDate, od.fromDate) && isSameDay(fromDate, od.toDate)) {
-            conflictingODs.push(od);
-            const statusText = od.status === 'approved' ? 'approved' : 'pending';
-            errors.push(`Employee has a ${statusText} OD on ${od.fromDate.toLocaleDateString()} that conflicts with this full-day leave`);
-          }
-        } else {
-          // Multi-day leave - conflicts with any overlapping OD
+        conflictingODs.push(od);
+        const statusText = od.status === 'approved' ? 'approved' : 'pending';
+        errors.push(`Employee has a ${statusText} OD from ${formatIstErrorDate(od.fromDate)} to ${formatIstErrorDate(od.toDate)} that conflicts with this leave period`);
+      }
+    } else {
+      if (isSameDay(fromDate, toDate) && !isHalfDay) {
+        if (isSameDay(fromDate, od.fromDate) && isSameDay(fromDate, od.toDate)) {
           conflictingODs.push(od);
           const statusText = od.status === 'approved' ? 'approved' : 'pending';
-          errors.push(`Employee has a ${statusText} OD from ${od.fromDate.toLocaleDateString()} to ${od.toDate.toLocaleDateString()} that conflicts with this leave period`);
+          errors.push(`Employee has a ${statusText} OD on ${formatIstErrorDate(od.fromDate)} that conflicts with this full-day leave`);
         }
+      } else {
+        conflictingODs.push(od);
+        const statusText = od.status === 'approved' ? 'approved' : 'pending';
+        errors.push(`Employee has a ${statusText} OD from ${formatIstErrorDate(od.fromDate)} to ${formatIstErrorDate(od.toDate)} that conflicts with this leave period`);
       }
     }
   }
@@ -390,26 +396,17 @@ const validateLeaveRequest = async (employeeId, employeeNumber, fromDate, toDate
     // Skip if it's the current application being updated
     if (excludeId && String(leave._id) === String(excludeId)) continue;
 
-    const leaveStart = new Date(leave.fromDate);
-    leaveStart.setUTCHours(0, 0, 0, 0);
-    const leaveEnd = new Date(leave.toDate);
-    leaveEnd.setUTCHours(23, 59, 59, 999);
-
-    // Check if date ranges overlap
-    if (start <= leaveEnd && end >= leaveStart) {
-      if (isSameDay(fromDate, toDate) && leave.isHalfDay && isHalfDay) {
-        // Both are half-day on same day - check for half-day conflict
-        if (checkHalfDayConflict(isHalfDay, halfDayType, leave.isHalfDay, leave.halfDayType)) {
-          conflictingLeaves.push(leave);
-          const statusText = leave.status === 'approved' ? 'approved' : 'pending';
-          errors.push(`Employee has a ${statusText} leave on ${leave.fromDate.toLocaleDateString()} that conflicts with this request (${isHalfDay ? (halfDayType === 'first_half' ? 'First Half' : 'Second Half') : 'Full Day'} vs ${leave.isHalfDay ? (leave.halfDayType === 'first_half' ? 'First Half' : 'Second Half') : 'Full Day'})`);
-        }
-      } else {
-        // Overlap with another leave (non-half-day or spanning multiple days)
+    if (!istYmdRangeOverlaps(fromDate, toDate, leave.fromDate, leave.toDate)) continue;
+    if (isSameDay(fromDate, toDate) && leave.isHalfDay && isHalfDay) {
+      if (checkHalfDayConflict(isHalfDay, halfDayType, leave.isHalfDay, leave.halfDayType)) {
         conflictingLeaves.push(leave);
         const statusText = leave.status === 'approved' ? 'approved' : 'pending';
-        errors.push(`Employee has a ${statusText} leave from ${leave.fromDate.toLocaleDateString()} to ${leave.toDate.toLocaleDateString()} that conflicts with this request period`);
+        errors.push(`Employee has a ${statusText} leave on ${formatIstErrorDate(leave.fromDate)} that conflicts with this request (${isHalfDay ? (halfDayType === 'first_half' ? 'First Half' : 'Second Half') : 'Full Day'} vs ${leave.isHalfDay ? (leave.halfDayType === 'first_half' ? 'First Half' : 'Second Half') : 'Full Day'})`);
       }
+    } else {
+      conflictingLeaves.push(leave);
+      const statusText = leave.status === 'approved' ? 'approved' : 'pending';
+      errors.push(`Employee has a ${statusText} leave from ${formatIstErrorDate(leave.fromDate)} to ${formatIstErrorDate(leave.toDate)} that conflicts with this request period`);
     }
   }
 
@@ -437,11 +434,7 @@ const validateODRequest = async (employeeId, employeeNumber, fromDate, toDate, i
   const errors = [];
   const warnings = [];
 
-  // Normalize dates for robust comparison
-  const start = new Date(fromDate);
-  start.setUTCHours(0, 0, 0, 0);
-  const end = new Date(toDate);
-  end.setUTCHours(23, 59, 59, 999);
+  const { start, end } = getIstQueryBounds(fromDate, toDate);
 
   // Resolve status list: for creation, block both pending AND approved records
   const statusFilter = ['pending', 'reporting_manager_approved', 'hod_approved', 'manager_approved', 'hr_approved', 'principal_approved', 'approved'];
@@ -461,51 +454,31 @@ const validateODRequest = async (employeeId, employeeNumber, fromDate, toDate, i
 
   const conflictingLeaves = [];
 
-  // Check each Leave for conflicts
   for (const leave of leaves) {
-    const leaveStart = new Date(leave.fromDate);
-    leaveStart.setUTCHours(0, 0, 0, 0);
-    const leaveEnd = new Date(leave.toDate);
-    leaveEnd.setUTCHours(23, 59, 59, 999);
-
-    // Check if date ranges overlap
-    if (start <= leaveEnd && end >= leaveStart) {
-      // If OD is single day and half day, check day-by-day
-      if (isSameDay(fromDate, toDate) && isHalfDay) {
-        // Single day half-day OD - check if Leave is on same day
-        if (isSameDay(fromDate, leave.fromDate) && isSameDay(fromDate, leave.toDate)) {
-          // Same day - check half-day conflict
-          if (checkHalfDayConflict(isHalfDay, halfDayType, leave.isHalfDay, leave.halfDayType)) {
-            conflictingLeaves.push(leave);
-            const statusText = leave.status === 'approved' ? 'approved' : 'pending';
-            errors.push(`Employee has a ${statusText} leave on ${leave.fromDate.toLocaleDateString()} that conflicts with this OD (${isHalfDay ? (halfDayType === 'first_half' ? 'First Half' : 'Second Half') : 'Full Day'} vs ${leave.isHalfDay ? (leave.halfDayType === 'first_half' ? 'First Half' : 'Second Half') : 'Full Day'})`);
-          }
-          // If different halves, no conflict - continue to next Leave
-        } else {
-          // Leave spans multiple days or different day - conflict
+    if (!istYmdRangeOverlaps(fromDate, toDate, leave.fromDate, leave.toDate)) continue;
+    if (isSameDay(fromDate, toDate) && isHalfDay) {
+      if (isSameDay(fromDate, leave.fromDate) && isSameDay(fromDate, leave.toDate)) {
+        if (checkHalfDayConflict(isHalfDay, halfDayType, leave.isHalfDay, leave.halfDayType)) {
           conflictingLeaves.push(leave);
           const statusText = leave.status === 'approved' ? 'approved' : 'pending';
-          errors.push(`Employee has a ${statusText} leave from ${leave.fromDate.toLocaleDateString()} to ${leave.toDate.toLocaleDateString()} that conflicts with this OD period`);
+          errors.push(`Employee has a ${statusText} leave on ${formatIstErrorDate(leave.fromDate)} that conflicts with this OD (${isHalfDay ? (halfDayType === 'first_half' ? 'First Half' : 'Second Half') : 'Full Day'} vs ${leave.isHalfDay ? (leave.halfDayType === 'first_half' ? 'First Half' : 'Second Half') : 'Full Day'})`);
         }
       } else {
-        // Multi-day OD or full-day OD - check each day in overlapping range
-        const startDate = fromDate > leave.fromDate ? fromDate : leave.fromDate;
-        const endDate = toDate < leave.toDate ? toDate : leave.toDate;
-
-        // If OD is single day full day, check if Leave is on same day
-        if (isSameDay(fromDate, toDate) && !isHalfDay) {
-          // Full day OD - conflicts with any Leave on same day
-          if (isSameDay(fromDate, leave.fromDate) && isSameDay(fromDate, leave.toDate)) {
-            conflictingLeaves.push(leave);
-            const statusText = leave.status === 'approved' ? 'approved' : 'pending';
-            errors.push(`Employee has a ${statusText} leave on ${leave.fromDate.toLocaleDateString()} that conflicts with this full-day OD`);
-          }
-        } else {
-          // Multi-day OD - conflicts with any overlapping Leave
+        conflictingLeaves.push(leave);
+        const statusText = leave.status === 'approved' ? 'approved' : 'pending';
+        errors.push(`Employee has a ${statusText} leave from ${formatIstErrorDate(leave.fromDate)} to ${formatIstErrorDate(leave.toDate)} that conflicts with this OD period`);
+      }
+    } else {
+      if (isSameDay(fromDate, toDate) && !isHalfDay) {
+        if (isSameDay(fromDate, leave.fromDate) && isSameDay(fromDate, leave.toDate)) {
           conflictingLeaves.push(leave);
           const statusText = leave.status === 'approved' ? 'approved' : 'pending';
-          errors.push(`Employee has a ${statusText} leave from ${leave.fromDate.toLocaleDateString()} to ${leave.toDate.toLocaleDateString()} that conflicts with this OD period`);
+          errors.push(`Employee has a ${statusText} leave on ${formatIstErrorDate(leave.fromDate)} that conflicts with this full-day OD`);
         }
+      } else {
+        conflictingLeaves.push(leave);
+        const statusText = leave.status === 'approved' ? 'approved' : 'pending';
+        errors.push(`Employee has a ${statusText} leave from ${formatIstErrorDate(leave.fromDate)} to ${formatIstErrorDate(leave.toDate)} that conflicts with this OD period`);
       }
     }
   }
@@ -526,29 +499,18 @@ const validateODRequest = async (employeeId, employeeNumber, fromDate, toDate, i
   const conflictingODs = [];
 
   for (const od of ods) {
-    // Skip if it's the current application being updated
     if (excludeId && String(od._id) === String(excludeId)) continue;
-
-    const odStart = new Date(od.fromDate);
-    odStart.setUTCHours(0, 0, 0, 0);
-    const odEnd = new Date(od.toDate);
-    odEnd.setUTCHours(23, 59, 59, 999);
-
-    // Check if date ranges overlap
-    if (start <= odEnd && end >= odStart) {
-      if (isSameDay(fromDate, toDate) && od.isHalfDay && isHalfDay) {
-        // Both are half-day on same day - check for half-day conflict
-        if (checkHalfDayConflict(isHalfDay, halfDayType, od.isHalfDay, od.halfDayType)) {
-          conflictingODs.push(od);
-          const statusText = od.status === 'approved' ? 'approved' : 'pending';
-          errors.push(`Employee has a ${statusText} OD on ${od.fromDate.toLocaleDateString()} that conflicts with this request (${isHalfDay ? (halfDayType === 'first_half' ? 'First Half' : 'Second Half') : 'Full Day'} vs ${od.isHalfDay ? (od.halfDayType === 'first_half' ? 'First Half' : 'Second Half') : 'Full Day'})`);
-        }
-      } else {
-        // Overlap with another OD (non-half-day or spanning multiple days)
+    if (!istYmdRangeOverlaps(fromDate, toDate, od.fromDate, od.toDate)) continue;
+    if (isSameDay(fromDate, toDate) && od.isHalfDay && isHalfDay) {
+      if (checkHalfDayConflict(isHalfDay, halfDayType, od.isHalfDay, od.halfDayType)) {
         conflictingODs.push(od);
         const statusText = od.status === 'approved' ? 'approved' : 'pending';
-        errors.push(`Employee has a ${statusText} OD from ${od.fromDate.toLocaleDateString()} to ${od.toDate.toLocaleDateString()} that conflicts with this request period`);
+        errors.push(`Employee has a ${statusText} OD on ${formatIstErrorDate(od.fromDate)} that conflicts with this request (${isHalfDay ? (halfDayType === 'first_half' ? 'First Half' : 'Second Half') : 'Full Day'} vs ${od.isHalfDay ? (od.halfDayType === 'first_half' ? 'First Half' : 'Second Half') : 'Full Day'})`);
       }
+    } else {
+      conflictingODs.push(od);
+      const statusText = od.status === 'approved' ? 'approved' : 'pending';
+      errors.push(`Employee has a ${statusText} OD from ${formatIstErrorDate(od.fromDate)} to ${formatIstErrorDate(od.toDate)} that conflicts with this request period`);
     }
   }
 

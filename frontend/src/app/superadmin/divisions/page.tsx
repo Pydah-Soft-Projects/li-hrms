@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { api, Division, Department, Designation, Shift, EmployeeGroup } from '@/lib/api';
 import Spinner from '@/components/Spinner';
 
@@ -519,6 +520,13 @@ export default function DivisionsPage() {
                                             </div>
                                         </div>
                                         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <Link
+                                                href={`/superadmin/divisions/${div._id}/workflows`}
+                                                className="p-2 text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded-xl transition-colors text-xs font-bold uppercase tracking-tighter"
+                                                title="Workflow overrides"
+                                            >
+                                                WF
+                                            </Link>
                                             <button onClick={() => { setShowEditDialog(div); setName(div.name); setCode(div.code); setDescription(div.description || ''); setManagerId(typeof div.manager === 'string' ? div.manager : div.manager?._id || ''); }} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"><EditIcon /></button>
                                             <button onClick={() => handleDeleteDivision(div._id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors"><TrashIcon /></button>
                                         </div>
@@ -615,6 +623,12 @@ export default function DivisionsPage() {
                                             </td>
                                             <td className="px-4 py-4 whitespace-nowrap text-right">
                                                 <div className="flex items-center justify-end gap-2">
+                                                    <Link
+                                                        href={`/superadmin/divisions/${div._id}/workflows`}
+                                                        className="px-2.5 py-1 text-xs font-medium text-violet-600 bg-violet-50 rounded-md hover:bg-violet-100 transition-colors"
+                                                    >
+                                                        Workflows
+                                                    </Link>
                                                     <button
                                                         onClick={() => openShiftDialog(div)}
                                                         className="px-2.5 py-1 text-xs font-medium text-amber-600 bg-amber-50 rounded-md hover:bg-amber-100 transition-colors"

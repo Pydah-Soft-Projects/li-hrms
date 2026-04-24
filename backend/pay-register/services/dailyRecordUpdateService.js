@@ -1,4 +1,12 @@
 const LeaveSettings = require('../../leaves/model/LeaveSettings');
+const { getLeaveNature } = require('./autoPopulationService');
+
+function payRegisterLeaveNatureEnum(raw) {
+  if (raw == null || raw === '') return 'paid';
+  const s = String(raw).toLowerCase();
+  if (s === 'lop' || s === 'without_pay' || s === 'loss_of_pay') return 'lop';
+  return 'paid';
+}
 
 /** Matches PayRegisterSummary daily record status enum (halves + full day). */
 const VALID_DAY_STATUSES = ['present', 'absent', 'leave', 'od', 'holiday', 'week_off', 'blank'];
@@ -184,8 +192,20 @@ async function updateDailyRecord(payRegister, date, updateData, editedBy) {
     dailyRecord.firstHalf.status = updateData.firstHalf.status || dailyRecord.firstHalf.status;
 
     if (updateData.firstHalf.status === 'leave') {
-      dailyRecord.firstHalf.leaveType = updateData.firstHalf.leaveType || await normalizeLeaveType(updateData.firstHalf.leaveType);
-      dailyRecord.firstHalf.leaveNature = updateData.firstHalf.leaveNature || dailyRecord.firstHalf.leaveNature || 'paid';
+      dailyRecord.firstHalf.leaveType =
+        updateData.firstHalf.leaveType != null
+          ? String(updateData.firstHalf.leaveType).trim()
+          : dailyRecord.firstHalf.leaveType;
+      const explicitNature = updateData.firstHalf.leaveNature ?? dailyRecord.firstHalf.leaveNature;
+      if (explicitNature != null && explicitNature !== '') {
+        dailyRecord.firstHalf.leaveNature = payRegisterLeaveNatureEnum(explicitNature);
+      } else if (dailyRecord.firstHalf.leaveType) {
+        dailyRecord.firstHalf.leaveNature = payRegisterLeaveNatureEnum(
+          await getLeaveNature(dailyRecord.firstHalf.leaveType)
+        );
+      } else {
+        dailyRecord.firstHalf.leaveNature = 'paid';
+      }
       dailyRecord.firstHalf.isOD = false;
     } else if (updateData.firstHalf.status === 'od') {
       dailyRecord.firstHalf.isOD = true;
@@ -213,8 +233,20 @@ async function updateDailyRecord(payRegister, date, updateData, editedBy) {
     dailyRecord.secondHalf.status = updateData.secondHalf.status || dailyRecord.secondHalf.status;
 
     if (updateData.secondHalf.status === 'leave') {
-      dailyRecord.secondHalf.leaveType = updateData.secondHalf.leaveType || await normalizeLeaveType(updateData.secondHalf.leaveType);
-      dailyRecord.secondHalf.leaveNature = updateData.secondHalf.leaveNature || dailyRecord.secondHalf.leaveNature || 'paid';
+      dailyRecord.secondHalf.leaveType =
+        updateData.secondHalf.leaveType != null
+          ? String(updateData.secondHalf.leaveType).trim()
+          : dailyRecord.secondHalf.leaveType;
+      const explicitNature2 = updateData.secondHalf.leaveNature ?? dailyRecord.secondHalf.leaveNature;
+      if (explicitNature2 != null && explicitNature2 !== '') {
+        dailyRecord.secondHalf.leaveNature = payRegisterLeaveNatureEnum(explicitNature2);
+      } else if (dailyRecord.secondHalf.leaveType) {
+        dailyRecord.secondHalf.leaveNature = payRegisterLeaveNatureEnum(
+          await getLeaveNature(dailyRecord.secondHalf.leaveType)
+        );
+      } else {
+        dailyRecord.secondHalf.leaveNature = 'paid';
+      }
       dailyRecord.secondHalf.isOD = false;
     } else if (updateData.secondHalf.status === 'od') {
       dailyRecord.secondHalf.isOD = true;

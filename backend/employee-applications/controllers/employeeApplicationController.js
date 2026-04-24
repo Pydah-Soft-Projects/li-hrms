@@ -41,6 +41,7 @@ const {
   resolveScopedUserIdsForEmployee,
   resolveEmployeePortalUserIds,
 } = require('../../shared/utils/scopedNotificationRecipients');
+const { schedulePostVerifyBiometricBackfill } = require('../../attendance/services/postVerifyBiometricBackfillService');
 
 const resolveReportingManagerUserIds = async (employeeRecord) => {
   const managers = employeeRecord?.dynamicFields?.reporting_to || employeeRecord?.dynamicFields?.reporting_to_ || [];
@@ -850,6 +851,12 @@ const verifySingleApplicationInternal = async (applicationId, approver) => {
     }
 
     await application.save();
+
+    schedulePostVerifyBiometricBackfill({
+      empNo: createdEmployee.emp_no,
+      doj: finalDOJ,
+      verifiedAt: application.verifiedAt,
+    });
 
     // Log History
     await EmployeeHistory.create({

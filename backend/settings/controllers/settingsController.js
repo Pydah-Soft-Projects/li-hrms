@@ -1,4 +1,5 @@
 const Settings = require('../model/Settings');
+const { invalidateSecondSalaryFeatureCache } = require('../secondSalaryFeatureGate');
 
 // @desc    Get all settings
 // @route   GET /api/settings
@@ -50,6 +51,7 @@ exports.getSetting = async (req, res) => {
         'qualification_statuses': ['Partial', 'Not Certified', 'Certified'],
         'default_apply_statutory_deductions': true,
         'default_apply_attendance_deductions': true,
+        'enable_second_salary': true,
       };
 
       if (defaults[req.params.key] !== undefined) {
@@ -182,6 +184,14 @@ exports.upsertSetting = async (req, res) => {
         });
       }
     }
+    if (key === 'enable_second_salary') {
+      if (typeof value !== 'boolean') {
+        return res.status(400).json({
+          success: false,
+          message: 'enable_second_salary must be a boolean',
+        });
+      }
+    }
 
     const setting = await Settings.findOneAndUpdate(
       { key },
@@ -191,7 +201,7 @@ exports.upsertSetting = async (req, res) => {
         description: description || `Setting for ${key}`,
         category:
           category ||
-          (['include_missing_employee_components', 'enable_absent_deduction', 'lop_days_per_absent', 'auto_reject_pending_requests_on_batch_complete'].includes(key)
+          (['include_missing_employee_components', 'enable_absent_deduction', 'lop_days_per_absent', 'auto_reject_pending_requests_on_batch_complete', 'enable_second_salary'].includes(key)
             ? 'payroll'
             : ['allow_employee_bulk_process', 'custom_employee_grouping_enabled'].includes(key)
               ? 'employee'
@@ -205,6 +215,10 @@ exports.upsertSetting = async (req, res) => {
         runValidators: true,
       }
     );
+
+    if (key === 'enable_second_salary') {
+      invalidateSecondSalaryFeatureCache();
+    }
 
     res.status(200).json({
       success: true,

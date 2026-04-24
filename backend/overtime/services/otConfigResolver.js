@@ -4,6 +4,8 @@
 
 const OvertimeSettings = require('../model/OvertimeSettings');
 const DepartmentSettings = require('../../departments/model/DepartmentSettings');
+const DivisionWorkflowSettings = require('../../departments/model/DivisionWorkflowSettings');
+const { mergeWorkflowObjects } = require('../../departments/services/divisionWorkflowResolver');
 const Settings = require('../../settings/model/Settings');
 
 function num(v, fallback = 0) {
@@ -48,11 +50,17 @@ async function getMergedOtConfig(departmentId, divisionId = null) {
     return num(fallback, 0);
   };
 
-  // OT approval workflow is organization-wide only; department `ot.workflow` is ignored.
-  const workflowMerged =
+  // OT workflow: global OvertimeSettings, then optional division override (department `ot.workflow` is not used for approvals).
+  let workflowMerged =
     g.workflow && typeof g.workflow === 'object'
       ? g.workflow
       : { isEnabled: false, steps: [], finalAuthority: { role: 'hr', anyHRCanApprove: false } };
+
+  if (divisionId && mongooseId(divisionId)) {
+    const divDoc = await DivisionWorkflowSettings.findOne({ division: divisionId }).lean();
+    const divOt = divDoc?.workflows?.ot;
+    workflowMerged = mergeWorkflowObjects(workflowMerged, divOt);
+  }
 
   const minFromDeptOrGlobal =
     d.minOTHours !== undefined && d.minOTHours !== null

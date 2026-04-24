@@ -9,7 +9,6 @@ const Shift = require('../../shifts/model/Shift');
 const { createISTDate, extractISTComponents, getAllDatesInRange } = require('../../shared/utils/dateUtils');
 const dateCycleService = require('../../leaves/services/dateCycleService');
 const Employee = require('../../employees/model/Employee');
-const LeaveRegisterYear = require('../../leaves/model/LeaveRegisterYear');
 const OT = require('../../overtime/model/OT');
 const deductionService = require('../../payroll/services/deductionService');
 const { getAbsentDeductionSettings } = require('../../payroll/services/allowanceDeductionResolverService');
@@ -82,7 +81,10 @@ function getExpectedHoursFromAttendance(attendance) {
 /** Pay register leave halves use paid/lop keys (same as populate resolveConflicts). */
 function normalizePayRegisterLeaveNature(l) {
   const n = String(l.leaveNature || '').toLowerCase();
-  if (n === 'paid' || n === 'lop') return n;
+  if (n === 'paid') return 'paid';
+  if (n === 'lop' || n === 'without_pay') return 'lop';
+  const lt = String(l.leaveType || '').toLowerCase();
+  if (lt.includes('lop') || lt.includes('loss of pay') || lt.includes('sandwich')) return 'lop';
   return 'paid';
 }
 
@@ -231,7 +233,45 @@ function buildPayRegisterDaySnapshotFromEngine(dStr, day, ctx) {
 function getHalfPortion(status, targetStatus, leaveNature) {
   if (status !== targetStatus) return 0;
   if (targetStatus !== 'leave') return 0.5;
-  return String(leaveNature || '').toLowerCase() === 'lop' ? 0.5 : 0;
+  const nat = String(leaveNature || '').toLowerCase();
+  return nat === 'lop' || nat === 'without_pay' ? 0.5 : 0;
+}
+
+/**
+ * Single-shift partial + payable credit: ensure pay-register halves show policy LOP (not default "paid").
+ * Applies when worked/payable + policy LOP split the day (~0.5 + ~0.5) and there is no approved leave
+ * using that capacity (see partialLopPortion, which subtracts leaveContrib before calling this).
+ */
+function enforceSingleShiftPartialLopSnapshot(snapshot, usePartialPayable, dayPayable, partialLopPortion) {
+  if (!snapshot || !usePartialPayable) return snapshot;
+  const lop = Math.min(1, Math.max(0, Number(partialLopPortion) || 0));
+  if (lop <= 0.001) return snapshot;
+  const pay = Math.min(1, Math.max(0, Number(dayPayable) || 0));
+  if (pay < 0.5 - 1e-6 || lop < 0.5 - 1e-6 || pay + lop > 1.0001) return snapshot;
+  const presentHalf = {
+    status: 'present',
+    leaveType: null,
+    leaveNature: null,
+    isOD: false,
+    otHours: 0,
+  };
+  const lopHalf = {
+    status: 'leave',
+    leaveType: 'lop',
+    leaveNature: 'lop',
+    isOD: false,
+    otHours: 0,
+  };
+  return {
+    ...snapshot,
+    firstHalf: { ...presentHalf },
+    secondHalf: { ...lopHalf },
+    isSplit: true,
+    status: null,
+    leaveType: null,
+    leaveNature: null,
+    isOD: false,
+  };
 }
 
 /**
@@ -325,6 +365,8 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     const contributingDates = {
       present: [],
       leaves: [],
+      paidLeaves: [],
+      lopLeaves: [],
       ods: [],
       partial: [],
       weeklyOffs: [],
@@ -419,21 +461,15 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
     }
 
     // 4. Get approved leaves for this month (Using .lean() and projections)
-    // Relaxed filter: include leaves where splitStatus is null, empty, or undefined.
+    // Load every approved leave overlapping the period (including split_approved parents).
+    // Days that have an approved LeaveSplit for this leave use splits only; any date in
+    // the parent range with no split row still uses the parent so we never drop coverage.
     const approvedLeaves = await Leave.find({
       employeeId,
       status: 'approved',
-      $or: [
-          { splitStatus: { $in: [null, ''] } },
-          { splitStatus: { $exists: false } }
-      ],
-      $or: [
-        {
-          fromDate: { $lte: endDate },
-          toDate: { $gte: startDate },
-        },
-      ],
       isActive: true,
+      fromDate: { $lte: endDate },
+      toDate: { $gte: startDate },
     }).select('fromDate toDate isHalfDay halfDayType leaveType leaveNature numberOfDays').lean();
 
     // 5. Get approved ODs for this month (Using .lean() and projections)
@@ -454,7 +490,15 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       employeeId,
       status: 'approved',
       date: { $gte: startDate, $lte: endDate },
-    }).select('date isHalfDay halfDayType numberOfDays leaveType leaveNature').lean();
+    }).select('leaveId date isHalfDay halfDayType numberOfDays leaveType leaveNature').lean();
+
+    /** Dates where LeaveSplit already defines that leave — skip parent push to avoid double-counting paid/leave units. */
+    const leaveSplitCoverageKeys = new Set();
+    for (const split of approvedLeaveSplits) {
+      if (!split?.leaveId) continue;
+      const dStr = toNormalizedDateStr(split.date);
+      leaveSplitCoverageKeys.add(`${String(split.leaveId)}_${dStr}`);
+    }
 
     // Half-day ESI remaining-hours logic:
     // if OT was declared from ESI conversion, use remaining punch hours
@@ -493,10 +537,11 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       const start = toNormalizedDateStr(lv.fromDate);
       const end = toNormalizedDateStr(lv.toDate);
       const range = getAllDatesInRange(start, end);
+      const lvId = lv?._id != null ? String(lv._id) : '';
       for (const dStr of range) {
-        if (dailyStatsMap.has(dStr)) {
-          dailyStatsMap.get(dStr).leaves.push(lv);
-        }
+        if (!dailyStatsMap.has(dStr)) continue;
+        if (lvId && leaveSplitCoverageKeys.has(`${lvId}_${dStr}`)) continue;
+        dailyStatsMap.get(dStr).leaves.push(lv);
       }
     }
 
@@ -723,6 +768,8 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       }
       const hasFullDayEsiLeave = Array.isArray(day.leaves) && day.leaves.some(isFullDayEsiLeaveEntry);
       const hasHalfDayEsiLeave = Array.isArray(day.leaves) && day.leaves.some(isHalfDayEsiLeaveEntry);
+      /** Capped 0..1; used again for PARTIAL policy LOP so we never stack policy LOP on the same half as an approved leave/OD (leave wins). */
+      let leaveContrib = 0;
       // 1. Leaves (Priority - if leave is taken, it counts as leave)
       if (day.leaves.length > 0) {
         // Sum all leave units on the same date (multiple 0.5 leaves can make 1.0)
@@ -733,18 +780,37 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
           const dailyUnit = l.isHalfDay ? 0.5 : 1;
           return sum + dailyUnit;
         }, 0);
-        const leaveContrib = Math.min(1, leaveContribRaw);
+        leaveContrib = Math.min(1, leaveContribRaw);
 
-        // Track Paid vs LOP for the Pay Register sync
-        day.leaves.forEach(l => {
+        // Paid vs LOP for pay register: same per-day cap as leaveContrib (scale if raw units exceed 1, e.g. duplicate rows).
+        let paidUnitSum = 0;
+        let lopUnitSum = 0;
+        for (const l of day.leaves) {
           const unit = l.isHalfDay ? 0.5 : 1;
           const nature = (l.leaveNature || '').toLowerCase();
-          if (nature === 'paid') {
-            totalPaidLeaveDays += unit;
-          } else {
-            totalLopLeaveDays += unit;
+          if (nature === 'lop' || nature === 'without_pay') lopUnitSum += unit;
+          else paidUnitSum += unit; // explicit 'paid' or unset → paid (CL/EL legacy rows)
+        }
+        const paidLopRaw = paidUnitSum + lopUnitSum;
+        if (paidLopRaw > 0) {
+          const scale = leaveContrib / paidLopRaw;
+          const paidScaled = Math.round(paidUnitSum * scale * 100) / 100;
+          const lopScaled = Math.round(lopUnitSum * scale * 100) / 100;
+          totalPaidLeaveDays += paidScaled;
+          totalLopLeaveDays += lopScaled;
+          if (paidScaled > 1e-9 && !contributingDates.paidLeaves.some((cd) => cd.date === dStr)) {
+            contributingDates.paidLeaves.push({ date: dStr, value: paidScaled, label: 'Paid' });
           }
-        });
+          if (lopScaled > 1e-9) {
+            const existingLop = contributingDates.lopLeaves.find((cd) => cd.date === dStr);
+            if (!existingLop) {
+              contributingDates.lopLeaves.push({ date: dStr, value: lopScaled, label: `LOP (${lopScaled})` });
+            } else {
+              existingLop.value = Math.round((Number(existingLop.value) + lopScaled) * 100) / 100;
+              existingLop.label = `LOP (${existingLop.value})`;
+            }
+          }
+        }
 
         const firstLeave = day.leaves[0];
         if (!contributingDates.leaves.some(cd => cd.date === dStr)) {
@@ -858,8 +924,18 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         !day.isWO &&
         !day.isHOL;
 
+      // PARTIAL + approved full-day leave (e.g. CL 1 day) + incomplete punch: treat as leave-only for
+      // payroll/pay register — do not add partial payable or policy LOP; leaveContrib is already 1.0.
+      // Half-day / OD cases keep using the existing partial + policy path.
+      const usePartialPolicy =
+        isPartialDay &&
+        !day.isWO &&
+        !day.isHOL &&
+        !hasFullDayEsiLeave &&
+        leaveContrib < 0.999;
+
       let mergedForPayable = mergedDailyCredit;
-      if (isPartialDay && partialDaysContributeToPayableShifts) {
+      if (usePartialPolicy && partialDaysContributeToPayableShifts) {
         mergedForPayable = Math.max(mergedForPayable, 0.5);
       }
 
@@ -877,17 +953,23 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
 
       if (hasFullDayEsiLeave) {
         dayPayable = 0;
+      } else if (isPartialDay && leaveContrib >= 0.999) {
+        // Full-day leave wins over PARTIAL thumb / shift payables
+        dayPayable = 0;
       }
 
       dayPayable = Math.min(dayPayable, 1.0);
-      // Partial-day LOP is only the truly uncovered remainder after
-      // approved leave/OD coverage plus payable worked portion.
+      // Partial-day policy LOP: remainder of the day not covered by (work/OD) + payable credit,
+      // plus *approved* leave (any nature) for full/half. Without leaveContrib we double-count:
+      // e.g. 0.5 partial thumb + 0.5 approved half-day leave must not add 0.5 policy LOP.
       const partialLopPortion =
-        isPartialDay
-          ? Math.round(Math.max(0, 1 - Math.min(1, mergedDailyCredit + dayPayable)) * 100) / 100
+        usePartialPolicy
+          ? Math.round(
+              Math.max(0, 1 - Math.min(1, mergedDailyCredit + dayPayable + leaveContrib)) * 100
+            ) / 100
           : 0;
 
-      if (isPartialDay) {
+      if (usePartialPolicy) {
         if (partialLopPortion > 0) {
           totalLeaveDays += partialLopPortion;
           totalLopLeaveDays += partialLopPortion;
@@ -897,6 +979,14 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
               value: partialLopPortion,
               label: `Leave (lop) (${partialLopPortion})`,
             });
+          }
+          const v = partialLopPortion;
+          const existingLop = contributingDates.lopLeaves.find((cd) => cd.date === dStr);
+          if (!existingLop) {
+            contributingDates.lopLeaves.push({ date: dStr, value: v, label: `LOP (${v})` });
+          } else {
+            existingLop.value = Math.round((Number(existingLop.value) + v) * 100) / 100;
+            existingLop.label = `LOP (${existingLop.value})`;
           }
         }
         if (!contributingDates.partial.some(cd => cd.date === dStr)) {
@@ -961,7 +1051,7 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
           // credits working portion (e.g. 0.5). Absent must not treat the full day as missing — add that
           // payable fraction so e.g. 0.5 pay + partial → 0.5 absent, not 1.0 absent.
           let effectiveCovered = dayCovered;
-          if (isPartialDay) {
+          if (usePartialPolicy) {
             const payPortion = Math.min(1, Math.max(0, Number(dayPayable) || 0));
             const lopPortion = Math.min(1, Math.max(0, Number(partialLopPortion) || 0));
             // Partial days are represented as worked/payable part + LOP leave part,
@@ -976,20 +1066,25 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
         }
       }
 
-      payRegisterDaySnapshots.push(
-        buildPayRegisterDaySnapshotFromEngine(dStr, day, {
-          leaveFirstAll,
-          leaveSecondAll,
-          attFirst,
-          attSecond,
-          odFirst,
-          odSecond,
-          isPartialDay,
-          dayPayable,
-        })
+      let daySnapshot = buildPayRegisterDaySnapshotFromEngine(dStr, day, {
+        leaveFirstAll,
+        leaveSecondAll,
+        attFirst,
+        attSecond,
+        odFirst,
+        odSecond,
+        isPartialDay: usePartialPolicy,
+        dayPayable,
+      });
+      daySnapshot = enforceSingleShiftPartialLopSnapshot(
+        daySnapshot,
+        partialDaysContributeToPayableShifts,
+        dayPayable,
+        partialLopPortion
       );
+      payRegisterDaySnapshots.push(daySnapshot);
       const latestSnapshot = payRegisterDaySnapshots[payRegisterDaySnapshots.length - 1];
-      if (isPartialDay && latestSnapshot) {
+      if (usePartialPolicy && latestSnapshot) {
         const firstStatus = latestSnapshot.firstHalf?.status || null;
         const secondStatus = latestSnapshot.secondHalf?.status || null;
         const firstLeaveNature = latestSnapshot.firstHalf?.leaveNature || null;
@@ -1344,57 +1439,6 @@ async function calculateMonthlySummary(employeeId, emp_no, year, monthNumber, pe
       console.error('[summaryCalculationService] Failed to persist AttendanceDaily policyMeta:', policyMetaErr.message);
     }
 
-    // --- LEAVE REGISTER CAPPING ---
-    // Rebalance Paid/LOP leaves from Leave Register monthly credits.
-    // Paid is capped by CL + CCL credits; LOP is the remaining leaves in the month.
-    try {
-      const fy = await dateCycleService.getFinancialYearForDate(startDate);
-      const registerYear = await LeaveRegisterYear.findOne({
-        employeeId,
-        financialYear: fy.name
-      }).lean();
-      
-      const slot = registerYear?.months?.find(
-        (m) =>
-          Number(m.payrollCycleMonth) === Number(monthNumber) &&
-          Number(m.payrollCycleYear) === Number(year)
-      );
-
-      if (slot) {
-        // Cap paid leaves by effective CL + CCL monthly credits from leave register.
-        // CL "Cr" shown in register can include explicit CL CREDIT transactions
-        // in addition to scheduled slot.clCredits, so include both sources.
-        // EL is intentionally excluded from this payroll monthly summary cap.
-        const clScheduledCredits = Number(slot.clCredits) || 0;
-        const clTxnCredits = (Array.isArray(slot.transactions) ? slot.transactions : [])
-          .filter(
-            (t) =>
-              String(t.leaveType || '').toUpperCase() === 'CL' &&
-              String(t.transactionType || '').toUpperCase() === 'CREDIT'
-          )
-          .reduce((sum, t) => sum + (Number(t.days) || 0), 0);
-        const clCredits = Math.max(clScheduledCredits, clTxnCredits);
-        const cclCredits = Number(slot.compensatoryOffs) || 0;
-        const paidLeaveCap = Math.max(0, clCredits + cclCredits);
-        const totalLeaves = Math.max(0, Number(summary.totalLeaves) || 0);
-        const prevPaid = Math.max(0, Number(summary.totalPaidLeaves) || 0);
-        const prevLop = Math.max(0, Number(summary.totalLopLeaves) || 0);
-
-        const targetPaid = Math.round(Math.min(totalLeaves, paidLeaveCap) * 100) / 100;
-        const targetLop = Math.round(Math.max(0, totalLeaves - targetPaid) * 100) / 100;
-
-        if (prevPaid !== targetPaid || prevLop !== targetLop) {
-          console.log(
-            `[CAPPING] Rebalanced leaves for ${emp_no}: paid ${prevPaid} -> ${targetPaid}, lop ${prevLop} -> ${targetLop} (cap ${paidLeaveCap}, total ${totalLeaves}).`
-          );
-          summary.totalPaidLeaves = targetPaid;
-          summary.totalLopLeaves = targetLop;
-        }
-      }
-    } catch (capErr) {
-      console.error(`[CAPPING] Error applying leave register cap for ${emp_no}:`, capErr.message);
-    }
-
     // 13. Save summary
     await summary.save();
     console.log('[OD-FLOW] calculateMonthlySummary saved', { emp_no, month: summary.month });
@@ -1484,7 +1528,28 @@ async function recalculateOnAttendanceUpdate(emp_no, date) {
     const { year, month: monthNumber, startDate, endDate } = periodInfo.payrollCycle;
     const startDateStr = extractISTComponents(startDate).dateStr;
     const endDateStr = extractISTComponents(endDate).dateStr;
+    const dateStr = extractISTComponents(baseDate).dateStr;
     console.log('[OD-FLOW] recalculateOnAttendanceUpdate period', { year, monthNumber, startDateStr, endDateStr });
+
+    // Reconcile single-day approved leave with punches before aggregating (reject / narrow + register credits)
+    try {
+      const AttendanceDaily = require('../model/AttendanceDaily');
+      const daily = await AttendanceDaily.findOne({ employeeNumber: empNoNorm, date: dateStr });
+      if (daily) {
+        const { runLeaveAttendanceReconciliation } = require('../../leaves/services/leaveAttendanceReconciliationService');
+        const recon = await runLeaveAttendanceReconciliation(employee, dateStr, daily);
+        if (recon?.results?.length) {
+          const interesting = (recon.results || []).filter(
+            (x) => x && x.action && !['none', 'skip'].includes(x.action) && !String(x.action).startsWith('no_')
+          );
+          if (interesting.length) {
+            console.log('[leaveAttendanceReconciliation]', { emp: empNoNorm, date: dateStr, results: interesting });
+          }
+        }
+      }
+    } catch (reconErr) {
+      console.error('[leaveAttendanceReconciliation] error:', reconErr);
+    }
 
     // Pass period so we always aggregate the exact cycle that contains this date (avoids anchor mismatch)
     await calculateMonthlySummary(employee._id, empNoNorm, year, monthNumber, { startDateStr, endDateStr });
@@ -1561,27 +1626,21 @@ async function recalculateOnODApproval(od) {
 
     const fromStr = extractISTComponents(od.fromDate).dateStr;
     const toStr = extractISTComponents(od.toDate).dateStr;
+    const odDateRange = getAllDatesInRange(fromStr, toStr);
 
     // Touch AttendanceDaily for hour-based OD (create/ensure daily) and for half-day OD (re-save existing dailies so pre-save runs and applies half-vs-punches logic).
     if (od.odType_extended === 'hours') {
       console.log('[OD-FLOW] recalculateOnODApproval: touching dailies (hour-based)');
-      let d = new Date(fromStr);
-      const toDate = new Date(toStr);
-      while (d <= toDate) {
-        const dateStr = extractISTComponents(d).dateStr;
+      for (const dateStr of odDateRange) {
         let daily = await AttendanceDaily.findOne({ employeeNumber: empNo, date: dateStr });
         if (!daily) {
           daily = new AttendanceDaily({ employeeNumber: empNo, date: dateStr, shifts: [] });
         }
         await daily.save();
-        d.setDate(d.getDate() + 1);
       }
     } else if (od.odType_extended === 'half_day' || od.isHalfDay) {
       console.log('[OD-FLOW] recalculateOnODApproval: re-saving dailies for half-day OD (so half-vs-punches is applied)');
-      let d = new Date(fromStr);
-      const toDate = new Date(toStr);
-      while (d <= toDate) {
-        const dateStr = extractISTComponents(d).dateStr;
+      for (const dateStr of odDateRange) {
         const daily = await AttendanceDaily.findOne({ employeeNumber: empNo, date: dateStr });
         if (daily) {
           await daily.save();
@@ -1589,7 +1648,6 @@ async function recalculateOnODApproval(od) {
           const newDaily = new AttendanceDaily({ employeeNumber: empNo, date: dateStr, shifts: [] });
           await newDaily.save();
         }
-        d.setDate(d.getDate() + 1);
       }
     }
     // Full-day OD: no daily create/update; contribution is added in monthly summary OD-only logic.
@@ -1613,29 +1671,6 @@ async function recalculateOnODApproval(od) {
     console.log('[OD-FLOW] recalculateOnODApproval done');
   } catch (error) {
     console.error(`Error recalculating summary on OD approval for OD ${od._id}:`, error);
-  }
-}
-
-/**
- * Recalculate monthly summary when leave register credits change
- * @param {string} employeeId - Employee ID
- * @param {Date|string} date - Reference date in the payroll cycle
- */
-async function recalculateOnLeaveRegisterUpdate(employeeId, date) {
-  try {
-    const employee = await Employee.findById(employeeId);
-    if (!employee) return;
-
-    const baseDate = typeof date === 'string' ? createISTDate(date) : date;
-    const periodInfo = await dateCycleService.getPeriodInfo(baseDate);
-    const { year, month: monthNumber, startDate, endDate } = periodInfo.payrollCycle;
-    
-    await calculateMonthlySummary(employee._id, employee.emp_no, year, monthNumber, {
-      startDateStr: extractISTComponents(startDate).dateStr,
-      endDateStr: extractISTComponents(endDate).dateStr,
-    });
-  } catch (error) {
-    console.error(`Error recalculating summary on leave register update:`, error);
   }
 }
 
@@ -1664,7 +1699,6 @@ module.exports = {
   recalculateOnAttendanceUpdate,
   recalculateOnLeaveApproval,
   recalculateOnODApproval,
-  recalculateOnLeaveRegisterUpdate,
   deleteAllMonthlySummaries,
 };
 

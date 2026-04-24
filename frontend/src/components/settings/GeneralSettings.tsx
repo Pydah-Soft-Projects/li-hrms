@@ -1,13 +1,16 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
 import Spinner from '@/components/Spinner';
 import { SettingsSkeleton } from './SettingsSkeleton';
-import { Save, Clock, ChevronRight } from 'lucide-react';
+import { Save, Clock, ChevronRight, Award, ArrowRight } from 'lucide-react';
 
 const GeneralSettings = () => {
+  const router = useRouter();
+  const pathname = usePathname();
   const [lateInGrace, setLateInGrace] = useState<number>(15);
   const [earlyOutGrace, setEarlyOutGrace] = useState<number>(15);
   const [allowEmployeeBulkProcess, setAllowEmployeeBulkProcess] = useState<boolean>(false);
@@ -108,6 +111,37 @@ const GeneralSettings = () => {
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-10">
         <div className="xl:col-span-2 space-y-8">
+          <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden p-4 sm:p-6 lg:p-8">
+            <div className="px-6 sm:px-8 py-4 sm:py-5 border-b border-indigo-100/80 dark:border-indigo-900/40 bg-indigo-50/40 dark:bg-indigo-950/20">
+              <h3 className="text-sm font-bold text-indigo-900 dark:text-indigo-200 uppercase tracking-wider">Human resources</h3>
+              <p className="text-xs text-indigo-800/80 dark:text-indigo-300/80 mt-1">Shortcuts to HR policy settings that also live under the Human resources group in the sidebar.</p>
+            </div>
+            <div className="p-6 sm:p-8">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 rounded-2xl border border-gray-200 dark:border-gray-700 p-4 sm:p-5 bg-gray-50/50 dark:bg-[#0F172A]/50">
+                <div className="flex gap-3 min-w-0">
+                  <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">
+                    <Award className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <h4 className="text-sm font-bold text-gray-900 dark:text-white">Promotions &amp; transfers — multi-level approval</h4>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                      Configure the ordered approval chain for salary changes and internal moves (or the default RM/HOD first approver
+                      when multi-level stages are off).
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => router.push(`${pathname}?tab=promotions_transfers`)}
+                  className="inline-flex items-center justify-center gap-2 self-start sm:self-center rounded-xl border border-indigo-200 dark:border-indigo-800 bg-white dark:bg-[#1E293B] px-4 py-2.5 text-xs font-bold text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors whitespace-nowrap"
+                >
+                  Open settings
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+          </section>
+
           <section className="bg-white dark:bg-[#1E293B] rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden p-4 sm:p-6 lg:p-8">
             <div className="px-8 py-6 border-b border-gray-100 dark:border-gray-800">
               <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider">Attendance Grace Periods</h3>
